@@ -70,7 +70,8 @@ For a desktop using the embedded host, make these changes in
 3. `src/omabridge_device.rs`: pass `--state-dir` when invoking `manage`; it currently
    relies on CLI defaults. Use a CLI built from `feat/embed` for local publish/unpublish
    against embedded state; older CLIs assume systemd and report already-running.
-4. Gate relay/gateway configuration UI on returned capabilities. Embedded mode rejects
+4. Gate gateway/relay-host UI on returned capabilities and disable relay mode changes
+   when `published.backend == "embedded"`. Embedded mode rejects
    `relay-set`, `relay-host`, `gateway-set`, `gateway-domain-set` with
    `omabridge_embedded_unsupported`; configure relay at server startup instead.
 5. Keep the T3 executable/base-dir mapping pointed at o3-server for session list/revoke.
