@@ -23,6 +23,11 @@ fn error(message: String) -> Value {
     json!({"_tag":"RpcNotImplemented","message":message})
 }
 pub fn authorize(session: &Value, tag: &str, p: &Value) -> Result<(), Value> {
+    let tag = if tag == "server.subscribeServerConfig" {
+        "subscribeServerConfig"
+    } else {
+        tag
+    };
     let check = |scope: &str| {
         if session["scopes"]
             .as_array()
@@ -103,7 +108,10 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
         for sub in subscriptions.values_mut().filter(|sub| !sub.waiting) {
             let item = if let Some(v) = sub.initial.take() {
                 Some(v)
-            } else if sub.tag == "server.subscribeServerConfig" {
+            } else if matches!(
+                sub.tag.as_str(),
+                "server.subscribeServerConfig" | "subscribeServerConfig"
+            ) {
                 let version = *changed.borrow();
                 if version != sub.version {
                     sub.version = version;
@@ -171,12 +179,12 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                                 "Request" if !eof=>{
                                     let tag=frame["tag"].as_str().unwrap_or("");let p=&frame["payload"];
                                     if let Err(e)=authorize(&session,tag,p){if send(&mut ws,exit(&id,Err(e))).await.is_err(){return}continue;}
-                                    if matches!(tag,"orchestration.subscribeShell"|"orchestration.subscribeThread"|"server.subscribeServerConfig") {
+                                    if matches!(tag,"orchestration.subscribeShell"|"orchestration.subscribeThread"|"server.subscribeServerConfig"|"subscribeServerConfig") {
                                         if subscriptions.len()>=64||subscriptions.contains_key(&id.to_string()) {if send(&mut ws,exit(&id,Err(error("subscription limit or duplicate id".into())))).await.is_err(){return}continue;}
                                         // Register notification receiver before any snapshot; no await until cursor is installed.
                                         let version=*changed.borrow();let seq=events::sequence(&s.db.lock().unwrap()).unwrap_or(0);let after=p["afterSequence"].as_i64().filter(|v|*v<=seq);
                                         let tid=if tag=="orchestration.subscribeThread" {p["threadId"].as_str().map(str::to_owned)}else{None};
-                                        let initial=if tag=="orchestration.subscribeThread" && tid.is_none(){Err("threadId required".into())}else if tag=="server.subscribeServerConfig" {settings::config(&s).map(|c|json!({"version":1,"type":"snapshot","config":c})).map(Some)}else if after.is_some(){Ok(None)}else if let Some(tid)=tid.as_deref(){events::bounded(&s,tid).map(|mut v|{v["kind"]=json!("snapshot");Some(v)})}else if tag=="orchestration.subscribeShell"{events::shell(&s).map(|v|Some(json!({"kind":"snapshot","snapshot":v})))}else{Err("threadId required".into())};
+                                        let initial=if tag=="orchestration.subscribeThread" && tid.is_none(){Err("threadId required".into())}else if matches!(tag,"server.subscribeServerConfig"|"subscribeServerConfig") {settings::config(&s).map(|c|json!({"version":1,"type":"snapshot","config":c})).map(Some)}else if after.is_some(){Ok(None)}else if let Some(tid)=tid.as_deref(){events::bounded(&s,tid).map(|mut v|{v["kind"]=json!("snapshot");Some(v)})}else if tag=="orchestration.subscribeShell"{events::shell(&s).map(|v|Some(json!({"kind":"snapshot","snapshot":v})))}else{Err("threadId required".into())};
                                         match initial {Ok(initial)=>{subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid,cursor:after.unwrap_or_else(||initial.as_ref().and_then(|v|v.get("snapshotSequence").or_else(||v.get("snapshot").and_then(|s|s.get("snapshotSequence")))).and_then(Value::as_i64).unwrap_or(seq)),waiting:false,initial,marker:p["requestCompletionMarker"]==true,version});},Err(e)=>{if send(&mut ws,exit(&id,Err(error(e)))).await.is_err(){return}}}
                                     }else if send(&mut ws,exit(&id,dispatch(&s,tag,p))).await.is_err(){return}
                                 },_=>{}

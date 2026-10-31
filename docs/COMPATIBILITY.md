@@ -4,7 +4,7 @@ Contrato: `t3code@3f9448747`. Generado por `tools/gen-compat`; editar `docs/comp
 
 Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ningún cliente lo usa)
 
-**Resumen:** 2 ✅ · 6 🟡 · 112 ⬜ · 83 🚫 de 203 RPC
+**Resumen:** 2 ✅ · 7 🟡 · 111 ⬜ · 83 🚫 de 203 RPC
 
 ## (root)
 
@@ -17,7 +17,7 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | ⬜ | `subscribePreviewEvents` | P2 | stream | `orchestration:read` | Deferred; client-usage.md inventory. |
 | 🚫 | `subscribeProjectClones` | unused | stream | `orchestration:read` | No client call site in inventory. |
 | 🚫 | `subscribeResourceTelemetry` | unused | stream | `diagnostics:read` | No client call site in inventory. |
-| ⬜ | `subscribeServerConfig` | P1 | stream | `orchestration:read` | Deferred; client-usage.md inventory. |
+| 🟡 | `subscribeServerConfig` | P1 | stream | `orchestration:read` | Connection test: initial config snapshot; changes emit replacement snapshots rather than typed incremental config events. Also accepts server.subscribeServerConfig alias used by client inventory. |
 | 🚫 | `subscribeServerLifecycle` | unused | stream | `orchestration:read` | No client call site in inventory. |
 | 🚫 | `subscribeTerminalEvents` | unused | stream | `terminal:read` | No client call site in inventory. |
 | 🚫 | `subscribeTerminalMetadata` | unused | stream | `terminal:read` | No client call site in inventory. |
@@ -362,7 +362,7 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | ⬜ | `subagent.stop` | P2 | Not implemented. |
 | ⬜ | `thread.active.reorder` | P1 | Not implemented. |
 | ✅ | `thread.archive` | P1 | Real Connection lifecycle/idempotency test. |
-| ⬜ | `thread.auto-settle` | unused | Not implemented. |
+| 🚫 | `thread.auto-settle` | unused | No client call site in inventory. |
 | ⬜ | `thread.auto-settle.set` | P1 | Not implemented. |
 | ✅ | `thread.create` | P0 | Real Connection lifecycle/idempotency test. |
 | 🚫 | `thread.created.record` | unused | No client call site in inventory. |

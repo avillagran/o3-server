@@ -816,11 +816,6 @@
       "priority": "P2",
       "note": "Deferred; client-usage.md inventory."
     },
-    "server.subscribeServerConfig": {
-      "status": "partial",
-      "priority": "P1",
-      "note": "Connection test: initial config snapshot; changes emit replacement snapshots rather than typed incremental config events."
-    },
     "server.uninstallAcpRegistryManagedBinary": {
       "status": "skip",
       "priority": "unused",
@@ -907,9 +902,9 @@
       "note": "No client call site in inventory."
     },
     "subscribeServerConfig": {
-      "status": "todo",
+      "status": "partial",
       "priority": "P1",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "Connection test: initial config snapshot; changes emit replacement snapshots rather than typed incremental config events. Also accepts server.subscribeServerConfig alias used by client inventory."
     },
     "subscribeServerLifecycle": {
       "status": "skip",
@@ -1144,9 +1139,9 @@
       "note": "Real Connection lifecycle/idempotency test."
     },
     "thread.auto-settle": {
-      "status": "todo",
+      "status": "skip",
       "priority": "unused",
-      "note": "Not implemented."
+      "note": "No client call site in inventory."
     },
     "thread.auto-settle.set": {
       "status": "todo",

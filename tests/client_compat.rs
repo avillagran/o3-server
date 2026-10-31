@@ -181,6 +181,10 @@ fn config_and_settings_round_trip_unknown_fields_and_secret_sentinel() {
     assert_eq!(read["futureField"]["x"], 1);
     let first = stream_first(&c, "server.subscribeServerConfig", json!({}));
     assert_eq!(first["type"], "snapshot");
+    assert_eq!(
+        stream_first(&c, "subscribeServerConfig", json!({}))["type"],
+        "snapshot"
+    );
     assert_eq!(first["config"]["settings"]["defaultTheme"], "dark");
 }
 #[test]
