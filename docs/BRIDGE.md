@@ -104,7 +104,7 @@ gateway route verification and desktop UI integration require deployment-level t
 Catalogs are populated by `publish_auto` only when verified HTTPS routes are available.
 The application still has the core/provider limits documented in `IMPLEMENTATION.md`.
 
-Latest release sample (2026-10-31, Btrfs): idle VmRSS/VmHWM 27,380 KiB,
+Pre-integration branch sample (2026-10-31, Btrfs): idle VmRSS/VmHWM 27,380 KiB,
 RssAnon 17,192 KiB; one bridged client VmRSS/VmHWM 34,200 KiB,
 RssAnon 23,348 KiB. Both samples used four threads and zero RssShmem.
 The stripped release binaries are 10,643,336 bytes with bridge and 2,319,360 bytes
@@ -113,7 +113,7 @@ Builds, worktrees and test state now use `/var/tmp/o3-build/embed` on disk,
 following the owner rule. Earlier tmpfs attempts were superseded.
 The measured server executable and all measurement state were always on Btrfs.
 
-Validation: o3-server has 23 passing tests with bridge and 22 without it; format,
+Branch-local validation before integration: o3-server had 23 passing tests with bridge and 22 without it; format,
 `clippy --all-targets -- -D warnings`, and compatibility generation pass.
 
 All development commands must use disk-backed paths, for example:
@@ -142,3 +142,6 @@ CARGO_TARGET_DIR=/var/tmp/o3-build/embed/target-omabridge \
 TMPDIR=/var/tmp/o3-build/embed/t \
 cargo test --manifest-path /var/tmp/o3-build/embed/omabridge/Cargo.toml --locked
 ```
+
+The integrated main workload and binary hash supersede these branch-local RSS
+figures; see rss-measurement.json and IMPLEMENTATION.md for current results.

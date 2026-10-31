@@ -1,32 +1,32 @@
 {
-  "measured_at_utc": "2026-10-31T21:47:30Z",
-  "binary_sha256": "f2fdc52d52717da841c2c79c8bd48c9fc76000639a1680b5f129175d5a0184c1",
-  "binary": "/tmp/o3-core-4d71/release/o3-server",
-  "binary_bytes": 2402752,
+  "measured_at_utc": "2026-10-31T23:40:15Z",
+  "binary_sha256": "d071cfde03063a6f20df55c32200d8522bed9cbae9cfe4a3f3c32f764016f7c3",
+  "binary": "/var/tmp/o3-build/main/release/o3-server",
+  "binary_bytes": 11909320,
   "seed_messages": 1000,
   "threads": 20,
   "subscribers": 3,
   "unary_calls": 1000,
   "text_bytes_per_message": 1000,
   "cold_kib": {
-    "VmHWM": 10804,
-    "VmRSS": 10804,
-    "RssAnon": 6544
+    "VmHWM": 27508,
+    "VmRSS": 27508,
+    "RssAnon": 17188
   },
   "seeded_kib": {
-    "VmHWM": 17296,
-    "VmRSS": 17296,
-    "RssAnon": 12820
+    "VmHWM": 34256,
+    "VmRSS": 33988,
+    "RssAnon": 22644
   },
   "subscribed_kib": {
-    "VmHWM": 24072,
-    "VmRSS": 24072,
-    "RssAnon": 19596
+    "VmHWM": 41252,
+    "VmRSS": 40764,
+    "RssAnon": 29420
   },
   "after_churn_kib": {
-    "VmHWM": 24072,
-    "VmRSS": 24072,
-    "RssAnon": 19596
+    "VmHWM": 41252,
+    "VmRSS": 40764,
+    "RssAnon": 29420
   },
   "snapshot_messages": [
     10,
@@ -34,7 +34,33 @@
     10
   ],
   "under_50_mib": true,
-  "provider": "none (defer_start)",
+  "providers": [
+    {
+      "instanceId": "claude",
+      "installed": true,
+      "status": "warning"
+    },
+    {
+      "instanceId": "codex",
+      "installed": false,
+      "status": "error"
+    }
+  ],
+  "bridge_enabled": true,
+  "provider_workload": "registered and probed; inference excluded (defer_start)",
   "measurement": "Linux /proc/PID/status; disk profile under /var/tmp",
-  "allocator_env": {}
+  "allocator_env": {},
+  "source_commit": "967d8c57c7771015fbf90910a78e57870745d73e",
+  "filesystem": "btrfs",
+  "units": "KiB for RSS/HWM/anonymous memory; bytes for binary size",
+  "build_features": [
+    "bridge"
+  ],
+  "bridge_readiness": "Isolated omabridge/endpoint.json published before workload",
+  "under_50_mb": true,
+  "limitations": [
+    "Provider inference and subprocess memory excluded; both providers registered and probed. Codex probe reported error in the isolated profile.",
+    "Clients use authenticated TCP/WebSocket; bridge is initialized but no bridged client load is included.",
+    "Single bounded workload, not a sustained peak-memory guarantee."
+  ]
 }

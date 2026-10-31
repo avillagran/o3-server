@@ -274,7 +274,10 @@ fn scheduled_tasks_are_stored_validated_and_launch_threads() {
     }
     s.state.streams.ops.wake_scheduler();
     assert!(
-        wait_for(T, || shell_threads(&c).len() == 2),
+        wait_for(T, || shell_threads(&c).len() == 2
+            && c.rpc("scheduledTasks.list", json!({})).unwrap()["tasks"][0]
+                ["runCount"]
+                == 2),
         "the timer never launched the due task"
     );
     let after = c.rpc("scheduledTasks.list", json!({})).unwrap()["tasks"][0].clone();

@@ -62,7 +62,7 @@ a new RSS measurement or a <50 MiB bound under concurrency.
   empty-thread resume error; it performs no authenticated inference.
 
 Attachments, additional message context, auto/auto-accept-edits runtime policies,
-subagent/background task settlement, dynamic tool callbacks, rollback/fork,
+subagent/background task settlement, dynamic tool callbacks, provider-native rollback/fork,
 provider-instance customization, setup/auth UI, durable control retry and active
 turn recovery after server restart remain unsupported. The two supported runtime
 modes are approval-required and full-access; plan interaction mode and selected
@@ -70,3 +70,8 @@ reasoning effort are passed natively. Unsupported input is rejected explicitly.
 Live authenticated tool execution/approvals and successful persisted-rollout resume
 have not been exercised; their behavior is covered by the deterministic peer and
 schema pin only. Full upstream parity is not claimed.
+
+Integrated main now routes Claude/Codex through one registry, emits command-output
+events, promotes queued input to native steering, and captures/restores Git workspace
+checkpoints. Native conversation rewind remains unsupported. Current integrated
+verification and RSS are recorded in IMPLEMENTATION.md and rss-measurement.json.

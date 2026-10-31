@@ -78,3 +78,15 @@ and both drivers registered/probed. The workload has 20 threads, 1,000 deferred
 messages, three bounded snapshot subscribers and 1,000 settings calls. Provider
 inference/subprocess memory and sustained slow-client concurrency are excluded;
 this is a measured workload, not a universal memory bound.
+
+Integration verification (2026-10-31): 91 tests pass with bridge enabled,
+90 pass without default features; each run leaves two live-provider tests
+explicitly ignored. Strict all-target clippy, cargo fmt --check and git diff
+--check pass. Both runs use serial test execution to avoid shared-disk deadline
+failures. The registry contains 32 done, 25 partial, 69 todo and 77 skipped RPCs.
+
+Final release sample on Btrfs: VmRSS 40,764 KiB, VmHWM 41,252 KiB,
+RssAnon 29,420 KiB after churn (under both 50 MB and 50 MiB). The bridge
+published its isolated endpoint before load. Claude was available with unknown
+authentication; the Codex probe reported error in the empty isolated profile.
+Neither adapter performed inference in this memory workload.
