@@ -125,7 +125,7 @@ fn preserve_environment(old: &Value, patch: &mut Value) {
 }
 pub fn config(s: &State) -> Result<Value, String> {
     Ok(
-        json!({"environment":descriptor(s),"auth":auth_descriptor(),"cwd":std::env::current_dir().unwrap_or_default(),"keybindingsConfigPath":s.dir.join("keybindings.json"),"keybindings":[],"issues":[],"providers":[],"availableEditors":[],"observability":{"logsDirectoryPath":s.dir.join("logs"),"localTracingEnabled":false,"otlpTracesEnabled":false,"otlpMetricsEnabled":false,"otlpLogsEnabled":false},"settings":get(s)?,"shellResumeCompletionMarker":true,"threadResumeCompletionMarker":true,"shellThreadFamilies":false,"shellOlderSettled":false,"threadSnapshotPagination":false}),
+        json!({"environment":descriptor(s),"directEndpoints":direct_endpoints(s),"auth":auth_descriptor(),"cwd":std::env::current_dir().unwrap_or_default(),"keybindingsConfigPath":s.dir.join("keybindings.json"),"keybindings":[],"issues":[],"providers":[],"availableEditors":[],"observability":{"logsDirectoryPath":s.dir.join("logs"),"localTracingEnabled":false,"otlpTracesEnabled":false,"otlpMetricsEnabled":false,"otlpLogsEnabled":false},"settings":get(s)?,"shellResumeCompletionMarker":true,"threadResumeCompletionMarker":true,"shellThreadFamilies":false,"shellOlderSettled":false,"threadSnapshotPagination":false}),
     )
 }
 
@@ -150,5 +150,17 @@ fn retain_sentinels(old: &Value, new: &mut Value) {
         for (k, v) in map {
             retain_sentinels(&old[k], v);
         }
+    }
+}
+
+fn direct_endpoints(s: &State) -> Vec<Value> {
+    #[cfg(feature = "bridge")]
+    {
+        s.bridge_endpoints.lock().unwrap().clone()
+    }
+    #[cfg(not(feature = "bridge"))]
+    {
+        let _ = s;
+        Vec::new()
     }
 }

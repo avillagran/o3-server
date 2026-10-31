@@ -5,7 +5,14 @@ edition = "2021"
 license = "MIT"
 description = "Lean Rust server, wire-compatible with T3 Code clients, with OmaBridge built in"
 
+[features]
+default = ["bridge"]
+bridge = ["dep:omabridge", "dep:anyhow", "dep:t3-protocol"]
+
 [dependencies]
+t3-protocol = { git = "https://github.com/avillagran/lib-t3-rust", rev = "8c80c4dc62414c454eaefb4706d973adf8d8ee74", optional = true }
+omabridge = { version = "0.2.4", default-features = false, features = ["embed"], optional = true }
+anyhow = { version = "1", optional = true }
 tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "net", "io-util", "time", "sync", "macros", "signal", "process"] }
 hyper = { version = "1", default-features = false, features = ["http1", "server"] }
 hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
@@ -24,7 +31,7 @@ base64 = "0.22"
 mimalloc = { version = "0.1", default-features = false }
 
 [dev-dependencies]
-t3-protocol = { path = "../lib-t3-rust" }
+t3-protocol = { git = "https://github.com/avillagran/lib-t3-rust", rev = "8c80c4dc62414c454eaefb4706d973adf8d8ee74" }
 
 [profile.release]
 opt-level = "s"
@@ -32,3 +39,11 @@ lto = "fat"
 codegen-units = 1
 panic = "abort"
 strip = true
+
+# Local co-development only: replace with a pinned upstream git rev before release.
+[patch.crates-io]
+omabridge = { path = "/home/node/Work/omabridge-embed" }
+
+[profile.dev]
+debug = 0
+incremental = false

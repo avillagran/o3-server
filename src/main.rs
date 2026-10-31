@@ -108,6 +108,24 @@ fn main() -> std::io::Result<()> {
             };
             return Ok(());
         }
+        if args.get(1).map(String::as_str) == Some("session") {
+            match args.get(2).map(String::as_str) {
+                Some("list") => {
+                    println!("{}", state.list_sessions().map_err(std::io::Error::other)?);
+                    return Ok(());
+                }
+                Some("revoke") => {
+                    // The desktop supplies the session id as the last argument.
+                    let id = args
+                        .last()
+                        .filter(|s| !s.starts_with('-') && args.len() > 3)
+                        .ok_or_else(|| std::io::Error::other("session id required"))?;
+                    state.revoke_session(id).map_err(std::io::Error::other)?;
+                    return Ok(());
+                }
+                _ => {}
+            }
+        }
         if args.get(1).map(String::as_str) == Some("pairing")
             && args.get(2).map(String::as_str) == Some("create")
         {
@@ -136,7 +154,18 @@ fn main() -> std::io::Result<()> {
         let listener=tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
         let _guard=o3_server::profile::RuntimeGuard::write(&dir,listener.local_addr()?)?;
         eprintln!("o3-server listening on {}",listener.local_addr()?);
+        let state = Arc::new(state);
+        #[cfg(feature = "bridge")]
+        let bridge = o3_server::bridge::start(&option(&args, "--bridge-state-dir").map(std::path::PathBuf::from).unwrap_or_else(|| base.join("omabridge")), state.clone(), {
+            let mut options = omabridge::NetOptions::loopback();
+            if let Some(bind) = option(&args, "--bridge-bind") { options.bind = bind.parse().map_err(std::io::Error::other)?; }
+            if let Some(relay) = option(&args, "--bridge-relay") { options.relay = match relay { "none" => omabridge::Relay::Disabled, "public" => omabridge::Relay::Public, url => omabridge::Relay::Custom(url.parse().map_err(std::io::Error::other)?) }; }
+            options
+        }).await.map_err(std::io::Error::other)?;
         let mut term=tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
-        tokio::select! {result=o3_server::serve(listener,Arc::new(state))=>result,_=tokio::signal::ctrl_c()=>Ok(()),_=term.recv()=>Ok(())}
+        let result = tokio::select! {result=o3_server::serve(listener,state)=>result,_=tokio::signal::ctrl_c()=>Ok(()),_=term.recv()=>Ok(())};
+        #[cfg(feature = "bridge")]
+        bridge.shutdown().await;
+        result
     })
 }

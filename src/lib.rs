@@ -11,3 +11,6 @@ pub mod provider;
 pub mod scopes;
 pub mod service;
 pub mod settings;
+
+#[cfg(feature = "bridge")]
+pub mod bridge;

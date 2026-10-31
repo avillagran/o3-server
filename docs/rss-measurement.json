@@ -15,5 +15,47 @@
     "max_blocking_threads": 2,
     "thread_stack_size_bytes": 524288
   },
-  "measured_on": "2026-10-31"
+  "measured_on": "2026-10-31",
+  "embedded_bridge": {
+    "binary": "/home/node/Work/o3-bridge-rss-rslygpog/o3-server",
+    "binary_bytes": 10643848,
+    "filesystem": "btrfs",
+    "units": "KiB (except Threads and binary_bytes)",
+    "idle": {
+      "VmHWM": 27468,
+      "VmRSS": 27468,
+      "RssAnon": 17200,
+      "RssFile": 10268,
+      "RssShmem": 0,
+      "Threads": 4
+    },
+    "one_bridged_authenticated_rpc_client": {
+      "VmHWM": 32120,
+      "VmRSS": 32120,
+      "RssAnon": 21356,
+      "RssFile": 10764,
+      "RssShmem": 0,
+      "Threads": 4
+    },
+    "seed_messages": 0,
+    "provider": "none",
+    "relay": "disabled",
+    "client_transport": "real t3-protocol pairing + server.getConfig, WebSocket held open",
+    "host_service_transport": "32 KiB Tokio duplex, no TCP target",
+    "measured_on": "2026-10-31",
+    "measurement": "Linux /proc/PID/status; binary and state on disk; 3 seconds settling per sample",
+    "artifacts": "/home/node/Work/o3-bridge-rss-rslygpog",
+    "release_binaries": {
+      "with_bridge": {
+        "bytes": 10643848,
+        "sha256": "af124e81fbaabcc064a888b6fc89a7d7abbed8221d984a99f64c40e7988acb34"
+      },
+      "without_bridge": {
+        "bytes": 2319360,
+        "sha256": "fff74a73d066b414b51e4669f671677560ec5fc79754e0b399b6c2bd25eeb87b"
+      }
+    },
+    "cargo_target_dir": "/tmp/o3-embed-disk-target (private symlink to disk-backed build artifacts after tmpfs quota exhaustion)",
+    "omabridge_revision": "44cc7fa7575c1256f4007be4823e3f455429175a"
+  }
 }
