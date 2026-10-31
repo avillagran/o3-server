@@ -579,3 +579,58 @@ fn pull_request_links_are_metadata_on_the_thread() {
     let err = cmd(&c, with("thread.pull-request.watch", "w3", json!({"watching":true,"link":{"url":"https://github.com/Org/Repo/pull/7","source":"agent"}}))).unwrap_err().to_string();
     assert!(err.contains("settled or archived"), "{err}");
 }
+
+#[test]
+fn thread_find_navigates_occurrences_wraps_and_confines_to_thread() {
+    let (_s, c) = server(false);
+    create(&c, "find");
+    create(&c, "other");
+    for (id, text) in [("a", "Needle needle"), ("b", "one NEEDLE")] {
+        cmd(&c,json!({"type":"message.dispatch","commandId":id,"messageId":id,"threadId":"find","text":text,"attachments":[],"dispatchMode":{"type":"defer_start"}})).unwrap();
+    }
+    let find = |extra: Value| {
+        let mut p = json!({"threadId":"find","query":"needle"});
+        p.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        c.rpc("orchestration.searchThread", p).unwrap()
+    };
+    let first = find(json!({}));
+    assert_eq!(first["totalMatches"], 3);
+    assert_eq!(first["match"]["entryId"], "a");
+    assert_eq!(first["navigation"][1]["startIndex"], 2);
+    assert_eq!(find(json!({"offset":-1}))["match"]["entryId"], "b");
+    assert_eq!(find(json!({"index":100}))["activeIndex"], 2);
+    assert_eq!(
+        find(json!({"start":{"entryId":"a","occurrence":1},"offset":1}))["match"]["entryId"],
+        "b"
+    );
+    assert_eq!(find(json!({"threadId":"other"}))["totalMatches"], 0);
+    assert!(c
+        .rpc(
+            "orchestration.searchThread",
+            json!({"threadId":"missing","query":"needle"})
+        )
+        .is_err());
+    let page = c
+        .request_json(
+            "GET",
+            "/api/orchestration/threads/find/history?cursor=9223372036854775807",
+            None,
+            true,
+        )
+        .unwrap();
+    assert_eq!(page["items"].as_array().unwrap().len(), 2);
+}
+#[test]
+fn source_control_discovery_has_honest_git_probe_and_option_encoding() {
+    let (_s, c) = server(false);
+    let v = c.rpc("server.discoverSourceControl", json!({})).unwrap();
+    let git = &v["versionControlSystems"][0];
+    assert_eq!(git["kind"], "git");
+    assert_eq!(git["status"], "available");
+    assert_eq!(git["version"]["_tag"], "Some");
+    assert_eq!(git["detail"]["_tag"], "None");
+    assert_eq!(v["versionControlSystems"][1]["implemented"], false);
+    assert!(v["sourceControlProviders"].is_array());
+}

@@ -380,3 +380,83 @@ async fn diff_between(
     }
     Ok(result(diff))
 }
+
+/// Literal find in transcript messages/plans, ordered like the projected transcript.
+/// Rich markdown/context search segmentation is tracked separately in the registry.
+pub fn search_thread(s: &State, p: &Value) -> Reply {
+    let fail = |message: &str| json!({"_tag":"OrchestrationV2SearchThreadError","cause":message});
+    let tid = p["threadId"]
+        .as_str()
+        .ok_or_else(|| fail("threadId required"))?;
+    let query = p["query"]
+        .as_str()
+        .map(str::trim)
+        .filter(|q| !q.is_empty() && q.chars().count() <= 200)
+        .ok_or_else(|| fail("query must be 1-200 characters"))?
+        .to_lowercase()
+        .replace('ς', "σ");
+    let db = s.db.lock().unwrap();
+    events::get(&db, "thread", tid).map_err(|e| fail(&e))?;
+    let mut navigation = Vec::new();
+    let mut total = 0usize;
+    for row in records(&db, "visibleTurnItems", tid) {
+        let item = &row["item"];
+        let text = match item["type"].as_str() {
+            Some("user_message" | "assistant_message") => item["text"].as_str(),
+            Some("proposed_plan") => item["markdown"].as_str(),
+            _ => None,
+        };
+        let count = text
+            .unwrap_or("")
+            .to_lowercase()
+            .replace('ς', "σ")
+            .matches(&query)
+            .count();
+        if count == 0 {
+            continue;
+        }
+        let entry = if item["type"] == "proposed_plan" {
+            &item["id"]
+        } else {
+            &item["messageId"]
+        };
+        navigation
+            .push(json!({"entryId":entry,"runId":item["runId"],"startIndex":total,"count":count}));
+        total += count;
+    }
+    let requested = p["index"].as_u64().map(|v| v as usize).unwrap_or_else(|| {
+        navigation
+            .iter()
+            .find(|n| n["entryId"] == p["start"]["entryId"])
+            .map(|n| {
+                n["startIndex"].as_u64().unwrap() as usize
+                    + (p["start"]["occurrence"].as_u64().unwrap_or(0) as usize)
+                        .min(n["count"].as_u64().unwrap() as usize)
+            })
+            .filter(|n| *n < total)
+            .unwrap_or(0)
+    });
+    let active = if p.get("index").is_some() {
+        requested.min(total.saturating_sub(1))
+    } else if total > 0 {
+        (requested as i128 + p["offset"].as_i64().unwrap_or(0) as i128).rem_euclid(total as i128)
+            as usize
+    } else {
+        0
+    };
+    let selected = navigation.iter().position(|n| {
+        active >= n["startIndex"].as_u64().unwrap() as usize
+            && active < (n["startIndex"].as_u64().unwrap() + n["count"].as_u64().unwrap()) as usize
+    });
+    let found = selected.map(|i| {let n=&navigation[i]; json!({"entryId":n["entryId"],"runId":n["runId"],"occurrence":active-n["startIndex"].as_u64().unwrap() as usize})});
+    if navigation.len() > 17 {
+        let len = navigation.len();
+        let center = selected.unwrap_or(0);
+        navigation = (0..17)
+            .map(|i| navigation[(center + len + i - 8) % len].clone())
+            .collect();
+    }
+    Ok(
+        json!({"snapshotSequence":events::sequence(&db).map_err(|e|fail(&e))?,"totalMatches":total,"activeIndex":active,"navigation":navigation,"match":found}),
+    )
+}

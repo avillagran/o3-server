@@ -85,7 +85,7 @@ fn dispatch(s: &Arc<State>, tag: &str, p: &Value) -> Result<Value, Value> {
         "server.updateSettings"=>return settings::update(s,p).map_err(|message|json!({"_tag":"ServerSettingsError","settingsPath":s.dir.join("settings.json"),"operation":"write","message":message})),
         "projects.mutate"=>return crate::projects::mutate(s,p).map_err(|message|json!({"_tag":"ProjectMutationError","message":message})),
         "orchestration.launchThread"=>return events::launch(s,p).map_err(|message|json!({"_tag":"OrchestrationV2ThreadLaunchError","commandId":p["commandId"],"projectId":p["projectId"],"message":message})),
-        "orchestration.dispatchCommand"=>return events::dispatch(s,p).map_err(|m|json!({"_tag":"OrchestrationV2DispatchCommandError","commandId":p["commandId"],"message":m})),
+        "orchestration.dispatchCommand"=>return events::dispatch(s,p).map_err(|m|json!({"_tag":"OrchestrationV2DispatchCommandError","commandId":p["commandId"],"commandType":p["type"],"message":m,"detail":m,"cause":{"name":"Error","message":m}})),
         _=>Err(format!("o3-server does not implement {tag}")),
     }.map_err(error)
 }

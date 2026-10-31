@@ -766,7 +766,7 @@ pub fn mutate_project(s: &State, c: &Value) -> Result<Value> {
             if get(&tx, "project", id).is_ok() {
                 return Err("project exists".into());
             }
-            json!({"id":id,"title":c["title"],"workspaceRoot":c["workspaceRoot"],"defaultModelSelection":null,"scripts":[],"createdAt":at,"updatedAt":at,"deletedAt":null})
+            json!({"id":id,"title":c["title"],"workspaceRoot":c["workspaceRoot"],"defaultModelSelection":null,"defaultThreadEnvMode":null,"autoPull":false,"faviconPath":null,"projectIcon":null,"repositoryIdentity":null,"archivedAt":null,"pinnedAt":null,"scripts":[],"createdAt":at,"updatedAt":at,"deletedAt":null})
         }
         Some("project.update" | "project.delete") => get(&tx, "project", id)?,
         _ => return Err("invalid project mutation".into()),

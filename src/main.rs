@@ -90,11 +90,17 @@ fn main() -> std::io::Result<()> {
         if args.get(1).map(String::as_str) == Some("session")
             && args.get(2).map(String::as_str) == Some("issue")
         {
-            let scopes: Vec<String> = args
+            let mut scopes: Vec<String> = args
                 .windows(2)
                 .filter(|w| w[0] == "--scope")
                 .map(|w| w[1].clone())
                 .collect();
+            if scopes.is_empty() {
+                scopes = o3_server::store::STANDARD_SCOPES
+                    .iter()
+                    .map(|s| (*s).to_owned())
+                    .collect();
+            }
             if scopes
                 .iter()
                 .any(|s| !o3_server::store::STANDARD_SCOPES.contains(&s.as_str()))

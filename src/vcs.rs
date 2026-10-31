@@ -186,7 +186,7 @@ async fn has_remote(cwd: &Path) -> bool {
 
 fn not_a_repo_status() -> Value {
     json!({"isRepo":false,"hasPrimaryRemote":false,"isDefaultRef":false,"refName":null,"hasWorkingTreeChanges":false,
-        "workingTree":{"files":[],"insertions":0,"deletions":0},"hasUpstream":false,"aheadCount":0,"behindCount":0,"pr":null})
+        "workingTree":{"files":[],"insertions":0,"deletions":0},"hasUpstream":false,"aheadCount":0,"behindCount":0,"aheadOfDefaultCount":0,"pr":null})
 }
 
 #[derive(Default)]
@@ -351,7 +351,7 @@ pub async fn refresh_status(p: Value) -> Reply {
         "isRepo":true,"hasPrimaryRemote":has_remote(&root).await,"isDefaultRef":is_default,"refName":st.head,
         "hasWorkingTreeChanges":!st.changed.is_empty() || !st.untracked.is_empty(),
         "workingTree":{"rootPath":root.to_string_lossy(),"files":files.iter().map(|f|json!({"path":f.0,"insertions":f.1,"deletions":f.2})).collect::<Vec<_>>(),"insertions":ins,"deletions":del},
-        "hasUpstream":st.upstream.is_some(),"aheadCount":st.ahead,"behindCount":st.behind,"pr":null});
+        "hasUpstream":st.upstream.is_some(),"aheadCount":st.ahead,"behindCount":st.behind,"aheadOfDefaultCount":0,"branchChanges":{"baseRef":null,"insertions":0,"deletions":0},"pr":null});
     if let (Some(head), Some(def)) = (&st.head, &default) {
         if head != def && !st.unborn {
             let range = format!("{def}...HEAD");
@@ -671,4 +671,52 @@ pub async fn init(p: Value) -> Reply {
     let _guard = proc::lock_repo(&cwd).await;
     ok(op, &cwd, &["init"], Opts::WRITE).await?;
     Ok(Value::Null)
+}
+
+/// Discovery probes are bounded and do not initiate provider login or installation.
+pub async fn discover() -> Reply {
+    let mut systems = Vec::new();
+    for (kind, label, implemented, hint) in [
+        (
+            "git",
+            "Git",
+            true,
+            "Install Git from https://git-scm.com/downloads or with your package manager.",
+        ),
+        (
+            "jj",
+            "Jujutsu",
+            false,
+            "Install Jujutsu with `brew install jj` or from https://github.com/jj-vcs/jj.",
+        ),
+    ] {
+        let output = proc::run(
+            kind,
+            Path::new("/"),
+            &["--version"],
+            Opts {
+                timeout: std::time::Duration::from_secs(5),
+                cap: 8000,
+                allow_truncate: true,
+            },
+            &[],
+        )
+        .await;
+        let (status, version, detail) = match output {
+            Ok(o) if o.ok() => (
+                "available",
+                o.text().lines().next().map(str::to_owned),
+                None,
+            ),
+            Ok(o) => ("missing", None, Some(o.stderr)),
+            Err(e) => ("missing", None, Some(format!("{e:?}"))),
+        };
+        let option = |v: Option<String>| match v {
+            Some(v) => json!({"_tag":"Some","value":v}),
+            None => json!({"_tag":"None"}),
+        };
+        systems.push(json!({"kind":kind,"label":label,"executable":kind,"implemented":implemented,"status":status,"version":option(version),"installHint":hint,"detail":option(detail)}));
+    }
+    // Host adapters/auth discovery are not implemented; do not claim their availability.
+    Ok(json!({"versionControlSystems":systems,"sourceControlProviders":[]}))
 }

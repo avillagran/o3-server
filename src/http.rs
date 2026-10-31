@@ -255,11 +255,14 @@ async fn route(state: Arc<State>, request: Request<Incoming>) -> Result<Reply, I
                     let tid = p
                         .trim_start_matches("/api/orchestration/threads/")
                         .trim_end_matches("/history");
-                    result_reply(crate::events::history(
-                        &state,
-                        tid,
-                        &query(&request, "cursor").unwrap_or_default(),
-                    ))
+                    let cursor = query(&request, "cursor").unwrap_or_default();
+                    if cursor.parse::<i64>().is_err() {
+                        return Ok(json_reply(
+                            StatusCode::BAD_REQUEST,
+                            serde_json::json!({"error":"invalid history cursor"}).to_string(),
+                        ));
+                    }
+                    result_reply(crate::events::history(&state, tid, &cursor))
                 }
                 (Method::GET, p)
                     if p.starts_with("/api/orchestration/threads/") && p.ends_with("/bounded") =>

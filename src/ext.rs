@@ -27,6 +27,8 @@ pub fn handles(tag: &str) -> bool {
             | "orchestration.getTurnDiff"
             | "orchestration.getFullThreadDiff"
             | "orchestration.searchThreads"
+            | "orchestration.searchThread"
+            | "server.discoverSourceControl"
             | "orchestration.getArchivedShellSnapshot"
             | "orchestration.getTurnItem"
             | "orchestration.getThreadProjection"
@@ -54,6 +56,8 @@ pub async fn call(s: &State, tag: &str, p: Value) -> Result<Value, Value> {
         "orchestration.getTurnDiff" => Box::pin(threadq::turn_diff(s, p)).await,
         "orchestration.getFullThreadDiff" => Box::pin(threadq::full_thread_diff(s, p)).await,
         "orchestration.searchThreads" => threadq::search_threads(s, &p),
+        "orchestration.searchThread" => threadq::search_thread(s, &p),
+        "server.discoverSourceControl" => crate::vcs::discover().await,
         "orchestration.getArchivedShellSnapshot" => threadq::archived_shell(s),
         "orchestration.getTurnItem" => threadq::turn_item(s, &p),
         "orchestration.getThreadProjection" => threadq::thread_projection(s, &p),

@@ -210,3 +210,20 @@ fn sqlite_and_receipts_survive_server_restart() {
         assert!(child.wait().unwrap().success());
     }
 }
+
+#[test]
+fn cli_default_scopes_match_upstream_and_explicit_scopes_replace_defaults() {
+    let p = Profile::new();
+    let output = p
+        .cmd()
+        .args(["auth", "session", "issue", "--token-only"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let token = String::from_utf8(output.stdout).unwrap();
+    let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(token.split('.').next().unwrap())
+        .unwrap();
+    let claims: Value = serde_json::from_slice(&payload).unwrap();
+    assert_eq!(claims["scopes"], json!(o3_server::store::STANDARD_SCOPES));
+}

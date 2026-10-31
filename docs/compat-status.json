@@ -139,7 +139,7 @@
     "orchestration.dispatchCommand": {
       "status": "partial",
       "priority": "P0",
-      "note": "Connection tests: transactional command receipts, lifecycle, scripted send/approval/completion/interrupt/dismiss; queues and production execution absent."
+      "note": "Nightly differential proves thread.create and deferred message.dispatch receipts through real client; registry-driven negative P0/P1 command frames expose validation/error differences. Scripted/native-peer tests cover execution locally. Durable controls, native attachments and upstream inference/approval parity remain; see docs/CONFORMANCE.md."
     },
     "orchestration.getArchivedShellSnapshot": {
       "status": "partial",
@@ -189,12 +189,12 @@
     "orchestration.launchThread": {
       "status": "partial",
       "priority": "P0",
-      "note": "Connection: idempotent root launch. Core tests: new git worktree, existing worktree, thread reuse and receipts. Atomic create+initial dispatch, workflow cleanup and reuse metadata semantics remain."
+      "note": "Isolated nightly differential exercises empty root-workspace launch via real client; projection optional-field differences remain. Initial-message atomicity/failure cleanup and reuse metadata remain (IMPLEMENTATION.md). Not certified done."
     },
     "orchestration.searchThread": {
-      "status": "todo",
+      "status": "partial",
       "priority": "P1",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "Real Connection + isolated nightly 3991 differential: literal transcript message/plan search, case folding, index/start/offset, wrap and bounded navigation implemented. tests/thread_commands.rs verifies ordering and isolation. Rich markdown/context/skills segmentation and folded-answer exclusion remain; not full conformance."
     },
     "orchestration.searchThreadStream": {
       "status": "skip",
@@ -224,12 +224,12 @@
     "orchestration.subscribeShell": {
       "status": "partial",
       "priority": "P0",
-      "note": "Real Connection snapshot/replay tests. SQLite streaming removes the 10,000 cap (10,002-project streaming test); omitIdleSubagents/omitOlderSettled and family shapes remain."
+      "note": "Isolated nightly differential exercises snapshot/next item order and real-client conformance-base subscription. Shell metadata and repository-identity replacement snapshots differ; replay/markers locally tested. See docs/CONFORMANCE.md."
     },
     "orchestration.subscribeThread": {
       "status": "partial",
       "priority": "P0",
-      "note": "Real Connection tests: streamed full opt-out (140 messages), bounded ten-turn window, compact IDs/body dedupe/local turn-item omission, replay/markers. Generic/activity/oversized and targeted-history policies are not fully conformant."
+      "note": "Isolated nightly differential exercises bounded initial stream and completion marker; full/compact decode and resume locally tested. Thread/run/item field and stream-order differences remain; see docs/CONFORMANCE.md."
     },
     "preview.adjust": {
       "status": "todo",
@@ -319,7 +319,7 @@
     "projects.mutate": {
       "status": "partial",
       "priority": "P1",
-      "note": "Tested over RPC and POST /api/projects/mutate: create/update/delete, idempotent replay, workspace-root validation (exists, createWorkspaceRootIfMissing, no duplicate roots), delete needs force when threads exist, shell events project.updated/removed on the shared sequence, scope checks. Not done: repositoryIdentity, force-delete does not cascade to threads."
+      "note": "Tested over RPC and POST /api/projects/mutate: create/update/delete, idempotent replay, workspace-root validation (exists, createWorkspaceRootIfMissing, no duplicate roots), delete needs force when threads exist, shell events project.updated/removed on the shared sequence, scope checks. Not done: repositoryIdentity, force-delete does not cascade to threads. Differential fix: creation initializes optional null/default metadata (including repositoryIdentity); simple project.create shape matches nightly 3991."
     },
     "projects.readFile": {
       "status": "done",
@@ -677,9 +677,9 @@
       "note": "No client call site in inventory."
     },
     "server.discoverSourceControl": {
-      "status": "todo",
+      "status": "partial",
       "priority": "P1",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "Real Connection + nightly differential: bounded git/jj executable/version probes, Effect Option encoding, honest implementation flags. Host-provider discovery/auth adapters are absent (sourceControlProviders=[]); upstream includes GitHub/GitLab descriptors. See docs/CONFORMANCE.md."
     },
     "server.getBackgroundPolicy": {
       "status": "skip",
@@ -689,7 +689,7 @@
     "server.getConfig": {
       "status": "partial",
       "priority": "P0",
-      "note": "Both Claude process-per-session and Codex shared app-server are registered in the executable and selected by providerInstanceId. Real Connection registry test; CLI availability/auth status are honest. Setup/custom instance catalogs remain incomplete."
+      "note": "Isolated nightly differential proves authenticated real-client read. CLI default-scope bug fixed. Minimal capability advertisement, provider/config catalog fields and newer settings differ; unsupported capabilities remain absent/off. See docs/CONFORMANCE.md."
     },
     "server.getDatabaseStorage": {
       "status": "skip",
@@ -934,7 +934,7 @@
     "terminal.attach": {
       "status": "partial",
       "priority": "P1",
-      "note": "tests/terminal.rs: snapshot then live tail without loss/duplication, resume, restartIfNotRunning, 8-chunk/64 KiB window. Same gaps as terminal.open."
+      "note": "tests/terminal.rs: snapshot then live tail without loss/duplication, resume, restartIfNotRunning, 8-chunk/64 KiB window. Same gaps as terminal.open. Differential fix: snapshots include current cols/rows; nightly 3991 simple open/attach shapes match."
     },
     "terminal.clear": {
       "status": "done",
@@ -954,7 +954,7 @@
     "terminal.open": {
       "status": "partial",
       "priority": "P1",
-      "note": "tests/terminal.rs. Real PTY, process group, bounded scrollback. providerInstanceId environment is not applied; history is not persisted across a server restart."
+      "note": "tests/terminal.rs. Real PTY, process group, bounded scrollback. providerInstanceId environment is not applied; history is not persisted across a server restart. Differential fix: snapshots include current cols/rows; nightly 3991 simple open/attach shapes match."
     },
     "terminal.resize": {
       "status": "done",
@@ -999,7 +999,7 @@
     "vcs.refreshStatus": {
       "status": "partial",
       "priority": "P1",
-      "note": "Real-client test: non-repo, clean, dirty (modified/staged/untracked line counts), upstream ahead/behind, branchChanges vs default branch, aheadOfDefaultCount. pr is always null and sourceControlProvider is absent (no host adapter); localOnly ignored."
+      "note": "Real-client test: non-repo, clean, dirty (modified/staged/untracked line counts), upstream ahead/behind, branchChanges vs default branch, aheadOfDefaultCount. pr is always null and sourceControlProvider is absent (no host adapter); localOnly ignored. Differential fix: aheadOfDefaultCount and zero branchChanges defaults are present even without a default/remote ref."
     },
     "vcs.removeWorktree": {
       "status": "skip",

@@ -514,7 +514,7 @@ impl Session {
     }
 
     fn snapshot_of(&self, st: &SessionState) -> Value {
-        json!({"threadId":self.thread_id,"terminalId":self.terminal_id,"cwd":st.cwd,"worktreePath":st.worktree_path,"status":st.status,"pid":st.pid,"history":st.history.value(),"exitCode":st.exit_code,"exitSignal":st.exit_signal,"label":st.label(&self.terminal_id),"updatedAt":st.updated_at,"sequence":st.seq})
+        json!({"threadId":self.thread_id,"terminalId":self.terminal_id,"cwd":st.cwd,"worktreePath":st.worktree_path,"status":st.status,"pid":st.pid,"history":st.history.value(),"cols":st.cols,"rows":st.rows,"exitCode":st.exit_code,"exitSignal":st.exit_signal,"label":st.label(&self.terminal_id),"updatedAt":st.updated_at,"sequence":st.seq})
     }
     pub fn snapshot(&self) -> Value {
         self.snapshot_of(&self.st.lock().unwrap())

@@ -4,7 +4,7 @@ Contrato: `t3code@3f9448747`. Generado por `tools/gen-compat`; editar `docs/comp
 
 Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ningún cliente lo usa)
 
-**Resumen:** 32 ✅ · 25 🟡 · 69 ⬜ · 77 🚫 de 203 RPC
+**Resumen:** 32 ✅ · 27 🟡 · 67 ⬜ · 77 🚫 de 203 RPC
 
 ## (root)
 
@@ -100,7 +100,7 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 
 | Estado | RPC | Prioridad | Tipo | Scope | Nota |
 |---|---|---|---|---|---|
-| 🟡 | `orchestration.dispatchCommand` | P0 | unary | `orchestration:operate` | Connection tests: transactional command receipts, lifecycle, scripted send/approval/completion/interrupt/dismiss; queues and production execution absent. |
+| 🟡 | `orchestration.dispatchCommand` | P0 | unary | `orchestration:operate` | Nightly differential proves thread.create and deferred message.dispatch receipts through real client; registry-driven negative P0/P1 command frames expose validation/error differences. Scripted/native-peer tests cover execution locally. Durable controls, native attachments and upstream inference/approval parity remain; see docs/CONFORMANCE.md. |
 | 🟡 | `orchestration.getArchivedShellSnapshot` | P2 | unary | `orchestration:read` | Real-client test: archived threads and projects with the shared sequence. Built from the in-memory shell assembly (10,000 thread cap), same limit as the live shell. |
 | ✅ | `orchestration.getFullThreadDiff` | P1 | unary | `orchestration:read` | Real Connection Codex execution captures Git refs and verifies baseline-to-turn diff. Checkpoint retention and overlapping-workspace isolation remain. |
 | ⬜ | `orchestration.getOlderSettledThreads` | P2 | unary | `orchestration:read` | Deferred; client-usage.md inventory. |
@@ -110,15 +110,15 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | ✅ | `orchestration.getTurnItem` | P1 | unary | `orchestration:read` | Real-client test: item by id for its own thread, null otherwise. The revision argument is ignored. |
 | ⬜ | `orchestration.getWorkflowScript` | P2 | unary | `orchestration:read` | Deferred; client-usage.md inventory. |
 | 🚫 | `orchestration.getWorktreeThreadIds` | unused | unary | `orchestration:read` | No client call site in inventory. |
-| 🟡 | `orchestration.launchThread` | P0 | unary | `orchestration:operate` | Connection: idempotent root launch. Core tests: new git worktree, existing worktree, thread reuse and receipts. Atomic create+initial dispatch, workflow cleanup and reuse metadata semantics remain. |
-| ⬜ | `orchestration.searchThread` | P1 | unary | `orchestration:read` | Deferred; client-usage.md inventory. |
+| 🟡 | `orchestration.launchThread` | P0 | unary | `orchestration:operate` | Isolated nightly differential exercises empty root-workspace launch via real client; projection optional-field differences remain. Initial-message atomicity/failure cleanup and reuse metadata remain (IMPLEMENTATION.md). Not certified done. |
+| 🟡 | `orchestration.searchThread` | P1 | unary | `orchestration:read` | Real Connection + isolated nightly 3991 differential: literal transcript message/plan search, case folding, index/start/offset, wrap and bounded navigation implemented. tests/thread_commands.rs verifies ordering and isolation. Rich markdown/context/skills segmentation and folded-answer exclusion remain; not full conformance. |
 | 🚫 | `orchestration.searchThreadStream` | unused | stream | `orchestration:read` | No client call site in inventory. |
 | 🟡 | `orchestration.searchThreads` | P1 | unary | `orchestration:read` | Real-client test: SQLite FTS5 index kept by message writes and rebuilt when missing; best message per thread with hits/quality/snippet, prefix match, project filter, titlesOnly, archived/deleted excluded, FTS syntax inert. Not done: threads/olderSettled fields, environmentLabel. |
 | ⬜ | `orchestration.stopWorkflow` | P2 | unary | `orchestration:operate` | Deferred; client-usage.md inventory. |
 | 🚫 | `orchestration.subscribeArchivedShell` | unused | stream | `orchestration:read` | No client call site in inventory. |
 | 🟡 | `orchestration.subscribeCommandOutput` | P1 | stream | `orchestration:read` | Real Connection tests verify bounded command tails/replacement/final output. Real Claude Bash results and Codex command/outputDelta frames emit Command events. Claude output arrives at tool completion; no full VT folding. |
-| 🟡 | `orchestration.subscribeShell` | P0 | stream | `orchestration:read` | Real Connection snapshot/replay tests. SQLite streaming removes the 10,000 cap (10,002-project streaming test); omitIdleSubagents/omitOlderSettled and family shapes remain. |
-| 🟡 | `orchestration.subscribeThread` | P0 | stream | `orchestration:read` | Real Connection tests: streamed full opt-out (140 messages), bounded ten-turn window, compact IDs/body dedupe/local turn-item omission, replay/markers. Generic/activity/oversized and targeted-history policies are not fully conformant. |
+| 🟡 | `orchestration.subscribeShell` | P0 | stream | `orchestration:read` | Isolated nightly differential exercises snapshot/next item order and real-client conformance-base subscription. Shell metadata and repository-identity replacement snapshots differ; replay/markers locally tested. See docs/CONFORMANCE.md. |
+| 🟡 | `orchestration.subscribeThread` | P0 | stream | `orchestration:read` | Isolated nightly differential exercises bounded initial stream and completion marker; full/compact decode and resume locally tested. Thread/run/item field and stream-order differences remain; see docs/CONFORMANCE.md. |
 
 ## preview
 
@@ -151,7 +151,7 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | 🚫 | `projects.ensureScratch` | unused | unary | `orchestration:operate` | No client call site in inventory. |
 | 🚫 | `projects.listEntries` | unused | unary | `filesystem:read` | No client call site in inventory. |
 | ⬜ | `projects.listIgnoredFiles` | P2 | unary | `filesystem:read` | Deferred; client-usage.md inventory. |
-| 🟡 | `projects.mutate` | P1 | unary | `orchestration:operate` | Tested over RPC and POST /api/projects/mutate: create/update/delete, idempotent replay, workspace-root validation (exists, createWorkspaceRootIfMissing, no duplicate roots), delete needs force when threads exist, shell events project.updated/removed on the shared sequence, scope checks. Not done: repositoryIdentity, force-delete does not cascade to threads. |
+| 🟡 | `projects.mutate` | P1 | unary | `orchestration:operate` | Tested over RPC and POST /api/projects/mutate: create/update/delete, idempotent replay, workspace-root validation (exists, createWorkspaceRootIfMissing, no duplicate roots), delete needs force when threads exist, shell events project.updated/removed on the shared sequence, scope checks. Not done: repositoryIdentity, force-delete does not cascade to threads. Differential fix: creation initializes optional null/default metadata (including repositoryIdentity); simple project.create shape matches nightly 3991. |
 | ✅ | `projects.readFile` | P1 | unary | `filesystem:read` | Real-client test: relative paths rooted lexically and by realpath (symlink escapes refused), 1 MiB cap with truncated flag, binary refused, allowMissing, absolute host paths read in place as T3 does, filesystem:read scope. |
 | 🚫 | `projects.searchContents` | unused | unary | `filesystem:read` | No client call site in inventory. |
 | ✅ | `projects.searchEntries` | P1 | unary | `filesystem:read` | Real-client test: git ignore rules, kind/imageOnly filters, limit clamp, truncated flag, missing root error. Ranking is o3's own (basename, then path, then subsequence), not T3's fff finder; index capped at 25,000 entries. |
@@ -253,9 +253,9 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | 🚫 | `server.commitDesktopUpdate` | unused | unary | `environment:maintain` | No client call site in inventory. |
 | 🚫 | `server.deleteAcpRegistrySession` | unused | unary | `orchestration:operate` | No client call site in inventory. |
 | 🚫 | `server.disableAcpRegistryProvider` | unused | unary | `providers:manage` | No client call site in inventory. |
-| ⬜ | `server.discoverSourceControl` | P1 | unary | `orchestration:read` | Deferred; client-usage.md inventory. |
+| 🟡 | `server.discoverSourceControl` | P1 | unary | `orchestration:read` | Real Connection + nightly differential: bounded git/jj executable/version probes, Effect Option encoding, honest implementation flags. Host-provider discovery/auth adapters are absent (sourceControlProviders=[]); upstream includes GitHub/GitLab descriptors. See docs/CONFORMANCE.md. |
 | 🚫 | `server.getBackgroundPolicy` | unused | unary | `orchestration:read` | No client call site in inventory. |
-| 🟡 | `server.getConfig` | P0 | unary | `orchestration:read` | Both Claude process-per-session and Codex shared app-server are registered in the executable and selected by providerInstanceId. Real Connection registry test; CLI availability/auth status are honest. Setup/custom instance catalogs remain incomplete. |
+| 🟡 | `server.getConfig` | P0 | unary | `orchestration:read` | Isolated nightly differential proves authenticated real-client read. CLI default-scope bug fixed. Minimal capability advertisement, provider/config catalog fields and newer settings differ; unsupported capabilities remain absent/off. See docs/CONFORMANCE.md. |
 | 🚫 | `server.getDatabaseStorage` | unused | stream | `orchestration:read` | No client call site in inventory. |
 | ⬜ | `server.getHostResources` | P2 | unary | `orchestration:read` | Deferred; client-usage.md inventory. |
 | ✅ | `server.getProcessDiagnostics` | P2 | unary | `diagnostics:read` | tests/ops.rs: the server process tree from /proc, with Option encoding for pgid/error. |
@@ -306,11 +306,11 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 
 | Estado | RPC | Prioridad | Tipo | Scope | Nota |
 |---|---|---|---|---|---|
-| 🟡 | `terminal.attach` | P1 | stream | `terminal:operate` | tests/terminal.rs: snapshot then live tail without loss/duplication, resume, restartIfNotRunning, 8-chunk/64 KiB window. Same gaps as terminal.open. |
+| 🟡 | `terminal.attach` | P1 | stream | `terminal:operate` | tests/terminal.rs: snapshot then live tail without loss/duplication, resume, restartIfNotRunning, 8-chunk/64 KiB window. Same gaps as terminal.open. Differential fix: snapshots include current cols/rows; nightly 3991 simple open/attach shapes match. |
 | ✅ | `terminal.clear` | unused | unary | `terminal:operate` | tests/terminal.rs: cleared event and empty history. |
 | ✅ | `terminal.close` | unused | unary | `terminal:operate` | tests/terminal.rs: kills the process group (HUP, TERM, KILL after 1 s), emits closed, resume attach reports closed. |
 | ✅ | `terminal.observe` | unused | stream | `terminal:read` | tests/terminal.rs: read-only snapshot + tail with terminal:read; a lagging subscriber is resynchronised with a snapshot. |
-| 🟡 | `terminal.open` | P1 | unary | `terminal:operate` | tests/terminal.rs. Real PTY, process group, bounded scrollback. providerInstanceId environment is not applied; history is not persisted across a server restart. |
+| 🟡 | `terminal.open` | P1 | unary | `terminal:operate` | tests/terminal.rs. Real PTY, process group, bounded scrollback. providerInstanceId environment is not applied; history is not persisted across a server restart. Differential fix: snapshots include current cols/rows; nightly 3991 simple open/attach shapes match. |
 | ✅ | `terminal.resize` | P1 | unary | `terminal:operate` | tests/terminal.rs: stty reports the new size. |
 | 🟡 | `terminal.restart` | unused | unary | `terminal:operate` | tests/terminal.rs: new pid, restarted event, fresh history. providerInstanceId environment is not applied. |
 | ✅ | `terminal.write` | P1 | unary | `terminal:operate` | tests/terminal.rs: data reaches the shell; typed lookup and not-running errors; exited terminals accept writes silently. |
@@ -324,7 +324,7 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | ✅ | `vcs.init` | P2 | unary | `source-control:write` | Real-client test: git init (also on an existing repo); jj is refused as unsupported; missing cwd is an error. |
 | ✅ | `vcs.listRefs` | P1 | unary | `orchestration:read` | Real-client test: current/default first, local and remote refs, worktreePath, pagination (cursor/limit/nextCursor), query, refKind, matching-remote dedupe. The refresh flag is ignored (no cache). |
 | ✅ | `vcs.pull` | P1 | unary | `source-control:write` | Real-client test: fast-forward pulled, up-to-date skipped, no upstream and diverged history are errors; --ff-only, never merges. |
-| 🟡 | `vcs.refreshStatus` | P1 | unary | `orchestration:read` | Real-client test: non-repo, clean, dirty (modified/staged/untracked line counts), upstream ahead/behind, branchChanges vs default branch, aheadOfDefaultCount. pr is always null and sourceControlProvider is absent (no host adapter); localOnly ignored. |
+| 🟡 | `vcs.refreshStatus` | P1 | unary | `orchestration:read` | Real-client test: non-repo, clean, dirty (modified/staged/untracked line counts), upstream ahead/behind, branchChanges vs default branch, aheadOfDefaultCount. pr is always null and sourceControlProvider is absent (no host adapter); localOnly ignored. Differential fix: aheadOfDefaultCount and zero branchChanges defaults are present even without a default/remote ref. |
 | 🚫 | `vcs.removeWorktree` | unused | unary | `source-control:write` | No client call site in inventory. |
 | ✅ | `vcs.switchRef` | P1 | unary | `source-control:write` | Real-client test: local switch, remote-only ref becomes a tracking branch, unknown ref refused. |
 
