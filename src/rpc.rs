@@ -6,7 +6,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
 
 pub const SERVER_VERSION: &str = concat!("o3-", env!("CARGO_PKG_VERSION"));
-const SHELL_SCHEMA_VERSION: u64 = 1;
+const SHELL_SCHEMA_VERSION: u64 = 2;
 
 /// Unary handlers. `Err` carries the typed error placed in a `Fail` cause.
 fn dispatch(tag: &str, _payload: &Value) -> Result<Value, Value> {
