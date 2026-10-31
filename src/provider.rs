@@ -14,11 +14,13 @@ pub struct RunInput {
     pub context: Option<serde_json::Value>,
 }
 pub enum ProviderEvent {
+    Codex(serde_json::Value),
     Started,
     Native(serde_json::Value),
     TextDelta(String),
     ApprovalRequest { request_id: String, command: String },
     Completed,
+    Interrupted,
     Failed(String),
 }
 pub enum ProviderControl {
@@ -32,8 +34,12 @@ pub enum ProviderControl {
     },
 }
 /// Implementations must await output capacity, stop on cancellation/receiver drop,
-/// and reap every subprocess before resolving. Futures must be Send for the shared two-worker runtime.
+/// and reap owned per-run subprocesses before resolving. Shared process adapters expose
+/// an explicit shutdown that reaps the process after all runs. Futures must be Send.
 pub trait Provider: Send + Sync + 'static {
+    fn config(&self) -> Vec<serde_json::Value> {
+        Vec::new()
+    }
     fn execute<'a>(
         &'a self,
         input: RunInput,
@@ -197,6 +203,9 @@ fn persist(
     }
     let at = iso(now_ms());
     match event {
+        ProviderEvent::Codex(frame) => {
+            crate::codex_projection::persist(&tx, tid, rid, &thread, &mut run, &at, frame)?;
+        }
         ProviderEvent::Native(frame) => {
             crate::claude_projection::persist(&tx, tid, rid, &mut thread, &mut run, &at, &frame)?;
         }
@@ -207,7 +216,13 @@ fn persist(
         ProviderEvent::TextDelta(delta) => {
             let mid = format!("assistant-{rid}");
             let mut message=get(&tx,"messages",&mid).unwrap_or_else(|_|json!({"id":mid,"threadId":tid,"runId":rid,"nodeId":null,"role":"assistant","text":"","attachments":[],"streaming":true,"createdBy":"agent","creationSource":"web","createdAt":at,"updatedAt":at}));
+            message["nodeId"] = run["rootNodeId"].clone();
+            message["providerThreadId"] = run["providerThreadId"].clone();
+            message["providerTurnId"] = run["codexProviderTurnId"].clone();
             let mut text = message["text"].as_str().unwrap_or("").to_owned();
+            if text.len().saturating_add(delta.len()) > 1024 * 1024 {
+                return Err("assistant message exceeds 1 MiB".into());
+            }
             text.push_str(&delta);
             if text.len() > 1024 * 1024 {
                 return Err("assistant message exceeds 1 MiB".into());
@@ -228,9 +243,11 @@ fn persist(
             append(&tx, tid, "runtime-request.updated", request, &thread)?;
             run["status"] = json!("waiting");
         }
-        ProviderEvent::Completed | ProviderEvent::Failed(_) => {
+        ProviderEvent::Completed | ProviderEvent::Interrupted | ProviderEvent::Failed(_) => {
             run["status"] = json!(if matches!(event, ProviderEvent::Completed) {
                 "completed"
+            } else if matches!(event, ProviderEvent::Interrupted) {
+                "interrupted"
             } else {
                 "failed"
             });

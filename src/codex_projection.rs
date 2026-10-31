@@ -1,0 +1,541 @@
+//! Native Codex frames reduced directly into SQLite; no adapter transcript cache.
+use crate::events::{append, get, put};
+use rusqlite::Connection;
+use serde_json::{json, Value};
+fn record(
+    db: &Connection,
+    tid: &str,
+    thread: &Value,
+    kind: &str,
+    event: &str,
+    v: Value,
+) -> Result<(), String> {
+    let mut v = v;
+    if kind == "providerTurns" {
+        if let Ok(old) = get(db, kind, v["id"].as_str().unwrap_or("")) {
+            if v.get("tokenUsage").is_none() {
+                if let Some(usage) = old.get("tokenUsage") {
+                    v["tokenUsage"] = usage.clone();
+                }
+            }
+        }
+    }
+    let id = v["id"].as_str().ok_or("record id missing")?;
+    put(db, kind, id, tid, &v)?;
+    append(db, tid, event, v, thread)?;
+    Ok(())
+}
+fn item(db: &Connection, tid: &str, thread: &Value, mut v: Value) -> Result<(), String> {
+    let id = v["id"].as_str().ok_or("item id missing")?.to_owned();
+    v["ordinal"] = if let Ok(old) = get(db, "turnItems", &id) {
+        old["ordinal"].clone()
+    } else {
+        json!(db
+            .query_row(
+                "SELECT count(*) FROM records WHERE kind='turnItems' AND thread_id=?",
+                [tid],
+                |r| r.get::<_, i64>(0)
+            )
+            .map_err(|e| e.to_string())?)
+    };
+    if v["type"] == "proposed_plan" {
+        record(
+            db,
+            tid,
+            thread,
+            "plans",
+            "plan.updated",
+            json!({"id":v["planId"],"threadId":tid,"runId":v["runId"],"nodeId":v["nodeId"],"status":if v["streaming"]==true{"draft"}else{"active"},"kind":"proposed_plan","markdown":v["markdown"]}),
+        )?;
+    }
+    put(
+        db,
+        "visibleTurnItems",
+        &id,
+        tid,
+        &json!({"position":v["ordinal"],"visibility":"local","sourceThreadId":tid,"sourceItemId":id,"item":v}),
+    )?;
+    record(db, tid, thread, "turnItems", "turn-item.updated", v)
+}
+pub(crate) fn persist(
+    db: &Connection,
+    tid: &str,
+    rid: &str,
+    thread: &Value,
+    run: &mut Value,
+    at: &str,
+    frame: Value,
+) -> Result<(), String> {
+    let method = frame["method"].as_str().unwrap_or("");
+    let p = &frame["params"];
+    let native_thread = p["threadId"].as_str().unwrap_or("");
+    let native_turn = p["turnId"]
+        .as_str()
+        .or_else(|| p["turn"]["id"].as_str())
+        .unwrap_or("");
+    let session_id = format!("codex-session-{tid}");
+    let pt = format!("codex-thread-{native_thread}");
+    let pv = format!("codex-turn-{native_turn}");
+    let native_item = p["itemId"]
+        .as_str()
+        .or_else(|| p["item"]["id"].as_str())
+        .unwrap_or(native_turn);
+    let id = format!("codex-item-{rid}-{native_item}");
+    let mut base = json!({"id":id,"threadId":tid,"runId":rid,"nodeId":rid,"providerThreadId":pt,"providerTurnId":pv,"nativeItemRef":{"driver":"codex","nativeId":native_item,"strength":"strong"},"parentItemId":null,"ordinal":0,"status":"running","title":null,"startedAt":at,"completedAt":null,"updatedAt":at});
+    match method {
+        "o3/binding" => {
+            let mut t = thread.clone();
+            t["codexNativeThreadId"] = json!(native_thread);
+            put(db, "thread", tid, tid, &t)?;
+            run["providerThreadId"] = json!(pt);
+            record(
+                db,
+                tid,
+                &t,
+                "providerThreads",
+                "provider-thread.updated",
+                json!({"id":pt,"appThreadId":tid,"driver":"codex","ownerNodeId":null,"nativeConversationHeadRef":null,"firstRunOrdinal":run["ordinal"],"lastRunOrdinal":run["ordinal"],"handoffIds":[],"forkedFrom":null,"providerInstanceId":"codex","providerSessionId":session_id,"nativeThreadRef":{"driver":"codex","nativeId":native_thread,"strength":"strong"},"status":"active","createdAt":at,"updatedAt":at}),
+            )?;
+            record(
+                db,
+                tid,
+                &t,
+                "providerSessions",
+                "provider-session.updated",
+                json!({"id":session_id,"driver":"codex","providerInstanceId":"codex","cwd":p["cwd"],"model":thread["modelSelection"]["model"],"capabilities":serde_json::from_str::<Value>(include_str!("codex-capabilities.json")).unwrap(),"lastError":null,"status":"ready","createdAt":at,"updatedAt":at}),
+            )?;
+        }
+        "turn/started" | "turn/completed" => {
+            let completed = method == "turn/completed";
+            run["status"] = json!(if completed {
+                match p["turn"]["status"].as_str() {
+                    Some("failed") => "failed",
+                    Some("interrupted") => "interrupted",
+                    _ => "completed",
+                }
+            } else {
+                "running"
+            });
+            run["rootNodeId"] = json!(rid);
+            run["codexProviderTurnId"] = json!(pv);
+            run["activeAttemptId"] = json!(format!("attempt-{rid}"));
+            run[if completed {
+                "completedAt"
+            } else {
+                "startedAt"
+            }] = json!(at);
+            record(
+                db,
+                tid,
+                thread,
+                "providerTurns",
+                "provider-turn.updated",
+                json!({"id":pv,"providerThreadId":pt,"nodeId":rid,"runAttemptId":format!("attempt-{rid}"),"ordinal":run["ordinal"],"nativeTurnRef":{"driver":"codex","nativeId":native_turn,"strength":"strong"},"status":run["status"],"startedAt":at,"completedAt":if completed{json!(at)}else{Value::Null}}),
+            )?;
+            record(
+                db,
+                tid,
+                thread,
+                "nodes",
+                "node.updated",
+                json!({"id":rid,"threadId":tid,"runId":rid,"parentNodeId":null,"rootNodeId":rid,"kind":"root_turn","status":run["status"],"countsForRun":true,"providerThreadId":pt,"providerTurnId":pv,"nativeItemRef":null,"runtimeRequestId":null,"checkpointScopeId":null,"startedAt":at,"completedAt":if completed{json!(at)}else{Value::Null}}),
+            )?;
+            record(
+                db,
+                tid,
+                thread,
+                "attempts",
+                "attempt.updated",
+                json!({"id":format!("attempt-{rid}"),"runId":rid,"attemptOrdinal":1,"providerInstanceId":"codex","providerThreadId":pt,"reason":"initial","rootNodeId":rid,"providerTurnId":pv,"status":run["status"],"startedAt":at,"completedAt":if completed{json!(at)}else{Value::Null}}),
+            )?;
+            if completed {
+                run["status"] = json!("running");
+            }
+        }
+        "item/started" | "item/completed" => {
+            let n = &p["item"];
+            let complete = method == "item/completed";
+            if let Ok(old) = get(db, "turnItems", &id) {
+                base = old;
+            }
+            base["updatedAt"] = json!(at);
+            base["status"] = json!(if complete {
+                match n["status"].as_str() {
+                    Some("failed") => "failed",
+                    Some("declined") => "cancelled",
+                    _ => "completed",
+                }
+            } else {
+                "running"
+            });
+            if complete {
+                base["completedAt"] = json!(at);
+            }
+            match n["type"].as_str().unwrap_or("") {
+                "commandExecution" => {
+                    base["type"] = json!("command_execution");
+                    base["input"] = n["command"].clone();
+                    if let Some(o) = n["aggregatedOutput"].as_str() {
+                        base["output"] = json!(o);
+                    }
+                    if let Some(e) = n["exitCode"].as_i64() {
+                        base["exitCode"] = json!(e);
+                        base["outputIndicatesFailure"] = json!(e != 0);
+                    }
+                }
+                "fileChange" => {
+                    base["type"] = json!("file_change");
+                    base["fileName"] = json!(n["changes"][0]["path"].as_str().unwrap_or("files"));
+                    base["diffStr"] = json!(n["changes"]
+                        .as_array()
+                        .unwrap_or(&vec![])
+                        .iter()
+                        .filter_map(|c| c["diff"].as_str())
+                        .collect::<Vec<_>>()
+                        .join("\n"));
+                    base["changes"] = json!(n["changes"]
+                        .as_array()
+                        .unwrap_or(&vec![])
+                        .iter()
+                        .map(|c| json!({"path":c["path"],"operation":c["kind"]["type"]}))
+                        .collect::<Vec<_>>());
+                }
+                "reasoning" => {
+                    for (stream, field) in [("summary", "summary"), ("text", "content")] {
+                        if let Some(parts) = n[field].as_array() {
+                            for (index, text) in parts.iter().enumerate() {
+                                let mut part = base.clone();
+                                part["id"] = json!(format!("{id}-{stream}-{index}"));
+                                part["type"] = json!("reasoning");
+                                part["text"] = text.clone();
+                                part["streaming"] = json!(!complete);
+                                item(db, tid, thread, part)?;
+                            }
+                        }
+                    }
+                    return Ok(());
+                }
+                "plan" => {
+                    base["type"] = json!("proposed_plan");
+                    base["planId"] = json!(format!("plan-{id}"));
+                    base["markdown"] = n["text"].clone();
+                    base["streaming"] = json!(!complete);
+                }
+                "mcpToolCall" | "dynamicToolCall" => {
+                    base["type"] = json!("dynamic_tool");
+                    base["toolName"] = n["tool"].clone();
+                    base["input"] = n["arguments"].clone();
+                    base["output"] = n["result"].clone();
+                }
+                _ => return Ok(()),
+            }
+            item(db, tid, thread, base)?;
+        }
+        "item/reasoning/summaryTextDelta"
+        | "item/reasoning/textDelta"
+        | "item/plan/delta"
+        | "item/commandExecution/outputDelta" => {
+            // Summary and raw reasoning parts have separate identities.
+            let field = if method.contains("reasoning") {
+                "text"
+            } else if method.contains("plan") {
+                "markdown"
+            } else {
+                "output"
+            };
+            if method.contains("reasoning") {
+                base["id"] = json!(format!(
+                    "{id}-{}-{}",
+                    if method.contains("summary") {
+                        "summary"
+                    } else {
+                        "text"
+                    },
+                    p["summaryIndex"]
+                        .as_u64()
+                        .or_else(|| p["contentIndex"].as_u64())
+                        .unwrap_or(0)
+                ));
+            }
+            let key = base["id"].as_str().unwrap();
+            base = get(db, "turnItems", key).unwrap_or(base);
+            base["type"] = json!(if field == "text" {
+                "reasoning"
+            } else if field == "markdown" {
+                "proposed_plan"
+            } else {
+                "command_execution"
+            });
+            if field == "output" && base.get("input").is_none() {
+                base["input"] = json!("");
+            }
+            if field == "markdown" {
+                base["planId"] = json!(format!("plan-{id}"));
+            }
+            let text = format!(
+                "{}{}",
+                base[field].as_str().unwrap_or(""),
+                p["delta"].as_str().unwrap_or("")
+            );
+            // Bound individual rendered bodies, while SQLite remains the authority.
+            base[field] = json!(if text.len() > 256 * 1024 {
+                text.chars().take(256 * 1024).collect::<String>()
+            } else {
+                text
+            });
+            base["streaming"] = json!(true);
+            base["updatedAt"] = json!(at);
+            item(db, tid, thread, base)?;
+        }
+        "turn/plan/updated" => {
+            let plan_id = format!("plan-{rid}");
+            let steps=json!(p["plan"].as_array().unwrap_or(&vec![]).iter().enumerate().map(|(i,s)|json!({"id":format!("step-{i}"),"text":s["step"],"status":match s["status"].as_str(){Some("inProgress")=>"running",Some("completed")=>"completed",_=>"pending"}})).collect::<Vec<_>>());
+            record(
+                db,
+                tid,
+                thread,
+                "plans",
+                "plan.updated",
+                json!({"id":plan_id,"threadId":tid,"runId":rid,"nodeId":rid,"status":"active","kind":"todo_list","steps":steps,"explanation":p["explanation"]}),
+            )?;
+            base["id"] = json!(format!("item-{plan_id}"));
+            base["type"] = json!("todo_list");
+            base["planId"] = json!(plan_id);
+            base["steps"] = steps;
+            if p["explanation"].is_string() {
+                base["explanation"] = p["explanation"].clone();
+            }
+            item(db, tid, thread, base)?;
+        }
+        "thread/tokenUsage/updated" => {
+            let usage = &p["tokenUsage"];
+            let last = &usage["last"];
+            let mut turn =
+                get(db, "providerTurns", &pv).unwrap_or(json!({"id":pv,"providerThreadId":pt}));
+            turn["tokenUsage"] = json!({"usedTokens":last["totalTokens"],"maxTokens":usage["modelContextWindow"],"inputTokens":last["inputTokens"],"cachedInputTokens":last["cachedInputTokens"],"outputTokens":last["outputTokens"],"reasoningOutputTokens":last["reasoningOutputTokens"],"updatedAt":at});
+            record(
+                db,
+                tid,
+                thread,
+                "providerTurns",
+                "provider-turn.updated",
+                turn,
+            )?;
+        }
+        "account/rateLimits/updated" => {
+            let mut session = get(db, "providerSessions", &session_id)
+                .unwrap_or(json!({"id":session_id,"providerInstanceId":"codex"}));
+            session["rateLimits"] = p["rateLimits"].clone();
+            session["updatedAt"] = json!(at);
+            record(
+                db,
+                tid,
+                thread,
+                "providerSessions",
+                "provider-session.updated",
+                session,
+            )?;
+        }
+        "item/commandExecution/requestApproval"
+        | "item/fileChange/requestApproval"
+        | "item/tool/requestUserInput"
+        | "mcpServer/elicitation/request" => {
+            let request_id = p["o3RequestId"]
+                .as_str()
+                .ok_or("Codex runtime request missing id")?;
+            let user = method == "item/tool/requestUserInput";
+            let kind = if user {
+                "user_input"
+            } else if method.contains("fileChange") {
+                "file-change"
+            } else if method.contains("elicitation") {
+                "mcp-elicitation"
+            } else {
+                "command"
+            };
+            let node = format!("node-{request_id}");
+            record(
+                db,
+                tid,
+                thread,
+                "nodes",
+                "node.updated",
+                json!({"id":node,"threadId":tid,"runId":rid,"parentNodeId":rid,"rootNodeId":rid,"kind":if user{"user_input_request"}else{"approval_request"},"status":"waiting","countsForRun":false,"providerThreadId":pt,"providerTurnId":pv,"nativeItemRef":base["nativeItemRef"],"runtimeRequestId":request_id,"checkpointScopeId":null,"startedAt":at,"completedAt":null}),
+            )?;
+            record(
+                db,
+                tid,
+                thread,
+                "runtimeRequests",
+                "runtime-request.updated",
+                json!({"id":request_id,"nodeId":node,"providerTurnId":pv,"nativeRequestRef":{"driver":"codex","nativeId":frame["id"].as_str().map(str::to_owned).unwrap_or_else(||frame["id"].to_string()),"strength":"strong"},"kind":kind,"status":"pending","responseCapability":{"type":"live","providerSessionId":session_id},"createdAt":at,"resolvedAt":null}),
+            )?;
+            base["id"] = json!(format!("item-{request_id}"));
+            base["nodeId"] = json!(node);
+            base["status"] = json!("waiting");
+            base["type"] = json!(if user {
+                "user_input_request"
+            } else {
+                "approval_request"
+            });
+            base["requestId"] = json!(request_id);
+            if user {
+                base["questions"] = p["questions"].clone();
+            } else {
+                base["requestKind"] = json!(kind);
+                base["prompt"] = json!(p["command"]
+                    .as_str()
+                    .or_else(|| p["message"].as_str())
+                    .or_else(|| p["reason"].as_str())
+                    .unwrap_or("Codex requests approval"));
+            }
+            item(db, tid, thread, base)?;
+            run["status"] = json!("waiting");
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+pub(crate) fn finish(
+    db: &Connection,
+    tid: &str,
+    rid: &str,
+    thread: &Value,
+    status: &Value,
+    at: &str,
+) -> Result<(), String> {
+    // Page by rowid: a long turn must not load all tool items at completion.
+    let mut cursor = 0i64;
+    loop {
+        let rows = {
+            let mut q=db.prepare("SELECT rowid,body FROM records WHERE kind='turnItems' AND thread_id=? AND rowid>? ORDER BY rowid LIMIT 16").map_err(|e|e.to_string())?;
+            let rows = q
+                .query_map(rusqlite::params![tid, cursor], |r| {
+                    Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+                })
+                .map_err(|e| e.to_string())?;
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?
+        };
+        if rows.is_empty() {
+            break;
+        }
+        for (row, body) in rows {
+            cursor = row;
+            let mut v: Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+            if v["runId"] != rid
+                || matches!(
+                    v["status"].as_str(),
+                    Some("completed" | "failed" | "interrupted" | "cancelled")
+                )
+            {
+                continue;
+            }
+            v["status"] = status.clone();
+            v["streaming"] = json!(false);
+            v["completedAt"] = json!(at);
+            v["updatedAt"] = json!(at);
+            item(db, tid, thread, v)?;
+        }
+    }
+    for (kind, event, field) in [
+        ("nodes", "node.updated", "runId"),
+        ("attempts", "attempt.updated", "runId"),
+        ("providerTurns", "provider-turn.updated", "nodeId"),
+    ] {
+        let mut cursor = 0i64;
+        loop {
+            let rows = {
+                let mut q=db.prepare("SELECT rowid,body FROM records WHERE kind=? AND thread_id=? AND rowid>? ORDER BY rowid LIMIT 16").map_err(|e|e.to_string())?;
+                let rows = q
+                    .query_map(rusqlite::params![kind, tid, cursor], |r| {
+                        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+                    })
+                    .map_err(|e| e.to_string())?;
+                rows.collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| e.to_string())?
+            };
+            if rows.is_empty() {
+                break;
+            }
+            for (row, body) in rows {
+                cursor = row;
+                let mut v: Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+                if v[field] != rid
+                    || matches!(
+                        v["status"].as_str(),
+                        Some("completed" | "failed" | "interrupted" | "cancelled")
+                    )
+                {
+                    continue;
+                }
+                v["status"] = status.clone();
+                v["completedAt"] = json!(at);
+                record(db, tid, thread, kind, event, v)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn replay_items_reasoning_plans_and_usage() {
+        let db = Connection::open_in_memory().unwrap();
+        crate::events::initialize(&db).unwrap();
+        let thread = json!({"id":"app-thread","modelSelection":{"model":"test"}});
+        put(&db, "thread", "app-thread", "app-thread", &thread).unwrap();
+        let mut run = json!({"id":"run","threadId":"app-thread","ordinal":1,"status":"preparing"});
+        for line in include_str!("../tests/fixtures/codex/notifications.synthetic.ndjson").lines() {
+            persist(
+                &db,
+                "app-thread",
+                "run",
+                &thread,
+                &mut run,
+                "2026-10-31T00:00:00.000Z",
+                serde_json::from_str(line).unwrap(),
+            )
+            .unwrap();
+        }
+        finish(
+            &db,
+            "app-thread",
+            "run",
+            &thread,
+            &json!("completed"),
+            "2026-10-31T00:01:00.000Z",
+        )
+        .unwrap();
+        let command = get(&db, "turnItems", "codex-item-run-command").unwrap();
+        assert_eq!(command["input"], "echo ok");
+        assert_eq!(command["output"], "ok\n");
+        assert_eq!(command["exitCode"], 0);
+        let reason = get(&db, "turnItems", "codex-item-run-reason-summary-0").unwrap();
+        assert_eq!(reason["text"], "Check the result");
+        assert_eq!(reason["streaming"], false);
+        assert_eq!(reason["status"], "completed");
+        let file = get(&db, "turnItems", "codex-item-run-files").unwrap();
+        assert_eq!(file["changes"][0]["path"], "file.txt");
+        assert_eq!(file["diffStr"], "+ok");
+        let plan = get(&db, "plans", "plan-run").unwrap();
+        assert_eq!(plan["steps"][1]["status"], "running");
+        let turn = get(&db, "providerTurns", "codex-turn-native-turn").unwrap();
+        assert_eq!(turn["tokenUsage"]["usedTokens"], 12);
+        assert_eq!(turn["status"], "completed");
+        assert_eq!(
+            get(&db, "providerSessions", "codex-session-app-thread").unwrap()["rateLimits"]
+                ["primary"]["usedPercent"],
+            25
+        );
+        assert_eq!(
+            get(&db, "thread", "app-thread").unwrap()["codexNativeThreadId"],
+            "native-thread"
+        );
+        let visible = get(&db, "visibleTurnItems", "codex-item-run-command").unwrap();
+        assert_eq!(visible["item"], command);
+    }
+}

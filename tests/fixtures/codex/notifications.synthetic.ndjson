@@ -1,0 +1,14 @@
+{"method":"o3/binding","params":{"threadId":"native-thread","turnId":"native-turn","cwd":"/tmp/o3-test"}}
+{"method":"turn/started","params":{"threadId":"native-thread","turnId":"native-turn","turn":{"id":"native-turn","status":"inProgress"}}}
+{"method":"item/started","params":{"threadId":"native-thread","turnId":"native-turn","item":{"id":"command","type":"commandExecution","command":"echo ok","status":"inProgress"}}}
+{"method":"item/commandExecution/outputDelta","params":{"threadId":"native-thread","turnId":"native-turn","itemId":"command","delta":"ok\n"}}
+{"method":"item/completed","params":{"threadId":"native-thread","turnId":"native-turn","item":{"id":"command","type":"commandExecution","command":"echo ok","aggregatedOutput":"ok\n","status":"completed","exitCode":0}}}
+{"method":"item/reasoning/summaryTextDelta","params":{"threadId":"native-thread","turnId":"native-turn","itemId":"reason","summaryIndex":0,"delta":"Check "}}
+{"method":"item/reasoning/summaryTextDelta","params":{"threadId":"native-thread","turnId":"native-turn","itemId":"reason","summaryIndex":0,"delta":"the result"}}
+{"method":"item/completed","params":{"threadId":"native-thread","turnId":"native-turn","item":{"id":"files","type":"fileChange","status":"completed","changes":[{"path":"file.txt","kind":{"type":"add"},"diff":"+ok"}]}}}
+{"method":"turn/plan/updated","params":{"threadId":"native-thread","turnId":"native-turn","explanation":"Steps","plan":[{"step":"Check","status":"completed"},{"step":"Ship","status":"inProgress"}]}}
+{"method":"item/plan/delta","params":{"threadId":"native-thread","turnId":"native-turn","itemId":"plan","delta":"## Plan\nDo it"}}
+{"method":"item/completed","params":{"threadId":"native-thread","turnId":"native-turn","item":{"id":"plan","type":"plan","text":"## Plan\nDo it"}}}
+{"method":"thread/tokenUsage/updated","params":{"threadId":"native-thread","turnId":"native-turn","tokenUsage":{"last":{"totalTokens":12,"inputTokens":7,"cachedInputTokens":2,"outputTokens":5,"reasoningOutputTokens":1},"total":{"totalTokens":100},"modelContextWindow":1000}}}
+{"method":"account/rateLimits/updated","params":{"threadId":"native-thread","turnId":"native-turn","rateLimits":{"primary":{"usedPercent":25,"windowDurationMins":300,"resetsAt":1900000000},"secondary":null}}}
+{"method":"turn/completed","params":{"threadId":"native-thread","turnId":"native-turn","turn":{"id":"native-turn","status":"completed","error":null}}}
