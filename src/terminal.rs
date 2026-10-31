@@ -470,6 +470,7 @@ impl SessionState {
 }
 
 impl Session {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         thread: &str,
         terminal: &str,

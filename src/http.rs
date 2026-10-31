@@ -251,6 +251,7 @@ pub async fn serve_io<I>(io: I, state: Arc<State>) -> std::io::Result<()>
 where
     I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
+    crate::scheduled::ensure_started(&state);
     let service = service_fn(move |request| route(state.clone(), request));
     hyper::server::conn::http1::Builder::new()
         .serve_connection(TokioIo::new(io), service)
@@ -259,6 +260,7 @@ where
         .map_err(std::io::Error::other)
 }
 pub async fn serve(listener: TcpListener, state: Arc<State>) -> std::io::Result<()> {
+    crate::scheduled::ensure_started(&state);
     loop {
         let (socket, _) = listener.accept().await?;
         let _ = socket.set_nodelay(true);

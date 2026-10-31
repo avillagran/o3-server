@@ -8,6 +8,6 @@ pub async fn call(s: &Arc<State>, tag: &str, p: &Value) -> Option<Result<Value, 
     match tag {
         "terminal.open" | "terminal.write" | "terminal.resize" | "terminal.clear"
         | "terminal.restart" | "terminal.close" => Some(crate::terminal::call(s, tag, p).await),
-        _ => None,
+        _ => crate::ops::call(s, tag, p).await,
     }
 }

@@ -761,7 +761,7 @@ fn pull_request(
             let undismiss = existing.is_some_and(|i| links[i]["source"] == "stack-dismissed")
                 && !matches!(source, "stack" | "stack-dismissed");
             if existing.is_some() && !undismiss {
-                return Ok(crate::events::sequence(tx)?);
+                return crate::events::sequence(tx);
             }
             let mut link = match existing {
                 Some(i) => links.remove(i),
@@ -778,7 +778,7 @@ fn pull_request(
         }
         "thread.pull-request.unlink" => {
             let Some(i) = existing else {
-                return Ok(crate::events::sequence(tx)?);
+                return crate::events::sequence(tx);
             };
             let stacked = links[i]["source"] == "stack" || !links[i]["stack"].is_null();
             if stacked {
@@ -815,7 +815,7 @@ fn pull_request(
                 }
             }
             let Some(i) = index else {
-                return Ok(crate::events::sequence(tx)?);
+                return crate::events::sequence(tx);
             };
             let watch = watching.then(|| links[i].get("watch").cloned().unwrap_or_else(|| json!({"startedAt":at,"headSha":null,"failedChecks":[],"passed":false,"passedChecks":[],"conflicting":false,"remarksThrough":at,"remarkIds":[],"wakes":0})));
             links[i] = with_watch(links[i].clone(), watch);
@@ -823,7 +823,7 @@ fn pull_request(
         _ => {
             // thread.pull-request-link.sync: refresh the stored snapshot and stack of a known link.
             let Some(i) = existing else {
-                return Ok(crate::events::sequence(tx)?);
+                return crate::events::sequence(tx);
             };
             links[i]["snapshot"] = c["snapshot"].clone();
             links[i]["stack"] = c["stack"].clone();

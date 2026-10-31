@@ -481,10 +481,6 @@ fn output_flow_control_bounds_unacknowledged_chunks() {
         request.headers_mut().insert("Authorization", format!("Bearer {token}").parse().unwrap());
         let (mut ws, _) = tokio_tungstenite::client_async(request, tcp).await.unwrap();
         ws.send(Message::Text(json!({"_tag":"Request","id":"a","tag":"terminal.attach","payload":{"threadId":"t1","terminalId":"term-1"},"headers":[]}).to_string().into())).await.unwrap();
-        let mut drain = |ws: &mut _| {
-            let _ = ws;
-        };
-        drain(&mut ws);
         let mut chunks = 0;
         let mut bytes = 0;
         while let Ok(Some(Ok(m))) = tokio::time::timeout(Duration::from_millis(800), ws.next()).await {

@@ -43,17 +43,44 @@ The compatibility registry marks broad methods partial where appropriate.
 - Launch supports new root-workspace threads; worktree creation, existing-worktree/reuse and
   one atomic launch transaction are unfinished. Its create and initial-message stages have
   separate deterministic receipts. The fake is injected only in tests, never enabled by the CLI.
-- Only defer_start and start_immediately dispatch modes are accepted. Queues, steering,
-  restart, deferred release and unlisted lifecycle commands are not implemented.
+- Dispatch modes defer_start, start_immediately and queue_after_active are accepted. Steering
+  (steer_active, promote-to-steer), restart_active, deferred release and unlisted lifecycle commands
+  are not implemented.
 - Auth implements bearer sessions, not DPoP/cookies. OAuth request validation/scope negotiation,
   complete HTTP error unions, and live connection metadata in the clients listing need work.
 - No conformance run against upstream T3, desktop UI or Android was performed. Tests use the
   real client library with o3-server. No actual systemd installation was tested.
 
+## Terminals, command output, thread commands and operations
+
+All of it is exercised through the real `t3-protocol` client (`tests/terminal.rs`,
+`tests/command_output.rs`, `tests/thread_commands.rs`, `tests/ops.rs`; shared harness in
+`tests/support`). Modules: `pty` (libc `openpty`, session leader, process group), `terminal`
+(manager, sessions, streams), `streams` (live subscriptions plus the wake-up channel),
+`command_output`, `thread_commands`, `ops`, `scheduled`, `routes` (the unary dispatch hook).
+
+- **Terminals.** One task per live process reads the PTY, decodes UTF-8 incrementally and
+  appends to a per-terminal scrollback (512 KiB / 5000 lines) and a 192 KiB replay log. Subscribers
+  keep a sequence cursor, not a queue; one that falls behind the log is sent a fresh snapshot.
+  Each stream allows at most 8 unacknowledged chunks or 64 KiB, as `OutputProtocol.ts` does. Close,
+  restart and replace send HUP and TERM to the process group and KILL after 1 s. Gaps: history is
+  not persisted across a server restart, `providerInstanceId` environment is not applied, and
+  there is no per-terminal log file.
+- **Command output.** `ProviderEvent::Command(CommandEvent)` is the Provider-trait side. Output
+  only updates a bounded tail; the item is persisted at start and finish. No shipped adapter emits
+  commands yet; `ScriptedCommandProvider` does in tests. The tail is plain text, not a folded screen.
+- **Thread commands.** Own receipts and transaction in `thread_commands`. The run queue is real
+  (`queue_after_active`, positions, hold on `run.interrupt`, advance when a run ends). Steering is
+  refused. Rollback, subagent stop and fork record state but cannot act on a provider.
+- **Operations.** Honest minimum: processes come from /proc, usage is empty, provider refresh is
+  the configured list, cleanup removes only old profile logs. The scheduler is one task, woken by
+  task changes; fixed-time schedules are UTC and webhook schedules are refused.
+
 ## Verification and memory
 
-`CARGO_TARGET_DIR=/tmp/o3-target cargo test` runs 22 tests: 3 auth unit tests, 14 real-client
-integration tests, 4 CLI subprocess tests and 1 embedded-transport test. All profiles are temporary.
+`CARGO_TARGET_DIR=/var/tmp/o3-build/<name> cargo test` runs the auth/terminal/scheduler unit tests, 14
+real-client integration tests, 4 CLI subprocess tests, 1 embedded-transport test and the terminal,
+command-output, thread-command and operations suites. All profiles are temporary.
 `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` are the static checks.
 
 Run `tools/measure-rss /tmp/o3-target/release/o3-server` after a release build. The probe uses a
