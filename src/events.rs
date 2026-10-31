@@ -43,8 +43,8 @@ pub fn sequence(db: &Connection) -> Result<i64> {
     .map_err(|e| e.to_string())
 }
 fn shell_thread(db: &Connection, t: &Value) -> Result<Value> {
-    let mut t = t.clone();
     let tid = t["id"].as_str().ok_or("thread id missing")?;
+    let mut t = t.clone();
     let count: i64 = db
         .query_row(
             "SELECT count(*) FROM records WHERE kind='messages' AND thread_id=?",
@@ -61,13 +61,30 @@ fn shell_thread(db: &Connection, t: &Value) -> Result<Value> {
         .map(|m| json!({"id":m["id"],"role":m["role"],"text":m["text"],"updatedAt":m["updatedAt"]}))
         .unwrap_or(Value::Null);
     t["latestUserMessageAt"] = Value::Null;
+    if let Some(run) = list(db, "runs", Some(tid), 1)?.pop() {
+        t["latestRunId"] = run["id"].clone();
+        t["status"] = run["status"].clone();
+        if matches!(
+            run["status"].as_str(),
+            Some("preparing" | "starting" | "running" | "waiting")
+        ) {
+            t["activeRunId"] = run["id"].clone();
+        }
+    }
+    if let Some(request) = list(db, "runtimeRequests", Some(tid), 1)?
+        .pop()
+        .filter(|r| r["status"] == "pending")
+    {
+        t["pendingRuntimeRequest"] =
+            json!({"id":request["id"],"kind":request["kind"],"createdAt":request["createdAt"]});
+    }
     t["hasActionableProposedPlan"] = json!(false);
     t["itemCount"] = json!(count);
     t["visibleItemCount"] = json!(count);
     Ok(t)
 }
 pub fn shell(s: &State) -> Result<Value> {
-    let db = s.db.borrow();
+    let db = s.db.lock().unwrap();
     let mut active = Vec::new();
     let mut archive = Vec::new();
     for t in list(&db, "thread", None, 10000)? {
@@ -82,12 +99,15 @@ pub fn shell(s: &State) -> Result<Value> {
         }
     }
     Ok(
-        json!({"schemaVersion":2,"snapshotSequence":sequence(&db)?,"projects":list(&db,"project",None,10000)?,"threads":active,"archivedThreads":archive}),
+        json!({"schemaVersion":2,"snapshotSequence":sequence(&db)?,"projects":list(&db,"project",None,10000)?.into_iter().filter(|p|p["deletedAt"].is_null()).collect::<Vec<_>>(),"threads":active,"archivedThreads":archive}),
     )
 }
 pub fn projection(s: &State, tid: &str) -> Result<Value> {
-    let db = s.db.borrow();
-    let thread = get(&db, "thread", tid)?;
+    let db = s.db.lock().unwrap();
+    projection_db(&db, tid)
+}
+fn projection_db(db: &Connection, tid: &str) -> Result<Value> {
+    let thread = get(db, "thread", tid)?;
     let mut p = json!({"updatedAt":thread["updatedAt"],"thread":thread});
     for kind in [
         "runs",
@@ -107,19 +127,19 @@ pub fn projection(s: &State, tid: &str) -> Result<Value> {
         "contextTransfers",
         "visibleTurnItems",
     ] {
-        p[kind] = json!(list(&db, kind, Some(tid), 100)?);
+        p[kind] = json!(list(db, kind, Some(tid), 100)?);
     }
     Ok(p)
 }
 pub fn bounded(s: &State, tid: &str) -> Result<Value> {
-    let p = projection(s, tid)?;
-    let (cursor, more) = history_boundary(s, tid)?;
+    let db = s.db.lock().unwrap();
+    let p = projection_db(&db, tid)?;
+    let (cursor, more) = history_boundary(&db, tid)?;
     Ok(
-        json!({"snapshotSequence":sequence(&s.db.borrow())?,"projection":p,"historyCursor":cursor,"hasMoreHistory":more,"latestLocalTurnOrdinal":null}),
+        json!({"snapshotSequence":sequence(&db)?,"projection":p,"historyCursor":cursor,"hasMoreHistory":more,"latestLocalTurnOrdinal":null}),
     )
 }
-fn history_boundary(s: &State, tid: &str) -> Result<(Option<String>, bool)> {
-    let db = s.db.borrow();
+fn history_boundary(db: &Connection, tid: &str) -> Result<(Option<String>, bool)> {
     let count: i64 = db
         .query_row(
             "SELECT count(*) FROM records WHERE kind='visibleTurnItems' AND thread_id=?",
@@ -139,7 +159,7 @@ fn history_boundary(s: &State, tid: &str) -> Result<(Option<String>, bool)> {
 }
 pub fn history(s: &State, tid: &str, cursor: &str) -> Result<Value> {
     let anchor: i64 = cursor.parse().map_err(|_| "invalid history cursor")?;
-    let db = s.db.borrow();
+    let db = s.db.lock().unwrap();
     get(&db, "thread", tid)?;
     let mut q=db.prepare("SELECT rowid,body FROM records WHERE kind='visibleTurnItems' AND thread_id=? AND rowid<? ORDER BY rowid DESC LIMIT 101").map_err(|e|e.to_string())?;
     let mut rows = q.query(params![tid, anchor]).map_err(|e| e.to_string())?;
@@ -163,7 +183,7 @@ pub fn history(s: &State, tid: &str, cursor: &str) -> Result<Value> {
 }
 
 pub fn next(s: &State, after: i64, tid: Option<&str>, shell: bool) -> Result<Option<(i64, Value)>> {
-    let db = s.db.borrow();
+    let db = s.db.lock().unwrap();
     let column = if shell { "shell" } else { "body" };
     let sql=format!("SELECT sequence,{column} FROM events WHERE sequence>? AND (?2 IS NULL OR thread_id=?2) AND {column} IS NOT NULL ORDER BY sequence LIMIT 1");
     let row: Option<(i64, String)> = db
@@ -208,12 +228,12 @@ pub(crate) fn append(
     .map_err(|e| e.to_string())?;
     Ok(seq)
 }
-pub fn dispatch(s: &std::rc::Rc<State>, c: &Value) -> Result<Value> {
+pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
     let cid = c["commandId"]
         .as_str()
         .filter(|s| !s.is_empty())
         .ok_or("commandId required")?;
-    let mut db = s.db.borrow_mut();
+    let mut db = s.db.lock().unwrap();
     let tx = db.transaction().map_err(|e| e.to_string())?;
     if let Some(r) = tx
         .query_row(
@@ -293,16 +313,28 @@ pub fn dispatch(s: &std::rc::Rc<State>, c: &Value) -> Result<Value> {
             "thread.metadata-updated"
         }
         "message.dispatch" => {
+            if !matches!(
+                c["dispatchMode"]["type"].as_str(),
+                Some("defer_start" | "start_immediately")
+            ) {
+                return Err("dispatch mode is not implemented".into());
+            }
             // Execution is deliberately refused until a provider is configured. Defer-start is durable.
-            if c["dispatchMode"]["type"] != "defer_start" && s.provider.borrow().is_none() {
+            if c["dispatchMode"]["type"] != "defer_start" && s.provider.lock().unwrap().is_none() {
                 return Err("no provider adapter configured; only defer_start is available".into());
             }
-            if s.active.borrow().len() >= 32 {
+            if s.active.lock().unwrap().len() >= 32 {
                 return Err("active run limit reached".into());
             }
             let run_id = random_id()?;
             let mid = c["messageId"].as_str().ok_or("messageId required")?;
-            let m = json!({"id":mid,"threadId":tid,"runId":run_id,"nodeId":null,"role":"user","text":c["text"],"attachments":c["attachments"],"streaming":false,"createdBy":"user","creationSource":"web","createdAt":at,"updatedAt":at});
+            let mut m = json!({"id":mid,"threadId":tid,"runId":run_id,"nodeId":null,"role":"user","text":c["text"],"attachments":c["attachments"],"streaming":false,"createdBy":"user","creationSource":"web","createdAt":at,"updatedAt":at});
+            if let Some(context) = c.get("context") {
+                m["context"] = context.clone();
+            }
+            if !c["text"].is_string() || !c["attachments"].is_array() {
+                return Err("text and attachments required".into());
+            }
             put(&tx, "messages", mid, tid, &m)?;
             t["updatedAt"] = json!(at);
             put(&tx, "thread", tid, tid, &t)?;
@@ -356,7 +388,7 @@ pub fn dispatch(s: &std::rc::Rc<State>, c: &Value) -> Result<Value> {
             .map_err(|e| e.to_string())?;
             tx.commit().map_err(|e| e.to_string())?;
             drop(db);
-            if let Some(control) = s.active.borrow().get(rid) {
+            if let Some(control) = s.active.lock().unwrap().get(rid) {
                 let _ = control.try_send(crate::provider::ProviderControl::Interrupt);
             }
             s.notify();
@@ -393,10 +425,12 @@ pub fn dispatch(s: &std::rc::Rc<State>, c: &Value) -> Result<Value> {
             .map_err(|e| e.to_string())?;
             tx.commit().map_err(|e| e.to_string())?;
             drop(db);
-            if let Some(control) = s.active.borrow().get(&rid) {
+            if let Some(control) = s.active.lock().unwrap().get(&rid) {
                 let _ = control.try_send(crate::provider::ProviderControl::Respond {
                     request_id: id.into(),
                     decision: c["decision"].clone(),
+                    feedback: c["feedback"].as_str().map(str::to_owned),
+                    answers: c.get("answers").cloned(),
                 });
             }
             s.notify();
@@ -448,10 +482,11 @@ pub(crate) fn message_item(db: &Connection, tid: &str, m: &Value) -> Result<Valu
     Ok(item)
 }
 
-pub fn launch(s: &std::rc::Rc<State>, p: &Value) -> Result<Value> {
+pub fn launch(s: &std::sync::Arc<State>, p: &Value) -> Result<Value> {
     let cid = p["commandId"].as_str().ok_or("commandId required")?;
     if let Some(result) =
-        s.db.borrow()
+        s.db.lock()
+            .unwrap()
             .query_row(
                 "SELECT result FROM receipts WHERE command_id=?",
                 [cid],
@@ -473,7 +508,7 @@ pub fn launch(s: &std::rc::Rc<State>, p: &Value) -> Result<Value> {
     create["type"] = json!("thread.create");
     create["threadId"] = json!(tid);
     create["commandId"] = json!(format!("{cid}:create"));
-    if p.get("initialMessage").is_some() && s.provider.borrow().is_none() {
+    if p.get("initialMessage").is_some() && s.provider.lock().unwrap().is_none() {
         return Err("no provider adapter configured".into());
     }
     dispatch(s, &create)?;
@@ -482,11 +517,91 @@ pub fn launch(s: &std::rc::Rc<State>, p: &Value) -> Result<Value> {
         dispatch(s, &message)?;
     }
     let result = json!({"threadId":tid,"projection":projection(s,&tid)?,"resumed":false});
-    s.db.borrow()
+    s.db.lock()
+        .unwrap()
         .execute(
             "INSERT INTO receipts VALUES(?,?)",
             params![cid, result.to_string()],
         )
         .map_err(|e| e.to_string())?;
     Ok(result)
+}
+
+pub fn mutate_project(s: &State, c: &Value) -> Result<Value> {
+    let cid = c["commandId"].as_str().ok_or("commandId required")?;
+    let id = c["projectId"].as_str().ok_or("projectId required")?;
+    let mut db = s.db.lock().unwrap();
+    let tx = db.transaction().map_err(|e| e.to_string())?;
+    if let Some(r) = tx
+        .query_row(
+            "SELECT result FROM receipts WHERE command_id=?",
+            [cid],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+    {
+        return serde_json::from_str(&r).map_err(|e| e.to_string());
+    }
+    let at = iso(now_ms());
+    let mut p = match c["type"].as_str() {
+        Some("project.create") => {
+            if !c["workspaceRoot"].as_str().is_some_and(|s| !s.is_empty())
+                || !c["title"].as_str().is_some_and(|s| !s.is_empty())
+            {
+                return Err("workspaceRoot and title required".into());
+            }
+            if get(&tx, "project", id).is_ok() {
+                return Err("project exists".into());
+            }
+            json!({"id":id,"title":c["title"],"workspaceRoot":c["workspaceRoot"],"defaultModelSelection":null,"scripts":[],"createdAt":at,"updatedAt":at,"deletedAt":null})
+        }
+        Some("project.update" | "project.delete") => get(&tx, "project", id)?,
+        _ => return Err("invalid project mutation".into()),
+    };
+    for key in [
+        "title",
+        "workspaceRoot",
+        "defaultModelSelection",
+        "defaultThreadEnvMode",
+        "autoPull",
+        "faviconPath",
+        "projectIcon",
+        "scripts",
+    ] {
+        if let Some(v) = c.get(key) {
+            p[key] = v.clone();
+        }
+    }
+    p["updatedAt"] = json!(at);
+    if c["type"] == "project.delete" {
+        p["deletedAt"] = json!(at);
+    }
+    put(&tx, "project", id, "", &p)?;
+    let body = json!({"id":random_id()?,"type":c["type"],"payload":p,"occurredAt":at});
+    tx.execute(
+        "INSERT INTO events(thread_id,body) VALUES('',?)",
+        [body.to_string()],
+    )
+    .map_err(|e| e.to_string())?;
+    let seq = tx.last_insert_rowid();
+    let shell = if c["type"] == "project.delete" {
+        json!({"kind":"project.removed","sequence":seq,"projectId":id})
+    } else {
+        json!({"kind":"project.updated","sequence":seq,"project":p})
+    };
+    tx.execute(
+        "UPDATE events SET shell=? WHERE sequence=?",
+        params![shell.to_string(), seq],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.execute(
+        "INSERT INTO receipts VALUES(?,?)",
+        params![cid, p.to_string()],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    drop(db);
+    s.notify();
+    Ok(p)
 }

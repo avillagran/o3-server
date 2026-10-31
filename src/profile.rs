@@ -87,3 +87,20 @@ impl Drop for RuntimeGuard {
         }
     }
 }
+
+/// An OS lock closes the check/register race between two o3 processes.
+pub fn ownership(dir: &Path) -> io::Result<fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    fs::create_dir_all(dir)?;
+    let lock = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .mode(0o600)
+        .open(dir.join("o3-runtime.lock"))?;
+    lock.try_lock()
+        .map_err(|e| io::Error::other(format!("profile is locked: {e}")))?;
+    refuse_live(dir)?;
+    Ok(lock)
+}

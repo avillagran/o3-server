@@ -1,4 +1,4 @@
-use std::{path::Path, rc::Rc};
+use std::{path::Path, sync::Arc};
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 fn option<'a>(a: &'a [String], name: &str) -> Option<&'a str> {
@@ -63,9 +63,7 @@ fn main() -> std::io::Result<()> {
     let base = o3_server::profile::base_dir(&args)?;
     let dir = base.join("userdata");
     if args.starts_with(&["service".into(), "install".into()]) {
-        return Err(std::io::Error::other(
-            "service install is not implemented; run o3-server serve under your service manager",
-        ));
+        return o3_server::service::install(&base, args.iter().any(|s| s == "--dry-run"));
     }
     if args
         .first()
@@ -74,9 +72,11 @@ fn main() -> std::io::Result<()> {
         return Err(std::io::Error::other("unsupported command"));
     }
     let is_auth = args.first().map(String::as_str) == Some("auth");
-    if !is_auth {
-        o3_server::profile::refuse_live(&dir)?;
-    }
+    let _ownership = if !is_auth {
+        Some(o3_server::profile::ownership(&dir)?)
+    } else {
+        None
+    };
     let state = o3_server::store::State::open(Path::new(&dir)).map_err(std::io::Error::other)?;
     if is_auth {
         if args.get(1).map(String::as_str) == Some("session")
@@ -132,11 +132,11 @@ fn main() -> std::io::Result<()> {
         .map(str::to_owned)
         .or_else(|| std::env::var("T3CODE_HOST").ok())
         .unwrap_or("127.0.0.1".into());
-    tokio::runtime::Builder::new_current_thread().enable_all().build()?.block_on(async {
+    tokio::runtime::Builder::new_multi_thread().worker_threads(2).max_blocking_threads(2).thread_stack_size(512 * 1024).enable_all().build()?.block_on(async {
         let listener=tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
         let _guard=o3_server::profile::RuntimeGuard::write(&dir,listener.local_addr()?)?;
         eprintln!("o3-server listening on {}",listener.local_addr()?);
         let mut term=tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
-        tokio::select! {result=o3_server::serve(listener,Rc::new(state))=>result,_=tokio::signal::ctrl_c()=>Ok(()),_=term.recv()=>Ok(())}
+        tokio::select! {result=o3_server::serve(listener,Arc::new(state))=>result,_=tokio::signal::ctrl_c()=>Ok(()),_=term.recv()=>Ok(())}
     })
 }

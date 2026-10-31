@@ -1,10 +1,1302 @@
 {
-  "_doc": "tag -> {status: done|partial|todo|skip, priority: P0|P1|P2|unused, note}. Tags absent here render as todo/untriaged.",
+  "_doc": "Priorities from client-usage.md table surfaces; unused=skip. Done means covered by real Connection tests. Partial notes list known limits.",
   "methods": {
-    "orchestration.subscribeShell": {
+    "agentSessions.import": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "agentSessions.scan": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "assets.createUrl": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "assets.persistChatAttachments": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "attachments.createUploadUrl": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Client usage inventory; deferred."
+    },
+    "attachments.delete": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "cloud.getRelayClientStatus": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "cloud.installRelayClient": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "device.action": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "device.close": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "device.configure": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "device.detail": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "device.easAccount": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "device.list": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "device.open": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "device.shutdown": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "device.testHost": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "filesystem.browse": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "filesystem.getMetadata": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "git.preparePullRequestThread": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "git.resolvePullRequest": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "git.runStackedAction": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "guestShare.create": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "mcpApps.callTool": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "mcpApps.readResource": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "mcpApps.toolInfo": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "mcpApps.updateModelContext": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "orchestration.dispatchCommand": {
       "status": "partial",
       "priority": "P0",
-      "note": "Stream real con snapshot vacío; falta proyección de hilos/proyectos y eventos"
+      "note": "Connection tests: transactional command receipts, lifecycle, scripted send/approval/completion/interrupt/dismiss; queues and production execution absent."
+    },
+    "orchestration.getArchivedShellSnapshot": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "orchestration.getFullThreadDiff": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "orchestration.getOlderSettledThreads": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "orchestration.getThreadFamily": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "orchestration.getThreadProjection": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "orchestration.getTurnDiff": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "orchestration.getTurnItem": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "orchestration.getWorkflowScript": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "orchestration.getWorktreeThreadIds": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "orchestration.launchThread": {
+      "status": "partial",
+      "priority": "P0",
+      "note": "Connection test: idempotent empty root-workspace creation; worktrees, reuse and atomic multi-stage launch remain."
+    },
+    "orchestration.searchThread": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "orchestration.searchThreadStream": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "orchestration.searchThreads": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "orchestration.stopWorkflow": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "orchestration.subscribeArchivedShell": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "orchestration.subscribeCommandOutput": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "orchestration.subscribeShell": {
+      "status": "done",
+      "priority": "P0",
+      "note": "Connection tests: SQLite snapshot, replay afterSequence, synchronized completion marker; shared project/thread sequence."
+    },
+    "orchestration.subscribeThread": {
+      "status": "partial",
+      "priority": "P0",
+      "note": "Connection tests: bounded snapshot, replay and marker; always bounded even without opt-in, advanced provider projections absent."
+    },
+    "preview.adjust": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "preview.clearProfile": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "preview.close": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "preview.list": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "preview.navigate": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "preview.open": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "preview.refresh": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "preview.reportProfiles": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "preview.reportStatus": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "preview.resize": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "projectClone.cancel": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "projectClone.retry": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "projectClone.start": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "projects.createNew": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "projects.ensureScratch": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "projects.listEntries": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "projects.listIgnoredFiles": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "projects.mutate": {
+      "status": "partial",
+      "priority": "P1",
+      "note": "Connection test: project create/dedup/shared log; update/delete and repository identity not yet covered."
+    },
+    "projects.readFile": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "projects.searchContents": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "projects.searchEntries": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "projects.writeFile": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "provider.auth.cancel": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "provider.auth.complete": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "provider.auth.logout": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "provider.auth.respond": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "provider.auth.start": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "provider.auth.subscribe": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "provider.chatgpt.handoff.subscribe": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "provider.chatgpt.import-profile": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "provider.chatgpt.reconnect-profile": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "provider.codex.auth-callback.subscribe": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "provider.consumeResetCredit": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "provider.install.cancel": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "provider.install.remove": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "provider.install.start": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "provider.install.subscribe": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "provider.uploadFeedback": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "pullRequests.activity": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "pullRequests.changeBreakdown": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "pullRequests.checks": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "pullRequests.comment": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "pullRequests.detail": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "pullRequests.diffFileContents": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "pullRequests.filesViewed": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "pullRequests.filterOptions": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "pullRequests.generateReviewGuide": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "pullRequests.invalidate": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "pullRequests.labelCandidates": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "pullRequests.linkedThreads": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "pullRequests.list": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "pullRequests.listStats": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "pullRequests.preview": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "pullRequests.replyToThread": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "pullRequests.reportState": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "pullRequests.requestReviewers": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "pullRequests.reviewGuide": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "pullRequests.reviewerCandidates": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "pullRequests.routing": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "pullRequests.routingIdentity": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "pullRequests.runAction": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "pullRequests.setFilesViewed": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "pullRequests.setLabels": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "pullRequests.setReaction": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "pullRequests.setThreadResolution": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "pullRequests.stack": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "pullRequests.submitReview": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "pullRequests.subscribeRefreshes": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "pullRequests.summary": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "pullRequests.threadComments": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "pullRequests.update": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "pullRequests.updateComment": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "review.getDiffFileContents": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "review.getDiffPreview": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "scheduledTasks.delete": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "scheduledTasks.getWebhookDelivery": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "scheduledTasks.list": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "scheduledTasks.listWebhookDeliveries": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "scheduledTasks.rotateWebhookToken": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "scheduledTasks.runNow": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "scheduledTasks.setEnabled": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "scheduledTasks.subscribe": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "scheduledTasks.upsert": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "secrets.answerRequest": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Client usage inventory; deferred."
+    },
+    "server.acceptAcpRegistryUrlAuth": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "server.checkOtlpEndpoint": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "server.commitDesktopUpdate": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "server.deleteAcpRegistrySession": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "server.disableAcpRegistryProvider": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "server.discoverSourceControl": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "server.getBackgroundPolicy": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "server.getConfig": {
+      "status": "partial",
+      "priority": "P0",
+      "note": "Real Connection test: descriptor/settings and empty providers; defaults are a subset, provider status catalog absent."
+    },
+    "server.getDatabaseStorage": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "server.getHostResources": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "server.getProcessDiagnostics": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "server.getProcessResourceHistory": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "server.getResourceTelemetryHistory": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "server.getSettings": {
+      "status": "done",
+      "priority": "P1",
+      "note": "Connection test: persisted settings, unknown fields and secret sentinel round-trip."
+    },
+    "server.getStorageCleanupReport": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "server.getTraceDiagnostics": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "server.getUsageSummary": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "server.importAcpRegistrySession": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "server.listAcpRegistryProviders": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "server.listAcpRegistrySessions": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "server.logoutAcpRegistry": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "server.prepareAcpRegistryAgent": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "server.probe": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "server.refreshProviders": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "server.refreshUsageRates": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "server.removeKeybinding": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "server.reportClientActivity": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "server.reportHostPowerState": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "server.retryResourceTelemetry": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "server.runStorageCleanup": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "server.searchAcpRegistry": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "server.setAcpRegistryProvider": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "server.signalProcess": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "server.subscribeServerConfig": {
+      "status": "partial",
+      "priority": "P1",
+      "note": "Connection test: initial config snapshot; changes emit replacement snapshots rather than typed incremental config events."
+    },
+    "server.uninstallAcpRegistryManagedBinary": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "server.updateProvider": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "server.updateServer": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "server.updateServerWithProgress": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "server.updateSettings": {
+      "status": "partial",
+      "priority": "P1",
+      "note": "Connection test: patch/persistence/redaction; providerInstanceMutation and full upstream validation/merge semantics remain."
+    },
+    "server.upsertKeybinding": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "shell.openInEditor": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "sourceControl.cloneRepository": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "sourceControl.lookupRepository": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "sourceControl.publishRepository": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "subscribeAuthAccess": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "subscribeBackgroundPolicy": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "subscribeDeviceState": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "subscribeDiscoveredLocalServers": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "subscribePreviewEvents": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "subscribeProjectClones": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "subscribeResourceTelemetry": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "subscribeServerConfig": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "subscribeServerLifecycle": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "subscribeTerminalEvents": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "subscribeTerminalMetadata": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "subscribeVcsStatus": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "subscribeWorktreeSetup": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "terminal.attach": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "terminal.clear": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "terminal.close": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "terminal.observe": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "terminal.open": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "terminal.resize": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "terminal.restart": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "terminal.write": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "vcs.createRef": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "vcs.createWorktree": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "vcs.init": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "vcs.listRefs": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "vcs.pull": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "vcs.refreshStatus": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "vcs.removeWorktree": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "vcs.switchRef": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Deferred; client-usage.md inventory."
+    },
+    "worktreeSetup.cancel": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Deferred; client-usage.md inventory."
+    }
+  },
+  "commands": {
+    "checkpoint.rollback": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Not implemented."
+    },
+    "delegated_task.completion-delivery.acknowledge": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "delegated_task.completion-delivery.dispose": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "delegated_task.request": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "delegated_task.wake-policy": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "message.dispatch": {
+      "status": "partial",
+      "priority": "P0",
+      "note": "Real Connection scripted provider test; production delivery/recovery not complete."
+    },
+    "notification.delivery.accept": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "prepared-run.fail": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "prepared-run.progress": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "prepared-run.release": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "prepared-run.retry": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "provider-session.detach": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "provider.switch": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "queue.resume": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Client queue builders; deferred."
+    },
+    "queued-message.promote-to-steer": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Not implemented."
+    },
+    "queued-run.cancel": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Not implemented."
+    },
+    "queued-run.edit": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Client queue builders; deferred."
+    },
+    "queued-run.reorder": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Not implemented."
+    },
+    "queued-run.start": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "run.interrupt": {
+      "status": "partial",
+      "priority": "P0",
+      "note": "Real Connection scripted provider test; production delivery/recovery not complete."
+    },
+    "runtime-request.respond": {
+      "status": "partial",
+      "priority": "P0",
+      "note": "Real Connection scripted provider test; production delivery/recovery not complete."
+    },
+    "subagent.stop": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Not implemented."
+    },
+    "thread.active.reorder": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Not implemented."
+    },
+    "thread.archive": {
+      "status": "done",
+      "priority": "P1",
+      "note": "Real Connection lifecycle/idempotency test."
+    },
+    "thread.auto-settle": {
+      "status": "todo",
+      "priority": "unused",
+      "note": "Not implemented."
+    },
+    "thread.auto-settle.set": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Not implemented."
+    },
+    "thread.create": {
+      "status": "done",
+      "priority": "P0",
+      "note": "Real Connection lifecycle/idempotency test."
+    },
+    "thread.created.record": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "thread.delete": {
+      "status": "done",
+      "priority": "P1",
+      "note": "Real Connection lifecycle/idempotency test."
+    },
+    "thread.fork": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Not implemented."
+    },
+    "thread.guest-message.dismiss": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Not implemented."
+    },
+    "thread.guest-share.close": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Not implemented."
+    },
+    "thread.interaction-mode.set": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Not implemented."
+    },
+    "thread.mark-unread": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Not implemented."
+    },
+    "thread.merge_back": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "thread.metadata.update": {
+      "status": "done",
+      "priority": "P1",
+      "note": "Real Connection lifecycle/idempotency test."
+    },
+    "thread.model-selection.set": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Not implemented."
+    },
+    "thread.pin": {
+      "status": "done",
+      "priority": "P1",
+      "note": "Real Connection lifecycle/idempotency test."
+    },
+    "thread.pin.reorder": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Not implemented."
+    },
+    "thread.pull-request-link.sync": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Not implemented."
+    },
+    "thread.pull-request.link": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Not implemented."
+    },
+    "thread.pull-request.sync": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "thread.pull-request.unlink": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "thread.pull-request.watch": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Client usage inventory; deferred."
+    },
+    "thread.runtime-mode.set": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Not implemented."
+    },
+    "thread.settle": {
+      "status": "done",
+      "priority": "P1",
+      "note": "Real Connection lifecycle/idempotency test."
+    },
+    "thread.snooze": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Not implemented."
+    },
+    "thread.stop": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "thread.title.regeneration.complete": {
+      "status": "skip",
+      "priority": "unused",
+      "note": "No client call site in inventory."
+    },
+    "thread.unarchive": {
+      "status": "done",
+      "priority": "P1",
+      "note": "Real Connection lifecycle/idempotency test."
+    },
+    "thread.unpin": {
+      "status": "done",
+      "priority": "P1",
+      "note": "Real Connection lifecycle/idempotency test."
+    },
+    "thread.unsettle": {
+      "status": "done",
+      "priority": "P1",
+      "note": "Real Connection lifecycle/idempotency test."
+    },
+    "thread.unsnooze": {
+      "status": "todo",
+      "priority": "P1",
+      "note": "Not implemented."
+    },
+    "thread.user-input.dismiss": {
+      "status": "partial",
+      "priority": "P1",
+      "note": "Real Connection scripted provider test; production delivery/recovery not complete."
+    },
+    "thread.visit": {
+      "status": "done",
+      "priority": "P1",
+      "note": "Real Connection lifecycle/idempotency test."
     }
   }
 }

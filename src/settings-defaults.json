@@ -51,10 +51,23 @@
   "cursorKeychainUsageEnabled": false,
   "usagePriceOverrides": {},
   "usageModelAliases": {},
-  "storageCleanup": {},
+  "storageCleanup": {
+    "worktreeKeepWhen": "uncommitted-changes",
+    "worktreeAfterDays": null,
+    "worktreeSettledAfterDays": null,
+    "worktreeOnMerge": false,
+    "worktreeOnDelete": false,
+    "worktreeUnchanged": false,
+    "browserArtifactsAfterDays": null,
+    "logsAfterDays": null
+  },
   "defaultRuntimeMode": "full-access",
   "sidebarAutoSettleAfterDays": 7,
-  "backgroundActivity": {},
+  "backgroundActivity": {
+    "schemaVersion": 1,
+    "profile": "balanced",
+    "overrides": {}
+  },
   "automaticGitFetchInterval": 300000,
   "providerHealthRefreshInterval": 300000,
   "backgroundActivityProfile": "balanced",

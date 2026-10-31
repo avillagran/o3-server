@@ -18,8 +18,8 @@ Fuentes normativas: `docs/research/t3-wire-contract.md`, `docs/research/client-u
    importación de hilos desde `statev2.sqlite` se hace sobre una copia consistente, solo lectura.
 4. **Binario único multi-nombre.** Responde la CLI que usa el desktop (`auth session issue`, `__ssh-helper`, `service install`,
    `serve`), de modo que un symlink `t3` lo haga drop-in sin tocar el desktop.
-5. **Memoria.** Un hilo tokio `current_thread`, mimalloc, las proyecciones viven en SQLite y no en RAM, caché SQLite acotada,
-   sin mmap, snapshots serializados en streaming y buffers por suscriptor acotados.
+5. **Memoria.** Tokio `multi_thread` con `worker_threads(2)`, `max_blocking_threads(2)` y stacks de 512 KiB; estado `Arc<State>` con SQLite bajo `Mutex`, mimalloc, proyecciones en SQLite y no en RAM, caché SQLite acotada,
+   sin mmap, transporte genérico `serve_io` para TCP y `DuplexStream` de OmaBridge (§4.3), snapshots serializados en streaming y buffers por suscriptor acotados.
 6. **Proveedores por subproceso.** Claude: CLI `stream-json` directo, nada de Node. Codex: `app-server` JSON-RPC por stdio.
 7. **OmaBridge dentro del proceso**, ruteando streams al handler HTTP/WS sin TCP loopback, detrás de un feature.
 8. **Sin web SPA, MCP OAuth, guest share ni T3 Connect** en el alcance inicial.

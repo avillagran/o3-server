@@ -4,9 +4,10 @@ pub mod http;
 pub mod rpc;
 pub mod store;
 
-pub use http::serve;
+pub use http::{serve, serve_io};
 pub mod events;
 pub mod profile;
 pub mod provider;
 pub mod scopes;
+pub mod service;
 pub mod settings;

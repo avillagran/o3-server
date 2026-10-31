@@ -58,8 +58,8 @@ pub fn redact(v: &mut Value) {
                 m.insert("valueRedacted".into(), json!(true));
             }
             for (k, v) in m {
-                if sensitive(k) && v.as_str().is_some_and(|s| !s.is_empty()) {
-                    *v = json!(SENTINEL)
+                if sensitive(k) {
+                    redact_secret(v);
                 } else {
                     redact(v)
                 }
@@ -79,6 +79,7 @@ pub fn get(s: &State) -> Result<Value, String> {
     Ok(v)
 }
 pub fn update(s: &State, p: &Value) -> Result<Value, String> {
+    let _guard = s.settings_lock.lock().unwrap();
     if p.get("providerInstanceMutation").is_some() {
         return Err("providerInstanceMutation is not implemented".into());
     }
@@ -91,6 +92,11 @@ pub fn update(s: &State, p: &Value) -> Result<Value, String> {
     let mut patch = patch.clone();
     preserve_environment(&v, &mut patch);
     merge(&mut v, &patch);
+    if let Some(instances) = patch.get("providerInstances") {
+        let mut replacement = instances.clone();
+        retain_sentinels(&v["providerInstances"], &mut replacement);
+        v["providerInstances"] = replacement;
+    }
     crate::profile::atomic_json(&s.dir.join("settings.json"), &v).map_err(|e| e.to_string())?;
     s.notify();
     redact(&mut v);
@@ -121,4 +127,28 @@ pub fn config(s: &State) -> Result<Value, String> {
     Ok(
         json!({"environment":descriptor(s),"auth":auth_descriptor(),"cwd":std::env::current_dir().unwrap_or_default(),"keybindingsConfigPath":s.dir.join("keybindings.json"),"keybindings":[],"issues":[],"providers":[],"availableEditors":[],"observability":{"logsDirectoryPath":s.dir.join("logs"),"localTracingEnabled":false,"otlpTracesEnabled":false,"otlpMetricsEnabled":false,"otlpLogsEnabled":false},"settings":get(s)?,"shellResumeCompletionMarker":true,"threadResumeCompletionMarker":true,"shellThreadFamilies":false,"shellOlderSettled":false,"threadSnapshotPagination":false}),
     )
+}
+
+fn redact_secret(v: &mut Value) {
+    match v {
+        Value::String(s) if !s.is_empty() => *s = SENTINEL.into(),
+        Value::Object(m) => {
+            for v in m.values_mut() {
+                redact_secret(v)
+            }
+        }
+        _ => {}
+    }
+}
+
+fn retain_sentinels(old: &Value, new: &mut Value) {
+    if new == SENTINEL {
+        *new = old.clone();
+        return;
+    }
+    if let Some(map) = new.as_object_mut() {
+        for (k, v) in map {
+            retain_sentinels(&old[k], v);
+        }
+    }
 }

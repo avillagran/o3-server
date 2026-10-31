@@ -2,7 +2,7 @@
 use crate::{events, scopes, settings, store::State};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
-use std::{collections::BTreeMap, rc::Rc};
+use std::{collections::BTreeMap, sync::Arc};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
 pub const SERVER_VERSION: &str = concat!("o3-", env!("CARGO_PKG_VERSION"));
@@ -35,21 +35,44 @@ pub fn authorize(session: &Value, tag: &str, p: &Value) -> Result<(), Value> {
             )
         }
     };
-    if let Some(scope) = scopes::required(tag) {
-        check(scope)?;
-    }
     if tag == "server.updateSettings" {
-        if p["patch"].get("providerInstances").is_some()
-            || p.get("providerInstanceMutation").is_some()
-        {
+        let patch = p["patch"].as_object();
+        let providers = patch.is_some_and(|m| {
+            m.keys().any(|k| {
+                matches!(
+                    k.as_str(),
+                    "providers" | "providerInstances" | "usageLimitSources"
+                )
+            })
+        }) || p.get("providerInstanceMutation").is_some();
+        let settings = patch.is_some_and(|m| {
+            m.keys().any(|k| {
+                !matches!(
+                    k.as_str(),
+                    "providers" | "providerInstances" | "usageLimitSources"
+                )
+            })
+        }) || !providers;
+        if settings {
+            check("settings:write")?;
+        }
+        if providers {
             check("providers:manage")?;
         }
+    } else if tag == "projects.mutate" {
+        check("orchestration:operate")?;
+        if p.get("scripts").is_some() {
+            check("settings:write")?;
+        }
+    } else if let Some(scope) = scopes::required(tag) {
+        check(scope)?;
     }
     Ok(())
 }
-fn dispatch(s: &Rc<State>, tag: &str, p: &Value) -> Result<Value, Value> {
+fn dispatch(s: &Arc<State>, tag: &str, p: &Value) -> Result<Value, Value> {
     match tag {
         "server.getConfig"=>settings::config(s),"server.getSettings"=>settings::get(s),"server.updateSettings"=>settings::update(s,p),
+        "projects.mutate"=>return events::mutate_project(s,p).map_err(|message|json!({"_tag":"ProjectMutationError","message":message})),
         "orchestration.launchThread"=>return events::launch(s,p).map_err(|message|json!({"_tag":"OrchestrationV2ThreadLaunchError","commandId":p["commandId"],"projectId":p["projectId"],"message":message})),
         "orchestration.dispatchCommand"=>return events::dispatch(s,p).map_err(|m|json!({"_tag":"OrchestrationV2DispatchCommandError","commandId":p["commandId"],"message":m})),
         _=>Err(format!("o3-server does not implement {tag}")),
@@ -65,7 +88,7 @@ async fn send<S: AsyncRead + AsyncWrite + Unpin>(
 }
 pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
     mut ws: WebSocketStream<S>,
-    s: Rc<State>,
+    s: Arc<State>,
     session: Value,
 ) {
     let mut changed = s.changed.subscribe();
@@ -151,10 +174,10 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                                     if matches!(tag,"orchestration.subscribeShell"|"orchestration.subscribeThread"|"server.subscribeServerConfig") {
                                         if subscriptions.len()>=64||subscriptions.contains_key(&id.to_string()) {if send(&mut ws,exit(&id,Err(error("subscription limit or duplicate id".into())))).await.is_err(){return}continue;}
                                         // Register notification receiver before any snapshot; no await until cursor is installed.
-                                        let seq=events::sequence(&s.db.borrow()).unwrap_or(0);let after=p["afterSequence"].as_i64().filter(|v|*v<=seq);
+                                        let version=*changed.borrow();let seq=events::sequence(&s.db.lock().unwrap()).unwrap_or(0);let after=p["afterSequence"].as_i64().filter(|v|*v<=seq);
                                         let tid=if tag=="orchestration.subscribeThread" {p["threadId"].as_str().map(str::to_owned)}else{None};
-                                        let initial=if tag=="server.subscribeServerConfig" {settings::config(&s).map(|c|json!({"version":1,"type":"snapshot","config":c})).map(Some)}else if after.is_some(){Ok(None)}else if let Some(tid)=tid.as_deref(){events::bounded(&s,tid).map(|mut v|{v["kind"]=json!("snapshot");Some(v)})}else if tag=="orchestration.subscribeShell"{events::shell(&s).map(|v|Some(json!({"kind":"snapshot","snapshot":v})))}else{Err("threadId required".into())};
-                                        match initial {Ok(initial)=>{subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid,cursor:after.unwrap_or(seq),waiting:false,initial,marker:p["requestCompletionMarker"]==true,version:*changed.borrow()});},Err(e)=>{if send(&mut ws,exit(&id,Err(error(e)))).await.is_err(){return}}}
+                                        let initial=if tag=="orchestration.subscribeThread" && tid.is_none(){Err("threadId required".into())}else if tag=="server.subscribeServerConfig" {settings::config(&s).map(|c|json!({"version":1,"type":"snapshot","config":c})).map(Some)}else if after.is_some(){Ok(None)}else if let Some(tid)=tid.as_deref(){events::bounded(&s,tid).map(|mut v|{v["kind"]=json!("snapshot");Some(v)})}else if tag=="orchestration.subscribeShell"{events::shell(&s).map(|v|Some(json!({"kind":"snapshot","snapshot":v})))}else{Err("threadId required".into())};
+                                        match initial {Ok(initial)=>{subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid,cursor:after.unwrap_or_else(||initial.as_ref().and_then(|v|v.get("snapshotSequence").or_else(||v.get("snapshot").and_then(|s|s.get("snapshotSequence")))).and_then(Value::as_i64).unwrap_or(seq)),waiting:false,initial,marker:p["requestCompletionMarker"]==true,version});},Err(e)=>{if send(&mut ws,exit(&id,Err(error(e)))).await.is_err(){return}}}
                                     }else if send(&mut ws,exit(&id,dispatch(&s,tag,p))).await.is_err(){return}
                                 },_=>{}
                             }

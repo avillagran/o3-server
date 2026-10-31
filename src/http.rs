@@ -14,7 +14,7 @@ use hyper::{
 use hyper_util::rt::TokioIo;
 use serde_json::{json, Value};
 use sha1::{Digest, Sha1};
-use std::{convert::Infallible, rc::Rc};
+use std::{convert::Infallible, sync::Arc};
 use tokio::net::TcpListener;
 use tokio_tungstenite::{tungstenite::protocol::Role, WebSocketStream};
 
@@ -103,7 +103,7 @@ fn websocket_ticket(state: &State, session: &Value, usage: Option<&str>) -> Repl
     )
 }
 
-fn upgrade(state: Rc<State>, session: Value, mut request: Request<Incoming>) -> Reply {
+fn upgrade(state: Arc<State>, session: Value, mut request: Request<Incoming>) -> Reply {
     let Some(key) = request.headers().get(header::SEC_WEBSOCKET_KEY).cloned() else {
         return json_reply(
             StatusCode::BAD_REQUEST,
@@ -115,7 +115,7 @@ fn upgrade(state: Rc<State>, session: Value, mut request: Request<Incoming>) -> 
     hash.update(b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
     let accept = base64::engine::general_purpose::STANDARD.encode(hash.finalize());
     let upgrading = hyper::upgrade::on(&mut request);
-    tokio::task::spawn_local(async move {
+    tokio::task::spawn(async move {
         if let Ok(upgraded) = upgrading.await {
             rpc::run(
                 WebSocketStream::from_raw_socket(
@@ -152,7 +152,7 @@ fn upgrade(state: Rc<State>, session: Value, mut request: Request<Incoming>) -> 
     response
 }
 
-async fn route(state: Rc<State>, request: Request<Incoming>) -> Result<Reply, Infallible> {
+async fn route(state: Arc<State>, request: Request<Incoming>) -> Result<Reply, Infallible> {
     let path = request.uri().path().to_owned();
     Ok(match (request.method().clone(), path.as_str()) {
         (Method::GET, "/.well-known/t3/environment") => json_reply(
@@ -246,25 +246,29 @@ async fn route(state: Rc<State>, request: Request<Incoming>) -> Result<Reply, In
     })
 }
 
-pub async fn serve(listener: TcpListener, state: Rc<State>) -> std::io::Result<()> {
-    let local = tokio::task::LocalSet::new();
-    local
-        .run_until(async move {
-            loop {
-                let (socket, _) = listener.accept().await?;
-                let _ = socket.set_nodelay(true);
-                let state = state.clone();
-                tokio::task::spawn_local(async move {
-                    let service = service_fn(move |request| route(state.clone(), request));
-                    let connection = hyper::server::conn::http1::Builder::new()
-                        .serve_connection(TokioIo::new(socket), service)
-                        .with_upgrades();
-                    let _ = connection.await;
-                });
-            }
-        })
+/// TCP and embedded transports use exactly this connection service, including upgrades.
+pub async fn serve_io<I>(io: I, state: Arc<State>) -> std::io::Result<()>
+where
+    I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    let service = service_fn(move |request| route(state.clone(), request));
+    hyper::server::conn::http1::Builder::new()
+        .serve_connection(TokioIo::new(io), service)
+        .with_upgrades()
         .await
+        .map_err(std::io::Error::other)
 }
+pub async fn serve(listener: TcpListener, state: Arc<State>) -> std::io::Result<()> {
+    loop {
+        let (socket, _) = listener.accept().await?;
+        let _ = socket.set_nodelay(true);
+        let state = state.clone();
+        tokio::spawn(async move {
+            let _ = serve_io(socket, state).await;
+        });
+    }
+}
+
 fn protocol_error() -> Reply {
     json_reply(StatusCode::UPGRADE_REQUIRED,json!({"code":"orchestration_protocol_incompatible","message":"Update this client to one that supports orchestration protocol 2.","orchestrationProtocolVersion":2}).to_string())
 }
@@ -296,7 +300,11 @@ async fn auth_route(s: &State, session: &Value, request: Request<Incoming>) -> R
         let Some(b) = body(request).await else {
             return json_reply(StatusCode::BAD_REQUEST, "{}".into());
         };
-        match serde_json::from_slice(&b) {
+        match if b.is_empty() {
+            Ok(json!({}))
+        } else {
+            serde_json::from_slice(&b)
+        } {
             Ok(v) => v,
             Err(_) => return json_reply(StatusCode::BAD_REQUEST, "{}".into()),
         }
@@ -305,6 +313,15 @@ async fn auth_route(s: &State, session: &Value, request: Request<Incoming>) -> R
     };
     match (method, path.as_str()) {
         (Method::POST, "/api/auth/pairing-token") => {
+            if p.get("scopes").is_some()
+                && !p["scopes"].as_array().is_some_and(|a| {
+                    !a.is_empty()
+                        && a.iter().all(|v| v.is_string())
+                        && a.iter().enumerate().all(|(i, v)| !a[..i].contains(v))
+                })
+            {
+                return json_reply(StatusCode::BAD_REQUEST,json!({"_tag":"EnvironmentRequestInvalidError","code":"invalid_request","reason":"invalid_scopes","traceId":crate::store::random_id().unwrap_or_default()}).to_string());
+            }
             if let Some(scopes) = p["scopes"].as_array() {
                 for scope in scopes {
                     if let Some(r) = scope_reply(session, scope.as_str().unwrap_or("")) {
@@ -325,7 +342,7 @@ async fn auth_route(s: &State, session: &Value, request: Request<Incoming>) -> R
                                 .join(" ")
                         })
                         .unwrap_or_default();
-                    let _ = s.db.borrow().execute(
+                    let _ = s.db.lock().unwrap().execute(
                         "UPDATE auth_pairing_links SET scopes=? WHERE id=?",
                         rusqlite::params![scopes, v["id"].as_str()],
                     );
@@ -335,14 +352,14 @@ async fn auth_route(s: &State, session: &Value, request: Request<Incoming>) -> R
             }
         }
         (Method::GET, "/api/auth/clients") => {
-            let db = s.db.borrow();
+            let db = s.db.lock().unwrap();
             let mut q=db.prepare("SELECT session_id,subject,scopes,client,issued_at,expires_at FROM auth_sessions WHERE revoked_at IS NULL AND expires_at>?").unwrap();
             let rows=q.query_map([now_ms()],|r| {let sid:String=r.get(0)?;let scopes:String=r.get(2)?;let c:String=r.get(3)?;let c:Value=serde_json::from_str(&c).unwrap_or(json!({}));Ok(json!({"sessionId":sid,"subject":r.get::<_,String>(1)?,"scopes":scopes.split_whitespace().collect::<Vec<_>>(),"client":{"label":c["client_label"],"deviceType":c.get("client_device_type").cloned().unwrap_or(json!("unknown")),"os":c["client_os"]},"current":session["sid"]==sid,"method":"bearer-access-token","connected":false,"lastConnectedAt":null,"issuedAt":crate::store::iso(r.get(4)?),"expiresAt":crate::store::iso(r.get(5)?)}))}).unwrap();
             let clients: Vec<_> = rows.filter_map(Result::ok).collect();
             json_reply(StatusCode::OK, json!(clients).to_string())
         }
         (Method::GET, "/api/auth/pairing-links") => {
-            let db = s.db.borrow();
+            let db = s.db.lock().unwrap();
             let mut q=db.prepare("SELECT id,label,created_at,expires_at,scopes,subject FROM auth_pairing_links WHERE revoked_at IS NULL AND consumed_at IS NULL AND expires_at>?").unwrap();
             let rows=q.query_map([now_ms()],|r|Ok(json!({"id":r.get::<_,String>(0)?,"label":r.get::<_,Option<String>>(1)?,"createdAt":crate::store::iso(r.get(2)?),"expiresAt":crate::store::iso(r.get(3)?),"scopes":r.get::<_,String>(4)?.split_whitespace().collect::<Vec<_>>(),"subject":r.get::<_,String>(5)?}))).unwrap();
             let links: Vec<_> = rows.filter_map(Result::ok).collect();
@@ -361,14 +378,15 @@ async fn auth_route(s: &State, session: &Value, request: Request<Incoming>) -> R
             )
         }
         (Method::POST, "/api/auth/clients/revoke-others") => {
-            let n=s.db.borrow().execute("UPDATE auth_sessions SET revoked_at=? WHERE session_id!=? AND revoked_at IS NULL",rusqlite::params![now_ms(),session["sid"].as_str()]).unwrap_or(0);
+            let n=s.db.lock().unwrap().execute("UPDATE auth_sessions SET revoked_at=? WHERE session_id!=? AND revoked_at IS NULL",rusqlite::params![now_ms(),session["sid"].as_str()]).unwrap_or(0);
             s.notify();
             json_reply(StatusCode::OK, json!({"revokedCount":n}).to_string())
         }
         (Method::POST, "/api/auth/pairing-links/revoke") => {
             let n = s
                 .db
-                .borrow()
+                .lock()
+                .unwrap()
                 .execute(
                     "UPDATE auth_pairing_links SET revoked_at=? WHERE id=? AND revoked_at IS NULL",
                     rusqlite::params![now_ms(), p["id"].as_str()],

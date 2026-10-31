@@ -39,17 +39,20 @@ fn spawn_with_provider(fake: bool) -> (String, String) {
     std::thread::spawn(move || {
         let state = o3_server::store::State::open(&dir).unwrap();
         if fake {
-            *state.provider.borrow_mut() =
-                Some(std::rc::Rc::new(o3_server::provider::ScriptedProvider));
+            *state.provider.lock().unwrap() =
+                Some(std::sync::Arc::new(o3_server::provider::ScriptedProvider));
         }
-        tokio::runtime::Builder::new_current_thread()
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .max_blocking_threads(2)
+            .thread_stack_size(512 * 1024)
             .enable_all()
             .build()
             .unwrap()
             .block_on(async {
                 o3_server::serve(
                     tokio::net::TcpListener::from_std(listener).unwrap(),
-                    std::rc::Rc::new(state),
+                    std::sync::Arc::new(state),
                 )
                 .await
                 .unwrap();
@@ -310,17 +313,31 @@ fn launch_empty_thread_is_idempotent() {
     assert_eq!(a, c.rpc("orchestration.launchThread", p).unwrap());
     assert_eq!(a["projection"]["thread"]["title"], "Launch");
 }
+fn wait_status(c: &Connection, status: &str) -> serde_json::Value {
+    let start = std::time::Instant::now();
+    loop {
+        let s = snap(c, "t1");
+        if s["projection"]["runs"][0]["status"] == status {
+            return s;
+        }
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(3),
+            "provider did not reach {status}: {s}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
 #[test]
 fn fake_provider_emits_text_approval_and_completion() {
     let (_, c) = connected(true);
     create(&c, "t1");
     c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"send","messageId":"m1","threadId":"t1","text":"hello","attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
-    let s = snap(&c, "t1");
+    let s = wait_status(&c, "waiting");
     assert_eq!(s["projection"]["messages"].as_array().unwrap().len(), 2);
     assert_eq!(s["projection"]["runtimeRequests"][0]["status"], "pending");
     assert_eq!(s["projection"]["runs"][0]["status"], "waiting");
     c.rpc("orchestration.dispatchCommand",json!({"type":"runtime-request.respond","commandId":"approve","threadId":"t1","requestId":"approval-1","decision":"accept"})).unwrap();
-    let s = snap(&c, "t1");
+    let s = wait_status(&c, "completed");
     assert_eq!(s["projection"]["runs"][0]["status"], "completed");
     assert_eq!(s["projection"]["messages"][1]["streaming"], false);
 }
@@ -329,7 +346,7 @@ fn run_interrupt_and_input_dismiss() {
     let (_, c) = connected(true);
     create(&c, "t1");
     c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"send","messageId":"m1","threadId":"t1","text":"hello","attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
-    let s = snap(&c, "t1");
+    let s = wait_status(&c, "waiting");
     let rid = s["projection"]["runs"][0]["id"].clone();
     c.rpc(
         "orchestration.dispatchCommand",
@@ -411,4 +428,68 @@ fn auth_management_and_scopes() {
         false,
     )
     .unwrap();
+}
+
+#[test]
+fn multiplex_batches_ack_interrupt_eof_and_revocation() {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
+    let (base, secret) = spawn_server();
+    let paired = pair_bearer(
+        &base,
+        &secret,
+        None,
+        &PairingClient::default(),
+        &ConnectionOptions::default(),
+    )
+    .unwrap();
+    let token = paired.access_token.to_string();
+    let c = paired.connection(&ConnectionOptions::default()).unwrap();
+    tokio::runtime::Builder::new_multi_thread().worker_threads(2).max_blocking_threads(2).thread_stack_size(512*1024).enable_all().build().unwrap().block_on(async {
+  let addr=base.trim_start_matches("http://");let tcp=tokio::net::TcpStream::connect(addr).await.unwrap();let mut request=format!("ws://{addr}/ws?orchestrationProtocol=2").into_client_request().unwrap();request.headers_mut().insert("Authorization",format!("Bearer {token}").parse().unwrap());let (mut ws,_)=tokio_tungstenite::client_async(request,tcp).await.unwrap();
+  ws.send(Message::Text(json!([{"_tag":"Request","id":"stream","tag":"orchestration.subscribeShell","payload":{"requestCompletionMarker":true}},{"_tag":"Request","id":"unary","tag":"server.getConfig","payload":{}},{"_tag":"Ping"}]).to_string().into())).await.unwrap();
+  let mut frames=Vec::new();for _ in 0..3 {let v:serde_json::Value=serde_json::from_str(ws.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();frames.push(v);}
+  assert!(frames.iter().any(|v|v["_tag"]=="Pong"));assert!(frames.iter().any(|v|v["requestId"]=="unary"&&v["_tag"]=="Exit"));assert!(frames.iter().any(|v|v["requestId"]=="stream"&&v["_tag"]=="Chunk"));
+  // No second chunk until Ack.
+  assert!(tokio::time::timeout(std::time::Duration::from_millis(50),ws.next()).await.is_err());
+  ws.send(Message::Text(json!({"_tag":"Ack","requestId":"stream"}).to_string().into())).await.unwrap();let v:serde_json::Value=serde_json::from_str(ws.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();assert_eq!(v["values"][0]["kind"],"synchronized");
+  ws.send(Message::Text(json!({"_tag":"Interrupt","requestId":"stream"}).to_string().into())).await.unwrap();let v:serde_json::Value=serde_json::from_str(ws.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();assert_eq!(v["_tag"],"Exit");assert_eq!(v["requestId"],"stream");
+  std::thread::spawn(move || {let clients=c.request_json("GET","/api/auth/clients",None,false).unwrap();let sid=clients[0]["sessionId"].as_str().unwrap();let admin_grant=c.request_json("POST","/api/auth/pairing-token",Some(&json!({})),false).unwrap();let admin=pair(&base,admin_grant["credential"].as_str().unwrap()).unwrap();admin.request_json("POST","/api/auth/clients/revoke",Some(&json!({"sessionId":sid})),false).unwrap();}).join().unwrap();
+  assert!(matches!(tokio::time::timeout(std::time::Duration::from_secs(3),ws.next()).await.unwrap(),Some(Ok(Message::Close(_)))|None));
+ });
+}
+#[test]
+fn protocol_rejected_before_auth() {
+    use std::io::{Read, Write};
+    let (base, _) = spawn_server();
+    for path in ["/ws?orchestrationProtocol=1", "/api/orchestration/shell"] {
+        let mut s = std::net::TcpStream::connect(base.trim_start_matches("http://")).unwrap();
+        s.write_all(format!("GET {path} HTTP/1.0\r\nHost: localhost\r\n\r\n").as_bytes())
+            .unwrap();
+        let mut reply = String::new();
+        s.read_to_string(&mut reply).unwrap();
+        assert!(reply.lines().next().unwrap().contains("426"), "{reply}");
+        assert!(reply.contains("orchestration_protocol_incompatible"));
+    }
+}
+
+#[test]
+fn projects_share_the_thread_sequence_and_replay_log() {
+    let (_, c) = connected(false);
+    let p = json!({"type":"project.create","commandId":"project-create","projectId":"p1","title":"Project","workspaceRoot":"/tmp","scripts":[]});
+    let result = c.rpc("projects.mutate", p.clone()).unwrap();
+    assert_eq!(result, c.rpc("projects.mutate", p).unwrap());
+    let shell = c
+        .request_json("GET", "/api/orchestration/shell", None, true)
+        .unwrap();
+    assert_eq!(shell["projects"][0]["id"], "p1");
+    let seq = shell["snapshotSequence"].as_i64().unwrap();
+    create(&c, "t1");
+    assert!(snap(&c, "t1")["snapshotSequence"].as_i64().unwrap() > seq);
+    let event = stream_first(
+        &c,
+        "orchestration.subscribeShell",
+        json!({"afterSequence":0}),
+    );
+    assert_eq!(event["kind"], "project.updated");
 }

@@ -7,6 +7,10 @@ pub struct RunInput {
     pub cwd: std::path::PathBuf,
     pub text: String,
     pub model_selection: serde_json::Value,
+    pub runtime_mode: String,
+    pub interaction_mode: String,
+    pub attachments: serde_json::Value,
+    pub context: Option<serde_json::Value>,
 }
 pub enum ProviderEvent {
     Started,
@@ -20,18 +24,20 @@ pub enum ProviderControl {
     Respond {
         request_id: String,
         decision: serde_json::Value,
+        feedback: Option<String>,
+        answers: Option<serde_json::Value>,
     },
 }
 /// Implementations must await output capacity, stop on cancellation/receiver drop,
-/// and reap every subprocess before resolving. No Send requirement on current_thread.
-pub trait Provider {
+/// and reap every subprocess before resolving. Futures must be Send for the shared two-worker runtime.
+pub trait Provider: Send + Sync + 'static {
     fn execute<'a>(
         &'a self,
         input: RunInput,
         output: mpsc::Sender<ProviderEvent>,
         control: mpsc::Receiver<ProviderControl>,
         cancel: watch::Receiver<bool>,
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + 'a>>;
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>>;
 }
 pub struct ScriptedProvider;
 impl Provider for ScriptedProvider {
@@ -41,7 +47,7 @@ impl Provider for ScriptedProvider {
         output: mpsc::Sender<ProviderEvent>,
         mut control: mpsc::Receiver<ProviderControl>,
         mut cancel: watch::Receiver<bool>,
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(async move {
             for event in [
                 ProviderEvent::Started,
@@ -59,25 +65,48 @@ impl Provider for ScriptedProvider {
 }
 
 /// Run supervisor: only bounded channels and handles live in RAM; every output is persisted.
-pub(crate) fn start(s: std::rc::Rc<crate::store::State>, tid: String, rid: String, text: String) {
-    let Some(provider) = s.provider.borrow().clone() else {
+pub(crate) fn start(
+    s: std::sync::Arc<crate::store::State>,
+    tid: String,
+    rid: String,
+    text: String,
+) {
+    let Some(provider) = s.provider.lock().unwrap().clone() else {
         return;
     };
     let (output, mut events) = mpsc::channel(16);
     let (control, controls) = mpsc::channel(8);
     let (cancel, cancellation) = watch::channel(false);
-    s.active.borrow_mut().insert(rid.clone(), control);
-    tokio::task::spawn_local(async move {
-        let input = RunInput {
-            thread_id: tid.clone(),
-            run_id: rid.clone(),
-            cwd: s.dir.clone(),
-            text,
-            model_selection: crate::events::get(&s.db.borrow(), "thread", &tid).unwrap_or_default()
-                ["modelSelection"]
-                .clone(),
+    s.active.lock().unwrap().insert(rid.clone(), control);
+    tokio::task::spawn(async move {
+        let input = {
+            let db = s.db.lock().unwrap();
+            let t = crate::events::get(&db, "thread", &tid).unwrap_or_default();
+            let r = crate::events::get(&db, "runs", &rid).unwrap_or_default();
+            let m = crate::events::get(&db, "messages", r["userMessageId"].as_str().unwrap_or(""))
+                .unwrap_or_default();
+            let cwd = t["worktreePath"]
+                .as_str()
+                .map(std::path::PathBuf::from)
+                .or_else(|| {
+                    crate::events::get(&db, "project", t["projectId"].as_str().unwrap_or(""))
+                        .ok()
+                        .and_then(|p| p["workspaceRoot"].as_str().map(std::path::PathBuf::from))
+                })
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+            RunInput {
+                thread_id: tid.clone(),
+                run_id: rid.clone(),
+                cwd,
+                text,
+                model_selection: t["modelSelection"].clone(),
+                runtime_mode: t["runtimeMode"].as_str().unwrap_or("full-access").into(),
+                interaction_mode: t["interactionMode"].as_str().unwrap_or("default").into(),
+                attachments: m["attachments"].clone(),
+                context: m.get("context").cloned(),
+            }
         };
-        let mut task = tokio::task::spawn_local(async move {
+        let mut task = tokio::task::spawn(async move {
             provider
                 .execute(input, output, controls, cancellation)
                 .await
@@ -87,7 +116,7 @@ pub(crate) fn start(s: std::rc::Rc<crate::store::State>, tid: String, rid: Strin
             if persist(&s, &tid, &rid, event).is_err() {
                 break;
             }
-            let interrupted = crate::events::get(&s.db.borrow(), "runs", &rid)
+            let interrupted = crate::events::get(&s.db.lock().unwrap(), "runs", &rid)
                 .is_ok_and(|r| r["status"] == "interrupted");
             if interrupted {
                 break;
@@ -95,8 +124,9 @@ pub(crate) fn start(s: std::rc::Rc<crate::store::State>, tid: String, rid: Strin
         }
         let _ = cancel.send(true);
         tokio::select! {r=&mut task=>{finished=r.is_ok_and(|r|r.is_ok())},_=tokio::time::sleep(std::time::Duration::from_secs(2))=>{task.abort();let _=task.await;}}
-        s.active.borrow_mut().remove(&rid);
-        if let Ok(run) = crate::events::get(&s.db.borrow(), "runs", &rid) {
+        s.active.lock().unwrap().remove(&rid);
+        let final_run = crate::events::get(&s.db.lock().unwrap(), "runs", &rid);
+        if let Ok(run) = final_run {
             if !matches!(
                 run["status"].as_str(),
                 Some("completed" | "interrupted" | "failed")
@@ -129,7 +159,7 @@ fn persist(
         store::{iso, now_ms},
     };
     use serde_json::json;
-    let mut db = s.db.borrow_mut();
+    let mut db = s.db.lock().unwrap();
     let tx = db.transaction().map_err(|e| e.to_string())?;
     let thread = get(&tx, "thread", tid)?;
     let mut run = get(&tx, "runs", rid)?;

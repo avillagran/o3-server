@@ -3,8 +3,8 @@ use crate::auth;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 use std::{
-    cell::RefCell,
     path::{Path, PathBuf},
+    sync::Mutex,
 };
 
 pub const STANDARD_SCOPES: [&str; 16] = [
@@ -27,18 +27,19 @@ pub const STANDARD_SCOPES: [&str; 16] = [
 ];
 
 pub struct State {
-    pub db: RefCell<Connection>,
+    pub db: Mutex<Connection>,
     pub signing_key: Vec<u8>,
     pub environment_id: String,
     pub label: String,
     pub dir: PathBuf,
-    pub provider: RefCell<Option<std::rc::Rc<dyn crate::provider::Provider>>>,
-    pub active: RefCell<
+    pub provider: Mutex<Option<std::sync::Arc<dyn crate::provider::Provider>>>,
+    pub active: Mutex<
         std::collections::BTreeMap<
             String,
             tokio::sync::mpsc::Sender<crate::provider::ProviderControl>,
         >,
     >,
+    pub settings_lock: Mutex<()>,
     pub changed: tokio::sync::watch::Sender<u64>,
 }
 
@@ -72,7 +73,7 @@ pub fn random_id() -> Result<String, String> {
 }
 
 const SCHEMA: &str = "
-PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA cache_size=-2048; PRAGMA mmap_size=0;
+PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA journal_size_limit=33554432; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA cache_size=-2048; PRAGMA mmap_size=0;
 CREATE TABLE IF NOT EXISTS auth_sessions(
   session_id TEXT PRIMARY KEY, subject TEXT NOT NULL, scopes TEXT NOT NULL, method TEXT NOT NULL,
   client TEXT NOT NULL, issued_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, revoked_at INTEGER);
@@ -101,10 +102,11 @@ impl State {
         let (changed, _) = tokio::sync::watch::channel(0);
         crate::events::initialize(&db)?;
         Ok(Self {
-            provider: RefCell::new(None),
-            active: RefCell::new(std::collections::BTreeMap::new()),
+            settings_lock: Mutex::new(()),
+            provider: Mutex::new(None),
+            active: Mutex::new(std::collections::BTreeMap::new()),
             changed,
-            db: RefCell::new(db),
+            db: Mutex::new(db),
             signing_key,
             environment_id,
             label,
@@ -115,7 +117,7 @@ impl State {
     /// A one-use pairing secret, as `/api/auth/pairing-token` hands out.
     pub fn issue_pairing(&self, label: Option<&str>, ttl_ms: i64) -> Result<Value, String> {
         let (id, credential, now) = (random_id()?, random_id()?, now_ms());
-        self.db.borrow().execute(
+        self.db.lock().unwrap().execute(
             "INSERT INTO auth_pairing_links(id,credential,scopes,subject,label,created_at,expires_at) VALUES(?,?,?,?,?,?,?)",
             params![id, credential, STANDARD_SCOPES.join(" "), "owner", label, now, now + ttl_ms],
         ).map_err(|e| e.to_string())?;
@@ -134,7 +136,7 @@ impl State {
         client: &Value,
     ) -> Result<Option<Value>, String> {
         let now = now_ms();
-        let db = self.db.borrow();
+        let db = self.db.lock().unwrap();
         let grant: Option<(String, String)> = db.query_row(
             "UPDATE auth_pairing_links SET consumed_at=?1 WHERE credential=?2 AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>?1 RETURNING scopes,subject",
             params![now, credential], |row| Ok((row.get(0)?, row.get(1)?)),
@@ -178,13 +180,14 @@ impl State {
 
     fn live(&self, claims: Value, now: i64) -> Option<Value> {
         let sid = claims["sid"].as_str()?;
-        self.db.borrow().query_row(
+        self.db.lock().unwrap().query_row(
             "SELECT 1 FROM auth_sessions WHERE session_id=? AND revoked_at IS NULL AND expires_at>?",
             params![sid, now], |_| Ok(()),
         ).optional().ok()??;
         let (scopes, subject): (String, String) = self
             .db
-            .borrow()
+            .lock()
+            .unwrap()
             .query_row(
                 "SELECT scopes,subject FROM auth_sessions WHERE session_id=?",
                 [sid],
@@ -206,7 +209,7 @@ impl State {
     ) -> Result<String, String> {
         let sid = random_id()?;
         let now = now_ms();
-        self.db.borrow().execute("INSERT INTO auth_sessions(session_id,subject,scopes,method,client,issued_at,expires_at) VALUES(?,?,?,?,?,?,?)",params![sid,subject,scopes.join(" "),"bearer-access-token",json!({"client_label":label}).to_string(),now,now+ttl]).map_err(|e|e.to_string())?;
+        self.db.lock().unwrap().execute("INSERT INTO auth_sessions(session_id,subject,scopes,method,client,issued_at,expires_at) VALUES(?,?,?,?,?,?,?)",params![sid,subject,scopes.join(" "),"bearer-access-token",json!({"client_label":label}).to_string(),now,now+ttl]).map_err(|e|e.to_string())?;
         Ok(auth::sign(
             &json!({"v":1,"kind":"session","sid":sid,"sub":subject,"scopes":scopes,"method":"bearer-access-token","iat":now,"exp":now+ttl}),
             &self.signing_key,
@@ -221,7 +224,8 @@ impl State {
     pub fn revoke_session(&self, sid: &str) -> Result<bool, String> {
         self.notify();
         self.db
-            .borrow()
+            .lock()
+            .unwrap()
             .execute(
                 "UPDATE auth_sessions SET revoked_at=? WHERE session_id=? AND revoked_at IS NULL",
                 params![now_ms(), sid],

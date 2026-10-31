@@ -3,7 +3,8 @@
 import collections, json, pathlib
 root = pathlib.Path(__file__).resolve().parent.parent / "docs"
 contract = json.loads((root / "t3-contract.json").read_text())
-status = json.loads((root / "compat-status.json").read_text())["methods"]
+document = json.loads((root / "compat-status.json").read_text())
+status = document["methods"]
 MARK = {"done": "✅", "partial": "🟡", "todo": "⬜", "skip": "🚫"}
 groups = collections.defaultdict(list)
 for tag, meta in sorted(contract["methods"].items()):
@@ -20,4 +21,9 @@ for group in sorted(groups):
         kind = "stream" if meta.get("stream") else "unary"
         out.append(f"| {MARK[s.get('status', 'todo')]} | `{tag}` | {s.get('priority', '?')} | {kind} | `{meta.get('scope')}` | {s.get('note', '')} |")
     out.append("")
+out += ["## Commands", "", "| Estado | Command | Prioridad | Nota |", "|---|---|---|---|"]
+for tag in contract["commandTypes"]:
+    item=document.get("commands",{}).get(tag,{})
+    out.append(f"| {MARK[item.get('status','todo')]} | `{tag}` | {item.get('priority','?')} | {item.get('note','')} |")
+out.append("")
 (root / "COMPATIBILITY.md").write_text("\n".join(out))

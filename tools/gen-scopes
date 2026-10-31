@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+"""Generate static RPC authorization scopes from the pinned contract."""
+import json,pathlib
+root=pathlib.Path(__file__).resolve().parent.parent
+methods=json.loads((root/'docs/t3-contract.json').read_text())['methods']
+lines=['//! Generated from docs/t3-contract.json. Regenerate with tools/gen-scopes.',"pub fn required(tag: &str) -> Option<&'static str> {",'    match tag {']
+for tag,meta in sorted(methods.items()):
+    if meta.get('scope'): lines.append(f'        {json.dumps(tag)} => Some({json.dumps(meta["scope"].split(" +")[0])}),')
+lines+=['        _ => None,','    }','}']
+(root/'src/scopes.rs').write_text('\n'.join(lines)+'\n')
