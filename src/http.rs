@@ -4,7 +4,8 @@ use crate::{
     store::{now_ms, State},
 };
 use base64::Engine;
-use http_body_util::{BodyExt, Full, Limited};
+use crate::body::{self, Body};
+use http_body_util::{BodyExt, Limited};
 use hyper::{
     body::{Bytes, Incoming},
     header,
@@ -18,15 +19,11 @@ use std::{convert::Infallible, sync::Arc};
 use tokio::net::TcpListener;
 use tokio_tungstenite::{tungstenite::protocol::Role, WebSocketStream};
 
-type Reply = Response<http_body_util::combinators::UnsyncBoxBody<Bytes, std::io::Error>>;
+type Reply = Response<Body>;
 const AUTH_BODY_LIMIT: usize = 64 * 1024;
 
 fn json_reply(status: StatusCode, body: String) -> Reply {
-    let mut response = Response::new(
-        Full::new(Bytes::from(body))
-            .map_err(|e| match e {})
-            .boxed_unsync(),
-    );
+    let mut response = Response::new(body::full(body));
     *response.status_mut() = status;
     response.headers_mut().insert(
         header::CONTENT_TYPE,
@@ -138,11 +135,7 @@ fn upgrade(state: Arc<State>, session: Value, mut request: Request<Incoming>) ->
             .await;
         }
     });
-    let mut response = Response::new(
-        Full::new(Bytes::new())
-            .map_err(|e| match e {})
-            .boxed_unsync(),
-    );
+    let mut response = Response::new(body::empty());
     *response.status_mut() = StatusCode::SWITCHING_PROTOCOLS;
     let headers = response.headers_mut();
     headers.insert(
@@ -168,6 +161,16 @@ async fn route(state: Arc<State>, request: Request<Incoming>) -> Result<Reply, I
             crate::settings::descriptor(&state).to_string(),
         ),
         (Method::POST, "/oauth/token") => token(&state, request).await,
+        (Method::POST, p) if p.starts_with(crate::assets::UPLOAD_PREFIX) => {
+            let token = p[crate::assets::UPLOAD_PREFIX.len()..].to_owned();
+            if token.is_empty() {
+                return Ok(json_reply(StatusCode::NOT_FOUND, "Not Found".into()));
+            }
+            Box::pin(crate::assets::upload(&state, &token, request)).await
+        }
+        (Method::GET | Method::HEAD, p) if p.starts_with(crate::assets::ASSET_PREFIX) => {
+            Box::pin(crate::assets::serve(&state, &request)).await
+        }
         (_, "/ws") => {
             if query(&request, "orchestrationProtocol").as_deref() != Some("2") {
                 return Ok(protocol_error());
@@ -216,6 +219,27 @@ async fn route(state: Arc<State>, request: Request<Incoming>) -> Result<Reply, I
                     websocket_ticket(&state, &session, Some("media"))
                 }
                 _ if path.starts_with("/api/auth/") => auth_route(&state, &session, request).await,
+                (Method::GET, "/api/projects") => {
+                    if let Some(r) = scope_reply(&session, "orchestration:read") {
+                        return Ok(r);
+                    }
+                    result_reply(crate::projects::snapshot(&state))
+                }
+                (Method::POST, "/api/projects/mutate") => {
+                    let Some(b) = body(request).await else {
+                        return Ok(json_reply(StatusCode::BAD_REQUEST, "{}".into()));
+                    };
+                    let Ok(mutation) = serde_json::from_slice::<Value>(&b) else {
+                        return Ok(json_reply(StatusCode::BAD_REQUEST, "{}".into()));
+                    };
+                    if let Err(e) = crate::rpc::authorize(&session, "projects.mutate", &mutation) {
+                        return Ok(json_reply(StatusCode::FORBIDDEN, json!({"_tag":"EnvironmentScopeRequiredError","code":"insufficient_scope","requiredScope":e["requiredScope"],"traceId":crate::store::random_id().unwrap_or_default()}).to_string()));
+                    }
+                    match crate::projects::mutate(&state, &mutation) {
+                        Ok(project) => json_reply(StatusCode::OK, project.to_string()),
+                        Err(_) => json_reply(StatusCode::BAD_REQUEST, json!({"_tag":"EnvironmentRequestInvalidError","code":"invalid_request","reason":"invalid_command","traceId":crate::store::random_id().unwrap_or_default()}).to_string()),
+                    }
+                }
                 (Method::GET, "/api/orchestration/shell") => {
                     if let Some(r) = scope_reply(&session, "orchestration:read") {
                         return Ok(r);

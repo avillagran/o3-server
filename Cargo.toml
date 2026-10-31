@@ -7,7 +7,7 @@ description = "Lean Rust server, wire-compatible with T3 Code clients, with OmaB
 
 [dependencies]
 libc = "0.2"
-tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "net", "io-util", "time", "sync", "macros", "signal", "process"] }
+tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "net", "io-util", "time", "sync", "macros", "signal", "process", "fs"] }
 hyper = { version = "1", default-features = false, features = ["http1", "server"] }
 hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
 http-body-util = "0.1"

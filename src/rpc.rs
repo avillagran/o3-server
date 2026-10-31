@@ -16,6 +16,8 @@ struct Subscription {
     snapshot: Option<crate::snapshot::Receiver>,
     marker: bool,
     version: u64,
+    /// Progress items of a producer task (`git.runStackedAction`) instead of log replay.
+    events: Option<tokio::sync::mpsc::Receiver<crate::stacked::Item>>,
 }
 fn exit(id: &Value, result: Result<Value, Value>) -> Value {
     json!({"_tag":"Exit","requestId":id,"exit":match result {Ok(v)=>json!({"_tag":"Success","value":v}),Err(e)=>json!({"_tag":"Failure","cause":[{"_tag":"Fail","error":e}]})}})
@@ -80,7 +82,7 @@ fn dispatch(s: &Arc<State>, tag: &str, p: &Value) -> Result<Value, Value> {
         "server.getConfig"=>settings::config(s),
         "server.getSettings"=>return settings::get(s).map_err(|message|json!({"_tag":"ServerSettingsError","settingsPath":s.dir.join("settings.json"),"operation":"read","message":message})),
         "server.updateSettings"=>return settings::update(s,p).map_err(|message|json!({"_tag":"ServerSettingsError","settingsPath":s.dir.join("settings.json"),"operation":"write","message":message})),
-        "projects.mutate"=>return events::mutate_project(s,p).map_err(|message|json!({"_tag":"ProjectMutationError","message":message})),
+        "projects.mutate"=>return crate::projects::mutate(s,p).map_err(|message|json!({"_tag":"ProjectMutationError","message":message})),
         "orchestration.launchThread"=>return events::launch(s,p).map_err(|message|json!({"_tag":"OrchestrationV2ThreadLaunchError","commandId":p["commandId"],"projectId":p["projectId"],"message":message})),
         "orchestration.dispatchCommand"=>return events::dispatch(s,p).map_err(|m|json!({"_tag":"OrchestrationV2DispatchCommandError","commandId":p["commandId"],"message":m})),
         _=>Err(format!("o3-server does not implement {tag}")),
@@ -103,12 +105,17 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
     let mut subscriptions: BTreeMap<String, Subscription> = BTreeMap::new();
     let mut eof = false;
     let mut expiry = tokio::time::interval(std::time::Duration::from_secs(1));
+    // Results of spawned unary calls, and the wake-up for action streams. At most 16 calls are in flight.
+    let (done_tx, mut done_rx) = tokio::sync::mpsc::unbounded_channel::<Value>();
+    let wake = Arc::new(tokio::sync::Notify::new());
+    let inflight = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     loop {
         if !s.session_live(&session) {
             let _ = ws.close(None).await;
             break;
         }
-        for sub in subscriptions.values_mut().filter(|sub| !sub.waiting) {
+        let mut finished: Vec<(String, Result<(), Value>)> = Vec::new();
+        for (key, sub) in subscriptions.iter_mut().filter(|(_, sub)| !sub.waiting) {
             if let Some(mut rx) = sub.snapshot.take() {
                 use tokio_tungstenite::tungstenite::protocol::frame::{
                     coding::{Data, OpCode},
@@ -141,7 +148,20 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                 sub.waiting = true;
                 continue;
             }
-            let item = if let Some(v) = sub.initial.take() {
+            let item = if let Some(rx) = sub.events.as_mut() {
+                match rx.try_recv() {
+                    Ok(crate::stacked::Item::Event(v)) => Some(v),
+                    Ok(crate::stacked::Item::End(r)) => {
+                        finished.push((key.clone(), r));
+                        None
+                    }
+                    Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                        finished.push((key.clone(), Ok(())));
+                        None
+                    }
+                    Err(_) => None,
+                }
+            } else if let Some(v) = sub.initial.take() {
                 Some(v)
             } else if matches!(
                 sub.tag.as_str(),
@@ -191,12 +211,24 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                 sub.waiting = true;
             }
         }
+        for (key, result) in finished {
+            if let Some(sub) = subscriptions.remove(&key) {
+                let v = match result {
+                    Ok(()) => json!({"_tag":"Exit","requestId":sub.id,"exit":{"_tag":"Success"}}),
+                    Err(e) => json!({"_tag":"Exit","requestId":sub.id,"exit":{"_tag":"Failure","cause":[{"_tag":"Fail","error":e}]}}),
+                };
+                if send(&mut ws, v).await.is_err() {
+                    return;
+                }
+            }
+        }
         if eof && subscriptions.is_empty() {
             let _ = ws.close(None).await;
             break;
         }
         tokio::select! {
-            _=changed.changed()=>{},_=expiry.tick()=>{},
+            _=changed.changed()=>{},_=expiry.tick()=>{},_=wake.notified()=>{},
+            Some(frame)=done_rx.recv()=>{if send(&mut ws,frame).await.is_err(){return}},
             message=ws.next()=>{
                 let Some(Ok(message))=message else {break};
                 match message {
@@ -214,7 +246,18 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                                 "Request" if !eof=>{
                                     let tag=frame["tag"].as_str().unwrap_or("");let p=&frame["payload"];
                                     if let Err(e)=authorize(&session,tag,p){if send(&mut ws,exit(&id,Err(e))).await.is_err(){return}continue;}
-                                    if matches!(tag,"orchestration.subscribeShell"|"orchestration.subscribeThread"|"server.subscribeServerConfig"|"subscribeServerConfig") {
+                                    if tag==crate::ext::STREAM_ACTION {
+                                        if subscriptions.len()>=64||subscriptions.contains_key(&id.to_string()) {if send(&mut ws,exit(&id,Err(error("subscription limit or duplicate id".into())))).await.is_err(){return}continue;}
+                                        if let Err(e)=crate::stacked::validate(p){if send(&mut ws,exit(&id,Err(e))).await.is_err(){return}continue;}
+                                        let (queue,rx)=tokio::sync::mpsc::channel(16);
+                                        tokio::spawn(crate::stacked::run(p.clone(),crate::stacked::Tx{queue,wake:wake.clone()}));
+                                        subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid:None,cursor:0,waiting:false,initial:None,marker:false,version:0,snapshot:None,events:Some(rx)});
+                                    }else if crate::ext::handles(tag) {
+                                        if inflight.load(std::sync::atomic::Ordering::Relaxed)>=16 {if send(&mut ws,exit(&id,Err(error("too many concurrent requests on this socket".into())))).await.is_err(){return}continue;}
+                                        inflight.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
+                                        let (s2,tag2,p2,tx2,count)=(s.clone(),tag.to_owned(),p.clone(),done_tx.clone(),inflight.clone());
+                                        tokio::spawn(async move{let r=crate::ext::call(&s2,&tag2,p2).await;count.fetch_sub(1,std::sync::atomic::Ordering::Relaxed);let _=tx2.send(exit(&id,r));});
+                                    }else if matches!(tag,"orchestration.subscribeShell"|"orchestration.subscribeThread"|"server.subscribeServerConfig"|"subscribeServerConfig") {
                                         if subscriptions.len()>=64||subscriptions.contains_key(&id.to_string()) {if send(&mut ws,exit(&id,Err(error("subscription limit or duplicate id".into())))).await.is_err(){return}continue;}
                                         // Register notification receiver before any snapshot; no await until cursor is installed.
                                         let version=*changed.borrow();let seq=events::sequence(&s.db.lock().unwrap()).unwrap_or(0);let after=p["afterSequence"].as_i64().filter(|v|*v<=seq);
@@ -230,7 +273,7 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                                             }
                                         }
                                         let initial=if config {settings::config(&s).ok().map(|c|json!({"version":1,"type":"snapshot","config":c}))}else{None};
-                                        subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid,cursor:after.unwrap_or(boundary),waiting:false,initial,snapshot,marker:p["requestCompletionMarker"]==true,version});
+                                        subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid,cursor:after.unwrap_or(boundary),waiting:false,initial,snapshot,events:None,marker:p["requestCompletionMarker"]==true,version});
                                     }else if send(&mut ws,exit(&id,dispatch(&s,tag,p))).await.is_err(){return}
                                 },_=>{}
                             }
