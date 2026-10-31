@@ -18,11 +18,15 @@ use std::{convert::Infallible, sync::Arc};
 use tokio::net::TcpListener;
 use tokio_tungstenite::{tungstenite::protocol::Role, WebSocketStream};
 
-type Reply = Response<Full<Bytes>>;
+type Reply = Response<http_body_util::combinators::UnsyncBoxBody<Bytes, std::io::Error>>;
 const AUTH_BODY_LIMIT: usize = 64 * 1024;
 
 fn json_reply(status: StatusCode, body: String) -> Reply {
-    let mut response = Response::new(Full::new(Bytes::from(body)));
+    let mut response = Response::new(
+        Full::new(Bytes::from(body))
+            .map_err(|e| match e {})
+            .boxed_unsync(),
+    );
     *response.status_mut() = status;
     response.headers_mut().insert(
         header::CONTENT_TYPE,
@@ -134,7 +138,11 @@ fn upgrade(state: Arc<State>, session: Value, mut request: Request<Incoming>) ->
             .await;
         }
     });
-    let mut response = Response::new(Full::new(Bytes::new()));
+    let mut response = Response::new(
+        Full::new(Bytes::new())
+            .map_err(|e| match e {})
+            .boxed_unsync(),
+    );
     *response.status_mut() = StatusCode::SWITCHING_PROTOCOLS;
     let headers = response.headers_mut();
     headers.insert(
@@ -212,7 +220,7 @@ async fn route(state: Arc<State>, request: Request<Incoming>) -> Result<Reply, I
                     if let Some(r) = scope_reply(&session, "orchestration:read") {
                         return Ok(r);
                     }
-                    result_reply(crate::events::shell(&state))
+                    stream_reply(&state, None, crate::snapshot::Options::default())
                 }
                 (Method::GET, p)
                     if p.starts_with("/api/orchestration/threads/") && p.ends_with("/history") =>
@@ -238,7 +246,17 @@ async fn route(state: Arc<State>, request: Request<Incoming>) -> Result<Reply, I
                     let tid = p
                         .trim_start_matches("/api/orchestration/threads/")
                         .trim_end_matches("/bounded");
-                    result_reply(crate::events::bounded(&state, tid))
+                    stream_reply(
+                        &state,
+                        Some(tid.to_owned()),
+                        crate::snapshot::Options {
+                            bounded: true,
+                            dedupe: query(&request, "dedupeBodies").as_deref() == Some("1"),
+                            compact_items: query(&request, "compactTurnItems").as_deref()
+                                == Some("1"),
+                            compact_ids: query(&request, "compactIds").as_deref() == Some("1"),
+                        },
+                    )
                 }
                 _ => json_reply(StatusCode::NOT_FOUND, r#"{"code":"not_found"}"#.into()),
             }
@@ -259,6 +277,7 @@ where
         .map_err(std::io::Error::other)
 }
 pub async fn serve(listener: TcpListener, state: Arc<State>) -> std::io::Result<()> {
+    crate::recovery::recover(&mut state.db.lock().unwrap()).map_err(std::io::Error::other)?;
     loop {
         let (socket, _) = listener.accept().await?;
         let _ = socket.set_nodelay(true);
@@ -395,5 +414,28 @@ async fn auth_route(s: &State, session: &Value, request: Request<Incoming>) -> R
             json_reply(StatusCode::OK, json!({"revoked":n>0}).to_string())
         }
         _ => json_reply(StatusCode::NOT_FOUND, "{}".into()),
+    }
+}
+
+fn stream_reply(s: &State, tid: Option<String>, opts: crate::snapshot::Options) -> Reply {
+    match crate::snapshot::start(s, tid, opts, None) {
+        Err(e) => result_reply(Err(e)),
+        Ok((_, rx)) => {
+            let stream = futures_util::stream::unfold(rx, |mut rx| async move {
+                rx.recv().await.map(|part| {
+                    (
+                        part.map(|b| hyper::body::Frame::data(Bytes::from(b)))
+                            .map_err(std::io::Error::other),
+                        rx,
+                    )
+                })
+            });
+            let mut r = Response::new(http_body_util::StreamBody::new(stream).boxed_unsync());
+            r.headers_mut().insert(
+                header::CONTENT_TYPE,
+                header::HeaderValue::from_static("application/json"),
+            );
+            r
+        }
     }
 }

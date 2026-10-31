@@ -80,22 +80,66 @@ pub fn get(s: &State) -> Result<Value, String> {
 }
 pub fn update(s: &State, p: &Value) -> Result<Value, String> {
     let _guard = s.settings_lock.lock().unwrap();
-    if p.get("providerInstanceMutation").is_some() {
-        return Err("providerInstanceMutation is not implemented".into());
-    }
     let patch = p
         .get("patch")
         .filter(|v| v.is_object())
         .ok_or("patch must be an object")?;
     let mut v = read(s)?;
+    let previous = v.clone();
     // Preserve sensitive environment values echoed by clients as valueRedacted.
     let mut patch = patch.clone();
     preserve_environment(&v, &mut patch);
     merge(&mut v, &patch);
+    apply_entry_patches(&previous, &mut v, &patch)?;
     if let Some(instances) = patch.get("providerInstances") {
         let mut replacement = instances.clone();
-        retain_sentinels(&v["providerInstances"], &mut replacement);
+        retain_sentinels(&previous["providerInstances"], &mut replacement);
         v["providerInstances"] = replacement;
+    }
+    if let Some(m) = p.get("providerInstanceMutation") {
+        let id = m["instanceId"]
+            .as_str()
+            .filter(|id| {
+                !id.is_empty()
+                    && id.len() <= 64
+                    && id.as_bytes()[0].is_ascii_alphabetic()
+                    && id
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+            })
+            .ok_or("invalid provider instance id")?;
+        if !v["providerInstances"].is_object() {
+            v["providerInstances"] = json!({});
+        }
+        let exists = v["providerInstances"].get(id).is_some();
+        match m["operation"].as_str() {
+            Some("remove") => {
+                v["providerInstances"].as_object_mut().unwrap().remove(id);
+            }
+            Some("create" | "upsert") => {
+                if m["operation"] == "create" && exists {
+                    return Err("provider instance already exists".into());
+                }
+                if !m["instance"].is_object() || !m["instance"]["driver"].is_string() {
+                    return Err("provider instance driver required".into());
+                }
+                let mut instance = m["instance"].clone();
+                let mut wrapper = json!({"providerInstances":{id:instance}});
+                preserve_environment(&previous, &mut wrapper);
+                instance = wrapper["providerInstances"][id].take();
+                retain_sentinels(&previous["providerInstances"][id], &mut instance);
+                v["providerInstances"][id] = instance;
+            }
+            _ => return Err("invalid provider instance operation".into()),
+        }
+    }
+    let defaults: Value = serde_json::from_str(include_str!("settings-defaults.json")).unwrap();
+    for (key, value) in patch.as_object().unwrap() {
+        if let Some(default) = defaults.get(key).filter(|v| !v.is_null()) {
+            if std::mem::discriminant(default) != std::mem::discriminant(value) {
+                return Err(format!("invalid settings type: {key}"));
+            }
+        }
     }
     crate::profile::atomic_json(&s.dir.join("settings.json"), &v).map_err(|e| e.to_string())?;
     s.notify();
@@ -103,7 +147,10 @@ pub fn update(s: &State, p: &Value) -> Result<Value, String> {
     Ok(v)
 }
 fn preserve_environment(old: &Value, patch: &mut Value) {
-    if let Some(instances) = patch["providerInstances"].as_object_mut() {
+    if let Some(instances) = patch
+        .get_mut("providerInstances")
+        .and_then(Value::as_object_mut)
+    {
         for (id, instance) in instances {
             if let Some(vars) = instance["environment"].as_array_mut() {
                 for var in vars {
@@ -151,4 +198,66 @@ fn retain_sentinels(old: &Value, new: &mut Value) {
             retain_sentinels(&old[k], v);
         }
     }
+}
+
+fn apply_entry_patches(old: &Value, next: &mut Value, patch: &Value) -> Result<(), String> {
+    for field in [
+        "usageLimitSources",
+        "usagePriceOverrides",
+        "usageModelAliases",
+        "projectSettingsOverrides",
+    ] {
+        if let Some(entries) = patch.get(field) {
+            let entries = entries
+                .as_object()
+                .ok_or("settings entry patch must be an object")?;
+            let mut result = old[field].as_object().cloned().unwrap_or_default();
+            for (id, entry) in entries {
+                if entry.is_null() {
+                    result.remove(id);
+                } else {
+                    let mut entry = entry.clone();
+                    if field == "projectSettingsOverrides" {
+                        if !entry.is_object() {
+                            return Err("project settings override must be an object".into());
+                        }
+                        if entry.get("providerInstances").is_none() {
+                            if let Some(instances) = old[field][id].get("providerInstances") {
+                                entry["providerInstances"] = instances.clone();
+                            }
+                        }
+                    }
+                    result.insert(id.clone(), entry);
+                }
+            }
+            next[field] = Value::Object(result);
+        }
+    }
+    for field in [
+        "defaultModelSelection",
+        "sourceControlWriterModelSelection",
+        "reviewGuideModelSelection",
+        "defaultProjectScripts",
+    ] {
+        if let Some(value) = patch.get(field) {
+            next[field] = value.clone();
+        }
+    }
+    if let Some(path) = patch["worktreesDirectory"]
+        .as_str()
+        .filter(|p| Some(*p) != old["worktreesDirectory"].as_str())
+    {
+        let mut prior = old["previousWorktreesDirectories"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        prior.retain(|p| p != path);
+        if let Some(old_path) = old["worktreesDirectory"].as_str().filter(|p| !p.is_empty()) {
+            if !prior.iter().any(|p| p == old_path) {
+                prior.push(json!(old_path));
+            }
+        }
+        next["previousWorktreesDirectories"] = json!(prior);
+    }
+    Ok(())
 }

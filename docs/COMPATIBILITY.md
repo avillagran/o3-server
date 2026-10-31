@@ -4,7 +4,7 @@ Contrato: `t3code@3f9448747`. Generado por `tools/gen-compat`; editar `docs/comp
 
 Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ningún cliente lo usa)
 
-**Resumen:** 2 ✅ · 7 🟡 · 111 ⬜ · 83 🚫 de 203 RPC
+**Resumen:** 1 ✅ · 8 🟡 · 111 ⬜ · 83 🚫 de 203 RPC
 
 ## (root)
 
@@ -110,15 +110,15 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | ⬜ | `orchestration.getTurnItem` | P1 | unary | `orchestration:read` | Deferred; client-usage.md inventory. |
 | ⬜ | `orchestration.getWorkflowScript` | P2 | unary | `orchestration:read` | Deferred; client-usage.md inventory. |
 | 🚫 | `orchestration.getWorktreeThreadIds` | unused | unary | `orchestration:read` | No client call site in inventory. |
-| 🟡 | `orchestration.launchThread` | P0 | unary | `orchestration:operate` | Connection test: idempotent empty root-workspace creation; worktrees, reuse and atomic multi-stage launch remain. |
+| 🟡 | `orchestration.launchThread` | P0 | unary | `orchestration:operate` | Connection: idempotent root launch. Core tests: new git worktree, existing worktree, thread reuse and receipts. Atomic create+initial dispatch, workflow cleanup and reuse metadata semantics remain. |
 | ⬜ | `orchestration.searchThread` | P1 | unary | `orchestration:read` | Deferred; client-usage.md inventory. |
 | 🚫 | `orchestration.searchThreadStream` | unused | stream | `orchestration:read` | No client call site in inventory. |
 | ⬜ | `orchestration.searchThreads` | P1 | unary | `orchestration:read` | Deferred; client-usage.md inventory. |
 | ⬜ | `orchestration.stopWorkflow` | P2 | unary | `orchestration:operate` | Deferred; client-usage.md inventory. |
 | 🚫 | `orchestration.subscribeArchivedShell` | unused | stream | `orchestration:read` | No client call site in inventory. |
 | ⬜ | `orchestration.subscribeCommandOutput` | P1 | stream | `orchestration:read` | Deferred; client-usage.md inventory. |
-| ✅ | `orchestration.subscribeShell` | P0 | stream | `orchestration:read` | Connection tests: SQLite snapshot, replay afterSequence, synchronized completion marker; shared project/thread sequence. |
-| 🟡 | `orchestration.subscribeThread` | P0 | stream | `orchestration:read` | Connection tests: bounded snapshot, replay and marker; always bounded even without opt-in, advanced provider projections absent. |
+| 🟡 | `orchestration.subscribeShell` | P0 | stream | `orchestration:read` | Real Connection snapshot/replay tests. SQLite streaming removes the 10,000 cap (10,002-project streaming test); omitIdleSubagents/omitOlderSettled and family shapes remain. |
+| 🟡 | `orchestration.subscribeThread` | P0 | stream | `orchestration:read` | Real Connection tests: streamed full opt-out (140 messages), bounded ten-turn window, compact IDs/body dedupe/local turn-item omission, replay/markers. Generic/activity/oversized and targeted-history policies are not fully conformant. |
 
 ## preview
 
@@ -285,7 +285,7 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | ⬜ | `server.updateProvider` | P2 | unary | `providers:manage` | Deferred; client-usage.md inventory. |
 | 🚫 | `server.updateServer` | unused | unary | `environment:maintain` | No client call site in inventory. |
 | 🚫 | `server.updateServerWithProgress` | unused | stream | `environment:maintain` | No client call site in inventory. |
-| 🟡 | `server.updateSettings` | P1 | unary | `settings:write` | Connection test: patch/persistence/redaction; providerInstanceMutation and full upstream validation/merge semantics remain. |
+| 🟡 | `server.updateSettings` | P1 | unary | `settings:write` | Connection tests: provider instance create/upsert/remove, redacted environment preservation, entry replacement/null removal, directory history, primitive type checks. Full upstream normalization/model preferences/background policy remain. |
 | ⬜ | `server.upsertKeybinding` | P2 | unary | `settings:write` | Deferred; client-usage.md inventory. |
 
 ## shell

@@ -29,20 +29,28 @@ The compatibility registry marks broad methods partial where appropriate.
   preserve its session. Neither T3 data nor its running service was accessed during this work.
 - Settings implement a minimal static default catalog and common secret field redaction,
   not every upstream schema annotation/migration/validation rule. Provider-instance mutations,
-  exact per-field patch semantics and every typed settings failure remain. Config changes send
+  entry-map replacement/removal and redacted environment retention are tested;
+  full model-preference/background-activity normalization and all validation annotations remain. Config changes send
   replacement snapshots, not the complete incremental event union.
-- Shell snapshots currently assemble JSON in memory and cap projects/threads at 10,000.
-  Thread projections read at most 100 records of each kind; the subscriber always gets the
-  bounded shape, even without bounded opt-in. Implement streaming serialization, a complete
-  opt-out snapshot and proper large-shell handling before claiming the memory/design contract
-  fully met. There is no retained transcript cache or unbounded subscriber event queue.
+- Shell and thread snapshots now stream from a separate read-only SQLite transaction through
+  two 16 KiB channel slots; WebSocket continuations carry one RPC JSON message, and HTTP uses
+  streamed bodies. Full subscriptions have no 100-record cap and shell has no 10,000-record cap.
+  Compact IDs use a capped dictionary, message text is deduplicated against included messages,
+  and local visible items can be omitted from turnItems. Ten-turn/75-generic/500-item/1 MiB
+  history windows share a policy; conversation/activity filtering, throughEntryId, older-page
+  widening and oversized-body transport truncation still need upstream conformance.
 - Advanced node/session/turn/attempt/plan/checkpoint/provider projections are not reduced.
   Approval rendering and durable provider/control recovery require the work in PROVIDER.md.
-  A crash after dispatch commit but before spawning leaves a preparing run. Control sends can
-  fail after a receipt commits. These are correctness gaps for real provider execution.
-- Launch supports new root-workspace threads; worktree creation, existing-worktree/reuse and
-  one atomic launch transaction are unfinished. Its create and initial-message stages have
-  separate deterministic receipts. The fake is injected only in tests, never enabled by the CLI.
+  Runs now record execution intent, so restart can fail executions stranded before spawn.
+  Control sends can still fail after a receipt commits; durable provider control replay remains.
+- Launch supports root, existing_worktree, git worktree creation and reuseExistingThread.
+  Empty launches are idempotent. Create and initial-message stages still have separate receipts;
+  atomic initial-message rejection, complete workflow cleanup and reused metadata remain.
+- Restart atomically marks orphaned executions failed, cancels pending requests and marks live
+  provider sessions disconnected, with replayable events; explicitly deferred runs survive.
+  Automatic provider-session reconnection/control replay is not implemented. This is safe
+  terminal recovery, not continuation of provider execution. Recovery runs once at TCP serve
+  startup; embedded hosts must call `recovery::recover` before accepting their first transport.
 - Only defer_start and start_immediately dispatch modes are accepted. Queues, steering,
   restart, deferred release and unlisted lifecycle commands are not implemented.
 - Auth implements bearer sessions, not DPoP/cookies. OAuth request validation/scope negotiation,
@@ -50,14 +58,26 @@ The compatibility registry marks broad methods partial where appropriate.
 - No conformance run against upstream T3, desktop UI or Android was performed. Tests use the
   real client library with o3-server. No actual systemd installation was tested.
 
-## Verification and memory
+## Import and verification
 
-`CARGO_TARGET_DIR=/tmp/o3-target cargo test` runs 22 tests: 3 auth unit tests, 14 real-client
-integration tests, 4 CLI subprocess tests and 1 embedded-transport test. All profiles are temporary.
-`cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` are the static checks.
+`o3-server import --from /path/to/statev2.sqlite --base-dir /isolated/profile` opens the
+source read-only and uses the SQLite backup API to create a private mode-0600 copy under
+`/tmp`. Only that consistent copy is queried. Projects, v2 threads/messages/turn items and
+local visible items load transactionally into o3.sqlite. Existing local IDs win on reimport.
+The synthetic fixture uses verbatim Appendix D migration 005/055 DDL. Tests prove WAL content
+is included, source DB/WAL bytes remain identical, rollback on schema failure and CLI idempotence.
+No real T3 database was accessed. Legacy v1 thread migration and inherited visibility are not
+implemented; imported projections do not reconstruct the upstream event log/provider bindings.
 
-Run `tools/measure-rss /tmp/o3-target/release/o3-server` after a release build. The probe uses a
-fresh temporary profile, seeds 1,000 messages (~1 KiB text each) through authenticated RPC,
-and opens one live bounded thread subscription. It reports Linux smaps RSS, not heap-only RSS.
-The results are in `rss-measurement.json`; no provider process, TLS or OmaBridge is included.
-The workload is a single sample, not a sustained/concurrent load test or a peak-memory bound.
+`CARGO_PROFILE_DEV_DEBUG=0 CARGO_INCREMENTAL=0 CARGO_TARGET_DIR=/tmp/o3-core-4d71 cargo test --tests`
+passes 31 tests, including real-client transport and compact decoding, restart recovery,
+worktrees and synthetic import. `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`
+and `git diff --check` are the static checks. No systemd service or actual provider was exercised.
+
+`tools/bench-rss` builds release by default (private target under `/tmp`); pass an existing
+release binary to avoid rebuilding. It uses a fresh on-disk `/var/tmp` profile, 20 threads,
+1,000 messages of ~1 KiB, three simultaneous compact bounded subscribers and 1,000 unary
+settings reads. It reports kernel VmRSS, VmHWM and RssAnon in KiB at each phase. The measured
+binary hash and workload are recorded in `docs/rss-measurement.json`. The measured workload is
+below 50 MiB VmHWM without purge tuning; SQLite writer cache is 2 MiB and snapshot cache 512 KiB.
+Provider subprocesses, OmaBridge, TLS and sustained slow-client load are excluded.

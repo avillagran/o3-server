@@ -13,6 +13,7 @@ struct Subscription {
     cursor: i64,
     waiting: bool,
     initial: Option<Value>,
+    snapshot: Option<crate::snapshot::Receiver>,
     marker: bool,
     version: u64,
 }
@@ -76,7 +77,9 @@ pub fn authorize(session: &Value, tag: &str, p: &Value) -> Result<(), Value> {
 }
 fn dispatch(s: &Arc<State>, tag: &str, p: &Value) -> Result<Value, Value> {
     match tag {
-        "server.getConfig"=>settings::config(s),"server.getSettings"=>settings::get(s),"server.updateSettings"=>settings::update(s,p),
+        "server.getConfig"=>settings::config(s),
+        "server.getSettings"=>return settings::get(s).map_err(|message|json!({"_tag":"ServerSettingsError","settingsPath":s.dir.join("settings.json"),"operation":"read","message":message})),
+        "server.updateSettings"=>return settings::update(s,p).map_err(|message|json!({"_tag":"ServerSettingsError","settingsPath":s.dir.join("settings.json"),"operation":"write","message":message})),
         "projects.mutate"=>return events::mutate_project(s,p).map_err(|message|json!({"_tag":"ProjectMutationError","message":message})),
         "orchestration.launchThread"=>return events::launch(s,p).map_err(|message|json!({"_tag":"OrchestrationV2ThreadLaunchError","commandId":p["commandId"],"projectId":p["projectId"],"message":message})),
         "orchestration.dispatchCommand"=>return events::dispatch(s,p).map_err(|m|json!({"_tag":"OrchestrationV2DispatchCommandError","commandId":p["commandId"],"message":m})),
@@ -106,6 +109,38 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
             break;
         }
         for sub in subscriptions.values_mut().filter(|sub| !sub.waiting) {
+            if let Some(mut rx) = sub.snapshot.take() {
+                use tokio_tungstenite::tungstenite::protocol::frame::{
+                    coding::{Data, OpCode},
+                    Frame,
+                };
+                let mut first = true;
+                while let Some(part) = rx.recv().await {
+                    let Ok(bytes) = part else { return };
+                    let opcode = OpCode::Data(if first { Data::Text } else { Data::Continue });
+                    first = false;
+                    if ws
+                        .send(Message::Frame(Frame::message(bytes, opcode, false)))
+                        .await
+                        .is_err()
+                    {
+                        return;
+                    }
+                }
+                if ws
+                    .send(Message::Frame(Frame::message(
+                        Vec::new(),
+                        OpCode::Data(Data::Continue),
+                        true,
+                    )))
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+                sub.waiting = true;
+                continue;
+            }
             let item = if let Some(v) = sub.initial.take() {
                 Some(v)
             } else if matches!(
@@ -184,8 +219,18 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                                         // Register notification receiver before any snapshot; no await until cursor is installed.
                                         let version=*changed.borrow();let seq=events::sequence(&s.db.lock().unwrap()).unwrap_or(0);let after=p["afterSequence"].as_i64().filter(|v|*v<=seq);
                                         let tid=if tag=="orchestration.subscribeThread" {p["threadId"].as_str().map(str::to_owned)}else{None};
-                                        let initial=if tag=="orchestration.subscribeThread" && tid.is_none(){Err("threadId required".into())}else if matches!(tag,"server.subscribeServerConfig"|"subscribeServerConfig") {settings::config(&s).map(|c|json!({"version":1,"type":"snapshot","config":c})).map(Some)}else if after.is_some(){Ok(None)}else if let Some(tid)=tid.as_deref(){events::bounded(&s,tid).map(|mut v|{v["kind"]=json!("snapshot");Some(v)})}else if tag=="orchestration.subscribeShell"{events::shell(&s).map(|v|Some(json!({"kind":"snapshot","snapshot":v})))}else{Err("threadId required".into())};
-                                        match initial {Ok(initial)=>{subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid,cursor:after.unwrap_or_else(||initial.as_ref().and_then(|v|v.get("snapshotSequence").or_else(||v.get("snapshot").and_then(|s|s.get("snapshotSequence")))).and_then(Value::as_i64).unwrap_or(seq)),waiting:false,initial,marker:p["requestCompletionMarker"]==true,version});},Err(e)=>{if send(&mut ws,exit(&id,Err(error(e)))).await.is_err(){return}}}
+                                        let config=matches!(tag,"server.subscribeServerConfig"|"subscribeServerConfig");
+                                        if tag=="orchestration.subscribeThread" && tid.is_none() {if send(&mut ws,exit(&id,Err(error("threadId required".into())))).await.is_err(){return}continue;}
+                                        let mut snapshot=None;let mut boundary=seq;
+                                        if !config && after.is_none() {
+                                            let opts=crate::snapshot::Options{bounded:p["acceptBoundedSnapshot"]==true,dedupe:p["acceptDedupedBodies"]==true,compact_items:p["acceptCompactTurnItems"]==true,compact_ids:p["acceptCompactIds"]==true};
+                                            match crate::snapshot::start(&s,tid.clone(),opts,Some(id.clone())) {
+                                                Ok((seq,rx))=>{boundary=seq;snapshot=Some(rx);},
+                                                Err(e)=>{if send(&mut ws,exit(&id,Err(error(e)))).await.is_err(){return}continue;}
+                                            }
+                                        }
+                                        let initial=if config {settings::config(&s).ok().map(|c|json!({"version":1,"type":"snapshot","config":c}))}else{None};
+                                        subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid,cursor:after.unwrap_or(boundary),waiting:false,initial,snapshot,marker:p["requestCompletionMarker"]==true,version});
                                     }else if send(&mut ws,exit(&id,dispatch(&s,tag,p))).await.is_err(){return}
                                 },_=>{}
                             }

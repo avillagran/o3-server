@@ -1,19 +1,40 @@
 {
-  "binary": "/tmp/o3-target/release/o3-server",
-  "binary_bytes": 2314432,
+  "measured_at_utc": "2026-10-31T21:47:30Z",
+  "binary_sha256": "f2fdc52d52717da841c2c79c8bd48c9fc76000639a1680b5f129175d5a0184c1",
+  "binary": "/tmp/o3-core-4d71/release/o3-server",
+  "binary_bytes": 2402752,
   "seed_messages": 1000,
+  "threads": 20,
+  "subscribers": 3,
+  "unary_calls": 1000,
   "text_bytes_per_message": 1000,
-  "cold_idle_rss_kib": 8772,
-  "seeded_idle_rss_kib": 17312,
-  "seeded_one_subscribed_client_rss_kib": 31860,
-  "snapshot_messages": 100,
-  "provider": "none (defer_start)",
-  "measurement": "Linux /proc/PID/smaps_rollup Rss",
-  "source_commit": "1353ad9",
-  "runtime": {
-    "worker_threads": 2,
-    "max_blocking_threads": 2,
-    "thread_stack_size_bytes": 524288
+  "cold_kib": {
+    "VmHWM": 10804,
+    "VmRSS": 10804,
+    "RssAnon": 6544
   },
-  "measured_on": "2026-10-31"
+  "seeded_kib": {
+    "VmHWM": 17296,
+    "VmRSS": 17296,
+    "RssAnon": 12820
+  },
+  "subscribed_kib": {
+    "VmHWM": 24072,
+    "VmRSS": 24072,
+    "RssAnon": 19596
+  },
+  "after_churn_kib": {
+    "VmHWM": 24072,
+    "VmRSS": 24072,
+    "RssAnon": 19596
+  },
+  "snapshot_messages": [
+    10,
+    10,
+    10
+  ],
+  "under_50_mib": true,
+  "provider": "none (defer_start)",
+  "measurement": "Linux /proc/PID/status; disk profile under /var/tmp",
+  "allocator_env": {}
 }

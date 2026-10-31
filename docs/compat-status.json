@@ -189,7 +189,7 @@
     "orchestration.launchThread": {
       "status": "partial",
       "priority": "P0",
-      "note": "Connection test: idempotent empty root-workspace creation; worktrees, reuse and atomic multi-stage launch remain."
+      "note": "Connection: idempotent root launch. Core tests: new git worktree, existing worktree, thread reuse and receipts. Atomic create+initial dispatch, workflow cleanup and reuse metadata semantics remain."
     },
     "orchestration.searchThread": {
       "status": "todo",
@@ -222,14 +222,14 @@
       "note": "Deferred; client-usage.md inventory."
     },
     "orchestration.subscribeShell": {
-      "status": "done",
+      "status": "partial",
       "priority": "P0",
-      "note": "Connection tests: SQLite snapshot, replay afterSequence, synchronized completion marker; shared project/thread sequence."
+      "note": "Real Connection snapshot/replay tests. SQLite streaming removes the 10,000 cap (10,002-project streaming test); omitIdleSubagents/omitOlderSettled and family shapes remain."
     },
     "orchestration.subscribeThread": {
       "status": "partial",
       "priority": "P0",
-      "note": "Connection tests: bounded snapshot, replay and marker; always bounded even without opt-in, advanced provider projections absent."
+      "note": "Real Connection tests: streamed full opt-out (140 messages), bounded ten-turn window, compact IDs/body dedupe/local turn-item omission, replay/markers. Generic/activity/oversized and targeted-history policies are not fully conformant."
     },
     "preview.adjust": {
       "status": "todo",
@@ -839,7 +839,7 @@
     "server.updateSettings": {
       "status": "partial",
       "priority": "P1",
-      "note": "Connection test: patch/persistence/redaction; providerInstanceMutation and full upstream validation/merge semantics remain."
+      "note": "Connection tests: provider instance create/upsert/remove, redacted environment preservation, entry replacement/null removal, directory history, primitive type checks. Full upstream normalization/model preferences/background policy remain."
     },
     "server.upsertKeybinding": {
       "status": "todo",

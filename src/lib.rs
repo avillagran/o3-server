@@ -11,3 +11,8 @@ pub mod provider;
 pub mod scopes;
 pub mod service;
 pub mod settings;
+
+pub mod import;
+pub mod recovery;
+pub mod snapshot;
+pub mod workspace;

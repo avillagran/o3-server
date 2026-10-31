@@ -65,10 +65,9 @@ fn main() -> std::io::Result<()> {
     if args.starts_with(&["service".into(), "install".into()]) {
         return o3_server::service::install(&base, args.iter().any(|s| s == "--dry-run"));
     }
-    if args
-        .first()
-        .is_some_and(|s| !matches!(s.as_str(), "serve" | "start" | "auth") && !s.starts_with('-'))
-    {
+    if args.first().is_some_and(|s| {
+        !matches!(s.as_str(), "serve" | "start" | "auth" | "import") && !s.starts_with('-')
+    }) {
         return Err(std::io::Error::other("unsupported command"));
     }
     let is_auth = args.first().map(String::as_str) == Some("auth");
@@ -78,6 +77,15 @@ fn main() -> std::io::Result<()> {
         None
     };
     let state = o3_server::store::State::open(Path::new(&dir)).map_err(std::io::Error::other)?;
+    if args.first().map(String::as_str) == Some("import") {
+        let source =
+            option(&args, "--from").ok_or_else(|| std::io::Error::other("--from is required"))?;
+        println!(
+            "{}",
+            o3_server::import::from_t3(&state, Path::new(source)).map_err(std::io::Error::other)?
+        );
+        return Ok(());
+    }
     if is_auth {
         if args.get(1).map(String::as_str) == Some("session")
             && args.get(2).map(String::as_str) == Some("issue")

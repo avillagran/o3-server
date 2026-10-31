@@ -293,21 +293,34 @@ fn bounded_history_pages_do_not_lose_messages() {
             .as_array()
             .unwrap()
             .len(),
-        100
+        10
     );
     assert_eq!(snapshot["hasMoreHistory"], true);
-    let cursor = snapshot["historyCursor"].as_str().unwrap();
-    let history = c
-        .request_json(
-            "GET",
-            &format!("/api/orchestration/threads/t1/history?cursor={cursor}"),
-            None,
-            true,
-        )
-        .unwrap();
-    assert_eq!(history["items"].as_array().unwrap().len(), 25);
-    assert_eq!(history["hasMoreHistory"], false);
-    assert_eq!(history["items"][0]["item"]["text"], "message 0");
+    let mut cursor = snapshot["historyCursor"].as_str().unwrap().to_owned();
+    let mut all = snapshot["projection"]["visibleTurnItems"]
+        .as_array()
+        .unwrap()
+        .clone();
+    loop {
+        let page = c
+            .request_json(
+                "GET",
+                &format!("/api/orchestration/threads/t1/history?cursor={cursor}"),
+                None,
+                true,
+            )
+            .unwrap();
+        assert!(page["items"].as_array().unwrap().len() <= 10);
+        all.splice(0..0, page["items"].as_array().unwrap().clone());
+        if page["hasMoreHistory"] == false {
+            break;
+        }
+        cursor = page["nextCursor"].as_str().unwrap().to_owned();
+    }
+    assert_eq!(all.len(), 125);
+    for (i, row) in all.iter().enumerate() {
+        assert_eq!(row["item"]["text"], format!("message {i}"));
+    }
 }
 #[test]
 fn launch_empty_thread_is_idempotent() {
@@ -496,4 +509,107 @@ fn projects_share_the_thread_sequence_and_replay_log() {
         json!({"afterSequence":0}),
     );
     assert_eq!(event["kind"], "project.updated");
+}
+
+#[test]
+fn streamed_full_and_compact_snapshots_decode_with_real_client() {
+    let (_, c) = connected(false);
+    create(&c, "t1");
+    for i in 0..140 {
+        c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":format!("c{i}"),"messageId":format!("m{i}"),"threadId":"t1","text":"x".repeat(2048),"attachments":[],"dispatchMode":{"type":"defer_start"}})).unwrap();
+    }
+    let full = stream_first(
+        &c,
+        "orchestration.subscribeThread",
+        json!({"threadId":"t1"}),
+    );
+    assert_eq!(
+        full["projection"]["messages"].as_array().unwrap().len(),
+        140
+    );
+    let plain = snap(&c, "t1");
+    let mut compact = c
+        .request_json(
+            "GET",
+            "/api/orchestration/threads/t1/bounded?compactIds=1&dedupeBodies=1&compactTurnItems=1",
+            None,
+            true,
+        )
+        .unwrap();
+    assert!(compact.get("ids").is_none());
+    assert_eq!(compact["turnItemsOmitLocalVisible"], true);
+    assert!(compact.to_string().len() < plain.to_string().len());
+    t3_protocol::wire::restore_snapshot(&mut compact).unwrap();
+    assert_eq!(
+        compact["projection"]["messages"],
+        plain["projection"]["messages"]
+    );
+    assert_eq!(
+        compact["projection"]["visibleTurnItems"],
+        plain["projection"]["visibleTurnItems"]
+    );
+    let mut live = stream_first(
+        &c,
+        "orchestration.subscribeThread",
+        json!({"threadId":"t1","acceptBoundedSnapshot":true,"acceptCompactIds":true,"acceptDedupedBodies":true,"acceptCompactTurnItems":true}),
+    );
+    t3_protocol::wire::restore_snapshot(&mut live).unwrap();
+    assert_eq!(
+        live["projection"]["visibleTurnItems"],
+        plain["projection"]["visibleTurnItems"]
+    );
+}
+#[test]
+fn provider_instance_mutations_preserve_redacted_environment() {
+    let (_, c) = connected(false);
+    let mutate = |m| {
+        c.rpc(
+            "server.updateSettings",
+            json!({"patch":{},"providerInstanceMutation":m}),
+        )
+    };
+    let value=mutate(json!({"operation":"create","instanceId":"custom","instance":{"driver":"custom","environment":[{"name":"KEY","sensitive":true,"value":"secret-value"}]}})).unwrap();
+    assert_eq!(
+        value["providerInstances"]["custom"]["environment"][0]["valueRedacted"],
+        true
+    );
+    assert!(mutate(
+        json!({"operation":"create","instanceId":"custom","instance":{"driver":"custom"}})
+    )
+    .is_err());
+    mutate(json!({"operation":"upsert","instanceId":"custom","instance":value["providerInstances"]["custom"]})).unwrap();
+    let removed = mutate(json!({"operation":"remove","instanceId":"custom"})).unwrap();
+    assert!(removed["providerInstances"].get("custom").is_none());
+    assert!(c
+        .rpc(
+            "server.updateSettings",
+            json!({"patch":{"enableProviderUpdateChecks":"wrong"}})
+        )
+        .is_err());
+}
+#[test]
+fn settings_replace_entries_remove_nulls_and_keep_worktree_directory_history() {
+    let (_, c) = connected(false);
+    let update = |p| c.rpc("server.updateSettings", json!({"patch":p})).unwrap();
+    update(
+        json!({"projectSettingsOverrides":{"p":{"defaultAutoPull":true,"providerInstances":{"custom":{"enabled":true}}}},"worktreesDirectory":"/tmp/first","usageModelAliases":{"a":"model1","b":"model2"}}),
+    );
+    let value = update(
+        json!({"projectSettingsOverrides":{"p":{"enableAgentBrowserAccess":false}},"worktreesDirectory":"/tmp/second","usageModelAliases":{"a":null}}),
+    );
+    assert!(value["projectSettingsOverrides"]["p"]
+        .get("defaultAutoPull")
+        .is_none());
+    assert_eq!(
+        value["projectSettingsOverrides"]["p"]["providerInstances"]["custom"]["enabled"],
+        true
+    );
+    assert!(value["usageModelAliases"].get("a").is_none());
+    assert_eq!(value["usageModelAliases"]["b"], "model2");
+    assert_eq!(value["previousWorktreesDirectories"], json!(["/tmp/first"]));
+    assert!(
+        update(json!({"projectSettingsOverrides":{"p":null}}))["projectSettingsOverrides"]
+            .get("p")
+            .is_none()
+    );
 }

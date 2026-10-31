@@ -42,7 +42,7 @@ pub fn sequence(db: &Connection) -> Result<i64> {
     })
     .map_err(|e| e.to_string())
 }
-fn shell_thread(db: &Connection, t: &Value) -> Result<Value> {
+pub(crate) fn shell_thread(db: &Connection, t: &Value) -> Result<Value> {
     let tid = t["id"].as_str().ok_or("thread id missing")?;
     let mut t = t.clone();
     let count: i64 = db
@@ -106,7 +106,7 @@ pub fn projection(s: &State, tid: &str) -> Result<Value> {
     let db = s.db.lock().unwrap();
     projection_db(&db, tid)
 }
-fn projection_db(db: &Connection, tid: &str) -> Result<Value> {
+pub(crate) fn projection_db(db: &Connection, tid: &str) -> Result<Value> {
     let thread = get(db, "thread", tid)?;
     let mut p = json!({"updatedAt":thread["updatedAt"],"thread":thread});
     for kind in [
@@ -161,21 +161,19 @@ pub fn history(s: &State, tid: &str, cursor: &str) -> Result<Value> {
     let anchor: i64 = cursor.parse().map_err(|_| "invalid history cursor")?;
     let db = s.db.lock().unwrap();
     get(&db, "thread", tid)?;
-    let mut q=db.prepare("SELECT rowid,body FROM records WHERE kind='visibleTurnItems' AND thread_id=? AND rowid<? ORDER BY rowid DESC LIMIT 101").map_err(|e|e.to_string())?;
-    let mut rows = q.query(params![tid, anchor]).map_err(|e| e.to_string())?;
+    let (lower, more) = crate::snapshot::boundary(&db, tid, anchor)?;
+    let mut q=db.prepare("SELECT body FROM records WHERE kind='visibleTurnItems' AND thread_id=? AND rowid<? AND rowid>=? ORDER BY rowid DESC").map_err(|e|e.to_string())?;
+    let rows = q
+        .query_map(params![tid, anchor, lower], |r| r.get::<_, String>(0))
+        .map_err(|e| e.to_string())?;
     let mut items = Vec::new();
-    let mut next = None;
-    let mut more = false;
-    while let Some(row) = rows.next().map_err(|e| e.to_string())? {
-        if items.len() == 100 {
-            more = true;
-            break;
-        }
-        let id: i64 = row.get(0).map_err(|e| e.to_string())?;
-        let body: String = row.get(1).map_err(|e| e.to_string())?;
-        items.push(serde_json::from_str::<Value>(&body).map_err(|e| e.to_string())?);
-        next = Some(id.to_string());
+    for row in rows {
+        items.push(
+            serde_json::from_str::<Value>(&row.map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?,
+        );
     }
+    let next = Some(lower.to_string());
     items.reverse();
     Ok(
         json!({"snapshotSequence":sequence(&db)?,"items":items,"nextCursor":if more{next}else{None},"hasMoreHistory":more}),
@@ -348,7 +346,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                     |r| r.get(0),
                 )
                 .map_err(|e| e.to_string())?;
-            let run = json!({"id":run_id,"threadId":tid,"ordinal":ordinal,"providerInstanceId":t["providerInstanceId"],"modelSelection":t["modelSelection"],"providerThreadId":null,"userMessageId":mid,"rootNodeId":null,"activeAttemptId":null,"status":"preparing","requestedAt":at,"startedAt":null,"completedAt":null,"checkpointId":null,"contextHandoffId":null});
+            let run = json!({"id":run_id,"threadId":tid,"ordinal":ordinal,"providerInstanceId":t["providerInstanceId"],"modelSelection":t["modelSelection"],"providerThreadId":null,"userMessageId":mid,"rootNodeId":null,"activeAttemptId":null,"status":"preparing","requestedAt":at,"startedAt":null,"completedAt":null,"checkpointId":null,"contextHandoffId":null,"executionRequested":c["dispatchMode"]["type"]!="defer_start"});
             put(&tx, "runs", &run_id, tid, &run)?;
             let seq = append(&tx, tid, "run.created", run, &t)?;
             let result = json!({"sequence":seq});
@@ -497,9 +495,6 @@ pub fn launch(s: &std::sync::Arc<State>, p: &Value) -> Result<Value> {
     {
         return serde_json::from_str(&result).map_err(|e| e.to_string());
     }
-    if p["workspaceStrategy"]["type"] != "root" {
-        return Err("only root workspace strategy is implemented".into());
-    }
     let tid = p["threadId"]
         .as_str()
         .map(str::to_owned)
@@ -511,12 +506,26 @@ pub fn launch(s: &std::sync::Arc<State>, p: &Value) -> Result<Value> {
     if p.get("initialMessage").is_some() && s.provider.lock().unwrap().is_none() {
         return Err("no provider adapter configured".into());
     }
-    dispatch(s, &create)?;
+    let reuse = p["reuseExistingThread"] == true;
+    if reuse && p["threadId"].as_str().is_none() {
+        return Err("threadId required for reuse".into());
+    }
+    if reuse {
+        let existing = get(&s.db.lock().unwrap(), "thread", &tid)?;
+        if existing["projectId"] != p["projectId"] {
+            return Err("reuse project does not match thread".into());
+        }
+    } else {
+        let (path, branch) = crate::workspace::prepare(s, p, &tid)?;
+        create["worktreePath"] = path;
+        create["branch"] = branch;
+        dispatch(s, &create)?;
+    }
     if let Some(m) = p.get("initialMessage") {
         let message = json!({"type":"message.dispatch","commandId":format!("{cid}:initial"),"threadId":tid,"messageId":m["messageId"].as_str().map(str::to_owned).unwrap_or(format!("message-{cid}")),"text":m["text"],"attachments":m["attachments"],"dispatchMode":{"type":"start_immediately"}});
         dispatch(s, &message)?;
     }
-    let result = json!({"threadId":tid,"projection":projection(s,&tid)?,"resumed":false});
+    let result = json!({"threadId":tid,"projection":projection(s,&tid)?,"resumed":reuse});
     s.db.lock()
         .unwrap()
         .execute(
