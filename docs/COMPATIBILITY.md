@@ -4,7 +4,7 @@ Contrato: `t3code@3f9448747`. Generado por `tools/gen-compat`; editar `docs/comp
 
 Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ningún cliente lo usa)
 
-**Resumen:** 0 ✅ · 0 🟡 · 203 ⬜ · 0 🚫 de 203 RPC
+**Resumen:** 0 ✅ · 1 🟡 · 202 ⬜ · 0 🚫 de 203 RPC
 
 ## (root)
 
@@ -117,7 +117,7 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | ⬜ | `orchestration.stopWorkflow` | ? | unary | `orchestration:operate` |  |
 | ⬜ | `orchestration.subscribeArchivedShell` | ? | stream | `orchestration:read` |  |
 | ⬜ | `orchestration.subscribeCommandOutput` | ? | stream | `orchestration:read` |  |
-| ⬜ | `orchestration.subscribeShell` | ? | stream | `orchestration:read` |  |
+| 🟡 | `orchestration.subscribeShell` | P0 | stream | `orchestration:read` | Stream real con snapshot vacío; falta proyección de hilos/proyectos y eventos |
 | ⬜ | `orchestration.subscribeThread` | ? | stream | `orchestration:read` |  |
 
 ## preview

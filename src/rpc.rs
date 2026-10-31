@@ -6,10 +6,26 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
 
 pub const SERVER_VERSION: &str = concat!("o3-", env!("CARGO_PKG_VERSION"));
+const SHELL_SCHEMA_VERSION: u64 = 1;
 
 /// Unary handlers. `Err` carries the typed error placed in a `Fail` cause.
 fn dispatch(tag: &str, _payload: &Value) -> Result<Value, Value> {
     Err(json!({ "_tag": "RpcNotImplemented", "message": format!("o3-server does not implement {tag}") }))
+}
+
+/// Items a subscription starts with. Open streams stay open until `Interrupt` or disconnect.
+fn stream_open(tag: &str, _payload: &Value) -> Option<Vec<Value>> {
+    match tag {
+        "orchestration.subscribeShell" => Some(vec![json!({ "kind": "snapshot", "snapshot": {
+            "schemaVersion": SHELL_SCHEMA_VERSION, "snapshotSequence": 0,
+            "projects": [], "threads": [], "archivedThreads": []
+        }})]),
+        _ => None,
+    }
+}
+
+fn chunk(id: &Value, values: Vec<Value>) -> Message {
+    Message::Text(json!({ "_tag": "Chunk", "requestId": id, "values": values }).to_string().into())
 }
 
 pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(mut ws: WebSocketStream<S>) {
@@ -33,7 +49,11 @@ fn handle(text: &str) -> Option<Message> {
     let reply = match frame["_tag"].as_str()? {
         "Ping" => json!({ "_tag": "Pong" }),
         "Request" => {
-            let exit = match dispatch(frame["tag"].as_str()?, &frame["payload"]) {
+            let tag = frame["tag"].as_str()?;
+            if let Some(items) = stream_open(tag, &frame["payload"]) {
+                return Some(chunk(&frame["id"], items));
+            }
+            let exit = match dispatch(tag, &frame["payload"]) {
                 Ok(value) => json!({ "_tag": "Success", "value": value }),
                 Err(error) => json!({ "_tag": "Failure", "cause": [{ "_tag": "Fail", "error": error }] }),
             };

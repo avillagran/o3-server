@@ -48,3 +48,21 @@ fn rpc_requires_a_valid_credential() {
     let error = conn.rpc("server.nope", json!({})).unwrap_err();
     assert!(error.to_string().contains("rpc_connection_failed") || error.to_string().contains("unauthorized"), "{error}");
 }
+
+#[test]
+fn shell_subscription_opens_with_a_snapshot() {
+    let (base, secret) = target();
+    let conn = pair(&base, &secret).unwrap();
+    let done = std::cell::Cell::new(false);
+    let mut first = None;
+    conn.subscribe("orchestration.subscribeShell", json!({}), || done.get(), |item| {
+        if let Some(item) = item {
+            first.get_or_insert(item);
+            done.set(true);
+        }
+        Ok(())
+    }).unwrap();
+    let first = first.expect("snapshot");
+    assert_eq!(first["kind"], "snapshot");
+    assert!(first["snapshot"]["projects"].is_array());
+}
