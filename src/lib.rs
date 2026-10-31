@@ -11,3 +11,6 @@ pub mod provider;
 pub mod scopes;
 pub mod service;
 pub mod settings;
+
+pub mod claude;
+mod claude_projection;

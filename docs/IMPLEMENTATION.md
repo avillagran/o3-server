@@ -43,8 +43,8 @@ The compatibility registry marks broad methods partial where appropriate.
 - Launch supports new root-workspace threads; worktree creation, existing-worktree/reuse and
   one atomic launch transaction are unfinished. Its create and initial-message stages have
   separate deterministic receipts. The fake is injected only in tests, never enabled by the CLI.
-- Only defer_start and start_immediately dispatch modes are accepted. Queues, steering,
-  restart, deferred release and unlisted lifecycle commands are not implemented.
+- Claude now supports queue_after_active and steer_active; idle model/mode commands persist
+  and apply on the next turn. Queue editing, restart and deferred release remain unimplemented.
 - Auth implements bearer sessions, not DPoP/cookies. OAuth request validation/scope negotiation,
   complete HTTP error unions, and live connection metadata in the clients listing need work.
 - No conformance run against upstream T3, desktop UI or Android was performed. Tests use the
@@ -61,3 +61,10 @@ fresh temporary profile, seeds 1,000 messages (~1 KiB text each) through authent
 and opens one live bounded thread subscription. It reports Linux smaps RSS, not heap-only RSS.
 The results are in `rss-measurement.json`; no provider process, TLS or OmaBridge is included.
 The workload is a single sample, not a sustained/concurrent load test or a peak-memory bound.
+
+## Claude implementation update
+
+The executable now registers a direct native Claude CLI provider when available. See the
+2026-10-31 checkpoint in PROVIDER.md and tests/fixtures/claude/README.md for observed protocol,
+verification and remaining limits. The earlier core-only test count and RSS measurement above
+remain historical; they do not measure this adapter. No production T3 service/profile was used.

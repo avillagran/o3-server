@@ -312,10 +312,49 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             }
             "thread.metadata-updated"
         }
+        "thread.model-selection.set"
+        | "thread.runtime-mode.set"
+        | "thread.interaction-mode.set" => {
+            let active:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='runs' AND thread_id=? AND json_extract(body,'$.status') IN ('preparing','starting','running','waiting'))",[tid],|r|r.get(0)).map_err(|e|e.to_string())?;
+            if active {
+                return Err("change model or mode after the active run finishes".into());
+            }
+            let key = match kind {
+                "thread.model-selection.set" => "modelSelection",
+                "thread.runtime-mode.set" => "runtimeMode",
+                _ => "interactionMode",
+            };
+            let value = c.get(key).ok_or("mode or model selection required")?;
+            if key == "modelSelection" {
+                if !value["instanceId"].is_string()
+                    || !value["model"].as_str().is_some_and(|m| !m.is_empty())
+                {
+                    return Err("invalid model selection".into());
+                }
+                t["providerInstanceId"] = value["instanceId"].clone();
+            } else if key == "runtimeMode"
+                && !matches!(
+                    value.as_str(),
+                    Some("approval-required" | "auto-accept-edits" | "full-access")
+                )
+            {
+                return Err("unsupported runtime mode".into());
+            } else if key == "interactionMode"
+                && !matches!(value.as_str(), Some("default" | "plan"))
+            {
+                return Err("unsupported interaction mode".into());
+            }
+            t[key] = value.clone();
+            match kind {
+                "thread.model-selection.set" => "thread.model-selection-updated",
+                "thread.runtime-mode.set" => "thread.runtime-mode-updated",
+                _ => "thread.interaction-mode-updated",
+            }
+        }
         "message.dispatch" => {
             if !matches!(
                 c["dispatchMode"]["type"].as_str(),
-                Some("defer_start" | "start_immediately")
+                Some("defer_start" | "start_immediately" | "queue_after_active" | "steer_active")
             ) {
                 return Err("dispatch mode is not implemented".into());
             }
@@ -326,6 +365,60 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             if s.active.lock().unwrap().len() >= 32 {
                 return Err("active run limit reached".into());
             }
+            let mut active_run: Option<String> = tx.query_row(
+                "SELECT id FROM records WHERE kind='runs' AND thread_id=? AND json_extract(body,'$.status') IN ('preparing','running','waiting','starting') ORDER BY rowid DESC LIMIT 1",
+                [tid], |r|r.get(0)).optional().map_err(|e|e.to_string())?;
+            if active_run.is_none() {
+                let active = s.active.lock().unwrap();
+                active_run = active
+                    .keys()
+                    .find(|rid| get(&tx, "runs", rid).is_ok_and(|r| r["threadId"] == tid))
+                    .cloned();
+            }
+            if c["dispatchMode"]["type"] == "start_immediately" && active_run.is_some() {
+                return Err(
+                    "thread already has an active run; use queue_after_active or steer_active"
+                        .into(),
+                );
+            }
+            if c["dispatchMode"]["type"] == "steer_active" {
+                let rid = c["dispatchMode"]["targetRunId"]
+                    .as_str()
+                    .ok_or("targetRunId required")?;
+                if active_run.as_deref() != Some(rid) {
+                    return Err("steering target is not active".into());
+                }
+                let text = c["text"].as_str().ok_or("text required")?;
+                let sender = s
+                    .active
+                    .lock()
+                    .unwrap()
+                    .get(rid)
+                    .cloned()
+                    .ok_or("provider not ready for steering")?;
+                let permit = sender
+                    .try_reserve_owned()
+                    .map_err(|_| "provider control busy")?;
+                let mid = c["messageId"].as_str().ok_or("messageId required")?;
+                let m = json!({"id":mid,"threadId":tid,"runId":rid,"nodeId":rid,"role":"user","text":text,"attachments":[],"streaming":false,"createdBy":"user","creationSource":"web","createdAt":at,"updatedAt":at});
+                put(&tx, "messages", mid, tid, &m)?;
+                append(&tx, tid, "message.updated", m.clone(), &t)?;
+                let mut item = message_item(&tx, tid, &m)?;
+                item["inputIntent"] = json!("steer");
+                crate::claude_projection::save_item(&tx, tid, &t, item)?;
+                let result = json!({"sequence":sequence(&tx)?});
+                tx.execute(
+                    "INSERT INTO receipts VALUES(?,?)",
+                    params![cid, result.to_string()],
+                )
+                .map_err(|e| e.to_string())?;
+                tx.commit().map_err(|e| e.to_string())?;
+                drop(db);
+                permit.send(crate::provider::ProviderControl::Steer(text.into()));
+                s.notify();
+                return Ok(result);
+            }
+            let queued = c["dispatchMode"]["type"] == "queue_after_active" && active_run.is_some();
             let run_id = random_id()?;
             let mid = c["messageId"].as_str().ok_or("messageId required")?;
             let mut m = json!({"id":mid,"threadId":tid,"runId":run_id,"nodeId":null,"role":"user","text":c["text"],"attachments":c["attachments"],"streaming":false,"createdBy":"user","creationSource":"web","createdAt":at,"updatedAt":at});
@@ -348,7 +441,10 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                     |r| r.get(0),
                 )
                 .map_err(|e| e.to_string())?;
-            let run = json!({"id":run_id,"threadId":tid,"ordinal":ordinal,"providerInstanceId":t["providerInstanceId"],"modelSelection":t["modelSelection"],"providerThreadId":null,"userMessageId":mid,"rootNodeId":null,"activeAttemptId":null,"status":"preparing","requestedAt":at,"startedAt":null,"completedAt":null,"checkpointId":null,"contextHandoffId":null});
+            let mut run = json!({"id":run_id,"threadId":tid,"ordinal":ordinal,"providerInstanceId":t["providerInstanceId"],"modelSelection":t["modelSelection"],"providerThreadId":null,"userMessageId":mid,"rootNodeId":null,"activeAttemptId":null,"status":"preparing","requestedAt":at,"startedAt":null,"completedAt":null,"checkpointId":null,"contextHandoffId":null});
+            if queued {
+                run["status"] = json!("queued");
+            }
             put(&tx, "runs", &run_id, tid, &run)?;
             let seq = append(&tx, tid, "run.created", run, &t)?;
             let result = json!({"sequence":seq});
@@ -360,7 +456,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             tx.commit().map_err(|e| e.to_string())?;
             drop(db);
             s.notify();
-            if c["dispatchMode"]["type"] != "defer_start" {
+            if c["dispatchMode"]["type"] != "defer_start" && !queued {
                 crate::provider::start(
                     s.clone(),
                     tid.to_owned(),
@@ -376,6 +472,24 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             if run["threadId"] != tid {
                 return Err("run belongs to another thread".into());
             }
+            let permit = match s.active.lock().unwrap().get(rid).cloned() {
+                Some(sender) => Some(
+                    sender
+                        .try_reserve_owned()
+                        .map_err(|_| "provider control busy")?,
+                ),
+                None => None,
+            };
+            crate::claude_projection::finish(&tx, tid, rid, &t, &at, "interrupted")?;
+            let mid = format!("assistant-{rid}");
+            if let Ok(mut message) = get(&tx, "messages", &mid) {
+                message["streaming"] = json!(false);
+                message["updatedAt"] = json!(at);
+                put(&tx, "messages", &mid, tid, &message)?;
+                append(&tx, tid, "message.updated", message.clone(), &t)?;
+                let item = message_item(&tx, tid, &message)?;
+                append(&tx, tid, "turn-item.updated", item, &t)?;
+            }
             run["status"] = json!("interrupted");
             run["completedAt"] = json!(at);
             put(&tx, "runs", rid, tid, &run)?;
@@ -388,8 +502,8 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             .map_err(|e| e.to_string())?;
             tx.commit().map_err(|e| e.to_string())?;
             drop(db);
-            if let Some(control) = s.active.lock().unwrap().get(rid) {
-                let _ = control.try_send(crate::provider::ProviderControl::Interrupt);
+            if let Some(permit) = permit {
+                permit.send(crate::provider::ProviderControl::Interrupt);
             }
             s.notify();
             return Ok(result);
@@ -404,6 +518,22 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             if get(&tx, "runs", &rid)?["threadId"] != tid {
                 return Err("request belongs to another thread".into());
             }
+            if request["status"] != "pending" {
+                return Err("runtime request is not pending".into());
+            }
+            if c["decision"] == "acceptAlways" && !request["nativeRequestRef"].is_null() {
+                return Err("persistent native approvals are not implemented; choose accept or acceptForSession".into());
+            }
+            let sender = s.active.lock().unwrap().get(&rid).cloned();
+            let permit = match sender {
+                Some(sender) => Some(
+                    sender
+                        .try_reserve_owned()
+                        .map_err(|_| "provider control busy")?,
+                ),
+                None if kind == "thread.user-input.dismiss" => None,
+                None => return Err("provider request is no longer live".into()),
+            };
             request["status"] = json!(if kind == "thread.user-input.dismiss" {
                 "cancelled"
             } else {
@@ -416,6 +546,19 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                 }
             }
             put(&tx, "runtimeRequests", id, tid, &request)?;
+            if let Ok(mut item) = get(&tx, "turnItems", &format!("approval-{id}")) {
+                item["status"] = json!("completed");
+                item["completedAt"] = json!(at);
+                item["updatedAt"] = json!(at);
+                crate::claude_projection::save_item(&tx, tid, &t, item)?;
+            }
+            if let Ok(mut run) = get(&tx, "runs", &rid) {
+                if run["status"] == "waiting" {
+                    run["status"] = json!("running");
+                }
+                put(&tx, "runs", &rid, tid, &run)?;
+                append(&tx, tid, "run.updated", run, &t)?;
+            }
             let seq = append(&tx, tid, "runtime-request.updated", request, &t)?;
             let result = json!({"sequence":seq});
             tx.execute(
@@ -425,10 +568,14 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             .map_err(|e| e.to_string())?;
             tx.commit().map_err(|e| e.to_string())?;
             drop(db);
-            if let Some(control) = s.active.lock().unwrap().get(&rid) {
-                let _ = control.try_send(crate::provider::ProviderControl::Respond {
+            if let Some(permit) = permit {
+                permit.send(crate::provider::ProviderControl::Respond {
                     request_id: id.into(),
-                    decision: c["decision"].clone(),
+                    decision: if kind == "thread.user-input.dismiss" {
+                        json!("cancel")
+                    } else {
+                        c["decision"].clone()
+                    },
                     feedback: c["feedback"].as_str().map(str::to_owned),
                     answers: c.get("answers").cloned(),
                 });

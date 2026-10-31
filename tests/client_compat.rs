@@ -497,3 +497,62 @@ fn projects_share_the_thread_sequence_and_replay_log() {
     );
     assert_eq!(event["kind"], "project.updated");
 }
+
+#[test]
+fn queued_dispatch_waits_for_completion_and_steering_reuses_active_run() {
+    let (_, c) = connected(true);
+    create(&c, "t1");
+    c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"send","messageId":"first","threadId":"t1","text":"first","attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
+    let first = wait_status(&c, "waiting")["projection"]["runs"][0]["id"].clone();
+    c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"queue","messageId":"second","threadId":"t1","text":"second","attachments":[],"dispatchMode":{"type":"queue_after_active"}})).unwrap();
+    let queued = snap(&c, "t1");
+    assert_eq!(queued["projection"]["runs"][1]["status"], "queued");
+    let steer = json!({"type":"message.dispatch","commandId":"steer","messageId":"steer","threadId":"t1","text":"STEERING","attachments":[],"dispatchMode":{"type":"steer_active","targetRunId":first}});
+    let receipt = c
+        .rpc("orchestration.dispatchCommand", steer.clone())
+        .unwrap();
+    assert_eq!(
+        c.rpc("orchestration.dispatchCommand", steer).unwrap(),
+        receipt
+    );
+    assert_eq!(
+        snap(&c, "t1")["projection"]["runs"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    c.rpc("orchestration.dispatchCommand",json!({"type":"runtime-request.respond","commandId":"approve-first","threadId":"t1","requestId":"approval-1","decision":"accept"})).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    loop {
+        let s = snap(&c, "t1");
+        if s["projection"]["runs"][1]["status"] == "waiting" {
+            assert_eq!(s["projection"]["runs"][0]["status"], "completed");
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "{s}");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    c.rpc("orchestration.dispatchCommand",json!({"type":"runtime-request.respond","commandId":"approve-second","threadId":"t1","requestId":"approval-1","decision":"accept"})).unwrap();
+}
+
+#[test]
+fn idle_model_and_permission_mode_updates_are_durable() {
+    let (_, c) = connected(false);
+    create(&c, "t1");
+    for command in [
+        json!({"type":"thread.model-selection.set","modelSelection":{"instanceId":"claude","model":"haiku"}}),
+        json!({"type":"thread.runtime-mode.set","runtimeMode":"approval-required"}),
+        json!({"type":"thread.interaction-mode.set","interactionMode":"plan"}),
+    ] {
+        let mut command = command;
+        command["commandId"] = command["type"].clone();
+        command["threadId"] = json!("t1");
+        c.rpc("orchestration.dispatchCommand", command).unwrap();
+    }
+    let s = snap(&c, "t1");
+    let t = &s["projection"]["thread"];
+    assert_eq!(t["modelSelection"]["model"], "haiku");
+    assert_eq!(t["runtimeMode"], "approval-required");
+    assert_eq!(t["interactionMode"], "plan");
+}

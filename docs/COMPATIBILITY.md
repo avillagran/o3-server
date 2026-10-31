@@ -255,7 +255,7 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | 🚫 | `server.disableAcpRegistryProvider` | unused | unary | `providers:manage` | No client call site in inventory. |
 | ⬜ | `server.discoverSourceControl` | P1 | unary | `orchestration:read` | Deferred; client-usage.md inventory. |
 | 🚫 | `server.getBackgroundPolicy` | unused | unary | `orchestration:read` | No client call site in inventory. |
-| 🟡 | `server.getConfig` | P0 | unary | `orchestration:read` | Real Connection test: descriptor/settings and empty providers; defaults are a subset, provider status catalog absent. |
+| 🟡 | `server.getConfig` | P0 | unary | `orchestration:read` | Real Connection config test; Claude CLI discovery, warning/unknown auth and CLI model aliases advertised. Auth/setup/catalog refresh remain partial. |
 | 🚫 | `server.getDatabaseStorage` | unused | stream | `orchestration:read` | No client call site in inventory. |
 | ⬜ | `server.getHostResources` | P2 | unary | `orchestration:read` | Deferred; client-usage.md inventory. |
 | ⬜ | `server.getProcessDiagnostics` | P2 | unary | `diagnostics:read` | Deferred; client-usage.md inventory. |
@@ -343,7 +343,7 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | 🚫 | `delegated_task.completion-delivery.dispose` | unused | No client call site in inventory. |
 | 🚫 | `delegated_task.request` | unused | No client call site in inventory. |
 | 🚫 | `delegated_task.wake-policy` | unused | No client call site in inventory. |
-| 🟡 | `message.dispatch` | P0 | Real Connection scripted provider test; production delivery/recovery not complete. |
+| 🟡 | `message.dispatch` | P0 | Direct Claude stream-json adapter; fixture replay, ignored live test, Connection queue/steer tests. Durable crash recovery and full queue controls remain. |
 | 🚫 | `notification.delivery.accept` | unused | No client call site in inventory. |
 | 🚫 | `prepared-run.fail` | unused | No client call site in inventory. |
 | 🚫 | `prepared-run.progress` | unused | No client call site in inventory. |
@@ -357,8 +357,8 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | ⬜ | `queued-run.edit` | P1 | Client queue builders; deferred. |
 | ⬜ | `queued-run.reorder` | P1 | Not implemented. |
 | 🚫 | `queued-run.start` | unused | No client call site in inventory. |
-| 🟡 | `run.interrupt` | P0 | Real Connection scripted provider test; production delivery/recovery not complete. |
-| 🟡 | `runtime-request.respond` | P0 | Real Connection scripted provider test; production delivery/recovery not complete. |
+| 🟡 | `run.interrupt` | P0 | Connection interrupt test and observed CLI control receipt; isolated process group cleanup and stream finalization. Crash recovery remains. |
+| 🟡 | `runtime-request.respond` | P0 | Observed can_use_tool allow/deny mapping; fixture approval projection and Connection responses. Live test approves Write; persistent approvals and structured questions remain. |
 | ⬜ | `subagent.stop` | P2 | Not implemented. |
 | ⬜ | `thread.active.reorder` | P1 | Not implemented. |
 | ✅ | `thread.archive` | P1 | Real Connection lifecycle/idempotency test. |
@@ -370,11 +370,11 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | ⬜ | `thread.fork` | P1 | Not implemented. |
 | ⬜ | `thread.guest-message.dismiss` | P2 | Not implemented. |
 | ⬜ | `thread.guest-share.close` | P2 | Not implemented. |
-| ⬜ | `thread.interaction-mode.set` | P1 | Not implemented. |
+| 🟡 | `thread.interaction-mode.set` | P1 | Idle default/plan updates persisted and Connection-tested; native mode applied on the next turn. Active-run mutation rejected. |
 | ⬜ | `thread.mark-unread` | P1 | Not implemented. |
 | 🚫 | `thread.merge_back` | unused | No client call site in inventory. |
 | ✅ | `thread.metadata.update` | P1 | Real Connection lifecycle/idempotency test. |
-| ⬜ | `thread.model-selection.set` | P1 | Not implemented. |
+| 🟡 | `thread.model-selection.set` | P1 | Idle updates persisted and Connection-tested; native set_model applied on the next turn. Active-run mutation rejected. |
 | ✅ | `thread.pin` | P1 | Real Connection lifecycle/idempotency test. |
 | ⬜ | `thread.pin.reorder` | P1 | Not implemented. |
 | ⬜ | `thread.pull-request-link.sync` | P2 | Not implemented. |
@@ -382,7 +382,7 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | ⬜ | `thread.pull-request.sync` | P2 | Client usage inventory; deferred. |
 | ⬜ | `thread.pull-request.unlink` | P2 | Client usage inventory; deferred. |
 | ⬜ | `thread.pull-request.watch` | P2 | Client usage inventory; deferred. |
-| ⬜ | `thread.runtime-mode.set` | P1 | Not implemented. |
+| 🟡 | `thread.runtime-mode.set` | P1 | Idle updates persisted and Connection-tested; native permission mode applied on the next turn. Active-run mutation rejected. |
 | ✅ | `thread.settle` | P1 | Real Connection lifecycle/idempotency test. |
 | ⬜ | `thread.snooze` | P1 | Not implemented. |
 | 🚫 | `thread.stop` | unused | No client call site in inventory. |

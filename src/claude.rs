@@ -1,0 +1,650 @@
+//! Direct Claude Code stream-json transport. No transcript cache or Node bridge.
+use crate::provider::{Provider, ProviderControl, ProviderEvent, RunInput};
+use serde_json::{json, Value};
+use std::{
+    collections::HashMap, future::Future, path::PathBuf, pin::Pin, process::Stdio, sync::Mutex,
+};
+use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    process::{Child, ChildStdin, ChildStdout, Command},
+    sync::{mpsc, watch},
+};
+const MAX_FRAME: usize = 1024 * 1024;
+const MAX_SESSIONS: usize = 16;
+pub struct ClaudeProvider {
+    binary: PathBuf,
+    sessions: Mutex<HashMap<String, Session>>,
+}
+struct Session {
+    child: Child,
+    stdin: ChildStdin,
+    stdout: BufReader<ChildStdout>,
+    buffer: Vec<u8>,
+    native: String,
+    cwd: PathBuf,
+}
+impl ClaudeProvider {
+    pub fn discover() -> Option<Self> {
+        std::env::split_paths(&std::env::var_os("PATH")?)
+            .map(|p| p.join("claude"))
+            .find(|p| {
+                use std::os::unix::fs::PermissionsExt;
+                p.metadata()
+                    .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+            })
+            .map(Self::new)
+    }
+    pub fn new(binary: PathBuf) -> Self {
+        Self {
+            binary,
+            sessions: Mutex::new(HashMap::new()),
+        }
+    }
+    async fn spawn(&self, input: &RunInput) -> Result<Session, String> {
+        let mut cmd = Command::new(&self.binary);
+        cmd.args([
+            "-p",
+            "--input-format",
+            "stream-json",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--include-partial-messages",
+            "--permission-prompt-tool",
+            "stdio",
+            "--allow-dangerously-skip-permissions",
+        ])
+        .arg("--model")
+        .arg(model(input))
+        .arg("--permission-mode")
+        .arg(mode(input))
+        .process_group(0)
+        .current_dir(&input.cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+        if let Some(id) = &input.native_session_id {
+            cmd.arg("--resume").arg(id);
+        }
+        let mut child = cmd.spawn().map_err(|e| format!("Claude spawn: {e}"))?;
+        let stdin = child.stdin.take().ok_or("Claude stdin missing")?;
+        let stdout = BufReader::new(child.stdout.take().ok_or("Claude stdout missing")?);
+        let mut s = Session {
+            child,
+            stdin,
+            stdout,
+            buffer: Vec::new(),
+            native: input.native_session_id.clone().unwrap_or_default(),
+            cwd: input.cwd.clone(),
+        };
+        s.send(json!({"type":"control_request","request_id":"initialize","request":{"subtype":"initialize"}})).await?;
+        // Pin the handshake: do not submit a prompt before initialize succeeds.
+        tokio::time::timeout(std::time::Duration::from_secs(30), async {
+            loop {
+                let v = s.frame().await?;
+                if v["type"] == "control_response" && v["response"]["request_id"] == "initialize" {
+                    if v["response"]["subtype"] != "success" {
+                        return Err("Claude initialize rejected".into());
+                    }
+                    return Ok::<_, String>(());
+                }
+            }
+        })
+        .await
+        .map_err(|_| "Claude initialize timeout")??;
+        Ok(s)
+    }
+    async fn run(
+        &self,
+        mut input: RunInput,
+        output: mpsc::Sender<ProviderEvent>,
+        mut control: mpsc::Receiver<ProviderControl>,
+        mut cancel: watch::Receiver<bool>,
+    ) -> Result<(), String> {
+        if *cancel.borrow() {
+            return Ok(());
+        }
+        if !input.attachments.as_array().is_none_or(|a| a.is_empty()) {
+            return Err("Claude attachments are not implemented".into());
+        }
+        if input.model_selection["instanceId"]
+            .as_str()
+            .is_some_and(|s| s != "claude")
+        {
+            return Err("unsupported provider instance".into());
+        }
+        let existing = self.sessions.lock().unwrap().remove(&input.thread_id);
+        let mut session = if let Some(mut s) = existing {
+            if input.native_session_id.is_none() && !s.native.is_empty() {
+                input.native_session_id = Some(s.native.clone());
+            }
+            if s.cwd == input.cwd && s.child.try_wait().map_err(|e| e.to_string())?.is_none() {
+                s.control(
+                    "model",
+                    json!({"subtype":"set_model","model":model(&input)}),
+                )
+                .await?;
+                s.control(
+                    "mode",
+                    json!({"subtype":"set_permission_mode","mode":mode(&input)}),
+                )
+                .await?;
+                s
+            } else {
+                s.stop().await;
+                self.spawn(&input).await?
+            }
+        } else {
+            self.spawn(&input).await?
+        };
+        let result = async {
+            session.prompt(&input.text).await?;
+            output.send(ProviderEvent::Started).await.map_err(|_|"receiver closed")?;
+            let mut pending: HashMap<String, Value> = HashMap::new();
+            let mut boundary=TurnBoundary::default();
+            loop {
+                tokio::select! {
+                    biased;
+                    _=output.closed()=>return Ok(false),
+                    _=cancel.changed()=>return Ok(false),
+                    c=control.recv()=>match c {
+                        Some(ProviderControl::Interrupt)=>{
+                            session.control("interrupt",json!({"subtype":"interrupt"})).await?;
+                            return Ok(false);
+                        },
+                        Some(ProviderControl::Steer(text))=>session.prompt(&text).await?,
+                        Some(ProviderControl::Respond{request_id,decision,feedback,answers:_})=>{
+                            let native=request_id.strip_prefix(&format!("{}:",input.run_id)).ok_or("foreign Claude request")?;
+                            let updated=pending.remove(native).ok_or("unknown Claude request")?;
+                            let mut response=permission_response(native,&decision,feedback.as_deref(),updated["input"].clone());
+                            if decision=="acceptForSession" {
+                                if let Some(suggestions)=updated["permission_suggestions"].as_array() {
+                                    let permissions:Vec<Value>=suggestions.iter().cloned().map(|mut p|{p["destination"]=json!("session");p}).collect();
+                                    response["response"]["response"]["updatedPermissions"]=json!(permissions);
+                                }
+                            }
+                            session.send(response).await?;
+                        },
+                        None=>return Ok(false),
+                    },
+                    frame=session.frame()=>{
+                        let v=frame?;
+                        if let Some(id)=v["session_id"].as_str() { session.native=id.into(); }
+                        if v["type"]=="control_response" && v["response"]["subtype"]=="error" { return Err(format!("Claude control rejected: {}",v["response"]["error"])); }
+                        if v["type"]=="control_request" {
+                            let native=v["request_id"].as_str().ok_or("missing request id")?;
+                            if v["request"]["subtype"]!="can_use_tool" { return Err("unsupported Claude control request".into()); }
+                            if pending.len()>=64 { return Err("Claude pending request limit".into()); }
+                            pending.insert(native.into(),v["request"].clone());
+                            output.send(ProviderEvent::Native(json!({"type":"permission","request_id":format!("{}:{native}",input.run_id),"native_id":native,"request":v["request"]}))).await.map_err(|_|"receiver closed")?;
+                        } else {
+                            boundary.observe(&v)?;
+                            for event in decode(&v) {
+                                if matches!(event,ProviderEvent::Completed|ProviderEvent::Failed(_)) {boundary.terminal=Some(event);} else {output.send(event).await.map_err(|_|"receiver closed")?;}
+                            }
+                        }
+                        if boundary.ready() {output.send(boundary.terminal.take().unwrap()).await.map_err(|_|"receiver closed")?;return Ok(true); }
+                    }
+                }
+            }
+        }.await;
+        if matches!(result, Ok(true)) {
+            let evicted = {
+                let mut sessions = self.sessions.lock().unwrap();
+                let evicted = if sessions.len() >= MAX_SESSIONS {
+                    let key = sessions.keys().next().cloned().unwrap();
+                    sessions.remove(&key)
+                } else {
+                    None
+                };
+                sessions.insert(input.thread_id, session);
+                evicted
+            };
+            if let Some(mut s) = evicted {
+                s.stop().await;
+            }
+        } else {
+            session.stop().await;
+        }
+        result.map(|_| ())
+    }
+}
+#[derive(Default)]
+struct TurnBoundary {
+    tasks: std::collections::HashSet<String>,
+    terminal: Option<ProviderEvent>,
+}
+impl TurnBoundary {
+    fn observe(&mut self, v: &Value) -> Result<(), String> {
+        if v["type"] == "system" {
+            if let Some(id) = v["task_id"].as_str() {
+                if v["subtype"] == "task_started" {
+                    if self.tasks.len() >= 64 {
+                        return Err("Claude task limit reached".into());
+                    }
+                    self.tasks.insert(id.into());
+                }
+                if v["subtype"] == "task_notification" {
+                    self.tasks.remove(id);
+                }
+            }
+        }
+        Ok(())
+    }
+    fn ready(&self) -> bool {
+        self.terminal.is_some() && self.tasks.is_empty()
+    }
+}
+fn model(input: &RunInput) -> &str {
+    input.model_selection["modelId"]
+        .as_str()
+        .or_else(|| input.model_selection["model"].as_str())
+        .unwrap_or("haiku")
+}
+fn mode(input: &RunInput) -> &str {
+    if input.interaction_mode == "plan" {
+        "plan"
+    } else {
+        match input.runtime_mode.as_str() {
+            "full-access" => "bypassPermissions",
+            "auto-accept-edits" => "acceptEdits",
+            _ => "default",
+        }
+    }
+}
+impl Drop for Session {
+    fn drop(&mut self) {
+        if let Some(pid) = self.child.id() {
+            // Each CLI owns an isolated process group. Never leave tool grandchildren behind.
+            // SAFETY: kill takes integer arguments and no pointers; pid is our live child's ID.
+            unsafe {
+                libc::kill(-(pid as i32), libc::SIGKILL);
+            }
+        }
+    }
+}
+impl Session {
+    async fn stop(&mut self) {
+        if let Some(pid) = self.child.id() {
+            // SAFETY: the isolated group is owned by this Session, with no borrowed pointers.
+            unsafe {
+                libc::kill(-(pid as i32), libc::SIGKILL);
+            }
+        }
+        let _ = self.child.kill().await;
+    }
+    async fn send(&mut self, v: Value) -> Result<(), String> {
+        let mut bytes = serde_json::to_vec(&v).map_err(|e| e.to_string())?;
+        if bytes.len() > MAX_FRAME {
+            return Err("Claude input frame too large".into());
+        }
+        bytes.push(b'\n');
+        self.stdin
+            .write_all(&bytes)
+            .await
+            .map_err(|e| e.to_string())
+    }
+    async fn control(&mut self, id: &str, request: Value) -> Result<(), String> {
+        self.send(json!({"type":"control_request","request_id":id,"request":request}))
+            .await
+    }
+    async fn prompt(&mut self, text: &str) -> Result<(), String> {
+        self.send(json!({"type":"user","message":{"role":"user","content":[{"type":"text","text":text}]},"parent_tool_use_id":null,"session_id":self.native})).await
+    }
+    // fill_buf is cancellation safe; the partial frame survives select! cancellation.
+    async fn frame(&mut self) -> Result<Value, String> {
+        loop {
+            let bytes = self.stdout.fill_buf().await.map_err(|e| e.to_string())?;
+            if bytes.is_empty() {
+                return Err("Claude stdout closed".into());
+            }
+            let n = bytes
+                .iter()
+                .position(|b| *b == b'\n')
+                .map(|n| n + 1)
+                .unwrap_or(bytes.len());
+            if self.buffer.len() + n > MAX_FRAME {
+                return Err("Claude frame exceeds 1 MiB".into());
+            }
+            let done = bytes[n - 1] == b'\n';
+            self.buffer.extend_from_slice(&bytes[..n]);
+            self.stdout.consume(n);
+            if done {
+                let v = serde_json::from_slice(&self.buffer)
+                    .map_err(|e| format!("Claude invalid JSON: {e}"));
+                self.buffer.clear();
+                return v;
+            }
+        }
+    }
+}
+impl Provider for ClaudeProvider {
+    fn execute<'a>(
+        &'a self,
+        input: RunInput,
+        output: mpsc::Sender<ProviderEvent>,
+        control: mpsc::Receiver<ProviderControl>,
+        cancel: watch::Receiver<bool>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(self.run(input, output, control, cancel))
+    }
+}
+pub(crate) fn permission_response(
+    id: &str,
+    decision: &Value,
+    feedback: Option<&str>,
+    input: Value,
+) -> Value {
+    let allow = matches!(
+        decision.as_str(),
+        Some("accept" | "acceptForSession" | "acceptAlways")
+    );
+    json!({"type":"control_response","response":{"subtype":"success","request_id":id,"response":if allow {json!({"behavior":"allow","updatedInput":input})}else{json!({"behavior":"deny","message":feedback.unwrap_or("Permission denied by user")})}}})
+}
+pub(crate) fn decode(v: &Value) -> Vec<ProviderEvent> {
+    let mut out = Vec::new();
+    match v["type"].as_str().unwrap_or("") {
+        "stream_event" => {
+            let e = &v["event"];
+            if e["type"] == "content_block_delta" {
+                let d = &e["delta"];
+                if d["type"] == "text_delta" && v["parent_tool_use_id"].is_null() {
+                    if let Some(t) = d["text"].as_str() {
+                        out.push(ProviderEvent::TextDelta(t.into()));
+                    }
+                }
+                if d["type"] == "text_delta" && !v["parent_tool_use_id"].is_null() {
+                    out.push(ProviderEvent::Native(json!({"type":"subagent_text","text":d["text"],"parent_tool_use_id":v["parent_tool_use_id"]})));
+                }
+                if d["type"] == "thinking_delta" {
+                    out.push(ProviderEvent::Native(json!({"type":"thinking","text":d["thinking"],"parent_tool_use_id":v["parent_tool_use_id"],"index":e["index"]})));
+                }
+            }
+        }
+        "system" if v["subtype"] == "init" => out.push(ProviderEvent::Native(
+            json!({"type":"session","session_id":v["session_id"]}),
+        )),
+        "system"
+            if matches!(
+                v["subtype"].as_str(),
+                Some("task_started" | "task_notification")
+            ) =>
+        {
+            out.push(ProviderEvent::Native(json!({"type":"task","frame":v})))
+        }
+        "assistant" | "user" => {
+            if let Some(content) = v["message"]["content"].as_array() {
+                for block in content {
+                    if matches!(block["type"].as_str(), Some("tool_use" | "tool_result")) {
+                        out.push(ProviderEvent::Native(json!({"type":"tool","block":block,"parent_tool_use_id":v["parent_tool_use_id"]})));
+                    }
+                }
+            }
+        }
+        "result" => {
+            out.push(ProviderEvent::Native(json!({"type":"usage","usage":v["usage"],"modelUsage":v["modelUsage"],"cost":v["total_cost_usd"],"session_id":v["session_id"]})));
+            out.push(if v["is_error"] == true || v["subtype"] != "success" {
+                ProviderEvent::Failed(v["result"].as_str().unwrap_or("Claude turn failed").into())
+            } else {
+                ProviderEvent::Completed
+            });
+        }
+        _ => {}
+    }
+    out
+}
+pub fn config(installed: bool) -> Value {
+    json!({"instanceId":"claude","driver":"claudeAgent","displayName":"Claude Code","enabled":installed,"installed":installed,"version":null,"status":if installed {"warning"}else{"disabled"},"auth":{"status":"unknown"},"checkedAt":crate::store::iso(crate::store::now_ms()),"message":"Direct CLI adapter; authentication checked at execution. No MCP bridge or crash recovery.","models":[{"slug":"haiku","name":"Haiku (CLI alias)","isCustom":false,"isDefault":true,"capabilities":null},{"slug":"sonnet","name":"Sonnet (CLI alias)","isCustom":false,"capabilities":null},{"slug":"opus","name":"Opus (CLI alias)","isCustom":false,"capabilities":null}],"supportedRuntimeModes":["approval-required","auto-accept-edits","full-access"],"supportsConversationRollback":false,"nativeSessions":{"canList":false,"canLoad":false,"canResume":true}})
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn fixtures(name: &str) -> Vec<Value> {
+        let text = match name {
+            "permission" => include_str!("../tests/fixtures/claude/permission.jsonl"),
+            _ => include_str!("../tests/fixtures/claude/observed.jsonl"),
+        };
+        text.lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect()
+    }
+    #[test]
+    fn replay_real_partial_text_tools_results_and_usage() {
+        let frames = fixtures("observed");
+        let events: Vec<_> = frames.iter().flat_map(decode).collect();
+        let text: String = events
+            .iter()
+            .filter_map(|e| {
+                if let ProviderEvent::TextDelta(t) = e {
+                    Some(t.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert!(text.contains("OK"));
+        assert!(text.contains("DONE"));
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(e, ProviderEvent::Completed))
+                .count(),
+            2
+        );
+        assert!(events
+            .iter()
+            .any(|e| matches!(e,ProviderEvent::Native(v) if v["block"]["name"]=="Bash")));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e,ProviderEvent::Native(v) if v["block"]["type"]=="tool_result")));
+        assert!(events.iter().any(|e|matches!(e,ProviderEvent::Native(v) if v["type"]=="usage" && v["usage"]["output_tokens"].as_u64().unwrap()>0)));
+    }
+    #[test]
+    fn real_permission_roundtrip_and_denial() {
+        let f = fixtures("permission")
+            .into_iter()
+            .find(|v| v["type"] == "control_request")
+            .unwrap();
+        assert_eq!(f["request"]["subtype"], "can_use_tool");
+        let r = permission_response(
+            f["request_id"].as_str().unwrap(),
+            &json!("accept"),
+            None,
+            f["request"]["input"].clone(),
+        );
+        assert_eq!(
+            r["response"]["response"]["updatedInput"],
+            f["request"]["input"]
+        );
+        assert_eq!(r["response"]["request_id"], f["request_id"]);
+        assert_eq!(
+            permission_response("id", &json!("decline"), Some("No"), json!({}))["response"]
+                ["response"],
+            json!({"behavior":"deny","message":"No"})
+        );
+    }
+    #[tokio::test]
+    async fn oversized_and_malformed_frames_fail_bounded() {
+        let mut child = Command::new("sh")
+            .args(["-c", "printf 'not-json\\n'"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let mut s = Session {
+            stdin: child.stdin.take().unwrap(),
+            stdout: BufReader::new(child.stdout.take().unwrap()),
+            child,
+            buffer: vec![],
+            native: String::new(),
+            cwd: PathBuf::new(),
+        };
+        assert!(s.frame().await.unwrap_err().contains("invalid JSON"));
+        let _ = s.child.wait().await;
+        let mut child = Command::new("sh")
+            .args(["-c", "head -c 1048577 /dev/zero"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let mut s = Session {
+            stdin: child.stdin.take().unwrap(),
+            stdout: BufReader::new(child.stdout.take().unwrap()),
+            child,
+            buffer: vec![],
+            native: String::new(),
+            cwd: PathBuf::new(),
+        };
+        assert!(s.frame().await.unwrap_err().contains("exceeds"));
+        assert!(s.buffer.len() <= MAX_FRAME);
+        s.stop().await;
+    }
+    #[test]
+    fn observed_steering_and_interrupt_boundaries() {
+        let steer: Vec<Value> = include_str!("../tests/fixtures/claude/steer.jsonl")
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        let results: Vec<_> = steer.iter().filter(|v| v["type"] == "result").collect();
+        assert_eq!(results.len(), 1);
+        assert!(results[0]["result"].as_str().unwrap().contains("STEER_OK"));
+        let interrupted: Vec<Value> = include_str!("../tests/fixtures/claude/interrupt.jsonl")
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert!(interrupted.iter().any(|v| v["type"] == "control_response"
+            && v["response"]["request_id"] == "interrupt-probe"
+            && v["response"]["subtype"] == "success"));
+        assert!(interrupted
+            .iter()
+            .flat_map(decode)
+            .any(|e| matches!(e, ProviderEvent::Failed(_))));
+    }
+    #[test]
+    fn background_acknowledgement_does_not_finish_parent() {
+        let frames: Vec<Value> = include_str!("../tests/fixtures/claude/subagent.jsonl")
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        let start = frames
+            .iter()
+            .find(|v| v["subtype"] == "task_started")
+            .unwrap();
+        let done = frames
+            .iter()
+            .find(|v| v["subtype"] == "task_notification")
+            .unwrap();
+        let mut boundary = TurnBoundary::default();
+        boundary.observe(start).unwrap();
+        boundary.terminal = Some(ProviderEvent::Completed);
+        // Reorder the observed terminal boundary to exercise a background completion race.
+        assert!(!boundary.ready());
+        boundary.observe(done).unwrap();
+        assert!(boundary.ready());
+    }
+    #[tokio::test]
+    #[ignore = "uses installed Claude credentials and Haiku quota; only temporary workspace"]
+    async fn live_persistent_turns_permission_and_native_resume() {
+        let dir = std::env::temp_dir().join(format!(
+            "o3-claude-live-{}",
+            crate::store::random_id().unwrap()
+        ));
+        std::fs::create_dir(&dir).unwrap();
+        let provider = ClaudeProvider::discover().expect("claude installed");
+        async fn turn(
+            p: &ClaudeProvider,
+            dir: &std::path::Path,
+            text: &str,
+            resume: Option<String>,
+        ) -> Vec<ProviderEvent> {
+            let input = RunInput {
+                native_session_id: resume,
+                thread_id: "live".into(),
+                run_id: crate::store::random_id().unwrap(),
+                cwd: dir.into(),
+                text: text.into(),
+                model_selection: json!({"instanceId":"claude","model":"haiku"}),
+                runtime_mode: "approval-required".into(),
+                interaction_mode: "default".into(),
+                attachments: json!([]),
+                context: None,
+            };
+            let (tx, mut rx) = mpsc::channel(16);
+            let (control, crx) = mpsc::channel(8);
+            let (_cancel, watch) = watch::channel(false);
+            let read = async {
+                let mut events = vec![];
+                while let Some(e) = rx.recv().await {
+                    if let ProviderEvent::Native(v) = &e {
+                        if v["type"] == "permission" {
+                            control
+                                .send(ProviderControl::Respond {
+                                    request_id: v["request_id"].as_str().unwrap().into(),
+                                    decision: json!("accept"),
+                                    feedback: None,
+                                    answers: None,
+                                })
+                                .await
+                                .unwrap();
+                        }
+                    }
+                    events.push(e);
+                }
+                events
+            };
+            let (r, events) = tokio::time::timeout(std::time::Duration::from_secs(90), async {
+                tokio::join!(p.execute(input, tx, crx, watch), read)
+            })
+            .await
+            .unwrap();
+            r.unwrap();
+            assert!(events.iter().any(|e| matches!(e, ProviderEvent::Completed)));
+            events
+        }
+        let events = turn(
+            &provider,
+            &dir,
+            "Use Write to create proof.txt containing TURQUOISE-741. Then reply OK.",
+            None,
+        )
+        .await;
+        assert!(events
+            .iter()
+            .any(|e| matches!(e,ProviderEvent::Native(v) if v["type"]=="permission")));
+        let (pid, native) = {
+            let pool = provider.sessions.lock().unwrap();
+            let s = &pool["live"];
+            (s.child.id(), s.native.clone())
+        };
+        let events = turn(
+            &provider,
+            &dir,
+            "What exact code did I ask you to write? No tools.",
+            None,
+        )
+        .await;
+        assert_eq!(provider.sessions.lock().unwrap()["live"].child.id(), pid);
+        assert!(events
+            .iter()
+            .any(|e| matches!(e,ProviderEvent::TextDelta(t) if t.contains("741"))));
+        let mut s = provider.sessions.lock().unwrap().remove("live").unwrap();
+        s.child.kill().await.unwrap();
+        let events = turn(
+            &provider,
+            &dir,
+            "Repeat the exact code from our earlier conversation. No tools.",
+            Some(native),
+        )
+        .await;
+        assert!(events
+            .iter()
+            .any(|e| matches!(e,ProviderEvent::TextDelta(t) if t.contains("741"))));
+        let mut s = provider.sessions.lock().unwrap().remove("live").unwrap();
+        s.child.kill().await.unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}
