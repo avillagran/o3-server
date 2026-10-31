@@ -50,10 +50,29 @@ The compatibility registry marks broad methods partial where appropriate.
 - No conformance run against upstream T3, desktop UI or Android was performed. Tests use the
   real client library with o3-server. No actual systemd installation was tested.
 
+## Files, assets, VCS and read-side queries
+
+Added behind a small dispatch hook (`ext.rs`, spawned per request, at most 16 in flight per socket):
+
+- `assets.rs`: attachment upload (`POST /api/attachments/upload/*`, streamed to a `.part` file, exact size, 204),
+  `assets.createUrl` and `GET|HEAD /api/assets/*` (Range, streamed). Tokens are T3's
+  `base64url(claims).base64url(HMAC-SHA256)` under `secrets/asset-access-signing-key.bin`, so a profile shared with T3
+  accepts each other's URLs. Paths are confined by lexical resolution, realpath and a post-open `/proc/self/fd` check.
+- `files.rs`, `paths.rs`: `projects.readFile`, `searchEntries`, `filesystem.browse/getMetadata`, `shell.openInEditor`.
+- `proc.rs`, `vcs.rs`, `stacked.rs`, `review.rs`: git as argv subprocesses (no shell, no stdin, timeouts, output caps,
+  `core.fsmonitor=false`), per-repository mutation lock, `vcs.*`, the `git.runStackedAction` stream and review diffs.
+- `threadq.rs`: FTS5 thread search (index maintained in `events::put`), archived shell, turn items, projections,
+  checkpoint diffs. `projects.rs`: `GET /api/projects`, `POST /api/projects/mutate` and workspace-root validation.
+
+Known gaps: no checkpoint capture (diffs work on recorded refs only), no pull-request host adapter besides `gh`,
+`git.runStackedAction` has no hook events or generated commit messages and does not cancel a running step,
+`assets.createUrl` refuses native-app-icon and source-control media. Tests: `tests/files_assets.rs`,
+`tests/vcs_compat.rs`, `tests/threads_compat.rs` (scratch dirs under `/var/tmp`, fake `code`/`gh` on PATH).
+
 ## Verification and memory
 
-`CARGO_TARGET_DIR=/tmp/o3-target cargo test` runs 22 tests: 3 auth unit tests, 14 real-client
-integration tests, 4 CLI subprocess tests and 1 embedded-transport test. All profiles are temporary.
+`CARGO_TARGET_DIR=/tmp/o3-target cargo test` runs 38 tests: 3 auth unit tests, 14 + 16 real-client
+integration tests (core, files/assets, VCS, threads), 4 CLI subprocess tests and 1 embedded-transport test. All profiles are temporary.
 `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` are the static checks.
 
 Run `tools/measure-rss /tmp/o3-target/release/o3-server` after a release build. The probe uses a
