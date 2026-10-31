@@ -5,3 +5,8 @@ pub mod rpc;
 pub mod store;
 
 pub use http::serve;
+pub mod events;
+pub mod profile;
+pub mod provider;
+pub mod scopes;
+pub mod settings;

@@ -2,13 +2,28 @@
 use crate::auth;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
-use std::{cell::RefCell, path::{Path, PathBuf}};
+use std::{
+    cell::RefCell,
+    path::{Path, PathBuf},
+};
 
 pub const STANDARD_SCOPES: [&str; 16] = [
-    "orchestration:read", "orchestration:operate", "settings:write", "providers:manage",
-    "environment:maintain", "preview:operate", "diagnostics:read", "terminal:read",
-    "terminal:operate", "source-control:write", "filesystem:read", "filesystem:write",
-    "relay:read", "access:read", "access:write", "relay:write",
+    "orchestration:read",
+    "orchestration:operate",
+    "settings:write",
+    "providers:manage",
+    "environment:maintain",
+    "preview:operate",
+    "diagnostics:read",
+    "terminal:read",
+    "terminal:operate",
+    "source-control:write",
+    "filesystem:read",
+    "filesystem:write",
+    "relay:read",
+    "access:read",
+    "access:write",
+    "relay:write",
 ];
 
 pub struct State {
@@ -17,6 +32,14 @@ pub struct State {
     pub environment_id: String,
     pub label: String,
     pub dir: PathBuf,
+    pub provider: RefCell<Option<std::rc::Rc<dyn crate::provider::Provider>>>,
+    pub active: RefCell<
+        std::collections::BTreeMap<
+            String,
+            tokio::sync::mpsc::Sender<crate::provider::ProviderControl>,
+        >,
+    >,
+    pub changed: tokio::sync::watch::Sender<u64>,
 }
 
 pub fn now_ms() -> i64 {
@@ -24,18 +47,28 @@ pub fn now_ms() -> i64 {
 }
 
 pub fn iso(ms: i64) -> String {
-    let at = time::OffsetDateTime::from_unix_timestamp_nanos(ms as i128 * 1_000_000).expect("timestamp in range");
-    let format = time::macros::format_description!("[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z");
+    let at = time::OffsetDateTime::from_unix_timestamp_nanos(ms as i128 * 1_000_000)
+        .expect("timestamp in range");
+    let format = time::macros::format_description!(
+        "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+    );
     at.format(&format).expect("fixed format")
 }
 
-fn random_id() -> Result<String, String> {
+pub fn random_id() -> Result<String, String> {
     let mut bytes = [0u8; 16];
     getrandom::fill(&mut bytes).map_err(|e| e.to_string())?;
     bytes[6] = bytes[6] & 0x0f | 0x40;
     bytes[8] = bytes[8] & 0x3f | 0x80;
     let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
-    Ok(format!("{}-{}-{}-{}-{}", &hex[..8], &hex[8..12], &hex[12..16], &hex[16..20], &hex[20..]))
+    Ok(format!(
+        "{}-{}-{}-{}-{}",
+        &hex[..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[16..20],
+        &hex[20..]
+    ))
 }
 
 const SCHEMA: &str = "
@@ -53,7 +86,8 @@ impl State {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
         let db = Connection::open(dir.join("o3.sqlite")).map_err(|e| e.to_string())?;
         db.execute_batch(SCHEMA).map_err(|e| e.to_string())?;
-        let signing_key = auth::load_or_create_key(&dir.join("secrets/server-signing-key.bin")).map_err(|e| e.to_string())?;
+        let signing_key = auth::load_or_create_key(&dir.join("secrets/server-signing-key.bin"))
+            .map_err(|e| e.to_string())?;
         let id_path = dir.join("environment-id");
         let environment_id = match std::fs::read_to_string(&id_path) {
             Ok(id) => id.trim().to_owned(),
@@ -64,7 +98,18 @@ impl State {
             }
         };
         let label = std::env::var("O3_LABEL").unwrap_or_else(|_| "o3-server".into());
-        Ok(Self { db: RefCell::new(db), signing_key, environment_id, label, dir: dir.into() })
+        let (changed, _) = tokio::sync::watch::channel(0);
+        crate::events::initialize(&db)?;
+        Ok(Self {
+            provider: RefCell::new(None),
+            active: RefCell::new(std::collections::BTreeMap::new()),
+            changed,
+            db: RefCell::new(db),
+            signing_key,
+            environment_id,
+            label,
+            dir: dir.into(),
+        })
     }
 
     /// A one-use pairing secret, as `/api/auth/pairing-token` hands out.
@@ -74,7 +119,8 @@ impl State {
             "INSERT INTO auth_pairing_links(id,credential,scopes,subject,label,created_at,expires_at) VALUES(?,?,?,?,?,?,?)",
             params![id, credential, STANDARD_SCOPES.join(" "), "owner", label, now, now + ttl_ms],
         ).map_err(|e| e.to_string())?;
-        let mut result = json!({ "id": id, "credential": credential, "expiresAt": iso(now + ttl_ms) });
+        let mut result =
+            json!({ "id": id, "credential": credential, "expiresAt": iso(now + ttl_ms) });
         if let Some(label) = label {
             result["label"] = label.into();
         }
@@ -82,14 +128,20 @@ impl State {
     }
 
     /// Consumes `credential` atomically and opens a bearer session. `None` if it is unusable.
-    pub fn exchange_pairing(&self, credential: &str, client: &Value) -> Result<Option<Value>, String> {
+    pub fn exchange_pairing(
+        &self,
+        credential: &str,
+        client: &Value,
+    ) -> Result<Option<Value>, String> {
         let now = now_ms();
         let db = self.db.borrow();
         let grant: Option<(String, String)> = db.query_row(
             "UPDATE auth_pairing_links SET consumed_at=?1 WHERE credential=?2 AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>?1 RETURNING scopes,subject",
             params![now, credential], |row| Ok((row.get(0)?, row.get(1)?)),
         ).optional().map_err(|e| e.to_string())?;
-        let Some((scopes, subject)) = grant else { return Ok(None) };
+        let Some((scopes, subject)) = grant else {
+            return Ok(None);
+        };
         let sid = random_id()?;
         let exp = now + auth::SESSION_TTL_MS;
         db.execute(
@@ -130,11 +182,51 @@ impl State {
             "SELECT 1 FROM auth_sessions WHERE session_id=? AND revoked_at IS NULL AND expires_at>?",
             params![sid, now], |_| Ok(()),
         ).optional().ok()??;
+        let (scopes, subject): (String, String) = self
+            .db
+            .borrow()
+            .query_row(
+                "SELECT scopes,subject FROM auth_sessions WHERE session_id=?",
+                [sid],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .ok()?;
+        let mut claims = claims;
+        claims["scopes"] = json!(scopes.split_whitespace().collect::<Vec<_>>());
+        claims["sub"] = subject.into();
         Some(claims)
     }
 
+    pub fn issue_session(
+        &self,
+        subject: &str,
+        scopes: &[String],
+        ttl: i64,
+        label: &str,
+    ) -> Result<String, String> {
+        let sid = random_id()?;
+        let now = now_ms();
+        self.db.borrow().execute("INSERT INTO auth_sessions(session_id,subject,scopes,method,client,issued_at,expires_at) VALUES(?,?,?,?,?,?,?)",params![sid,subject,scopes.join(" "),"bearer-access-token",json!({"client_label":label}).to_string(),now,now+ttl]).map_err(|e|e.to_string())?;
+        Ok(auth::sign(
+            &json!({"v":1,"kind":"session","sid":sid,"sub":subject,"scopes":scopes,"method":"bearer-access-token","iat":now,"exp":now+ttl}),
+            &self.signing_key,
+        ))
+    }
+    pub fn session_live(&self, session: &Value) -> bool {
+        self.live(session.clone(), now_ms()).is_some()
+    }
+    pub fn notify(&self) {
+        self.changed.send_modify(|v| *v = v.wrapping_add(1));
+    }
     pub fn revoke_session(&self, sid: &str) -> Result<bool, String> {
-        self.db.borrow().execute("UPDATE auth_sessions SET revoked_at=? WHERE session_id=? AND revoked_at IS NULL", params![now_ms(), sid])
-            .map(|n| n > 0).map_err(|e| e.to_string())
+        self.notify();
+        self.db
+            .borrow()
+            .execute(
+                "UPDATE auth_sessions SET revoked_at=? WHERE session_id=? AND revoked_at IS NULL",
+                params![now_ms(), sid],
+            )
+            .map(|n| n > 0)
+            .map_err(|e| e.to_string())
     }
 }

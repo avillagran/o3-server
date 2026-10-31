@@ -1,29 +1,142 @@
-use std::{net::SocketAddr, path::PathBuf, rc::Rc};
-
+use std::{path::Path, rc::Rc};
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
-
-fn state_dir() -> PathBuf {
-    std::env::var_os("O3_HOME").map(PathBuf::from).unwrap_or_else(|| {
-        PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".o3/userdata")
-    })
+fn option<'a>(a: &'a [String], name: &str) -> Option<&'a str> {
+    a.windows(2).find(|w| w[0] == name).map(|w| w[1].as_str())
 }
-
+fn ttl(s: &str) -> std::io::Result<i64> {
+    let (n, m) = if let Some(v) = s.strip_suffix('d') {
+        (v, 86400000)
+    } else if let Some(v) = s.strip_suffix('h') {
+        (v, 3600000)
+    } else if let Some(v) = s.strip_suffix('m') {
+        (v, 60000)
+    } else {
+        (s, 1000)
+    };
+    n.parse::<i64>()
+        .ok()
+        .and_then(|n| n.checked_mul(m))
+        .filter(|n| *n > 0)
+        .ok_or_else(|| std::io::Error::other("invalid TTL"))
+}
 fn main() -> std::io::Result<()> {
-    let state = o3_server::store::State::open(&state_dir()).map_err(std::io::Error::other)?;
-    if std::env::args().nth(1).as_deref() == Some("pair") {
-        // A short-lived one-use secret, printed once for the operator.
-        let grant = state.issue_pairing(Some("cli"), 5 * 60 * 1000).map_err(std::io::Error::other)?;
-        println!("{}", grant["credential"].as_str().unwrap_or_default());
-        return Ok(());
+    let args: Vec<_> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("__ssh-helper") {
+        match args.get(1).map(String::as_str) {
+            Some("runtime-port") => {
+                let v: serde_json::Value = serde_json::from_slice(&std::fs::read(
+                    args.get(2)
+                        .ok_or_else(|| std::io::Error::other("runtime path required"))?,
+                )?)?;
+                println!("{} {}", v["pid"], v["port"]);
+                return Ok(());
+            }
+            Some("wait-ready") => {
+                use std::io::{Read, Write};
+                let port = args
+                    .get(2)
+                    .ok_or_else(|| std::io::Error::other("port required"))?;
+                let timeout = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(15000);
+                let interval = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(1000u64);
+                let start = std::time::Instant::now();
+                while start.elapsed().as_millis() < (timeout as u128) {
+                    if let Ok(mut s) = std::net::TcpStream::connect(format!("127.0.0.1:{port}")) {
+                        s.set_read_timeout(Some(std::time::Duration::from_secs(1)))?;
+                        s.write_all(
+                            b"GET /.well-known/t3/environment HTTP/1.0\r\nHost: localhost\r\n\r\n",
+                        )?;
+                        let mut b = [0; 32];
+                        if s.read(&mut b)
+                            .is_ok_and(|n| String::from_utf8_lossy(&b[..n]).contains("200"))
+                        {
+                            return Ok(());
+                        }
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(interval.max(1)));
+                }
+                return Err(std::io::Error::other("server readiness timed out"));
+            }
+            _ => return Err(std::io::Error::other("unknown ssh helper")),
+        }
     }
-    let port: u16 = std::env::var("O3_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(3773);
-    let host = std::env::var("O3_HOST").unwrap_or_else(|_| "127.0.0.1".into());
-    let addr: SocketAddr = format!("{host}:{port}").parse().map_err(std::io::Error::other)?;
-    // One thread: idle cost is what we optimise, and every handler is non-blocking.
+    let base = o3_server::profile::base_dir(&args)?;
+    let dir = base.join("userdata");
+    if args.starts_with(&["service".into(), "install".into()]) {
+        return Err(std::io::Error::other(
+            "service install is not implemented; run o3-server serve under your service manager",
+        ));
+    }
+    if args
+        .first()
+        .is_some_and(|s| !matches!(s.as_str(), "serve" | "start" | "auth") && !s.starts_with('-'))
+    {
+        return Err(std::io::Error::other("unsupported command"));
+    }
+    let is_auth = args.first().map(String::as_str) == Some("auth");
+    if !is_auth {
+        o3_server::profile::refuse_live(&dir)?;
+    }
+    let state = o3_server::store::State::open(Path::new(&dir)).map_err(std::io::Error::other)?;
+    if is_auth {
+        if args.get(1).map(String::as_str) == Some("session")
+            && args.get(2).map(String::as_str) == Some("issue")
+        {
+            let scopes: Vec<String> = args
+                .windows(2)
+                .filter(|w| w[0] == "--scope")
+                .map(|w| w[1].clone())
+                .collect();
+            if scopes
+                .iter()
+                .any(|s| !o3_server::store::STANDARD_SCOPES.contains(&s.as_str()))
+            {
+                return Err(std::io::Error::other("unknown scope"));
+            }
+            let token = state
+                .issue_session(
+                    option(&args, "--subject").unwrap_or("owner"),
+                    &scopes,
+                    ttl(option(&args, "--ttl").unwrap_or("30d"))?,
+                    option(&args, "--label").unwrap_or("cli"),
+                )
+                .map_err(std::io::Error::other)?;
+            if args.iter().any(|s| s == "--token-only") {
+                println!("{token}")
+            } else {
+                println!("{}", serde_json::json!({"token":token}))
+            };
+            return Ok(());
+        }
+        if args.get(1).map(String::as_str) == Some("pairing")
+            && args.get(2).map(String::as_str) == Some("create")
+        {
+            println!(
+                "{}",
+                state
+                    .issue_pairing(
+                        option(&args, "--label"),
+                        ttl(option(&args, "--ttl").unwrap_or("5m"))?
+                    )
+                    .map_err(std::io::Error::other)?
+            );
+            return Ok(());
+        }
+        return Err(std::io::Error::other("unsupported auth command"));
+    }
+    let port = option(&args, "--port")
+        .map(str::to_owned)
+        .or_else(|| std::env::var("T3CODE_PORT").ok())
+        .unwrap_or("3773".into());
+    let host = option(&args, "--host")
+        .map(str::to_owned)
+        .or_else(|| std::env::var("T3CODE_HOST").ok())
+        .unwrap_or("127.0.0.1".into());
     tokio::runtime::Builder::new_current_thread().enable_all().build()?.block_on(async {
-        let listener = tokio::net::TcpListener::bind(addr).await?;
-        eprintln!("o3-server listening on {}", listener.local_addr()?);
-        o3_server::serve(listener, Rc::new(state)).await
+        let listener=tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
+        let _guard=o3_server::profile::RuntimeGuard::write(&dir,listener.local_addr()?)?;
+        eprintln!("o3-server listening on {}",listener.local_addr()?);
+        let mut term=tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+        tokio::select! {result=o3_server::serve(listener,Rc::new(state))=>result,_=tokio::signal::ctrl_c()=>Ok(()),_=term.recv()=>Ok(())}
     })
 }

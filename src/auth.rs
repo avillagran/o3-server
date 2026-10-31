@@ -19,14 +19,22 @@ pub fn load_or_create_key(path: &Path) -> io::Result<Vec<u8>> {
     use std::{io::Write, os::unix::fs::OpenOptionsExt};
     match fs::read(path) {
         Ok(key) if key.len() == 32 => Ok(key),
-        Ok(_) => Err(io::Error::new(io::ErrorKind::InvalidData, "signing key must be 32 bytes")),
+        Ok(_) => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "signing key must be 32 bytes",
+        )),
         Err(e) if e.kind() == io::ErrorKind::NotFound => {
             let mut key = vec![0u8; 32];
             getrandom::fill(&mut key).map_err(io::Error::other)?;
             if let Some(dir) = path.parent() {
                 fs::create_dir_all(dir)?;
             }
-            fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(path)?.write_all(&key)?;
+            fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(path)?
+                .write_all(&key)?;
             Ok(key)
         }
         Err(e) => Err(e),
@@ -50,7 +58,12 @@ pub fn verify(token: &str, kind: &str, secret: &[u8], now_ms: i64) -> Option<Val
     (claims["kind"] == kind && claims["exp"].as_i64()? > now_ms).then_some(claims)
 }
 
-pub fn websocket_ticket(session: &Value, secret: &[u8], now_ms: i64, usage: Option<&str>) -> String {
+pub fn websocket_ticket(
+    session: &Value,
+    secret: &[u8],
+    now_ms: i64,
+    usage: Option<&str>,
+) -> String {
     let mut claims = json!({ "v": 1, "kind": "websocket", "sid": session["sid"], "iat": now_ms, "exp": now_ms + WEBSOCKET_TTL_MS });
     if let Some(usage) = usage {
         claims["aud"] = usage.into();
@@ -69,8 +82,12 @@ mod tests {
     #[test]
     fn matches_node_hmac_vector() {
         // Produced by Node's createHmac("sha256", key).update(payload).digest("base64url").
-        let expected = "eyJleHAiOjEwLCJraW5kIjoic2Vzc2lvbiJ9.Vvxxfz3ecI3mln6fdU_gRtpD7Pjv_8rYYojyBoadWbM";
-        assert_eq!(sign(&json!({ "exp": 10, "kind": "session" }), KEY), expected);
+        let expected =
+            "eyJleHAiOjEwLCJraW5kIjoic2Vzc2lvbiJ9.Vvxxfz3ecI3mln6fdU_gRtpD7Pjv_8rYYojyBoadWbM";
+        assert_eq!(
+            sign(&json!({ "exp": 10, "kind": "session" }), KEY),
+            expected
+        );
     }
 
     #[test]
@@ -87,7 +104,16 @@ mod tests {
     #[test]
     fn websocket_ticket_keeps_session_and_proof_key() {
         let session = json!({ "sid": "s1", "jkt": "thumb" });
-        let claims = verify(&websocket_ticket(&session, KEY, 0, Some("media")), "websocket", KEY, 1).unwrap();
-        assert_eq!((&claims["sid"], &claims["jkt"], &claims["aud"]), (&json!("s1"), &json!("thumb"), &json!("media")));
+        let claims = verify(
+            &websocket_ticket(&session, KEY, 0, Some("media")),
+            "websocket",
+            KEY,
+            1,
+        )
+        .unwrap();
+        assert_eq!(
+            (&claims["sid"], &claims["jkt"], &claims["aud"]),
+            (&json!("s1"), &json!("thumb"), &json!("media"))
+        );
     }
 }
