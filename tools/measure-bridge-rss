@@ -2,7 +2,7 @@
 """Measure an isolated release server from disk; second argument is bridge_probe."""
 import json, os, pathlib, shutil, subprocess, sys, tempfile, time
 binary, probe = map(lambda p: pathlib.Path(p).resolve(), sys.argv[1:3])
-root = pathlib.Path(tempfile.mkdtemp(prefix='o3-bridge-rss-', dir='/home/node/Work'))
+root = pathlib.Path(tempfile.mkdtemp(prefix='o3-bridge-rss-', dir='/var/tmp/o3-build/embed'))
 assert subprocess.check_output(['stat','-f','-c','%T',str(root)], text=True).strip() != 'tmpfs'
 server = root/'o3-server'
 shutil.copy2(binary, server)
@@ -27,7 +27,7 @@ with (root/'server.log').open('w') as log:
         client = subprocess.Popen([str(probe),str(root)],stdout=log,stderr=log)
         for _ in range(300):
             if (root/'ready').exists(): break
-            if client.poll() is not None: raise RuntimeError((root/'server.log').read_text())
+            if client.poll() is not None: raise RuntimeError(f'bridge_probe exited {client.returncode} before RPC readiness: '+(root/'server.log').read_text())
             time.sleep(.05)
         else: raise RuntimeError('bridged RPC timeout')
         time.sleep(3)

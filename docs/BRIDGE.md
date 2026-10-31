@@ -3,7 +3,7 @@
 The default `bridge` Cargo feature runs OmaBridge on o3-server's two-worker Tokio runtime.
 `--no-default-features` removes it. No bridge executable or service is started by the server.
 
-The local development dependency is patched to `/home/node/Work/omabridge-embed`, branch
+The local development dependency is patched to `/var/tmp/o3-build/embed/omabridge`, branch
 `feat/embed`, commit `44cc7fa7575c1256f4007be4823e3f455429175a`. Before release, replace this patch with a published, pinned git revision.
 The real protocol client and bridge both use the pinned `t3-protocol` revision
 `8c80c4dc62414c454eaefb4706d973adf8d8ee74`: linking different revisions together fails
@@ -103,14 +103,28 @@ gateway route verification and desktop UI integration require deployment-level t
 Catalogs are populated by `publish_auto` only when verified HTTPS routes are available.
 The application still has the core/provider limits documented in `IMPLEMENTATION.md`.
 
-Latest release sample (2026-10-31, Btrfs): idle VmRSS/VmHWM 27,468 KiB,
-RssAnon 17,200 KiB; one bridged client VmRSS/VmHWM 32,120 KiB,
-RssAnon 21,356 KiB. Both samples used four threads and zero RssShmem.
-The stripped release binaries are 10,643,848 bytes with bridge and 2,319,360 bytes
+Latest release sample (2026-10-31, Btrfs): idle VmRSS/VmHWM 27,380 KiB,
+RssAnon 17,192 KiB; one bridged client VmRSS/VmHWM 34,200 KiB,
+RssAnon 23,348 KiB. Both samples used four threads and zero RssShmem.
+The stripped release binaries are 10,643,336 bytes with bridge and 2,319,360 bytes
 without it. SHA-256 values and full method are in `rss-measurement.json`.
-Build artifacts started in a private tmpfs target; after quota failures the target
-was backed by a private disk directory through `/tmp/o3-embed-disk-target`.
+Builds, worktrees and test state now use `/var/tmp/o3-build/embed` on disk,
+following the owner rule. Earlier tmpfs attempts were superseded.
 The measured server executable and all measurement state were always on Btrfs.
 
 Validation: o3-server has 23 passing tests with bridge and 22 without it; format,
 `clippy --all-targets -- -D warnings`, and compatibility generation pass.
+
+All development commands must use disk-backed paths, for example:
+
+```sh
+export CARGO_TARGET_DIR=/var/tmp/o3-build/embed/target
+export TMPDIR=/var/tmp/o3-build/embed/t
+cargo test --locked
+```
+
+The implementation worktrees are `/var/tmp/o3-build/embed/o3-server` and
+`/var/tmp/o3-build/embed/omabridge`. Do not use `/tmp` for builds or test state.
+
+Use the short test-state path above: long profile paths can exceed Linux's 108-byte Unix socket address limit. For long production profiles, provide a shorter
+explicit `--bridge-state-dir` within the authorized disk directory.

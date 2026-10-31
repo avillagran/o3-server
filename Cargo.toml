@@ -42,8 +42,12 @@ strip = true
 
 # Local co-development only: replace with a pinned upstream git rev before release.
 [patch.crates-io]
-omabridge = { path = "/home/node/Work/omabridge-embed" }
+omabridge = { path = "/var/tmp/o3-build/embed/omabridge" }
 
 [profile.dev]
 debug = 0
 incremental = false
+
+[[example]]
+name = "bridge_probe"
+required-features = ["bridge"]

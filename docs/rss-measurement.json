@@ -17,23 +17,23 @@
   },
   "measured_on": "2026-10-31",
   "embedded_bridge": {
-    "binary": "/home/node/Work/o3-bridge-rss-rslygpog/o3-server",
-    "binary_bytes": 10643848,
+    "binary": "/var/tmp/o3-build/embed/o3-bridge-rss-9q3kzk71/o3-server",
+    "binary_bytes": 10643336,
     "filesystem": "btrfs",
     "units": "KiB (except Threads and binary_bytes)",
     "idle": {
-      "VmHWM": 27468,
-      "VmRSS": 27468,
-      "RssAnon": 17200,
-      "RssFile": 10268,
+      "VmHWM": 27380,
+      "VmRSS": 27380,
+      "RssAnon": 17192,
+      "RssFile": 10188,
       "RssShmem": 0,
       "Threads": 4
     },
     "one_bridged_authenticated_rpc_client": {
-      "VmHWM": 32120,
-      "VmRSS": 32120,
-      "RssAnon": 21356,
-      "RssFile": 10764,
+      "VmHWM": 34200,
+      "VmRSS": 34200,
+      "RssAnon": 23348,
+      "RssFile": 10852,
       "RssShmem": 0,
       "Threads": 4
     },
@@ -44,18 +44,18 @@
     "host_service_transport": "32 KiB Tokio duplex, no TCP target",
     "measured_on": "2026-10-31",
     "measurement": "Linux /proc/PID/status; binary and state on disk; 3 seconds settling per sample",
-    "artifacts": "/home/node/Work/o3-bridge-rss-rslygpog",
+    "artifacts": "/var/tmp/o3-build/embed/o3-bridge-rss-9q3kzk71",
     "release_binaries": {
       "with_bridge": {
-        "bytes": 10643848,
-        "sha256": "af124e81fbaabcc064a888b6fc89a7d7abbed8221d984a99f64c40e7988acb34"
+        "bytes": 10643336,
+        "sha256": "aeff561b2035591a2739f6ec2fd8f3fa31aaf10a9cc8f9a409829016f7d66582"
       },
       "without_bridge": {
         "bytes": 2319360,
-        "sha256": "fff74a73d066b414b51e4669f671677560ec5fc79754e0b399b6c2bd25eeb87b"
+        "sha256": "9e98073c029acec1b5989f4197b1dd3c9f46d6e102a938cb3533b8885da0266d"
       }
     },
-    "cargo_target_dir": "/tmp/o3-embed-disk-target (private symlink to disk-backed build artifacts after tmpfs quota exhaustion)",
+    "cargo_target_dir": "/var/tmp/o3-build/embed/target",
     "omabridge_revision": "44cc7fa7575c1256f4007be4823e3f455429175a"
   }
 }
