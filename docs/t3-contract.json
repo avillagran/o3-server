@@ -1,0 +1,1095 @@
+{
+ "commandTypes": [
+  "checkpoint.rollback",
+  "delegated_task.completion-delivery.acknowledge",
+  "delegated_task.completion-delivery.dispose",
+  "delegated_task.request",
+  "delegated_task.wake-policy",
+  "message.dispatch",
+  "notification.delivery.accept",
+  "prepared-run.fail",
+  "prepared-run.progress",
+  "prepared-run.release",
+  "prepared-run.retry",
+  "provider-session.detach",
+  "provider.switch",
+  "queue.resume",
+  "queued-message.promote-to-steer",
+  "queued-run.cancel",
+  "queued-run.edit",
+  "queued-run.reorder",
+  "queued-run.start",
+  "run.interrupt",
+  "runtime-request.respond",
+  "subagent.stop",
+  "thread.active.reorder",
+  "thread.archive",
+  "thread.auto-settle",
+  "thread.auto-settle.set",
+  "thread.create",
+  "thread.created.record",
+  "thread.delete",
+  "thread.fork",
+  "thread.guest-message.dismiss",
+  "thread.guest-share.close",
+  "thread.interaction-mode.set",
+  "thread.mark-unread",
+  "thread.merge_back",
+  "thread.metadata.update",
+  "thread.model-selection.set",
+  "thread.pin",
+  "thread.pin.reorder",
+  "thread.pull-request-link.sync",
+  "thread.pull-request.link",
+  "thread.pull-request.sync",
+  "thread.pull-request.unlink",
+  "thread.pull-request.watch",
+  "thread.runtime-mode.set",
+  "thread.settle",
+  "thread.snooze",
+  "thread.stop",
+  "thread.title.regeneration.complete",
+  "thread.unarchive",
+  "thread.unpin",
+  "thread.unsettle",
+  "thread.unsnooze",
+  "thread.user-input.dismiss",
+  "thread.visit"
+ ],
+ "contract": "t3code@3f9448747",
+ "methods": {
+  "agentSessions.import": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "agentSessions.scan": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "assets.createUrl": {
+   "dynamic": true,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "assets.persistChatAttachments": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "attachments.createUploadUrl": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "attachments.delete": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "cloud.getRelayClientStatus": {
+   "dynamic": false,
+   "scope": "relay:read",
+   "stream": false
+  },
+  "cloud.installRelayClient": {
+   "dynamic": false,
+   "scope": "relay:write",
+   "stream": true
+  },
+  "device.action": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "device.close": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "device.configure": {
+   "dynamic": false,
+   "scope": "settings:write",
+   "stream": false
+  },
+  "device.detail": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "device.easAccount": {
+   "dynamic": false,
+   "scope": "settings:write",
+   "stream": false
+  },
+  "device.list": {
+   "dynamic": true,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "device.open": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "device.shutdown": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "device.testHost": {
+   "dynamic": false,
+   "scope": "settings:write",
+   "stream": false
+  },
+  "filesystem.browse": {
+   "dynamic": false,
+   "scope": "filesystem:read",
+   "stream": false
+  },
+  "filesystem.getMetadata": {
+   "dynamic": false,
+   "scope": "filesystem:read",
+   "stream": false
+  },
+  "git.preparePullRequestThread": {
+   "dynamic": true,
+   "scope": "source-control:write",
+   "stream": false
+  },
+  "git.resolvePullRequest": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "git.runStackedAction": {
+   "dynamic": true,
+   "scope": "source-control:write",
+   "stream": true
+  },
+  "guestShare.create": {
+   "dynamic": false,
+   "scope": "access:write",
+   "stream": false
+  },
+  "mcpApps.callTool": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "mcpApps.readResource": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "mcpApps.toolInfo": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "mcpApps.updateModelContext": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "orchestration.dispatchCommand": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "orchestration.getArchivedShellSnapshot": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "orchestration.getFullThreadDiff": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "orchestration.getOlderSettledThreads": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "orchestration.getThreadFamily": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "orchestration.getThreadProjection": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "orchestration.getTurnDiff": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "orchestration.getTurnItem": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "orchestration.getWorkflowScript": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "orchestration.getWorktreeThreadIds": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "orchestration.launchThread": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "orchestration.searchThread": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "orchestration.searchThreadStream": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": true
+  },
+  "orchestration.searchThreads": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "orchestration.stopWorkflow": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "orchestration.subscribeArchivedShell": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": true
+  },
+  "orchestration.subscribeCommandOutput": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": true
+  },
+  "orchestration.subscribeShell": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": true
+  },
+  "orchestration.subscribeThread": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": true
+  },
+  "preview.adjust": {
+   "dynamic": false,
+   "scope": "preview:operate",
+   "stream": false
+  },
+  "preview.clearProfile": {
+   "dynamic": false,
+   "scope": "preview:operate",
+   "stream": false
+  },
+  "preview.close": {
+   "dynamic": false,
+   "scope": "preview:operate",
+   "stream": false
+  },
+  "preview.list": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "preview.navigate": {
+   "dynamic": false,
+   "scope": "preview:operate",
+   "stream": false
+  },
+  "preview.open": {
+   "dynamic": false,
+   "scope": "preview:operate",
+   "stream": false
+  },
+  "preview.refresh": {
+   "dynamic": false,
+   "scope": "preview:operate",
+   "stream": false
+  },
+  "preview.reportProfiles": {
+   "dynamic": false,
+   "scope": "preview:operate",
+   "stream": false
+  },
+  "preview.reportStatus": {
+   "dynamic": false,
+   "scope": "preview:operate",
+   "stream": false
+  },
+  "preview.resize": {
+   "dynamic": false,
+   "scope": "preview:operate",
+   "stream": false
+  },
+  "projectClone.cancel": {
+   "dynamic": false,
+   "scope": "source-control:write",
+   "stream": false
+  },
+  "projectClone.retry": {
+   "dynamic": false,
+   "scope": "source-control:write",
+   "stream": false
+  },
+  "projectClone.start": {
+   "dynamic": false,
+   "scope": "source-control:write",
+   "stream": false
+  },
+  "projects.createNew": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "projects.ensureScratch": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "projects.listEntries": {
+   "dynamic": false,
+   "scope": "filesystem:read",
+   "stream": false
+  },
+  "projects.listIgnoredFiles": {
+   "dynamic": false,
+   "scope": "filesystem:read",
+   "stream": false
+  },
+  "projects.mutate": {
+   "dynamic": true,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "projects.readFile": {
+   "dynamic": false,
+   "scope": "filesystem:read",
+   "stream": false
+  },
+  "projects.searchContents": {
+   "dynamic": false,
+   "scope": "filesystem:read",
+   "stream": false
+  },
+  "projects.searchEntries": {
+   "dynamic": false,
+   "scope": "filesystem:read",
+   "stream": false
+  },
+  "projects.writeFile": {
+   "dynamic": false,
+   "scope": "filesystem:write",
+   "stream": false
+  },
+  "provider.auth.cancel": {
+   "dynamic": false,
+   "scope": "providers:manage",
+   "stream": false
+  },
+  "provider.auth.complete": {
+   "dynamic": false,
+   "scope": "providers:manage",
+   "stream": false
+  },
+  "provider.auth.logout": {
+   "dynamic": false,
+   "scope": "providers:manage",
+   "stream": false
+  },
+  "provider.auth.respond": {
+   "dynamic": false,
+   "scope": "providers:manage",
+   "stream": false
+  },
+  "provider.auth.start": {
+   "dynamic": false,
+   "scope": "providers:manage",
+   "stream": false
+  },
+  "provider.auth.subscribe": {
+   "dynamic": false,
+   "scope": "providers:manage",
+   "stream": true
+  },
+  "provider.chatgpt.handoff.subscribe": {
+   "dynamic": false,
+   "scope": "providers:manage",
+   "stream": true
+  },
+  "provider.chatgpt.import-profile": {
+   "dynamic": false,
+   "scope": "providers:manage",
+   "stream": false
+  },
+  "provider.chatgpt.reconnect-profile": {
+   "dynamic": false,
+   "scope": "providers:manage",
+   "stream": false
+  },
+  "provider.codex.auth-callback.subscribe": {
+   "dynamic": false,
+   "scope": "providers:manage",
+   "stream": true
+  },
+  "provider.consumeResetCredit": {
+   "dynamic": false,
+   "scope": "providers:manage",
+   "stream": false
+  },
+  "provider.install.cancel": {
+   "dynamic": false,
+   "scope": "providers:manage",
+   "stream": false
+  },
+  "provider.install.remove": {
+   "dynamic": false,
+   "scope": "providers:manage",
+   "stream": false
+  },
+  "provider.install.start": {
+   "dynamic": false,
+   "scope": "providers:manage",
+   "stream": false
+  },
+  "provider.install.subscribe": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": true
+  },
+  "provider.uploadFeedback": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "pullRequests.activity": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "pullRequests.changeBreakdown": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "pullRequests.checks": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "pullRequests.comment": {
+   "dynamic": false,
+   "scope": "source-control:write",
+   "stream": false
+  },
+  "pullRequests.detail": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "pullRequests.diffFileContents": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "pullRequests.filesViewed": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "pullRequests.filterOptions": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "pullRequests.generateReviewGuide": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "pullRequests.invalidate": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "pullRequests.labelCandidates": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "pullRequests.linkedThreads": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "pullRequests.list": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "pullRequests.listStats": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "pullRequests.preview": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "pullRequests.replyToThread": {
+   "dynamic": false,
+   "scope": "source-control:write",
+   "stream": false
+  },
+  "pullRequests.reportState": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "pullRequests.requestReviewers": {
+   "dynamic": false,
+   "scope": "source-control:write",
+   "stream": false
+  },
+  "pullRequests.reviewGuide": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "pullRequests.reviewerCandidates": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "pullRequests.routing": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "pullRequests.routingIdentity": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "pullRequests.runAction": {
+   "dynamic": false,
+   "scope": "source-control:write",
+   "stream": false
+  },
+  "pullRequests.setFilesViewed": {
+   "dynamic": false,
+   "scope": "source-control:write",
+   "stream": false
+  },
+  "pullRequests.setLabels": {
+   "dynamic": false,
+   "scope": "source-control:write",
+   "stream": false
+  },
+  "pullRequests.setReaction": {
+   "dynamic": false,
+   "scope": "source-control:write",
+   "stream": false
+  },
+  "pullRequests.setThreadResolution": {
+   "dynamic": false,
+   "scope": "source-control:write",
+   "stream": false
+  },
+  "pullRequests.stack": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "pullRequests.submitReview": {
+   "dynamic": false,
+   "scope": "source-control:write",
+   "stream": false
+  },
+  "pullRequests.subscribeRefreshes": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": true
+  },
+  "pullRequests.summary": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "pullRequests.threadComments": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "pullRequests.update": {
+   "dynamic": false,
+   "scope": "source-control:write",
+   "stream": false
+  },
+  "pullRequests.updateComment": {
+   "dynamic": false,
+   "scope": "source-control:write",
+   "stream": false
+  },
+  "review.getDiffFileContents": {
+   "dynamic": false,
+   "scope": "filesystem:read",
+   "stream": false
+  },
+  "review.getDiffPreview": {
+   "dynamic": false,
+   "scope": "filesystem:read",
+   "stream": false
+  },
+  "scheduledTasks.delete": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "scheduledTasks.getWebhookDelivery": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "scheduledTasks.list": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "scheduledTasks.listWebhookDeliveries": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "scheduledTasks.rotateWebhookToken": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "scheduledTasks.runNow": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "scheduledTasks.setEnabled": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "scheduledTasks.subscribe": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": true
+  },
+  "scheduledTasks.upsert": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "secrets.answerRequest": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "server.acceptAcpRegistryUrlAuth": {
+   "dynamic": false,
+   "scope": "providers:manage",
+   "stream": false
+  },
+  "server.checkOtlpEndpoint": {
+   "dynamic": false,
+   "scope": "settings:write",
+   "stream": false
+  },
+  "server.commitDesktopUpdate": {
+   "dynamic": false,
+   "scope": "environment:maintain",
+   "stream": false
+  },
+  "server.deleteAcpRegistrySession": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "server.disableAcpRegistryProvider": {
+   "dynamic": false,
+   "scope": "providers:manage",
+   "stream": false
+  },
+  "server.discoverSourceControl": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "server.getBackgroundPolicy": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "server.getConfig": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "server.getDatabaseStorage": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": true
+  },
+  "server.getHostResources": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "server.getProcessDiagnostics": {
+   "dynamic": false,
+   "scope": "diagnostics:read",
+   "stream": false
+  },
+  "server.getProcessResourceHistory": {
+   "dynamic": false,
+   "scope": "diagnostics:read",
+   "stream": false
+  },
+  "server.getResourceTelemetryHistory": {
+   "dynamic": false,
+   "scope": "diagnostics:read",
+   "stream": false
+  },
+  "server.getSettings": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "server.getStorageCleanupReport": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": true
+  },
+  "server.getTraceDiagnostics": {
+   "dynamic": false,
+   "scope": "diagnostics:read",
+   "stream": false
+  },
+  "server.getUsageSummary": {
+   "dynamic": false,
+   "scope": "diagnostics:read",
+   "stream": false
+  },
+  "server.importAcpRegistrySession": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "server.listAcpRegistryProviders": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "server.listAcpRegistrySessions": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "server.logoutAcpRegistry": {
+   "dynamic": false,
+   "scope": "providers:manage",
+   "stream": false
+  },
+  "server.prepareAcpRegistryAgent": {
+   "dynamic": false,
+   "scope": "providers:manage",
+   "stream": false
+  },
+  "server.probe": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "server.refreshProviders": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "server.refreshUsageRates": {
+   "dynamic": false,
+   "scope": "diagnostics:read",
+   "stream": false
+  },
+  "server.removeKeybinding": {
+   "dynamic": false,
+   "scope": "settings:write",
+   "stream": false
+  },
+  "server.reportClientActivity": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "server.reportHostPowerState": {
+   "dynamic": false,
+   "scope": "environment:maintain",
+   "stream": false
+  },
+  "server.retryResourceTelemetry": {
+   "dynamic": true,
+   "scope": "diagnostics:read",
+   "stream": false
+  },
+  "server.runStorageCleanup": {
+   "dynamic": false,
+   "scope": "settings:write",
+   "stream": false
+  },
+  "server.searchAcpRegistry": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "server.setAcpRegistryProvider": {
+   "dynamic": false,
+   "scope": "providers:manage",
+   "stream": false
+  },
+  "server.signalProcess": {
+   "dynamic": false,
+   "scope": "environment:maintain",
+   "stream": false
+  },
+  "server.uninstallAcpRegistryManagedBinary": {
+   "dynamic": false,
+   "scope": "providers:manage",
+   "stream": false
+  },
+  "server.updateProvider": {
+   "dynamic": false,
+   "scope": "providers:manage",
+   "stream": false
+  },
+  "server.updateServer": {
+   "dynamic": false,
+   "scope": "environment:maintain",
+   "stream": false
+  },
+  "server.updateServerWithProgress": {
+   "dynamic": false,
+   "scope": "environment:maintain",
+   "stream": true
+  },
+  "server.updateSettings": {
+   "dynamic": true,
+   "scope": "settings:write",
+   "stream": false
+  },
+  "server.upsertKeybinding": {
+   "dynamic": false,
+   "scope": "settings:write",
+   "stream": false
+  },
+  "shell.openInEditor": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  },
+  "sourceControl.cloneRepository": {
+   "dynamic": false,
+   "scope": "source-control:write",
+   "stream": false
+  },
+  "sourceControl.lookupRepository": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "sourceControl.publishRepository": {
+   "dynamic": false,
+   "scope": "source-control:write",
+   "stream": false
+  },
+  "subscribeAuthAccess": {
+   "dynamic": false,
+   "scope": "access:read",
+   "stream": true
+  },
+  "subscribeBackgroundPolicy": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": true
+  },
+  "subscribeDeviceState": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": true
+  },
+  "subscribeDiscoveredLocalServers": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": true
+  },
+  "subscribePreviewEvents": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": true
+  },
+  "subscribeProjectClones": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": true
+  },
+  "subscribeResourceTelemetry": {
+   "dynamic": false,
+   "scope": "diagnostics:read",
+   "stream": true
+  },
+  "subscribeServerConfig": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": true
+  },
+  "subscribeServerLifecycle": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": true
+  },
+  "subscribeTerminalEvents": {
+   "dynamic": false,
+   "scope": "terminal:read",
+   "stream": true
+  },
+  "subscribeTerminalMetadata": {
+   "dynamic": false,
+   "scope": "terminal:read",
+   "stream": true
+  },
+  "subscribeVcsStatus": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": true
+  },
+  "subscribeWorktreeSetup": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": true
+  },
+  "terminal.attach": {
+   "dynamic": false,
+   "scope": "terminal:operate",
+   "stream": true
+  },
+  "terminal.clear": {
+   "dynamic": false,
+   "scope": "terminal:operate",
+   "stream": false
+  },
+  "terminal.close": {
+   "dynamic": false,
+   "scope": "terminal:operate",
+   "stream": false
+  },
+  "terminal.observe": {
+   "dynamic": false,
+   "scope": "terminal:read",
+   "stream": true
+  },
+  "terminal.open": {
+   "dynamic": false,
+   "scope": "terminal:operate",
+   "stream": false
+  },
+  "terminal.resize": {
+   "dynamic": false,
+   "scope": "terminal:operate",
+   "stream": false
+  },
+  "terminal.restart": {
+   "dynamic": false,
+   "scope": "terminal:operate",
+   "stream": false
+  },
+  "terminal.write": {
+   "dynamic": false,
+   "scope": "terminal:operate",
+   "stream": false
+  },
+  "vcs.createRef": {
+   "dynamic": false,
+   "scope": "source-control:write",
+   "stream": false
+  },
+  "vcs.createWorktree": {
+   "dynamic": false,
+   "scope": "source-control:write",
+   "stream": false
+  },
+  "vcs.init": {
+   "dynamic": false,
+   "scope": "source-control:write",
+   "stream": false
+  },
+  "vcs.listRefs": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "vcs.pull": {
+   "dynamic": false,
+   "scope": "source-control:write",
+   "stream": false
+  },
+  "vcs.refreshStatus": {
+   "dynamic": false,
+   "scope": "orchestration:read",
+   "stream": false
+  },
+  "vcs.removeWorktree": {
+   "dynamic": false,
+   "scope": "source-control:write",
+   "stream": false
+  },
+  "vcs.switchRef": {
+   "dynamic": false,
+   "scope": "source-control:write",
+   "stream": false
+  },
+  "worktreeSetup.cancel": {
+   "dynamic": false,
+   "scope": "orchestration:operate",
+   "stream": false
+  }
+ },
+ "scopes": [
+  "access:read",
+  "access:write",
+  "diagnostics:read",
+  "environment:maintain",
+  "filesystem:read",
+  "filesystem:write",
+  "orchestration:operate",
+  "orchestration:read",
+  "preview:operate",
+  "providers:manage",
+  "relay:read",
+  "relay:write",
+  "settings:write",
+  "source-control:write",
+  "terminal:operate",
+  "terminal:read"
+ ]
+}

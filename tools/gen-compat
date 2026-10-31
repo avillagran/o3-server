@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+"""Render docs/COMPATIBILITY.md from docs/t3-contract.json + docs/compat-status.json."""
+import collections, json, pathlib
+root = pathlib.Path(__file__).resolve().parent.parent / "docs"
+contract = json.loads((root / "t3-contract.json").read_text())
+status = json.loads((root / "compat-status.json").read_text())["methods"]
+MARK = {"done": "✅", "partial": "🟡", "todo": "⬜", "skip": "🚫"}
+groups = collections.defaultdict(list)
+for tag, meta in sorted(contract["methods"].items()):
+    groups[tag.split(".")[0] if "." in tag else "(root)"].append((tag, meta))
+counts = collections.Counter(status.get(t, {}).get("status", "todo") for t in contract["methods"])
+out = ["# Compatibilidad o3-server ↔ T3", "",
+       f"Contrato: `{contract['contract']}`. Generado por `tools/gen-compat`; editar `docs/compat-status.json`.", "",
+       "Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ningún cliente lo usa)", "",
+       f"**Resumen:** {counts['done']} ✅ · {counts['partial']} 🟡 · {counts['todo']} ⬜ · {counts['skip']} 🚫 de {len(contract['methods'])} RPC", ""]
+for group in sorted(groups):
+    out += [f"## {group}", "", "| Estado | RPC | Prioridad | Tipo | Scope | Nota |", "|---|---|---|---|---|---|"]
+    for tag, meta in groups[group]:
+        s = status.get(tag, {})
+        kind = "stream" if meta.get("stream") else "unary"
+        out.append(f"| {MARK[s.get('status', 'todo')]} | `{tag}` | {s.get('priority', '?')} | {kind} | `{meta.get('scope')}` | {s.get('note', '')} |")
+    out.append("")
+(root / "COMPATIBILITY.md").write_text("\n".join(out))

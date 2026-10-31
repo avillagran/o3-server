@@ -1,0 +1,4 @@
+{
+  "_doc": "tag -> {status: done|partial|todo|skip, priority: P0|P1|P2|unused, note}. Tags absent here render as todo/untriaged.",
+  "methods": {}
+}

@@ -1,0 +1,28 @@
+[package]
+name = "o3-server"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Lean Rust server, wire-compatible with T3 Code clients, with OmaBridge built in"
+
+[dependencies]
+tokio = { version = "1", default-features = false, features = ["rt", "net", "io-util", "time", "sync", "macros", "signal", "process"] }
+hyper = { version = "1", default-features = false, features = ["http1", "server"] }
+hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
+http-body-util = "0.1"
+tokio-tungstenite = { version = "0.28", default-features = false, features = ["handshake"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+serde_json = "1"
+sha1 = "0.10"
+base64 = "0.22"
+mimalloc = { version = "0.1", default-features = false }
+
+[dev-dependencies]
+t3-protocol = { path = "../lib-t3-rust" }
+
+[profile.release]
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
