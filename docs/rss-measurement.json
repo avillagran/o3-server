@@ -1,0 +1,19 @@
+{
+  "binary": "/tmp/o3-target/release/o3-server",
+  "binary_bytes": 2314432,
+  "seed_messages": 1000,
+  "text_bytes_per_message": 1000,
+  "cold_idle_rss_kib": 8772,
+  "seeded_idle_rss_kib": 17312,
+  "seeded_one_subscribed_client_rss_kib": 31860,
+  "snapshot_messages": 100,
+  "provider": "none (defer_start)",
+  "measurement": "Linux /proc/PID/smaps_rollup Rss",
+  "source_commit": "1353ad9",
+  "runtime": {
+    "worker_threads": 2,
+    "max_blocking_threads": 2,
+    "thread_stack_size_bytes": 524288
+  },
+  "measured_on": "2026-10-31"
+}
