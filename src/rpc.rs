@@ -9,10 +9,7 @@ pub const SERVER_VERSION: &str = concat!("o3-", env!("CARGO_PKG_VERSION"));
 
 /// Unary handlers. `Err` carries the typed error placed in a `Fail` cause.
 fn dispatch(tag: &str, _payload: &Value) -> Result<Value, Value> {
-    match tag {
-        "server.getVersion" => Ok(json!({ "version": SERVER_VERSION })),
-        _ => Err(json!({ "_tag": "RpcNotImplemented", "message": format!("o3-server does not implement {tag}") })),
-    }
+    Err(json!({ "_tag": "RpcNotImplemented", "message": format!("o3-server does not implement {tag}") }))
 }
 
 pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(mut ws: WebSocketStream<S>) {

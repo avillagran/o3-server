@@ -2,5 +2,6 @@
 pub mod auth;
 pub mod http;
 pub mod rpc;
+pub mod store;
 
 pub use http::serve;
