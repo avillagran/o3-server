@@ -15,9 +15,10 @@ struct Subscription {
     initial: Option<Value>,
     marker: bool,
     version: u64,
+    live: Option<crate::streams::Live>,
 }
 fn exit(id: &Value, result: Result<Value, Value>) -> Value {
-    json!({"_tag":"Exit","requestId":id,"exit":match result {Ok(v)=>json!({"_tag":"Success","value":v}),Err(e)=>json!({"_tag":"Failure","cause":[{"_tag":"Fail","error":e}]})}})
+    json!({"_tag":"Exit","requestId":id,"exit":match result {Ok(Value::Null)=>json!({"_tag":"Success"}),Ok(v)=>json!({"_tag":"Success","value":v}),Err(e)=>json!({"_tag":"Failure","cause":[{"_tag":"Fail","error":e}]})}})
 }
 fn error(message: String) -> Value {
     json!({"_tag":"RpcNotImplemented","message":message})
@@ -97,6 +98,7 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
     session: Value,
 ) {
     let mut changed = s.changed.subscribe();
+    let mut live_changed = s.streams.changed.subscribe();
     let mut subscriptions: BTreeMap<String, Subscription> = BTreeMap::new();
     let mut eof = false;
     let mut expiry = tokio::time::interval(std::time::Duration::from_secs(1));
@@ -105,7 +107,44 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
             let _ = ws.close(None).await;
             break;
         }
-        for sub in subscriptions.values_mut().filter(|sub| !sub.waiting) {
+        // Terminals and command output: several chunks may be outstanding, bounded by each source.
+        let mut finished = Vec::new();
+        for (key, sub) in subscriptions.iter_mut() {
+            let Some(live) = sub.live.as_mut() else {
+                continue;
+            };
+            while !live.is_full() {
+                match live.next(&s) {
+                    crate::streams::Step::Values(values) => {
+                        if send(
+                            &mut ws,
+                            json!({"_tag":"Chunk","requestId":sub.id,"values":values}),
+                        )
+                        .await
+                        .is_err()
+                        {
+                            return;
+                        }
+                    }
+                    crate::streams::Step::Idle => break,
+                    crate::streams::Step::Done => {
+                        finished.push(key.clone());
+                        break;
+                    }
+                }
+            }
+        }
+        for key in finished {
+            if let Some(sub) = subscriptions.remove(&key) {
+                if send(&mut ws, exit(&sub.id, Ok(Value::Null))).await.is_err() {
+                    return;
+                }
+            }
+        }
+        for sub in subscriptions
+            .values_mut()
+            .filter(|sub| !sub.waiting && sub.live.is_none())
+        {
             let item = if let Some(v) = sub.initial.take() {
                 Some(v)
             } else if matches!(
@@ -161,7 +200,7 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
             break;
         }
         tokio::select! {
-            _=changed.changed()=>{},_=expiry.tick()=>{},
+            _=changed.changed()=>{},_=live_changed.changed()=>{},_=expiry.tick()=>{},
             message=ws.next()=>{
                 let Some(Ok(message))=message else {break};
                 match message {
@@ -173,20 +212,28 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                             let id=frame.get("id").cloned().unwrap_or(Value::Null);let key=frame["requestId"].to_string();
                             match frame["_tag"].as_str().unwrap_or("") {
                                 "Ping"=>if send(&mut ws,json!({"_tag":"Pong"})).await.is_err(){return},
-                                "Ack"=>{if let Some(sub)=subscriptions.get_mut(&key){sub.waiting=false;}},
+                                "Ack"=>{if let Some(sub)=subscriptions.get_mut(&key){match sub.live.as_mut(){Some(live)=>live.ack(),None=>sub.waiting=false}}},
                                 "Interrupt"=>{if let Some(sub)=subscriptions.remove(&key){let v=json!({"_tag":"Exit","requestId":sub.id,"exit":{"_tag":"Failure","cause":[{"_tag":"Interrupt","fiberId":frame["interruptors"]}]}});if send(&mut ws,v).await.is_err(){return}}},
                                 "Eof"=>eof=true,
                                 "Request" if !eof=>{
                                     let tag=frame["tag"].as_str().unwrap_or("");let p=&frame["payload"];
                                     if let Err(e)=authorize(&session,tag,p){if send(&mut ws,exit(&id,Err(e))).await.is_err(){return}continue;}
+                                    if crate::streams::is_live_tag(tag) {
+                                        if subscriptions.len()>=64||subscriptions.contains_key(&id.to_string()) {if send(&mut ws,exit(&id,Err(error("subscription limit or duplicate id".into())))).await.is_err(){return}continue;}
+                                        match crate::streams::open(&s,tag,p).await {
+                                            Ok(live)=>{subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid:None,cursor:0,waiting:false,initial:None,marker:false,version:0,live:Some(live)});}
+                                            Err(e)=>{if send(&mut ws,exit(&id,Err(e))).await.is_err(){return}}
+                                        }
+                                        continue;
+                                    }
                                     if matches!(tag,"orchestration.subscribeShell"|"orchestration.subscribeThread"|"server.subscribeServerConfig"|"subscribeServerConfig") {
                                         if subscriptions.len()>=64||subscriptions.contains_key(&id.to_string()) {if send(&mut ws,exit(&id,Err(error("subscription limit or duplicate id".into())))).await.is_err(){return}continue;}
                                         // Register notification receiver before any snapshot; no await until cursor is installed.
                                         let version=*changed.borrow();let seq=events::sequence(&s.db.lock().unwrap()).unwrap_or(0);let after=p["afterSequence"].as_i64().filter(|v|*v<=seq);
                                         let tid=if tag=="orchestration.subscribeThread" {p["threadId"].as_str().map(str::to_owned)}else{None};
                                         let initial=if tag=="orchestration.subscribeThread" && tid.is_none(){Err("threadId required".into())}else if matches!(tag,"server.subscribeServerConfig"|"subscribeServerConfig") {settings::config(&s).map(|c|json!({"version":1,"type":"snapshot","config":c})).map(Some)}else if after.is_some(){Ok(None)}else if let Some(tid)=tid.as_deref(){events::bounded(&s,tid).map(|mut v|{v["kind"]=json!("snapshot");Some(v)})}else if tag=="orchestration.subscribeShell"{events::shell(&s).map(|v|Some(json!({"kind":"snapshot","snapshot":v})))}else{Err("threadId required".into())};
-                                        match initial {Ok(initial)=>{subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid,cursor:after.unwrap_or_else(||initial.as_ref().and_then(|v|v.get("snapshotSequence").or_else(||v.get("snapshot").and_then(|s|s.get("snapshotSequence")))).and_then(Value::as_i64).unwrap_or(seq)),waiting:false,initial,marker:p["requestCompletionMarker"]==true,version});},Err(e)=>{if send(&mut ws,exit(&id,Err(error(e)))).await.is_err(){return}}}
-                                    }else if send(&mut ws,exit(&id,dispatch(&s,tag,p))).await.is_err(){return}
+                                        match initial {Ok(initial)=>{subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid,cursor:after.unwrap_or_else(||initial.as_ref().and_then(|v|v.get("snapshotSequence").or_else(||v.get("snapshot").and_then(|s|s.get("snapshotSequence")))).and_then(Value::as_i64).unwrap_or(seq)),waiting:false,initial,marker:p["requestCompletionMarker"]==true,version,live:None});},Err(e)=>{if send(&mut ws,exit(&id,Err(error(e)))).await.is_err(){return}}}
+                                    }else{let result=match crate::routes::call(&s,tag,p).await{Some(r)=>r,None=>dispatch(&s,tag,p)};if send(&mut ws,exit(&id,result)).await.is_err(){return}}
                                 },_=>{}
                             }
                         }

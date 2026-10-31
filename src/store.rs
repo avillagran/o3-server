@@ -41,6 +41,8 @@ pub struct State {
     >,
     pub settings_lock: Mutex<()>,
     pub changed: tokio::sync::watch::Sender<u64>,
+    /// Live terminal and command-output sources, with their own wake-up channel.
+    pub streams: crate::streams::Hub,
 }
 
 pub fn now_ms() -> i64 {
@@ -106,6 +108,7 @@ impl State {
             provider: Mutex::new(None),
             active: Mutex::new(std::collections::BTreeMap::new()),
             changed,
+            streams: crate::streams::Hub::new(),
             db: Mutex::new(db),
             signing_key,
             environment_id,

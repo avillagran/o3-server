@@ -22,6 +22,7 @@ time = { version = "0.3", features = ["formatting", "macros"] }
 url = "2"
 base64 = "0.22"
 mimalloc = { version = "0.1", default-features = false }
+libc = "0.2"
 
 [dev-dependencies]
 t3-protocol = { path = "../lib-t3-rust" }

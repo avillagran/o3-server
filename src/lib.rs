@@ -5,9 +5,14 @@ pub mod rpc;
 pub mod store;
 
 pub use http::{serve, serve_io};
+pub mod command_output;
 pub mod events;
 pub mod profile;
 pub mod provider;
+pub mod pty;
+pub mod routes;
 pub mod scopes;
 pub mod service;
 pub mod settings;
+pub mod streams;
+pub mod terminal;

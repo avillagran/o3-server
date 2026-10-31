@@ -15,9 +15,14 @@ pub struct RunInput {
 pub enum ProviderEvent {
     Started,
     TextDelta(String),
-    ApprovalRequest { request_id: String, command: String },
+    ApprovalRequest {
+        request_id: String,
+        command: String,
+    },
     Completed,
     Failed(String),
+    /// A command item and its transient output; see `command_output`.
+    Command(crate::command_output::CommandEvent),
 }
 pub enum ProviderControl {
     Interrupt,
@@ -159,6 +164,9 @@ fn persist(
         store::{iso, now_ms},
     };
     use serde_json::json;
+    if let ProviderEvent::Command(command) = event {
+        return crate::command_output::persist(s, tid, rid, command);
+    }
     let mut db = s.db.lock().unwrap();
     let tx = db.transaction().map_err(|e| e.to_string())?;
     let thread = get(&tx, "thread", tid)?;
@@ -196,6 +204,7 @@ fn persist(
             append(&tx, tid, "runtime-request.updated", request, &thread)?;
             run["status"] = json!("waiting");
         }
+        ProviderEvent::Command(_) => unreachable!("handled before the transaction"),
         ProviderEvent::Completed | ProviderEvent::Failed(_) => {
             run["status"] = json!(if matches!(event, ProviderEvent::Completed) {
                 "completed"
