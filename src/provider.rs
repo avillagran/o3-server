@@ -151,6 +151,7 @@ pub(crate) fn start(
                 );
             }
         }
+        crate::thread_commands::advance(&s, &tid);
     });
 }
 fn persist(

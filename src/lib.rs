@@ -16,3 +16,4 @@ pub mod service;
 pub mod settings;
 pub mod streams;
 pub mod terminal;
+pub mod thread_commands;

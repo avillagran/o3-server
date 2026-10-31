@@ -233,6 +233,12 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
         .as_str()
         .filter(|s| !s.is_empty())
         .ok_or("commandId required")?;
+    if c["type"]
+        .as_str()
+        .is_some_and(crate::thread_commands::handles)
+    {
+        return crate::thread_commands::dispatch(s, c);
+    }
     let mut db = s.db.lock().unwrap();
     let tx = db.transaction().map_err(|e| e.to_string())?;
     if let Some(r) = tx
@@ -313,14 +319,20 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             "thread.metadata-updated"
         }
         "message.dispatch" => {
+            let mode = c["dispatchMode"]["type"].as_str();
             if !matches!(
-                c["dispatchMode"]["type"].as_str(),
-                Some("defer_start" | "start_immediately")
+                mode,
+                Some("defer_start" | "start_immediately" | "queue_after_active")
             ) {
                 return Err("dispatch mode is not implemented".into());
             }
+            // A queued message waits behind the active run; with none active it starts at once.
+            let queued = mode == Some("queue_after_active")
+                && crate::thread_commands::has_blocking_run(&tx, tid)?;
+            let launch = mode == Some("start_immediately")
+                || (mode == Some("queue_after_active") && !queued);
             // Execution is deliberately refused until a provider is configured. Defer-start is durable.
-            if c["dispatchMode"]["type"] != "defer_start" && s.provider.lock().unwrap().is_none() {
+            if launch && s.provider.lock().unwrap().is_none() {
                 return Err("no provider adapter configured; only defer_start is available".into());
             }
             if s.active.lock().unwrap().len() >= 32 {
@@ -348,7 +360,13 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                     |r| r.get(0),
                 )
                 .map_err(|e| e.to_string())?;
-            let run = json!({"id":run_id,"threadId":tid,"ordinal":ordinal,"providerInstanceId":t["providerInstanceId"],"modelSelection":t["modelSelection"],"providerThreadId":null,"userMessageId":mid,"rootNodeId":null,"activeAttemptId":null,"status":"preparing","requestedAt":at,"startedAt":null,"completedAt":null,"checkpointId":null,"contextHandoffId":null});
+            let run = json!({"id":run_id,"threadId":tid,"ordinal":ordinal,"providerInstanceId":t["providerInstanceId"],"modelSelection":t["modelSelection"],"providerThreadId":null,"userMessageId":mid,"rootNodeId":null,"activeAttemptId":null,"status":if queued {"queued"} else {"preparing"},"requestedAt":at,"startedAt":null,"completedAt":null,"checkpointId":null,"contextHandoffId":null});
+            let mut run = run;
+            if queued {
+                run["queuePosition"] =
+                    json!(crate::thread_commands::next_queue_position(&tx, tid)?);
+                run["queueHeld"] = json!(false);
+            }
             put(&tx, "runs", &run_id, tid, &run)?;
             let seq = append(&tx, tid, "run.created", run, &t)?;
             let result = json!({"sequence":seq});
@@ -360,7 +378,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             tx.commit().map_err(|e| e.to_string())?;
             drop(db);
             s.notify();
-            if c["dispatchMode"]["type"] != "defer_start" {
+            if launch {
                 crate::provider::start(
                     s.clone(),
                     tid.to_owned(),
@@ -380,6 +398,9 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             run["completedAt"] = json!(at);
             put(&tx, "runs", rid, tid, &run)?;
             let seq = append(&tx, tid, "run.updated", run, &t)?;
+            if c["holdQueue"] == true {
+                crate::thread_commands::hold_queue(&tx, tid, &t)?;
+            }
             let result = json!({"sequence":seq});
             tx.execute(
                 "INSERT INTO receipts VALUES(?,?)",
