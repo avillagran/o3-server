@@ -129,3 +129,16 @@ The implementation worktrees are `/var/tmp/o3-build/embed/o3-server` and
 
 Use the short test-state path above: long profile paths can exceed Linux's 108-byte Unix socket address limit. For long production profiles, provide a shorter
 explicit `--bridge-state-dir` within the authorized disk directory.
+
+OmaBridge validation on the final disk-backed paths: 165 tests passed across the
+full run and the remaining state/T3-pair/units suites. The 2,200-cycle retention
+stress test timed out with `connection setup deadline reached` in the full run.
+An isolated retry was observed blocked by Btrfs `wait_log_commit` (global I/O
+pressure 40–60%) and also ended with the setup timeout after 343.49 seconds. No all-green claim is made for that suite. Re-run after
+host I/O pressure clears:
+
+```sh
+CARGO_TARGET_DIR=/var/tmp/o3-build/embed/target-omabridge \
+TMPDIR=/var/tmp/o3-build/embed/t \
+cargo test --manifest-path /var/tmp/o3-build/embed/omabridge/Cargo.toml --locked
+```
