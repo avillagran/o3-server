@@ -39,3 +39,5 @@ pub mod vcs;
 pub mod streams;
 pub mod terminal;
 pub mod thread_commands;
+#[cfg(feature = "bridge")]
+pub mod bridge;

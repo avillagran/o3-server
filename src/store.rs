@@ -27,6 +27,8 @@ pub const STANDARD_SCOPES: [&str; 16] = [
 ];
 
 pub struct State {
+    #[cfg(feature = "bridge")]
+    pub bridge_endpoints: Mutex<Vec<Value>>,
     pub db: Mutex<Connection>,
     pub signing_key: Vec<u8>,
     pub environment_id: String,
@@ -104,6 +106,8 @@ impl State {
         let (changed, _) = tokio::sync::watch::channel(0);
         crate::events::initialize(&db)?;
         Ok(Self {
+            #[cfg(feature = "bridge")]
+            bridge_endpoints: Mutex::new(Vec::new()),
             settings_lock: Mutex::new(()),
             provider: Mutex::new(None),
             active: Mutex::new(std::collections::BTreeMap::new()),
@@ -140,13 +144,17 @@ impl State {
     ) -> Result<Option<Value>, String> {
         let now = now_ms();
         let db = self.db.lock().unwrap();
-        let grant: Option<(String, String)> = db.query_row(
-            "UPDATE auth_pairing_links SET consumed_at=?1 WHERE credential=?2 AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>?1 RETURNING scopes,subject",
-            params![now, credential], |row| Ok((row.get(0)?, row.get(1)?)),
+        let grant: Option<(String, String, Option<String>)> = db.query_row(
+            "UPDATE auth_pairing_links SET consumed_at=?1 WHERE credential=?2 AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>?1 RETURNING scopes,subject,label",
+            params![now, credential], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         ).optional().map_err(|e| e.to_string())?;
-        let Some((scopes, subject)) = grant else {
+        let Some((scopes, subject, label)) = grant else {
             return Ok(None);
         };
+        let mut client = client.clone();
+        if let Some(label) = label {
+            client["client_label"] = label.into();
+        }
         let sid = random_id()?;
         let exp = now + auth::SESSION_TTL_MS;
         db.execute(
@@ -223,6 +231,20 @@ impl State {
     }
     pub fn notify(&self) {
         self.changed.send_modify(|v| *v = v.wrapping_add(1));
+    }
+    /// CLI view used by desktop bridge revocation, retaining issuer labels.
+    pub fn list_sessions(&self) -> Result<Value, String> {
+        let db = self.db.lock().unwrap();
+        let mut query = db.prepare("SELECT session_id,client FROM auth_sessions WHERE revoked_at IS NULL AND expires_at>?").map_err(|e| e.to_string())?;
+        let rows = query.query_map([now_ms()], |r| {
+            let client: String = r.get(1)?;
+            let client: Value = serde_json::from_str(&client).unwrap_or(json!({}));
+            Ok(json!({"sessionId":r.get::<_,String>(0)?, "client":{"label":client["client_label"]}}))
+        }).map_err(|e| e.to_string())?;
+        Ok(Value::Array(
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?,
+        ))
     }
     pub fn revoke_session(&self, sid: &str) -> Result<bool, String> {
         self.notify();
