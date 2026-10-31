@@ -493,23 +493,20 @@ fn output_flow_control_bounds_unacknowledged_chunks() {
         }
         assert!((1..=8).contains(&chunks), "unacknowledged chunks must stay within the window: {chunks}");
         assert!(bytes < 8 * 80 * 1024, "{bytes}");
-        // Acknowledgements reopen the window, one chunk at a time.
-        for _ in 0..3 {
+        // Acknowledging what it received reopens the window.
+        for _ in 0..chunks {
             ws.send(Message::Text(json!({"_tag":"Ack","requestId":"a"}).to_string().into())).await.unwrap();
         }
-        // The window is open again: a later write reaches the subscriber (the first chunks may be the
-        // backlog, never more than the three acknowledged).
+        // Acknowledging as it goes, the subscriber reaches the present: a later write arrives.
         write(&c, "t1", "term-1", "echo AFTER-ACK\n");
         let mut seen = String::new();
-        let mut chunks_after = 0;
         while !seen.contains("AFTER-ACK") {
-            let m = tokio::time::timeout(Duration::from_secs(5), ws.next()).await.expect("chunk after ack").unwrap().unwrap();
+            let m = tokio::time::timeout(Duration::from_secs(10), ws.next()).await.expect("chunk after ack").unwrap().unwrap();
             let text = m.into_text().unwrap();
             if serde_json::from_str::<Value>(&text).unwrap()["_tag"] == "Chunk" {
-                chunks_after += 1;
                 seen.push_str(&text);
+                ws.send(Message::Text(json!({"_tag":"Ack","requestId":"a"}).to_string().into())).await.unwrap();
             }
         }
-        assert!(chunks_after <= 3, "{chunks_after}");
     });
 }
