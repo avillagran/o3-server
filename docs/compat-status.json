@@ -147,9 +147,9 @@
       "note": "Real-client test: archived threads and projects with the shared sequence. Built from the in-memory shell assembly (10,000 thread cap), same limit as the live shell."
     },
     "orchestration.getFullThreadDiff": {
-      "status": "partial",
+      "status": "done",
       "priority": "P1",
-      "note": "Same as getTurnDiff: tested against seeded checkpoints; capture is not implemented."
+      "note": "Real Connection Codex execution captures Git refs and verifies baseline-to-turn diff. Checkpoint retention and overlapping-workspace isolation remain."
     },
     "orchestration.getOlderSettledThreads": {
       "status": "todo",
@@ -167,9 +167,9 @@
       "note": "Real-client test: bounded projection (up to 100 rows per kind) and an error for unknown threads."
     },
     "orchestration.getTurnDiff": {
-      "status": "partial",
+      "status": "done",
       "priority": "P1",
-      "note": "Tested against seeded checkpoint records and real git refs (ranges, whitespace flag, unavailable turns, invalid refs and unknown workspaces refused). o3-server does not capture checkpoints yet, so no thread produces them."
+      "note": "Real Connection Codex execution captures baseline/end refs using a private Git index; test verifies diff over a real workspace change. Includes untracked nonignored files and deletions; non-Git workspaces report unavailable."
     },
     "orchestration.getTurnItem": {
       "status": "done",
@@ -219,7 +219,7 @@
     "orchestration.subscribeCommandOutput": {
       "status": "partial",
       "priority": "P1",
-      "note": "tests/command_output.rs: replace/append/settled frames fed by Provider CommandEvent; no cursor-addressing fold of the tail, no frame throttle, and no shipped adapter emits commands yet."
+      "note": "Real Connection tests verify bounded command tails/replacement/final output. Real Claude Bash results and Codex command/outputDelta frames emit Command events. Claude output arrives at tool completion; no full VT folding."
     },
     "orchestration.subscribeShell": {
       "status": "partial",
@@ -689,7 +689,7 @@
     "server.getConfig": {
       "status": "partial",
       "priority": "P0",
-      "note": "Real Connection test: Codex app-server probe advertises actual auth/status and native model catalog. Other provider catalogs and setup flows remain partial."
+      "note": "Both Claude process-per-session and Codex shared app-server are registered in the executable and selected by providerInstanceId. Real Connection registry test; CLI availability/auth status are honest. Setup/custom instance catalogs remain incomplete."
     },
     "server.getDatabaseStorage": {
       "status": "skip",
@@ -767,9 +767,9 @@
       "note": "No client call site in inventory."
     },
     "server.refreshProviders": {
-      "status": "partial",
+      "status": "done",
       "priority": "P1",
-      "note": "tests/ops.rs: returns the configured provider list; no adapters exist to probe."
+      "note": "Real Connection Codex-peer test probes the registered drivers and returns both provider descriptors; Claude authentication is checked at execution and reported unknown beforehand."
     },
     "server.refreshUsageRates": {
       "status": "todo",
@@ -1021,7 +1021,7 @@
     "checkpoint.rollback": {
       "status": "partial",
       "priority": "P2",
-      "note": "tests/thread_commands.rs: validates the checkpoint and records the request; files and provider conversation are not restored (o3-server captures no checkpoints)."
+      "note": "Real Connection execution captures real refs and restores baseline workspace files. Private-index test covers additions/deletions and preserves user index. Refuses active runs; provider conversation rewind and crash-safe restore replay remain."
     },
     "delegated_task.completion-delivery.acknowledge": {
       "status": "skip",
@@ -1046,7 +1046,7 @@
     "message.dispatch": {
       "status": "partial",
       "priority": "P0",
-      "note": "Real Connection Codex stdio-peer test: turn start and steer_active; persisted native resume binding. Authenticated live inference, attachments, context, queues and crash recovery remain."
+      "note": "Real Connection tests exercise Claude/scripted and Codex execution, queue_after_active and steer_active; one shared queue advances after teardown. Provider-native attachments/context and durable control replay remain."
     },
     "notification.delivery.accept": {
       "status": "skip",
@@ -1089,9 +1089,9 @@
       "note": "tests/thread_commands.rs: also covers run.interrupt holdQueue and automatic advance when a run ends."
     },
     "queued-message.promote-to-steer": {
-      "status": "todo",
+      "status": "done",
       "priority": "P1",
-      "note": "Refused with an explicit error: no adapter accepts mid-run input."
+      "note": "Real Connection Codex-peer test promotes queuedRunId into targetRunId using the native steer control, cancels the queued run and reassigns its message; rejects inactive/cross-thread targets and attachments."
     },
     "queued-run.cancel": {
       "status": "done",

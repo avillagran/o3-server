@@ -1,14 +1,14 @@
 //! Response bodies: small buffered JSON or streamed file bytes behind one type.
-use http_body_util::{combinators::BoxBody, BodyExt, Full, StreamBody};
+use http_body_util::{combinators::UnsyncBoxBody, BodyExt, Full, StreamBody};
 use hyper::body::{Bytes, Frame};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
-pub type Body = BoxBody<Bytes, std::io::Error>;
+pub type Body = UnsyncBoxBody<Bytes, std::io::Error>;
 
 pub fn full(bytes: impl Into<Bytes>) -> Body {
     Full::new(bytes.into())
         .map_err(|never| match never {})
-        .boxed()
+        .boxed_unsync()
 }
 pub fn empty() -> Body {
     full(Bytes::new())
@@ -41,5 +41,5 @@ pub fn file_range(file: tokio::fs::File, offset: u64, len: u64) -> Body {
             }
         },
     );
-    StreamBody::new(stream).boxed()
+    StreamBody::new(stream).boxed_unsync()
 }

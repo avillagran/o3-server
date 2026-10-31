@@ -1,3 +1,5 @@
+#[path = "support/wire.rs"]
+mod wire;
 use o3_server::{import::from_t3, store::State};
 use serde_json::json;
 fn directory() -> std::path::PathBuf {
@@ -17,7 +19,7 @@ fn import_backup_includes_wal_is_idempotent_and_preserves_source() {
         .execute_batch(include_str!("fixtures/t3-import.sql"))
         .unwrap();
     source.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
-    source.execute("INSERT INTO projection_projects VALUES('p','Project','/tmp',NULL,'[]','now','now',NULL)",[]).unwrap();
+    source.execute("INSERT INTO projection_projects VALUES('p','Project','/var/tmp/o3-build/tmp',NULL,'[]','now','now',NULL)",[]).unwrap();
     let thread = json!({"id":"t","projectId":"p","title":"Thread","updatedAt":"now"});
     source.execute("INSERT INTO orchestration_v2_projection_threads VALUES('t','p','Thread','codex','full-access','default',NULL,'now','now',NULL,NULL,?)",[thread.to_string()]).unwrap();
     let message = json!({"id":"m","threadId":"t","text":"durable","role":"user"});
@@ -187,7 +189,7 @@ async fn snapshot_is_consistent_and_chunks_are_bounded() {
     let mut v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert!(v["ids"].is_array());
     assert_eq!(v["projection"]["turnItems"], json!([]));
-    t3_protocol::wire::restore_snapshot(&mut v).unwrap();
+    wire::restore_snapshot(&mut v).unwrap();
     assert_eq!(v["projection"]["messages"].as_array().unwrap().len(), 10);
     assert_eq!(
         v["projection"]["visibleTurnItems"][0]["item"]["text"],
@@ -253,7 +255,7 @@ fn cli_import_operates_only_in_isolated_profile_and_rolls_back_bad_source() {
     db.execute_batch(include_str!("fixtures/t3-import.sql"))
         .unwrap();
     db.execute(
-        "INSERT INTO projection_projects VALUES('p','Project','/tmp',NULL,'[]','now','now',NULL)",
+        "INSERT INTO projection_projects VALUES('p','Project','/var/tmp/o3-build/tmp',NULL,'[]','now','now',NULL)",
         [],
     )
     .unwrap();
@@ -286,7 +288,7 @@ fn cli_import_operates_only_in_isolated_profile_and_rolls_back_bad_source() {
     let db = rusqlite::Connection::open(&path).unwrap();
     db.execute("DROP TABLE orchestration_v2_projection_messages", [])
         .unwrap();
-    db.execute("INSERT INTO projection_projects VALUES('rollback','Rollback','/tmp',NULL,'[]','now','now',NULL)",[]).unwrap();
+    db.execute("INSERT INTO projection_projects VALUES('rollback','Rollback','/var/tmp/o3-build/tmp',NULL,'[]','now','now',NULL)",[]).unwrap();
     drop(db);
     assert!(!run().status.success());
     let target = rusqlite::Connection::open(dir.join("profile/userdata/o3.sqlite")).unwrap();

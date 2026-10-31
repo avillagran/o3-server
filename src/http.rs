@@ -1,10 +1,10 @@
 //! HTTP routes and the WebSocket upgrade, on bare hyper to stay small.
+use crate::body::{self, Body};
 use crate::{
     auth, rpc,
     store::{now_ms, State},
 };
 use base64::Engine;
-use crate::body::{self, Body};
 use http_body_util::{BodyExt, Limited};
 use hyper::{
     body::{Bytes, Incoming},

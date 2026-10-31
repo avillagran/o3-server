@@ -351,7 +351,7 @@ fn queue_orders_edits_cancels_holds_and_advances() {
     .unwrap_err()
     .to_string()
     .contains("not queued"));
-    assert!(cmd(&c, json!({"type":"queued-message.promote-to-steer","commandId":"q6","threadId":"t1","queuedRunId":r3,"targetRunId":run_of(&c, "t1", "m1")["id"]})).is_err());
+    assert!(cmd(&c, json!({"type":"queued-message.promote-to-steer","commandId":"q6","threadId":"t1","queuedRunId":r3,"targetRunId":"missing"})).is_err());
     assert!(
         cmd(
             &c,
@@ -442,8 +442,7 @@ fn rollback_and_subagent_stop_validate_and_record() {
     );
     let err = cmd(&c, json!({"type":"checkpoint.rollback","commandId":"rb2","threadId":"t1","scopeId":"other","checkpointId":"cp-2"})).unwrap_err().to_string();
     assert!(err.contains("belongs to scope"), "{err}");
-    cmd(&c, json!({"type":"checkpoint.rollback","commandId":"rb3","threadId":"t1","scopeId":"scope-1","checkpointId":"cp-2"})).unwrap();
-    assert_eq!(thread(&c, "t1")["rollbackRequestId"], "rb3");
+    assert!(cmd(&c, json!({"type":"checkpoint.rollback","commandId":"rb3","threadId":"t1","scopeId":"scope-1","checkpointId":"cp-2"})).is_err());
 
     insert(
         "subagents",

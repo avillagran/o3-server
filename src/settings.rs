@@ -261,3 +261,15 @@ fn apply_entry_patches(old: &Value, next: &mut Value, patch: &Value) -> Result<(
     }
     Ok(())
 }
+
+fn direct_endpoints(s: &State) -> Vec<Value> {
+    #[cfg(feature = "bridge")]
+    {
+        s.bridge_endpoints.lock().unwrap().clone()
+    }
+    #[cfg(not(feature = "bridge"))]
+    {
+        let _ = s;
+        Vec::new()
+    }
+}

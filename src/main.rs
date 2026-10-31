@@ -86,11 +86,6 @@ fn main() -> std::io::Result<()> {
         );
         return Ok(());
     }
-    if !is_auth {
-        if let Some(provider) = o3_server::claude::ClaudeProvider::discover() {
-            *state.provider.lock().unwrap() = Some(std::sync::Arc::new(provider));
-        }
-    }
     if is_auth {
         if args.get(1).map(String::as_str) == Some("session")
             && args.get(2).map(String::as_str) == Some("issue")
@@ -165,12 +160,16 @@ fn main() -> std::io::Result<()> {
         .unwrap_or("127.0.0.1".into());
     tokio::runtime::Builder::new_multi_thread().worker_threads(2).max_blocking_threads(2).thread_stack_size(512 * 1024).enable_all().build()?.block_on(async {
         let codex=Arc::new(o3_server::codex::CodexProvider::default());
-        if let Err(e)=codex.probe().await {eprintln!("Codex unavailable: {e}");}
-        *state.provider.lock().unwrap()=Some(codex.clone());
+        *state.provider.lock().unwrap()=Some(Arc::new(o3_server::provider::Providers { claude: o3_server::claude::ClaudeProvider::discover().map(Arc::new), codex: codex.clone() }));
+        let mut term=tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+        let mut interrupt=tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
         let listener=tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
         let _guard=o3_server::profile::RuntimeGuard::write(&dir,listener.local_addr()?)?;
         eprintln!("o3-server listening on {}",listener.local_addr()?);
         let state = Arc::new(state);
+        let probe=codex.clone();let probe_state=state.clone();
+        let probe_task=tokio::spawn(async move { if let Err(e)=probe.probe().await {eprintln!("Codex unavailable: {e}");} probe_state.notify(); });
+        let mut serving=tokio::spawn(o3_server::serve(listener,state.clone()));
         #[cfg(feature = "bridge")]
         let bridge = o3_server::bridge::start(&option(&args, "--bridge-state-dir").map(std::path::PathBuf::from).unwrap_or_else(|| base.join("omabridge")), state.clone(), {
             let mut options = omabridge::NetOptions::loopback();
@@ -178,10 +177,12 @@ fn main() -> std::io::Result<()> {
             if let Some(relay) = option(&args, "--bridge-relay") { options.relay = match relay { "none" => omabridge::Relay::Disabled, "public" => omabridge::Relay::Public, url => omabridge::Relay::Custom(url.parse().map_err(std::io::Error::other)?) }; }
             options
         }).await.map_err(std::io::Error::other)?;
-        let mut term=tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
-        let result = tokio::select! {result=o3_server::serve(listener,state)=>result,_=tokio::signal::ctrl_c()=>Ok(()),_=term.recv()=>Ok(())};
+        let result = tokio::select! {result=&mut serving=>result.map_err(std::io::Error::other)?,_=interrupt.recv()=>Ok(()),_=term.recv()=>Ok(())};
+        if !serving.is_finished() { serving.abort(); let _=serving.await; }
         #[cfg(feature = "bridge")]
         bridge.shutdown().await;
+        probe_task.abort();
+        let _=probe_task.await;
         codex.shutdown().await;
         result
     })

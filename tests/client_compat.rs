@@ -1,4 +1,6 @@
-//! Conformance: the real client library against a real o3-server.
+#[path = "support/wire.rs"]
+mod wire;
+// Conformance: the real client library against a real o3-server.
 use serde_json::json;
 use t3_protocol::{
     fetch_descriptor, pair_bearer, Connection, ConnectionOptions, Credential, PairingClient,
@@ -493,7 +495,7 @@ fn protocol_rejected_before_auth() {
 #[test]
 fn projects_share_the_thread_sequence_and_replay_log() {
     let (_, c) = connected(false);
-    let p = json!({"type":"project.create","commandId":"project-create","projectId":"p1","title":"Project","workspaceRoot":"/tmp","scripts":[]});
+    let p = json!({"type":"project.create","commandId":"project-create","projectId":"p1","title":"Project","workspaceRoot":"/var/tmp/o3-build/tmp","scripts":[]});
     let result = c.rpc("projects.mutate", p.clone()).unwrap();
     assert_eq!(result, c.rpc("projects.mutate", p).unwrap());
     let shell = c
@@ -536,10 +538,11 @@ fn streamed_full_and_compact_snapshots_decode_with_real_client() {
             true,
         )
         .unwrap();
+    wire::expand_ids(&mut compact).unwrap();
     assert!(compact.get("ids").is_none());
     assert_eq!(compact["turnItemsOmitLocalVisible"], true);
     assert!(compact.to_string().len() < plain.to_string().len());
-    t3_protocol::wire::restore_snapshot(&mut compact).unwrap();
+    wire::restore_snapshot(&mut compact).unwrap();
     assert_eq!(
         compact["projection"]["messages"],
         plain["projection"]["messages"]
@@ -553,7 +556,7 @@ fn streamed_full_and_compact_snapshots_decode_with_real_client() {
         "orchestration.subscribeThread",
         json!({"threadId":"t1","acceptBoundedSnapshot":true,"acceptCompactIds":true,"acceptDedupedBodies":true,"acceptCompactTurnItems":true}),
     );
-    t3_protocol::wire::restore_snapshot(&mut live).unwrap();
+    wire::restore_snapshot(&mut live).unwrap();
     assert_eq!(
         live["projection"]["visibleTurnItems"],
         plain["projection"]["visibleTurnItems"]
@@ -592,10 +595,10 @@ fn settings_replace_entries_remove_nulls_and_keep_worktree_directory_history() {
     let (_, c) = connected(false);
     let update = |p| c.rpc("server.updateSettings", json!({"patch":p})).unwrap();
     update(
-        json!({"projectSettingsOverrides":{"p":{"defaultAutoPull":true,"providerInstances":{"custom":{"enabled":true}}}},"worktreesDirectory":"/tmp/first","usageModelAliases":{"a":"model1","b":"model2"}}),
+        json!({"projectSettingsOverrides":{"p":{"defaultAutoPull":true,"providerInstances":{"custom":{"enabled":true}}}},"worktreesDirectory":"/var/tmp/o3-build/first","usageModelAliases":{"a":"model1","b":"model2"}}),
     );
     let value = update(
-        json!({"projectSettingsOverrides":{"p":{"enableAgentBrowserAccess":false}},"worktreesDirectory":"/tmp/second","usageModelAliases":{"a":null}}),
+        json!({"projectSettingsOverrides":{"p":{"enableAgentBrowserAccess":false}},"worktreesDirectory":"/var/tmp/o3-build/second","usageModelAliases":{"a":null}}),
     );
     assert!(value["projectSettingsOverrides"]["p"]
         .get("defaultAutoPull")
@@ -606,7 +609,10 @@ fn settings_replace_entries_remove_nulls_and_keep_worktree_directory_history() {
     );
     assert!(value["usageModelAliases"].get("a").is_none());
     assert_eq!(value["usageModelAliases"]["b"], "model2");
-    assert_eq!(value["previousWorktreesDirectories"], json!(["/tmp/first"]));
+    assert_eq!(
+        value["previousWorktreesDirectories"],
+        json!(["/var/tmp/o3-build/first"])
+    );
     assert!(
         update(json!({"projectSettingsOverrides":{"p":null}}))["projectSettingsOverrides"]
             .get("p")

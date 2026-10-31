@@ -151,7 +151,10 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
             }
         }
         let mut finished: Vec<(String, Result<(), Value>)> = Vec::new();
-        for (key, sub) in subscriptions.iter_mut().filter(|(_, sub)| !sub.waiting && sub.live.is_none()) {
+        for (key, sub) in subscriptions
+            .iter_mut()
+            .filter(|(_, sub)| !sub.waiting && sub.live.is_none())
+        {
             if let Some(mut rx) = sub.snapshot.take() {
                 use tokio_tungstenite::tungstenite::protocol::frame::{
                     coding::{Data, OpCode},
@@ -251,7 +254,9 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
             if let Some(sub) = subscriptions.remove(&key) {
                 let v = match result {
                     Ok(()) => json!({"_tag":"Exit","requestId":sub.id,"exit":{"_tag":"Success"}}),
-                    Err(e) => json!({"_tag":"Exit","requestId":sub.id,"exit":{"_tag":"Failure","cause":[{"_tag":"Fail","error":e}]}}),
+                    Err(e) => {
+                        json!({"_tag":"Exit","requestId":sub.id,"exit":{"_tag":"Failure","cause":[{"_tag":"Fail","error":e}]}})
+                    }
                 };
                 if send(&mut ws, v).await.is_err() {
                     return;

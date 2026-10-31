@@ -266,7 +266,12 @@ pub fn persist(s: &State, tid: &str, rid: &str, event: CommandEvent) -> Result<(
                     |r| r.get(0),
                 )
                 .map_err(|e| e.to_string())?;
-            let item = json!({"id":item_id,"threadId":tid,"runId":rid,"nodeId":null,"providerThreadId":null,"providerTurnId":null,"nativeItemRef":null,"parentItemId":null,"ordinal":ordinal,"status":"running","title":null,"startedAt":at,"completedAt":null,"updatedAt":at,"type":"command_execution","input":input});
+            let mut item = json!({"id":item_id,"threadId":tid,"runId":rid,"nodeId":null,"providerThreadId":null,"providerTurnId":null,"nativeItemRef":null,"parentItemId":null,"ordinal":ordinal,"status":"running","title":null,"startedAt":at,"completedAt":null,"updatedAt":at,"type":"command_execution","input":input});
+            if let Ok(mut native) = get(&tx, "turnItems", &item_id) {
+                native["input"] = item["input"].clone();
+                native["status"] = json!("running");
+                item = native;
+            }
             store_item(&tx, tid, &item)?;
             append(&tx, tid, "turn-item.updated", item, &thread)?;
             tx.commit().map_err(|e| e.to_string())?;

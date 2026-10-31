@@ -2,14 +2,14 @@
 """Isolated release RSS probe, using a real authenticated WebSocket and 1000 durable messages."""
 import base64,hashlib,json,os,pathlib,socket,struct,subprocess,sys,tempfile,time
 repo=pathlib.Path(__file__).resolve().parent.parent
-build_dir=os.environ.get('CARGO_TARGET_DIR','/tmp/o3-bench-target')
+build_dir=os.environ.get('CARGO_TARGET_DIR','/var/tmp/o3-build/main')
 if len(sys.argv)<2:
- subprocess.run(['cargo','build','--release','--locked'],cwd=repo,env={**os.environ,'CARGO_TARGET_DIR':build_dir},check=True)
+ subprocess.run(['nice','cargo','build','--release','--locked','-j','6'],cwd=repo,env={**os.environ,'CARGO_TARGET_DIR':build_dir},check=True)
 binary=pathlib.Path(sys.argv[1] if len(sys.argv)>1 else build_dir+'/release/o3-server').resolve()
 assert '/release/' in str(binary), 'benchmark requires a release binary' 
 class WS:
  def __init__(self,port,token):
-  self.s=socket.create_connection(('127.0.0.1',port),timeout=20)
+  self.s=socket.create_connection(('127.0.0.1',port),timeout=120)
   self.s.sendall((f'GET /ws?orchestrationProtocol=2 HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: {base64.b64encode(os.urandom(16)).decode()}\r\nAuthorization: Bearer {token}\r\n\r\n').encode())
   header=b''
   while not header.endswith(b'\r\n\r\n'):header+=self.s.recv(1)
@@ -37,17 +37,24 @@ class WS:
   self.send({'_tag':'Request','id':'1','tag':tag,'payload':payload,'headers':[]});v=self.recv();assert v['exit']['_tag']=='Success',v;return v['exit']['value']
 def memory(pid):
  return {k:int(v.split()[0]) for k,v in (line.split(':',1) for line in pathlib.Path(f'/proc/{pid}/status').read_text().splitlines() if ':' in line) if k in ('VmRSS','VmHWM','RssAnon')}
-with tempfile.TemporaryDirectory(prefix='o3-rss-',dir='/var/tmp') as temp:
- env={**os.environ,'T3CODE_HOME':temp,'HOME':temp}
- token=subprocess.check_output([str(binary),'auth','session','issue','--scope','orchestration:read','--scope','orchestration:operate','--token-only'],env=env,text=True).strip()
+with tempfile.TemporaryDirectory(prefix='o3-rss-',dir='/var/tmp/o3-build') as temp:
+ env={**os.environ,'T3CODE_HOME':temp,'HOME':temp,'CODEX_HOME':str(pathlib.Path(temp)/'codex'),'CLAUDE_CONFIG_DIR':str(pathlib.Path(temp)/'claude')}
+ token=subprocess.check_output([str(binary),'auth','session','issue','--scope','orchestration:read','--scope','orchestration:operate','--scope','providers:manage','--token-only'],env=env,text=True).strip()
  process=subprocess.Popen([str(binary),'serve','--port','0','--host','127.0.0.1'],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
  try:
-  runtime=pathlib.Path(temp)/'userdata/server-runtime.json';deadline=time.monotonic()+10
+  runtime=pathlib.Path(temp)/'userdata/server-runtime.json';deadline=time.monotonic()+90
   while not runtime.exists():
    assert process.poll() is None and time.monotonic()<deadline
    time.sleep(.01)
   port=json.loads(runtime.read_text())['port'];cold=memory(process.pid)
   ws=WS(port,token)
+  ws.rpc('server.refreshProviders',{})
+  config=ws.rpc('server.getConfig',{})
+  while not (pathlib.Path(temp)/'omabridge/endpoint.json').exists():
+   assert time.monotonic()<deadline, 'bridge startup timeout'
+   time.sleep(.05)
+  providers=config['providers']
+  assert {p['instanceId'] for p in providers}=={'claude','codex'},providers
   ws.rpc('orchestration.dispatchCommand',{'type':'thread.create','commandId':'create','threadId':'rss-thread','projectId':'rss-project','title':'RSS workload','modelSelection':{'instanceId':'scripted','model':'test','options':[]},'runtimeMode':'full-access','interactionMode':'default','branch':None,'worktreePath':None})
   for j in range(1,20):ws.rpc('orchestration.dispatchCommand',{'type':'thread.create','commandId':f'create-{j}','threadId':f'thread-{j}','projectId':'rss-project','title':'RSS thread','modelSelection':{'instanceId':'scripted','model':'test','options':[]},'runtimeMode':'full-access','interactionMode':'default'})
   for i in range(1000):ws.rpc('orchestration.dispatchCommand',{'type':'message.dispatch','commandId':f'c{i}','messageId':f'm{i}','threadId':'rss-thread','text':f'message {i}: '+('x'*1000),'attachments':[],'dispatchMode':{'type':'defer_start'}})
@@ -63,7 +70,7 @@ with tempfile.TemporaryDirectory(prefix='o3-rss-',dir='/var/tmp') as temp:
   for i in range(1000):churn.rpc('server.getSettings',{})
   churn.s.close();time.sleep(.2)
   final=memory(process.pid)
-  result={'measured_at_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'binary':str(binary),'binary_bytes':binary.stat().st_size,'seed_messages':1000,'threads':20,'subscribers':3,'unary_calls':1000,'text_bytes_per_message':1000,'cold_kib':cold,'seeded_kib':idle,'subscribed_kib':subscribed,'after_churn_kib':final,'snapshot_messages':counts,'under_50_mib':final['VmHWM']<50*1024,'provider':'none (defer_start)','measurement':'Linux /proc/PID/status; disk profile under /var/tmp','allocator_env':{k:v for k,v in env.items() if k.startswith('MIMALLOC_')}}
+  result={'measured_at_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'binary':str(binary),'binary_bytes':binary.stat().st_size,'seed_messages':1000,'threads':20,'subscribers':3,'unary_calls':1000,'text_bytes_per_message':1000,'cold_kib':cold,'seeded_kib':idle,'subscribed_kib':subscribed,'after_churn_kib':final,'snapshot_messages':counts,'under_50_mib':final['VmHWM']<50*1024,'providers':[{'instanceId':p['instanceId'],'installed':p.get('installed'),'status':p.get('status')} for p in providers],'bridge_enabled':True,'provider_workload':'registered and probed; inference excluded (defer_start)','measurement':'Linux /proc/PID/status; disk profile under /var/tmp','allocator_env':{k:v for k,v in env.items() if k.startswith('MIMALLOC_')}}
   print(json.dumps(result,indent=2))
   for ws in subscribers:ws.s.close()
 

@@ -78,7 +78,7 @@ fn invalid(message: &str) -> Value {
 pub async fn call(s: &std::sync::Arc<State>, tag: &str, p: &Value) -> Option<Reply> {
     Some(match tag {
         "server.reportClientActivity" => report_activity(s, p),
-        "server.refreshProviders" => refresh_providers(s, p),
+        "server.refreshProviders" => refresh_providers(s, p).await,
         "secrets.answerRequest" => answer_secret(s, p),
         "server.getProcessDiagnostics" => Ok(diagnostics()),
         "server.getResourceTelemetryHistory" => telemetry(s, p),
@@ -132,9 +132,15 @@ fn report_activity(s: &State, p: &Value) -> Reply {
     Ok(Value::Null)
 }
 
-fn refresh_providers(s: &State, _p: &Value) -> Reply {
-    // No provider adapter is installed by the executable, so there is nothing to probe: the
-    // answer is the configured list as `server.getConfig` reports it.
+async fn refresh_providers(s: &State, _p: &Value) -> Reply {
+    let provider = s.provider.lock().unwrap().clone();
+    if let Some(provider) = provider {
+        provider
+            .refresh()
+            .await
+            .map_err(|m| json!({"_tag":"ProviderSetupError","message":m}))?;
+    }
+    s.notify();
     let config =
         crate::settings::config(s).map_err(|m| json!({"_tag":"ProviderSetupError","message":m}))?;
     Ok(json!({"providers":config["providers"]}))

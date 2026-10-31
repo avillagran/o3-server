@@ -417,15 +417,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             ) {
                 return Err("dispatch mode is not implemented".into());
             }
-            // A queued message waits behind the active run; with none active it starts at once.
-            let queued = mode == Some("queue_after_active")
-                && crate::thread_commands::has_blocking_run(&tx, tid)?;
-            let launch = mode == Some("start_immediately")
-                || (mode == Some("queue_after_active") && !queued);
-            // Execution is deliberately refused until a provider is configured. Defer-start is durable.
-            if launch && s.provider.lock().unwrap().is_none() {
-                return Err("no provider adapter configured; only defer_start is available".into());
-            }
+            let mode = c["dispatchMode"]["type"].as_str();
             if s.active.lock().unwrap().len() >= 32 {
                 return Err("active run limit reached".into());
             }
@@ -445,44 +437,11 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                         .into(),
                 );
             }
-            if c["dispatchMode"]["type"] == "steer_active" {
-                let rid = c["dispatchMode"]["targetRunId"]
-                    .as_str()
-                    .ok_or("targetRunId required")?;
-                if active_run.as_deref() != Some(rid) {
-                    return Err("steering target is not active".into());
-                }
-                let text = c["text"].as_str().ok_or("text required")?;
-                let sender = s
-                    .active
-                    .lock()
-                    .unwrap()
-                    .get(rid)
-                    .cloned()
-                    .ok_or("provider not ready for steering")?;
-                let permit = sender
-                    .try_reserve_owned()
-                    .map_err(|_| "provider control busy")?;
-                let mid = c["messageId"].as_str().ok_or("messageId required")?;
-                let m = json!({"id":mid,"threadId":tid,"runId":rid,"nodeId":rid,"role":"user","text":text,"attachments":[],"streaming":false,"createdBy":"user","creationSource":"web","createdAt":at,"updatedAt":at});
-                put(&tx, "messages", mid, tid, &m)?;
-                append(&tx, tid, "message.updated", m.clone(), &t)?;
-                let mut item = message_item(&tx, tid, &m)?;
-                item["inputIntent"] = json!("steer");
-                crate::claude_projection::save_item(&tx, tid, &t, item)?;
-                let result = json!({"sequence":sequence(&tx)?});
-                tx.execute(
-                    "INSERT INTO receipts VALUES(?,?)",
-                    params![cid, result.to_string()],
-                )
-                .map_err(|e| e.to_string())?;
-                tx.commit().map_err(|e| e.to_string())?;
-                drop(db);
-                permit.send(crate::provider::ProviderControl::Steer(text.into()));
-                s.notify();
-                return Ok(result);
-            }
+
             let queued = c["dispatchMode"]["type"] == "queue_after_active" && active_run.is_some();
+            if mode != Some("defer_start") && s.provider.lock().unwrap().is_none() {
+                return Err("no provider adapter configured; only defer_start is available".into());
+            }
             let run_id = random_id()?;
             let mid = c["messageId"].as_str().ok_or("messageId required")?;
             let mut m = json!({"id":mid,"threadId":tid,"runId":run_id,"nodeId":null,"role":"user","text":c["text"],"attachments":c["attachments"],"streaming":false,"createdBy":"user","creationSource":"web","createdAt":at,"updatedAt":at});
@@ -547,7 +506,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                 ),
                 None => None,
             };
-            crate::claude_projection::finish(&tx, tid, rid, &t, &at, "interrupted")?;
+            crate::projection::finish(&tx, tid, rid, &t, &at, "interrupted")?;
             let mid = format!("assistant-{rid}");
             if let Ok(mut message) = get(&tx, "messages", &mid) {
                 message["streaming"] = json!(false);
@@ -645,7 +604,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                 item["status"] = json!("completed");
                 item["completedAt"] = json!(at);
                 item["updatedAt"] = json!(at);
-                crate::claude_projection::save_item(&tx, tid, &t, item)?;
+                crate::projection::save_item(&tx, tid, &t, item)?;
             }
             if let Ok(mut run) = get(&tx, "runs", &rid) {
                 if run["status"] == "waiting" {

@@ -2,6 +2,7 @@
 use std::{future::Future, pin::Pin};
 use tokio::sync::{mpsc, watch};
 pub struct RunInput {
+    pub provider_instance_id: String,
     pub native_session_id: Option<String>,
     pub thread_id: String,
     pub run_id: String,
@@ -42,6 +43,9 @@ pub enum ProviderControl {
 /// and reap owned per-run subprocesses before resolving. Shared process adapters expose
 /// an explicit shutdown that reaps the process after all runs. Futures must be Send.
 pub trait Provider: Send + Sync + 'static {
+    fn refresh<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
+    }
     fn config(&self) -> Vec<serde_json::Value> {
         Vec::new()
     }
@@ -116,9 +120,16 @@ pub(crate) fn start(
                         .ok()
                         .and_then(|p| p["workspaceRoot"].as_str().map(std::path::PathBuf::from))
                 })
-                .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+                .unwrap_or_else(|| s.dir.clone());
             RunInput {
-                native_session_id: t["activeProviderThreadId"].as_str().map(str::to_owned),
+                provider_instance_id: t["providerInstanceId"].as_str().unwrap_or("").into(),
+                native_session_id: t[if t["providerInstanceId"] == "codex" {
+                    "codexNativeThreadId"
+                } else {
+                    "activeProviderThreadId"
+                }]
+                .as_str()
+                .map(str::to_owned),
                 thread_id: tid.clone(),
                 run_id: rid.clone(),
                 cwd,
@@ -130,14 +141,38 @@ pub(crate) fn start(
                 context: m.get("context").cloned(),
             }
         };
+        let checkpoint_cwd = input.cwd.clone();
+        let checkpoint_state = s.clone();
+        let ct = tid.clone();
+        let cr = rid.clone();
+        let cc = checkpoint_cwd.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            crate::checkpoint::capture(&checkpoint_state, &ct, &cr, &cc, true)
+        })
+        .await;
         let mut task = tokio::task::spawn(async move {
             provider
                 .execute(input, output, controls, cancellation)
                 .await
         });
+        let mut checkpoint_finished = false;
         let mut finished = false;
         let mut failure = None;
         while let Some(event) = events.recv().await {
+            if matches!(
+                event,
+                ProviderEvent::Completed | ProviderEvent::Interrupted | ProviderEvent::Failed(_)
+            ) {
+                checkpoint_finished = true;
+                let cs = s.clone();
+                let ct = tid.clone();
+                let cr = rid.clone();
+                let cc = checkpoint_cwd.clone();
+                let _ = tokio::task::spawn_blocking(move || {
+                    crate::checkpoint::capture(&cs, &ct, &cr, &cc, false)
+                })
+                .await;
+            }
             if persist(&s, &tid, &rid, event).is_err() {
                 break;
             }
@@ -149,6 +184,16 @@ pub(crate) fn start(
         }
         let _ = cancel.send(true);
         tokio::select! {r=&mut task=>{match r {Ok(Ok(()))=>finished=true,Ok(Err(e))=>failure=Some(e),Err(e)=>failure=Some(e.to_string())}},_=tokio::time::sleep(std::time::Duration::from_secs(2))=>{task.abort();let _=task.await;}}
+        if !checkpoint_finished {
+            let cs = s.clone();
+            let ct = tid.clone();
+            let cr = rid.clone();
+            let cc = checkpoint_cwd.clone();
+            let _ = tokio::task::spawn_blocking(move || {
+                crate::checkpoint::capture(&cs, &ct, &cr, &cc, false)
+            })
+            .await;
+        }
         s.active.lock().unwrap().remove(&rid);
         let final_run = crate::events::get(&s.db.lock().unwrap(), "runs", &rid);
         if let Ok(run) = final_run {
@@ -185,7 +230,31 @@ fn persist(
         store::{iso, now_ms},
     };
     use serde_json::json;
-    if let ProviderEvent::Command(command) = event {
+    if let ProviderEvent::Command(mut command) = event {
+        use crate::command_output::CommandEvent as C;
+        let id = match &mut command {
+            C::Started { item_id, .. }
+            | C::Output { item_id, .. }
+            | C::Finished { item_id, .. } => item_id,
+        };
+        if let Some(native) = id.strip_prefix("native-tool:") {
+            *id = format!("tool-{rid}-{native}");
+            if matches!(command, C::Finished { .. }) {
+                let db = s.db.lock().unwrap();
+                if crate::events::get(
+                    &db,
+                    "turnItems",
+                    match &command {
+                        C::Finished { item_id, .. } => item_id,
+                        _ => unreachable!(),
+                    },
+                )
+                .is_ok_and(|v| v["type"] != "command_execution")
+                {
+                    return Ok(());
+                }
+            }
+        }
         return crate::command_output::persist(s, tid, rid, command);
     }
     let mut db = s.db.lock().unwrap();
@@ -253,7 +322,7 @@ fn persist(
             if let ProviderEvent::Failed(ref error) = event {
                 run["error"] = json!(error);
             }
-            crate::claude_projection::finish(
+            crate::projection::finish(
                 &tx,
                 tid,
                 rid,
@@ -278,6 +347,41 @@ fn persist(
     drop(db);
     s.notify();
     Ok(())
+}
+
+/// Routes sessions to a driver without imposing subprocess ownership on adapters.
+pub struct Providers {
+    pub claude: Option<std::sync::Arc<crate::claude::ClaudeProvider>>,
+    pub codex: std::sync::Arc<crate::codex::CodexProvider>,
+}
+impl Provider for Providers {
+    fn config(&self) -> Vec<serde_json::Value> {
+        let mut result = vec![crate::claude::config(self.claude.is_some())];
+        result.extend(self.codex.config());
+        result
+    }
+    fn refresh<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            let _ = self.codex.probe().await;
+            Ok(())
+        })
+    }
+    fn execute<'a>(
+        &'a self,
+        input: RunInput,
+        output: mpsc::Sender<ProviderEvent>,
+        control: mpsc::Receiver<ProviderControl>,
+        cancel: watch::Receiver<bool>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        match input.provider_instance_id.as_str() {
+            "codex" => self.codex.execute(input, output, control, cancel),
+            "claude" | "claude-code" => match self.claude.as_ref() {
+                Some(p) => p.execute(input, output, control, cancel),
+                None => Box::pin(async { Err("Claude CLI is unavailable".into()) }),
+            },
+            _ => Box::pin(async { Err("unknown providerInstanceId".into()) }),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -355,5 +459,59 @@ mod tests {
             drop(s);
             std::fs::remove_dir_all(dir).unwrap();
         }
+    }
+}
+
+#[cfg(test)]
+mod command_tests {
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn claude_bash_frames_feed_command_output_without_reclassifying_other_tools() {
+        let dir =
+            std::env::temp_dir().join(format!("o3-command-{}", crate::store::random_id().unwrap()));
+        let state = crate::store::State::open(&dir).unwrap();
+        {
+            let db = state.db.lock().unwrap();
+            crate::events::put(
+                &db,
+                "thread",
+                "t",
+                "t",
+                &json!({"id":"t","providerInstanceId":"claude"}),
+            )
+            .unwrap();
+            crate::events::put(&db, "runs", "r", "t", &json!({"id":"r","status":"running"}))
+                .unwrap();
+        }
+        for block in [
+            json!({"type":"tool_use","id":"bash","name":"Bash","input":{"command":"echo hello"}}),
+            json!({"type":"tool_result","tool_use_id":"bash","content":"hello\n"}),
+            json!({"type":"tool_use","id":"read","name":"Read","input":{"file_path":"proof"}}),
+            json!({"type":"tool_result","tool_use_id":"read","content":"file"}),
+        ] {
+            for event in
+                crate::claude::decode(&json!({"type":"assistant","message":{"content":[block]}}))
+            {
+                persist(&state, "t", "r", event).unwrap();
+            }
+        }
+        let mut stream = crate::command_output::open_stream(
+            &state,
+            &json!({"threadId":"t","itemId":"tool-r-bash"}),
+        )
+        .unwrap();
+        let crate::terminal::Step::Values(values) = stream.next(&state) else {
+            panic!("missing command output")
+        };
+        assert_eq!(values[0]["text"], "hello\n");
+        let db = state.db.lock().unwrap();
+        assert_eq!(
+            crate::events::get(&db, "turnItems", "tool-r-read").unwrap()["type"],
+            "dynamic_tool"
+        );
+        drop(db);
+        drop(state);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

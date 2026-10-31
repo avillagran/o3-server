@@ -234,8 +234,10 @@ impl CodexProvider {
                         let failed=frame["params"]["turn"]["status"]=="failed";
                         let interrupted=frame["params"]["turn"]["status"]=="interrupted";
                         let text=frame["params"]["delta"].as_str().unwrap_or("").to_owned();
+                        let commands=command_events(&frame,&input.run_id);
                         let event=if frame["method"]=="item/agentMessage/delta" {ProviderEvent::TextDelta(text)}else{ProviderEvent::Codex(frame)};
                         tokio::select! { r=output.send(event)=>r.map_err(|_|"receiver closed")?, _=cancel.changed()=>continue, _=output.closed()=>return Ok(()) }
+                        for command in commands {output.send(ProviderEvent::Command(command)).await.map_err(|_|"receiver closed")?;}
                         if done { terminal_received=true; output.send(if failed {ProviderEvent::Failed(failure_message)}else if interrupted{ProviderEvent::Interrupted}else{ProviderEvent::Completed}).await.map_err(|_|"receiver closed")?; return Ok(()); }
                     }
                 }
@@ -414,11 +416,39 @@ fn usage_limits(limits: &Value) -> Value {
     json!({"checkedAt":crate::store::iso(crate::store::now_ms()),"windows":windows})
 }
 
+fn command_events(frame: &Value, rid: &str) -> Vec<crate::command_output::CommandEvent> {
+    use crate::command_output::CommandEvent as E;
+    let p = &frame["params"];
+    let item = &p["item"];
+    let native = p["itemId"]
+        .as_str()
+        .or_else(|| item["id"].as_str())
+        .unwrap_or("");
+    let id = format!("codex-item-{rid}-{native}");
+    match frame["method"].as_str().unwrap_or("") {
+        "item/started" if item["type"] == "commandExecution" => vec![E::Started {
+            item_id: id,
+            input: item["command"].as_str().unwrap_or("").into(),
+        }],
+        "item/completed" if item["type"] == "commandExecution" => vec![E::Finished {
+            item_id: id,
+            exit_code: item["exitCode"].as_i64().map(|n| n as i32),
+            output: item["aggregatedOutput"].as_str().map(str::to_owned),
+        }],
+        "item/commandExecution/outputDelta" => vec![E::Output {
+            item_id: id,
+            chunk: p["delta"].as_str().unwrap_or("").into(),
+        }],
+        _ => vec![],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     fn input(thread: &str, resume: Option<String>) -> RunInput {
         RunInput {
+            provider_instance_id: "codex".into(),
             thread_id: thread.into(),
             run_id: format!("run-{thread}"),
             native_session_id: resume,
@@ -474,8 +504,8 @@ mod tests {
                         assert!(saw_text);
                         assert!(f["id"].is_number());
                         tx.send(ProviderControl::Steer("more".into()))
-                        .await
-                        .unwrap();
+                            .await
+                            .unwrap();
                         tx.send(ProviderControl::Respond {
                             request_id: f["params"]["o3RequestId"].as_str().unwrap().into(),
                             decision: json!("accept"),

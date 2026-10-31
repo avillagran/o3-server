@@ -4,7 +4,7 @@ Contrato: `t3code@3f9448747`. Generado por `tools/gen-compat`; editar `docs/comp
 
 Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ningún cliente lo usa)
 
-**Resumen:** 29 ✅ · 28 🟡 · 69 ⬜ · 77 🚫 de 203 RPC
+**Resumen:** 32 ✅ · 25 🟡 · 69 ⬜ · 77 🚫 de 203 RPC
 
 ## (root)
 
@@ -102,11 +102,11 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 |---|---|---|---|---|---|
 | 🟡 | `orchestration.dispatchCommand` | P0 | unary | `orchestration:operate` | Connection tests: transactional command receipts, lifecycle, scripted send/approval/completion/interrupt/dismiss; queues and production execution absent. |
 | 🟡 | `orchestration.getArchivedShellSnapshot` | P2 | unary | `orchestration:read` | Real-client test: archived threads and projects with the shared sequence. Built from the in-memory shell assembly (10,000 thread cap), same limit as the live shell. |
-| 🟡 | `orchestration.getFullThreadDiff` | P1 | unary | `orchestration:read` | Same as getTurnDiff: tested against seeded checkpoints; capture is not implemented. |
+| ✅ | `orchestration.getFullThreadDiff` | P1 | unary | `orchestration:read` | Real Connection Codex execution captures Git refs and verifies baseline-to-turn diff. Checkpoint retention and overlapping-workspace isolation remain. |
 | ⬜ | `orchestration.getOlderSettledThreads` | P2 | unary | `orchestration:read` | Deferred; client-usage.md inventory. |
 | 🚫 | `orchestration.getThreadFamily` | unused | unary | `orchestration:read` | No client call site in inventory. |
 | ✅ | `orchestration.getThreadProjection` | P2 | unary | `orchestration:read` | Real-client test: bounded projection (up to 100 rows per kind) and an error for unknown threads. |
-| 🟡 | `orchestration.getTurnDiff` | P1 | unary | `orchestration:read` | Tested against seeded checkpoint records and real git refs (ranges, whitespace flag, unavailable turns, invalid refs and unknown workspaces refused). o3-server does not capture checkpoints yet, so no thread produces them. |
+| ✅ | `orchestration.getTurnDiff` | P1 | unary | `orchestration:read` | Real Connection Codex execution captures baseline/end refs using a private Git index; test verifies diff over a real workspace change. Includes untracked nonignored files and deletions; non-Git workspaces report unavailable. |
 | ✅ | `orchestration.getTurnItem` | P1 | unary | `orchestration:read` | Real-client test: item by id for its own thread, null otherwise. The revision argument is ignored. |
 | ⬜ | `orchestration.getWorkflowScript` | P2 | unary | `orchestration:read` | Deferred; client-usage.md inventory. |
 | 🚫 | `orchestration.getWorktreeThreadIds` | unused | unary | `orchestration:read` | No client call site in inventory. |
@@ -116,7 +116,7 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | 🟡 | `orchestration.searchThreads` | P1 | unary | `orchestration:read` | Real-client test: SQLite FTS5 index kept by message writes and rebuilt when missing; best message per thread with hits/quality/snippet, prefix match, project filter, titlesOnly, archived/deleted excluded, FTS syntax inert. Not done: threads/olderSettled fields, environmentLabel. |
 | ⬜ | `orchestration.stopWorkflow` | P2 | unary | `orchestration:operate` | Deferred; client-usage.md inventory. |
 | 🚫 | `orchestration.subscribeArchivedShell` | unused | stream | `orchestration:read` | No client call site in inventory. |
-| 🟡 | `orchestration.subscribeCommandOutput` | P1 | stream | `orchestration:read` | tests/command_output.rs: replace/append/settled frames fed by Provider CommandEvent; no cursor-addressing fold of the tail, no frame throttle, and no shipped adapter emits commands yet. |
+| 🟡 | `orchestration.subscribeCommandOutput` | P1 | stream | `orchestration:read` | Real Connection tests verify bounded command tails/replacement/final output. Real Claude Bash results and Codex command/outputDelta frames emit Command events. Claude output arrives at tool completion; no full VT folding. |
 | 🟡 | `orchestration.subscribeShell` | P0 | stream | `orchestration:read` | Real Connection snapshot/replay tests. SQLite streaming removes the 10,000 cap (10,002-project streaming test); omitIdleSubagents/omitOlderSettled and family shapes remain. |
 | 🟡 | `orchestration.subscribeThread` | P0 | stream | `orchestration:read` | Real Connection tests: streamed full opt-out (140 messages), bounded ten-turn window, compact IDs/body dedupe/local turn-item omission, replay/markers. Generic/activity/oversized and targeted-history policies are not fully conformant. |
 
@@ -255,7 +255,7 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | 🚫 | `server.disableAcpRegistryProvider` | unused | unary | `providers:manage` | No client call site in inventory. |
 | ⬜ | `server.discoverSourceControl` | P1 | unary | `orchestration:read` | Deferred; client-usage.md inventory. |
 | 🚫 | `server.getBackgroundPolicy` | unused | unary | `orchestration:read` | No client call site in inventory. |
-| 🟡 | `server.getConfig` | P0 | unary | `orchestration:read` | Real Connection test: Codex app-server probe advertises actual auth/status and native model catalog. Other provider catalogs and setup flows remain partial. |
+| 🟡 | `server.getConfig` | P0 | unary | `orchestration:read` | Both Claude process-per-session and Codex shared app-server are registered in the executable and selected by providerInstanceId. Real Connection registry test; CLI availability/auth status are honest. Setup/custom instance catalogs remain incomplete. |
 | 🚫 | `server.getDatabaseStorage` | unused | stream | `orchestration:read` | No client call site in inventory. |
 | ⬜ | `server.getHostResources` | P2 | unary | `orchestration:read` | Deferred; client-usage.md inventory. |
 | ✅ | `server.getProcessDiagnostics` | P2 | unary | `diagnostics:read` | tests/ops.rs: the server process tree from /proc, with Option encoding for pgid/error. |
@@ -271,7 +271,7 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | 🚫 | `server.logoutAcpRegistry` | unused | unary | `providers:manage` | No client call site in inventory. |
 | ⬜ | `server.prepareAcpRegistryAgent` | P2 | unary | `providers:manage` | Deferred; client-usage.md inventory. |
 | 🚫 | `server.probe` | unused | unary | `orchestration:read` | No client call site in inventory. |
-| 🟡 | `server.refreshProviders` | P1 | unary | `orchestration:read` | tests/ops.rs: returns the configured provider list; no adapters exist to probe. |
+| ✅ | `server.refreshProviders` | P1 | unary | `orchestration:read` | Real Connection Codex-peer test probes the registered drivers and returns both provider descriptors; Claude authentication is checked at execution and reported unknown beforehand. |
 | ⬜ | `server.refreshUsageRates` | P2 | unary | `diagnostics:read` | Deferred; client-usage.md inventory. |
 | ⬜ | `server.removeKeybinding` | P2 | unary | `settings:write` | Deferred; client-usage.md inventory. |
 | ✅ | `server.reportClientActivity` | P1 | unary | `orchestration:read` | tests/ops.rs: validated, kept per client until its ttl; nothing consumes it yet (no background policy). |
@@ -338,12 +338,12 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 
 | Estado | Command | Prioridad | Nota |
 |---|---|---|---|
-| 🟡 | `checkpoint.rollback` | P2 | tests/thread_commands.rs: validates the checkpoint and records the request; files and provider conversation are not restored (o3-server captures no checkpoints). |
+| 🟡 | `checkpoint.rollback` | P2 | Real Connection execution captures real refs and restores baseline workspace files. Private-index test covers additions/deletions and preserves user index. Refuses active runs; provider conversation rewind and crash-safe restore replay remain. |
 | 🚫 | `delegated_task.completion-delivery.acknowledge` | unused | No client call site in inventory. |
 | 🚫 | `delegated_task.completion-delivery.dispose` | unused | No client call site in inventory. |
 | 🚫 | `delegated_task.request` | unused | No client call site in inventory. |
 | 🚫 | `delegated_task.wake-policy` | unused | No client call site in inventory. |
-| 🟡 | `message.dispatch` | P0 | Real Connection Codex stdio-peer test: turn start and steer_active; persisted native resume binding. Authenticated live inference, attachments, context, queues and crash recovery remain. |
+| 🟡 | `message.dispatch` | P0 | Real Connection tests exercise Claude/scripted and Codex execution, queue_after_active and steer_active; one shared queue advances after teardown. Provider-native attachments/context and durable control replay remain. |
 | 🚫 | `notification.delivery.accept` | unused | No client call site in inventory. |
 | 🚫 | `prepared-run.fail` | unused | No client call site in inventory. |
 | 🚫 | `prepared-run.progress` | unused | No client call site in inventory. |
@@ -352,7 +352,7 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | 🚫 | `provider-session.detach` | unused | No client call site in inventory. |
 | 🚫 | `provider.switch` | unused | No client call site in inventory. |
 | ✅ | `queue.resume` | P1 | tests/thread_commands.rs: also covers run.interrupt holdQueue and automatic advance when a run ends. |
-| ⬜ | `queued-message.promote-to-steer` | P1 | Refused with an explicit error: no adapter accepts mid-run input. |
+| ✅ | `queued-message.promote-to-steer` | P1 | Real Connection Codex-peer test promotes queuedRunId into targetRunId using the native steer control, cancels the queued run and reassigns its message; rejects inactive/cross-thread targets and attachments. |
 | ✅ | `queued-run.cancel` | P1 | tests/thread_commands.rs |
 | ✅ | `queued-run.edit` | P1 | tests/thread_commands.rs |
 | ✅ | `queued-run.reorder` | P1 | tests/thread_commands.rs: user messages only; automatic completion deliveries are not modelled. |

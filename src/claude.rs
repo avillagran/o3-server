@@ -378,6 +378,37 @@ pub(crate) fn decode(v: &Value) -> Vec<ProviderEvent> {
                 for block in content {
                     if matches!(block["type"].as_str(), Some("tool_use" | "tool_result")) {
                         out.push(ProviderEvent::Native(json!({"type":"tool","block":block,"parent_tool_use_id":v["parent_tool_use_id"]})));
+                        if block["type"] == "tool_use" && block["name"] == "Bash" {
+                            out.push(ProviderEvent::Command(
+                                crate::command_output::CommandEvent::Started {
+                                    item_id: format!(
+                                        "native-tool:{}",
+                                        block["id"].as_str().unwrap_or("")
+                                    ),
+                                    input: block["input"]["command"].as_str().unwrap_or("").into(),
+                                },
+                            ));
+                        } else if block["type"] == "tool_result" {
+                            out.push(ProviderEvent::Command(
+                                crate::command_output::CommandEvent::Finished {
+                                    item_id: format!(
+                                        "native-tool:{}",
+                                        block["tool_use_id"].as_str().unwrap_or("")
+                                    ),
+                                    exit_code: if block["is_error"] == true {
+                                        Some(1)
+                                    } else {
+                                        Some(0)
+                                    },
+                                    output: Some(
+                                        block["content"]
+                                            .as_str()
+                                            .map(str::to_owned)
+                                            .unwrap_or_else(|| block["content"].to_string()),
+                                    ),
+                                },
+                            ));
+                        }
                     }
                 }
             }
@@ -562,6 +593,7 @@ mod tests {
             resume: Option<String>,
         ) -> Vec<ProviderEvent> {
             let input = RunInput {
+                provider_instance_id: "claude".into(),
                 native_session_id: resume,
                 thread_id: "live".into(),
                 run_id: crate::store::random_id().unwrap(),

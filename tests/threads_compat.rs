@@ -433,7 +433,7 @@ fn checkpoint_diffs_come_from_recorded_refs() {
         1,
         Some(1),
         Some("run1"),
-        "--output=/tmp/pwned",
+        "--output=/var/tmp/o3-build/pwned",
         "ready",
     );
     assert!(c
@@ -442,7 +442,7 @@ fn checkpoint_diffs_come_from_recorded_refs() {
             json!({"threadId":"t1","fromTurnCount":0,"toTurnCount":1})
         )
         .is_err());
-    assert!(!Path::new("/tmp/pwned").exists());
+    assert!(!Path::new("/var/tmp/o3-build/pwned").exists());
     // Checkpoints whose workspace is not a known one are not diffed.
     cp(
         "cp1",

@@ -21,9 +21,6 @@ pub fn handles(kind: &str) -> bool {
             | "thread.active.reorder"
             | "thread.mark-unread"
             | "thread.auto-settle.set"
-            | "thread.runtime-mode.set"
-            | "thread.interaction-mode.set"
-            | "thread.model-selection.set"
             | "queued-run.cancel"
             | "queued-run.reorder"
             | "queued-run.edit"
@@ -158,6 +155,10 @@ pub fn advance(s: &Arc<State>, tid: &str) {
 }
 
 struct Outcome {
+    steer: Option<(
+        tokio::sync::mpsc::OwnedPermit<crate::provider::ProviderControl>,
+        String,
+    )>,
     seq: i64,
     start: Option<(String, String, String)>,
 }
@@ -191,6 +192,9 @@ pub fn dispatch(s: &Arc<State>, c: &Value) -> Result<Value> {
     tx.commit().map_err(|e| e.to_string())?;
     drop(db);
     s.notify();
+    if let Some((permit, text)) = outcome.steer {
+        permit.send(crate::provider::ProviderControl::Steer(text));
+    }
     if let Some((tid, rid, text)) = outcome.start {
         crate::provider::start(s.clone(), tid, rid, text);
     }
@@ -212,7 +216,11 @@ fn commit_thread(tx: &Connection, tid: &str, event: &str, thread: &Value) -> Res
 
 fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outcome> {
     if kind == "thread.fork" {
-        return fork(tx, c).map(|seq| Outcome { seq, start: None });
+        return fork(tx, c).map(|seq| Outcome {
+            seq,
+            start: None,
+            steer: None,
+        });
     }
     let tid = string(c, "threadId").or_else(|_| string(c, "sourceThreadId"))?;
     let mut t = get(tx, "thread", tid).map_err(|_| format!("Thread {tid} was not found."))?;
@@ -232,6 +240,7 @@ fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outco
         return Err(format!("Thread {tid} is archived."));
     }
     let mut start = None;
+    let mut steer = None;
     let seq = match kind {
         "thread.snooze" => {
             let until = string(c, "snoozedUntil")?;
@@ -454,7 +463,53 @@ fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outco
             crate::events::sequence(tx)?
         }
         "queued-message.promote-to-steer" => {
-            return Err("steering an active run is not supported: no provider adapter accepts mid-run input".into());
+            let queued_id = string(c, "queuedRunId")?;
+            let mut queued = queued_runs(tx, tid)?
+                .into_iter()
+                .find(|r| r["id"] == queued_id)
+                .ok_or("queued run not found")?;
+            let mid = queued["userMessageId"]
+                .as_str()
+                .ok_or("queued message missing")?
+                .to_owned();
+            let active = string(c, "targetRunId")?.to_owned();
+            let run = get(tx, "runs", &active)?;
+            if run["threadId"] != tid
+                || !matches!(run["status"].as_str(), Some("running" | "waiting"))
+            {
+                return Err("target run is not active in this thread".into());
+            }
+            let sender = s
+                .active
+                .lock()
+                .unwrap()
+                .get(&active)
+                .cloned()
+                .ok_or("provider control unavailable")?;
+            let permit = sender
+                .try_reserve_owned()
+                .map_err(|_| "provider control busy")?;
+            let mut message = get(tx, "messages", &mid)?;
+            if message["attachments"]
+                .as_array()
+                .is_some_and(|a| !a.is_empty())
+            {
+                return Err("steering attachments unsupported".into());
+            }
+            queued["status"] = json!("cancelled");
+            queued["completedAt"] = json!(at);
+            queued["queuePosition"] = Value::Null;
+            put(tx, "runs", queued["id"].as_str().unwrap(), tid, &queued)?;
+            append(tx, tid, "run.updated", queued.clone(), &t)?;
+            renumber(tx, tid, &t, &queued_runs(tx, tid)?)?;
+            message["runId"] = json!(active);
+            put(tx, "messages", &mid, tid, &message)?;
+            append(tx, tid, "message.updated", message.clone(), &t)?;
+            let mut item = message_item(tx, tid, &message)?;
+            item["inputIntent"] = json!("steer");
+            crate::projection::save_item(tx, tid, &t, item)?;
+            steer = Some((permit, message["text"].as_str().unwrap_or("").into()));
+            crate::events::sequence(tx)?
         }
         "checkpoint.rollback" => {
             let cp = string(c, "checkpointId")?;
@@ -476,8 +531,19 @@ fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outco
                     checkpoint["scopeId"].as_str().unwrap_or("")
                 ));
             }
-            // The request is recorded; restoring files and the provider conversation is the provider's job
-            // and nothing here claims it happened.
+            if has_blocking_run(tx, tid)? {
+                return Err("cannot restore during an active run".into());
+            }
+            let scope_record = get(tx, "checkpointScopes", scope)?;
+            crate::checkpoint::restore(
+                s,
+                std::path::Path::new(
+                    scope_record["cwd"]
+                        .as_str()
+                        .ok_or("checkpoint cwd missing")?,
+                ),
+                checkpoint["ref"].as_str().ok_or("checkpoint ref missing")?,
+            )?;
             t["rollbackRequestId"] = json!(c["commandId"]);
             t["rollbackFailure"] = Value::Null;
             t["updatedAt"] = json!(at);
@@ -519,11 +585,15 @@ fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outco
         | "thread.pull-request.watch"
         | "thread.pull-request-link.sync"
         | "thread.pull-request.sync" => {
-            return pull_request(tx, c, kind, tid, t, &at).map(|seq| Outcome { seq, start: None });
+            return pull_request(tx, c, kind, tid, t, &at).map(|seq| Outcome {
+                seq,
+                start: None,
+                steer: None,
+            });
         }
         _ => return Err(format!("command {kind} is not implemented")),
     };
-    Ok(Outcome { seq, start })
+    Ok(Outcome { seq, start, steer })
 }
 
 // ---------------------------------------------------------------- fork

@@ -13,12 +13,14 @@ use std::{
 };
 use t3_protocol::{pair_bearer, Connection, ConnectionOptions, PairingClient};
 
-pub const SCRATCH: &str = "/var/tmp/o3-tests";
+pub fn scratch_root() -> PathBuf {
+    std::env::temp_dir()
+}
 static INIT: Once = Once::new();
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 pub fn bin_dir() -> PathBuf {
-    PathBuf::from(SCRATCH).join(format!("{}-bin", std::process::id()))
+    scratch_root().join(format!("{}-bin", std::process::id()))
 }
 
 fn init_process() {
@@ -62,7 +64,7 @@ impl Drop for Env {
 
 pub fn setup(name: &str) -> Env {
     init_process();
-    let scratch = PathBuf::from(SCRATCH).join(format!(
+    let scratch = scratch_root().join(format!(
         "{}-{}-{}",
         std::process::id(),
         name,

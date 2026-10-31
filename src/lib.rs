@@ -17,27 +17,30 @@ pub mod scopes;
 pub mod service;
 pub mod settings;
 
-pub mod claude;
-mod claude_projection;
-pub mod import;
-pub mod recovery;
-pub mod snapshot;
-pub mod workspace;
-pub mod codex;
-mod codex_projection;
 pub mod assets;
 pub mod body;
+#[cfg(feature = "bridge")]
+pub mod bridge;
+pub mod claude;
+mod claude_projection;
+pub mod codex;
+mod codex_projection;
 pub mod ext;
-pub mod stacked;
 pub mod files;
+pub mod import;
 pub mod paths;
 pub mod proc;
 pub mod projects;
+pub mod recovery;
 pub mod review;
-pub mod threadq;
-pub mod vcs;
+pub mod snapshot;
+pub mod stacked;
 pub mod streams;
 pub mod terminal;
 pub mod thread_commands;
-#[cfg(feature = "bridge")]
-pub mod bridge;
+pub mod threadq;
+pub mod vcs;
+pub mod workspace;
+
+pub mod checkpoint;
+mod projection;

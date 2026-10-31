@@ -1,102 +1,80 @@
-# Core implementation checkpoint
+# Integrated implementation
 
-Implemented and exercised through the real `t3-protocol::Connection`:
+Main combines the core, streaming snapshots/import, Claude and Codex adapters,
+attachments/assets/projects/files/VCS/review/search, terminals/operations/queues,
+and embedded OmaBridge. docs/compat-status.json is the RPC/command registry;
+tools/gen-compat renders COMPATIBILITY.md. Done rows require real-client tests.
 
-- CLI/profile bootstrap, local session issuance, readiness helpers, live-PID refusal and owned
-  runtime cleanup. `service install --dry-run` is tested; actual systemd installation is not run.
-- Discovery, one-use OAuth pairing, session state, pairing/client management, scope failures,
-  and revocation of open sockets. WebSocket protocol-2 rejection precedes authentication.
-- Multiplexed/batched RPC, Ping/Pong, one unacknowledged chunk per subscriber, Interrupt/Eof,
-  at most 64 subscriptions per socket and database replay instead of event queues.
-- Settings and unknown keys on disk, secret redaction/sentinel preservation, config snapshots.
-- SQLite shared event sequence, atomic command receipts/projections, project creation, thread
-  lifecycle, messages, runs, turn items and minimal runtime requests. Restart retains receipts.
-- Shell/thread snapshots, resume and synchronized markers, bounded reads and history pages.
-- Injected scripted provider start/text/approval/completion, response, interrupt and dismissal.
+The provider contract accepts session input and bounded event/control channels.
+A registry routes each thread by providerInstanceId: Claude owns a process per
+session, Codex multiplexes one app-server process. Both appear in getConfig with
+availability/status; refreshProviders probes the registered drivers. Native frame
+reducers feed the same SQLite transcript; events.rs uses common projection
+operations. Command events update bounded output tails for real adapters as well
+as scripted tests. Claude delivers Bash output when the native tool result arrives;
+Codex also streams outputDelta notifications.
 
-OmaBridge preparation is implemented, not the bridge itself: `State: Send + Sync`, `Arc`, SQLite
-mutex, two workers/two blocking threads/512 KiB stacks. `serve_io` accepts any `AsyncRead +
-AsyncWrite + Unpin + Send + 'static` transport; TCP and authenticated DuplexStream HTTP/WS
-have tests. No `Rc`, `RefCell`, `LocalSet` or local spawning remains in the server.
+There is one queue implementation in thread_commands: ordering, editing, holding,
+resuming, cancellation and automatic advance after provider teardown. Direct
+steer_active and queued-message.promote-to-steer use the same provider control.
+Promotion reserves control capacity before commit and sends after the receipt commits.
+
+Provider turns capture Git trees through a private index, including untracked
+nonignored files and deletions. Anonymous commits are retained under
+refs/o3/checkpoints; no branch or user index changes. SQLite stores baseline/end
+refs and scopes used by getTurnDiff/getFullThreadDiff. checkpoint.rollback restores
+the workspace from a ready ref and refuses active executions. Non-Git workspaces
+cannot provide checkpoints. Rollback restores files; native provider conversation
+rewind is not implemented.
 
 ## Remaining gaps
 
-This checkpoint is **not yet a complete drop-in replacement** for the desktop/Android clients.
-The compatibility registry marks broad methods partial where appropriate.
+- Durable provider/control replay and active-session reconnection after restart.
+  Recovery marks orphan executions failed and requests cancelled; it does not
+  continue inference. A crash between a committed receipt and control delivery
+  still needs an outbox. Embedded hosts must recover before first transport.
+- Provider-native attachments/additional context, full permission policy/setup
+  flows, structured Claude questions, full attempt identity and background/subagent
+  settlement. Codex authenticated inference/approvals and persisted-rollout resume
+  have deterministic-peer coverage, not a live authenticated validation.
+  Per-instance custom binaries/environment/model catalogs remain incomplete.
+- Checkpoint filesystem restoration and SQLite receipt are separate durable
+  effects; crash-safe restoration replay, provider conversation rewind, checkpoint
+  retention/garbage collection and overlapping-thread workspace isolation remain.
+  Git capture errors leave a turn without a checkpoint; they never fabricate refs.
+- Launch create/initial-message receipts are separate, with incomplete failure
+  cleanup and reused-thread metadata. Inherited/imported histories do not rebuild
+  the complete upstream event log/provider bindings; legacy v1 import is absent.
+- Settings schema normalization/annotations/migrations and advanced history
+  filtering, throughEntryId, older-page widening and oversized-body transport
+  truncation need upstream conformance. Config subscriptions replace snapshots.
+- Authentication uses bearer sessions, not cookies/DPoP; existing T3 session rows
+  are not imported. OAuth validation/scope negotiation and detailed error/client
+  metadata unions remain partial.
+- Terminal output is bounded plain text without a full VT screen emulator.
+  Scheduled operations, usage/telemetry, PR watches, subagent control, VCS/editor
+  variants and native fork semantics have the limits recorded per registry row.
+- OmaBridge fine-grained Cargo pruning, host-aware supervisor sync/rollback/rebind
+  and production desktop wiring remain (BRIDGE.md). OmaBridge uses the local
+  feat/embed checkout at 44cc7fa. Bridge and conformance transport use the same pinned
+  client revision. Snapshot tests carry the reference decoder extracted from
+  lib-t3-rust 1500d06, whose newer API lacks the bridge catalog module.
+  Pin published revisions before distribution.
+- No upstream T3 conformance run, desktop/Android end-to-end run, systemd install
+  or production deployment. No real T3 profile or running service was accessed.
 
-- Existing T3 signing keys and environment identity are reused, but existing session rows are
-  not imported from T3's database. A prior T3 bearer needs reissuance; key reuse alone does not
-  preserve its session. Neither T3 data nor its running service was accessed during this work.
-- Settings implement a minimal static default catalog and common secret field redaction,
-  not every upstream schema annotation/migration/validation rule. Provider-instance mutations,
-  entry-map replacement/removal and redacted environment retention are tested;
-  full model-preference/background-activity normalization and all validation annotations remain. Config changes send
-  replacement snapshots, not the complete incremental event union.
-- Shell and thread snapshots now stream from a separate read-only SQLite transaction through
-  two 16 KiB channel slots; WebSocket continuations carry one RPC JSON message, and HTTP uses
-  streamed bodies. Full subscriptions have no 100-record cap and shell has no 10,000-record cap.
-  Compact IDs use a capped dictionary, message text is deduplicated against included messages,
-  and local visible items can be omitted from turnItems. Ten-turn/75-generic/500-item/1 MiB
-  history windows share a policy; conversation/activity filtering, throughEntryId, older-page
-  widening and oversized-body transport truncation still need upstream conformance.
-- Advanced node/session/turn/attempt/plan/checkpoint/provider projections are not reduced.
-  Approval rendering and durable provider/control recovery require the work in PROVIDER.md.
-  Runs now record execution intent, so restart can fail executions stranded before spawn.
-  Control sends can still fail after a receipt commits; durable provider control replay remains.
-- Launch supports root, existing_worktree, git worktree creation and reuseExistingThread.
-  Empty launches are idempotent. Create and initial-message stages still have separate receipts;
-  atomic initial-message rejection, complete workflow cleanup and reused metadata remain.
-- Restart atomically marks orphaned executions failed, cancels pending requests and marks live
-  provider sessions disconnected, with replayable events; explicitly deferred runs survive.
-  Automatic provider-session reconnection/control replay is not implemented. This is safe
-  terminal recovery, not continuation of provider execution. Recovery runs once at TCP serve
-  startup; embedded hosts must call `recovery::recover` before accepting their first transport.
-- Only defer_start and start_immediately dispatch modes are accepted. Queues, steering,
-  restart, deferred release and unlisted lifecycle commands are not implemented.
-  A crash after dispatch commit but before spawning leaves a preparing run. Control sends can
-  fail after a receipt commits. These are correctness gaps for real provider execution.
-- Launch supports new root-workspace threads; worktree creation, existing-worktree/reuse and
-  one atomic launch transaction are unfinished. Its create and initial-message stages have
-  separate deterministic receipts. The fake is injected only in tests, never enabled by the CLI.
-- Claude now supports queue_after_active and steer_active; idle model/mode commands persist
-  and apply on the next turn. Queue editing, restart and deferred release remain unimplemented.
-- Auth implements bearer sessions, not DPoP/cookies. OAuth request validation/scope negotiation,
-  complete HTTP error unions, and live connection metadata in the clients listing need work.
-- No conformance run against upstream T3, desktop UI or Android was performed. Tests use the
-  real client library with o3-server. No actual systemd installation was tested.
+## Verification and memory
 
-## Import and verification
+Build and test with TMPDIR=/var/tmp/o3-build/tmp and
+CARGO_TARGET_DIR=/var/tmp/o3-build/main. Use nice cargo test -j 6 --tests,
+nice cargo clippy -j 6 --all-targets -- -D warnings, nice cargo fmt --check,
+and nice cargo build -j 6 --release --features bridge. Regenerate tools/gen-compat.
+Run nice tools/bench-rss /var/tmp/o3-build/main/release/o3-server afterward.
 
-`o3-server import --from /path/to/statev2.sqlite --base-dir /isolated/profile` opens the
-source read-only and uses the SQLite backup API to create a private mode-0600 copy under
-`/tmp`. Only that consistent copy is queried. Projects, v2 threads/messages/turn items and
-local visible items load transactionally into o3.sqlite. Existing local IDs win on reimport.
-The synthetic fixture uses verbatim Appendix D migration 005/055 DDL. Tests prove WAL content
-is included, source DB/WAL bytes remain identical, rollback on schema failure and CLI idempotence.
-No real T3 database was accessed. Legacy v1 thread migration and inherited visibility are not
-implemented; imported projections do not reconstruct the upstream event log/provider bindings.
-
-`CARGO_PROFILE_DEV_DEBUG=0 CARGO_INCREMENTAL=0 CARGO_TARGET_DIR=/tmp/o3-core-4d71 cargo test --tests`
-passes 31 tests, including real-client transport and compact decoding, restart recovery,
-worktrees and synthetic import. `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`
-and `git diff --check` are the static checks. No systemd service or actual provider was exercised.
-
-`tools/bench-rss` builds release by default (private target under `/tmp`); pass an existing
-release binary to avoid rebuilding. It uses a fresh on-disk `/var/tmp` profile, 20 threads,
-1,000 messages of ~1 KiB, three simultaneous compact bounded subscribers and 1,000 unary
-settings reads. It reports kernel VmRSS, VmHWM and RssAnon in KiB at each phase. The measured
-binary hash and workload are recorded in `docs/rss-measurement.json`. The measured workload is
-below 50 MiB VmHWM without purge tuning; SQLite writer cache is 2 MiB and snapshot cache 512 KiB.
-Provider subprocesses, OmaBridge, TLS and sustained slow-client load are excluded.
-Run `tools/measure-rss /tmp/o3-target/release/o3-server` after a release build. The probe uses a
-fresh temporary profile, seeds 1,000 messages (~1 KiB text each) through authenticated RPC,
-and opens one live bounded thread subscription. It reports Linux smaps RSS, not heap-only RSS.
-The results are in `rss-measurement.json`; no provider process, TLS or OmaBridge is included.
-The workload is a single sample, not a sustained/concurrent load test or a peak-memory bound.
-
-## Claude implementation update
-
-The executable now registers a direct native Claude CLI provider when available. See the
-2026-10-31 checkpoint in PROVIDER.md and tests/fixtures/claude/README.md for observed protocol,
-verification and remaining limits. The earlier core-only test count and RSS measurement above
-remain historical; they do not measure this adapter. No production T3 service/profile was used.
+Import uses SQLite read-only backup into TMPDIR, never the real T3 database for
+tests. Tests use synthetic profiles and repositories. RSS evidence is recorded
+in rss-measurement.json from the integrated release executable with bridge enabled
+and both drivers registered/probed. The workload has 20 threads, 1,000 deferred
+messages, three bounded snapshot subscribers and 1,000 settings calls. Provider
+inference/subprocess memory and sustained slow-client concurrency are excluded;
+this is a measured workload, not a universal memory bound.
