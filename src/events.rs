@@ -235,6 +235,12 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
         .as_str()
         .filter(|s| !s.is_empty())
         .ok_or("commandId required")?;
+    if c["type"]
+        .as_str()
+        .is_some_and(crate::thread_commands::handles)
+    {
+        return crate::thread_commands::dispatch(s, c);
+    }
     let mut db = s.db.lock().unwrap();
     let tx = db.transaction().map_err(|e| e.to_string())?;
     if let Some(r) = tx
@@ -411,8 +417,13 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             ) {
                 return Err("dispatch mode is not implemented".into());
             }
+            // A queued message waits behind the active run; with none active it starts at once.
+            let queued = mode == Some("queue_after_active")
+                && crate::thread_commands::has_blocking_run(&tx, tid)?;
+            let launch = mode == Some("start_immediately")
+                || (mode == Some("queue_after_active") && !queued);
             // Execution is deliberately refused until a provider is configured. Defer-start is durable.
-            if c["dispatchMode"]["type"] != "defer_start" && s.provider.lock().unwrap().is_none() {
+            if launch && s.provider.lock().unwrap().is_none() {
                 return Err("no provider adapter configured; only defer_start is available".into());
             }
             if s.active.lock().unwrap().len() >= 32 {
@@ -497,6 +508,9 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             let mut run = json!({"id":run_id,"threadId":tid,"ordinal":ordinal,"providerInstanceId":t["providerInstanceId"],"modelSelection":t["modelSelection"],"providerThreadId":null,"userMessageId":mid,"rootNodeId":null,"activeAttemptId":null,"status":"preparing","requestedAt":at,"startedAt":null,"completedAt":null,"checkpointId":null,"contextHandoffId":null,"executionRequested":c["dispatchMode"]["type"]!="defer_start"});
             if queued {
                 run["status"] = json!("queued");
+                run["queuePosition"] =
+                    json!(crate::thread_commands::next_queue_position(&tx, tid)?);
+                run["queueHeld"] = json!(false);
             }
             put(&tx, "runs", &run_id, tid, &run)?;
             let seq = append(&tx, tid, "run.created", run, &t)?;
@@ -547,6 +561,9 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             run["completedAt"] = json!(at);
             put(&tx, "runs", rid, tid, &run)?;
             let seq = append(&tx, tid, "run.updated", run, &t)?;
+            if c["holdQueue"] == true {
+                crate::thread_commands::hold_queue(&tx, tid, &t)?;
+            }
             let result = json!({"sequence":seq});
             tx.execute(
                 "INSERT INTO receipts VALUES(?,?)",

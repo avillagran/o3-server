@@ -4,7 +4,7 @@ Contrato: `t3code@3f9448747`. Generado por `tools/gen-compat`; editar `docs/comp
 
 Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ningún cliente lo usa)
 
-**Resumen:** 16 ✅ · 16 🟡 · 88 ⬜ · 83 🚫 de 203 RPC
+**Resumen:** 29 ✅ · 28 🟡 · 69 ⬜ · 77 🚫 de 203 RPC
 
 ## (root)
 
@@ -19,8 +19,8 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | 🚫 | `subscribeResourceTelemetry` | unused | stream | `diagnostics:read` | No client call site in inventory. |
 | 🟡 | `subscribeServerConfig` | P1 | stream | `orchestration:read` | Connection test: initial config snapshot; changes emit replacement snapshots rather than typed incremental config events. Also accepts server.subscribeServerConfig alias used by client inventory. |
 | 🚫 | `subscribeServerLifecycle` | unused | stream | `orchestration:read` | No client call site in inventory. |
-| 🚫 | `subscribeTerminalEvents` | unused | stream | `terminal:read` | No client call site in inventory. |
-| 🚫 | `subscribeTerminalMetadata` | unused | stream | `terminal:read` | No client call site in inventory. |
+| ✅ | `subscribeTerminalEvents` | unused | stream | `terminal:read` | tests/terminal.rs: manager-wide events from a bounded ring; a subscriber that falls behind the ring is ended. |
+| ✅ | `subscribeTerminalMetadata` | unused | stream | `terminal:read` | tests/terminal.rs: snapshot, upserts incl. hasRunningSubprocess/label from /proc, remove on close. |
 | 🚫 | `subscribeVcsStatus` | unused | stream | `orchestration:read` | No client call site in inventory. |
 | ⬜ | `subscribeWorktreeSetup` | P2 | stream | `orchestration:read` | Deferred; client-usage.md inventory. |
 
@@ -116,7 +116,7 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | 🟡 | `orchestration.searchThreads` | P1 | unary | `orchestration:read` | Real-client test: SQLite FTS5 index kept by message writes and rebuilt when missing; best message per thread with hits/quality/snippet, prefix match, project filter, titlesOnly, archived/deleted excluded, FTS syntax inert. Not done: threads/olderSettled fields, environmentLabel. |
 | ⬜ | `orchestration.stopWorkflow` | P2 | unary | `orchestration:operate` | Deferred; client-usage.md inventory. |
 | 🚫 | `orchestration.subscribeArchivedShell` | unused | stream | `orchestration:read` | No client call site in inventory. |
-| ⬜ | `orchestration.subscribeCommandOutput` | P1 | stream | `orchestration:read` | Deferred; client-usage.md inventory. |
+| 🟡 | `orchestration.subscribeCommandOutput` | P1 | stream | `orchestration:read` | tests/command_output.rs: replace/append/settled frames fed by Provider CommandEvent; no cursor-addressing fold of the tail, no frame throttle, and no shipped adapter emits commands yet. |
 | 🟡 | `orchestration.subscribeShell` | P0 | stream | `orchestration:read` | Real Connection snapshot/replay tests. SQLite streaming removes the 10,000 cap (10,002-project streaming test); omitIdleSubagents/omitOlderSettled and family shapes remain. |
 | 🟡 | `orchestration.subscribeThread` | P0 | stream | `orchestration:read` | Real Connection tests: streamed full opt-out (140 messages), bounded ten-turn window, compact IDs/body dedupe/local turn-item omission, replay/markers. Generic/activity/oversized and targeted-history policies are not fully conformant. |
 
@@ -228,21 +228,21 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 
 | Estado | RPC | Prioridad | Tipo | Scope | Nota |
 |---|---|---|---|---|---|
-| ⬜ | `scheduledTasks.delete` | P2 | unary | `orchestration:operate` | Client usage inventory; deferred. |
+| ✅ | `scheduledTasks.delete` | P2 | unary | `orchestration:operate` | tests/ops.rs. |
 | 🚫 | `scheduledTasks.getWebhookDelivery` | unused | unary | `orchestration:operate` | No client call site in inventory. |
-| ⬜ | `scheduledTasks.list` | P2 | unary | `orchestration:read` | Deferred; client-usage.md inventory. |
+| ✅ | `scheduledTasks.list` | P2 | unary | `orchestration:read` | tests/ops.rs. |
 | 🚫 | `scheduledTasks.listWebhookDeliveries` | unused | unary | `orchestration:operate` | No client call site in inventory. |
 | 🚫 | `scheduledTasks.rotateWebhookToken` | unused | unary | `orchestration:operate` | No client call site in inventory. |
-| ⬜ | `scheduledTasks.runNow` | P2 | unary | `orchestration:operate` | Client usage inventory; deferred. |
-| ⬜ | `scheduledTasks.setEnabled` | P2 | unary | `orchestration:operate` | Client usage inventory; deferred. |
+| 🟡 | `scheduledTasks.runNow` | P2 | unary | `orchestration:operate` | tests/ops.rs: launches a thread or messages one; the in-process timer fires due tasks. "succeeded" means launched, not that the agent finished. |
+| ✅ | `scheduledTasks.setEnabled` | P2 | unary | `orchestration:operate` | tests/ops.rs. |
 | 🚫 | `scheduledTasks.subscribe` | unused | stream | `orchestration:read` | No client call site in inventory. |
-| ⬜ | `scheduledTasks.upsert` | P2 | unary | `orchestration:operate` | Client usage inventory; deferred. |
+| 🟡 | `scheduledTasks.upsert` | P2 | unary | `orchestration:operate` | tests/ops.rs: interval and fixed_time (UTC) schedules, commandId idempotency, requireExisting. Webhook schedules are refused. |
 
 ## secrets
 
 | Estado | RPC | Prioridad | Tipo | Scope | Nota |
 |---|---|---|---|---|---|
-| ⬜ | `secrets.answerRequest` | P1 | unary | `orchestration:operate` | Client usage inventory; deferred. |
+| 🟡 | `secrets.answerRequest` | P1 | unary | `orchestration:operate` | tests/ops.rs: save/decline of secret_request items, value in a 0600 file only, typed failures. No adapter consumes the file yet. |
 
 ## server
 
@@ -258,29 +258,29 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | 🟡 | `server.getConfig` | P0 | unary | `orchestration:read` | Real Connection test: Codex app-server probe advertises actual auth/status and native model catalog. Other provider catalogs and setup flows remain partial. |
 | 🚫 | `server.getDatabaseStorage` | unused | stream | `orchestration:read` | No client call site in inventory. |
 | ⬜ | `server.getHostResources` | P2 | unary | `orchestration:read` | Deferred; client-usage.md inventory. |
-| ⬜ | `server.getProcessDiagnostics` | P2 | unary | `diagnostics:read` | Deferred; client-usage.md inventory. |
+| ✅ | `server.getProcessDiagnostics` | P2 | unary | `diagnostics:read` | tests/ops.rs: the server process tree from /proc, with Option encoding for pgid/error. |
 | 🚫 | `server.getProcessResourceHistory` | unused | unary | `diagnostics:read` | No client call site in inventory. |
-| ⬜ | `server.getResourceTelemetryHistory` | P2 | unary | `diagnostics:read` | Deferred; client-usage.md inventory. |
+| 🟡 | `server.getResourceTelemetryHistory` | P2 | unary | `diagnostics:read` | tests/ops.rs: buckets from a 10 s sampler that starts at the first call; per-process IO and the desktop source are not available. |
 | ✅ | `server.getSettings` | P1 | unary | `orchestration:read` | Connection test: persisted settings, unknown fields and secret sentinel round-trip. |
-| ⬜ | `server.getStorageCleanupReport` | P2 | stream | `orchestration:read` | Deferred; client-usage.md inventory. |
+| 🟡 | `server.getStorageCleanupReport` | P2 | stream | `orchestration:read` | tests/ops.rs: stream of the latest manual report (null before any); no automatic runs. |
 | 🚫 | `server.getTraceDiagnostics` | unused | unary | `diagnostics:read` | No client call site in inventory. |
-| ⬜ | `server.getUsageSummary` | P2 | unary | `diagnostics:read` | Deferred; client-usage.md inventory. |
+| 🟡 | `server.getUsageSummary` | P2 | unary | `diagnostics:read` | tests/ops.rs: always empty (contractVersion 6, pricing unavailable); o3-server reads no usage ledgers. |
 | 🚫 | `server.importAcpRegistrySession` | unused | unary | `orchestration:operate` | No client call site in inventory. |
 | 🚫 | `server.listAcpRegistryProviders` | unused | unary | `orchestration:read` | No client call site in inventory. |
 | 🚫 | `server.listAcpRegistrySessions` | unused | unary | `orchestration:read` | No client call site in inventory. |
 | 🚫 | `server.logoutAcpRegistry` | unused | unary | `providers:manage` | No client call site in inventory. |
 | ⬜ | `server.prepareAcpRegistryAgent` | P2 | unary | `providers:manage` | Deferred; client-usage.md inventory. |
 | 🚫 | `server.probe` | unused | unary | `orchestration:read` | No client call site in inventory. |
-| ⬜ | `server.refreshProviders` | P1 | unary | `orchestration:read` | Deferred; client-usage.md inventory. |
+| 🟡 | `server.refreshProviders` | P1 | unary | `orchestration:read` | tests/ops.rs: returns the configured provider list; no adapters exist to probe. |
 | ⬜ | `server.refreshUsageRates` | P2 | unary | `diagnostics:read` | Deferred; client-usage.md inventory. |
 | ⬜ | `server.removeKeybinding` | P2 | unary | `settings:write` | Deferred; client-usage.md inventory. |
-| ⬜ | `server.reportClientActivity` | P1 | unary | `orchestration:read` | Deferred; client-usage.md inventory. |
+| ✅ | `server.reportClientActivity` | P1 | unary | `orchestration:read` | tests/ops.rs: validated, kept per client until its ttl; nothing consumes it yet (no background policy). |
 | 🚫 | `server.reportHostPowerState` | unused | unary | `environment:maintain` | No client call site in inventory. |
 | 🚫 | `server.retryResourceTelemetry` | unused | unary | `diagnostics:read` | No client call site in inventory. |
-| ⬜ | `server.runStorageCleanup` | P2 | unary | `settings:write` | Deferred; client-usage.md inventory. |
+| 🟡 | `server.runStorageCleanup` | P2 | unary | `settings:write` | tests/ops.rs: removes profile log files older than 14 days; worktree and browser-artifact cleanup do not exist. |
 | ⬜ | `server.searchAcpRegistry` | P2 | unary | `orchestration:read` | Deferred; client-usage.md inventory. |
 | 🚫 | `server.setAcpRegistryProvider` | unused | unary | `providers:manage` | No client call site in inventory. |
-| ⬜ | `server.signalProcess` | P2 | unary | `environment:maintain` | Deferred; client-usage.md inventory. |
+| ✅ | `server.signalProcess` | P2 | unary | `environment:maintain` | tests/ops.rs: SIGINT/SIGKILL only to descendants matching pid and start time. |
 | 🚫 | `server.uninstallAcpRegistryManagedBinary` | unused | unary | `providers:manage` | No client call site in inventory. |
 | ⬜ | `server.updateProvider` | P2 | unary | `providers:manage` | Deferred; client-usage.md inventory. |
 | 🚫 | `server.updateServer` | unused | unary | `environment:maintain` | No client call site in inventory. |
@@ -306,14 +306,14 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 
 | Estado | RPC | Prioridad | Tipo | Scope | Nota |
 |---|---|---|---|---|---|
-| ⬜ | `terminal.attach` | P1 | stream | `terminal:operate` | Deferred; client-usage.md inventory. |
-| 🚫 | `terminal.clear` | unused | unary | `terminal:operate` | No client call site in inventory. |
-| 🚫 | `terminal.close` | unused | unary | `terminal:operate` | No client call site in inventory. |
-| 🚫 | `terminal.observe` | unused | stream | `terminal:read` | No client call site in inventory. |
-| ⬜ | `terminal.open` | P1 | unary | `terminal:operate` | Deferred; client-usage.md inventory. |
-| ⬜ | `terminal.resize` | P1 | unary | `terminal:operate` | Deferred; client-usage.md inventory. |
-| 🚫 | `terminal.restart` | unused | unary | `terminal:operate` | No client call site in inventory. |
-| ⬜ | `terminal.write` | P1 | unary | `terminal:operate` | Deferred; client-usage.md inventory. |
+| 🟡 | `terminal.attach` | P1 | stream | `terminal:operate` | tests/terminal.rs: snapshot then live tail without loss/duplication, resume, restartIfNotRunning, 8-chunk/64 KiB window. Same gaps as terminal.open. |
+| ✅ | `terminal.clear` | unused | unary | `terminal:operate` | tests/terminal.rs: cleared event and empty history. |
+| ✅ | `terminal.close` | unused | unary | `terminal:operate` | tests/terminal.rs: kills the process group (HUP, TERM, KILL after 1 s), emits closed, resume attach reports closed. |
+| ✅ | `terminal.observe` | unused | stream | `terminal:read` | tests/terminal.rs: read-only snapshot + tail with terminal:read; a lagging subscriber is resynchronised with a snapshot. |
+| 🟡 | `terminal.open` | P1 | unary | `terminal:operate` | tests/terminal.rs. Real PTY, process group, bounded scrollback. providerInstanceId environment is not applied; history is not persisted across a server restart. |
+| ✅ | `terminal.resize` | P1 | unary | `terminal:operate` | tests/terminal.rs: stty reports the new size. |
+| 🟡 | `terminal.restart` | unused | unary | `terminal:operate` | tests/terminal.rs: new pid, restarted event, fresh history. providerInstanceId environment is not applied. |
+| ✅ | `terminal.write` | P1 | unary | `terminal:operate` | tests/terminal.rs: data reaches the shell; typed lookup and not-running errors; exited terminals accept writes silently. |
 
 ## vcs
 
@@ -338,7 +338,7 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 
 | Estado | Command | Prioridad | Nota |
 |---|---|---|---|
-| ⬜ | `checkpoint.rollback` | P2 | Not implemented. |
+| 🟡 | `checkpoint.rollback` | P2 | tests/thread_commands.rs: validates the checkpoint and records the request; files and provider conversation are not restored (o3-server captures no checkpoints). |
 | 🚫 | `delegated_task.completion-delivery.acknowledge` | unused | No client call site in inventory. |
 | 🚫 | `delegated_task.completion-delivery.dispose` | unused | No client call site in inventory. |
 | 🚫 | `delegated_task.request` | unused | No client call site in inventory. |
@@ -351,45 +351,45 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | 🚫 | `prepared-run.retry` | unused | No client call site in inventory. |
 | 🚫 | `provider-session.detach` | unused | No client call site in inventory. |
 | 🚫 | `provider.switch` | unused | No client call site in inventory. |
-| ⬜ | `queue.resume` | P1 | Client queue builders; deferred. |
-| ⬜ | `queued-message.promote-to-steer` | P1 | Not implemented. |
-| ⬜ | `queued-run.cancel` | P1 | Not implemented. |
-| ⬜ | `queued-run.edit` | P1 | Client queue builders; deferred. |
-| ⬜ | `queued-run.reorder` | P1 | Not implemented. |
-| 🚫 | `queued-run.start` | unused | No client call site in inventory. |
+| ✅ | `queue.resume` | P1 | tests/thread_commands.rs: also covers run.interrupt holdQueue and automatic advance when a run ends. |
+| ⬜ | `queued-message.promote-to-steer` | P1 | Refused with an explicit error: no adapter accepts mid-run input. |
+| ✅ | `queued-run.cancel` | P1 | tests/thread_commands.rs |
+| ✅ | `queued-run.edit` | P1 | tests/thread_commands.rs |
+| ✅ | `queued-run.reorder` | P1 | tests/thread_commands.rs: user messages only; automatic completion deliveries are not modelled. |
+| ✅ | `queued-run.start` | unused | tests/thread_commands.rs |
 | 🟡 | `run.interrupt` | P0 | Real Connection Codex stdio-peer test: live approval nodes/items, numeric native ID reply and idempotent receipt; answer/elicitation shapes unit-tested. Crash recovery remains. |
 | 🟡 | `runtime-request.respond` | P0 | Observed can_use_tool allow/deny mapping; fixture approval projection and Connection responses. Live test approves Write; persistent approvals and structured questions remain. |
-| ⬜ | `subagent.stop` | P2 | Not implemented. |
-| ⬜ | `thread.active.reorder` | P1 | Not implemented. |
+| 🟡 | `subagent.stop` | P2 | tests/thread_commands.rs: marks the subagent cancelled; no provider session is told. |
+| ✅ | `thread.active.reorder` | P1 | tests/thread_commands.rs |
 | ✅ | `thread.archive` | P1 | Real Connection lifecycle/idempotency test. |
 | 🚫 | `thread.auto-settle` | unused | No client call site in inventory. |
-| ⬜ | `thread.auto-settle.set` | P1 | Not implemented. |
+| ✅ | `thread.auto-settle.set` | P1 | tests/thread_commands.rs |
 | ✅ | `thread.create` | P0 | Real Connection lifecycle/idempotency test. |
 | 🚫 | `thread.created.record` | unused | No client call site in inventory. |
 | ✅ | `thread.delete` | P1 | Real Connection lifecycle/idempotency test. |
-| ⬜ | `thread.fork` | P1 | Not implemented. |
+| 🟡 | `thread.fork` | P1 | tests/thread_commands.rs: new linked thread, inherited history rows copied in SQLite, idempotent. Native provider-thread fork/handoff is not performed. |
 | ⬜ | `thread.guest-message.dismiss` | P2 | Not implemented. |
 | ⬜ | `thread.guest-share.close` | P2 | Not implemented. |
-| 🟡 | `thread.interaction-mode.set` | P1 | Idle default/plan updates persisted and Connection-tested; native mode applied on the next turn. Active-run mutation rejected. |
-| ⬜ | `thread.mark-unread` | P1 | Not implemented. |
+| ✅ | `thread.interaction-mode.set` | P1 | tests/thread_commands.rs |
+| ✅ | `thread.mark-unread` | P1 | tests/thread_commands.rs |
 | 🚫 | `thread.merge_back` | unused | No client call site in inventory. |
 | ✅ | `thread.metadata.update` | P1 | Real Connection lifecycle/idempotency test. |
-| 🟡 | `thread.model-selection.set` | P1 | Idle updates persisted and Connection-tested; native set_model applied on the next turn. Active-run mutation rejected. |
+| 🟡 | `thread.model-selection.set` | P1 | tests/thread_commands.rs: updates selection and switches provider instance; no provider-session handoff. |
 | ✅ | `thread.pin` | P1 | Real Connection lifecycle/idempotency test. |
-| ⬜ | `thread.pin.reorder` | P1 | Not implemented. |
-| ⬜ | `thread.pull-request-link.sync` | P2 | Not implemented. |
-| ⬜ | `thread.pull-request.link` | P2 | Not implemented. |
-| ⬜ | `thread.pull-request.sync` | P2 | Client usage inventory; deferred. |
-| ⬜ | `thread.pull-request.unlink` | P2 | Client usage inventory; deferred. |
-| ⬜ | `thread.pull-request.watch` | P2 | Client usage inventory; deferred. |
-| 🟡 | `thread.runtime-mode.set` | P1 | Idle updates persisted and Connection-tested; native permission mode applied on the next turn. Active-run mutation rejected. |
+| ✅ | `thread.pin.reorder` | P1 | tests/thread_commands.rs |
+| ✅ | `thread.pull-request-link.sync` | P2 | tests/thread_commands.rs |
+| ✅ | `thread.pull-request.link` | P2 | tests/thread_commands.rs: metadata only. |
+| ✅ | `thread.pull-request.sync` | P2 | tests/thread_commands.rs: staleness checks and branch PR update; no discovery performed here. |
+| ✅ | `thread.pull-request.unlink` | P2 | tests/thread_commands.rs: metadata only. |
+| ✅ | `thread.pull-request.watch` | P2 | tests/thread_commands.rs: metadata only; nothing wakes the thread on PR changes. |
+| ✅ | `thread.runtime-mode.set` | P1 | tests/thread_commands.rs |
 | ✅ | `thread.settle` | P1 | Real Connection lifecycle/idempotency test. |
-| ⬜ | `thread.snooze` | P1 | Not implemented. |
+| ✅ | `thread.snooze` | P1 | tests/thread_commands.rs |
 | 🚫 | `thread.stop` | unused | No client call site in inventory. |
 | 🚫 | `thread.title.regeneration.complete` | unused | No client call site in inventory. |
 | ✅ | `thread.unarchive` | P1 | Real Connection lifecycle/idempotency test. |
 | ✅ | `thread.unpin` | P1 | Real Connection lifecycle/idempotency test. |
 | ✅ | `thread.unsettle` | P1 | Real Connection lifecycle/idempotency test. |
-| ⬜ | `thread.unsnooze` | P1 | Not implemented. |
+| ✅ | `thread.unsnooze` | P1 | tests/thread_commands.rs |
 | 🟡 | `thread.user-input.dismiss` | P1 | Real Connection scripted provider test; production delivery/recovery not complete. |
 | ✅ | `thread.visit` | P1 | Real Connection lifecycle/idempotency test. |

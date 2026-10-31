@@ -18,9 +18,10 @@ struct Subscription {
     version: u64,
     /// Progress items of a producer task (`git.runStackedAction`) instead of log replay.
     events: Option<tokio::sync::mpsc::Receiver<crate::stacked::Item>>,
+    live: Option<crate::streams::Live>,
 }
 fn exit(id: &Value, result: Result<Value, Value>) -> Value {
-    json!({"_tag":"Exit","requestId":id,"exit":match result {Ok(v)=>json!({"_tag":"Success","value":v}),Err(e)=>json!({"_tag":"Failure","cause":[{"_tag":"Fail","error":e}]})}})
+    json!({"_tag":"Exit","requestId":id,"exit":match result {Ok(Value::Null)=>json!({"_tag":"Success"}),Ok(v)=>json!({"_tag":"Success","value":v}),Err(e)=>json!({"_tag":"Failure","cause":[{"_tag":"Fail","error":e}]})}})
 }
 fn error(message: String) -> Value {
     json!({"_tag":"RpcNotImplemented","message":message})
@@ -102,6 +103,7 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
     session: Value,
 ) {
     let mut changed = s.changed.subscribe();
+    let mut live_changed = s.streams.changed.subscribe();
     let mut subscriptions: BTreeMap<String, Subscription> = BTreeMap::new();
     let mut eof = false;
     let mut expiry = tokio::time::interval(std::time::Duration::from_secs(1));
@@ -114,8 +116,42 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
             let _ = ws.close(None).await;
             break;
         }
+        // Terminals and command output: several chunks may be outstanding, bounded by each source.
+        let mut finished = Vec::new();
+        for (key, sub) in subscriptions.iter_mut() {
+            let Some(live) = sub.live.as_mut() else {
+                continue;
+            };
+            while !live.is_full() {
+                match live.next(&s) {
+                    crate::streams::Step::Values(values) => {
+                        if send(
+                            &mut ws,
+                            json!({"_tag":"Chunk","requestId":sub.id,"values":values}),
+                        )
+                        .await
+                        .is_err()
+                        {
+                            return;
+                        }
+                    }
+                    crate::streams::Step::Idle => break,
+                    crate::streams::Step::Done => {
+                        finished.push(key.clone());
+                        break;
+                    }
+                }
+            }
+        }
+        for key in finished {
+            if let Some(sub) = subscriptions.remove(&key) {
+                if send(&mut ws, exit(&sub.id, Ok(Value::Null))).await.is_err() {
+                    return;
+                }
+            }
+        }
         let mut finished: Vec<(String, Result<(), Value>)> = Vec::new();
-        for (key, sub) in subscriptions.iter_mut().filter(|(_, sub)| !sub.waiting) {
+        for (key, sub) in subscriptions.iter_mut().filter(|(_, sub)| !sub.waiting && sub.live.is_none()) {
             if let Some(mut rx) = sub.snapshot.take() {
                 use tokio_tungstenite::tungstenite::protocol::frame::{
                     coding::{Data, OpCode},
@@ -227,7 +263,7 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
             break;
         }
         tokio::select! {
-            _=changed.changed()=>{},_=expiry.tick()=>{},_=wake.notified()=>{},
+            _=live_changed.changed()=>{},_=changed.changed()=>{},_=expiry.tick()=>{},_=wake.notified()=>{},
             Some(frame)=done_rx.recv()=>{if send(&mut ws,frame).await.is_err(){return}},
             message=ws.next()=>{
                 let Some(Ok(message))=message else {break};
@@ -240,18 +276,26 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                             let id=frame.get("id").cloned().unwrap_or(Value::Null);let key=frame["requestId"].to_string();
                             match frame["_tag"].as_str().unwrap_or("") {
                                 "Ping"=>if send(&mut ws,json!({"_tag":"Pong"})).await.is_err(){return},
-                                "Ack"=>{if let Some(sub)=subscriptions.get_mut(&key){sub.waiting=false;}},
+                                "Ack"=>{if let Some(sub)=subscriptions.get_mut(&key){match sub.live.as_mut(){Some(live)=>live.ack(),None=>sub.waiting=false}}},
                                 "Interrupt"=>{if let Some(sub)=subscriptions.remove(&key){let v=json!({"_tag":"Exit","requestId":sub.id,"exit":{"_tag":"Failure","cause":[{"_tag":"Interrupt","fiberId":frame["interruptors"]}]}});if send(&mut ws,v).await.is_err(){return}}},
                                 "Eof"=>eof=true,
                                 "Request" if !eof=>{
                                     let tag=frame["tag"].as_str().unwrap_or("");let p=&frame["payload"];
                                     if let Err(e)=authorize(&session,tag,p){if send(&mut ws,exit(&id,Err(e))).await.is_err(){return}continue;}
+                                    if crate::streams::is_live_tag(tag) {
+                                        if subscriptions.len()>=64||subscriptions.contains_key(&id.to_string()) {if send(&mut ws,exit(&id,Err(error("subscription limit or duplicate id".into())))).await.is_err(){return}continue;}
+                                        match crate::streams::open(&s,tag,p).await {
+                                            Ok(live)=>{subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid:None,cursor:0,waiting:false,initial:None,marker:false,version:0,snapshot:None,events:None,live:Some(live)});}
+                                            Err(e)=>{if send(&mut ws,exit(&id,Err(e))).await.is_err(){return}}
+                                        }
+                                        continue;
+                                    }
                                     if tag==crate::ext::STREAM_ACTION {
                                         if subscriptions.len()>=64||subscriptions.contains_key(&id.to_string()) {if send(&mut ws,exit(&id,Err(error("subscription limit or duplicate id".into())))).await.is_err(){return}continue;}
                                         if let Err(e)=crate::stacked::validate(p){if send(&mut ws,exit(&id,Err(e))).await.is_err(){return}continue;}
                                         let (queue,rx)=tokio::sync::mpsc::channel(16);
                                         tokio::spawn(crate::stacked::run(p.clone(),crate::stacked::Tx{queue,wake:wake.clone()}));
-                                        subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid:None,cursor:0,waiting:false,initial:None,marker:false,version:0,snapshot:None,events:Some(rx)});
+                                        subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid:None,cursor:0,waiting:false,initial:None,marker:false,version:0,snapshot:None,live:None,events:Some(rx)});
                                     }else if crate::ext::handles(tag) {
                                         if inflight.load(std::sync::atomic::Ordering::Relaxed)>=16 {if send(&mut ws,exit(&id,Err(error("too many concurrent requests on this socket".into())))).await.is_err(){return}continue;}
                                         inflight.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
@@ -273,8 +317,8 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                                             }
                                         }
                                         let initial=if config {settings::config(&s).ok().map(|c|json!({"version":1,"type":"snapshot","config":c}))}else{None};
-                                        subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid,cursor:after.unwrap_or(boundary),waiting:false,initial,snapshot,events:None,marker:p["requestCompletionMarker"]==true,version});
-                                    }else if send(&mut ws,exit(&id,dispatch(&s,tag,p))).await.is_err(){return}
+                                        subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid,cursor:after.unwrap_or(boundary),waiting:false,initial,snapshot,live:None,events:None,marker:p["requestCompletionMarker"]==true,version});
+                                    }else{let result=match crate::routes::call(&s,tag,p).await{Some(r)=>r,None=>dispatch(&s,tag,p)};if send(&mut ws,exit(&id,result)).await.is_err(){return}}
                                 },_=>{}
                             }
                         }

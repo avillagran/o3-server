@@ -18,10 +18,15 @@ pub enum ProviderEvent {
     Started,
     Native(serde_json::Value),
     TextDelta(String),
-    ApprovalRequest { request_id: String, command: String },
+    ApprovalRequest {
+        request_id: String,
+        command: String,
+    },
     Completed,
     Interrupted,
     Failed(String),
+    /// A command item and its transient output; see `command_output`.
+    Command(crate::command_output::CommandEvent),
 }
 pub enum ProviderControl {
     Steer(String),
@@ -166,19 +171,8 @@ pub(crate) fn start(
                 );
             }
         }
-        start_next(s, tid);
+        crate::thread_commands::advance(&s, &tid);
     });
-}
-fn start_next(s: std::sync::Arc<crate::store::State>, tid: String) {
-    let next = {
-        let db = s.db.lock().unwrap();
-        db.query_row("SELECT body FROM records WHERE kind='runs' AND thread_id=? AND json_extract(body,'$.status')='queued' AND NOT EXISTS(SELECT 1 FROM records a WHERE a.kind='runs' AND a.thread_id=records.thread_id AND json_extract(a.body,'$.status') IN ('preparing','starting','running','waiting')) ORDER BY rowid LIMIT 1",[&tid],|r|r.get::<_,String>(0)).ok()
-            .and_then(|body|serde_json::from_str::<serde_json::Value>(&body).ok())
-            .and_then(|mut run| {let rid=run["id"].as_str()?.to_owned();let m=crate::events::get(&db,"messages",run["userMessageId"].as_str()?).ok()?;run["status"]=serde_json::json!("preparing");crate::events::put(&db,"runs",&rid,&tid,&run).ok()?;Some((rid,m["text"].as_str()?.to_owned()))})
-    };
-    if let Some((rid, text)) = next {
-        start(s, tid, rid, text);
-    }
 }
 fn persist(
     s: &crate::store::State,
@@ -191,6 +185,9 @@ fn persist(
         store::{iso, now_ms},
     };
     use serde_json::json;
+    if let ProviderEvent::Command(command) = event {
+        return crate::command_output::persist(s, tid, rid, command);
+    }
     let mut db = s.db.lock().unwrap();
     let tx = db.transaction().map_err(|e| e.to_string())?;
     let mut thread = get(&tx, "thread", tid)?;
@@ -243,6 +240,7 @@ fn persist(
             append(&tx, tid, "runtime-request.updated", request, &thread)?;
             run["status"] = json!("waiting");
         }
+        ProviderEvent::Command(_) => unreachable!(),
         ProviderEvent::Completed | ProviderEvent::Interrupted | ProviderEvent::Failed(_) => {
             run["status"] = json!(if matches!(event, ProviderEvent::Completed) {
                 "completed"
