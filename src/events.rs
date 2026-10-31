@@ -313,6 +313,57 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             "thread.metadata-updated"
         }
         "message.dispatch" => {
+            if c["dispatchMode"]["type"] == "steer_active" {
+                let rid = c["dispatchMode"]["targetRunId"]
+                    .as_str()
+                    .ok_or("targetRunId required")?;
+                let run = get(&tx, "runs", rid)?;
+                if run["threadId"] != tid
+                    || !matches!(run["status"].as_str(), Some("running" | "waiting"))
+                {
+                    return Err("target run is not active in this thread".into());
+                }
+                let text = c["text"].as_str().ok_or("text required")?;
+                if c["attachments"].as_array().is_none_or(|a| !a.is_empty()) {
+                    return Err("steering attachments are unsupported".into());
+                }
+                let sender = s
+                    .active
+                    .lock()
+                    .unwrap()
+                    .get(rid)
+                    .cloned()
+                    .ok_or("provider control unavailable")?;
+                let permit = sender
+                    .try_reserve_owned()
+                    .map_err(|_| "provider control busy")?;
+                let mid = c["messageId"].as_str().ok_or("messageId required")?;
+                let m = json!({"id":mid,"threadId":tid,"runId":rid,"nodeId":null,"role":"user","text":text,"attachments":[],"streaming":false,"createdBy":"user","creationSource":"web","createdAt":at,"updatedAt":at});
+                put(&tx, "messages", mid, tid, &m)?;
+                append(&tx, tid, "message.updated", m.clone(), &t)?;
+                let mut item = message_item(&tx, tid, &m)?;
+                item["inputIntent"] = json!("steer");
+                put(&tx, "turnItems", item["id"].as_str().unwrap(), tid, &item)?;
+                put(
+                    &tx,
+                    "visibleTurnItems",
+                    item["id"].as_str().unwrap(),
+                    tid,
+                    &json!({"position":item["ordinal"],"visibility":"local","sourceThreadId":tid,"sourceItemId":item["id"],"item":item}),
+                )?;
+                let seq = append(&tx, tid, "turn-item.updated", item, &t)?;
+                let result = json!({"sequence":seq});
+                tx.execute(
+                    "INSERT INTO receipts VALUES(?,?)",
+                    params![cid, result.to_string()],
+                )
+                .map_err(|e| e.to_string())?;
+                tx.commit().map_err(|e| e.to_string())?;
+                drop(db);
+                permit.send(crate::provider::ProviderControl::Steer { text: text.into() });
+                s.notify();
+                return Ok(result);
+            }
             if !matches!(
                 c["dispatchMode"]["type"].as_str(),
                 Some("defer_start" | "start_immediately")
@@ -376,7 +427,12 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             if run["threadId"] != tid {
                 return Err("run belongs to another thread".into());
             }
+            let sender = s.active.lock().unwrap().get(rid).cloned();
+            let permit = sender
+                .map(|s| s.try_reserve_owned().map_err(|_| "provider control busy"))
+                .transpose()?;
             run["status"] = json!("interrupted");
+            crate::codex_projection::finish(&tx, tid, rid, &t, &json!("interrupted"), &at)?;
             run["completedAt"] = json!(at);
             put(&tx, "runs", rid, tid, &run)?;
             let seq = append(&tx, tid, "run.updated", run, &t)?;
@@ -388,8 +444,8 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             .map_err(|e| e.to_string())?;
             tx.commit().map_err(|e| e.to_string())?;
             drop(db);
-            if let Some(control) = s.active.lock().unwrap().get(rid) {
-                let _ = control.try_send(crate::provider::ProviderControl::Interrupt);
+            if let Some(permit) = permit {
+                permit.send(crate::provider::ProviderControl::Interrupt);
             }
             s.notify();
             return Ok(result);
@@ -397,13 +453,27 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
         "runtime-request.respond" | "thread.user-input.dismiss" => {
             let id = c["requestId"].as_str().ok_or("requestId required")?;
             let mut request = get(&tx, "runtimeRequests", id)?;
-            let rid = request["nodeId"]
+            let node_id = request["nodeId"]
                 .as_str()
                 .ok_or("request node missing")?
                 .to_owned();
+            let rid = get(&tx, "nodes", &node_id)
+                .ok()
+                .and_then(|n| n["runId"].as_str().map(str::to_owned))
+                .unwrap_or_else(|| node_id.to_owned());
             if get(&tx, "runs", &rid)?["threadId"] != tid {
                 return Err("request belongs to another thread".into());
             }
+            if request["status"] != "pending" {
+                return Err("runtime request is not pending".into());
+            }
+            let sender = s.active.lock().unwrap().get(&rid).cloned();
+            if sender.is_none() && kind != "thread.user-input.dismiss" {
+                return Err("provider control unavailable".into());
+            }
+            let permit = sender
+                .map(|s| s.try_reserve_owned().map_err(|_| "provider control busy"))
+                .transpose()?;
             request["status"] = json!(if kind == "thread.user-input.dismiss" {
                 "cancelled"
             } else {
@@ -413,6 +483,27 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             for k in ["decision", "feedback", "answers"] {
                 if let Some(v) = c.get(k) {
                     request[k] = v.clone()
+                }
+            }
+            if let Ok(mut node) = get(&tx, "nodes", &node_id) {
+                node["status"] = json!("completed");
+                node["completedAt"] = json!(at);
+                put(&tx, "nodes", &node_id, tid, &node)?;
+                append(&tx, tid, "node.updated", node, &t)?;
+                let item_id = format!("item-{id}");
+                if let Ok(mut item) = get(&tx, "turnItems", &item_id) {
+                    item["status"] = json!("completed");
+                    item["completedAt"] = json!(at);
+                    item["updatedAt"] = json!(at);
+                    put(&tx, "turnItems", &item_id, tid, &item)?;
+                    put(
+                        &tx,
+                        "visibleTurnItems",
+                        &item_id,
+                        tid,
+                        &json!({"position":item["ordinal"],"visibility":"local","sourceThreadId":tid,"sourceItemId":item_id,"item":item}),
+                    )?;
+                    append(&tx, tid, "turn-item.updated", item, &t)?;
                 }
             }
             put(&tx, "runtimeRequests", id, tid, &request)?;
@@ -425,8 +516,8 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             .map_err(|e| e.to_string())?;
             tx.commit().map_err(|e| e.to_string())?;
             drop(db);
-            if let Some(control) = s.active.lock().unwrap().get(&rid) {
-                let _ = control.try_send(crate::provider::ProviderControl::Respond {
+            if let Some(permit) = permit {
+                permit.send(crate::provider::ProviderControl::Respond {
                     request_id: id.into(),
                     decision: c["decision"].clone(),
                     feedback: c["feedback"].as_str().map(str::to_owned),
@@ -462,7 +553,7 @@ pub(crate) fn message_item(db: &Connection, tid: &str, m: &Value) -> Result<Valu
             |r| r.get(0),
         )
         .map_err(|e| e.to_string())?;
-    let mut item = json!({"id":id,"threadId":tid,"runId":m["runId"],"nodeId":null,"providerThreadId":null,"providerTurnId":null,"nativeItemRef":null,"parentItemId":null,"ordinal":ordinal,"status":"completed","title":null,"startedAt":m["createdAt"],"completedAt":m["updatedAt"],"updatedAt":m["updatedAt"],"type":if m["role"]=="user"{"user_message"}else{"assistant_message"},"messageId":m["id"],"text":m["text"],"streaming":m["streaming"],"attachments":m["attachments"]});
+    let mut item = json!({"id":id,"threadId":tid,"runId":m["runId"],"nodeId":m["nodeId"],"providerThreadId":m["providerThreadId"],"providerTurnId":m["providerTurnId"],"nativeItemRef":null,"parentItemId":null,"ordinal":ordinal,"status":"completed","title":null,"startedAt":m["createdAt"],"completedAt":m["updatedAt"],"updatedAt":m["updatedAt"],"type":if m["role"]=="user"{"user_message"}else{"assistant_message"},"messageId":m["id"],"text":m["text"],"streaming":m["streaming"],"attachments":m["attachments"]});
     if m["role"] == "user" {
         item["createdBy"] = json!("user");
         item["creationSource"] = json!("web");

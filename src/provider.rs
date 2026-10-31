@@ -2,6 +2,7 @@
 use std::{future::Future, pin::Pin};
 use tokio::sync::{mpsc, watch};
 pub struct RunInput {
+    pub native_thread_id: Option<String>,
     pub thread_id: String,
     pub run_id: String,
     pub cwd: std::path::PathBuf,
@@ -13,13 +14,18 @@ pub struct RunInput {
     pub context: Option<serde_json::Value>,
 }
 pub enum ProviderEvent {
+    Codex(serde_json::Value),
     Started,
     TextDelta(String),
     ApprovalRequest { request_id: String, command: String },
     Completed,
+    Interrupted,
     Failed(String),
 }
 pub enum ProviderControl {
+    Steer {
+        text: String,
+    },
     Interrupt,
     Respond {
         request_id: String,
@@ -29,8 +35,12 @@ pub enum ProviderControl {
     },
 }
 /// Implementations must await output capacity, stop on cancellation/receiver drop,
-/// and reap every subprocess before resolving. Futures must be Send for the shared two-worker runtime.
+/// and reap owned per-run subprocesses before resolving. Shared process adapters expose
+/// an explicit shutdown that reaps the process after all runs. Futures must be Send.
 pub trait Provider: Send + Sync + 'static {
+    fn config(&self) -> Vec<serde_json::Value> {
+        Vec::new()
+    }
     fn execute<'a>(
         &'a self,
         input: RunInput,
@@ -95,6 +105,7 @@ pub(crate) fn start(
                 })
                 .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
             RunInput {
+                native_thread_id: t["codexNativeThreadId"].as_str().map(str::to_owned),
                 thread_id: tid.clone(),
                 run_id: rid.clone(),
                 cwd,
@@ -111,7 +122,7 @@ pub(crate) fn start(
                 .execute(input, output, controls, cancellation)
                 .await
         });
-        let mut finished = false;
+        let mut failure = "provider ended without completion".to_owned();
         while let Some(event) = events.recv().await {
             if persist(&s, &tid, &rid, event).is_err() {
                 break;
@@ -123,7 +134,7 @@ pub(crate) fn start(
             }
         }
         let _ = cancel.send(true);
-        tokio::select! {r=&mut task=>{finished=r.is_ok_and(|r|r.is_ok())},_=tokio::time::sleep(std::time::Duration::from_secs(2))=>{task.abort();let _=task.await;}}
+        tokio::select! {r=&mut task=>{match r {Ok(Err(e))=>failure=e,Err(e)=>failure=e.to_string(),_=>{}}},_=tokio::time::sleep(std::time::Duration::from_secs(2))=>{failure="provider cancellation timed out".into();task.abort();let _=task.await;}}
         s.active.lock().unwrap().remove(&rid);
         let final_run = crate::events::get(&s.db.lock().unwrap(), "runs", &rid);
         if let Ok(run) = final_run {
@@ -131,19 +142,7 @@ pub(crate) fn start(
                 run["status"].as_str(),
                 Some("completed" | "interrupted" | "failed")
             ) {
-                let _ = persist(
-                    &s,
-                    &tid,
-                    &rid,
-                    ProviderEvent::Failed(
-                        if finished {
-                            "provider ended without completion"
-                        } else {
-                            "provider failed"
-                        }
-                        .into(),
-                    ),
-                );
+                let _ = persist(&s, &tid, &rid, ProviderEvent::Failed(failure));
             }
         }
     });
@@ -171,6 +170,9 @@ fn persist(
     }
     let at = iso(now_ms());
     match event {
+        ProviderEvent::Codex(frame) => {
+            crate::codex_projection::persist(&tx, tid, rid, &thread, &mut run, &at, frame)?
+        }
         ProviderEvent::Started => {
             run["status"] = json!("running");
             run["startedAt"] = json!(at);
@@ -178,7 +180,13 @@ fn persist(
         ProviderEvent::TextDelta(delta) => {
             let mid = format!("assistant-{rid}");
             let mut message=get(&tx,"messages",&mid).unwrap_or_else(|_|json!({"id":mid,"threadId":tid,"runId":rid,"nodeId":null,"role":"assistant","text":"","attachments":[],"streaming":true,"createdBy":"agent","creationSource":"web","createdAt":at,"updatedAt":at}));
+            message["nodeId"] = run["rootNodeId"].clone();
+            message["providerThreadId"] = run["providerThreadId"].clone();
+            message["providerTurnId"] = run["codexProviderTurnId"].clone();
             let mut text = message["text"].as_str().unwrap_or("").to_owned();
+            if text.len().saturating_add(delta.len()) > 1024 * 1024 {
+                return Err("assistant message exceeds 1 MiB".into());
+            }
             text.push_str(&delta);
             message["text"] = json!(text);
             message["updatedAt"] = json!(at);
@@ -196,13 +204,19 @@ fn persist(
             append(&tx, tid, "runtime-request.updated", request, &thread)?;
             run["status"] = json!("waiting");
         }
-        ProviderEvent::Completed | ProviderEvent::Failed(_) => {
+        ProviderEvent::Completed | ProviderEvent::Interrupted | ProviderEvent::Failed(_) => {
             run["status"] = json!(if matches!(event, ProviderEvent::Completed) {
                 "completed"
+            } else if matches!(event, ProviderEvent::Interrupted) {
+                "interrupted"
             } else {
                 "failed"
             });
             run["completedAt"] = json!(at);
+            if let ProviderEvent::Failed(ref message) = event {
+                run["lastError"] = json!(message);
+            }
+            crate::codex_projection::finish(&tx, tid, rid, &thread, &run["status"], &at)?;
             let mid = format!("assistant-{rid}");
             if let Ok(mut message) = get(&tx, "messages", &mid) {
                 message["streaming"] = json!(false);

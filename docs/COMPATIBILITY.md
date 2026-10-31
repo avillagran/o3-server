@@ -255,7 +255,7 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | 🚫 | `server.disableAcpRegistryProvider` | unused | unary | `providers:manage` | No client call site in inventory. |
 | ⬜ | `server.discoverSourceControl` | P1 | unary | `orchestration:read` | Deferred; client-usage.md inventory. |
 | 🚫 | `server.getBackgroundPolicy` | unused | unary | `orchestration:read` | No client call site in inventory. |
-| 🟡 | `server.getConfig` | P0 | unary | `orchestration:read` | Real Connection test: descriptor/settings and empty providers; defaults are a subset, provider status catalog absent. |
+| 🟡 | `server.getConfig` | P0 | unary | `orchestration:read` | Real Connection test: Codex app-server probe advertises actual auth/status and native model catalog. Other provider catalogs and setup flows remain partial. |
 | 🚫 | `server.getDatabaseStorage` | unused | stream | `orchestration:read` | No client call site in inventory. |
 | ⬜ | `server.getHostResources` | P2 | unary | `orchestration:read` | Deferred; client-usage.md inventory. |
 | ⬜ | `server.getProcessDiagnostics` | P2 | unary | `diagnostics:read` | Deferred; client-usage.md inventory. |
@@ -343,7 +343,7 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | 🚫 | `delegated_task.completion-delivery.dispose` | unused | No client call site in inventory. |
 | 🚫 | `delegated_task.request` | unused | No client call site in inventory. |
 | 🚫 | `delegated_task.wake-policy` | unused | No client call site in inventory. |
-| 🟡 | `message.dispatch` | P0 | Real Connection scripted provider test; production delivery/recovery not complete. |
+| 🟡 | `message.dispatch` | P0 | Real Connection Codex stdio-peer test: turn start and steer_active; persisted native resume binding. Authenticated live inference, attachments, context, queues and crash recovery remain. |
 | 🚫 | `notification.delivery.accept` | unused | No client call site in inventory. |
 | 🚫 | `prepared-run.fail` | unused | No client call site in inventory. |
 | 🚫 | `prepared-run.progress` | unused | No client call site in inventory. |
@@ -357,7 +357,7 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | ⬜ | `queued-run.edit` | P1 | Client queue builders; deferred. |
 | ⬜ | `queued-run.reorder` | P1 | Not implemented. |
 | 🚫 | `queued-run.start` | unused | No client call site in inventory. |
-| 🟡 | `run.interrupt` | P0 | Real Connection scripted provider test; production delivery/recovery not complete. |
+| 🟡 | `run.interrupt` | P0 | Real Connection Codex stdio-peer test: live approval nodes/items, numeric native ID reply and idempotent receipt; answer/elicitation shapes unit-tested. Crash recovery remains. |
 | 🟡 | `runtime-request.respond` | P0 | Real Connection scripted provider test; production delivery/recovery not complete. |
 | ⬜ | `subagent.stop` | P2 | Not implemented. |
 | ⬜ | `thread.active.reorder` | P1 | Not implemented. |

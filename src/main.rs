@@ -133,10 +133,15 @@ fn main() -> std::io::Result<()> {
         .or_else(|| std::env::var("T3CODE_HOST").ok())
         .unwrap_or("127.0.0.1".into());
     tokio::runtime::Builder::new_multi_thread().worker_threads(2).max_blocking_threads(2).thread_stack_size(512 * 1024).enable_all().build()?.block_on(async {
+        let codex=Arc::new(o3_server::codex::CodexProvider::default());
+        if let Err(e)=codex.probe().await {eprintln!("Codex unavailable: {e}");}
+        *state.provider.lock().unwrap()=Some(codex.clone());
         let listener=tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
         let _guard=o3_server::profile::RuntimeGuard::write(&dir,listener.local_addr()?)?;
         eprintln!("o3-server listening on {}",listener.local_addr()?);
         let mut term=tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
-        tokio::select! {result=o3_server::serve(listener,Arc::new(state))=>result,_=tokio::signal::ctrl_c()=>Ok(()),_=term.recv()=>Ok(())}
+        let result=tokio::select! {result=o3_server::serve(listener,Arc::new(state))=>result,_=tokio::signal::ctrl_c()=>Ok(()),_=term.recv()=>Ok(())};
+        codex.shutdown().await;
+        result
     })
 }

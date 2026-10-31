@@ -1,0 +1,614 @@
+//! Codex 0.166 app-server: one process, bounded multiplexing, no retained history.
+use crate::provider::{Provider, ProviderControl, ProviderEvent, RunInput};
+use serde_json::{json, Value};
+use std::{collections::HashMap, future::Future, path::PathBuf, pin::Pin, sync::Mutex};
+use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    process::Command,
+    sync::{mpsc, oneshot, watch},
+};
+
+const MAX_FRAME: usize = 1024 * 1024;
+type Reply = oneshot::Sender<Result<Value, String>>;
+enum Op {
+    Call(String, Value, Reply),
+    Reply(Value),
+    Subscribe(
+        String,
+        mpsc::Sender<Value>,
+        oneshot::Sender<Result<(), String>>,
+    ),
+    Unsubscribe(String),
+    Shutdown(oneshot::Sender<()>),
+}
+#[derive(Clone)]
+struct Client(mpsc::Sender<Op>);
+impl Client {
+    async fn call(&self, method: &str, params: Value) -> Result<Value, String> {
+        let (tx, rx) = oneshot::channel();
+        self.0
+            .send(Op::Call(method.into(), params, tx))
+            .await
+            .map_err(|_| "Codex process closed")?;
+        tokio::time::timeout(std::time::Duration::from_secs(30), rx)
+            .await
+            .map_err(|_| format!("Codex {method} timed out"))?
+            .map_err(|_| "Codex process closed".to_owned())?
+    }
+}
+
+pub struct CodexProvider {
+    executable: PathBuf,
+    home: Option<PathBuf>,
+    client: tokio::sync::Mutex<Option<Client>>,
+    descriptor: std::sync::Arc<Mutex<Value>>,
+}
+impl Default for CodexProvider {
+    fn default() -> Self {
+        Self::new("codex".into(), None)
+    }
+}
+impl CodexProvider {
+    pub fn new(executable: PathBuf, home: Option<PathBuf>) -> Self {
+        Self {
+            executable,
+            home,
+            client: tokio::sync::Mutex::new(None),
+            descriptor: std::sync::Arc::new(Mutex::new(json!({
+                "instanceId":"codex", "driver":"codex", "displayName":"Codex", "enabled":true,
+                "installed":false,"version":null,"status":"warning","auth":{"status":"unknown"},
+                "checkedAt":crate::store::iso(crate::store::now_ms()),"models":[],"slashCommands":[],"skills":[],
+                "message":"Codex has not been probed", "supportsConversationRollback":false,
+                "supportedRuntimeModes":["full-access","approval-required"],"reportsContextWindow":true
+            }))),
+        }
+    }
+    pub async fn probe(&self) -> Result<(), String> {
+        self.connection().await.map(|_| ())
+    }
+    pub async fn shutdown(&self) {
+        if let Some(c) = self.client.lock().await.take() {
+            let (tx, rx) = oneshot::channel();
+            if c.0.send(Op::Shutdown(tx)).await.is_ok() {
+                let _ = rx.await;
+            }
+        }
+    }
+    async fn connection(&self) -> Result<Client, String> {
+        let mut guard = self.client.lock().await;
+        if let Some(c) = guard.as_ref().filter(|c| !c.0.is_closed()) {
+            return Ok(c.clone());
+        }
+        let result = self.launch().await;
+        match &result {
+            Ok(c) => *guard = Some(c.clone()),
+            Err(e) => {
+                let mut d = self.descriptor.lock().unwrap();
+                d["status"] = json!("error");
+                d["message"] = json!(e);
+                d["models"] = json!([]);
+            }
+        }
+        result
+    }
+    async fn launch(&self) -> Result<Client, String> {
+        let mut cmd = Command::new(&self.executable);
+        cmd.arg("app-server")
+            .arg("--stdio")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .kill_on_drop(true);
+        if let Some(home) = &self.home {
+            cmd.env("CODEX_HOME", home);
+        }
+        let child = cmd
+            .spawn()
+            .map_err(|e| format!("Cannot spawn Codex: {e}"))?;
+        let (tx, rx) = mpsc::channel(32);
+        tokio::spawn(actor(child, rx, self.descriptor.clone()));
+        let c = Client(tx);
+        let init=c.call("initialize",json!({"clientInfo":{"name":"o3-server","version":env!("CARGO_PKG_VERSION")},"capabilities":{"experimentalApi":true}})).await?;
+        c.0.send(Op::Reply(json!({"method":"initialized","params":{}})))
+            .await
+            .map_err(|_| "Codex closed")?;
+        let models = c.call("model/list", json!({"limit":100})).await?;
+        let auth = c
+            .call("account/read", json!({"refreshToken":false}))
+            .await?;
+        let mut d = self.descriptor.lock().unwrap();
+        d["installed"] = json!(true);
+        d["version"] = json!(init["userAgent"]
+            .as_str()
+            .and_then(|a| a.split('/').nth(1))
+            .and_then(|a| a.split_whitespace().next()));
+        let authenticated = !auth["account"].is_null() || auth["requiresOpenaiAuth"] == false;
+        d["auth"] = json!({"status":if authenticated{"authenticated"}else{"unauthenticated"}});
+        d["status"] = json!(if authenticated { "ready" } else { "warning" });
+        d["message"] = json!(if authenticated {
+            "Codex app-server initialized"
+        } else {
+            "Codex requires authentication"
+        });
+        d["checkedAt"] = json!(crate::store::iso(crate::store::now_ms()));
+        d["models"]=json!(models["data"].as_array().unwrap_or(&vec![]).iter().map(|m|json!({"slug":m["model"],"name":m["displayName"],"isCustom":false,"isDefault":m["isDefault"],"capabilities":null})).collect::<Vec<_>>());
+        Ok(c)
+    }
+    async fn run(
+        &self,
+        input: RunInput,
+        output: mpsc::Sender<ProviderEvent>,
+        mut control: mpsc::Receiver<ProviderControl>,
+        mut cancel: watch::Receiver<bool>,
+    ) -> Result<(), String> {
+        if *cancel.borrow() || output.is_closed() {
+            return Ok(());
+        }
+        if input.model_selection["instanceId"]
+            .as_str()
+            .is_some_and(|id| id != "codex")
+        {
+            return Err("Codex adapter cannot execute another provider instance".into());
+        }
+        if !matches!(
+            input.runtime_mode.as_str(),
+            "approval-required" | "full-access"
+        ) {
+            return Err("Codex runtime mode is not implemented".into());
+        }
+        if input.attachments.as_array().is_some_and(|a| !a.is_empty()) {
+            return Err("Codex attachments are not yet supported".into());
+        }
+        if input.context.as_ref().is_some_and(|c| !c.is_null()) {
+            return Err("Codex additional context is not yet supported".into());
+        }
+        let c = self.connection().await?;
+        let mut params = json!({"cwd":input.cwd,"model":input.model_selection["model"],"approvalPolicy":if input.runtime_mode=="full-access"{"never"}else{"on-request"},"sandbox":if input.runtime_mode=="full-access"{"danger-full-access"}else{"workspace-write"}});
+        let response = if let Some(id) = input.native_thread_id.as_ref() {
+            params["threadId"] = json!(id);
+            params["excludeTurns"] = json!(true);
+            match c.call("thread/resume", params.clone()).await {
+                Err(e) if e.contains("no rollout found for thread id") => {
+                    params.as_object_mut().unwrap().remove("threadId");
+                    params.as_object_mut().unwrap().remove("excludeTurns");
+                    c.call("thread/start", params).await?
+                }
+                other => other?,
+            }
+        } else {
+            c.call("thread/start", params).await?
+        };
+        let tid = response["thread"]["id"]
+            .as_str()
+            .ok_or("Codex thread id missing")?
+            .to_owned();
+        let (tx, mut frames) = mpsc::channel(16);
+        let (ack, ready) = oneshot::channel();
+        c.0.send(Op::Subscribe(tid.clone(), tx, ack))
+            .await
+            .map_err(|_| "Codex closed")?;
+        ready.await.map_err(|_| "Codex closed")??;
+        let mut active_turn = None;
+        let mut terminal_received = false;
+        let result=async {
+            output.send(ProviderEvent::Codex(json!({"method":"o3/binding","params":{"threadId":tid,"cwd":input.cwd}}))).await.map_err(|_|"receiver closed")?;
+            let effort=input.model_selection["options"].as_array().and_then(|a|a.iter().find(|v|v["id"]=="reasoningEffort")).map(|v|v["value"].clone());
+            let mut turn_params=json!({"threadId":tid,"input":[{"type":"text","text":input.text,"text_elements":[]}],"model":input.model_selection["model"],"effort":effort});
+            if input.interaction_mode=="plan" {turn_params["collaborationMode"]=json!({"mode":"plan","settings":{"model":input.model_selection["model"],"reasoning_effort":effort,"developer_instructions":null}});}
+            let response=c.call("turn/start",turn_params).await?;
+            let turn=response["turn"]["id"].as_str().ok_or("Codex turn id missing")?.to_owned();
+            active_turn=Some(turn.clone());
+            let mut pending=HashMap::<String,(Value,String)>::new();
+            loop {
+                if *cancel.borrow() { let _=c.call("turn/interrupt",json!({"threadId":tid,"turnId":turn})).await; return Ok(()); }
+                tokio::select! {
+                    _=output.closed()=> { let _=c.call("turn/interrupt",json!({"threadId":tid,"turnId":turn})).await; return Ok(()); },
+                    _=cancel.changed()=>continue,
+                    action=control.recv()=>match action {
+                        Some(ProviderControl::Interrupt)|None=>{ c.call("turn/interrupt",json!({"threadId":tid,"turnId":turn})).await?; return Ok(()); },
+                        Some(ProviderControl::Steer{text})=>{ c.call("turn/steer",json!({"threadId":tid,"expectedTurnId":turn,"input":[{"type":"text","text":text,"text_elements":[]}]})).await?; },
+                        Some(ProviderControl::Respond{request_id,decision,answers,..})=>{
+                            let (id,method)=pending.remove(&request_id).ok_or("Unknown Codex native request")?;
+                            let result=native_response(&method,&decision,answers)?;
+                            c.0.send(Op::Reply(json!({"id":id,"result":result}))).await.map_err(|_|"Codex closed")?;
+                        }
+                    },
+                    frame=frames.recv()=>{
+                        let mut frame=frame.ok_or("Codex notification channel closed or overflowed")?;
+                        if frame["params"]["turnId"].as_str().or_else(||frame["params"]["turn"]["id"].as_str()).is_some_and(|id|id!=turn){continue;}
+                        if let Some(id)=frame.get("id").cloned() {
+                            if pending.len()>=16 { return Err("Too many pending Codex requests".into()); }
+                            let method=frame["method"].as_str().unwrap_or("").to_owned();
+                            if !matches!(method.as_str(),"item/commandExecution/requestApproval"|"item/fileChange/requestApproval"|"item/tool/requestUserInput"|"mcpServer/elicitation/request") {
+                                c.0.send(Op::Reply(json!({"id":id,"error":{"code":-32601,"message":"Unsupported server request"}}))).await.map_err(|_|"Codex closed")?;continue;
+                            }
+                            let request_id=format!("codex-{}-{}",input.run_id,id);
+                            pending.insert(request_id.clone(),(id,method));
+                            frame["params"]["o3RequestId"]=json!(request_id);
+                        }
+                        if frame["method"]=="account/rateLimits/updated" {
+                            self.descriptor.lock().unwrap()["usageLimits"]=usage_limits(&frame["params"]["rateLimits"]);
+                        }
+                        let failure_message=frame["params"]["turn"]["error"]["message"].as_str().unwrap_or("Codex turn failed").to_owned();
+                        let done=frame["method"]=="turn/completed";
+                        let failed=frame["params"]["turn"]["status"]=="failed";
+                        let interrupted=frame["params"]["turn"]["status"]=="interrupted";
+                        let text=frame["params"]["delta"].as_str().unwrap_or("").to_owned();
+                        let event=if frame["method"]=="item/agentMessage/delta" {ProviderEvent::TextDelta(text)}else{ProviderEvent::Codex(frame)};
+                        tokio::select! { r=output.send(event)=>r.map_err(|_|"receiver closed")?, _=cancel.changed()=>continue, _=output.closed()=>return Ok(()) }
+                        if done { terminal_received=true; output.send(if failed {ProviderEvent::Failed(failure_message)}else if interrupted{ProviderEvent::Interrupted}else{ProviderEvent::Completed}).await.map_err(|_|"receiver closed")?; return Ok(()); }
+                    }
+                }
+            }
+        }.await;
+        if result.is_err() || !terminal_received {
+            if let Some(turn) = active_turn {
+                let _ = c
+                    .call("turn/interrupt", json!({"threadId":tid,"turnId":turn}))
+                    .await;
+            }
+        }
+        let _ = c.0.send(Op::Unsubscribe(tid)).await;
+        result
+    }
+}
+impl Provider for CodexProvider {
+    fn config(&self) -> Vec<Value> {
+        let mut d = self.descriptor.lock().unwrap().clone();
+        if self
+            .client
+            .try_lock()
+            .is_ok_and(|c| c.as_ref().is_some_and(|c| c.0.is_closed()))
+        {
+            d["status"] = json!("error");
+            d["message"] = json!("Codex process closed");
+        }
+        vec![d]
+    }
+    fn execute<'a>(
+        &'a self,
+        input: RunInput,
+        output: mpsc::Sender<ProviderEvent>,
+        control: mpsc::Receiver<ProviderControl>,
+        cancel: watch::Receiver<bool>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(self.run(input, output, control, cancel))
+    }
+}
+fn native_response(
+    method: &str,
+    decision: &Value,
+    answers: Option<Value>,
+) -> Result<Value, String> {
+    let d = decision.as_str().unwrap_or("cancel");
+    match method {
+        "item/commandExecution/requestApproval" | "item/fileChange/requestApproval" => Ok(
+            json!({"decision":match d {"accept"=>"accept","acceptForSession"|"acceptAlways"=>"acceptForSession","decline"=>"decline",_=>"cancel"}}),
+        ),
+        "item/tool/requestUserInput" => Ok(
+            json!({"answers":answers.unwrap_or(json!({})).as_object().map(|a|a.iter().map(|(k,v)|(k.clone(),if v.get("answers").is_some(){v.clone()}else{json!({"answers":if v.is_array(){v.clone()}else{json!([v])}})})).collect::<serde_json::Map<_,_>>()).unwrap_or_default()}),
+        ),
+        "mcpServer/elicitation/request" => Ok(
+            json!({"action":if d=="accept"{"accept"}else if d=="decline"{"decline"}else{"cancel"},"content":answers}),
+        ),
+        _ => Err(format!("Unsupported Codex server request: {method}")),
+    }
+}
+// read_until would allocate without bound before checking the size. Read from the
+// fixed-capacity BufReader, checking each slice before extending the frame.
+async fn read_frame<R: tokio::io::AsyncBufRead + Unpin>(
+    reader: &mut R,
+    frame: &mut Vec<u8>,
+) -> Result<Option<Value>, String> {
+    loop {
+        let buf = reader.fill_buf().await.map_err(|e| e.to_string())?;
+        if buf.is_empty() {
+            return if frame.is_empty() {
+                Ok(None)
+            } else {
+                Err("Truncated Codex frame".into())
+            };
+        }
+        let n = buf
+            .iter()
+            .position(|b| *b == b'\n')
+            .map(|n| n + 1)
+            .unwrap_or(buf.len());
+        if frame.len() + n > MAX_FRAME {
+            return Err("Codex frame exceeds 1 MiB".into());
+        }
+        frame.extend_from_slice(&buf[..n]);
+        reader.consume(n);
+        if frame.last() == Some(&b'\n') {
+            let result = serde_json::from_slice(frame)
+                .map(Some)
+                .map_err(|e| e.to_string());
+            frame.clear();
+            return result;
+        }
+    }
+}
+async fn actor(
+    mut child: tokio::process::Child,
+    mut ops: mpsc::Receiver<Op>,
+    descriptor: std::sync::Arc<Mutex<Value>>,
+) {
+    let mut stdin = child.stdin.take().unwrap();
+    let mut reader = BufReader::with_capacity(8192, child.stdout.take().unwrap());
+    let mut calls = HashMap::<u64, Reply>::new();
+    let mut routes = HashMap::<String, mpsc::Sender<Value>>::new();
+    let mut next = 0u64;
+    let mut buffer = Vec::new();
+    let mut shutdown = None;
+    let result:Result<(),String>=async {
+        loop { tokio::select! {
+            op=ops.recv()=>{
+                let frame=match op {
+                    None=>return Ok(()),
+                    Some(Op::Subscribe(id,tx,ack))=>{let result=if routes.len()>=32||routes.contains_key(&id){Err("Codex thread already active or capacity reached".into())}else{routes.insert(id,tx);Ok(())};let _=ack.send(result);continue;},
+                    Some(Op::Shutdown(ack))=>{shutdown=Some(ack);return Ok(());},
+                    Some(Op::Unsubscribe(id))=>{routes.remove(&id);continue;},
+                    Some(Op::Reply(frame))=>frame,
+                    Some(Op::Call(method,params,reply))=>{
+                        if calls.len()>=32 {let _=reply.send(Err("Codex RPC capacity reached".into()));continue;}
+                        next+=1;calls.insert(next,reply);json!({"id":next,"method":method,"params":params})
+                    }
+                };
+                let bytes=serde_json::to_vec(&frame).map_err(|e|e.to_string())?;
+                if bytes.len()>MAX_FRAME{return Err("Codex outgoing frame exceeds limit".into());}
+                tokio::time::timeout(std::time::Duration::from_secs(10),async {stdin.write_all(&bytes).await?;stdin.write_all(b"\n").await}).await.map_err(|_|"Codex write timed out")?.map_err(|e|e.to_string())?;
+            },
+            frame=read_frame(&mut reader,&mut buffer)=>{
+                let frame=frame?.ok_or("Codex stdout closed")?;
+                if frame.get("method").is_none(){if let Some(id)=frame["id"].as_u64(){if let Some(reply)=calls.remove(&id){let _=reply.send(if frame.get("error").is_some(){Err(frame["error"].to_string())}else{Ok(frame["result"].clone())});}}continue;}
+                if frame["method"]=="account/rateLimits/updated" {descriptor.lock().unwrap()["usageLimits"]=usage_limits(&frame["params"]["rateLimits"]);}
+                let tid=frame["params"]["threadId"].as_str();
+                if let Some(tid)=tid {
+                    if let Some(tx)=routes.get(tid){if tx.try_send(frame.clone()).is_err(){routes.remove(tid);}}
+                    else if let Some(id)=frame.get("id"){let bytes=serde_json::to_vec(&json!({"id":id,"error":{"code":-32601,"message":"No active thread"}})).unwrap();stdin.write_all(&bytes).await.map_err(|e|e.to_string())?;stdin.write_all(b"\n").await.map_err(|e|e.to_string())?;}
+                }else if frame["method"]=="account/rateLimits/updated"{
+                    routes.retain(|_,tx|tx.try_send(frame.clone()).is_ok());
+                }
+            }
+        }}
+    }.await;
+    let reason = result.err().unwrap_or_else(|| "Codex stopped".into());
+    {
+        let mut d = descriptor.lock().unwrap();
+        d["status"] = json!("error");
+        d["message"] = json!(reason);
+    }
+    for (_, reply) in calls {
+        let _ = reply.send(Err(reason.clone()));
+    }
+    let _ = child.kill().await;
+    let _ = child.wait().await;
+    if let Some(ack) = shutdown {
+        let _ = ack.send(());
+    }
+}
+
+fn usage_limits(limits: &Value) -> Value {
+    let mut windows = Vec::new();
+    for (id, label, kind) in [
+        ("primary", "Session", "session"),
+        ("secondary", "Weekly", "weekly"),
+    ] {
+        let w = &limits[id];
+        if !w.is_object() {
+            continue;
+        }
+        let mut window = json!({"id":id,"kind":kind,"label":label,"usedPercent":w["usedPercent"].as_f64().unwrap_or(0.0).clamp(0.0,100.0)});
+        if let Some(mins) = w["windowDurationMins"].as_u64() {
+            window["windowDurationMins"] = json!(mins);
+        }
+        if let Some(reset) = w["resetsAt"]
+            .as_i64()
+            .and_then(|s| s.checked_mul(1000))
+            .filter(|m| time::OffsetDateTime::from_unix_timestamp(*m / 1000).is_ok())
+        {
+            window["resetsAt"] = json!(crate::store::iso(reset));
+        }
+        windows.push(window);
+    }
+    json!({"checkedAt":crate::store::iso(crate::store::now_ms()),"windows":windows})
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn input(thread: &str, resume: Option<String>) -> RunInput {
+        RunInput {
+            thread_id: thread.into(),
+            run_id: format!("run-{thread}"),
+            native_thread_id: resume,
+            cwd: std::env::temp_dir(),
+            text: "fixture".into(),
+            model_selection: json!({"model":"gpt-6.1-sol"}),
+            runtime_mode: "approval-required".into(),
+            interaction_mode: "default".into(),
+            attachments: json!([]),
+            context: None,
+        }
+    }
+    #[tokio::test]
+    async fn shared_process_routes_native_approvals_steering_and_resume() {
+        let provider = std::sync::Arc::new(CodexProvider::new(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/codex/mock-server.py"),
+            None,
+        ));
+        provider.probe().await.unwrap();
+        assert_eq!(provider.config()[0]["auth"]["status"], "unauthenticated");
+        assert!(!provider.config()[0]["models"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        let (out1, mut events1) = mpsc::channel(16);
+        let (out2, mut events2) = mpsc::channel(16);
+        let (tx1, rx1) = mpsc::channel(8);
+        let (tx2, rx2) = mpsc::channel(8);
+        let (_cancel, cancel) = watch::channel(false);
+        let a = provider.clone();
+        let c1 = cancel.clone();
+        let first = tokio::spawn(async move { a.run(input("app-1", None), out1, rx1, c1).await });
+        let a = provider.clone();
+        let second =
+            tokio::spawn(async move { a.run(input("app-2", None), out2, rx2, cancel).await });
+        let mut bindings = Vec::new();
+        for (events, tx) in [(&mut events1, &tx1), (&mut events2, &tx2)] {
+            let mut saw_text = false;
+            loop {
+                match tokio::time::timeout(std::time::Duration::from_secs(5), events.recv())
+                    .await
+                    .unwrap()
+                    .unwrap()
+                {
+                    ProviderEvent::Codex(f) if f["method"] == "o3/binding" => {
+                        bindings.push(f["params"]["threadId"].as_str().unwrap().to_owned())
+                    }
+                    ProviderEvent::TextDelta(t) => {
+                        assert!(t.starts_with("hello thread-"));
+                        saw_text = true;
+                    }
+                    ProviderEvent::Codex(f) if f.get("id").is_some() => {
+                        assert!(saw_text);
+                        assert!(f["id"].is_number());
+                        tx.send(ProviderControl::Steer {
+                            text: "more".into(),
+                        })
+                        .await
+                        .unwrap();
+                        tx.send(ProviderControl::Respond {
+                            request_id: f["params"]["o3RequestId"].as_str().unwrap().into(),
+                            decision: json!("accept"),
+                            feedback: None,
+                            answers: None,
+                        })
+                        .await
+                        .unwrap();
+                    }
+                    ProviderEvent::Completed => break,
+                    _ => {}
+                }
+            }
+        }
+        first.await.unwrap().unwrap();
+        second.await.unwrap().unwrap();
+        bindings.sort();
+        assert_eq!(bindings, vec!["thread-1", "thread-2"]);
+        // A fresh app run resumes the same native thread, then interrupts it.
+        let (out, mut events) = mpsc::channel(16);
+        let (tx, rx) = mpsc::channel(8);
+        let (_cancel, cancel) = watch::channel(false);
+        let a = provider.clone();
+        let third = tokio::spawn(async move {
+            a.run(input("app-1", Some("thread-1".into())), out, rx, cancel)
+                .await
+        });
+        while let Some(e) = events.recv().await {
+            if matches!(e, ProviderEvent::TextDelta(_)) {
+                tx.send(ProviderControl::Interrupt).await.unwrap();
+            }
+        }
+        third.await.unwrap().unwrap();
+        provider.shutdown().await;
+    }
+    #[tokio::test]
+    async fn bounded_frames_survive_cancelled_read() {
+        let (mut writer, reader) = tokio::io::duplex(128);
+        let mut reader = BufReader::new(reader);
+        let mut bytes = Vec::new();
+        writer.write_all(b"{\"method\":").await.unwrap();
+        assert!(tokio::time::timeout(
+            std::time::Duration::from_millis(10),
+            read_frame(&mut reader, &mut bytes)
+        )
+        .await
+        .is_err());
+        writer.write_all(b"\"test\"}\n").await.unwrap();
+        assert_eq!(
+            read_frame(&mut reader, &mut bytes).await.unwrap().unwrap()["method"],
+            "test"
+        );
+        let oversized = vec![b'x'; MAX_FRAME + 1];
+        let mut reader = BufReader::new(oversized.as_slice());
+        assert!(read_frame(&mut reader, &mut bytes)
+            .await
+            .unwrap_err()
+            .contains("1 MiB"));
+    }
+    #[test]
+    fn native_response_shapes() {
+        let pin: Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/codex/protocol-0.166.0.json"
+        ))
+        .unwrap();
+        assert_eq!(pin["version"], "codex-cli 0.166.0");
+        assert!(pin["schemas"]["v2/TurnSteerParams"]["required"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("expectedTurnId")));
+        assert!(
+            pin["schemas"]["CommandExecutionRequestApprovalResponse"]["required"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("decision"))
+        );
+        assert_eq!(
+            native_response(
+                "item/commandExecution/requestApproval",
+                &json!("decline"),
+                None
+            )
+            .unwrap(),
+            json!({"decision":"decline"})
+        );
+        assert_eq!(
+            native_response(
+                "item/tool/requestUserInput",
+                &Value::Null,
+                Some(json!({"q":["yes"]}))
+            )
+            .unwrap(),
+            json!({"answers":{"q":{"answers":["yes"]}}})
+        );
+        assert_eq!(
+            native_response(
+                "mcpServer/elicitation/request",
+                &json!("accept"),
+                Some(json!({"name":"test"}))
+            )
+            .unwrap(),
+            json!({"action":"accept","content":{"name":"test"}})
+        );
+    }
+    #[tokio::test]
+    #[ignore = "requires installed codex; starts isolated app-server without an inference call"]
+    async fn live_installed_codex_handshake_and_empty_resume() {
+        let home = std::env::temp_dir().join(format!(
+            "o3-codex-live-{}",
+            crate::store::random_id().unwrap()
+        ));
+        std::fs::create_dir(&home).unwrap();
+        let provider = CodexProvider::new("codex".into(), Some(home.clone()));
+        provider.probe().await.unwrap();
+        assert_eq!(provider.config()[0]["version"], "0.166.0");
+        let c = provider.connection().await.unwrap();
+        let thread = c
+            .call(
+                "thread/start",
+                json!({"cwd":home,"approvalPolicy":"on-request","sandbox":"workspace-write"}),
+            )
+            .await
+            .unwrap();
+        let tid = &thread["thread"]["id"];
+        let error = c
+            .call("thread/resume", json!({"threadId":tid,"excludeTurns":true}))
+            .await
+            .unwrap_err();
+        assert!(error.contains("no rollout found for thread id"));
+        drop(c);
+        provider.shutdown().await;
+        std::fs::remove_dir_all(home).unwrap();
+    }
+}

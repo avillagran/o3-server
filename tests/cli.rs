@@ -20,6 +20,7 @@ impl Profile {
         let mut c = Command::new(env!("CARGO_BIN_EXE_o3-server"));
         c.env("T3CODE_HOME", &self.0)
             .env("HOME", &self.0)
+            .env("CODEX_HOME", &self.0)
             .env_remove("T3CODE_PORT")
             .env_remove("T3CODE_HOST");
         c

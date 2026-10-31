@@ -689,7 +689,7 @@
     "server.getConfig": {
       "status": "partial",
       "priority": "P0",
-      "note": "Real Connection test: descriptor/settings and empty providers; defaults are a subset, provider status catalog absent."
+      "note": "Real Connection test: Codex app-server probe advertises actual auth/status and native model catalog. Other provider catalogs and setup flows remain partial."
     },
     "server.getDatabaseStorage": {
       "status": "skip",
@@ -1046,7 +1046,7 @@
     "message.dispatch": {
       "status": "partial",
       "priority": "P0",
-      "note": "Real Connection scripted provider test; production delivery/recovery not complete."
+      "note": "Real Connection Codex stdio-peer test: turn start and steer_active; persisted native resume binding. Authenticated live inference, attachments, context, queues and crash recovery remain."
     },
     "notification.delivery.accept": {
       "status": "skip",
@@ -1116,7 +1116,7 @@
     "run.interrupt": {
       "status": "partial",
       "priority": "P0",
-      "note": "Real Connection scripted provider test; production delivery/recovery not complete."
+      "note": "Real Connection Codex stdio-peer test: live approval nodes/items, numeric native ID reply and idempotent receipt; answer/elicitation shapes unit-tested. Crash recovery remains."
     },
     "runtime-request.respond": {
       "status": "partial",
