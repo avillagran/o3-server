@@ -53,6 +53,13 @@ The compatibility registry marks broad methods partial where appropriate.
   startup; embedded hosts must call `recovery::recover` before accepting their first transport.
 - Only defer_start and start_immediately dispatch modes are accepted. Queues, steering,
   restart, deferred release and unlisted lifecycle commands are not implemented.
+  A crash after dispatch commit but before spawning leaves a preparing run. Control sends can
+  fail after a receipt commits. These are correctness gaps for real provider execution.
+- Launch supports new root-workspace threads; worktree creation, existing-worktree/reuse and
+  one atomic launch transaction are unfinished. Its create and initial-message stages have
+  separate deterministic receipts. The fake is injected only in tests, never enabled by the CLI.
+- Claude now supports queue_after_active and steer_active; idle model/mode commands persist
+  and apply on the next turn. Queue editing, restart and deferred release remain unimplemented.
 - Auth implements bearer sessions, not DPoP/cookies. OAuth request validation/scope negotiation,
   complete HTTP error unions, and live connection metadata in the clients listing need work.
 - No conformance run against upstream T3, desktop UI or Android was performed. Tests use the
@@ -81,3 +88,15 @@ settings reads. It reports kernel VmRSS, VmHWM and RssAnon in KiB at each phase.
 binary hash and workload are recorded in `docs/rss-measurement.json`. The measured workload is
 below 50 MiB VmHWM without purge tuning; SQLite writer cache is 2 MiB and snapshot cache 512 KiB.
 Provider subprocesses, OmaBridge, TLS and sustained slow-client load are excluded.
+Run `tools/measure-rss /tmp/o3-target/release/o3-server` after a release build. The probe uses a
+fresh temporary profile, seeds 1,000 messages (~1 KiB text each) through authenticated RPC,
+and opens one live bounded thread subscription. It reports Linux smaps RSS, not heap-only RSS.
+The results are in `rss-measurement.json`; no provider process, TLS or OmaBridge is included.
+The workload is a single sample, not a sustained/concurrent load test or a peak-memory bound.
+
+## Claude implementation update
+
+The executable now registers a direct native Claude CLI provider when available. See the
+2026-10-31 checkpoint in PROVIDER.md and tests/fixtures/claude/README.md for observed protocol,
+verification and remaining limits. The earlier core-only test count and RSS measurement above
+remain historical; they do not measure this adapter. No production T3 service/profile was used.

@@ -6,6 +6,7 @@ license = "MIT"
 description = "Lean Rust server, wire-compatible with T3 Code clients, with OmaBridge built in"
 
 [dependencies]
+libc = "0.2"
 tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "net", "io-util", "time", "sync", "macros", "signal", "process"] }
 hyper = { version = "1", default-features = false, features = ["http1", "server"] }
 hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }

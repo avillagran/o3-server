@@ -689,7 +689,7 @@
     "server.getConfig": {
       "status": "partial",
       "priority": "P0",
-      "note": "Real Connection test: descriptor/settings and empty providers; defaults are a subset, provider status catalog absent."
+      "note": "Real Connection config test; Claude CLI discovery, warning/unknown auth and CLI model aliases advertised. Auth/setup/catalog refresh remain partial."
     },
     "server.getDatabaseStorage": {
       "status": "skip",
@@ -1046,7 +1046,7 @@
     "message.dispatch": {
       "status": "partial",
       "priority": "P0",
-      "note": "Real Connection scripted provider test; production delivery/recovery not complete."
+      "note": "Direct Claude stream-json adapter; fixture replay, ignored live test, Connection queue/steer tests. Durable crash recovery and full queue controls remain."
     },
     "notification.delivery.accept": {
       "status": "skip",
@@ -1116,12 +1116,12 @@
     "run.interrupt": {
       "status": "partial",
       "priority": "P0",
-      "note": "Real Connection scripted provider test; production delivery/recovery not complete."
+      "note": "Connection interrupt test and observed CLI control receipt; isolated process group cleanup and stream finalization. Crash recovery remains."
     },
     "runtime-request.respond": {
       "status": "partial",
       "priority": "P0",
-      "note": "Real Connection scripted provider test; production delivery/recovery not complete."
+      "note": "Observed can_use_tool allow/deny mapping; fixture approval projection and Connection responses. Live test approves Write; persistent approvals and structured questions remain."
     },
     "subagent.stop": {
       "status": "todo",
@@ -1179,9 +1179,9 @@
       "note": "Not implemented."
     },
     "thread.interaction-mode.set": {
-      "status": "todo",
+      "status": "partial",
       "priority": "P1",
-      "note": "Not implemented."
+      "note": "Idle default/plan updates persisted and Connection-tested; native mode applied on the next turn. Active-run mutation rejected."
     },
     "thread.mark-unread": {
       "status": "todo",
@@ -1199,9 +1199,9 @@
       "note": "Real Connection lifecycle/idempotency test."
     },
     "thread.model-selection.set": {
-      "status": "todo",
+      "status": "partial",
       "priority": "P1",
-      "note": "Not implemented."
+      "note": "Idle updates persisted and Connection-tested; native set_model applied on the next turn. Active-run mutation rejected."
     },
     "thread.pin": {
       "status": "done",
@@ -1239,9 +1239,9 @@
       "note": "Client usage inventory; deferred."
     },
     "thread.runtime-mode.set": {
-      "status": "todo",
+      "status": "partial",
       "priority": "P1",
-      "note": "Not implemented."
+      "note": "Idle updates persisted and Connection-tested; native permission mode applied on the next turn. Active-run mutation rejected."
     },
     "thread.settle": {
       "status": "done",

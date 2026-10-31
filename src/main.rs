@@ -86,6 +86,11 @@ fn main() -> std::io::Result<()> {
         );
         return Ok(());
     }
+    if !is_auth {
+        if let Some(provider) = o3_server::claude::ClaudeProvider::discover() {
+            *state.provider.lock().unwrap() = Some(std::sync::Arc::new(provider));
+        }
+    }
     if is_auth {
         if args.get(1).map(String::as_str) == Some("session")
             && args.get(2).map(String::as_str) == Some("issue")

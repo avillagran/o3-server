@@ -2,6 +2,7 @@
 use std::{future::Future, pin::Pin};
 use tokio::sync::{mpsc, watch};
 pub struct RunInput {
+    pub native_session_id: Option<String>,
     pub thread_id: String,
     pub run_id: String,
     pub cwd: std::path::PathBuf,
@@ -14,12 +15,14 @@ pub struct RunInput {
 }
 pub enum ProviderEvent {
     Started,
+    Native(serde_json::Value),
     TextDelta(String),
     ApprovalRequest { request_id: String, command: String },
     Completed,
     Failed(String),
 }
 pub enum ProviderControl {
+    Steer(String),
     Interrupt,
     Respond {
         request_id: String,
@@ -59,7 +62,16 @@ impl Provider for ScriptedProvider {
             ] {
                 tokio::select! {r=output.send(event)=>r.map_err(|_|"receiver closed")?,_=cancel.changed()=>return Ok(())}
             }
-            tokio::select! {c=control.recv()=>match c {Some(ProviderControl::Respond{..})=>output.send(ProviderEvent::Completed).await.map_err(|_|"receiver closed".into()),_=>Ok(())},_=cancel.changed()=>Ok(())}
+            loop {
+                tokio::select! {
+                    c=control.recv()=>match c {
+                        Some(ProviderControl::Respond{..})=>return output.send(ProviderEvent::Completed).await.map_err(|_|"receiver closed".into()),
+                        Some(ProviderControl::Steer(text))=>output.send(ProviderEvent::TextDelta(text)).await.map_err(|_|"receiver closed")?,
+                        _=>return Ok(()),
+                    },
+                    _=cancel.changed()=>return Ok(()),
+                }
+            }
         })
     }
 }
@@ -95,6 +107,7 @@ pub(crate) fn start(
                 })
                 .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
             RunInput {
+                native_session_id: t["activeProviderThreadId"].as_str().map(str::to_owned),
                 thread_id: tid.clone(),
                 run_id: rid.clone(),
                 cwd,
@@ -112,6 +125,7 @@ pub(crate) fn start(
                 .await
         });
         let mut finished = false;
+        let mut failure = None;
         while let Some(event) = events.recv().await {
             if persist(&s, &tid, &rid, event).is_err() {
                 break;
@@ -123,7 +137,7 @@ pub(crate) fn start(
             }
         }
         let _ = cancel.send(true);
-        tokio::select! {r=&mut task=>{finished=r.is_ok_and(|r|r.is_ok())},_=tokio::time::sleep(std::time::Duration::from_secs(2))=>{task.abort();let _=task.await;}}
+        tokio::select! {r=&mut task=>{match r {Ok(Ok(()))=>finished=true,Ok(Err(e))=>failure=Some(e),Err(e)=>failure=Some(e.to_string())}},_=tokio::time::sleep(std::time::Duration::from_secs(2))=>{task.abort();let _=task.await;}}
         s.active.lock().unwrap().remove(&rid);
         let final_run = crate::events::get(&s.db.lock().unwrap(), "runs", &rid);
         if let Ok(run) = final_run {
@@ -135,18 +149,30 @@ pub(crate) fn start(
                     &s,
                     &tid,
                     &rid,
-                    ProviderEvent::Failed(
+                    ProviderEvent::Failed(failure.unwrap_or_else(|| {
                         if finished {
                             "provider ended without completion"
                         } else {
                             "provider failed"
                         }
-                        .into(),
-                    ),
+                        .into()
+                    })),
                 );
             }
         }
+        start_next(s, tid);
     });
+}
+fn start_next(s: std::sync::Arc<crate::store::State>, tid: String) {
+    let next = {
+        let db = s.db.lock().unwrap();
+        db.query_row("SELECT body FROM records WHERE kind='runs' AND thread_id=? AND json_extract(body,'$.status')='queued' AND NOT EXISTS(SELECT 1 FROM records a WHERE a.kind='runs' AND a.thread_id=records.thread_id AND json_extract(a.body,'$.status') IN ('preparing','starting','running','waiting')) ORDER BY rowid LIMIT 1",[&tid],|r|r.get::<_,String>(0)).ok()
+            .and_then(|body|serde_json::from_str::<serde_json::Value>(&body).ok())
+            .and_then(|mut run| {let rid=run["id"].as_str()?.to_owned();let m=crate::events::get(&db,"messages",run["userMessageId"].as_str()?).ok()?;run["status"]=serde_json::json!("preparing");crate::events::put(&db,"runs",&rid,&tid,&run).ok()?;Some((rid,m["text"].as_str()?.to_owned()))})
+    };
+    if let Some((rid, text)) = next {
+        start(s, tid, rid, text);
+    }
 }
 fn persist(
     s: &crate::store::State,
@@ -161,7 +187,7 @@ fn persist(
     use serde_json::json;
     let mut db = s.db.lock().unwrap();
     let tx = db.transaction().map_err(|e| e.to_string())?;
-    let thread = get(&tx, "thread", tid)?;
+    let mut thread = get(&tx, "thread", tid)?;
     let mut run = get(&tx, "runs", rid)?;
     if matches!(
         run["status"].as_str(),
@@ -171,6 +197,9 @@ fn persist(
     }
     let at = iso(now_ms());
     match event {
+        ProviderEvent::Native(frame) => {
+            crate::claude_projection::persist(&tx, tid, rid, &mut thread, &mut run, &at, &frame)?;
+        }
         ProviderEvent::Started => {
             run["status"] = json!("running");
             run["startedAt"] = json!(at);
@@ -180,6 +209,9 @@ fn persist(
             let mut message=get(&tx,"messages",&mid).unwrap_or_else(|_|json!({"id":mid,"threadId":tid,"runId":rid,"nodeId":null,"role":"assistant","text":"","attachments":[],"streaming":true,"createdBy":"agent","creationSource":"web","createdAt":at,"updatedAt":at}));
             let mut text = message["text"].as_str().unwrap_or("").to_owned();
             text.push_str(&delta);
+            if text.len() > 1024 * 1024 {
+                return Err("assistant message exceeds 1 MiB".into());
+            }
             message["text"] = json!(text);
             message["updatedAt"] = json!(at);
             put(&tx, "messages", &mid, tid, &message)?;
@@ -203,6 +235,17 @@ fn persist(
                 "failed"
             });
             run["completedAt"] = json!(at);
+            if let ProviderEvent::Failed(ref error) = event {
+                run["error"] = json!(error);
+            }
+            crate::claude_projection::finish(
+                &tx,
+                tid,
+                rid,
+                &thread,
+                &at,
+                run["status"].as_str().unwrap_or("failed"),
+            )?;
             let mid = format!("assistant-{rid}");
             if let Ok(mut message) = get(&tx, "messages", &mid) {
                 message["streaming"] = json!(false);
@@ -220,4 +263,82 @@ fn persist(
     drop(db);
     s.notify();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{json, Value};
+    #[test]
+    fn real_frames_reduce_to_renderable_items_and_native_identity() {
+        for (name, fixture) in [
+            (
+                "permission",
+                include_str!("../tests/fixtures/claude/permission.jsonl"),
+            ),
+            (
+                "subagent",
+                include_str!("../tests/fixtures/claude/subagent.jsonl"),
+            ),
+        ] {
+            let dir = std::env::temp_dir()
+                .join(format!("o3-replay-{}", crate::store::random_id().unwrap()));
+            let s = crate::store::State::open(&dir).unwrap();
+            {
+                let db = s.db.lock().unwrap();
+                crate::events::put(&db,"thread","t","t",&json!({"id":"t","projectId":"p","modelSelection":{"instanceId":"claude","model":"haiku"},"providerInstanceId":"claude"})).unwrap();
+                crate::events::put(
+                    &db,
+                    "runs",
+                    "r",
+                    "t",
+                    &json!({"id":"r","threadId":"t","ordinal":1,"status":"preparing"}),
+                )
+                .unwrap();
+            }
+            for line in fixture.lines() {
+                let v: Value = serde_json::from_str(line).unwrap();
+                if v["type"] == "control_request" {
+                    persist(&s,"t","r",ProviderEvent::Native(json!({"type":"permission","request_id":"r:approval","native_id":v["request_id"],"request":v["request"]}))).unwrap();
+                }
+                for event in crate::claude::decode(&v) {
+                    persist(&s, "t", "r", event).unwrap();
+                }
+            }
+            let db = s.db.lock().unwrap();
+            assert_eq!(
+                crate::events::get(&db, "runs", "r").unwrap()["status"],
+                "completed"
+            );
+            let thread = crate::events::get(&db, "thread", "t").unwrap();
+            assert!(thread["activeProviderThreadId"].is_string());
+            let turn = crate::events::get(&db, "providerTurns", "r").unwrap();
+            assert_eq!(turn["status"], "completed");
+            assert!(turn["tokenUsage"]["outputTokens"].as_u64().unwrap() > 0);
+            let items: Vec<Value> = db
+                .prepare("SELECT body FROM records WHERE kind='turnItems'")
+                .unwrap()
+                .query_map([], |r| r.get::<_, String>(0))
+                .unwrap()
+                .map(|r| serde_json::from_str(&r.unwrap()).unwrap())
+                .collect();
+            assert!(items.iter().any(|i| i["type"] == "assistant_message"));
+            if name == "permission" {
+                assert!(items.iter().any(|i| i["type"] == "approval_request"));
+                assert!(items
+                    .iter()
+                    .any(|i| i["type"] == "dynamic_tool" && i["toolName"] == "Write"));
+            } else {
+                assert!(items
+                    .iter()
+                    .any(|i| i["type"] == "reasoning" && i["streaming"] == false));
+                assert!(items
+                    .iter()
+                    .any(|i| i["type"] == "subagent" && i["status"] == "completed"));
+            }
+            drop(db);
+            drop(s);
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
 }
