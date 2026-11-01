@@ -999,7 +999,7 @@
     "vcs.refreshStatus": {
       "status": "partial",
       "priority": "P1",
-      "note": "Real-client local/branch/upstream/GitHub tests plus real glab 1.126.0 through server/lib VCS reader against a local GitLab API fixture: MR metadata, explicit self-host ports, localOnly and 403/null behavior. Partial: live authenticated GitLab, other hosts and upstream stale-PR fallback/backoff parity."
+      "note": "Real-client local/branch/upstream/GitHub tests plus simulated glab through server/lib VCS reader (real glab CLI not installed or verified): MR metadata, explicit self-host ports, localOnly and 403/null behavior. Partial: live authenticated GitLab, other hosts and upstream stale-PR fallback/backoff parity."
     },
     "vcs.removeWorktree": {
       "status": "skip",

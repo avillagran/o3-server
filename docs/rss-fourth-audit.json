@@ -1,0 +1,67 @@
+{
+  "measured_at_utc": "2026-11-01T17:31:19Z",
+  "binary_sha256": "fd67a428341ff68fbd00d15487f7cd22d2740a6d8e03c89152a6c998cb34f540",
+  "binary": "/var/tmp/o3-build/main/release/o3-server",
+  "binary_bytes": 13677816,
+  "seed_messages": 1000,
+  "threads": 20,
+  "subscribers": 3,
+  "unary_calls": 1000,
+  "text_bytes_per_message": 1000,
+  "cold_kib": {
+    "VmHWM": 9768,
+    "VmRSS": 9768,
+    "RssAnon": 1036,
+    "RssFile": 8732,
+    "THP_enabled": 0,
+    "Threads": 4
+  },
+  "seeded_kib": {
+    "VmHWM": 15428,
+    "VmRSS": 15168,
+    "RssAnon": 2532,
+    "RssFile": 12636,
+    "THP_enabled": 0,
+    "Threads": 5
+  },
+  "subscribed_kib": {
+    "VmHWM": 17000,
+    "VmRSS": 15744,
+    "RssAnon": 3108,
+    "RssFile": 12636,
+    "THP_enabled": 0,
+    "Threads": 6
+  },
+  "after_churn_kib": {
+    "VmHWM": 17000,
+    "VmRSS": 15700,
+    "RssAnon": 3064,
+    "RssFile": 12636,
+    "THP_enabled": 0,
+    "Threads": 6
+  },
+  "snapshot_messages": [
+    10,
+    10,
+    10
+  ],
+  "under_50_mib": true,
+  "under_50_mb": true,
+  "providers": [
+    {
+      "instanceId": "claudeAgent",
+      "installed": true,
+      "status": "warning"
+    },
+    {
+      "instanceId": "codex",
+      "installed": true,
+      "status": "error"
+    }
+  ],
+  "bridge_enabled": true,
+  "gateway_hosting": false,
+  "provider_workload": "registered and probed; inference excluded (defer_start)",
+  "measurement": "Linux /proc/PID/status; disk profile under /var/tmp",
+  "allocator_env": {}
+}
