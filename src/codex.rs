@@ -242,7 +242,10 @@ impl CodexProvider {
         let content = crate::provider_input::content(&input, false)?;
         let c = self.connection().await?;
         let mut params = json!({"cwd":input.cwd,"model":input.model_selection["model"],"approvalPolicy":if input.runtime_mode=="full-access"{"never"}else{"on-request"},"sandbox":if input.runtime_mode=="full-access"{"danger-full-access"}else{"workspace-write"}});
-        let response = if let Some(id) = input.native_session_id.as_ref() {
+        let response = if let Some(id) = input.model_selection["nativeForkSource"].as_str() {
+            params["threadId"] = json!(id);
+            c.call("thread/fork", params).await?
+        } else if let Some(id) = input.native_session_id.as_ref() {
             params["threadId"] = json!(id);
             params["excludeTurns"] = json!(true);
             c.call("thread/resume", params).await?
@@ -276,7 +279,7 @@ impl CodexProvider {
                     _=output.closed()=> { let _=c.call("turn/interrupt",json!({"threadId":tid,"turnId":turn})).await; return Ok(()); },
                     _=cancel.changed()=>continue,
                     action=control.recv()=>match action {
-                        Some(ProviderControl::Interrupt)|None=>{ c.call("turn/interrupt",json!({"threadId":tid,"turnId":turn})).await?; return Ok(()); },
+                        Some(ProviderControl::Interrupt)|None=>{ c.call("turn/interrupt",json!({"threadId":tid,"turnId":turn})).await?; output.send(ProviderEvent::Interrupted).await.map_err(|_| "receiver closed")?; return Ok(()); },
                         Some(ProviderControl::Steer(text))=>{ c.call("turn/steer",json!({"threadId":tid,"expectedTurnId":turn,"input":[{"type":"text","text":text,"text_elements":[]}]})).await?; },
                         Some(ProviderControl::Respond{request_id,decision,answers,..})=>{
                             let (id,method)=pending.remove(&request_id).ok_or("Unknown Codex native request")?;

@@ -1021,7 +1021,7 @@
     "checkpoint.rollback": {
       "status": "partial",
       "priority": "P2",
-      "note": "Real Connection execution captures real refs and restores baseline workspace files. Private-index test covers additions/deletions and preserves user index. Refuses active runs; provider conversation rewind and crash-safe restore replay remain."
+      "note": "Restores Git checkpoint files; refuses active runs. Next turn uses a fresh native session and explicit transcript handoff through checkpoint ordinal, with a new Claude cache generation. Crash-safe filesystem restore replay remains unavailable."
     },
     "delegated_task.completion-delivery.acknowledge": {
       "status": "skip",
@@ -1126,7 +1126,7 @@
     "subagent.stop": {
       "status": "partial",
       "priority": "P2",
-      "note": "tests/thread_commands.rs: marks the subagent cancelled; no provider session is told."
+      "note": "Reserves provider control before recording cancellation; interrupts the owning native Claude/Codex turn. Unavailable controls fail explicitly. Independent native subagent cancellation remains unsupported; whole owner turn is interrupted."
     },
     "thread.active.reorder": {
       "status": "done",
@@ -1166,7 +1166,7 @@
     "thread.fork": {
       "status": "partial",
       "priority": "P1",
-      "note": "tests/thread_commands.rs: new linked thread, inherited history rows copied in SQLite, idempotent. Native provider-thread fork/handoff is not performed."
+      "note": "Native latest-completed forks: Claude --resume --fork-session, Codex thread/fork; historical points use bounded explicit transcript handoff. Clears inherited native IDs. Deterministic peers in tests/provider_lifecycle.rs. Native resume-at message mapping remains unavailable."
     },
     "thread.guest-message.dismiss": {
       "status": "todo",
@@ -1201,7 +1201,7 @@
     "thread.model-selection.set": {
       "status": "partial",
       "priority": "P1",
-      "note": "tests/thread_commands.rs: updates selection and switches provider instance; no provider-session handoff."
+      "note": "Idle model changes apply at next turn: Claude set_model control and Codex turn/start model preserve native session. Deterministic adapter peers cover same-session model change. Cross-provider context transfer remains unavailable."
     },
     "thread.pin": {
       "status": "done",

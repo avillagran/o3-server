@@ -94,7 +94,9 @@ impl ClaudeProvider {
             cmd.arg("--effort").arg(effort);
         }
         cmd.arg("--settings").arg(settings.to_string());
-        if let Some(id) = &input.native_session_id {
+        if let Some(id) = input.model_selection["nativeForkSource"].as_str() {
+            cmd.arg("--resume").arg(id).arg("--fork-session");
+        } else if let Some(id) = &input.native_session_id {
             cmd.arg("--resume").arg(id);
         }
         let mut child = cmd.spawn().map_err(|e| format!("Claude spawn: {e}"))?;
@@ -188,6 +190,7 @@ impl ClaudeProvider {
                     c=control.recv()=>match c {
                         Some(ProviderControl::Interrupt)=>{
                             session.control("interrupt",json!({"subtype":"interrupt"})).await?;
+                            output.send(ProviderEvent::Interrupted).await.map_err(|_| "receiver closed")?;
                             return Ok(false);
                         },
                         Some(ProviderControl::Steer(text))=>session.prompt(&text).await?,

@@ -13,6 +13,7 @@ pub fn stage(db: &Connection, command: &Value) -> Result<(), String> {
                 | "runtime-request.respond"
                 | "thread.user-input.dismiss"
                 | "queued-message.promote-to-steer"
+                | "subagent.stop"
         )
     ) || command["type"] == "message.dispatch"
         && command["dispatchMode"]["type"] == "steer_active";

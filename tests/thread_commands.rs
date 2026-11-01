@@ -267,6 +267,8 @@ fn fork_creates_a_linked_thread_with_inherited_history() {
         json!({"type":"run","threadId":"t1","runId":run_id})
     );
     assert_eq!(t["activeProviderThreadId"], Value::Null);
+    assert_eq!(t["codexNativeThreadId"], Value::Null);
+    assert!(t["providerHandoff"].as_str().unwrap().contains("text of"));
     let items = snap(&c, "t2")["projection"]["visibleTurnItems"]
         .as_array()
         .unwrap()
@@ -451,6 +453,12 @@ fn rollback_and_subagent_stop_validate_and_record() {
     );
     let err = cmd(&c, json!({"type":"subagent.stop","commandId":"ss0","threadId":"t1","runId":"run-9","subagentId":"sub-1"})).unwrap_err().to_string();
     assert!(err.contains("does not belong"), "{err}");
+    let (control, mut controls) = tokio::sync::mpsc::channel(1);
+    s.state
+        .active
+        .lock()
+        .unwrap()
+        .insert("run-1".into(), control);
     cmd(&c, json!({"type":"subagent.stop","commandId":"ss1","threadId":"t1","runId":"run-1","subagentId":"sub-1"})).unwrap();
     let sub: Value = {
         let body: String = s
@@ -467,6 +475,10 @@ fn rollback_and_subagent_stop_validate_and_record() {
         serde_json::from_str(&body).unwrap()
     };
     assert_eq!(sub["status"], "cancelled");
+    assert!(matches!(
+        controls.try_recv().unwrap(),
+        o3_server::provider::ProviderControl::Interrupt
+    ));
     let err = cmd(&c, json!({"type":"subagent.stop","commandId":"ss2","threadId":"t1","runId":"run-1","subagentId":"sub-1"})).unwrap_err().to_string();
     assert!(err.contains("already cancelled"), "{err}");
 }

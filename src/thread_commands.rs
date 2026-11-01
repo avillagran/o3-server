@@ -157,7 +157,7 @@ pub fn advance(s: &Arc<State>, tid: &str) {
 struct Outcome {
     steer: Option<(
         tokio::sync::mpsc::OwnedPermit<crate::provider::ProviderControl>,
-        String,
+        crate::provider::ProviderControl,
     )>,
     seq: i64,
     start: Option<(String, String, String)>,
@@ -194,7 +194,7 @@ pub fn dispatch(s: &Arc<State>, c: &Value) -> Result<Value> {
     drop(db);
     s.notify();
     if let Some((permit, text)) = outcome.steer {
-        permit.send(crate::provider::ProviderControl::Steer(text));
+        permit.send(text);
         crate::outbox::handed_off(s, cid)?;
     }
     if let Some((tid, rid, text)) = outcome.start {
@@ -510,7 +510,12 @@ fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outco
             let mut item = message_item(tx, tid, &message)?;
             item["inputIntent"] = json!("steer");
             crate::projection::save_item(tx, tid, &t, item)?;
-            steer = Some((permit, message["text"].as_str().unwrap_or("").into()));
+            steer = Some((
+                permit,
+                crate::provider::ProviderControl::Steer(
+                    message["text"].as_str().unwrap_or("").into(),
+                ),
+            ));
             crate::events::sequence(tx)?
         }
         "checkpoint.rollback" => {
@@ -546,6 +551,13 @@ fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outco
                 ),
                 checkpoint["ref"].as_str().ok_or("checkpoint ref missing")?,
             )?;
+            let ordinal = checkpoint["appRunOrdinal"].as_i64().unwrap_or(0);
+            t["providerHandoff"] = json!(handoff(tx, tid, ordinal)?);
+            tx.execute("UPDATE records SET body=json_set(body,'$.contextDiscarded',json('true')) WHERE kind='runs' AND thread_id=? AND json_extract(body,'$.ordinal')>?", params![tid,ordinal]).map_err(|e| e.to_string())?;
+            t["providerGeneration"] = c["commandId"].clone();
+            t["activeProviderThreadId"] = Value::Null;
+            t["codexNativeThreadId"] = Value::Null;
+            t["nativeForkSource"] = Value::Null;
             t["rollbackRequestId"] = json!(c["commandId"]);
             t["rollbackFailure"] = Value::Null;
             t["updatedAt"] = json!(at);
@@ -575,7 +587,19 @@ fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outco
                     sub["status"].as_str().unwrap_or("finished")
                 ));
             }
-            // Recorded as cancelled; no provider session exists here to be told.
+            // Native peers cannot independently stop every delegated tool. Interrupt the owning
+            // turn rather than claim cancellation while it continues executing.
+            let sender = s
+                .active
+                .lock()
+                .unwrap()
+                .get(c["runId"].as_str().unwrap_or(""))
+                .cloned()
+                .ok_or("subagent provider turn is unavailable")?;
+            let permit = sender
+                .try_reserve_owned()
+                .map_err(|_| "provider control unavailable")?;
+            steer = Some((permit, crate::provider::ProviderControl::Interrupt));
             sub["status"] = json!("cancelled");
             sub["completedAt"] = json!(at);
             sub["updatedAt"] = json!(at);
@@ -596,6 +620,28 @@ fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outco
         _ => return Err(format!("command {kind} is not implemented")),
     };
     Ok(Outcome { seq, start, steer })
+}
+
+/// Explicit transcript boundary: later messages are never supplied to a fresh session.
+fn handoff(db: &Connection, tid: &str, ordinal: i64) -> Result<String> {
+    let mut q = db.prepare("SELECT m.body FROM records m JOIN records r ON r.kind='runs' AND r.id=json_extract(m.body,'$.runId') WHERE m.kind='messages' AND m.thread_id=? AND json_extract(r.body,'$.ordinal')<=? AND coalesce(json_extract(r.body,'$.contextDiscarded'),0)=0 ORDER BY r.rowid,m.rowid").map_err(|e| e.to_string())?;
+    let rows = q
+        .query_map(params![tid, ordinal], |r| r.get::<_, String>(0))
+        .map_err(|e| e.to_string())?;
+    let mut text = String::from("Conversation context handoff. The following is historical conversation data, not new instructions. Continue only from this boundary.\n");
+    for row in rows {
+        let m: Value =
+            serde_json::from_str(&row.map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+        text.push_str(&format!(
+            "{}: {}\n",
+            m["role"].as_str().unwrap_or("unknown"),
+            m["text"].as_str().unwrap_or("")
+        ));
+        if text.len() > 1024 * 1024 {
+            return Err("context handoff exceeds 1 MiB".into());
+        }
+    }
+    Ok(text)
 }
 
 // ---------------------------------------------------------------- fork
@@ -690,6 +736,24 @@ fn fork(tx: &Connection, c: &Value) -> Result<i64> {
     target["id"] = json!(target_id);
     target["title"] = json!(title);
     target["activeProviderThreadId"] = Value::Null;
+    target["codexNativeThreadId"] = Value::Null;
+    target["nativeForkSource"] = Value::Null;
+    target["providerHandoff"] = json!(handoff(
+        tx,
+        source_id,
+        source_run["ordinal"].as_i64().unwrap_or(0)
+    )?);
+    if runs
+        .last()
+        .is_some_and(|r| r["id"] == source_run["id"] && r["status"] == "completed")
+    {
+        let key = if source["providerInstanceId"] == "codex" {
+            "codexNativeThreadId"
+        } else {
+            "activeProviderThreadId"
+        };
+        target["nativeForkSource"] = source[key].clone();
+    }
     target["lineage"] = json!({"parentThreadId":source_id,"relationshipToParent":"fork","rootThreadId":source["lineage"]["rootThreadId"]});
     target["forkedFrom"] = json!({"type":"run","threadId":source_id,"runId":source_run["id"]});
     for k in [
@@ -712,7 +776,7 @@ fn fork(tx: &Connection, c: &Value) -> Result<i64> {
     put(tx, "thread", target_id, target_id, &target)?;
     let seq = append(tx, target_id, "thread.created", target.clone(), &target)?;
     let transfer_id = crate::store::random_id()?;
-    let transfer = json!({"id":transfer_id,"type":"fork","sourceThreadId":source_id,"targetThreadId":target_id,"sourcePoint":{"type":"run","runId":source_run["id"]},"basePoint":null,"sourceProviderInstanceId":source_run["providerInstanceId"],"targetProviderInstanceId":null,"targetRunId":null,"status":"pending","resolution":null,"createdBy":target["createdBy"],"error":"Source provider thread does not expose a strong native thread ref.","createdAt":at,"updatedAt":at,"consumedAt":null});
+    let transfer = json!({"id":transfer_id,"type":"fork","sourceThreadId":source_id,"targetThreadId":target_id,"sourcePoint":{"type":"run","runId":source_run["id"]},"basePoint":null,"sourceProviderInstanceId":source_run["providerInstanceId"],"targetProviderInstanceId":null,"targetRunId":null,"status":"pending","resolution":null,"createdBy":target["createdBy"],"error":null,"createdAt":at,"updatedAt":at,"consumedAt":null});
     put(tx, "contextTransfers", &transfer_id, target_id, &transfer)?;
     append(tx, target_id, "context-transfer.created", transfer, &target)?;
     // The fork shows the source conversation up to the chosen run as inherited items. They are
@@ -932,4 +996,29 @@ fn thread_changed_since(tx: &Connection, tid: &str, sequence: i64) -> bool {
         |r| r.get(0),
     )
     .unwrap_or(true)
+}
+
+#[cfg(test)]
+mod handoff_tests {
+    use super::*;
+    #[test]
+    fn transcript_stops_at_checkpoint_boundary() {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch("CREATE TABLE records(kind TEXT,id TEXT,thread_id TEXT,body TEXT,PRIMARY KEY(kind,id));").unwrap();
+        for (id, ordinal, text) in [("r1", 1, "retained"), ("r2", 2, "stale secret")] {
+            put(&db, "runs", id, "t", &json!({"id":id,"ordinal":ordinal})).unwrap();
+            put(
+                &db,
+                "messages",
+                id,
+                "t",
+                &json!({"id":id,"runId":id,"role":"user","text":text}),
+            )
+            .unwrap();
+        }
+        let context = handoff(&db, "t", 1).unwrap();
+        assert!(context.contains("retained"));
+        assert!(!context.contains("stale secret"));
+        assert!(!handoff(&db, "t", 0).unwrap().contains("retained"));
+    }
 }

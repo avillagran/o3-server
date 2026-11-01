@@ -122,6 +122,16 @@ pub(crate) fn start(
                         .and_then(|p| p["workspaceRoot"].as_str().map(std::path::PathBuf::from))
                 })
                 .unwrap_or_else(|| s.dir.clone());
+            let native_key = if t["providerInstanceId"] == "codex" {
+                "codexNativeThreadId"
+            } else {
+                "activeProviderThreadId"
+            };
+            let fresh = !t[native_key].is_string();
+            let mut selection = t["modelSelection"].clone();
+            if fresh {
+                selection["nativeForkSource"] = t["nativeForkSource"].clone();
+            }
             RunInput {
                 provider_instance_id: t["providerInstanceId"].as_str().unwrap_or("").into(),
                 native_session_id: t[if t["providerInstanceId"] == "codex" {
@@ -131,11 +141,18 @@ pub(crate) fn start(
                 }]
                 .as_str()
                 .map(str::to_owned),
-                thread_id: tid.clone(),
+                thread_id: format!("{}:{}", tid, t["providerGeneration"].as_str().unwrap_or("")),
                 run_id: rid.clone(),
                 cwd,
-                text,
-                model_selection: t["modelSelection"].clone(),
+                text: if fresh && !t["nativeForkSource"].is_string() {
+                    t["providerHandoff"]
+                        .as_str()
+                        .map(|h| format!("{h}\nCurrent user request:\n{text}"))
+                        .unwrap_or(text)
+                } else {
+                    text
+                },
+                model_selection: selection,
                 runtime_mode: t["runtimeMode"].as_str().unwrap_or("full-access").into(),
                 interaction_mode: t["interactionMode"].as_str().unwrap_or("default").into(),
                 attachment_root: crate::assets::attachments_dir(&s),
