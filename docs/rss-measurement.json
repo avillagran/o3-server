@@ -1,54 +1,110 @@
 {
-  "measured_at_utc": "2026-11-01T00:43:35Z",
-  "binary_sha256": "55366577f14736d2cc4cd36ad345869946914fbd3869d442b6b7f073ce6d41c5",
-  "binary": "/var/tmp/o3-build/main/release/o3-server",
-  "binary_bytes": 12071368,
-  "seed_messages": 1000,
-  "threads": 20,
-  "subscribers": 3,
-  "unary_calls": 1000,
-  "text_bytes_per_message": 1000,
-  "cold_kib": {
-    "VmHWM": 22640,
-    "VmRSS": 22640,
-    "RssAnon": 13036
+  "measured_at_utc": "2026-11-01T00:57:58Z",
+  "binary_sha256": "6fc449d79e9f0dceca8fb2f83acafeb8811e96df97227e85bc8060f07d2d6fc2",
+  "profile_counts": {
+    "messages": 10605,
+    "project": 23,
+    "thread": 374,
+    "turnItems": 67250,
+    "visibleTurnItems": 67250
   },
-  "seeded_kib": {
-    "VmHWM": 36228,
-    "VmRSS": 35432,
-    "RssAnon": 24004
+  "biggest_thread_items": 8264,
+  "idle_kib": {
+    "VmHWM": 32948,
+    "VmRSS": 30716,
+    "RssAnon": 19696
   },
-  "subscribed_kib": {
-    "VmHWM": 44568,
-    "VmRSS": 44120,
-    "RssAnon": 32692
+  "after_snapshot_kib": {
+    "VmHWM": 35176,
+    "VmRSS": 29804,
+    "RssAnon": 18464
   },
-  "after_churn_kib": {
-    "VmHWM": 44568,
-    "VmRSS": 44120,
-    "RssAnon": 32692
+  "thread_open_kib": {
+    "VmHWM": 43740,
+    "VmRSS": 34916,
+    "RssAnon": 23576
   },
-  "snapshot_messages": [
-    10,
-    10,
-    10
-  ],
-  "under_50_mib": true,
-  "under_50_mb": true,
-  "providers": [
-    {
-      "instanceId": "claudeAgent",
-      "installed": true,
-      "status": "warning"
-    },
-    {
-      "instanceId": "codex",
-      "installed": true,
-      "status": "warning"
-    }
-  ],
+  "after_disconnect_kib": {
+    "VmHWM": 43740,
+    "VmRSS": 30260,
+    "RssAnon": 18920
+  },
+  "snapshot_ms": 191.46,
   "bridge_enabled": true,
-  "provider_workload": "registered and probed; inference excluded (defer_start)",
-  "measurement": "Linux /proc/PID/status; disk profile under /var/tmp",
-  "allocator_env": {}
+  "client": "real omarchy-t3-client snapshot/watch",
+  "measurement": "Linux /proc/PID/status, isolated SQLite backup; no inference",
+  "heap_samples": [],
+  "under_50_mb": true,
+  "under_35_mb_idle": true,
+  "disconnect_within_3_mb_idle": true,
+  "under_500_ms_snapshot": true,
+  "allocator_env": {},
+  "baseline_evidence": {
+    "source_revision": "fb87550",
+    "instrumented": true,
+    "idle_kib": {
+      "VmHWM": 37576,
+      "VmRSS": 36212,
+      "RssAnon": 25336
+    },
+    "after_snapshot_kib": {
+      "VmHWM": 46876,
+      "VmRSS": 46144,
+      "RssAnon": 34756
+    },
+    "thread_open_kib": {
+      "VmHWM": 53352,
+      "VmRSS": 53352,
+      "RssAnon": 41964
+    },
+    "after_disconnect_kib": {
+      "VmHWM": 53352,
+      "VmRSS": 53352,
+      "RssAnon": 41964
+    },
+    "snapshot_ms": 3885.3,
+    "heap_samples": [
+      {
+        "rust_live_bytes": 3530489,
+        "rust_peak_bytes": 5279701,
+        "sqlite_live_bytes": 2229624,
+        "sqlite_peak_bytes": 8438656
+      },
+      {
+        "rust_live_bytes": 3530401,
+        "rust_peak_bytes": 5279701,
+        "sqlite_live_bytes": 71856,
+        "sqlite_peak_bytes": 8438656
+      },
+      {
+        "rust_live_bytes": 3917956,
+        "rust_peak_bytes": 5279701,
+        "sqlite_live_bytes": 3975632,
+        "sqlite_peak_bytes": 8438656
+      },
+      {
+        "rust_live_bytes": 3530724,
+        "rust_peak_bytes": 5279701,
+        "sqlite_live_bytes": 71872,
+        "sqlite_peak_bytes": 8438656
+      }
+    ]
+  },
+  "purge_only_ablation": {
+    "instrumented": true,
+    "allocator_env": {
+      "MIMALLOC_PURGE_DELAY": "0"
+    },
+    "thread_open_kib": {
+      "VmHWM": 44384,
+      "VmRSS": 44044,
+      "RssAnon": 32544
+    },
+    "after_disconnect_kib": {
+      "VmHWM": 44384,
+      "VmRSS": 44044,
+      "RssAnon": 32544
+    },
+    "snapshot_ms": 3995.18
+  }
 }

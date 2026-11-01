@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Isolated release RSS probe, using a real authenticated WebSocket and 1000 durable messages."""
 import base64,hashlib,json,os,pathlib,socket,struct,subprocess,sys,tempfile,time
+sys.dont_write_bytecode=True
 if '--profile' in sys.argv:
  from rss_profile import run
  # Keep the existing sampler shared by both workloads.

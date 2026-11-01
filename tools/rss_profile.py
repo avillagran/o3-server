@@ -1,5 +1,5 @@
 """Real desktop probe. Private records stay in memory and the isolated disk copy."""
-import argparse, hashlib, json, os, pathlib, queue, signal, sqlite3, subprocess, threading, time
+import argparse, hashlib, json, os, pathlib, queue, signal, sqlite3, subprocess, threading, time, urllib.request
 
 def run(memory):
     parser = argparse.ArgumentParser()
@@ -9,6 +9,7 @@ def run(memory):
     parser.add_argument('--output', default='docs/rss-measurement.json')
     args = parser.parse_args()
     binary = pathlib.Path(args.binary).resolve()
+    assert '/release/' in str(binary), 'benchmark requires a release binary'
     root = pathlib.Path('/var/tmp/o3-build/real-opt')
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     # A consistent read-only backup, never open the source in writable mode.
@@ -20,6 +21,8 @@ def run(memory):
         src.backup(dst)
         tid, count = dst.execute("SELECT thread_id,count(*) FROM records WHERE kind='visibleTurnItems' GROUP BY thread_id ORDER BY count(*) DESC LIMIT 1").fetchone()
         counts = {k:n for k,n in dst.execute('SELECT kind,count(*) FROM records GROUP BY kind')}
+    src.close()
+    dst.close()
     (home/'bin').mkdir()
     (home/'bin/t3').symlink_to(binary)
     env = {**os.environ, 'HOME':str(home), 'T3CODE_HOME':str(profile), 'TMPDIR':'/var/tmp/o3-build/tmp',
@@ -48,6 +51,9 @@ def run(memory):
         while not (profile/'omabridge/control.sock').exists():
             assert process.poll() is None and time.monotonic()<deadline, 'isolated startup failed'
             time.sleep(.02)
+        runtime=json.loads((profile/'userdata/server-runtime.json').read_text())
+        with urllib.request.urlopen(f"http://127.0.0.1:{runtime['port']}/.well-known/t3/environment", timeout=90) as response:
+            assert response.status == 200
         time.sleep(.2)
         idle=sample()
         started=time.monotonic()
@@ -62,17 +68,18 @@ def run(memory):
                 try:
                     v=json.loads(line)
                     # Retain only event names, never private message content.
-                    events.put(v.get('type',v.get('event',v.get('kind'))))
+                    events.put((v.get('type'), v.get('data',{}).get('connected') is True))
                 except ValueError: pass
         threading.Thread(target=reader,daemon=True).start()
         for v in ({'op':'visible','value':True},{'op':'select','environment':'local','thread':tid,'serial':1}):
             watch.stdin.write(json.dumps(v)+'\n');watch.stdin.flush()
         deadline=time.monotonic()+90
-        seen=[]
+        messages = connected = False
         while time.monotonic()<deadline:
-            event=events.get(timeout=max(.1,deadline-time.monotonic()))
-            if event not in seen: seen.append(event)
-            if event == 'messages': break
+            event, ready = events.get(timeout=max(.1,deadline-time.monotonic()))
+            messages = messages or event == 'messages'
+            connected = connected or (event == 'live-state' and ready)
+            if messages and connected: break
         else: raise RuntimeError('thread view timeout')
         time.sleep(1)
         opened=sample()
@@ -83,9 +90,13 @@ def run(memory):
                 'profile_counts':counts,'biggest_thread_items':count,'idle_kib':idle,'after_snapshot_kib':after_snapshot,'thread_open_kib':opened,
                 'after_disconnect_kib':disconnected,'snapshot_ms':snapshot_ms,'bridge_enabled':True,'client':'real omarchy-t3-client snapshot/watch',
                 'measurement':'Linux /proc/PID/status, isolated SQLite backup; no inference','heap_samples':diagnostics,
+                'under_50_mb':opened['VmHWM']*1024<50_000_000,
+                'under_35_mb_idle':idle['VmRSS']*1024<35_000_000,
+                'disconnect_within_3_mb_idle':(disconnected['VmRSS']-idle['VmRSS'])*1024<3_000_000,'under_500_ms_snapshot':snapshot_ms<500,
                 'allocator_env':{k:v for k,v in env.items() if k.startswith('MIMALLOC_')}}
         pathlib.Path(args.output).write_text(json.dumps(result,indent=2)+'\n')
         print(json.dumps(result,indent=2))
+        assert result['under_50_mb'] and result['under_35_mb_idle'] and result['under_500_ms_snapshot'] and result['disconnect_within_3_mb_idle'], 'real-profile budget exceeded'
     finally:
         if watch is not None: watch.terminate();watch.wait(timeout=10)
         process.terminate();process.wait(timeout=10)
