@@ -114,7 +114,7 @@ impl ClaudeProvider {
         if let Some(effort) = effort {
             cmd.arg("--effort").arg(effort);
         }
-        if input.thread_id == "discovery" {
+        if input.thread_id == "discovery" || input.runtime_mode == "text-only" {
             settings["disableAllHooks"] = json!(true);
             cmd.args([
                 "--no-session-persistence",
@@ -127,6 +127,15 @@ impl ClaudeProvider {
             .env("ENABLE_CLAUDEAI_MCP_SERVERS", "false")
             .env("CLAUDE_CODE_AUTO_CONNECT_IDE", "0")
             .env("CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL", "1");
+        }
+        if input.runtime_mode == "text-only" {
+            cmd.args([
+                "--tools",
+                "",
+                "--disable-slash-commands",
+                "--setting-sources",
+                "",
+            ]);
         }
         cmd.arg("--settings").arg(settings.to_string());
         if let Some(id) = input.model_selection["nativeForkSource"].as_str() {
@@ -305,7 +314,7 @@ impl ClaudeProvider {
                 }
             }
         }.await;
-        if matches!(result, Ok(true)) {
+        if matches!(result, Ok(true)) && input.runtime_mode != "text-only" {
             let stamp = tokio::time::Instant::now();
             session.idle_since = stamp;
             let thread_id = input.thread_id.clone();

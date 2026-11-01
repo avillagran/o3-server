@@ -148,6 +148,14 @@ pub fn update(s: &State, p: &Value) -> Result<Value, String> {
         v["backgroundActivity"]["overrides"] = overrides.clone();
     }
     if let Some(selection) = patch.get("textGenerationModelSelection") {
+        if selection.is_object()
+            && selection.get("instanceId").is_none()
+            && v["textGenerationModelSelection"]
+                .get("instanceId")
+                .is_none()
+        {
+            v["textGenerationModelSelection"]["instanceId"] = json!("codex");
+        }
         if selection.get("options").is_none()
             && (selection.get("model").is_some() || selection.get("instanceId").is_some())
         {

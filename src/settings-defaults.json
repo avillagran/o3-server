@@ -79,14 +79,5 @@
   "automaticGitFetchInterval": 300000,
   "providerHealthRefreshInterval": 300000,
   "backgroundActivityProfile": "balanced",
-  "textGenerationModelSelection": {
-    "instanceId": "codex",
-    "model": "gpt-6-luna",
-    "options": [
-      {
-        "id": "reasoningEffort",
-        "value": "low"
-      }
-    ]
-  }
+  "textGenerationModelSelection": null
 }
