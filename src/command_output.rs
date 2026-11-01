@@ -3,8 +3,8 @@
 //! A provider reports a command with `CommandEvent`s. Output chunks only update a bounded tail held
 //! here; the turn item is persisted when the command starts and again when it finishes. Subscribers
 //! hold an absolute offset into the tail, so a slow viewer is sent a `replace` of the tail instead of
-//! a queue of appends. Terminal escape folding (cursor addressing) is not implemented: the tail is
-//! plain text cut at line boundaries.
+//! a queue of appends. Progress folding handles CR, backspace and bounded CSI sequences;
+//! arbitrary multi-line terminal emulation is deliberately outside this surface.
 use crate::{
     events::{append, get, put},
     store::{iso, now_ms, State},
@@ -46,11 +46,102 @@ struct Tail {
     start: u64,
     total: u64,
     truncated: bool,
+    cursor: usize,
+    escape: String,
+    rewritten: u64,
 }
 impl Tail {
     fn push(&mut self, chunk: &str) {
-        self.text.push_str(chunk);
-        self.total += chunk.len() as u64;
+        let plain = self.escape.is_empty()
+            && !chunk.chars().any(|c| c.is_control() && c != '\n')
+            && self.cursor == self.text.rsplit('\n').next().unwrap_or("").chars().count();
+        if plain {
+            self.text.push_str(chunk);
+            self.cursor = self.text.rsplit('\n').next().unwrap_or("").chars().count();
+            self.total += chunk.len() as u64;
+        } else {
+            self.rewritten += 1;
+            for c in chunk.chars() {
+                let line_start = self.text.rfind('\n').map_or(0, |n| n + 1);
+                if !self.escape.is_empty() {
+                    self.escape.push(c);
+                    if self.escape.len() > 64 {
+                        self.escape.clear();
+                        continue;
+                    }
+                    if self.escape.starts_with("\x1b[") && c.is_ascii_alphabetic() {
+                        let n = self.escape[2..self.escape.len() - 1]
+                            .parse::<usize>()
+                            .unwrap_or(1)
+                            .min(TAIL_BYTES);
+                        let len = self.text[line_start..].chars().count();
+                        match c {
+                            'G' => self.cursor = n.saturating_sub(1),
+                            'C' => self.cursor = self.cursor.saturating_add(n).min(TAIL_BYTES),
+                            'D' => self.cursor = self.cursor.saturating_sub(n),
+                            'K' => {
+                                let mode = &self.escape[2..self.escape.len() - 1];
+                                if mode == "2" {
+                                    self.text.truncate(line_start);
+                                } else if mode.is_empty() || mode == "0" {
+                                    let end = self.text[line_start..]
+                                        .char_indices()
+                                        .nth(self.cursor)
+                                        .map_or(self.text.len(), |(i, _)| line_start + i);
+                                    self.text.truncate(end);
+                                }
+                            }
+                            _ => {}
+                        }
+                        self.cursor = self.cursor.min(len.max(TAIL_BYTES));
+                        self.escape.clear();
+                    } else if self.escape.starts_with("\x1b]") {
+                        if c == '\x07' || self.escape.ends_with("\x1b\\") {
+                            self.escape.clear();
+                        }
+                    } else if self.escape.len() == 2 && c != '[' && c != ']' {
+                        self.escape.clear();
+                    }
+                    continue;
+                }
+                match c {
+                    '\x1b' => self.escape.push(c),
+                    '\r' => self.cursor = 0,
+                    '\x08' => self.cursor = self.cursor.saturating_sub(1),
+                    '\n' => {
+                        self.text.push('\n');
+                        self.cursor = 0;
+                    }
+                    c if !c.is_control() || c == '\t' => {
+                        let mut line: Vec<char> = self.text[line_start..].chars().collect();
+                        let value = if c == '\t' { ' ' } else { c };
+                        while line.len() < self.cursor {
+                            line.push(' ');
+                        }
+                        if self.cursor < line.len() {
+                            line[self.cursor] = value;
+                        } else {
+                            line.push(value);
+                        }
+                        self.cursor += 1;
+                        self.text.truncate(line_start);
+                        self.text.extend(line);
+                    }
+                    _ => {}
+                }
+                // Enforce the bound during a single large chunk too.
+                if self.text.len() > 2 * TAIL_BYTES {
+                    let mut cut = self.text.len() - TAIL_BYTES;
+                    while !self.text.is_char_boundary(cut) {
+                        cut += 1;
+                    }
+                    self.text.drain(..cut);
+                    self.truncated = true;
+                }
+            }
+            self.total += chunk.len() as u64 + self.text.len() as u64;
+            self.start = self.total - self.text.len() as u64;
+        }
         if self.text.len() > TAIL_BYTES {
             let excess = self.text.len() - TAIL_BYTES;
             let mut cut = excess;
@@ -141,6 +232,11 @@ fn persisted(output: Option<&str>) -> (String, bool) {
     let Some(out) = output else {
         return (String::new(), false);
     };
+    if out.chars().any(|c| matches!(c, '\r' | '\x1b' | '\x08')) {
+        let mut folded = Tail::default();
+        folded.push(out);
+        return (folded.text, folded.truncated);
+    }
     if out.len() <= MAX_FINAL_BYTES {
         return (out.to_owned(), false);
     }
@@ -162,6 +258,7 @@ pub struct Cursor {
     replace: bool,
     done: bool,
     waiting: bool,
+    rewritten: u64,
 }
 
 impl Cursor {
@@ -200,7 +297,8 @@ impl Cursor {
             }
         } else if let Some(t) = tail {
             let behind = self.sent < t.start || t.total - self.sent > MAX_APPEND_BYTES;
-            if self.replace || behind {
+            if self.replace || behind || self.rewritten != t.rewritten {
+                self.rewritten = t.rewritten;
                 self.replace = false;
                 self.sent = t.total;
                 json!({"kind":"replace","text":t.text,"truncated":t.truncated,"running":true})
@@ -244,6 +342,7 @@ pub fn open_stream(s: &State, p: &Value) -> Result<Cursor, Value> {
         replace: true,
         done: false,
         waiting: false,
+        rewritten: 0,
     })
 }
 
@@ -378,5 +477,22 @@ impl crate::provider::Provider for ScriptedCommandProvider {
             .await?;
             send(Completed).await
         })
+    }
+}
+
+#[cfg(test)]
+mod progress_tests {
+    use super::*;
+    #[test]
+    fn progress_rewrites_split_controls_and_bounds_unicode() {
+        let mut t = Tail::default();
+        t.push("step 100%");
+        t.push("\rstep 2\x1b[");
+        t.push("K\nnext\x08!");
+        assert_eq!(t.text, "step 2\nnex!");
+        assert!(t.rewritten > 0);
+        t.push(&"é".repeat(TAIL_BYTES));
+        assert!(t.text.len() <= TAIL_BYTES);
+        assert!(t.truncated);
     }
 }

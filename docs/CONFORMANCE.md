@@ -1102,3 +1102,13 @@ provider child memory is excluded. Aggregate evidence: [rss-implementation.json]
    with hidden link destinations/context chips and displayed skill labels.
    Rich file labels, legacy context envelopes, citations, artifacts and the full
    upstream Markdown plugin pipeline remain partial; no row is promoted.
+
+3. Command tails fold carriage returns, backspaces and bounded CSI erase-line,
+   absolute column and relative horizontal cursor sequences across input chunks.
+   Rewrites force replacement frames so previously emitted progress is corrected;
+   rendered retention stays 64 KiB. This is not a full multi-line VT emulator.
+   Installed Claude 2.1.316 was run in a private disk home with only Bash enabled,
+   hooks/MCP disabled and no session persistence. A printf/sleep-2/printf command
+   emitted tool_use at 1.97 s and both output lines in one tool_result at 4.00 s;
+   partial stream frames carried tool input JSON, not command output. Consequently
+   Claude command output remains completion-only on this observed protocol.
