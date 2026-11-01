@@ -31,11 +31,8 @@ fn main() -> std::io::Result<()> {
     // operator setting; the default delayed purge otherwise needs more allocations
     // on the same worker and can retain a finished snapshot indefinitely.
     if std::env::var_os("MIMALLOC_PURGE_DELAY").is_none() {
-        unsafe extern "C" {
-            fn mi_option_set(option: libc::c_int, value: libc::c_long);
-        }
         unsafe {
-            mi_option_set(15, 0);
+            libmimalloc_sys::mi_option_set(15, 0);
         }
     }
     let args: Vec<_> = std::env::args().skip(1).collect();

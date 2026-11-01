@@ -134,6 +134,7 @@ fn upgrade(state: Arc<State>, session: Value, mut request: Request<Incoming>) ->
             )
             .await;
         }
+        crate::heap::collect();
     });
     let mut response = Response::new(body::empty());
     *response.status_mut() = StatusCode::SWITCHING_PROTOCOLS;
@@ -312,10 +313,7 @@ pub async fn serve(listener: TcpListener, state: Arc<State>) -> std::io::Result<
         .unwrap()
         .execute_batch("PRAGMA shrink_memory")
         .map_err(std::io::Error::other)?;
-    #[cfg(all(target_os = "linux", target_env = "gnu"))]
-    unsafe {
-        libc::malloc_trim(0);
-    }
+    crate::heap::collect();
     crate::scheduled::ensure_started(&state);
     loop {
         let (socket, _) = listener.accept().await?;
@@ -323,6 +321,7 @@ pub async fn serve(listener: TcpListener, state: Arc<State>) -> std::io::Result<
         let state = state.clone();
         tokio::spawn(async move {
             let _ = serve_io(socket, state).await;
+            crate::heap::collect();
         });
     }
 }
