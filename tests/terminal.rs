@@ -469,19 +469,19 @@ fn output_flow_control_bounds_unacknowledged_chunks() {
     .access_token
     .to_string();
     let addr = s.base.trim_start_matches("http://").to_owned();
-    // A producer far faster than a client that never acknowledges.
-    write(
-        &c,
-        "t1",
-        "term-1",
-        "yes 0123456789abcdef0123456789abcdef | head -c 3000000; echo ENDED\n",
-    );
+    let finished = cwd.join("producer-finished");
     tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
         let tcp = tokio::net::TcpStream::connect(&addr).await.unwrap();
         let mut request = format!("ws://{addr}/ws?orchestrationProtocol=2").into_client_request().unwrap();
         request.headers_mut().insert("Authorization", format!("Bearer {token}").parse().unwrap());
         let (mut ws, _) = tokio_tungstenite::client_async(request, tcp).await.unwrap();
         ws.send(Message::Text(json!({"_tag":"Request","id":"a","tag":"terminal.attach","payload":{"threadId":"t1","terminalId":"term-1"},"headers":[]}).to_string().into())).await.unwrap();
+        // Subscribe before producing: otherwise the entire burst can be swallowed
+        // by the initial snapshot and never exercise live flow control.
+        let first = tokio::time::timeout(T, ws.next()).await.unwrap().unwrap().unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&first.into_text().unwrap()).unwrap()["_tag"], "Chunk");
+        ws.send(Message::Text(json!({"_tag":"Ack","requestId":"a"}).to_string().into())).await.unwrap();
+        write(&c, "t1", "term-1", "yes 0123456789abcdef0123456789abcdef | head -c 3000000; : > producer-finished\n");
         let mut chunks = 0;
         let mut bytes = 0;
         // Initial delivery may wait for the busy test runtime; the flow-control quiet window starts after the first chunk.
@@ -495,18 +495,24 @@ fn output_flow_control_bounds_unacknowledged_chunks() {
         }
         assert!((1..=8).contains(&chunks), "unacknowledged chunks must stay within the window: {chunks}");
         assert!(bytes < 8 * 80 * 1024, "{bytes}");
+        // A quiet socket is not proof the shell finished. Synchronize with
+        // the producer independently of this intentionally blocked stream.
+        assert!(wait_for(T, || finished.exists()), "producer did not finish");
         // Acknowledging what it received reopens the window.
         for _ in 0..chunks {
             ws.send(Message::Text(json!({"_tag":"Ack","requestId":"a"}).to_string().into())).await.unwrap();
         }
         // Acknowledging as it goes, the subscriber reaches the present: a later write arrives.
-        write(&c, "t1", "term-1", "echo AFTER-ACK\n");
-        let mut seen = String::new();
-        while !seen.contains("AFTER-ACK") {
+        write(&c, "t1", "term-1", "printf '%s%s\\n' AFTER- ACK\n");
+        let mut seen = Screen::default();
+        while !seen.text.contains("AFTER-ACK\r\n") {
             let m = tokio::time::timeout(Duration::from_secs(10), ws.next()).await.expect("chunk after ack").unwrap().unwrap();
             let text = m.into_text().unwrap();
-            if serde_json::from_str::<Value>(&text).unwrap()["_tag"] == "Chunk" {
-                seen.push_str(&text);
+            let frame: Value = serde_json::from_str(&text).unwrap();
+            if frame["_tag"] == "Chunk" {
+                for event in frame["values"].as_array().unwrap() {
+                    seen.feed(event);
+                }
                 ws.send(Message::Text(json!({"_tag":"Ack","requestId":"a"}).to_string().into())).await.unwrap();
             }
         }
