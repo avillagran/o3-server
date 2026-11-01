@@ -1,5 +1,5 @@
 {
-  "measured_at_utc": "2026-11-01T00:17:44Z",
+  "measured_at_utc": "2026-11-01T00:21:49Z",
   "binary_sha256": "1b46c614bbc3f7a26f9138cc6f5da35b744841c30a0a9c35011d1f3e73e16989",
   "binary": "/var/tmp/o3-build/main/release/o3-server",
   "binary_bytes": 11986184,
@@ -9,24 +9,24 @@
   "unary_calls": 1000,
   "text_bytes_per_message": 1000,
   "cold_kib": {
-    "VmHWM": 22488,
-    "VmRSS": 22488,
-    "RssAnon": 13040
+    "VmHWM": 14792,
+    "VmRSS": 14792,
+    "RssAnon": 6876
   },
   "seeded_kib": {
-    "VmHWM": 36192,
-    "VmRSS": 35428,
-    "RssAnon": 24076
+    "VmHWM": 32692,
+    "VmRSS": 32692,
+    "RssAnon": 21460
   },
   "subscribed_kib": {
-    "VmHWM": 42284,
-    "VmRSS": 42284,
-    "RssAnon": 30932
+    "VmHWM": 39404,
+    "VmRSS": 39404,
+    "RssAnon": 28108
   },
   "after_churn_kib": {
-    "VmHWM": 42284,
-    "VmRSS": 42284,
-    "RssAnon": 30932
+    "VmHWM": 39404,
+    "VmRSS": 39404,
+    "RssAnon": 28108
   },
   "snapshot_messages": [
     10,
@@ -34,6 +34,7 @@
     10
   ],
   "under_50_mib": true,
+  "under_50_mb": true,
   "providers": [
     {
       "instanceId": "claudeAgent",

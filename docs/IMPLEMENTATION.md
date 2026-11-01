@@ -98,3 +98,5 @@ after 60 seconds idle. Claude's advertised default instance is claudeAgent; old 
 and claude-code selections remain aliases. See CONFORMANCE.md for scope and evidence.
 
 Current local validation: 101 tests pass, 3 live/reference tests ignored; strict clippy passes. Desktop embedded management has isolated real-client proof (E2E.md). See RECOVERY.md for handoff guarantees and remaining gaps.
+
+Final no-default-features validation: 100 tests pass, 3 ignored. Desktop OmaBridge-filtered tests: 20 pass. The complete desktop suite was not run.

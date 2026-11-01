@@ -70,8 +70,9 @@ with tempfile.TemporaryDirectory(prefix='o3-rss-',dir='/var/tmp/o3-build') as te
   for i in range(1000):churn.rpc('server.getSettings',{})
   churn.s.close();time.sleep(.2)
   final=memory(process.pid)
-  result={'measured_at_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'binary':str(binary),'binary_bytes':binary.stat().st_size,'seed_messages':1000,'threads':20,'subscribers':3,'unary_calls':1000,'text_bytes_per_message':1000,'cold_kib':cold,'seeded_kib':idle,'subscribed_kib':subscribed,'after_churn_kib':final,'snapshot_messages':counts,'under_50_mib':final['VmHWM']<50*1024,'providers':[{'instanceId':p['instanceId'],'installed':p.get('installed'),'status':p.get('status')} for p in providers],'bridge_enabled':True,'provider_workload':'registered and probed; inference excluded (defer_start)','measurement':'Linux /proc/PID/status; disk profile under /var/tmp','allocator_env':{k:v for k,v in env.items() if k.startswith('MIMALLOC_')}}
+  result={'measured_at_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'binary':str(binary),'binary_bytes':binary.stat().st_size,'seed_messages':1000,'threads':20,'subscribers':3,'unary_calls':1000,'text_bytes_per_message':1000,'cold_kib':cold,'seeded_kib':idle,'subscribed_kib':subscribed,'after_churn_kib':final,'snapshot_messages':counts,'under_50_mib':final['VmHWM']<50*1024,'under_50_mb':final['VmHWM']*1024<50_000_000,'providers':[{'instanceId':p['instanceId'],'installed':p.get('installed'),'status':p.get('status')} for p in providers],'bridge_enabled':True,'provider_workload':'registered and probed; inference excluded (defer_start)','measurement':'Linux /proc/PID/status; disk profile under /var/tmp','allocator_env':{k:v for k,v in env.items() if k.startswith('MIMALLOC_')}}
   print(json.dumps(result,indent=2))
+  assert result['under_50_mb'], 'server HWM exceeded 50 MB'
   for ws in subscribers:ws.s.close()
 
  finally:

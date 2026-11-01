@@ -74,6 +74,8 @@ failures. Strict all-target clippy, fmt and diff checks pass. An earlier full ru
 hit the pre-existing `scrollback_is_bounded_per_terminal` timing assumption; the
 terminal suite retry and final full suite pass. This does not certify that flake fixed.
 
-Final `tools/bench-rss` release workload: VmHWM 42,284 KiB (43.30 MB), below 50 MB;
+Final `tools/bench-rss` release workload: VmHWM 39,404 KiB (40.35 MB), below 50 MB;
 20 threads, 1,000 deferred messages, 3 subscribers, 1,000 settings calls. Bridge is
 active, providers registered/probed, inference excluded. See rss-measurement.json.
+
+The final desktop E2E also verifies that an explicit standalone route state directory overrides embedded auto-discovery. Desktop OmaBridge-filtered tests: 20 pass.

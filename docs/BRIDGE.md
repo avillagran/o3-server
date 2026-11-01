@@ -142,4 +142,4 @@ nice cargo test -j 4 --manifest-path /home/node/Work/omabridge-embed/Cargo.toml 
 The integrated main workload and binary hash supersede these branch-local RSS
 figures; see rss-measurement.json and IMPLEMENTATION.md for current results.
 
-The registered local `feat/embed` worktree is now `/home/node/Work/omabridge-embed`, preserving commit 44cc7fa. Cargo no longer depends on the historical `/var/tmp` checkout. The cross-filesystem relocation used a copy plus `git worktree repair`; the old directory is an unused archival copy, not a registered worktree. No push.
+The registered local `feat/embed` worktree is now `/home/node/Work/omabridge-embed`, preserving commit 44cc7fa. Cargo no longer depends on the historical `/var/tmp` checkout. The cross-filesystem relocation used a copy plus `git worktree repair`; the old copy was byte-compared (excluding `.git`) and removed after repairing the registration. No push.

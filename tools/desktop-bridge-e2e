@@ -73,7 +73,15 @@ with tempfile.TemporaryDirectory(prefix='db-', dir=root) as temp:
         finally:
             guest_process.terminate()
             guest_process.wait(timeout=10)
-        print(json.dumps({'status':'pass','available':True,'identity':True,'peers':0,'read':True,'publish':True,'unpublish':True,'pairing':True,'pairedPeers':1,'t3Pair':True,'forward':True}))
+        routes=p/'config/omarchy-t3-code/omabridge-routes.json'
+        routes.parent.mkdir(parents=True,exist_ok=True)
+        explicit=p/'standalone'
+        routes.write_text(json.dumps({'version':1,'stateDir':str(explicit),'routes':{}}))
+        selected=call('omabridge-status')
+        assert selected['stateDir']==str(explicit) and not selected['available'],selected
+        routes.unlink()
+        assert call('omabridge-status')['available']
+        print(json.dumps({'status':'pass' ,'available':True,'identity':True,'peers':0,'read':True,'publish':True,'unpublish':True,'pairing':True,'pairedPeers':1,'t3Pair':True,'forward':True}))
     finally:
         process.terminate()
         try: process.wait(timeout=10)
