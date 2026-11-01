@@ -339,6 +339,7 @@ impl CodexProvider {
                     _=cancel.changed()=>continue,
                     action=control.recv()=>match action {
                         Some(ProviderControl::Interrupt)|None=>{ c.call("turn/interrupt",json!({"threadId":tid,"turnId":turn})).await?; output.send(ProviderEvent::Interrupted).await.map_err(|_| "receiver closed")?; return Ok(()); },
+                        Some(ProviderControl::SteerContent(content))=>{ c.call("turn/steer",json!({"threadId":tid,"expectedTurnId":turn,"input":content})).await?; },
                         Some(ProviderControl::Steer(text))=>{ c.call("turn/steer",json!({"threadId":tid,"expectedTurnId":turn,"input":[{"type":"text","text":text,"text_elements":[]}]})).await?; },
                         Some(ProviderControl::Respond{request_id,decision,answers,..})=>{
                             let (id,method)=pending.remove(&request_id).ok_or("Unknown Codex native request")?;

@@ -32,6 +32,7 @@ pub enum ProviderEvent {
 }
 pub enum ProviderControl {
     Steer(String),
+    SteerContent(Vec<serde_json::Value>),
     Interrupt,
     Respond {
         request_id: String,
@@ -104,6 +105,7 @@ impl Provider for ScriptedProvider {
                 tokio::select! {
                     c=control.recv()=>match c {
                         Some(ProviderControl::Respond{..})=>return output.send(ProviderEvent::Completed).await.map_err(|_|"receiver closed".into()),
+                        Some(ProviderControl::SteerContent(content))=>output.send(ProviderEvent::TextDelta(content[0]["text"].as_str().unwrap_or("").into())).await.map_err(|_|"receiver closed")?,
                         Some(ProviderControl::Steer(text))=>output.send(ProviderEvent::TextDelta(text)).await.map_err(|_|"receiver closed")?,
                         _=>return Ok(()),
                     },
@@ -342,6 +344,7 @@ fn persist(
     match event {
         ProviderEvent::Codex(frame) => {
             crate::codex_projection::persist(&tx, tid, rid, &thread, &mut run, &at, frame)?;
+            thread = get(&tx, "thread", tid)?;
         }
         ProviderEvent::Native(frame) => {
             crate::claude_projection::persist(&tx, tid, rid, &mut thread, &mut run, &at, &frame)?;

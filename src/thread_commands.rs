@@ -492,12 +492,13 @@ fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outco
                 .try_reserve_owned()
                 .map_err(|_| "provider control busy")?;
             let mut message = get(tx, "messages", &mid)?;
-            if message["attachments"]
-                .as_array()
-                .is_some_and(|a| !a.is_empty())
-            {
-                return Err("steering attachments unsupported".into());
-            }
+            let content = crate::provider_input::materialize(
+                &crate::assets::attachments_dir(s),
+                message["text"].as_str().unwrap_or(""),
+                &message["attachments"],
+                message.get("context"),
+                crate::provider_input::driver(s, &t["providerInstanceId"])? != "codex",
+            )?;
             queued["status"] = json!("cancelled");
             queued["completedAt"] = json!(at);
             queued["queuePosition"] = Value::Null;
@@ -512,9 +513,7 @@ fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outco
             crate::projection::save_item(tx, tid, &t, item)?;
             steer = Some((
                 permit,
-                crate::provider::ProviderControl::Steer(
-                    message["text"].as_str().unwrap_or("").into(),
-                ),
+                crate::provider::ProviderControl::SteerContent(content),
             ));
             crate::events::sequence(tx)?
         }

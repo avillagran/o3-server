@@ -677,3 +677,58 @@ honestly, without claiming it is healthy. `tools/bench-rss` completed with HWM
 [rss-config.json](rss-config.json). This workload excludes inference and its child
 process RSS; it does not certify live provider quota exhaustion/reset. No emulator,
 service/profile deployment or public route change was performed.
+
+## Launch and dispatch reader closure (2026-11-01)
+
+This checkpoint supersedes the launch/dispatch gaps in earlier tables.
+`tests/orchestration_readers.rs` uses the pinned real Connection and native stdio
+peers for both providers. Reused launch applies the requested model before staging
+the initial run; the peer asserts the override on Codex turn/start. Imported strong
+native references and metadata are stored before the initial run, and Codex resumes
+the imported id. Launch receipt replay returns the original result. generateTitle
+uses the same bounded first-message title policy as thread.metadata.update; semantic
+provider-generated titles remain an accepted difference (no client relies on title
+wording). Existing provider_input tests cover workspace rollback and occupied reuse.
+Direct and queued-to-active steering now deliver uploaded image/file bytes and
+serialized context through Claude user content and Codex turn/steer. Invalid/missing
+uploads fail before the durable control handoff. Message projections retain uploads.
+
+Permission reader audit (read-only source check): shared `src/approvals.rs:7,17,27,73`
+reads live runtimeRequests, approval_request items, offered decisions and response
+capability; `src/api/orchestration.rs:462,550,850` validates decisions. Desktop
+`src/write.rs:163,173,198,211` uses that reducer and sends thread.runtime-mode.set
+before dispatch when the permission selector changes. Android uses shared reducers.
+Search terms: `approvalPolicies|permissionRule|revoke|acceptAlways`, across shared
+Rust src, desktop src/ui and Android app/core src. Auth/device/bridge revocation
+hits are distinct APIs and unchanged. No inference-policy CRUD/revocation command
+is exposed by these readers. Accepted difference: exact-operation acceptAlways
+consent, scoped by thread/provider/project/worktree, instead of broad native glob
+rules; generic questions and mode changes cannot acquire wildcard consent. Changing
+runtime mode or model selection now deletes previous thread consent, so restoring
+an earlier mode cannot silently restore grants. `provider_input` proves persistence,
+automatic repeat acceptance and a fresh pending approval after mode revocation.
+Native plan acceptance and structured-question tests still apply.
+
+Accepted recovery boundary for dispatch: receipts acknowledge durable acceptance,
+not original-process native delivery. RECOVERY.md and the outbox retain uncertain
+controls without blind replay; active_recovery tests prove explicit new-turn
+continuation. No exact original-inference reattachment is claimed. With the positive
+reader evidence above, dispatchCommand and launchThread are promoted to done.
+
+Codex rate-limit windows now project the latest exhausted-window reset to shell;
+non-exhausted windows clear it, while sparse metadata-only updates preserve it.
+A failed turn with codexErrorInfo=usageLimitExceeded sets lastErrorClass=usage_limit;
+the next successful run clears the shell failure class. Claude rejected rate limits
+also mark that run's error class. `codex_quota_failure_and_reset_reach_shell_reader`
+proves both fields through real subscribeShell snapshots using a schema-based
+synthetic stdio peer. This is **not** an exhausted-account capture. The repository's
+real Codex capture (15 frames in real-0.166.0.ndjson) contains no usage-limit failure, and the reference fixtures have
+only synthesized projection errors. The required realistic captured failure frame
+is unavailable: subscribeShell remains partial pending that evidence. No credentials
+or private live profiles were inspected to manufacture quota exhaustion.
+
+Validation: 158 default / 156 no-default all-target tests pass (six explicit opt-in
+ignores each); strict Clippy in both configurations, fmt, gen-compat and diff checks.
+`tools/bench-rss` completed with bridge enabled: HWM 15,804 KiB (16.18 MB), below
+50 MB; 1,000 messages, 20 threads, three subscribers and 1,000 unary calls, inference
+excluded. Sanitized aggregate evidence: [rss-orchestration.json](rss-orchestration.json).

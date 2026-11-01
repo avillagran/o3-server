@@ -338,6 +338,9 @@ pub(crate) fn persist(
         }
         "rate_limit" => {
             let info = &f["info"];
+            if info["status"] == "rejected" {
+                run["errorClass"] = json!("usage_limit");
+            }
             t["usageLimitResetAt"] = if info["status"] == "rejected" {
                 info["resetsAt"]
                     .as_i64()

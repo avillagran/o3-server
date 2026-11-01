@@ -232,6 +232,7 @@ impl ClaudeProvider {
                             output.send(ProviderEvent::Interrupted).await.map_err(|_| "receiver closed")?;
                             return Ok(false);
                         },
+                        Some(ProviderControl::SteerContent(content))=>session.send(json!({"type":"user","message":{"role":"user","content":content},"parent_tool_use_id":null,"session_id":session.native})).await?,
                         Some(ProviderControl::Steer(text))=>session.prompt(&text).await?,
                         Some(ProviderControl::Respond{request_id,decision,feedback,answers})=>{
                             let native=request_id.strip_prefix(&format!("{}:",input.run_id)).ok_or("foreign Claude request")?;

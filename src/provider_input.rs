@@ -4,16 +4,32 @@ use base64::Engine;
 use serde_json::{json, Value};
 
 pub(crate) fn content(input: &RunInput, claude: bool) -> Result<Vec<Value>, String> {
-    let mut text = input.text.clone();
-    if let Some(context) = input.context.as_ref().filter(|c| !c.is_null()) {
+    materialize(
+        &input.attachment_root,
+        &input.text,
+        &input.attachments,
+        input.context.as_ref(),
+        claude,
+    )
+}
+
+pub(crate) fn materialize(
+    root: &std::path::Path,
+    text: &str,
+    attachments: &Value,
+    context: Option<&Value>,
+    claude: bool,
+) -> Result<Vec<Value>, String> {
+    let mut text = text.to_owned();
+    if let Some(context) = context.filter(|c| !c.is_null()) {
         text.push_str("\n\nAdditional context supplied by the user:\n");
         text.push_str(&serde_json::to_string(context).map_err(|e| e.to_string())?);
     }
     let mut out = vec![json!({"type":"text","text":text})];
-    for a in input.attachments.as_array().into_iter().flatten() {
+    for a in attachments.as_array().into_iter().flatten() {
         let id = a["id"].as_str().ok_or("attachment id required")?;
-        let path = crate::assets::attachment_path_in(&input.attachment_root, id)
-            .ok_or("uploaded attachment is missing")?;
+        let path =
+            crate::assets::attachment_path_in(root, id).ok_or("uploaded attachment is missing")?;
         let name = a["name"].as_str().unwrap_or(id);
         let mime = a["mimeType"].as_str().unwrap_or("application/octet-stream");
         if matches!(
@@ -47,4 +63,18 @@ pub(crate) fn content(input: &RunInput, claude: bool) -> Result<Vec<Value>, Stri
         return Err("provider input exceeds 8 MiB".into());
     }
     Ok(out)
+}
+
+/// Resolve configured native drivers as well as the built-in instance IDs.
+pub(crate) fn driver(s: &crate::store::State, instance: &Value) -> Result<String, String> {
+    let id = instance.as_str().ok_or("provider instance required")?;
+    let settings = crate::settings::read(s)?;
+    Ok(settings["providerInstances"][id]["driver"]
+        .as_str()
+        .unwrap_or(if id == "codex" {
+            "codex"
+        } else {
+            "claudeAgent"
+        })
+        .to_owned())
 }

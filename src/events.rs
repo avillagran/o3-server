@@ -114,6 +114,7 @@ pub(crate) fn shell_thread(db: &Connection, t: &Value) -> Result<Value> {
         t["activityRunStatus"] = run["status"].clone();
         t["activityRunStartedAt"] = run["startedAt"].clone();
         t["lastError"] = run["error"].clone();
+        t["lastErrorClass"] = run["errorClass"].clone();
         t["status"] = run["status"].clone();
         if matches!(
             run["status"].as_str(),
@@ -410,6 +411,13 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             {
                 return Err("unsupported interaction mode".into());
             }
+            if t[key] != *value && matches!(key, "runtimeMode" | "modelSelection") {
+                tx.execute(
+                    "DELETE FROM records WHERE kind='approvalPolicies' AND thread_id=?",
+                    [tid],
+                )
+                .map_err(|e| e.to_string())?;
+            }
             t[key] = value.clone();
             match kind {
                 "thread.model-selection.set" => "thread.model-selection-updated",
@@ -429,9 +437,16 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                     return Err("target run is not active in this thread".into());
                 }
                 let text = c["text"].as_str().ok_or("text required")?;
-                if c["attachments"].as_array().is_none_or(|a| !a.is_empty()) {
-                    return Err("steering attachments are unsupported".into());
+                if !c["attachments"].is_array() {
+                    return Err("attachments required".into());
                 }
+                let content = crate::provider_input::materialize(
+                    &crate::assets::attachments_dir(s),
+                    text,
+                    &c["attachments"],
+                    c.get("context"),
+                    crate::provider_input::driver(s, &t["providerInstanceId"])? != "codex",
+                )?;
                 let sender = s
                     .active
                     .lock()
@@ -443,7 +458,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                     .try_reserve_owned()
                     .map_err(|_| "provider control busy")?;
                 let mid = c["messageId"].as_str().ok_or("messageId required")?;
-                let m = json!({"id":mid,"threadId":tid,"runId":rid,"nodeId":rid,"role":"user","text":text,"attachments":[],"streaming":false,"createdBy":"user","creationSource":"web","createdAt":at,"updatedAt":at});
+                let m = json!({"id":mid,"threadId":tid,"runId":rid,"nodeId":rid,"role":"user","text":text,"attachments":c["attachments"],"context":c["context"],"streaming":false,"createdBy":"user","creationSource":"web","createdAt":at,"updatedAt":at});
                 put(&tx, "messages", mid, tid, &m)?;
                 append(&tx, tid, "message.updated", m.clone(), &t)?;
                 let mut item = message_item(&tx, tid, &m)?;
@@ -466,7 +481,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                 .map_err(|e| e.to_string())?;
                 tx.commit().map_err(|e| e.to_string())?;
                 drop(db);
-                permit.send(crate::provider::ProviderControl::Steer(text.into()));
+                permit.send(crate::provider::ProviderControl::SteerContent(content));
                 crate::outbox::handed_off(s, cid)?;
                 s.notify();
                 return Ok(result);
@@ -924,6 +939,47 @@ pub fn launch(s: &std::sync::Arc<State>, p: &Value) -> Result<Value> {
             append(&tx, &tid, "thread.created", thread.clone(), &thread)?;
             thread
         };
+        if p.get("initialMessage").is_some() {
+            thread["modelSelection"] = p["modelSelection"].clone();
+            thread["providerInstanceId"] = p["modelSelection"]["instanceId"].clone();
+        }
+        if p["generateTitle"] == true {
+            if let Some(text) = p["initialMessage"]["text"].as_str() {
+                let title = text.split_whitespace().collect::<Vec<_>>().join(" ");
+                if !title.is_empty() {
+                    thread["title"] = json!(title.chars().take(80).collect::<String>());
+                }
+            }
+        }
+        if let Some(imported) = p.get("importedNativeThread") {
+            let native = imported["ref"]["nativeId"]
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .ok_or("nativeId required")?;
+            let driver = imported["ref"]["driver"]
+                .as_str()
+                .ok_or("native driver required")?;
+            let expected = crate::provider_input::driver(s, &thread["providerInstanceId"])?;
+            if driver != expected || imported["ref"]["strength"] != "strong" {
+                return Err("import requires matching strong native ref".into());
+            }
+            let id = format!("imported-{tid}");
+            let record = json!({"id":id,"appThreadId":tid,"driver":driver,"providerInstanceId":thread["providerInstanceId"],"nativeThreadRef":imported["ref"],"status":"not_loaded","nativeMetadata":imported["metadata"],"pendingBackgroundTasks":[],"createdAt":at,"updatedAt":at});
+            thread["activeProviderThreadId"] = json!(id);
+            if driver == "codex" {
+                thread["codexNativeThreadId"] = json!(native);
+            }
+            put(&tx, "providerThreads", &id, &tid, &record)?;
+            append(&tx, &tid, "provider-thread.updated", record, &thread)?;
+        }
+        put(&tx, "thread", &tid, &tid, &thread)?;
+        append(
+            &tx,
+            &tid,
+            "thread.metadata-updated",
+            thread.clone(),
+            &thread,
+        )?;
         let mut start = None;
         if let Some(m) = p.get("initialMessage") {
             let message = json!({"type":"message.dispatch","commandId":format!("{cid}:initial"),"threadId":tid,"messageId":m["messageId"].as_str().map(str::to_owned).unwrap_or(format!("message-{cid}")),"text":m["text"],"context":m["context"],"attachments":m["attachments"],"dispatchMode":{"type":"start_immediately"}});

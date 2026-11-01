@@ -137,9 +137,9 @@
       "note": "o3-server runs no MCP app host; answers McpAppRequestError(provider-unsupported). tests/admin_reads.rs."
     },
     "orchestration.dispatchCommand": {
-      "status": "partial",
+      "status": "done",
       "priority": "P0",
-      "note": "Durable native background ownership, delayed settlement and pre-binding identity have real-client peer coverage (tests/background.rs). Remaining: native attachment steering, exact inference reattachment (native-session continuation with a new turn is implemented; process-kill peers in tests/active_recovery.rs) and native delivery acknowledgement. Persistent exact-operation consent and both native plan acceptance flows have real-client peer coverage; broad native permission rules/revocation UI remain unsupported."
+      "note": "Reader-equivalent: both native attachment steering paths, scoped exact-operation consent and mode/model revocation; real Connection/native peers in orchestration_readers/provider_input plus background/active_recovery. Broad glob policies and original-process delivery guarantees are accepted differences with reader/recovery evidence in CONFORMANCE.md."
     },
     "orchestration.getArchivedShellSnapshot": {
       "status": "partial",
@@ -187,9 +187,9 @@
       "note": "No client call site in inventory."
     },
     "orchestration.launchThread": {
-      "status": "partial",
+      "status": "done",
       "priority": "P0",
-      "note": "Real-client tests/provider_input.rs covers owned worktree/branch rollback after SQL failure, retry receipts, reused empty-thread workspace metadata, preserved title/model and refusal of occupied threads. Remaining: reused launch initial-message model override, imported-native-thread/generateTitle preparation parity. SQL launch remains transaction-atomic."
+      "note": "Reader-equivalent: reused initial-message model override, strong imported native mapping/resume and deterministic generateTitle, receipt replay; both native peers and real Connection in orchestration_readers, workspace rollback/reuse in provider_input. Semantic title wording accepted in CONFORMANCE.md."
     },
     "orchestration.searchThread": {
       "status": "partial",
@@ -224,7 +224,7 @@
     "orchestration.subscribeShell": {
       "status": "partial",
       "priority": "P0",
-      "note": "Real Connection coverage includes durable native background rosters, result-before-background-completion, interrupt, pre-binding identity, repository snapshots/resolved roots, timestamps/plans/subagents and cursor/replay invariants. Claude rate-limit signals project rejection reset timestamps and clear them on allowed signals. Remaining: live quota failure/reset proof and Codex quota failure/reset projection; independent interleavings follow CONFORMANCE.md."
+      "note": "Real Connection background/identity/replay coverage plus Codex quota failure/reset and usage_limit error class via schema-based synthetic native peer; Claude rejection reset/error class projected. Still partial: required realistic captured exhausted-provider failure frame is unavailable; synthetic evidence is explicitly not a real capture. See CONFORMANCE.md."
     },
     "orchestration.subscribeThread": {
       "status": "done",

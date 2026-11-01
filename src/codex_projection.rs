@@ -112,7 +112,16 @@ pub(crate) fn persist(
         }
         // A native turn result can precede item completion. The supervisor owns
         // the terminal projection, after the adapter drains all owned items.
-        "turn/completed" => {}
+        "turn/completed" => {
+            if p["turn"]["status"] == "failed" {
+                run["errorClass"] = if p["turn"]["error"]["codexErrorInfo"] == "usageLimitExceeded"
+                {
+                    json!("usage_limit")
+                } else {
+                    json!("unknown")
+                };
+            }
+        }
         "turn/started" => {
             run["status"] = json!("running");
             run["rootNodeId"] = json!(rid);
@@ -349,6 +358,35 @@ pub(crate) fn persist(
             let mut session = get(db, "providerSessions", &session_id).unwrap_or(
                 json!({"id":session_id,"providerInstanceId":thread["providerInstanceId"]}),
             );
+            let limits = &p["rateLimits"];
+            let exhausted: Vec<_> = ["primary", "secondary"]
+                .iter()
+                .filter_map(|key| {
+                    let window = &limits[*key];
+                    (window["usedPercent"].as_f64().is_some_and(|v| v >= 100.0)).then_some(window)
+                })
+                .collect();
+            let reset = exhausted
+                .iter()
+                .filter_map(|w| w["resetsAt"].as_i64())
+                .max();
+            let mut updated = get(db, "thread", tid)?;
+            if limits["primary"].is_object() || limits["secondary"].is_object() {
+                updated["usageLimitResetAt"] = reset
+                    .and_then(|v| v.checked_mul(1000))
+                    .filter(|v| time::OffsetDateTime::from_unix_timestamp(*v / 1000).is_ok())
+                    .map(crate::store::iso)
+                    .map(Value::String)
+                    .unwrap_or(Value::Null);
+                put(db, "thread", tid, tid, &updated)?;
+                append(
+                    db,
+                    tid,
+                    "thread.metadata-updated",
+                    updated.clone(),
+                    &updated,
+                )?;
+            }
             session["rateLimits"] = p["rateLimits"].clone();
             session["updatedAt"] = json!(at);
             record(

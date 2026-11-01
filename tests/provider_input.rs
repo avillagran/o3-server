@@ -288,7 +288,7 @@ fn persistent_exact_operation_approval_survives_database_reopen() {
     let c = server.connect();
     c.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"create","threadId":"t","projectId":"p","title":"Approval","modelSelection":{"instanceId":"claudeAgent","model":"test"},"runtimeMode":"approval-required","interactionMode":"default"})).unwrap();
     for i in 0..3 {
-        c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":format!("send{i}"),"messageId":format!("m{i}"),"threadId":"t","text":if i<2{"echo safe"}else{"rm other"},"attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
+        c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":format!("send{i}"),"messageId":format!("m{i}"),"threadId":"t","text":"echo safe","attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
             let p = c
@@ -314,6 +314,25 @@ fn persistent_exact_operation_approval_survives_database_reopen() {
             }
             assert!(Instant::now() < deadline, "{p}");
             std::thread::sleep(Duration::from_millis(20));
+        }
+        if i == 1 {
+            for (id, mode) in [("revoke", "full-access"), ("restore", "approval-required")] {
+                c.rpc("orchestration.dispatchCommand",json!({"type":"thread.runtime-mode.set","commandId":id,"threadId":"t","runtimeMode":mode})).unwrap();
+            }
+            assert_eq!(
+                server
+                    .state
+                    .db
+                    .lock()
+                    .unwrap()
+                    .query_row(
+                        "SELECT count(*) FROM records WHERE kind='approvalPolicies'",
+                        [],
+                        |r| r.get::<_, i64>(0)
+                    )
+                    .unwrap(),
+                0
+            );
         }
         if i == 0 {
             let reopened = o3_server::store::State::open(&server.state.dir).unwrap();
