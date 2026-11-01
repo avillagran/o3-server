@@ -1122,3 +1122,14 @@ provider child memory is excluded. Aggregate evidence: [rss-implementation.json]
    unavailable and explicitly unknown; no authenticated-provider parity is claimed.
    The discovery RPC runs through the actual lib API reader; local HTTP failure
    fixtures verify classification/redaction, not live token acceptance by hosts.
+
+5. GitLab status uses `glab mr list --source-branch ... --all --per-page 1
+   --output json --order updated_at --sort desc`; opened/closed/merged metadata
+   maps to the existing PR shape. An explicit `GITLAB_HOST` enables self-hosted
+   identification, including ports. Local-only calls skip the host. Missing CLI,
+   refused requests and invalid JSON retain null PR status. Background update
+   checks and telemetry are disabled for this query.
+   Opt-in `glab_live` ran real glab 1.126.0 through the real server and lib VCS API
+   against a private local GitLab API fixture: branch query, draft/open metadata,
+   local-only and HTTP 403 passed. Live authenticated GitLab and upstream stale
+   last-known-PR fallback/backoff parity remain unverified; the row stays partial.

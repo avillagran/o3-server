@@ -394,14 +394,42 @@ pub async fn refresh_status(p: Value) -> Reply {
             }
         }
     }
-    let identity = crate::projects::repository_identity(&root.to_string_lossy()).await;
+    let mut identity = crate::projects::repository_identity(&root.to_string_lossy()).await;
+    let mut host = identity["canonicalKey"]
+        .as_str()
+        .and_then(|k| k.split('/').next())
+        .unwrap_or("")
+        .to_owned();
+    if let Some(remote) = identity["locator"]["remoteUrl"]
+        .as_str()
+        .and_then(|s| url::Url::parse(s).ok())
+    {
+        if let Some(name) = remote.host_str() {
+            host = format!(
+                "{name}{}",
+                remote.port().map(|p| format!(":{p}")).unwrap_or_default()
+            );
+        }
+    }
+    if identity["provider"].is_null()
+        && std::env::var("GITLAB_HOST").ok().is_some_and(|configured| {
+            let configured = configured
+                .trim_start_matches("https://")
+                .trim_start_matches("http://")
+                .trim_end_matches('/');
+            !host.is_empty() && configured.eq_ignore_ascii_case(&host)
+        })
+    {
+        identity["provider"] = json!("gitlab");
+    }
+
     if let Some(kind) = identity["provider"].as_str() {
         let (name, base) = if kind == "github" {
             ("GitHub", "https://github.com")
         } else {
             ("GitLab", "https://gitlab.com")
         };
-        v["sourceControlProvider"] = json!({"kind":kind,"name":name,"baseUrl":base});
+        v["sourceControlProvider"] = json!({"kind":kind,"name":name,"baseUrl":if host.is_empty() { base.to_owned() } else { format!("https://{host}") }});
         if kind == "github" && p["localOnly"] != true {
             if let Some(head) = st.head.as_deref() {
                 let result = proc::run(
@@ -434,8 +462,64 @@ pub async fn refresh_status(p: Value) -> Reply {
                 }
             }
         }
+        if kind == "gitlab" && p["localOnly"] != true {
+            if let Some(head) = st.head.as_deref() {
+                if let Ok(o) = proc::run(
+                    "glab",
+                    &root,
+                    &[
+                        "mr",
+                        "list",
+                        "--source-branch",
+                        head,
+                        "--all",
+                        "--per-page",
+                        "1",
+                        "--output",
+                        "json",
+                        "--order",
+                        "updated_at",
+                        "--sort",
+                        "desc",
+                    ],
+                    Opts::READ,
+                    &[
+                        ("GLAB_SEND_TELEMETRY", Path::new("false")),
+                        ("GLAB_CHECK_UPDATE", Path::new("false")),
+                    ],
+                )
+                .await
+                {
+                    if o.ok() {
+                        if let Ok(rows) = serde_json::from_slice::<Vec<Value>>(&o.stdout) {
+                            if let Some(pr) = rows.first().and_then(gitlab_status_pr) {
+                                if !default
+                                    .as_deref()
+                                    .is_some_and(|d| Some(d) == st.head.as_deref())
+                                    || pr["state"] == "open"
+                                {
+                                    v["pr"] = pr;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     Ok(v)
+}
+
+fn gitlab_status_pr(pr: &Value) -> Option<Value> {
+    let state = match pr["state"].as_str()? {
+        "opened" | "open" => "open",
+        "closed" => "closed",
+        "merged" => "merged",
+        _ => return None,
+    };
+    Some(
+        json!({"number":pr["iid"].as_u64().filter(|n| *n > 0)?,"title":pr["title"].as_str()?,"url":pr["web_url"].as_str()?,"baseRef":pr["target_branch"].as_str()?,"headRef":pr["source_branch"].as_str()?,"state":state,"isDraft":pr["draft"].as_bool().or_else(|| pr["work_in_progress"].as_bool()).unwrap_or(false),"updatedAt":pr["updated_at"]}),
+    )
 }
 
 // ------------------------------------------------------------------ vcs.listRefs
