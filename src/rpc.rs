@@ -14,11 +14,13 @@ impl ClientGuard {
         state
             .rpc_clients
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        state.activity.send_modify(|v| *v = v.wrapping_add(1));
         Self(state)
     }
 }
 impl Drop for ClientGuard {
     fn drop(&mut self) {
+        self.0.activity.send_modify(|v| *v = v.wrapping_add(1));
         if self
             .0
             .rpc_clients
@@ -244,7 +246,10 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                 let version = *changed.borrow();
                 if version != sub.version {
                     sub.version = version;
-                    settings::config(&s).ok().map(|v| {
+                    settings::config(&s).ok().and_then(|v| {
+                        if sub.last_config.as_ref() == Some(&v) {
+                            return None;
+                        }
                         // Emit a typed delta only when it describes the entire change.
                         // Coalesced changes retain the lossless replacement snapshot.
                         let fields = [
@@ -282,7 +287,7 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                             }
                         }
                         sub.last_config = Some(v);
-                        event
+                        Some(event)
                     })
                 } else {
                     None

@@ -95,7 +95,6 @@ fn base_command(program: &str, cwd: &Path, args: &[&str]) -> tokio::process::Com
         .env("GCM_INTERACTIVE", "never")
         .env("GIT_ASKPASS", "true")
         .env("SSH_ASKPASS", "true")
-        .env("GIT_SSH_COMMAND", "ssh -o BatchMode=yes")
         .env("GIT_PAGER", "cat")
         .env("LC_ALL", "C")
         .env_remove("GIT_DIR")

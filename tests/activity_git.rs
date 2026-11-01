@@ -29,6 +29,7 @@ fn power_profile_suspends_and_resumes_actual_git_fetch() {
     std::env::set_var("O3_POWER_SUPPLY_DIRECTORY", &power);
     let s = support::start(|_| {});
     let c = s.connect();
+    let _connected = support::keep_connected(s.connect());
     let origin = s.dir.join("origin");
     let seed = s.dir.join("seed");
     let repo = s.dir.join("repo");
@@ -54,6 +55,7 @@ fn power_profile_suspends_and_resumes_actual_git_fetch() {
     git(&seed, &["push", "origin", "main"]);
     let expected = git(&seed, &["rev-parse", "HEAD"]);
     c.rpc("projects.mutate",json!({"type":"project.create","commandId":"p","projectId":"p","title":"Fetch","workspaceRoot":repo})).unwrap();
+    c.rpc("server.reportClientActivity",json!({"clientId":"fetch","clientKind":"web","visible":true,"focused":true,"recentlyInteracted":true,"observedAt":"2026-11-01T00:00:00Z","scopes":[{"type":"project","projectId":"p"}],"ttlMs":60000})).unwrap();
     let config = c.rpc("server.getConfig", json!({})).unwrap();
     let patch = t3_protocol::native_settings::patch(
         &json!({"key":"backgroundActivityProfile","value":"battery-saver"}),
@@ -62,7 +64,7 @@ fn power_profile_suspends_and_resumes_actual_git_fetch() {
     .unwrap();
     let saved = c.rpc("server.updateSettings", patch).unwrap();
     assert_eq!(saved["automaticGitFetchInterval"], 0);
-    c.rpc("server.updateSettings",json!({"patch":{"backgroundActivity":{"schemaVersion":1,"profile":"custom","baseProfile":"balanced","overrides":{"automaticGitFetchInterval":1000,"hostPowerMonitorIdleInterval":1000,"pauseWhenOnBattery":true}}}})).unwrap();
+    c.rpc("server.updateSettings",json!({"patch":{"backgroundActivity":{"schemaVersion":1,"profile":"custom","baseProfile":"balanced","overrides":{"automaticGitFetchInterval":1000,"hostPowerMonitorIdleInterval":1000,"hostPowerMonitorActiveInterval":1000,"pauseWhenOnBattery":true}}}})).unwrap();
     std::thread::sleep(Duration::from_millis(1400));
     assert_eq!(git(&repo, &["rev-parse", "origin/main"]), before);
     std::fs::write(power.join("BAT0/status"), "Charging").unwrap();

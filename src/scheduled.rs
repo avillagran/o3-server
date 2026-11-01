@@ -355,8 +355,20 @@ pub fn ensure_started(s: &Arc<State>) {
     tokio::spawn(crate::background::refresh_health(s.clone()));
     let cleanup_state = s.clone();
     tokio::spawn(async move {
+        let mut changes = cleanup_state.changed.subscribe();
+        let mut activity = cleanup_state.activity.subscribe();
         loop {
-            tokio::time::sleep(Duration::from_secs(60)).await;
+            if !cleanup_state.background_needed() {
+                if (tokio::select! { r=changes.changed()=>r, r=activity.changed()=>r }).is_err() {
+                    return;
+                }
+                continue;
+            }
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_secs(60)) => {},
+                _ = changes.changed() => { continue; },
+                _ = activity.changed() => { continue; },
+            }
             let s = cleanup_state.clone();
             let _ = tokio::task::spawn_blocking(move || {
                 let enabled = crate::settings::read(&s).is_ok_and(|v| {
@@ -377,11 +389,20 @@ pub fn ensure_started(s: &Arc<State>) {
     });
     let s = s.clone();
     tokio::spawn(async move {
+        let mut changes = s.changed.subscribe();
+        let mut activity = s.activity.subscribe();
         loop {
-            let _ = crate::settlement::tick(&s, now_ms());
+            if s.background_needed() {
+                let _ = crate::settlement::tick(&s, now_ms());
+            }
             let (ready, soonest) = due(&s, now_ms());
             for id in ready {
                 let _ = fire(&s, &id);
+            }
+            if soonest.is_none() && !s.background_needed() {
+                tokio::select! { _ = changes.changed() => {},
+                _ = activity.changed() => {}, _ = s.streams.ops.scheduler_wake.notified() => {} }
+                continue;
             }
             let wait = soonest.map_or(30_000, |t| (t - now_ms()).clamp(200, 30_000));
             tokio::select! {

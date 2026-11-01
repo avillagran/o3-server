@@ -253,6 +253,15 @@ pub(crate) fn ensure_identity_watcher(state: &std::sync::Arc<State>) {
         let mut previous_roots = Vec::new();
         loop {
             let Some(state) = weak.upgrade() else { break };
+            let mut changes = state.changed.subscribe();
+            let mut activity = state.activity.subscribe();
+            if !state.background_needed() {
+                drop(state);
+                if (tokio::select! { r=changes.changed()=>r, r=activity.changed()=>r }).is_err() {
+                    break;
+                }
+                continue;
+            }
             let projects = crate::projects::snapshot(&state).unwrap_or(Value::Null);
             let roots = projects["projects"]
                 .as_array()
@@ -265,7 +274,7 @@ pub(crate) fn ensure_identity_watcher(state: &std::sync::Arc<State>) {
             let _ = crate::projects::refresh_identities_if_changed(&state, force).await;
             previous_roots = roots;
             drop(state);
-            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            tokio::select! { _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {}, _ = changes.changed() => {}, _ = activity.changed() => {} }
         }
     });
 }

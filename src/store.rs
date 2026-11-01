@@ -34,10 +34,12 @@ pub struct State {
     pub(crate) identities_started: std::sync::atomic::AtomicBool,
     pub(crate) rpc_clients: std::sync::atomic::AtomicUsize,
     checkpoint_started: std::sync::atomic::AtomicBool,
+    checkpoint_wake: std::sync::Arc<(Mutex<bool>, std::sync::Condvar)>,
     pub signing_key: Vec<u8>,
     pub environment_id: String,
     pub label: String,
     pub dir: PathBuf,
+    pub(crate) settings_cache: Mutex<crate::settings::Cache>,
     pub provider: Mutex<Option<std::sync::Arc<dyn crate::provider::Provider>>>,
     pub active: Mutex<
         std::collections::BTreeMap<
@@ -48,6 +50,7 @@ pub struct State {
     pub settings_lock: Mutex<()>,
     pub launch_lock: Mutex<()>,
     pub changed: tokio::sync::watch::Sender<u64>,
+    pub activity: tokio::sync::watch::Sender<u64>,
     /// Live terminal and command-output sources, with their own wake-up channel.
     pub streams: crate::streams::Hub,
 }
@@ -131,16 +134,19 @@ impl State {
             provider: Mutex::new(None),
             active: Mutex::new(std::collections::BTreeMap::new()),
             changed,
+            activity: tokio::sync::watch::channel(0).0,
             streams,
             reader: Mutex::new(reader),
             identities_started: std::sync::atomic::AtomicBool::new(false),
             rpc_clients: std::sync::atomic::AtomicUsize::new(0),
             checkpoint_started: std::sync::atomic::AtomicBool::new(false),
+            checkpoint_wake: std::sync::Arc::new((Mutex::new(true), std::sync::Condvar::new())),
             db: Mutex::new(db),
             signing_key,
             environment_id,
             label,
             dir: dir.into(),
+            settings_cache: Mutex::new(None),
         })
     }
 
@@ -164,10 +170,18 @@ impl State {
         }
         let weak = std::sync::Arc::downgrade(self);
         let path = self.dir.join("o3.sqlite");
+        let wake = self.checkpoint_wake.clone();
         std::thread::Builder::new().name("sqlite-checkpoint".into()).stack_size(256 * 1024).spawn(move || {
             let Ok(db) = Connection::open(path) else { return };
             let _ = db.execute_batch("PRAGMA busy_timeout=0; PRAGMA journal_size_limit=33554432; PRAGMA wal_autocheckpoint=0;");
             while weak.strong_count() != 0 {
+                let (dirty,signal)=&*wake;
+                let mut pending=dirty.lock().unwrap();
+                while !*pending {
+                    pending=signal.wait(pending).unwrap();
+                }
+                *pending=false;
+                drop(pending);
                 let _ = db.execute_batch("PRAGMA wal_checkpoint(PASSIVE);");
                 // PASSIVE never waits for readers. At the budget, try reclaiming
                 // the file; busy_timeout=0 keeps pinned snapshots nonblocking.
@@ -287,7 +301,14 @@ impl State {
     pub fn session_live(&self, session: &Value) -> bool {
         self.live(session.clone(), now_ms()).is_some()
     }
+    pub fn background_needed(&self) -> bool {
+        self.rpc_clients.load(std::sync::atomic::Ordering::Relaxed) > 0
+            || !self.active.lock().unwrap().is_empty()
+    }
     pub fn notify(&self) {
+        let (dirty, wake) = &*self.checkpoint_wake;
+        *dirty.lock().unwrap() = true;
+        wake.notify_one();
         self.changed.send_modify(|v| *v = v.wrapping_add(1));
     }
     /// CLI view used by desktop bridge revocation, retaining issuer labels.
@@ -315,5 +336,13 @@ impl State {
             )
             .map(|n| n > 0)
             .map_err(|e| e.to_string())
+    }
+}
+
+impl Drop for State {
+    fn drop(&mut self) {
+        let (dirty, wake) = &*self.checkpoint_wake;
+        *dirty.lock().unwrap() = true;
+        wake.notify_one();
     }
 }

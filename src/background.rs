@@ -100,8 +100,25 @@ pub(crate) async fn refresh_health(s: std::sync::Arc<crate::store::State>) {
     let mut fetch = health;
     let mut power_at = health;
     let mut power = (false, false, false);
+    let mut changes = s.changed.subscribe();
+    let mut activity = s.activity.subscribe();
+    let mut cached = Value::Null;
+    let mut stamp = None;
     loop {
-        let settings = crate::settings::read(&s).unwrap_or_default();
+        if !s.background_needed() {
+            if (tokio::select! { r=changes.changed()=>r, r=activity.changed()=>r }).is_err() {
+                return;
+            }
+            continue;
+        }
+        let current = std::fs::metadata(s.dir.join("settings.json"))
+            .ok()
+            .and_then(|m| m.modified().ok());
+        if cached.is_null() || current != stamp {
+            cached = crate::settings::read(&s).unwrap_or_default();
+            stamp = current;
+        }
+        let settings = &cached;
         let profile = crate::settings::background_resolved(&settings);
         let now = tokio::time::Instant::now();
         if prior != profile {
@@ -153,7 +170,11 @@ pub(crate) async fn refresh_health(s: std::sync::Arc<crate::store::State>) {
                 .and_then(|v| v["projects"].as_array().cloned())
                 .unwrap_or_default();
             let mut seen = std::collections::HashSet::new();
+            let viewed = s.streams.ops.viewed_projects();
             for p in roots {
+                if !viewed.contains(p["id"].as_str().unwrap_or("")) {
+                    continue;
+                }
                 if let Some(root) = p["workspaceRoot"]
                     .as_str()
                     .filter(|r| seen.insert((*r).to_owned()))
@@ -179,7 +200,16 @@ pub(crate) async fn refresh_health(s: std::sync::Arc<crate::store::State>) {
                         .unwrap_or(300000),
                 );
         }
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        let deadline = if paused {
+            power_at
+        } else {
+            health.min(fetch).min(power_at)
+        };
+        tokio::select! {
+            _ = tokio::time::sleep_until(deadline) => {},
+            _ = changes.changed() => {},
+            _ = activity.changed() => {},
+        }
     }
 }
 async fn host_power() -> (bool, bool, bool) {
@@ -221,4 +251,38 @@ async fn host_power() -> (bool, bool, bool) {
         }
     }
     (locked, low, battery)
+}
+
+#[cfg(test)]
+mod idle_tests {
+    use super::*;
+    use std::future::Future;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    #[tokio::test]
+    async fn disconnected_worker_has_no_periodic_polls_or_child_processes() {
+        let dir = std::env::temp_dir().join(crate::store::random_id().unwrap());
+        let s = Arc::new(crate::store::State::open(&dir).unwrap());
+        // A one-second custom deadline must never run without demand.
+        crate::settings::update(&s, &json!({"patch":{"backgroundActivity":{"profile":"custom","baseProfile":"balanced","overrides":{"providerHealthRefreshInterval":1000,"automaticGitFetchInterval":1000,"hostPowerMonitorIdleInterval":1000}}}})).unwrap();
+        let polls = Arc::new(AtomicUsize::new(0));
+        let count = polls.clone();
+        let mut worker = Box::pin(refresh_health(s.clone()));
+        let task = tokio::spawn(std::future::poll_fn(move |cx| {
+            count.fetch_add(1, Ordering::SeqCst);
+            worker.as_mut().poll(cx)
+        }));
+        tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+        assert_eq!(
+            polls.load(Ordering::SeqCst),
+            1,
+            "idle worker woke periodically"
+        );
+        task.abort();
+        let _ = task.await;
+        drop(s);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

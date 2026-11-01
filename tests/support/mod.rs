@@ -254,3 +254,36 @@ pub fn raw_exit(server: &Server, tag: &str, payload: Value) -> Value {
             }
         })
 }
+
+pub struct Connected(
+    std::sync::Arc<AtomicBool>,
+    Option<std::thread::JoinHandle<()>>,
+);
+impl Drop for Connected {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
+        if let Some(t) = self.1.take() {
+            let _ = t.join();
+        }
+    }
+}
+pub fn keep_connected(c: Connection) -> Connected {
+    let stop = Arc::new(AtomicBool::new(false));
+    let cancel = stop.clone();
+    let (tx, rx) = mpsc::channel();
+    let t = std::thread::spawn(move || {
+        let _ = c.subscribe(
+            "orchestration.subscribeShell",
+            json!({}),
+            || cancel.load(Ordering::SeqCst),
+            |v| {
+                if v.is_some() {
+                    let _ = tx.send(());
+                }
+                Ok(())
+            },
+        );
+    });
+    rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    Connected(stop, Some(t))
+}

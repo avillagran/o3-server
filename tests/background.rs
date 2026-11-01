@@ -180,7 +180,11 @@ fn owned_background_work_and_prebinding_identity_through_real_client() {
             || done.get(),
             |v| {
                 if let Some(v) = v {
-                    if v["event"]["type"] == "provider-thread.updated" {
+                    if v["event"]["type"] == "provider-thread.updated"
+                        && v["event"]["payload"]["pendingBackgroundTasks"]
+                            .as_array()
+                            .is_some_and(|a| a.is_empty())
+                    {
                         event = Some(v);
                         done.set(true);
                     }

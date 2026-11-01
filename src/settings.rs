@@ -8,7 +8,19 @@ pub fn descriptor(s: &State) -> Value {
 pub fn auth_descriptor() -> Value {
     json!({"policy":"loopback-browser","bootstrapMethods":["pairing-token"],"sessionMethods":["bearer-access-token"],"sessionCookieName":"t3code_session"})
 }
+pub(crate) type Cache = Option<(Option<(std::time::SystemTime, u64)>, Value)>;
 pub fn read(s: &State) -> Result<Value, String> {
+    let stamp = match std::fs::metadata(s.dir.join("settings.json")) {
+        Ok(m) => Some((m.modified().map_err(|e| e.to_string())?, m.len())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e.to_string()),
+    };
+    let mut cache = s.settings_cache.lock().unwrap();
+    if let Some((prior, value)) = &*cache {
+        if *prior == stamp {
+            return Ok(value.clone());
+        }
+    }
     let mut v: Value = serde_json::from_str(include_str!("settings-defaults.json")).unwrap();
     match std::fs::read(s.dir.join("settings.json")) {
         Ok(b) => {
@@ -19,6 +31,7 @@ pub fn read(s: &State) -> Result<Value, String> {
         Err(e) => return Err(e.to_string()),
     }
     normalize(&mut v, &json!({}))?;
+    *cache = Some((stamp, v.clone()));
     Ok(v)
 }
 pub fn merge(dst: &mut Value, patch: &Value) {

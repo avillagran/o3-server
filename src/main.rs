@@ -213,6 +213,12 @@ fn main() -> std::io::Result<()> {
             let probe = state.provider.lock().unwrap().clone().unwrap();
             let probe_state = state.clone();
             let probe_task = tokio::spawn(async move {
+                let mut changes = probe_state.activity.subscribe();
+                while !probe_state.background_needed() {
+                    if changes.changed().await.is_err() {
+                        return;
+                    }
+                }
                 if let Err(e) = probe
                     .discover(std::env::current_dir().unwrap_or_else(|_| probe_state.dir.clone()))
                     .await
@@ -250,13 +256,11 @@ fn main() -> std::io::Result<()> {
             .await
             .map_err(std::io::Error::other)?;
             // block_on runs on the main thread, outside the runtime worker park hooks.
-            let mut reclaim = tokio::time::interval(std::time::Duration::from_secs(1));
             let result = loop {
                 tokio::select! {
                     result=&mut serving=>break result.map_err(std::io::Error::other)?,
                     _=interrupt.recv()=>break Ok(()),
                     _=term.recv()=>break Ok(()),
-                    _=reclaim.tick()=>o3_server::heap::collect(),
                 }
             };
             if !serving.is_finished() {

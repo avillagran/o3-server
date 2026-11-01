@@ -63,6 +63,16 @@ impl Ops {
             .filter(|(until, r)| *until > now && r["visible"] == true)
             .count()
     }
+    pub(crate) fn viewed_projects(&self) -> std::collections::HashSet<String> {
+        self.clients
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|(until, v)| *until > now_ms() && v["visible"] == true)
+            .flat_map(|(_, v)| v["scopes"].as_array().into_iter().flatten())
+            .filter_map(|scope| scope["projectId"].as_str().map(str::to_owned))
+            .collect()
+    }
     pub(crate) fn client_low_power(&self) -> bool {
         let now = now_ms();
         self.clients
@@ -145,6 +155,8 @@ fn report_activity(s: &State, p: &Value) -> Reply {
         }
     }
     clients.insert(id.to_owned(), (now + ttl, p.clone()));
+    drop(clients);
+    s.notify();
     Ok(Value::Null)
 }
 
@@ -506,7 +518,15 @@ fn ensure_sampler(s: &std::sync::Arc<State>) {
     let s = s.clone();
     tokio::spawn(async move {
         let mut previous = None;
+        let mut changes = s.changed.subscribe();
+        let mut activity = s.activity.subscribe();
         loop {
+            if !s.background_needed() {
+                if (tokio::select! { r=changes.changed()=>r, r=activity.changed()=>r }).is_err() {
+                    return;
+                }
+                continue;
+            }
             push_sample(&s.streams.ops, take_sample(&mut previous));
             tokio::time::sleep(SAMPLE_EVERY).await;
         }
