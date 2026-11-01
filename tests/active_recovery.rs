@@ -29,6 +29,24 @@ use std::{
     process::{Command, Stdio},
     time::{Duration, Instant},
 };
+struct Server(std::process::Child);
+impl Drop for Server {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+impl std::ops::Deref for Server {
+    type Target = std::process::Child;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl std::ops::DerefMut for Server {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 fn wait(mut ready: impl FnMut() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(20);
     while !ready() {
@@ -101,11 +119,11 @@ fn sigkill_active_native_sessions_continue_after_restart() {
                 .spawn()
                 .unwrap()
         };
-        let mut child = spawn();
+        let mut child = Server(spawn());
         wait(|| root.join("active").exists());
         child.kill().unwrap();
         child.wait().unwrap();
-        let mut child = spawn();
+        let mut child = Server(spawn());
         let state = State::open(&root.join("userdata")).unwrap();
         wait(|| {
             events::get(&state.db.lock().unwrap(), "runs", "r").unwrap()["status"] == "completed"

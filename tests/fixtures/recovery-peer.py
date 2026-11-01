@@ -18,6 +18,8 @@ for line in sys.stdin:
    if select.select([sys.stdin], [], [], 60)[0]: sys.exit(0)
   if claude: send({'type':'result','subtype':'success','session_id':'native','result':'recovered'})
   else: send({'method':'turn/completed','params':{'threadId':'native','turn':{'id':'turn','status':'completed'}}})
+ elif claude and f.get('type') == 'control_request':
+  send({'type':'control_response','response':{'request_id':f['request_id'],'subtype':'success'}})
  elif m == 'thread/resume':
   assert f['params']['threadId']=='native'
   send({'id':i,'result':{'thread':{'id':'native'}}})

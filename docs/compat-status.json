@@ -139,7 +139,7 @@
     "orchestration.dispatchCommand": {
       "status": "partial",
       "priority": "P0",
-      "note": "Remaining: native attachment steering, full attempt/provider-thread identity, background/subagent settlement, active execution recovery and native delivery acknowledgement. Persistent exact-operation consent and both native plan acceptance flows have real-client peer coverage; broad native permission rules/revocation UI remain unsupported."
+      "note": "Remaining: native attachment steering, full attempt/provider-thread identity, background/subagent settlement, exact inference reattachment (native-session continuation with a new turn is implemented; process-kill peers in tests/active_recovery.rs) and native delivery acknowledgement. Persistent exact-operation consent and both native plan acceptance flows have real-client peer coverage; broad native permission rules/revocation UI remain unsupported."
     },
     "orchestration.getArchivedShellSnapshot": {
       "status": "partial",

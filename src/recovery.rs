@@ -135,7 +135,7 @@ pub fn recover(db: &mut Connection) -> Result<(), String> {
 pub fn resume(state: &std::sync::Arc<crate::store::State>) -> Result<(), String> {
     let rows = {
         let db = state.db.lock().unwrap();
-        let mut q = db.prepare("SELECT thread_id,id FROM records WHERE kind='runs' AND json_extract(body,'$.recoveryPending')=1").map_err(|e|e.to_string())?;
+        let mut q = db.prepare("SELECT thread_id,id FROM records WHERE kind='runs' AND json_extract(body,'$.recoveryPending')=1 AND json_extract(body,'$.status')='starting'").map_err(|e|e.to_string())?;
         let rows = q
             .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
             .map_err(|e| e.to_string())?
