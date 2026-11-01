@@ -258,21 +258,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
     let tid = c["threadId"].as_str().ok_or("threadId required")?;
     let at = iso(now_ms());
     let mut t = if kind == "thread.create" {
-        for key in [
-            "projectId",
-            "title",
-            "modelSelection",
-            "runtimeMode",
-            "interactionMode",
-        ] {
-            if c.get(key).is_none() {
-                return Err(format!("{key} required"));
-            }
-        }
-        if get(&tx, "thread", tid).is_ok() {
-            return Err("thread already exists".into());
-        }
-        json!({"id":tid,"projectId":c["projectId"],"title":c["title"],"providerInstanceId":c["modelSelection"]["instanceId"],"modelSelection":c["modelSelection"],"runtimeMode":c["runtimeMode"],"interactionMode":c["interactionMode"],"branch":c["branch"],"worktreePath":c["worktreePath"],"createdBy":"user","creationSource":c.get("creationSource").cloned().unwrap_or(json!("web")),"lineage":{"parentThreadId":null,"relationshipToParent":null,"rootThreadId":tid},"forkedFrom":null,"activeProviderThreadId":null,"createdAt":at,"updatedAt":at,"archivedAt":null,"settledOverride":null,"settledAt":null,"lastVisitedAt":null,"deletedAt":null})
+        new_thread(&tx, c, tid, &at)?
     } else {
         get(&tx, "thread", tid)?
     };
@@ -413,75 +399,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                 s.notify();
                 return Ok(result);
             }
-            if !matches!(
-                c["dispatchMode"]["type"].as_str(),
-                Some("defer_start" | "start_immediately" | "queue_after_active" | "steer_active")
-            ) {
-                return Err("dispatch mode is not implemented".into());
-            }
-            let mode = c["dispatchMode"]["type"].as_str();
-            if s.active.lock().unwrap().len() >= 32 {
-                return Err("active run limit reached".into());
-            }
-            let mut active_run: Option<String> = tx.query_row(
-                "SELECT id FROM records WHERE kind='runs' AND thread_id=? AND json_extract(body,'$.status') IN ('preparing','running','waiting','starting') ORDER BY rowid DESC LIMIT 1",
-                [tid], |r|r.get(0)).optional().map_err(|e|e.to_string())?;
-            if active_run.is_none() {
-                let active = s.active.lock().unwrap();
-                active_run = active
-                    .keys()
-                    .find(|rid| get(&tx, "runs", rid).is_ok_and(|r| r["threadId"] == tid))
-                    .cloned();
-            }
-            if c["dispatchMode"]["type"] == "start_immediately" && active_run.is_some() {
-                return Err(
-                    "thread already has an active run; use queue_after_active or steer_active"
-                        .into(),
-                );
-            }
-
-            let queued = c["dispatchMode"]["type"] == "queue_after_active" && active_run.is_some();
-            if mode != Some("defer_start") && s.provider.lock().unwrap().is_none() {
-                return Err("no provider adapter configured; only defer_start is available".into());
-            }
-            let run_id = random_id()?;
-            let mid = c["messageId"].as_str().ok_or("messageId required")?;
-            let mut m = json!({"id":mid,"threadId":tid,"runId":run_id,"nodeId":null,"role":"user","text":c["text"],"attachments":c["attachments"],"streaming":false,"createdBy":"user","creationSource":"web","createdAt":at,"updatedAt":at});
-            if let Some(context) = c.get("context") {
-                m["context"] = context.clone();
-            }
-            if !c["text"].is_string() || !c["attachments"].is_array() {
-                return Err("text and attachments required".into());
-            }
-            put(&tx, "messages", mid, tid, &m)?;
-            t["updatedAt"] = json!(at);
-            put(&tx, "thread", tid, tid, &t)?;
-            append(&tx, tid, "message.updated", m.clone(), &t)?;
-            let item = message_item(&tx, tid, &m)?;
-            append(&tx, tid, "turn-item.updated", item, &t)?;
-            let ordinal: i64 = tx
-                .query_row(
-                    "SELECT count(*)+1 FROM records WHERE kind='runs' AND thread_id=?",
-                    [tid],
-                    |r| r.get(0),
-                )
-                .map_err(|e| e.to_string())?;
-            let mut run = json!({"id":run_id,"threadId":tid,"ordinal":ordinal,"providerInstanceId":t["providerInstanceId"],"modelSelection":t["modelSelection"],"providerThreadId":null,"userMessageId":mid,"rootNodeId":null,"activeAttemptId":null,"status":"preparing","requestedAt":at,"startedAt":null,"completedAt":null,"checkpointId":null,"contextHandoffId":null,"executionRequested":c["dispatchMode"]["type"]!="defer_start"});
-            if queued {
-                run["status"] = json!("queued");
-                run["queuePosition"] =
-                    json!(crate::thread_commands::next_queue_position(&tx, tid)?);
-                run["queueHeld"] = json!(false);
-            }
-            put(&tx, "runs", &run_id, tid, &run)?;
-            let seq = append(&tx, tid, "run.created", run, &t)?;
-            let result = json!({"sequence":seq});
-            crate::outbox::stage(&tx, c)?;
-            tx.execute(
-                "INSERT INTO receipts VALUES(?,?)",
-                params![cid, result.to_string()],
-            )
-            .map_err(|e| e.to_string())?;
+            let (result, run_id, queued) = stage_message(s, &tx, c, &mut t, &at)?;
             tx.commit().map_err(|e| e.to_string())?;
             drop(db);
             s.notify();
@@ -691,6 +609,105 @@ pub(crate) fn message_item(db: &Connection, tid: &str, m: &Value) -> Result<Valu
     Ok(item)
 }
 
+fn stage_message(
+    s: &std::sync::Arc<State>,
+    tx: &Connection,
+    c: &Value,
+    t: &mut Value,
+    at: &str,
+) -> Result<(Value, String, bool)> {
+    let tid = c["threadId"].as_str().ok_or("threadId required")?;
+    let cid = c["commandId"].as_str().ok_or("commandId required")?;
+    if !matches!(
+        c["dispatchMode"]["type"].as_str(),
+        Some("defer_start" | "start_immediately" | "queue_after_active" | "steer_active")
+    ) {
+        return Err("dispatch mode is not implemented".into());
+    }
+    let mode = c["dispatchMode"]["type"].as_str();
+    if s.active.lock().unwrap().len() >= 32 {
+        return Err("active run limit reached".into());
+    }
+    let mut active_run: Option<String> = tx.query_row(
+        "SELECT id FROM records WHERE kind='runs' AND thread_id=? AND json_extract(body,'$.status') IN ('preparing','running','waiting','starting') ORDER BY rowid DESC LIMIT 1",
+        [tid], |r|r.get(0)).optional().map_err(|e|e.to_string())?;
+    if active_run.is_none() {
+        let active = s.active.lock().unwrap();
+        active_run = active
+            .keys()
+            .find(|rid| get(tx, "runs", rid).is_ok_and(|r| r["threadId"] == tid))
+            .cloned();
+    }
+    if c["dispatchMode"]["type"] == "start_immediately" && active_run.is_some() {
+        return Err(
+            "thread already has an active run; use queue_after_active or steer_active".into(),
+        );
+    }
+
+    let queued = c["dispatchMode"]["type"] == "queue_after_active" && active_run.is_some();
+    if mode != Some("defer_start") && s.provider.lock().unwrap().is_none() {
+        return Err("no provider adapter configured; only defer_start is available".into());
+    }
+    let run_id = random_id()?;
+    let mid = c["messageId"].as_str().ok_or("messageId required")?;
+    let mut m = json!({"id":mid,"threadId":tid,"runId":run_id,"nodeId":null,"role":"user","text":c["text"],"attachments":c["attachments"],"streaming":false,"createdBy":"user","creationSource":"web","createdAt":at,"updatedAt":at});
+    if let Some(context) = c.get("context") {
+        m["context"] = context.clone();
+    }
+    if !c["text"].is_string() || !c["attachments"].is_array() {
+        return Err("text and attachments required".into());
+    }
+    put(tx, "messages", mid, tid, &m)?;
+    t["updatedAt"] = json!(at);
+    put(tx, "thread", tid, tid, t)?;
+    append(tx, tid, "message.updated", m.clone(), t)?;
+    let item = message_item(tx, tid, &m)?;
+    append(tx, tid, "turn-item.updated", item, t)?;
+    let ordinal: i64 = tx
+        .query_row(
+            "SELECT count(*)+1 FROM records WHERE kind='runs' AND thread_id=?",
+            [tid],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let mut run = json!({"id":run_id,"threadId":tid,"ordinal":ordinal,"providerInstanceId":t["providerInstanceId"],"modelSelection":t["modelSelection"],"providerThreadId":null,"userMessageId":mid,"rootNodeId":null,"activeAttemptId":null,"status":"preparing","requestedAt":at,"startedAt":null,"completedAt":null,"checkpointId":null,"contextHandoffId":null,"executionRequested":c["dispatchMode"]["type"]!="defer_start"});
+    if queued {
+        run["status"] = json!("queued");
+        run["queuePosition"] = json!(crate::thread_commands::next_queue_position(tx, tid)?);
+        run["queueHeld"] = json!(false);
+    }
+    put(tx, "runs", &run_id, tid, &run)?;
+    let seq = append(tx, tid, "run.created", run, t)?;
+    let result = json!({"sequence":seq});
+    crate::outbox::stage(tx, c)?;
+    tx.execute(
+        "INSERT INTO receipts VALUES(?,?)",
+        params![cid, result.to_string()],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok((result, run_id, queued))
+}
+
+fn new_thread(db: &Connection, c: &Value, tid: &str, at: &str) -> Result<Value> {
+    Ok({
+        for key in [
+            "projectId",
+            "title",
+            "modelSelection",
+            "runtimeMode",
+            "interactionMode",
+        ] {
+            if c.get(key).is_none() {
+                return Err(format!("{key} required"));
+            }
+        }
+        if get(db, "thread", tid).is_ok() {
+            return Err("thread already exists".into());
+        }
+        json!({"id":tid,"projectId":c["projectId"],"title":c["title"],"providerInstanceId":c["modelSelection"]["instanceId"],"modelSelection":c["modelSelection"],"runtimeMode":c["runtimeMode"],"interactionMode":c["interactionMode"],"branch":c["branch"],"worktreePath":c["worktreePath"],"createdBy":"user","creationSource":c.get("creationSource").cloned().unwrap_or(json!("web")),"lineage":{"parentThreadId":null,"relationshipToParent":null,"rootThreadId":tid},"forkedFrom":null,"activeProviderThreadId":null,"createdAt":at,"updatedAt":at,"archivedAt":null,"settledOverride":null,"settledAt":null,"lastVisitedAt":null,"deletedAt":null})
+    })
+}
+
 pub fn launch(s: &std::sync::Arc<State>, p: &Value) -> Result<Value> {
     let cid = p["commandId"].as_str().ok_or("commandId required")?;
     if let Some(result) =
@@ -721,29 +738,62 @@ pub fn launch(s: &std::sync::Arc<State>, p: &Value) -> Result<Value> {
     if reuse && p["threadId"].as_str().is_none() {
         return Err("threadId required for reuse".into());
     }
-    if reuse {
-        let existing = get(&s.db.lock().unwrap(), "thread", &tid)?;
-        if existing["projectId"] != p["projectId"] {
-            return Err("reuse project does not match thread".into());
+    // Validate the message before workspace preparation can create filesystem effects.
+    if let Some(m) = p.get("initialMessage") {
+        if !m["text"].is_string() || !m["attachments"].is_array() {
+            return Err("text and attachments required".into());
         }
-    } else {
+    }
+    if !reuse {
         let (path, branch) = crate::workspace::prepare(s, p, &tid)?;
         create["worktreePath"] = path;
         create["branch"] = branch;
-        dispatch(s, &create)?;
     }
-    if let Some(m) = p.get("initialMessage") {
-        let message = json!({"type":"message.dispatch","commandId":format!("{cid}:initial"),"threadId":tid,"messageId":m["messageId"].as_str().map(str::to_owned).unwrap_or(format!("message-{cid}")),"text":m["text"],"attachments":m["attachments"],"dispatchMode":{"type":"start_immediately"}});
-        dispatch(s, &message)?;
-    }
-    let result = json!({"threadId":tid,"projection":projection(s,&tid)?,"resumed":reuse});
-    s.db.lock()
-        .unwrap()
-        .execute(
-            "INSERT INTO receipts VALUES(?,?)",
-            params![cid, result.to_string()],
+    let mut db = s.db.lock().unwrap();
+    let tx = db.transaction().map_err(|e| e.to_string())?;
+    // Recheck under the same lock as all writes, including concurrent retries.
+    if let Some(result) = tx
+        .query_row(
+            "SELECT result FROM receipts WHERE command_id=?",
+            [cid],
+            |r| r.get::<_, String>(0),
         )
-        .map_err(|e| e.to_string())?;
+        .optional()
+        .map_err(|e| e.to_string())?
+    {
+        return serde_json::from_str(&result).map_err(|e| e.to_string());
+    }
+    let at = iso(now_ms());
+    let mut thread = if reuse {
+        let existing = get(&tx, "thread", &tid)?;
+        if existing["projectId"] != p["projectId"] {
+            return Err("reuse project does not match thread".into());
+        }
+        existing
+    } else {
+        let thread = new_thread(&tx, &create, &tid, &at)?;
+        put(&tx, "thread", &tid, &tid, &thread)?;
+        append(&tx, &tid, "thread.created", thread.clone(), &thread)?;
+        thread
+    };
+    let mut start = None;
+    if let Some(m) = p.get("initialMessage") {
+        let message = json!({"type":"message.dispatch","commandId":format!("{cid}:initial"),"threadId":tid,"messageId":m["messageId"].as_str().map(str::to_owned).unwrap_or(format!("message-{cid}")),"text":m["text"],"context":m["context"],"attachments":m["attachments"],"dispatchMode":{"type":"start_immediately"}});
+        let (_, rid, _) = stage_message(s, &tx, &message, &mut thread, &at)?;
+        start = Some((rid, m["text"].as_str().unwrap().to_owned()));
+    }
+    let result = json!({"threadId":tid,"projection":projection_db(&tx,&tid)?,"resumed":reuse});
+    tx.execute(
+        "INSERT INTO receipts VALUES(?,?)",
+        params![cid, result.to_string()],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    drop(db);
+    s.notify();
+    if let Some((rid, text)) = start {
+        crate::provider::start(s.clone(), tid, rid, text);
+    }
     Ok(result)
 }
 

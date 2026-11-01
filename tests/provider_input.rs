@@ -56,3 +56,27 @@ fn uploaded_images_files_and_context_reach_both_native_transports() {
         }
     }
 }
+
+#[test]
+fn launch_initial_message_and_receipt_roll_back_together_and_retry_once() {
+    let server = support::start(|s| {
+        *s.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::ScriptedProvider));
+        s.db.lock().unwrap().execute_batch("CREATE TRIGGER reject_run BEFORE INSERT ON records WHEN NEW.kind='runs' BEGIN SELECT RAISE(ABORT, 'injected run failure'); END;").unwrap();
+    });
+    let c = server.connect();
+    let launch = json!({"commandId":"launch","threadId":"t","projectId":"p","title":"Atomic launch","modelSelection":{"instanceId":"scripted","model":"test"},"runtimeMode":"full-access","interactionMode":"default","workspaceStrategy":{"type":"root"},"initialMessage":{"messageId":"m","text":"hello","context":{"proof":"retained"},"attachments":[]}});
+    assert!(c.rpc("orchestration.launchThread", launch.clone()).is_err());
+    {
+        let db = server.state.db.lock().unwrap();
+        for table in ["records", "events", "receipts"] {
+            assert_eq!(db.query_row(&format!("SELECT count(*) FROM {table}"), [], |r|r.get::<_,i64>(0)).unwrap(),0);
+        }
+        db.execute_batch("DROP TRIGGER reject_run").unwrap();
+    }
+    assert!(server.state.active.lock().unwrap().is_empty());
+    let result = c.rpc("orchestration.launchThread",launch.clone()).unwrap();
+    assert_eq!(result["projection"]["messages"][0]["context"]["proof"], "retained");
+    assert_eq!(c.rpc("orchestration.launchThread",launch).unwrap(), result);
+    let db = server.state.db.lock().unwrap();
+    assert_eq!(db.query_row("SELECT count(*) FROM records WHERE kind='runs'", [], |r|r.get::<_,i64>(0)).unwrap(),1);
+}
