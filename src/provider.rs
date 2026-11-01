@@ -139,8 +139,16 @@ pub(crate) fn start(
                 runtime_mode: t["runtimeMode"].as_str().unwrap_or("full-access").into(),
                 interaction_mode: t["interactionMode"].as_str().unwrap_or("default").into(),
                 attachment_root: crate::assets::attachments_dir(&s),
-                attachments: m["attachments"].clone(),
-                context: m.get("context").cloned(),
+                attachments: if r["recoveryPending"] == true {
+                    serde_json::json!([])
+                } else {
+                    m["attachments"].clone()
+                },
+                context: if r["recoveryPending"] == true {
+                    None
+                } else {
+                    m.get("context").cloned()
+                },
             }
         };
         let checkpoint_cwd = input.cwd.clone();
@@ -304,6 +312,7 @@ fn persist(
         ProviderEvent::Started => {
             run["status"] = json!("running");
             run["startedAt"] = json!(at);
+            run["recoveryPending"] = json!(false);
         }
         ProviderEvent::TextDelta(delta) => {
             let mid = format!("assistant-{rid}");

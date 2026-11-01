@@ -74,6 +74,24 @@ pub fn recover(db: &mut Connection) -> Result<(), String> {
                         events::append(&tx, &tid, "turn-item.updated", item, &t)?;
                     }
                 }
+                if let Ok(t) = events::get(&tx, "thread", &tid) {
+                    let key = if t["providerInstanceId"] == "codex" {
+                        "codexNativeThreadId"
+                    } else {
+                        "activeProviderThreadId"
+                    };
+                    if matches!(
+                        t["providerInstanceId"].as_str(),
+                        Some("codex" | "claudeAgent" | "claude" | "claude-code")
+                    ) && t[key].as_str().is_some_and(|id| !id.is_empty())
+                    {
+                        v["status"] = json!("starting");
+                        v["completedAt"] = Value::Null;
+                        v["error"] = Value::Null;
+                        v["recoveryPending"] = json!(true);
+                        v["recoveryReason"] = json!("server restarted; continuing native session in a new turn; prior tools may have executed; old approvals/questions cancelled");
+                    }
+                }
                 "run.updated"
             }
             "runtimeRequests" if v["status"] == "pending" => {
@@ -111,4 +129,23 @@ pub fn recover(db: &mut Connection) -> Result<(), String> {
         }
     }
     tx.commit().map_err(|e| e.to_string())
+}
+
+/// Start only executions selected by durable recovery, after provider registration.
+pub fn resume(state: &std::sync::Arc<crate::store::State>) -> Result<(), String> {
+    let rows = {
+        let db = state.db.lock().unwrap();
+        let mut q = db.prepare("SELECT thread_id,id FROM records WHERE kind='runs' AND json_extract(body,'$.recoveryPending')=1").map_err(|e|e.to_string())?;
+        let rows = q
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        rows
+    };
+    for (tid, rid) in rows {
+        crate::provider::start(state.clone(), tid, rid,
+            "The server restarted during your previous turn. Continue the interrupted task using this native session's history. Inspect current state before acting: previous tools may already have executed. Do not repeat completed work. Any old approval or question was cancelled; request fresh authorization or ask again where necessary.".into());
+    }
+    Ok(())
 }
