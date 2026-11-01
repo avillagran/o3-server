@@ -112,3 +112,27 @@ Final release `tools/bench-rss`: HWM 42,052 KiB = 43.06 MB, below the decimal
 50 MB budget. Bridge active; 20 threads, 1,000 deferred messages, 3 subscribers,
 1,000 unary calls; provider inference excluded. Exact binary digest and /proc
 samples are in `rss-measurement.json`.
+
+## Scoped approvals and plan follow-up checkpoint (2026-11-01)
+
+Deterministic real-client suite: 110 passed, 4 ignored with bridge; 109 passed,
+4 ignored without default features. Strict all-target Clippy, format and diff
+checks pass. Native peer coverage now includes both proposed-plan capture and
+implementation using the real plan helper, source-plan completion, observed
+Claude quota windows, explicit deterministic title generation, and persistent
+exact-operation approvals with database reopen plus a changed-command refusal.
+Recovery closes streaming messages and orphan nodes/items; linked-worktree
+rollback preserves root files and real worktree index. Settlement safety tests
+cover queued work, approvals, subagents, uncertain controls, pins and opt-outs.
+
+`tools/live-chat-e2e` passed fresh short authenticated Claude and Codex turns.
+No live approval/plan inference or Android/QML UI validation is claimed. No push,
+service/systemd changes, real T3 profile access, emulators or QEMU.
+
+Fresh release validation: `tools/desktop-bridge-e2e` passes status, identity, read,
+publication/unpublication, pairing, approved peers, T3 pairing and QUIC forward
+against the existing real desktop executable and the newly built release server.
+`tools/bench-rss` HWM is 44,568 KiB = 45.64 MB (decimal), below 50 MB; bridge active,
+20 threads/1,000 deferred messages/3 subscribers/1,000 calls, inference excluded.
+The exact binary hash and samples replace `rss-measurement.json`. P0 RPCs remain
+0 done/5 partial; P1 18 done/13 partial, because consumed behavior still differs.

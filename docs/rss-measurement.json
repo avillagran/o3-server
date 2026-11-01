@@ -1,32 +1,32 @@
 {
-  "measured_at_utc": "2026-11-01T00:33:09Z",
-  "binary_sha256": "6ce1cfc34e51faaead4cf39d945436c8ea46863bb3042fba164e507fa75cebf6",
+  "measured_at_utc": "2026-11-01T00:43:35Z",
+  "binary_sha256": "55366577f14736d2cc4cd36ad345869946914fbd3869d442b6b7f073ce6d41c5",
   "binary": "/var/tmp/o3-build/main/release/o3-server",
-  "binary_bytes": 12032328,
+  "binary_bytes": 12071368,
   "seed_messages": 1000,
   "threads": 20,
   "subscribers": 3,
   "unary_calls": 1000,
   "text_bytes_per_message": 1000,
   "cold_kib": {
-    "VmHWM": 18192,
-    "VmRSS": 18192,
-    "RssAnon": 8948
+    "VmHWM": 22640,
+    "VmRSS": 22640,
+    "RssAnon": 13036
   },
   "seeded_kib": {
-    "VmHWM": 37816,
-    "VmRSS": 36980,
-    "RssAnon": 25424
+    "VmHWM": 36228,
+    "VmRSS": 35432,
+    "RssAnon": 24004
   },
   "subscribed_kib": {
-    "VmHWM": 42052,
-    "VmRSS": 42052,
-    "RssAnon": 30496
+    "VmHWM": 44568,
+    "VmRSS": 44120,
+    "RssAnon": 32692
   },
   "after_churn_kib": {
-    "VmHWM": 42052,
-    "VmRSS": 42052,
-    "RssAnon": 30496
+    "VmHWM": 44568,
+    "VmRSS": 44120,
+    "RssAnon": 32692
   },
   "snapshot_messages": [
     10,
