@@ -1,4 +1,24 @@
-# Real-client E2E — partial, 2026-10-31
+# Real-client E2E
+
+## Base operativa, 2026-10-31 (binario release de `main`, perfil aislado)
+
+| Flujo | Cliente | Resultado |
+|---|---|---|
+| Turno real de Claude (`claudeAgent`, haiku), streaming, checkpoint, completado | WebSocket real | PASS |
+| Turno real de Codex, proceso bajo demanda, cierre tras 60 s inactivo | WebSocket real | PASS |
+| Descubrimiento por perfil y `t3` (symlink), `snapshot` en `ready` | `omarchy-t3-client` real | PASS |
+| `send` con respuesta real de Claude | `omarchy-t3-client watch` real | PASS |
+| Visor: `bounded`, `subscribeThread`, proyección en vivo | `omarchy-t3-client watch` real | PASS |
+| Interfaz QML | O3 desktop | sin probar |
+| Android | O3 Android | sin probar, pospuesto hasta tener la versión operativa |
+| Flujos OmaBridge del desktop | O3 desktop | sin probar; reporta `available: false` con estado aislado |
+
+Memoria de `o3-server`: reposo 29,7-32 MB sin hijos; pico 38,6 MB con turnos de Claude y Codex; 37,9 MB con el
+desktop conectado. Los procesos de proveedor son aparte (Claude CLI ~240 MB, Codex ~390 MB) y solo existen en uso.
+
+Nota: `scrollback_is_bounded_per_terminal` falló una vez dentro de la suite completa bajo carga y pasó 3/3 en solitario.
+
+## Corrida parcial anterior
 
 This run did not complete the requested end-to-end validation. No compatibility
 status is promoted on this evidence.
