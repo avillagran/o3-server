@@ -1,0 +1,533 @@
+{
+  "workload": "Private copied history; desktop snapshot/watch; public relay configured; separate local Rust QUIC client; shell/thread subscriptions held through 100 unary calls and a real Haiku turn. Server memory only.",
+  "units": "KiB for process samples; bytes for heap counters; decimal MB budgets; milliseconds for snapshot; seconds for settling; Threads and THP_enabled are counts/flags.",
+  "before": {
+    "measured_at_utc": "2026-11-01T07:20:03Z",
+    "binary_sha256": "ef743e43a27379285c6c07960bc63b2b51ad90837381dc29233004ff2afb8b15",
+    "relay": "public",
+    "native_turn": true,
+    "bridged_unary_calls": 100,
+    "idle_settle_seconds": 35,
+    "disconnect_settle_seconds": 3,
+    "idle_kib": {
+      "VmHWM": 48728,
+      "VmRSS": 44456,
+      "RssAnon": 31756,
+      "RssFile": 12700,
+      "THP_enabled": 1,
+      "Threads": 5,
+      "AnonHugePages": 14336,
+      "Pss_Anon": 31756
+    },
+    "after_snapshot_kib": {
+      "VmHWM": 48728,
+      "VmRSS": 45556,
+      "RssAnon": 32664,
+      "RssFile": 12892,
+      "THP_enabled": 1,
+      "Threads": 5,
+      "AnonHugePages": 12288,
+      "Pss_Anon": 32664
+    },
+    "thread_open_kib": {
+      "VmHWM": 50056,
+      "VmRSS": 43256,
+      "RssAnon": 30236,
+      "RssFile": 13020,
+      "THP_enabled": 1,
+      "Threads": 6,
+      "AnonHugePages": 8192,
+      "Pss_Anon": 30248
+    },
+    "bridged_kib": {
+      "ready": {
+        "VmHWM": 51104,
+        "VmRSS": 51104,
+        "RssAnon": 38084,
+        "RssFile": 13020,
+        "THP_enabled": 1,
+        "Threads": 6,
+        "AnonHugePages": 10240,
+        "Pss_Anon": 38176
+      },
+      "shell": {
+        "VmHWM": 52008,
+        "VmRSS": 47008,
+        "RssAnon": 33988,
+        "RssFile": 13020,
+        "THP_enabled": 1,
+        "Threads": 6,
+        "AnonHugePages": 8192,
+        "Pss_Anon": 34000
+      },
+      "thread": {
+        "VmHWM": 52008,
+        "VmRSS": 47032,
+        "RssAnon": 34012,
+        "RssFile": 13020,
+        "THP_enabled": 1,
+        "Threads": 6,
+        "AnonHugePages": 8192,
+        "Pss_Anon": 36160
+      },
+      "churn": {
+        "VmHWM": 57256,
+        "VmRSS": 55584,
+        "RssAnon": 42564,
+        "RssFile": 13020,
+        "THP_enabled": 1,
+        "Threads": 6,
+        "AnonHugePages": 10240,
+        "Pss_Anon": 42576
+      },
+      "turn": {
+        "VmHWM": 57632,
+        "VmRSS": 57632,
+        "RssAnon": 44548,
+        "RssFile": 13084,
+        "THP_enabled": 1,
+        "Threads": 6,
+        "AnonHugePages": 10240,
+        "Pss_Anon": 44548
+      }
+    },
+    "after_disconnect_kib": {
+      "VmHWM": 58028,
+      "VmRSS": 53100,
+      "RssAnon": 40016,
+      "RssFile": 13084,
+      "THP_enabled": 1,
+      "Threads": 6,
+      "AnonHugePages": 10240,
+      "Pss_Anon": 40016
+    },
+    "lifetime_hwm_kib": 58028,
+    "snapshot_ms": 270.49,
+    "under_50_mb": false,
+    "under_35_mb_idle": false,
+    "disconnect_within_3_mb_idle": false,
+    "under_500_ms_snapshot": true,
+    "allocator_env": {},
+    "allocator": "mimalloc"
+  },
+  "after": {
+    "measured_at_utc": "2026-11-01T07:25:33Z",
+    "binary_sha256": "61eb35932a8b9e19105da3cab48a4c395aa138a3a6cd0c521cf3fd85c1ccbf97",
+    "relay": "public",
+    "native_turn": true,
+    "bridged_unary_calls": 100,
+    "idle_settle_seconds": 35,
+    "disconnect_settle_seconds": 3,
+    "idle_kib": {
+      "VmHWM": 20432,
+      "VmRSS": 15544,
+      "RssAnon": 3184,
+      "RssFile": 12360,
+      "THP_enabled": 0,
+      "Threads": 4,
+      "AnonHugePages": 0,
+      "Pss_Anon": 3184
+    },
+    "after_snapshot_kib": {
+      "VmHWM": 20432,
+      "VmRSS": 16016,
+      "RssAnon": 3400,
+      "RssFile": 12616,
+      "THP_enabled": 0,
+      "Threads": 5,
+      "AnonHugePages": 0,
+      "Pss_Anon": 3400
+    },
+    "thread_open_kib": {
+      "VmHWM": 20432,
+      "VmRSS": 18284,
+      "RssAnon": 5476,
+      "RssFile": 12808,
+      "THP_enabled": 0,
+      "Threads": 6,
+      "AnonHugePages": 0,
+      "Pss_Anon": 5476
+    },
+    "bridged_kib": {
+      "ready": {
+        "VmHWM": 20432,
+        "VmRSS": 20428,
+        "RssAnon": 7556,
+        "RssFile": 12872,
+        "THP_enabled": 0,
+        "Threads": 6,
+        "AnonHugePages": 0,
+        "Pss_Anon": 7616
+      },
+      "shell": {
+        "VmHWM": 20432,
+        "VmRSS": 18852,
+        "RssAnon": 5980,
+        "RssFile": 12872,
+        "THP_enabled": 0,
+        "Threads": 6,
+        "AnonHugePages": 0,
+        "Pss_Anon": 5980
+      },
+      "thread": {
+        "VmHWM": 20432,
+        "VmRSS": 18852,
+        "RssAnon": 5980,
+        "RssFile": 12872,
+        "THP_enabled": 0,
+        "Threads": 6,
+        "AnonHugePages": 0,
+        "Pss_Anon": 5980
+      },
+      "churn": {
+        "VmHWM": 20432,
+        "VmRSS": 19220,
+        "RssAnon": 6348,
+        "RssFile": 12872,
+        "THP_enabled": 0,
+        "Threads": 6,
+        "AnonHugePages": 0,
+        "Pss_Anon": 6348
+      },
+      "turn": {
+        "VmHWM": 20432,
+        "VmRSS": 18796,
+        "RssAnon": 5860,
+        "RssFile": 12936,
+        "THP_enabled": 0,
+        "Threads": 5,
+        "AnonHugePages": 0,
+        "Pss_Anon": 5860
+      }
+    },
+    "after_disconnect_kib": {
+      "VmHWM": 20432,
+      "VmRSS": 17764,
+      "RssAnon": 4828,
+      "RssFile": 12936,
+      "THP_enabled": 0,
+      "Threads": 4,
+      "AnonHugePages": 0,
+      "Pss_Anon": 4828
+    },
+    "lifetime_hwm_kib": 20432,
+    "snapshot_ms": 264.46,
+    "under_50_mb": true,
+    "under_35_mb_idle": true,
+    "disconnect_within_3_mb_idle": true,
+    "under_500_ms_snapshot": true,
+    "allocator_env": {},
+    "allocator": "System; two arenas, fixed 128 KiB mmap threshold"
+  },
+  "diagnostics": {
+    "measured_at_utc": "2026-11-01T07:22:40Z",
+    "binary_sha256": "1da302559bcbb13a1959823d11891fca87f9f6115b5fb3e9d98c4f3cc5e08259",
+    "relay": "public",
+    "native_turn": true,
+    "bridged_unary_calls": 100,
+    "idle_settle_seconds": 35,
+    "disconnect_settle_seconds": 3,
+    "idle_kib": {
+      "VmHWM": 21468,
+      "VmRSS": 15956,
+      "RssAnon": 3328,
+      "RssFile": 12628,
+      "THP_enabled": 0,
+      "Threads": 4,
+      "AnonHugePages": 0,
+      "Pss_Anon": 3328
+    },
+    "after_snapshot_kib": {
+      "VmHWM": 21468,
+      "VmRSS": 16368,
+      "RssAnon": 3420,
+      "RssFile": 12948,
+      "THP_enabled": 0,
+      "Threads": 5,
+      "AnonHugePages": 0,
+      "Pss_Anon": 3420
+    },
+    "thread_open_kib": {
+      "VmHWM": 21468,
+      "VmRSS": 18816,
+      "RssAnon": 5740,
+      "RssFile": 13076,
+      "THP_enabled": 0,
+      "Threads": 6,
+      "AnonHugePages": 0,
+      "Pss_Anon": 5740
+    },
+    "bridged_kib": {
+      "ready": {
+        "VmHWM": 22192,
+        "VmRSS": 18892,
+        "RssAnon": 5688,
+        "RssFile": 13204,
+        "THP_enabled": 0,
+        "Threads": 6,
+        "AnonHugePages": 0,
+        "Pss_Anon": 5688
+      },
+      "shell": {
+        "VmHWM": 22192,
+        "VmRSS": 19860,
+        "RssAnon": 6656,
+        "RssFile": 13204,
+        "THP_enabled": 0,
+        "Threads": 6,
+        "AnonHugePages": 0,
+        "Pss_Anon": 6656
+      },
+      "thread": {
+        "VmHWM": 22192,
+        "VmRSS": 19644,
+        "RssAnon": 6440,
+        "RssFile": 13204,
+        "THP_enabled": 0,
+        "Threads": 6,
+        "AnonHugePages": 0,
+        "Pss_Anon": 6440
+      },
+      "churn": {
+        "VmHWM": 22192,
+        "VmRSS": 19804,
+        "RssAnon": 6600,
+        "RssFile": 13204,
+        "THP_enabled": 0,
+        "Threads": 6,
+        "AnonHugePages": 0,
+        "Pss_Anon": 6600
+      },
+      "turn": {
+        "VmHWM": 22192,
+        "VmRSS": 19388,
+        "RssAnon": 6120,
+        "RssFile": 13268,
+        "THP_enabled": 0,
+        "Threads": 5,
+        "AnonHugePages": 0,
+        "Pss_Anon": 6120
+      }
+    },
+    "after_disconnect_kib": {
+      "VmHWM": 22192,
+      "VmRSS": 18228,
+      "RssAnon": 4960,
+      "RssFile": 13268,
+      "THP_enabled": 0,
+      "Threads": 4,
+      "AnonHugePages": 0,
+      "Pss_Anon": 4960
+    },
+    "lifetime_hwm_kib": 22192,
+    "snapshot_ms": 257.87,
+    "under_50_mb": true,
+    "under_35_mb_idle": true,
+    "disconnect_within_3_mb_idle": true,
+    "under_500_ms_snapshot": true,
+    "allocator_env": {},
+    "heap_samples": [
+      {
+        "phase": "idle",
+        "rust_large_live_bytes": 3153936,
+        "rust_large_peak_bytes": 4202512,
+        "rust_max_allocation_bytes": 3014656
+      },
+      {
+        "phase": "idle",
+        "rust_live_bytes": 3790645,
+        "rust_peak_bytes": 5301514,
+        "sqlite_live_bytes": 752192,
+        "sqlite_peak_bytes": 6961224
+      },
+      {
+        "phase": "snapshot",
+        "rust_large_live_bytes": 3153936,
+        "rust_large_peak_bytes": 4202512,
+        "rust_max_allocation_bytes": 3014656
+      },
+      {
+        "phase": "snapshot",
+        "rust_live_bytes": 3790836,
+        "rust_peak_bytes": 5301514,
+        "sqlite_live_bytes": 216032,
+        "sqlite_peak_bytes": 6961224
+      },
+      {
+        "phase": "desktop_thread",
+        "rust_large_live_bytes": 3678224,
+        "rust_large_peak_bytes": 4202512,
+        "rust_max_allocation_bytes": 3014656
+      },
+      {
+        "phase": "desktop_thread",
+        "rust_live_bytes": 4853666,
+        "rust_peak_bytes": 6517876,
+        "sqlite_live_bytes": 229168,
+        "sqlite_peak_bytes": 6961224
+      },
+      {
+        "phase": "ready",
+        "rust_large_live_bytes": 3416080,
+        "rust_large_peak_bytes": 4202512,
+        "rust_max_allocation_bytes": 3014656
+      },
+      {
+        "phase": "ready",
+        "rust_live_bytes": 4999115,
+        "rust_peak_bytes": 6517876,
+        "sqlite_live_bytes": 417672,
+        "sqlite_peak_bytes": 6961224
+      },
+      {
+        "phase": "shell",
+        "rust_large_live_bytes": 3416080,
+        "rust_large_peak_bytes": 4202512,
+        "rust_max_allocation_bytes": 3014656
+      },
+      {
+        "phase": "shell",
+        "rust_live_bytes": 4769200,
+        "rust_peak_bytes": 6517876,
+        "sqlite_live_bytes": 233576,
+        "sqlite_peak_bytes": 6961224
+      },
+      {
+        "phase": "thread",
+        "rust_large_live_bytes": 3547152,
+        "rust_large_peak_bytes": 4202512,
+        "rust_max_allocation_bytes": 3014656
+      },
+      {
+        "phase": "thread",
+        "rust_live_bytes": 5239403,
+        "rust_peak_bytes": 6517876,
+        "sqlite_live_bytes": 285992,
+        "sqlite_peak_bytes": 6961224
+      },
+      {
+        "phase": "churn",
+        "rust_large_live_bytes": 3547152,
+        "rust_large_peak_bytes": 4202512,
+        "rust_max_allocation_bytes": 3014656
+      },
+      {
+        "phase": "churn",
+        "rust_live_bytes": 5219526,
+        "rust_peak_bytes": 6517876,
+        "sqlite_live_bytes": 329688,
+        "sqlite_peak_bytes": 6961224
+      },
+      {
+        "phase": "turn",
+        "rust_large_live_bytes": 3416080,
+        "rust_large_peak_bytes": 4202512,
+        "rust_max_allocation_bytes": 3014656
+      },
+      {
+        "phase": "turn",
+        "rust_live_bytes": 4809306,
+        "rust_peak_bytes": 6517876,
+        "sqlite_live_bytes": 1219936,
+        "sqlite_peak_bytes": 6961224
+      },
+      {
+        "phase": "disconnected",
+        "rust_large_live_bytes": 3153936,
+        "rust_large_peak_bytes": 4202512,
+        "rust_max_allocation_bytes": 3014656
+      },
+      {
+        "phase": "disconnected",
+        "rust_live_bytes": 3939604,
+        "rust_peak_bytes": 6517876,
+        "sqlite_live_bytes": 245872,
+        "sqlite_peak_bytes": 6961224
+      }
+    ],
+    "allocator": "System; two arenas, fixed 128 KiB mmap threshold"
+  },
+  "allocator_ablation_short_workload": [
+    {
+      "label": "mimalloc with idle worker collection",
+      "binary_sha256": "43415b3039108de3453c6eef0a638e9728946b0b730062290572e3b82b9538c4",
+      "unary_churn_calls": 0,
+      "allocator_env": {},
+      "hwm_kib": 51388,
+      "idle_rss_kib": 37836,
+      "disconnected_rss_kib": 50156,
+      "rust_peak_bytes": 9192358,
+      "return_budget_passed": false
+    },
+    {
+      "label": "same executable, THP disabled by environment",
+      "binary_sha256": "43415b3039108de3453c6eef0a638e9728946b0b730062290572e3b82b9538c4",
+      "unary_churn_calls": 0,
+      "allocator_env": {
+        "MIMALLOC_ALLOW_THP": "0"
+      },
+      "hwm_kib": 28904,
+      "idle_rss_kib": 19264,
+      "disconnected_rss_kib": 26456,
+      "rust_peak_bytes": 8723262,
+      "return_budget_passed": false
+    }
+  ],
+  "validation": {
+    "all_features": {
+      "passed": 147,
+      "ignored": 5
+    },
+    "no_default_features": {
+      "passed": 145,
+      "ignored": 5
+    },
+    "clippy": "All targets, all features and no-default-features; -D warnings passed",
+    "watcher_regression": "24 identity replacement publications before; 1 after"
+  },
+  "synthetic": {
+    "binary_sha256": "61eb35932a8b9e19105da3cab48a4c395aa138a3a6cd0c521cf3fd85c1ccbf97",
+    "seed_messages": 1000,
+    "threads": 20,
+    "subscribers": 3,
+    "unary_calls": 1000,
+    "cold_kib": {
+      "VmHWM": 9212,
+      "VmRSS": 9212,
+      "RssAnon": 916,
+      "RssFile": 8296,
+      "THP_enabled": 0,
+      "Threads": 4
+    },
+    "seeded_kib": {
+      "VmHWM": 13896,
+      "VmRSS": 13896,
+      "RssAnon": 2204,
+      "RssFile": 11692,
+      "THP_enabled": 0,
+      "Threads": 5
+    },
+    "subscribed_kib": {
+      "VmHWM": 15616,
+      "VmRSS": 14580,
+      "RssAnon": 2888,
+      "RssFile": 11692,
+      "THP_enabled": 0,
+      "Threads": 6
+    },
+    "after_churn_kib": {
+      "VmHWM": 15616,
+      "VmRSS": 14544,
+      "RssAnon": 2852,
+      "RssFile": 11692,
+      "THP_enabled": 0,
+      "Threads": 6
+    },
+    "snapshot_messages": [
+      10,
+      10,
+      10
+    ],
+    "under_50_mb": true
+  }
+}
