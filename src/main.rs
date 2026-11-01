@@ -87,6 +87,8 @@ fn main() -> std::io::Result<()> {
     }) {
         return Err(std::io::Error::other("unsupported command"));
     }
+    // Before anything creates o3 files, which would pollute another server's profile.
+    o3_server::profile::refuse_foreign_live(Path::new(&dir))?;
     let is_auth = args.first().map(String::as_str) == Some("auth");
     let _ownership = if !is_auth {
         Some(o3_server::profile::ownership(&dir)?)

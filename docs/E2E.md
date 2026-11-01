@@ -10,7 +10,7 @@
 | `send` con respuesta real de Claude | `omarchy-t3-client watch` real | PASS |
 | Visor: `bounded`, `subscribeThread`, proyección en vivo | `omarchy-t3-client watch` real | PASS |
 | Interfaz QML (carga, barra lateral, hilo, composer, respuesta real) | O3 desktop, QML real | PASS, ver «QML real» abajo |
-| Android | O3 Android | PASS pairing, chat, aprobación, reconexión, nuevos hilos Claude/Codex, adjunto y comando de terminal; ruta OmaBridge sin probar (ver abajo) |
+| Android | O3 Android | Verificado en commits anteriores: pairing, chat, aprobación, reconexión, nuevos hilos Claude/Codex, adjunto, terminal y ruta pública. En la versión actual solo pairing, proyecto, hilo y modelos (ver abajo) |
 | OmaBridge status/read/identity/peers/publish/pair | `omarchy-t3-client` real | PASS aislado; detalles abajo |
 
 Memoria de `o3-server`: reposo 29,7-32 MB sin hijos; pico 38,6 MB con turnos de Claude y Codex; 37,9 MB con el

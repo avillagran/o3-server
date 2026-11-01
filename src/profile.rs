@@ -36,6 +36,22 @@ pub fn atomic_json(path: &Path, value: &Value) -> io::Result<()> {
     f.sync_all()?;
     fs::rename(tmp, path)
 }
+/// Commands must not leave o3 files in a profile a different live server owns.
+pub fn refuse_foreign_live(dir: &Path) -> io::Result<()> {
+    let Ok(bytes) = fs::read(dir.join("server-runtime.json")) else {
+        return Ok(());
+    };
+    let Ok(v) = serde_json::from_slice::<Value>(&bytes) else {
+        return Ok(());
+    };
+    if v["serverVersion"]
+        .as_str()
+        .is_some_and(|version| version.starts_with("o3-"))
+    {
+        return Ok(());
+    }
+    refuse_live(dir)
+}
 pub fn refuse_live(dir: &Path) -> io::Result<()> {
     if let Ok(bytes) = fs::read(dir.join("server-runtime.json")) {
         if let Ok(v) = serde_json::from_slice::<Value>(&bytes) {
@@ -92,6 +108,7 @@ impl Drop for RuntimeGuard {
 pub fn ownership(dir: &Path) -> io::Result<fs::File> {
     use std::os::unix::fs::OpenOptionsExt;
     fs::create_dir_all(dir)?;
+    refuse_live(dir)?;
     let lock = fs::OpenOptions::new()
         .create(true)
         .truncate(false)

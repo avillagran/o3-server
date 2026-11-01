@@ -227,3 +227,26 @@ fn cli_default_scopes_match_upstream_and_explicit_scopes_replace_defaults() {
     let claims: Value = serde_json::from_slice(&payload).unwrap();
     assert_eq!(claims["scopes"], json!(o3_server::store::STANDARD_SCOPES));
 }
+
+#[test]
+fn auth_leaves_no_files_in_a_profile_owned_by_another_live_server() {
+    let p = Profile::new();
+    let runtime = serde_json::json!({"version":1,"pid":std::process::id(),"port":1,"origin":"http://127.0.0.1:1","serverVersion":"0.1.7-nightly"});
+    std::fs::create_dir_all(p.0.join("userdata")).unwrap();
+    std::fs::write(
+        p.0.join("userdata/server-runtime.json"),
+        runtime.to_string(),
+    )
+    .unwrap();
+    let out = p
+        .cmd()
+        .args(["auth", "session", "issue", "--token-only"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let names: Vec<_> = std::fs::read_dir(p.0.join("userdata"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert_eq!(names, ["server-runtime.json"], "{names:?}");
+}
