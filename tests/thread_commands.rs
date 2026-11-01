@@ -646,14 +646,23 @@ fn source_control_discovery_has_honest_git_probe_and_option_encoding() {
     assert_eq!(v["versionControlSystems"][1]["implemented"], false);
     // Host CLIs depend on the machine: assert shape and the missing/unknown invariant, not presence.
     let providers = v["sourceControlProviders"].as_array().unwrap();
-    let kinds: Vec<_> = providers.iter().map(|p| p["kind"].as_str().unwrap()).collect();
+    let kinds: Vec<_> = providers
+        .iter()
+        .map(|p| p["kind"].as_str().unwrap())
+        .collect();
     assert_eq!(kinds, ["github", "gitlab", "azure-devops"]);
     assert_eq!(providers[0]["label"], "GitHub");
     assert_eq!(providers[0]["executable"], "gh");
     for p in providers {
         assert!(p["installHint"].as_str().unwrap().starts_with("Install"));
-        assert!(matches!(p["status"].as_str(), Some("available" | "missing")));
-        assert!(matches!(p["auth"]["status"].as_str(), Some("authenticated" | "unauthenticated" | "unknown")));
+        assert!(matches!(
+            p["status"].as_str(),
+            Some("available" | "missing")
+        ));
+        assert!(matches!(
+            p["auth"]["status"].as_str(),
+            Some("authenticated" | "unauthenticated" | "unknown")
+        ));
         if p["status"] == "missing" {
             assert_eq!(p["auth"]["status"], "unknown");
         }
@@ -689,13 +698,20 @@ fn config_stream_sends_typed_provider_statuses_then_snapshots() {
     let event = stream.next(T);
     assert_eq!(event["type"], "providerStatuses", "{}", event["type"]);
     assert_eq!(event["version"], 1);
-    assert_eq!(event["payload"]["providers"], c.rpc("server.getConfig", json!({})).unwrap()["providers"]);
+    assert_eq!(
+        event["payload"]["providers"],
+        c.rpc("server.getConfig", json!({})).unwrap()["providers"]
+    );
     let mut state = json!({});
     assert!(t3_protocol::quota_sources::apply(&mut state, &first));
     assert!(t3_protocol::quota_sources::apply(&mut state, &event));
     assert_eq!(state["providers"][0]["instanceId"], "codex");
     // A settings change is not provider-only: the full replacement snapshot.
-    c.rpc("server.updateSettings", json!({"patch":{"defaultTheme":"dark"}})).unwrap();
+    c.rpc(
+        "server.updateSettings",
+        json!({"patch":{"defaultTheme":"dark"}}),
+    )
+    .unwrap();
     let next = stream.next(T);
     assert_eq!(next["type"], "snapshot");
     assert_eq!(next["config"]["settings"]["defaultTheme"], "dark");

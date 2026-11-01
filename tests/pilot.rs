@@ -33,7 +33,8 @@ fn pilot_imports_read_only_starts_pairs_refuses_overwrite_and_stops() {
     std::fs::create_dir_all(t3.join("userdata")).unwrap();
     let source = t3.join("userdata/statev2.sqlite");
     let db = rusqlite::Connection::open(&source).unwrap();
-    db.execute_batch(include_str!("fixtures/t3-import.sql")).unwrap();
+    db.execute_batch(include_str!("fixtures/t3-import.sql"))
+        .unwrap();
     db.execute(
         "INSERT INTO projection_projects VALUES('p','Project','/var/tmp','','[]','now','now',NULL)",
         [],
@@ -44,8 +45,12 @@ fn pilot_imports_read_only_starts_pairs_refuses_overwrite_and_stops() {
     let dir = root.join("pilot");
 
     let out = pilot(&dir, &t3, &[]);
-    let (stdout, stderr) = (String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
-    let state: Value = serde_json::from_slice(&std::fs::read(dir.join("pilot.json")).unwrap()).unwrap_or(json!({}));
+    let (stdout, stderr) = (
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let state: Value = serde_json::from_slice(&std::fs::read(dir.join("pilot.json")).unwrap())
+        .unwrap_or(json!({}));
     let pid = state["pid"].as_u64();
     // Always stop what we started, whatever the asserts below say.
     let _guard = Stop(dir.clone(), t3.clone());
@@ -54,13 +59,21 @@ fn pilot_imports_read_only_starts_pairs_refuses_overwrite_and_stops() {
     assert!(stdout.contains("/pair#token="), "{stdout}");
     let pid = pid.unwrap();
     assert!(alive(pid));
-    assert_eq!(std::fs::read(&source).unwrap(), before, "T3 database must not change");
+    assert_eq!(
+        std::fs::read(&source).unwrap(),
+        before,
+        "T3 database must not change"
+    );
     assert!(!t3.join("userdata/o3.sqlite").exists());
     assert!(dir.join("t3home/userdata/o3.sqlite").exists());
 
     // The printed origin answers on its own port, and the link pairs a real client.
     let origin = state["origin"].as_str().unwrap();
-    let link = stdout.lines().find(|l| l.contains("/pair#token=")).unwrap().trim();
+    let link = stdout
+        .lines()
+        .find(|l| l.contains("/pair#token="))
+        .unwrap()
+        .trim();
     let token = link.split("#token=").nth(1).unwrap();
     let conn = t3_protocol::pair_bearer(
         origin,
@@ -81,15 +94,27 @@ fn pilot_imports_read_only_starts_pairs_refuses_overwrite_and_stops() {
     assert!(alive(pid));
 
     let stop = pilot(&dir, &t3, &["--stop"]);
-    assert!(stop.status.success(), "{}", String::from_utf8_lossy(&stop.stderr));
+    assert!(
+        stop.status.success(),
+        "{}",
+        String::from_utf8_lossy(&stop.stderr)
+    );
     assert!(!alive(pid));
-    assert!(dir.join("t3home/userdata/o3.sqlite").exists(), "stop keeps the dir");
+    assert!(
+        dir.join("t3home/userdata/o3.sqlite").exists(),
+        "stop keeps the dir"
+    );
 
     let resumed = pilot(&dir, &t3, &["--resume"]);
-    assert!(resumed.status.success(), "{}", String::from_utf8_lossy(&resumed.stderr));
+    assert!(
+        resumed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&resumed.stderr)
+    );
     assert!(!String::from_utf8_lossy(&resumed.stdout).contains("imported"));
     drop(_guard);
-    let state: Value = serde_json::from_slice(&std::fs::read(dir.join("pilot.json")).unwrap()).unwrap();
+    let state: Value =
+        serde_json::from_slice(&std::fs::read(dir.join("pilot.json")).unwrap()).unwrap();
     assert!(!alive(state["pid"].as_u64().unwrap()));
     std::fs::remove_dir_all(root).unwrap();
 }
