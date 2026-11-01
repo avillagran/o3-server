@@ -67,6 +67,11 @@ fn uploaded_images_files_and_context_reach_both_native_transports() {
                         "compact"
                     );
                     assert_eq!(config["providers"][0]["skills"][0]["name"], "test-skill");
+                    assert_eq!(
+                        config["providers"][0]["usageLimits"]["windows"][0]["usedPercent"],
+                        12.0
+                    );
+                    assert!(config["providers"][0]["usageLimits"]["checkedAt"].is_string());
                     assert!(config["providers"][0]["models"].as_array().unwrap().len() > 3);
                 }
                 break;
@@ -214,5 +219,145 @@ fn live_claude_and_codex_through_real_client() {
             assert!(Instant::now() < deadline, "{instance}: live timeout");
             std::thread::sleep(Duration::from_millis(100));
         }
+    }
+}
+
+#[test]
+fn persistent_exact_operation_approval_survives_database_reopen() {
+    use o3_server::provider::{Provider, ProviderControl, ProviderEvent, RunInput};
+    struct Peer;
+    impl Provider for Peer {
+        fn execute<'a>(
+            &'a self,
+            input: RunInput,
+            output: tokio::sync::mpsc::Sender<ProviderEvent>,
+            mut controls: tokio::sync::mpsc::Receiver<ProviderControl>,
+            _cancel: tokio::sync::watch::Receiver<bool>,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'a>>
+        {
+            Box::pin(async move {
+                output.send(ProviderEvent::Started).await.unwrap();
+                output.send(ProviderEvent::Native(json!({"type":"permission","request_id":format!("{}:approval",input.run_id),"native_id":"approval","request":{"tool_name":"Bash","input":{"command":input.text}}}))).await.unwrap();
+                match controls.recv().await {
+                    Some(ProviderControl::Respond { decision, .. })
+                        if decision == "accept" || decision == "acceptAlways" => {}
+                    _ => return Err("approval missing".into()),
+                }
+                output.send(ProviderEvent::Completed).await.unwrap();
+                Ok(())
+            })
+        }
+    }
+    let server = support::start(|s| *s.provider.lock().unwrap() = Some(Arc::new(Peer)));
+    let c = server.connect();
+    c.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"create","threadId":"t","projectId":"p","title":"Approval","modelSelection":{"instanceId":"claudeAgent","model":"test"},"runtimeMode":"approval-required","interactionMode":"default"})).unwrap();
+    for i in 0..3 {
+        c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":format!("send{i}"),"messageId":format!("m{i}"),"threadId":"t","text":if i<2{"echo safe"}else{"rm other"},"attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let p = c
+                .rpc("orchestration.getThreadProjection", json!({"threadId":"t"}))
+                .unwrap();
+            let requests = p["runtimeRequests"].as_array().unwrap();
+            if let Some(request) = requests.iter().find(|r| r["status"] == "pending") {
+                if i == 0 {
+                    c.rpc("orchestration.dispatchCommand",json!({"type":"runtime-request.respond","commandId":"allow","threadId":"t","requestId":request["id"],"decision":"acceptAlways"})).unwrap();
+                } else if i == 2 {
+                    break;
+                }
+            }
+            if i < 2
+                && p["runs"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|r| r["status"] == "completed")
+                && server.state.active.lock().unwrap().is_empty()
+            {
+                break;
+            }
+            assert!(Instant::now() < deadline, "{p}");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        if i == 0 {
+            let reopened = o3_server::store::State::open(&server.state.dir).unwrap();
+            assert_eq!(
+                reopened
+                    .db
+                    .lock()
+                    .unwrap()
+                    .query_row(
+                        "SELECT count(*) FROM records WHERE kind='approvalPolicies'",
+                        [],
+                        |r| r.get::<_, i64>(0)
+                    )
+                    .unwrap(),
+                1
+            );
+        }
+    }
+}
+
+#[test]
+fn both_plan_acceptances_dispatch_implementation_and_complete_source_plan() {
+    for instance in ["codex", "claudeAgent"] {
+        let server = support::start(|s| {
+            *s.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::Providers {
+                claude: Some(Arc::new(o3_server::claude::ClaudeProvider::new(
+                    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                        .join("tests/fixtures/input/peer.py"),
+                ))),
+                codex: Arc::new(o3_server::codex::CodexProvider::new(
+                    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                        .join("tests/fixtures/input/peer.py"),
+                    None,
+                )),
+            }))
+        });
+        let c = server.connect();
+        c.rpc("orchestration.launchThread",json!({"commandId":"launch","threadId":"t","projectId":"p","title":"Plan","modelSelection":{"instanceId":instance,"model":"test"},"runtimeMode":"full-access","interactionMode":"plan","workspaceStrategy":{"type":"root"},"initialMessage":{"text":"plan-proof","attachments":[]}})).unwrap();
+        let wait = || {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                let p = c
+                    .rpc("orchestration.getThreadProjection", json!({"threadId":"t"}))
+                    .unwrap();
+                assert!(
+                    !p["runs"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|r| r["status"] == "failed"),
+                    "{p}"
+                );
+                if p["runs"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|r| r["status"] == "completed")
+                    && server.state.active.lock().unwrap().is_empty()
+                {
+                    return p;
+                }
+                assert!(Instant::now() < deadline, "{p}");
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        };
+        let p = wait();
+        let plan = &p["plans"][0];
+        assert_eq!(plan["kind"], "proposed_plan");
+        let follow = t3_protocol::plan_workflow::follow_up(plan, "t", "").unwrap();
+        let mut cmd = json!({"type":"message.dispatch","commandId":"implement","messageId":"implementation","threadId":"t","text":follow["text"],"interactionMode":follow["interactionMode"],"attachments":[],"dispatchMode":{"type":"start_immediately"}});
+        t3_protocol::plan_workflow::attach_source_ref(&mut cmd, &follow).unwrap();
+        c.rpc("orchestration.dispatchCommand", cmd).unwrap();
+        let p = wait();
+        assert_eq!(p["plans"][0]["status"], "completed");
+        assert_eq!(p["thread"]["interactionMode"], "default");
+        let rename = json!({"type":"thread.metadata.update","commandId":"title","threadId":"t","regenerateTitle":true});
+        c.rpc("orchestration.dispatchCommand", rename).unwrap();
+        let p = c
+            .rpc("orchestration.getThreadProjection", json!({"threadId":"t"}))
+            .unwrap();
+        assert_eq!(p["thread"]["title"], "plan-proof");
     }
 }

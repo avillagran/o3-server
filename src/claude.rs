@@ -224,11 +224,23 @@ impl ClaudeProvider {
                             }
                             if let Some(version)=v["claude_code_version"].as_str() {metadata["version"]=json!(version);}
                         }
+                        if v["type"]=="rate_limit_event" {
+                            self.metadata.lock().unwrap()["usageLimits"]=usage_limits(&v["rate_limit_info"]);
+                        }
                         if let Some(id)=v["session_id"].as_str() { session.native=id.into(); }
                         if v["type"]=="control_response" && v["response"]["subtype"]=="error" { return Err(format!("Claude control rejected: {}",v["response"]["error"])); }
                         if v["type"]=="control_request" {
                             let native=v["request_id"].as_str().ok_or("missing request id")?;
                             if v["request"]["subtype"]!="can_use_tool" { return Err("unsupported Claude control request".into()); }
+                            if v["request"]["tool_name"]=="ExitPlanMode" {
+                                let raw=&v["request"]["input"];
+                                let raw=if raw["type"]=="record" {&raw["value"]} else {raw};
+                                if let Some(markdown)=raw["plan"].as_str().filter(|s|!s.trim().is_empty() && s.len()<=120_000) {
+                                    output.send(ProviderEvent::Native(json!({"type":"proposed_plan","id":format!("plan-{}-{native}",input.run_id),"markdown":markdown.trim()}))).await.map_err(|_|"receiver closed")?;
+                                }
+                                session.send(permission_response(native,&json!("decline"),Some("The client captured your proposed plan. Stop and wait for user feedback or implementation in a later turn."),json!({}))).await?;
+                                continue;
+                            }
                             if pending.len()>=64 { return Err("Claude pending request limit".into()); }
                             pending.insert(native.into(),v["request"].clone());
                             output.send(ProviderEvent::Native(json!({"type":"permission","request_id":format!("{}:{native}",input.run_id),"native_id":native,"request":v["request"]}))).await.map_err(|_|"receiver closed")?;
@@ -800,4 +812,27 @@ mod tests {
         s.child.kill().await.unwrap();
         std::fs::remove_dir_all(dir).unwrap();
     }
+}
+
+fn usage_limits(info: &Value) -> Value {
+    let mut windows = Vec::new();
+    for (native, id, label) in [
+        ("five_hour", "session", "Session"),
+        ("seven_day", "weekly", "Weekly"),
+    ] {
+        let w = &info["unifiedWindows"][native];
+        let Some(used) = w["utilization"].as_f64().filter(|v| v.is_finite()) else {
+            continue;
+        };
+        let mut window = json!({"id":native,"kind":id,"label":label,"usedPercent":(used*100.0).clamp(0.0,100.0)});
+        if let Some(reset) = w["resetsAt"]
+            .as_i64()
+            .and_then(|s| s.checked_mul(1000))
+            .filter(|v| time::OffsetDateTime::from_unix_timestamp(*v / 1000).is_ok())
+        {
+            window["resetsAt"] = json!(crate::store::iso(reset));
+        }
+        windows.push(window);
+    }
+    json!({"windows":windows,"checkedAt":crate::store::iso(crate::store::now_ms())})
 }

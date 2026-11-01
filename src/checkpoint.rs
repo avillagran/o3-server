@@ -95,21 +95,23 @@ mod tests {
         std::fs::write(root.join("file"), "base").unwrap();
         git(&root, &index, &["add", "."]).unwrap();
         git(&root, &index, &["commit", "-qm", "base"]).unwrap();
-        git(
-            &root,
-            &index,
-            &[
+        assert!(Command::new("git")
+            .current_dir(&root)
+            .env_remove("GIT_INDEX_FILE")
+            .args([
                 "worktree",
                 "add",
                 "--detach",
                 linked.to_str().unwrap(),
-                "HEAD",
-            ],
-        )
-        .unwrap();
+                "HEAD"
+            ])
+            .output()
+            .unwrap()
+            .status
+            .success());
         let gitdir = git(&linked, &index, &["rev-parse", "--absolute-git-dir"]).unwrap();
         let linked_index = std::path::PathBuf::from(gitdir).join("index");
-        let before = std::fs::read(&linked_index).ok();
+        let before = std::fs::read(&linked_index).unwrap();
         let state = State::open(&dir.join("state")).unwrap();
         {
             let db = state.db.lock().unwrap();
@@ -131,7 +133,7 @@ mod tests {
         );
         assert!(!linked.join("new").exists());
         assert_eq!(std::fs::read_to_string(root.join("file")).unwrap(), "base");
-        assert_eq!(std::fs::read(linked_index).ok(), before);
+        assert_eq!(std::fs::read(linked_index).unwrap(), before);
         assert!(!root.join(".git/index").exists());
         drop(state);
         std::fs::remove_dir_all(dir).unwrap();

@@ -80,6 +80,20 @@ pub(crate) fn persist(
             put(db, "nodes", rid, tid, &node)?;
             append(db, tid, "node.updated", node, t)?;
         }
+        "proposed_plan" => {
+            let id = f["id"].as_str().ok_or("plan id missing")?;
+            let plan = json!({"id":id,"threadId":tid,"runId":rid,"nodeId":rid,"status":"active","kind":"proposed_plan","markdown":f["markdown"]});
+            put(db, "plans", id, tid, &plan)?;
+            append(db, tid, "plan.updated", plan, t)?;
+            let mut i = item(db, tid, rid, &format!("item-{id}"), at)?;
+            i["type"] = json!("proposed_plan");
+            i["planId"] = json!(id);
+            i["markdown"] = f["markdown"].clone();
+            i["streaming"] = json!(false);
+            i["status"] = json!("completed");
+            i["completedAt"] = json!(at);
+            save_item(db, tid, t, i)?;
+        }
         "thinking" => {
             let id = format!(
                 "thinking-{rid}-{}-{}",
@@ -223,7 +237,10 @@ pub(crate) fn persist(
         "permission" => {
             let id = f["request_id"].as_str().ok_or("request id missing")?;
             let user = f["request"]["tool_name"] == "AskUserQuestion";
-            let req = json!({"id":id,"nodeId":rid,"providerTurnId":rid,"nativeRequestRef":reference(&f["native_id"]),"kind":if user {"user_input"}else{"permission"},"status":"pending","responseCapability":{"type":"live","providerSessionId":t["activeProviderThreadId"],"supportsFeedback":true},"createdAt":at,"resolvedAt":null});
+            let mut req = json!({"id":id,"nodeId":rid,"providerTurnId":rid,"nativeRequestRef":reference(&f["native_id"]),"kind":if user {"user_input"}else{"permission"},"status":"pending","responseCapability":{"type":"live","providerSessionId":t["activeProviderThreadId"],"supportsFeedback":true},"createdAt":at,"resolvedAt":null});
+            if let Some(key) = crate::approval_policy::key(f, true) {
+                req["approvalPolicyKey"] = key;
+            }
             put(db, "runtimeRequests", id, tid, &req)?;
             append(db, tid, "runtime-request.updated", req, t)?;
             let mut i = item(db, tid, rid, &format!("approval-{id}"), at)?;

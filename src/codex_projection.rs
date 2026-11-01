@@ -368,7 +368,7 @@ pub(crate) fn persist(
                 thread,
                 "runtimeRequests",
                 "runtime-request.updated",
-                json!({"id":request_id,"nodeId":node,"providerTurnId":pv,"nativeRequestRef":{"driver":"codex","nativeId":frame["id"].as_str().map(str::to_owned).unwrap_or_else(||frame["id"].to_string()),"strength":"strong"},"kind":kind,"status":"pending","responseCapability":{"type":"live","providerSessionId":session_id},"createdAt":at,"resolvedAt":null}),
+                json!({"id":request_id,"nodeId":node,"providerTurnId":pv,"nativeRequestRef":{"driver":"codex","nativeId":frame["id"].as_str().map(str::to_owned).unwrap_or_else(||frame["id"].to_string()),"strength":"strong"},"approvalPolicyKey":crate::approval_policy::key(&frame, false),"kind":kind,"status":"pending","responseCapability":{"type":"live","providerSessionId":session_id},"createdAt":at,"resolvedAt":null}),
             )?;
             base["id"] = json!(format!("item-{request_id}"));
             base["nodeId"] = json!(node);

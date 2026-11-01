@@ -355,6 +355,7 @@ pub fn ensure_started(s: &Arc<State>) {
     let s = s.clone();
     tokio::spawn(async move {
         loop {
+            let _ = crate::settlement::tick(&s, now_ms());
             let (ready, soonest) = due(&s, now_ms());
             for id in ready {
                 let _ = fire(&s, &id);

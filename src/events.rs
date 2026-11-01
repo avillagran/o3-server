@@ -318,6 +318,20 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             "thread.visited"
         }
         "thread.metadata.update" => {
+            if c["regenerateTitle"] == true {
+                let text: Option<String> = tx.query_row("SELECT json_extract(body,'$.text') FROM records WHERE kind='messages' AND thread_id=? AND json_extract(body,'$.role')='user' ORDER BY rowid LIMIT 1",[tid],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
+                let title = text
+                    .as_deref()
+                    .unwrap_or("")
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                if title.is_empty() {
+                    return Err("send a message before generating a title".into());
+                }
+                t["title"] = json!(title.chars().take(80).collect::<String>());
+                t["titleRegeneration"] = Value::Null;
+            }
             for k in ["title", "branch", "worktreePath", "limitRecovery"] {
                 if let Some(v) = c.get(k) {
                     t[k] = v.clone()
@@ -496,8 +510,19 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             if request["status"] != "pending" {
                 return Err("runtime request is not pending".into());
             }
-            if c["decision"] == "acceptAlways" && !request["nativeRequestRef"].is_null() {
-                return Err("persistent native approvals are not implemented; choose accept or acceptForSession".into());
+            if c["decision"] == "acceptAlways" {
+                if request["approvalPolicyKey"].is_null() {
+                    return Err("this request has no persistable operation scope".into());
+                }
+                let key = request["approvalPolicyKey"].clone();
+                let id = format!("approval-policy-{}", random_id()?);
+                put(
+                    &tx,
+                    "approvalPolicies",
+                    &id,
+                    tid,
+                    &json!({"id":id,"key":key,"providerInstanceId":t["providerInstanceId"],"worktreePath":t["worktreePath"],"projectId":t["projectId"],"createdAt":at}),
+                )?;
             }
             let sender = s.active.lock().unwrap().get(&rid).cloned();
             let permit = match sender {
@@ -667,9 +692,42 @@ fn stage_message(
     if mode != Some("defer_start") && s.provider.lock().unwrap().is_none() {
         return Err("no provider adapter configured; only defer_start is available".into());
     }
+    if let Some(mode) = c.get("interactionMode") {
+        if !matches!(mode.as_str(), Some("default" | "plan")) {
+            return Err("unsupported interaction mode".into());
+        }
+        if active_run.is_some() {
+            return Err("cannot change mode with active or queued work".into());
+        }
+        t["interactionMode"] = mode.clone();
+        append(tx, tid, "thread.interaction-mode-updated", t.clone(), t)?;
+    }
+    if let Some(reference) = c.get("sourcePlanRef") {
+        let source = reference["threadId"]
+            .as_str()
+            .ok_or("source plan thread missing")?;
+        let id = reference["planId"]
+            .as_str()
+            .ok_or("source plan id missing")?;
+        let mut plan = get(tx, "plans", id)?;
+        let source_thread = get(tx, "thread", source)?;
+        if plan["threadId"] != source
+            || plan["status"] != "active"
+            || source_thread["projectId"] != t["projectId"]
+            || t["interactionMode"] != "default"
+        {
+            return Err("source plan is not eligible for implementation".into());
+        }
+        plan["status"] = json!("completed");
+        put(tx, "plans", id, source, &plan)?;
+        append(tx, source, "plan.updated", plan, &source_thread)?;
+    }
     let run_id = random_id()?;
     let mid = c["messageId"].as_str().ok_or("messageId required")?;
     let mut m = json!({"id":mid,"threadId":tid,"runId":run_id,"nodeId":null,"role":"user","text":c["text"],"attachments":c["attachments"],"streaming":false,"createdBy":"user","creationSource":"web","createdAt":at,"updatedAt":at});
+    if let Some(reference) = c.get("sourcePlanRef") {
+        m["sourcePlanRef"] = reference.clone();
+    }
     if let Some(context) = c.get("context") {
         m["context"] = context.clone();
     }

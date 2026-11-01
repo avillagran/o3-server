@@ -175,8 +175,32 @@ pub(crate) fn start(
                 })
                 .await;
             }
+            let request_id = match &event {
+                ProviderEvent::Native(f) if f["type"] == "permission" => {
+                    f["request_id"].as_str().map(str::to_owned)
+                }
+                ProviderEvent::Codex(f) => f["params"]["o3RequestId"].as_str().map(str::to_owned),
+                _ => None,
+            };
             if persist(&s, &tid, &rid, event).is_err() {
                 break;
+            }
+            if let Some(id) = request_id {
+                let granted = {
+                    let db = s.db.lock().unwrap();
+                    let request =
+                        crate::events::get(&db, "runtimeRequests", &id).unwrap_or_default();
+                    let thread = crate::events::get(&db, "thread", &tid).unwrap_or_default();
+                    !request["approvalPolicyKey"].is_null() && db.query_row(
+                        "SELECT EXISTS(SELECT 1 FROM records WHERE kind='approvalPolicies' AND thread_id=? AND json_extract(body,'$.key')=json(?) AND json_extract(body,'$.providerInstanceId')=? AND json_extract(body,'$.worktreePath') IS json_extract(?,'$.worktreePath') AND json_extract(body,'$.projectId') IS json_extract(?,'$.projectId'))",
+                        rusqlite::params![tid,request["approvalPolicyKey"].to_string(),thread["providerInstanceId"].as_str().unwrap_or(""), thread.to_string(), thread.to_string()],|r|r.get::<_,bool>(0)).unwrap_or(false)
+                };
+                if granted {
+                    let _ = crate::events::dispatch(
+                        &s,
+                        &serde_json::json!({"type":"runtime-request.respond","commandId":format!("auto-approval-{rid}-{id}"),"threadId":tid,"requestId":id,"decision":"accept"}),
+                    );
+                }
             }
             let interrupted = crate::events::get(&s.db.lock().unwrap(), "runs", &rid)
                 .is_ok_and(|r| r["status"] == "interrupted");
