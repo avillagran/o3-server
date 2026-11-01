@@ -708,6 +708,138 @@ fn favicon_ext_ok(p: &str) -> bool {
         )
 }
 
+/// Follow only index.theme-declared paths, with finite inheritance and directory budgets.
+fn themed_icon(roots: &[PathBuf], icon: &str) -> Option<PathBuf> {
+    let config = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")));
+    let theme = config
+        .and_then(|p| std::fs::read_to_string(p.join("gtk-3.0/settings.ini")).ok())
+        .and_then(|text| {
+            text.lines().find_map(|l| {
+                l.trim()
+                    .strip_prefix("gtk-icon-theme-name=")
+                    .map(|s| s.trim().to_owned())
+            })
+        });
+    let mut pending: std::collections::VecDeque<String> =
+        theme.into_iter().chain(["hicolor".into()]).collect();
+    let mut visited = std::collections::HashSet::new();
+    while let Some(theme) = pending.pop_front() {
+        if visited.len() >= 16 {
+            break;
+        }
+        if !safe_theme_path(&theme) || theme.contains('/') || !visited.insert(theme.clone()) {
+            continue;
+        }
+        for root in roots {
+            let base = root.join("icons").join(&theme);
+            let index = std::fs::read_to_string(base.join("index.theme")).unwrap_or_default();
+            let mut dirs: Vec<String> = Vec::new();
+            for line in index.lines() {
+                if let Some(inherits) = line.strip_prefix("Inherits=") {
+                    for inherited in inherits
+                        .split(',')
+                        .take(16)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
+                    {
+                        pending.push_front(inherited.trim().to_owned());
+                    }
+                }
+                if let Some(list) = line
+                    .strip_prefix("Directories=")
+                    .or_else(|| line.strip_prefix("ScaledDirectories="))
+                {
+                    dirs.extend(list.split(',').take(256).map(|s| s.trim().to_owned()));
+                }
+            }
+            if theme == "hicolor" {
+                dirs.extend(
+                    [
+                        "scalable", "256x256", "128x128", "64x64", "48x48", "32x32", "16x16",
+                    ]
+                    .map(|s| format!("{s}/apps")),
+                );
+            }
+            for dir in dirs.into_iter().take(256).filter(|d| safe_theme_path(d)) {
+                for ext in ["png", "svg"] {
+                    let p = base.join(&dir).join(format!("{icon}.{ext}"));
+                    if p.is_file() {
+                        return Some(p);
+                    }
+                }
+            }
+        }
+    }
+    for root in roots {
+        for ext in ["png", "svg"] {
+            let p = root.join("pixmaps").join(format!("{icon}.{ext}"));
+            if p.is_file() {
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+fn safe_theme_path(path: &str) -> bool {
+    !path.is_empty()
+        && Path::new(path)
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
+        && !path.contains('\\')
+}
+fn cached_media_extension(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("png")
+    } else if bytes.starts_with(b"\xff\xd8\xff") {
+        Some("jpg")
+    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        Some("gif")
+    } else if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") {
+        Some("webp")
+    } else if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WAVE") {
+        Some("wav")
+    } else if bytes.get(4..8) == Some(b"ftyp") {
+        if bytes.get(8..12) == Some(b"avif") {
+            Some("avif")
+        } else if bytes.get(8..12) == Some(b"M4A ") {
+            Some("m4a")
+        } else {
+            Some("mp4")
+        }
+    } else if bytes.starts_with(b"ID3") || bytes.starts_with(b"\xff\xfb") {
+        Some("mp3")
+    } else if bytes.starts_with(b"fLaC") {
+        Some("flac")
+    } else {
+        None
+    }
+}
+fn sweep_media(dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.take(2048).flatten() {
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        if !meta.is_file() || mime_for(&entry.path().to_string_lossy()).is_none() {
+            continue;
+        }
+        // Two grant lifetimes leave an in-flight URL valid through its entire TTL.
+        if meta
+            .modified()
+            .ok()
+            .and_then(|m| m.elapsed().ok())
+            .is_some_and(|age| age.as_millis() > (2 * ASSET_TTL_MS) as u128)
+        {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
 /// Credentialed media is fetched once into the private profile, then served through an expiring grant.
 pub async fn create_url_async(s: &State, p: &Value) -> Reply {
     let resource = &p["resource"];
@@ -754,8 +886,11 @@ pub async fn create_url_async(s: &State, p: &Value) -> Reply {
     }
     let dir = s.dir.join("asset-media");
     std::fs::create_dir_all(&dir).map_err(|_| invalid("asset cache unavailable"))?;
+    sweep_media(&dir);
+    let ext =
+        cached_media_extension(&o.stdout).ok_or_else(|| invalid("unsupported media content"))?;
     let file = dir.join(format!(
-        "{}.png",
+        "{}.{ext}",
         random_id().map_err(|_| invalid("asset id unavailable"))?
     ));
     std::fs::write(&file, &o.stdout).map_err(|_| invalid("asset cache write failed"))?;
@@ -954,10 +1089,13 @@ pub fn create_url(s: &State, p: &Value) -> Reply {
             if let Some(home) = std::env::var_os("HOME") {
                 roots.push(PathBuf::from(home).join(".local/share"));
             }
-            roots.extend([
-                PathBuf::from("/usr/local/share"),
-                PathBuf::from("/usr/share"),
-            ]);
+            roots.extend(
+                std::env::split_paths(
+                    &std::env::var_os("XDG_DATA_DIRS")
+                        .unwrap_or_else(|| "/usr/local/share:/usr/share".into()),
+                )
+                .take(32),
+            );
             let mut icon = None;
             for root in &roots {
                 if app["_tag"] == "display-name" {
@@ -1002,24 +1140,7 @@ pub fn create_url(s: &State, p: &Value) -> Reply {
             if Path::new(&icon).is_absolute() {
                 found = Some(PathBuf::from(&icon));
             } else if !icon.contains('/') {
-                'search: for root in roots {
-                    for size in [
-                        "scalable", "256x256", "128x128", "64x64", "48x48", "32x32", "16x16",
-                    ] {
-                        for ext in ["png", "svg"] {
-                            let path = root.join(format!("icons/hicolor/{size}/apps/{icon}.{ext}"));
-                            if path.is_file() {
-                                found = Some(path);
-                                break 'search;
-                            }
-                        }
-                    }
-                    let path = root.join(format!("pixmaps/{icon}.png"));
-                    if path.is_file() {
-                        found = Some(path);
-                        break;
-                    }
-                }
+                found = themed_icon(&roots, &icon);
             }
             let file = found
                 .filter(|p| mime_for(&p.to_string_lossy()).is_some_and(|m| m.starts_with("image/")))
@@ -1603,5 +1724,32 @@ mod boundary_tests {
         assert!(create_url(&s, &json!({"resource":{"_tag":"draft-workspace-file","cwd":base.join("profile"),"path":private}})).is_err());
         drop(s);
         std::fs::remove_dir_all(base).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod media_cache_tests {
+    use super::*;
+    #[test]
+    fn expired_cache_is_collected_and_media_types_follow_content() {
+        let root = std::env::temp_dir().join(random_id().unwrap());
+        std::fs::create_dir_all(&root).unwrap();
+        let old = root.join("old.png");
+        let live = root.join("live.mp4");
+        std::fs::write(&old, b"old").unwrap();
+        std::fs::write(&live, b"live").unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&old)
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(3 * 3600))
+            .unwrap();
+        sweep_media(&root);
+        assert!(!old.exists());
+        assert!(live.exists());
+        assert_eq!(cached_media_extension(b"\xff\xd8\xffJPEG"), Some("jpg"));
+        assert_eq!(cached_media_extension(b"\0\0\0\x18ftypisom"), Some("mp4"));
+        assert_eq!(cached_media_extension(b"<html>login</html>"), None);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

@@ -1133,3 +1133,13 @@ provider child memory is excluded. Aggregate evidence: [rss-implementation.json]
    against a private local GitLab API fixture: branch query, draft/open metadata,
    local-only and HTTP 403 passed. Live authenticated GitLab and upstream stale
    last-known-PR fallback/backoff parity remain unverified; the row stays partial.
+
+6. Native icons follow the GTK3 configured theme, index.theme inheritance and
+   declared directories (16 themes, 256 directories/theme, cycle/traversal guards),
+   XDG data directories, hicolor and pixmaps fallback. Signed icon URL downloads
+   exercise a cyclic inherited theme through the real server. Credentialed media
+   selects image/audio/video extensions from content instead of always PNG;
+   unknown content is rejected. Cache collection removes expired media after two
+   grant lifetimes, examining at most 2048 entries per media creation. Tests retain
+   fresh entries and remove expired entries. Full platform discovery, all media
+   formats and MCP HTML injection remain partial; no row is promoted.

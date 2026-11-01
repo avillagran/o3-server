@@ -5,17 +5,34 @@ use serde_json::json;
 #[test]
 fn native_icon_tool_image_and_credentialed_media_use_signed_urls() {
     let data = std::env::temp_dir().join(format!("o3-icons-{}", std::process::id()));
-    std::fs::create_dir_all(data.join("icons/hicolor/48x48/apps")).unwrap();
+    std::fs::create_dir_all(data.join("icons/inherited/48x48/apps")).unwrap();
+    write(
+        &data.join("config/gtk-3.0/settings.ini"),
+        "[Settings]\ngtk-icon-theme-name=primary\n",
+    );
+    write(
+        &data.join("icons/primary/index.theme"),
+        "[Icon Theme]\nInherits=inherited\nDirectories=\n",
+    );
+    write(
+        &data.join("icons/inherited/index.theme"),
+        "[Icon Theme]\nInherits=primary\nDirectories=48x48/apps\n",
+    );
+    std::env::set_var("XDG_CONFIG_HOME", data.join("config"));
     // This integration-test executable contains one test; set before spawning any server threads.
     unsafe { std::env::set_var("XDG_DATA_HOME", &data) };
     write(
-        &data.join("icons/hicolor/48x48/apps/o3-proof.png"),
+        &data.join("icons/inherited/48x48/apps/o3-proof.png"),
         b"\x89PNG\r\n\x1a\n",
     );
     std::fs::create_dir_all(data.join("applications")).unwrap();
     write(
         &data.join("applications/o3-proof.desktop"),
         "[Desktop Entry]\nName=O3 Proof App\nIcon=o3-proof\n",
+    );
+    write(
+        &data.join("icons/hicolor/48x48/apps/o3-proof.png"),
+        b"fallback must not override inherited theme",
     );
     let e = setup("asset-kinds");
     let root = e.dir("workspace");
