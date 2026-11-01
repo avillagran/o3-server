@@ -225,14 +225,7 @@ impl CodexProvider {
         let response = if let Some(id) = input.native_session_id.as_ref() {
             params["threadId"] = json!(id);
             params["excludeTurns"] = json!(true);
-            match c.call("thread/resume", params.clone()).await {
-                Err(e) if e.contains("no rollout found for thread id") => {
-                    params.as_object_mut().unwrap().remove("threadId");
-                    params.as_object_mut().unwrap().remove("excludeTurns");
-                    c.call("thread/start", params).await?
-                }
-                other => other?,
-            }
+            c.call("thread/resume", params).await?
         } else {
             c.call("thread/start", params).await?
         };
@@ -627,7 +620,8 @@ mod tests {
         second.await.unwrap().unwrap();
         bindings.sort();
         assert_eq!(bindings, vec!["thread-1", "thread-2"]);
-        // A fresh app run resumes the same native thread, then interrupts it.
+        // Drop the native app-server connection too: the next run must resume after restart.
+        provider.shutdown().await;
         let (out, mut events) = mpsc::channel(16);
         let (tx, rx) = mpsc::channel(8);
         let (_cancel, cancel) = watch::channel(false);

@@ -515,3 +515,61 @@ mod command_tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
+
+#[cfg(test)]
+mod restart_tests {
+    use super::*;
+    use crate::{events, store::State};
+    use serde_json::json;
+    use std::sync::Arc;
+    struct Probe(mpsc::Sender<Option<String>>);
+    impl Provider for Probe {
+        fn execute<'a>(
+            &'a self,
+            input: RunInput,
+            _output: mpsc::Sender<ProviderEvent>,
+            _control: mpsc::Receiver<ProviderControl>,
+            _cancel: watch::Receiver<bool>,
+        ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+            Box::pin(async move {
+                self.0
+                    .send(input.native_session_id)
+                    .await
+                    .map_err(|e| e.to_string())
+            })
+        }
+    }
+    #[tokio::test]
+    async fn idle_restart_supplies_durable_native_ids_to_both_adapters() {
+        for (instance, key) in [
+            ("claudeAgent", "activeProviderThreadId"),
+            ("codex", "codexNativeThreadId"),
+        ] {
+            let dir = std::env::temp_dir()
+                .join(format!("o3-resume-{}", crate::store::random_id().unwrap()));
+            let state = State::open(&dir).unwrap();
+            let mut thread = json!({"id":"t","providerInstanceId":instance});
+            thread[key] = json!("native-conversation");
+            events::put(&state.db.lock().unwrap(), "thread", "t", "t", &thread).unwrap();
+            drop(state);
+            let state = Arc::new(State::open(&dir).unwrap());
+            crate::recovery::recover(&mut state.db.lock().unwrap()).unwrap();
+            let (tx, mut rx) = mpsc::channel(1);
+            *state.provider.lock().unwrap() = Some(Arc::new(Probe(tx)));
+            start(state.clone(), "t".into(), "r".into(), "next message".into());
+            assert_eq!(
+                tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv())
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .as_deref(),
+                Some("native-conversation")
+            );
+            while !state.active.lock().unwrap().is_empty() {
+                tokio::task::yield_now().await;
+            }
+            drop(state);
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
+}

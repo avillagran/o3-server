@@ -184,6 +184,7 @@ pub fn dispatch(s: &Arc<State>, c: &Value) -> Result<Value> {
     }
     let outcome = apply(s, &tx, c, kind)?;
     let result = json!({"sequence":outcome.seq});
+    crate::outbox::stage(&tx, c)?;
     tx.execute(
         "INSERT INTO receipts VALUES(?,?)",
         params![cid, result.to_string()],
@@ -194,6 +195,7 @@ pub fn dispatch(s: &Arc<State>, c: &Value) -> Result<Value> {
     s.notify();
     if let Some((permit, text)) = outcome.steer {
         permit.send(crate::provider::ProviderControl::Steer(text));
+        crate::outbox::handed_off(s, cid)?;
     }
     if let Some((tid, rid, text)) = outcome.start {
         crate::provider::start(s.clone(), tid, rid, text);

@@ -340,3 +340,54 @@ async fn shell_stream_has_no_ten_thousand_project_cap() {
     drop(s);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn control_outbox_is_receipt_atomic_and_restart_reports_uncertain_delivery() {
+    let dir = directory();
+    let s = State::open(&dir).unwrap();
+    fn record(
+        db: &rusqlite::Connection,
+        kind: &str,
+        id: &str,
+    ) -> Result<serde_json::Value, String> {
+        let raw: String = db
+            .query_row(
+                "SELECT body FROM records WHERE kind=? AND id=?",
+                [kind, id],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        serde_json::from_str(&raw).map_err(|e| e.to_string())
+    }
+    let command = json!({"type":"runtime-request.respond","commandId":"answer","threadId":"t","requestId":"approval","decision":"accept"});
+    {
+        let mut db = s.db.lock().unwrap();
+        db.execute("INSERT INTO records VALUES('thread','t','t',?)", [json!({"id":"t","activeProviderThreadId":"claude-native","codexNativeThreadId":"codex-native"}).to_string()]).unwrap();
+        let tx = db.transaction().unwrap();
+        o3_server::outbox::stage(&tx, &command).unwrap();
+        // Dropping the transaction must discard the outbox together with the receipt.
+    }
+    assert!(record(&s.db.lock().unwrap(), "controlOutbox", "answer").is_err());
+    {
+        let mut db = s.db.lock().unwrap();
+        let tx = db.transaction().unwrap();
+        o3_server::outbox::stage(&tx, &command).unwrap();
+        tx.execute("INSERT INTO receipts VALUES('answer','{}')", [])
+            .unwrap();
+        tx.commit().unwrap();
+    }
+    drop(s);
+    let s = State::open(&dir).unwrap();
+    o3_server::recovery::recover(&mut s.db.lock().unwrap()).unwrap();
+    let db = s.db.lock().unwrap();
+    let entry = record(&db, "controlOutbox", "answer").unwrap();
+    assert_eq!(entry["status"], "delivery-unknown");
+    assert_eq!(entry["command"], command);
+    let thread = record(&db, "thread", "t").unwrap();
+    assert_eq!(thread["activeProviderThreadId"], "claude-native");
+    assert_eq!(thread["codexNativeThreadId"], "codex-native");
+    assert_eq!(thread["lastControlDeliveryError"]["commandId"], "answer");
+    drop(db);
+    drop(s);
+    std::fs::remove_dir_all(dir).unwrap();
+}

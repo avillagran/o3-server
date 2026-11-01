@@ -10,7 +10,7 @@ pub fn recover(db: &mut Connection) -> Result<(), String> {
     use rusqlite::OptionalExtension;
     let mut cursor = 0i64;
     loop {
-        let row=tx.query_row("SELECT rowid,kind,id,thread_id,body FROM records WHERE rowid>? AND kind IN ('runs','runtimeRequests','providerSessions') ORDER BY rowid LIMIT 1",[cursor],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?))).optional().map_err(|e|e.to_string())?;
+        let row=tx.query_row("SELECT rowid,kind,id,thread_id,body FROM records WHERE rowid>? AND kind IN ('runs','runtimeRequests','providerSessions','controlOutbox') ORDER BY rowid LIMIT 1",[cursor],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?))).optional().map_err(|e|e.to_string())?;
         let Some((rowid, kind, id, tid, body)) = row else {
             break;
         };
@@ -31,6 +31,7 @@ pub fn recover(db: &mut Connection) -> Result<(), String> {
             "runtimeRequests" if v["status"] == "pending" => {
                 v["status"] = json!("cancelled");
                 v["resolvedAt"] = json!(iso(now_ms()));
+                v["resolutionReason"] = json!("server-restarted; native approval channel closed; resend the message to request approval again");
                 "runtime-request.updated"
             }
             "providerSessions"
@@ -41,6 +42,18 @@ pub fn recover(db: &mut Connection) -> Result<(), String> {
             {
                 v["status"] = json!("disconnected");
                 "provider-session.updated"
+            }
+            "controlOutbox" if matches!(v["status"].as_str(), Some("pending" | "handed-off")) => {
+                v["status"] = json!("delivery-unknown");
+                v["error"] = json!("server restarted; native execution acknowledgement unavailable; not replayed into another turn");
+                events::put(&tx, &kind, &id, &tid, &v)?;
+                if let Ok(mut t) = events::get(&tx, "thread", &tid) {
+                    t["lastControlDeliveryError"] =
+                        json!({"commandId":id,"status":"delivery-unknown","message":v["error"]});
+                    events::put(&tx, "thread", &tid, &tid, &t)?;
+                    events::append(&tx, &tid, "thread.metadata-updated", t.clone(), &t)?;
+                }
+                continue;
             }
             _ => continue,
         };

@@ -400,6 +400,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                 )?;
                 let seq = append(&tx, tid, "turn-item.updated", item, &t)?;
                 let result = json!({"sequence":seq});
+                crate::outbox::stage(&tx, c)?;
                 tx.execute(
                     "INSERT INTO receipts VALUES(?,?)",
                     params![cid, result.to_string()],
@@ -408,6 +409,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                 tx.commit().map_err(|e| e.to_string())?;
                 drop(db);
                 permit.send(crate::provider::ProviderControl::Steer(text.into()));
+                crate::outbox::handed_off(s, cid)?;
                 s.notify();
                 return Ok(result);
             }
@@ -474,6 +476,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             put(&tx, "runs", &run_id, tid, &run)?;
             let seq = append(&tx, tid, "run.created", run, &t)?;
             let result = json!({"sequence":seq});
+            crate::outbox::stage(&tx, c)?;
             tx.execute(
                 "INSERT INTO receipts VALUES(?,?)",
                 params![cid, result.to_string()],
@@ -524,6 +527,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                 crate::thread_commands::hold_queue(&tx, tid, &t)?;
             }
             let result = json!({"sequence":seq});
+            crate::outbox::stage(&tx, c)?;
             tx.execute(
                 "INSERT INTO receipts VALUES(?,?)",
                 params![cid, result.to_string()],
@@ -533,6 +537,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             drop(db);
             if let Some(permit) = permit {
                 permit.send(crate::provider::ProviderControl::Interrupt);
+                crate::outbox::handed_off(s, cid)?;
             }
             s.notify();
             return Ok(result);
@@ -615,6 +620,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             }
             let seq = append(&tx, tid, "runtime-request.updated", request, &t)?;
             let result = json!({"sequence":seq});
+            crate::outbox::stage(&tx, c)?;
             tx.execute(
                 "INSERT INTO receipts VALUES(?,?)",
                 params![cid, result.to_string()],
@@ -633,6 +639,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                     feedback: c["feedback"].as_str().map(str::to_owned),
                     answers: c.get("answers").cloned(),
                 });
+                crate::outbox::handed_off(s, cid)?;
             }
             s.notify();
             return Ok(result);
@@ -643,6 +650,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
     put(&tx, "thread", tid, tid, &t)?;
     let seq = append(&tx, tid, event, t.clone(), &t)?;
     let result = json!({"sequence":seq});
+    crate::outbox::stage(&tx, c)?;
     tx.execute(
         "INSERT INTO receipts VALUES(?,?)",
         params![cid, result.to_string()],
@@ -807,6 +815,7 @@ pub fn mutate_project(s: &State, c: &Value) -> Result<Value> {
         params![shell.to_string(), seq],
     )
     .map_err(|e| e.to_string())?;
+    crate::outbox::stage(&tx, c)?;
     tx.execute(
         "INSERT INTO receipts VALUES(?,?)",
         params![cid, p.to_string()],
