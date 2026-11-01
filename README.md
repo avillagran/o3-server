@@ -9,14 +9,16 @@ and O3 Android can talk to it like T3, with OmaBridge built in. Claude runs thro
 
 Not a finished replacement and not installed anywhere. T3 stays the daily server.
 
-- Compatibility: 78 of 203 RPCs done, 40 partial, 85 out of scope (77 no client uses, 8 answer T3's typed unavailable error).
-  P0 is 0 of 5 done (daily chat, shell and thread streams, config, dispatch); P1 is 20 of 31.
+- Compatibility: 81 of 203 RPCs done, 37 partial, 85 out of scope (77 no client uses, 8 answer T3's typed unavailable error).
+  P0 is 0 of 5 done (daily chat, shell and thread streams, config, dispatch); P1 is 23 of 31.
   Full table and per-RPC limits: [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md); evidence and
   accepted differences: [docs/CONFORMANCE.md](docs/CONFORMANCE.md).
 - Memory: about 31 MB idle and 42 MB peak with a real 374-thread history ([docs/RSS.md](docs/RSS.md)),
   against 579 MB for T3 headless.
-- Verified against the real lib-t3-rust client, real Claude and Codex turns, and the O3 desktop
-  backend ([docs/E2E.md](docs/E2E.md)). Not verified: the QML desktop UI and Android.
+- Verified against the real lib-t3-rust client, real Claude and Codex turns, the O3 desktop backend
+  and QML UI, and O3 Android on an emulator: pairing, new threads, chat, approval, reconnect and an
+  image attachment ([docs/E2E.md](docs/E2E.md)). Not verified: daily use, Android terminal commands
+  and Android through OmaBridge.
 
 ## Build and test
 
