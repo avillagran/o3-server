@@ -18,6 +18,17 @@ pub struct Server {
 }
 
 /// Starts a server on an ephemeral port. `configure` runs before it serves (install a provider, a shell...).
+/// The client and server share this test process, unlike production. Child exits from the
+/// server raise SIGCHLD, which would interrupt the client's blocking socket reads.
+fn shield_client_thread_from_sigchld() {
+    unsafe {
+        let mut set: libc::sigset_t = std::mem::zeroed();
+        libc::sigemptyset(&mut set);
+        libc::sigaddset(&mut set, libc::SIGCHLD);
+        libc::pthread_sigmask(libc::SIG_BLOCK, &set, std::ptr::null_mut());
+    }
+}
+
 pub fn start(configure: impl FnOnce(&Arc<o3_server::store::State>)) -> Server {
     static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     let dir = std::env::temp_dir().join(format!(
@@ -53,6 +64,7 @@ pub fn start(configure: impl FnOnce(&Arc<o3_server::store::State>)) -> Server {
                 .unwrap();
             })
     });
+    shield_client_thread_from_sigchld();
     Server {
         base,
         secret,
