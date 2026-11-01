@@ -143,9 +143,41 @@ pub fn search_threads(s: &State, p: &Value) -> Reply {
             }
         }
     }
+    let mut threads = Vec::new();
+    if let Some(before) = p["olderSettledBefore"].as_str() {
+        let needle = query.to_lowercase();
+        let mut q=db.prepare("SELECT id FROM records WHERE kind='thread' AND json_extract(body,'$.settledAt') < ? ORDER BY rowid DESC LIMIT 10000").map_err(|e|fail(&e.to_string()))?;
+        let ids = q
+            .query_map([before], |r| r.get::<_, String>(0))
+            .map_err(|e| fail(&e.to_string()))?;
+        for id in ids.flatten() {
+            let Some(t) = live(&id) else { continue };
+            let project = events::get(&db, "project", t["projectId"].as_str().unwrap_or(""))
+                .unwrap_or(Value::Null);
+            let title = [
+                t["title"].as_str(),
+                t["branch"].as_str(),
+                project["title"].as_str(),
+                p["environmentLabel"].as_str(),
+            ]
+            .into_iter()
+            .flatten()
+            .any(|v| v.to_lowercase().contains(&needle));
+            if title && threads.len() < limit {
+                threads.push(events::shell_thread(&db, &t).map_err(|e| fail(&e))?);
+            }
+        }
+    }
     matches.truncate(limit);
+    for m in &matches {
+        if !threads.iter().any(|t| t["id"] == m["threadId"]) {
+            if let Some(t) = m["threadId"].as_str().and_then(live) {
+                threads.push(events::shell_thread(&db, &t).map_err(|e| fail(&e))?);
+            }
+        }
+    }
     let seq = events::sequence(&db).unwrap_or(0);
-    Ok(json!({"matches":matches,"snapshotSequence":seq}))
+    Ok(json!({"matches":matches,"snapshotSequence":seq,"threads":threads}))
 }
 
 // ------------------------------------------------------------------ simple reads

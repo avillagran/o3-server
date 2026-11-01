@@ -76,7 +76,7 @@ pub(crate) fn persist(
             put(db, "providerSessions", id, tid, &session)?;
             append(db, tid, "provider-session.updated", session, t)?;
             let previous = get(db, "providerThreads", id).unwrap_or(Value::Null);
-            let p = json!({"id":id,"driver":"claudeAgent","providerInstanceId":t["providerInstanceId"],"providerSessionId":id,"appThreadId":tid,"ownerNodeId":rid,"nativeThreadRef":reference(&json!(id)),"nativeConversationHeadRef":null,"status":"active","firstRunOrdinal":previous.get("firstRunOrdinal").unwrap_or(&run["ordinal"]),"lastRunOrdinal":run["ordinal"],"handoffIds":[],"forkedFrom":null,"createdAt":previous.get("createdAt").unwrap_or(&json!(at)),"updatedAt":at});
+            let p = json!({"id":id,"driver":"claudeAgent","providerInstanceId":t["providerInstanceId"],"providerSessionId":id,"appThreadId":tid,"ownerNodeId":rid,"nativeThreadRef":reference(&json!(id)),"nativeConversationHeadRef":null,"contextUsage":null,"goal":null,"nativeMetadata":null,"pendingBackgroundTasks":[],"status":"active","firstRunOrdinal":previous.get("firstRunOrdinal").unwrap_or(&run["ordinal"]),"lastRunOrdinal":run["ordinal"],"handoffIds":[],"forkedFrom":null,"createdAt":previous.get("createdAt").unwrap_or(&json!(at)),"updatedAt":at});
             put(db, "providerThreads", id, tid, &p)?;
             append(db, tid, "provider-thread.updated", p, t)?;
             let turn = json!({"id":rid,"providerThreadId":id,"nodeId":rid,"runAttemptId":aid,"nativeTurnRef":null,"ordinal":run["ordinal"],"status":"running","startedAt":at,"completedAt":null});
@@ -279,6 +279,25 @@ pub(crate) fn persist(
                 let output = u["output_tokens"].as_u64().unwrap_or(0);
                 let created = u["cache_creation_input_tokens"].as_u64().unwrap_or(0);
                 turn["tokenUsage"] = json!({"usedTokens":input+cached+output+created,"inputTokens":input+created,"cachedInputTokens":cached,"outputTokens":output,"updatedAt":at});
+                if f["cost"].is_number() {
+                    turn["tokenUsage"]["cost"] = f["cost"].clone();
+                }
+                if let Some(window) = f["modelUsage"]
+                    .as_object()
+                    .into_iter()
+                    .flat_map(|m| m.values())
+                    .filter_map(|m| m["contextWindow"].as_u64())
+                    .max()
+                {
+                    turn["tokenUsage"]["maxTokens"] = json!(window);
+                }
+                if let Some(id) = t["activeProviderThreadId"].as_str() {
+                    if let Ok(mut pt) = get(db, "providerThreads", id) {
+                        pt["contextUsage"] = turn["tokenUsage"].clone();
+                        put(db, "providerThreads", id, tid, &pt)?;
+                        append(db, tid, "provider-thread.updated", pt, t)?;
+                    }
+                }
                 put(db, "providerTurns", rid, tid, &turn)?;
                 append(db, tid, "provider-turn.updated", turn, t)?;
             }

@@ -73,6 +73,8 @@ fn uploaded_images_files_and_context_reach_both_native_transports() {
                     run["providerThreadId"]
                 );
                 if instance == "claudeAgent" {
+                    assert_eq!(p["providerThreads"][0]["contextUsage"]["maxTokens"], 200000);
+                    assert_eq!(p["providerThreads"][0]["contextUsage"]["cost"], 0.01);
                     let config = c.rpc("server.getConfig", json!({})).unwrap();
                     assert_eq!(
                         config["providers"][0]["slashCommands"][0]["name"],
@@ -89,6 +91,24 @@ fn uploaded_images_files_and_context_reach_both_native_transports() {
                     );
                     assert!(config["providers"][0]["usageLimits"]["checkedAt"].is_string());
                     assert!(config["providers"][0]["models"].as_array().unwrap().len() > 3);
+                }
+                if instance == "codex" {
+                    let config = c.rpc("server.getConfig", json!({})).unwrap();
+                    let provider = config["providers"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .find(|p| p["driver"] == "codex")
+                        .unwrap();
+                    assert_eq!(
+                        provider["models"][0]["capabilities"]["optionDescriptors"][0]["id"],
+                        "reasoningEffort"
+                    );
+                    assert_eq!(
+                        provider["models"][0]["capabilities"]["optionDescriptors"][0]["options"][0]
+                            ["id"],
+                        "high"
+                    );
                 }
                 break;
             }

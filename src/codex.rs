@@ -45,6 +45,31 @@ pub struct CodexProvider {
     descriptor: std::sync::Arc<Mutex<Value>>,
 }
 /// Codex's own catalog cache, so selecting a model never needs the 400 MB app-server.
+fn model_capabilities(m: &Value) -> Value {
+    let efforts = m["supportedReasoningEfforts"]
+        .as_array()
+        .or_else(|| m["supported_reasoning_levels"].as_array());
+    let current = m
+        .get("defaultReasoningEffort")
+        .or_else(|| m.get("default_reasoning_level"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let options = efforts
+        .into_iter()
+        .flatten()
+        .filter_map(|e| {
+            let id = e["reasoningEffort"]
+                .as_str()
+                .or_else(|| e["effort"].as_str())?;
+            Some(json!({"id":id,"label":id,"isDefault":current==id}))
+        })
+        .collect::<Vec<_>>();
+    let mut descriptors = Vec::new();
+    if !options.is_empty() {
+        descriptors.push(json!({"id":"reasoningEffort","label":"Reasoning","type":"select","options":options,"currentValue":current}));
+    }
+    json!({"optionDescriptors":descriptors})
+}
 fn cached_models(home: Option<&std::path::Path>) -> Value {
     let dir = home
         .map(PathBuf::from)
@@ -65,7 +90,7 @@ fn cached_models(home: Option<&std::path::Path>) -> Value {
         models
             .iter()
             .enumerate()
-            .map(|(i, m)| json!({"slug":m["slug"],"name":m["display_name"],"isCustom":false,"isDefault":i==0,"capabilities":null}))
+            .map(|(i, m)| json!({"slug":m["slug"],"name":m["display_name"],"isCustom":false,"isDefault":i==0,"capabilities":model_capabilities(m)}))
             .collect(),
     )
 }
@@ -189,7 +214,7 @@ impl CodexProvider {
             "Codex requires authentication"
         });
         d["checkedAt"] = json!(crate::store::iso(crate::store::now_ms()));
-        d["models"]=json!(models["data"].as_array().unwrap_or(&vec![]).iter().map(|m|json!({"slug":m["model"],"name":m["displayName"],"isCustom":false,"isDefault":m["isDefault"],"capabilities":null})).collect::<Vec<_>>());
+        d["models"]=json!(models["data"].as_array().unwrap_or(&vec![]).iter().map(|m|json!({"slug":m["model"],"name":m["displayName"],"isCustom":false,"isDefault":m["isDefault"],"capabilities":model_capabilities(m)})).collect::<Vec<_>>());
         Ok(c)
     }
     async fn run(

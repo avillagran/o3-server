@@ -584,7 +584,7 @@ fn projects_over_http_publish_shell_events_and_validate_roots() {
     assert_eq!(ids, ["p1"]);
     let mut seen = Vec::new();
     let mut after = 0;
-    for _ in 0..8 {
+    for _ in 0..32 {
         let ev = collect(
             &e.conn,
             "orchestration.subscribeShell",
@@ -594,6 +594,10 @@ fn projects_over_http_publish_shell_events_and_validate_roots() {
         let Some(ev) = ev.into_iter().next() else {
             break;
         };
+        if ev["kind"] == "snapshot" {
+            after = ev["snapshot"]["snapshotSequence"].as_i64().unwrap();
+            continue;
+        }
         after = ev["sequence"].as_i64().unwrap();
         seen.push((
             ev["kind"].as_str().unwrap().to_owned(),

@@ -300,9 +300,11 @@ where
     crate::scheduled::ensure_started(&state);
     let weak = Arc::downgrade(&state);
     tokio::spawn(async move {
+        let mut initial = true;
         loop {
             let Some(state) = weak.upgrade() else { break };
-            let _ = crate::projects::refresh_identities(&state).await;
+            let _ = crate::projects::refresh_identities_if_changed(&state, initial).await;
+            initial = false;
             drop(state);
             tokio::time::sleep(std::time::Duration::from_secs(30)).await;
         }
@@ -326,9 +328,11 @@ pub async fn serve(listener: TcpListener, state: Arc<State>) -> std::io::Result<
     crate::scheduled::ensure_started(&state);
     let weak = Arc::downgrade(&state);
     tokio::spawn(async move {
+        let mut initial = true;
         loop {
             let Some(state) = weak.upgrade() else { break };
-            let _ = crate::projects::refresh_identities(&state).await;
+            let _ = crate::projects::refresh_identities_if_changed(&state, initial).await;
+            initial = false;
             drop(state);
             tokio::time::sleep(std::time::Duration::from_secs(30)).await;
         }

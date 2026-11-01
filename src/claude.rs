@@ -217,6 +217,7 @@ impl ClaudeProvider {
                         let v=frame?;
                         if v["type"]=="system" && v["subtype"]=="init" {
                             let mut metadata=self.metadata.lock().unwrap();
+                            metadata["slashCommandsPending"]=json!(false);
                             for (native,field) in [("slash_commands","slashCommands"),("skills","skills")] {
                                 if let Some(entries)=v[native].as_array() {
                                     metadata[field]=json!(entries.iter().map(|entry| if let Some(name)=entry.as_str() {json!({"name":name,"description":""})} else {entry.clone()}).collect::<Vec<_>>());
@@ -518,7 +519,7 @@ pub(crate) fn decode(v: &Value) -> Vec<ProviderEvent> {
     out
 }
 pub fn config(installed: bool) -> Value {
-    json!({"instanceId":"claudeAgent","driver":"claudeAgent","displayName":"Claude Code","enabled":installed,"installed":installed,"version":null,"status":if installed {"warning"}else{"disabled"},"auth":{"status":"unknown"},"checkedAt":crate::store::iso(crate::store::now_ms()),"message":"Direct CLI adapter; authentication checked at execution. No MCP bridge or crash recovery.","models":crate::claude_models::models(),"supportedRuntimeModes":["approval-required","auto-accept-edits","full-access"],"supportsConversationRollback":false,"nativeSessions":{"canList":false,"canLoad":false,"canResume":true}})
+    json!({"instanceId":"claudeAgent","driver":"claudeAgent","displayName":"Claude Code","enabled":installed,"installed":installed,"version":null,"status":if installed {"warning"}else{"disabled"},"auth":{"status":"unknown"},"checkedAt":crate::store::iso(crate::store::now_ms()),"message":"Direct CLI adapter; authentication checked at execution. No MCP bridge or crash recovery.","slashCommands":[{"name":"compact","description":"Compact conversation history"}],"skills":[],"slashCommandsPending":true,"models":crate::claude_models::models(),"supportedRuntimeModes":["approval-required","auto-accept-edits","full-access"],"supportsConversationRollback":false,"nativeSessions":{"canList":false,"canLoad":false,"canResume":true}})
 }
 
 fn usage_limits(info: &Value) -> Value {

@@ -86,6 +86,25 @@ pub(crate) fn shell_thread(db: &Connection, t: &Value) -> Result<Value> {
     ] {
         t[field] = Value::Null;
     }
+    for key in [
+        "snoozedAt",
+        "snoozedUntil",
+        "unsettledAt",
+        "titleRegeneration",
+        "usageLimitResetAt",
+    ] {
+        if t.get(key).is_none() {
+            t[key] = Value::Null;
+        }
+    }
+    t["pendingBackgroundTasks"] = json!(list(db, "subagents", Some(tid), 1000)?
+        .into_iter()
+        .filter(|s| !matches!(
+            s["status"].as_str(),
+            Some("completed" | "cancelled" | "failed")
+        ))
+        .map(|s| json!({"kind":"subagent","taskId":s["id"],"awaited":true}))
+        .collect::<Vec<_>>());
     t["latestRunStopRequested"] = json!(false);
     if let Some(run) = list(db, "runs", Some(tid), 1)?.pop() {
         t["latestRunId"] = run["id"].clone();

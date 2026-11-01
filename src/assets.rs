@@ -856,8 +856,10 @@ pub fn create_url(s: &State, p: &Value) -> Reply {
                 .filter(|v| {
                     !v.is_empty()
                         && v.len() <= 512
-                        && v.bytes()
-                            .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+                        && !v.chars().any(char::is_control)
+                        && (app["_tag"] == "display-name"
+                            || v.bytes()
+                                .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b)))
                 })
                 .ok_or_else(|| invalid("invalid application reference"))?;
             let mut roots = Vec::new();
@@ -873,6 +875,31 @@ pub fn create_url(s: &State, p: &Value) -> Reply {
             ]);
             let mut icon = None;
             for root in &roots {
+                if app["_tag"] == "display-name" {
+                    if let Ok(entries) = std::fs::read_dir(root.join("applications")) {
+                        for entry in entries.take(2048).flatten() {
+                            let Ok(text) = std::fs::read_to_string(entry.path()) else {
+                                continue;
+                            };
+                            if text.lines().any(|line| {
+                                line.strip_prefix("Name=")
+                                    .is_some_and(|name| name.eq_ignore_ascii_case(id))
+                            }) {
+                                icon = text
+                                    .lines()
+                                    .find_map(|line| line.strip_prefix("Icon=").map(str::to_owned));
+                                if icon.is_some() {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if icon.is_some() {
+                        break;
+                    } else {
+                        continue;
+                    }
+                }
                 let desktop = root
                     .join("applications")
                     .join(format!("{}.desktop", id.trim_end_matches(".desktop")));

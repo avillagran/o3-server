@@ -89,13 +89,14 @@ pub(crate) fn persist(
             t["activeProviderThreadId"] = json!(pt);
             put(db, "thread", tid, tid, &t)?;
             run["providerThreadId"] = json!(pt);
+            let previous = get(db, "providerThreads", &pt).unwrap_or(Value::Null);
             record(
                 db,
                 tid,
                 &t,
                 "providerThreads",
                 "provider-thread.updated",
-                json!({"id":pt,"appThreadId":tid,"driver":"codex","ownerNodeId":null,"nativeConversationHeadRef":null,"firstRunOrdinal":run["ordinal"],"lastRunOrdinal":run["ordinal"],"handoffIds":[],"forkedFrom":null,"providerInstanceId":thread["providerInstanceId"],"providerSessionId":session_id,"nativeThreadRef":{"driver":"codex","nativeId":native_thread,"strength":"strong"},"status":"active","createdAt":at,"updatedAt":at}),
+                json!({"id":pt,"appThreadId":tid,"driver":"codex","ownerNodeId":null,"nativeConversationHeadRef":null,"firstRunOrdinal":previous.get("firstRunOrdinal").unwrap_or(&run["ordinal"]),"lastRunOrdinal":run["ordinal"],"handoffIds":[],"forkedFrom":null,"providerInstanceId":thread["providerInstanceId"],"providerSessionId":session_id,"nativeThreadRef":{"driver":"codex","nativeId":native_thread,"strength":"strong"},"status":"active","createdAt":previous.get("createdAt").unwrap_or(&json!(at)),"updatedAt":at,"contextUsage":null,"goal":null,"nativeMetadata":null,"pendingBackgroundTasks":[]}),
             )?;
             record(
                 db,
@@ -131,7 +132,7 @@ pub(crate) fn persist(
                 thread,
                 "providerTurns",
                 "provider-turn.updated",
-                json!({"id":pv,"providerThreadId":pt,"nodeId":rid,"runAttemptId":format!("attempt-{rid}"),"ordinal":run["ordinal"],"nativeTurnRef":{"driver":"codex","nativeId":native_turn,"strength":"strong"},"status":run["status"],"startedAt":at,"completedAt":if completed{json!(at)}else{Value::Null}}),
+                json!({"id":pv,"providerThreadId":pt,"nodeId":rid,"runAttemptId":format!("attempt-{rid}"),"ordinal":run["ordinal"],"nativeTurnRef":{"driver":"codex","nativeId":native_turn,"strength":"strong"},"status":run["status"],"startedAt":run["startedAt"],"completedAt":if completed{json!(at)}else{Value::Null}}),
             )?;
             record(
                 db,
@@ -147,7 +148,7 @@ pub(crate) fn persist(
                 thread,
                 "attempts",
                 "attempt.updated",
-                json!({"id":format!("attempt-{rid}"),"runId":rid,"attemptOrdinal":1,"providerInstanceId":thread["providerInstanceId"],"providerThreadId":pt,"reason":"initial","rootNodeId":rid,"providerTurnId":pv,"status":run["status"],"startedAt":at,"completedAt":if completed{json!(at)}else{Value::Null}}),
+                json!({"id":format!("attempt-{rid}"),"runId":rid,"attemptOrdinal":1,"providerInstanceId":thread["providerInstanceId"],"providerThreadId":pt,"reason":"initial","rootNodeId":rid,"providerTurnId":pv,"status":run["status"],"startedAt":run["startedAt"],"completedAt":if completed{json!(at)}else{Value::Null}}),
             )?;
             if completed {
                 run["status"] = json!("running");
@@ -314,6 +315,17 @@ pub(crate) fn persist(
             let mut turn =
                 get(db, "providerTurns", &pv).unwrap_or(json!({"id":pv,"providerThreadId":pt}));
             turn["tokenUsage"] = json!({"usedTokens":last["totalTokens"],"maxTokens":usage["modelContextWindow"],"inputTokens":last["inputTokens"],"cachedInputTokens":last["cachedInputTokens"],"outputTokens":last["outputTokens"],"reasoningOutputTokens":last["reasoningOutputTokens"],"updatedAt":at});
+            if let Ok(mut provider_thread) = get(db, "providerThreads", &pt) {
+                provider_thread["contextUsage"] = turn["tokenUsage"].clone();
+                record(
+                    db,
+                    tid,
+                    thread,
+                    "providerThreads",
+                    "provider-thread.updated",
+                    provider_thread,
+                )?;
+            }
             record(
                 db,
                 tid,

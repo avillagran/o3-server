@@ -505,7 +505,10 @@ fn project_identity_refresh_replaces_shell_without_losing_threads() {
         &e.conn,
         "orchestration.subscribeShell",
         json!({"afterSequence":seq}),
-        |v| v["resolvedRepositoryIdentityRoots"].is_array(),
+        |v| {
+            v["snapshot"]["projects"][0]["repositoryIdentity"]["canonicalKey"]
+                == "gitlab.com/group/new"
+        },
     );
     let replacement = items.last().unwrap();
     assert_eq!(
@@ -599,4 +602,31 @@ fn pending_identity_and_stream_metadata_are_ordered_on_the_shared_sequence() {
         }
     }
     assert!(sequence > before.as_i64().unwrap());
+}
+
+#[test]
+fn search_returns_supplemental_shell_fields_for_old_settled_threads() {
+    let e = setup("search-shell");
+    e.project("p", &e.dir("workspace"));
+    e.thread("t", "p");
+    e.message("t", "m", "metadata-proof");
+    let found = e
+        .conn
+        .rpc(
+            "orchestration.searchThreads",
+            json!({"query":"metadata-proof"}),
+        )
+        .unwrap();
+    assert_eq!(found["threads"][0]["id"], "t");
+    assert!(found["snapshotSequence"].is_u64());
+    assert!(found["threads"][0]["latestUserMessageAt"].is_string());
+    e.conn
+        .rpc(
+            "orchestration.dispatchCommand",
+            json!({"type":"thread.settle","threadId":"t","commandId":"settle"}),
+        )
+        .unwrap();
+    let found=e.conn.rpc("orchestration.searchThreads",json!({"query":"remote-proof","olderSettledBefore":"9999-01-01T00:00:00Z","environmentLabel":"remote-proof"})).unwrap();
+    assert_eq!(found["threads"][0]["id"], "t");
+    assert!(found["threads"][0]["settledAt"].is_string());
 }

@@ -12,6 +12,11 @@ fn native_icon_tool_image_and_credentialed_media_use_signed_urls() {
         &data.join("icons/hicolor/48x48/apps/o3-proof.png"),
         b"\x89PNG\r\n\x1a\n",
     );
+    std::fs::create_dir_all(data.join("applications")).unwrap();
+    write(
+        &data.join("applications/o3-proof.desktop"),
+        "[Desktop Entry]\nName=O3 Proof App\nIcon=o3-proof\n",
+    );
     let e = setup("asset-kinds");
     let root = e.dir("workspace");
     e.project("p", &root);
@@ -27,6 +32,18 @@ fn native_icon_tool_image_and_credentialed_media_use_signed_urls() {
         )
         .2,
         b"\x89PNG\r\n\x1a\n"
+    );
+    let named=e.conn.rpc("assets.createUrl",json!({"resource":{"_tag":"native-app-icon","app":{"_tag":"display-name","displayName":"O3 Proof App"}}})).unwrap();
+    assert_eq!(
+        http(
+            &e.base,
+            "GET",
+            named["relativeUrl"].as_str().unwrap(),
+            &[],
+            b""
+        )
+        .0,
+        200
     );
     e.db().execute("INSERT INTO records VALUES('turnItems','image','t',?)",[json!({"id":"image","threadId":"t","output":{"images":[{"mimeType":"image/png","data":"iVBORw0KGgo="}]}}).to_string()]).unwrap();
     let image=e.conn.rpc("assets.createUrl",json!({"resource":{"_tag":"tool-output-image","threadId":"t","itemId":"image","index":0}})).unwrap();

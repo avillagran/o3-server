@@ -189,6 +189,9 @@ pub async fn mutate_resolved(s: &State, c: &Value) -> Result<Value> {
 
 /// One replacement snapshot publishes the resolved roots and current shell together.
 pub async fn refresh_identities(s: &State) -> Result<()> {
+    refresh_identities_if_changed(s, true).await
+}
+pub(crate) async fn refresh_identities_if_changed(s: &State, force: bool) -> Result<()> {
     let projects = live_projects(s)?;
     let mut resolved = Vec::new();
     for p in projects {
@@ -197,6 +200,7 @@ pub async fn refresh_identities(s: &State) -> Result<()> {
                 p["id"].as_str().unwrap_or("").to_owned(),
                 root.to_owned(),
                 repository_identity(root).await,
+                p["repositoryIdentity"].clone(),
             ));
         }
     }
@@ -205,10 +209,13 @@ pub async fn refresh_identities(s: &State) -> Result<()> {
     }
     let mut db = s.db.lock().unwrap();
     let tx = db.transaction().map_err(|e| e.to_string())?;
-    let mut changed = false;
-    for (id, root, identity) in &resolved {
+    let mut changed = force;
+    for (id, root, identity, previous) in &resolved {
         let mut p = events::get(&tx, "project", id)?;
-        if p["workspaceRoot"] == root.as_str() && p["repositoryIdentity"] != *identity {
+        if p["workspaceRoot"] == root.as_str()
+            && p["repositoryIdentity"] != *identity
+            && p["repositoryIdentity"] == *previous
+        {
             p["repositoryIdentity"] = identity.clone();
             events::put(&tx, "project", id, "", &p)?;
             changed = true;
@@ -219,7 +226,7 @@ pub async fn refresh_identities(s: &State) -> Result<()> {
             .map_err(|e| e.to_string())?;
         let seq = tx.last_insert_rowid();
         let snapshot = events::shell_db(&tx)?;
-        let item = json!({"kind":"snapshot","snapshot":snapshot,"resolvedRepositoryIdentityRoots":resolved.iter().map(|(_,root,_)|root).collect::<Vec<_>>()});
+        let item = json!({"kind":"snapshot","snapshot":snapshot,"resolvedRepositoryIdentityRoots":resolved.iter().map(|(_,root,_,_)|root).collect::<Vec<_>>()});
         tx.execute(
             "UPDATE events SET shell=? WHERE sequence=?",
             rusqlite::params![item.to_string(), seq],
