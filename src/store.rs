@@ -30,6 +30,7 @@ pub struct State {
     #[cfg(feature = "bridge")]
     pub bridge_endpoints: Mutex<Vec<Value>>,
     pub db: Mutex<Connection>,
+    pub(crate) worktree_gate: std::sync::RwLock<()>,
     pub(crate) reader: Mutex<Connection>,
     pub(crate) identities_started: std::sync::atomic::AtomicBool,
     pub(crate) rpc_clients: std::sync::atomic::AtomicUsize,
@@ -142,6 +143,7 @@ impl State {
             checkpoint_started: std::sync::atomic::AtomicBool::new(false),
             checkpoint_wake: std::sync::Arc::new((Mutex::new(true), std::sync::Condvar::new())),
             db: Mutex::new(db),
+            worktree_gate: std::sync::RwLock::new(()),
             signing_key,
             environment_id,
             label,

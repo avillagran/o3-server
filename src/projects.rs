@@ -63,6 +63,10 @@ fn normalize_root(raw: &str, create: bool) -> Result<PathBuf> {
 }
 
 pub fn mutate(s: &State, c: &Value) -> Result<Value> {
+    let _worktree = s
+        .worktree_gate
+        .try_read()
+        .map_err(|_| "worktree cleanup in progress; retry mutation")?;
     let cid = c["commandId"].as_str().ok_or("commandId required")?;
     let replay =
         s.db.lock()

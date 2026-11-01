@@ -290,6 +290,10 @@ pub(crate) fn append(
     Ok(seq)
 }
 pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
+    let _worktree = s
+        .worktree_gate
+        .try_read()
+        .map_err(|_| "worktree cleanup in progress; retry command")?;
     let cid = c["commandId"]
         .as_str()
         .filter(|s| !s.is_empty())
@@ -927,6 +931,10 @@ fn new_thread(db: &Connection, c: &Value, tid: &str, at: &str) -> Result<Value> 
 }
 
 pub fn launch(s: &std::sync::Arc<State>, p: &Value) -> Result<Value> {
+    let _worktree = s
+        .worktree_gate
+        .try_read()
+        .map_err(|_| "worktree cleanup in progress; retry launch")?;
     let _launch = s.launch_lock.lock().unwrap();
     let cid = p["commandId"].as_str().ok_or("commandId required")?;
     if let Some(result) =

@@ -47,10 +47,15 @@ fn due(rules: &Value, key: &str, stamp: &Value, now: i64) -> bool {
         .is_some_and(|(days, age)| age >= days * 86_400_000)
 }
 pub(crate) fn worktrees(s: &State, settings: &Value) -> Result<Vec<Value>, String> {
-    let mut db = s.db.lock().unwrap();
-    let tx = db.transaction().map_err(|e| e.to_string())?;
+    // Reject competing mutations rather than parking an async worker on cleanup.
+    // This reservation protects ownership checks while the database stays available.
+    let _reservation = s
+        .worktree_gate
+        .try_write()
+        .map_err(|_| "worktree mutation in progress; retry cleanup")?;
     let rows = {
-        let mut q = tx
+        let db = s.db.lock().unwrap();
+        let mut q = db
             .prepare("SELECT body FROM records WHERE kind='thread'")
             .map_err(|e| e.to_string())?;
         let rows = q
@@ -72,21 +77,23 @@ pub(crate) fn worktrees(s: &State, settings: &Value) -> Result<Vec<Value>, Strin
             continue;
         }
         let tid = t["id"].as_str().unwrap_or("").to_owned();
-        let blocked:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE thread_id=? AND ((kind='runs' AND json_extract(body,'$.status') NOT IN ('completed','rolled_back','cancelled','failed','interrupted')) OR (kind='runtimeRequests' AND json_extract(body,'$.status')='pending') OR (kind IN ('subagents','backgroundTasks') AND json_extract(body,'$.status') NOT IN ('completed','failed','cancelled','interrupted')) OR (kind='controlOutbox' AND json_extract(body,'$.status') IN ('pending','delivery-unknown'))))",[&tid],|r|r.get(0)).map_err(|e|e.to_string())?;
+        let db = s.db.lock().unwrap();
+        let blocked:bool=db.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE thread_id=? AND ((kind='runs' AND json_extract(body,'$.status') NOT IN ('completed','rolled_back','cancelled','failed','interrupted')) OR (kind='runtimeRequests' AND json_extract(body,'$.status')='pending') OR (kind IN ('subagents','backgroundTasks') AND json_extract(body,'$.status') NOT IN ('completed','failed','cancelled','interrupted')) OR (kind='controlOutbox' AND json_extract(body,'$.status') IN ('pending','delivery-unknown'))))",[&tid],|r|r.get(0)).map_err(|e|e.to_string())?;
         if blocked || t["pinnedAt"].is_string() {
             continue;
         }
-        let shared:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='thread' AND id<>? AND json_extract(body,'$.worktreePath')=?)",rusqlite::params![tid,path.to_string_lossy()],|r|r.get(0)).map_err(|e|e.to_string())?;
+        let shared:bool=db.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='thread' AND id<>? AND json_extract(body,'$.worktreePath')=?)",rusqlite::params![tid,path.to_string_lossy()],|r|r.get(0)).map_err(|e|e.to_string())?;
         if shared {
             continue;
         }
-        let project = get(&tx, "project", t["projectId"].as_str().unwrap_or(""))?;
+        let project = get(&db, "project", t["projectId"].as_str().unwrap_or(""))?;
         let Some(root) = project["workspaceRoot"]
             .as_str()
             .map(std::path::PathBuf::from)
         else {
             continue;
         };
+        drop(db);
         let Some(common) = git(
             &root,
             &["rev-parse", "--path-format=absolute", "--git-common-dir"],
@@ -157,13 +164,16 @@ pub(crate) fn worktrees(s: &State, settings: &Value) -> Result<Vec<Value>, Strin
         let removed = git(&root, &args).is_some();
         entries.push(json!({"kind":"worktree","outcome":if removed{"removed"}else{"failed"},"reason":"cleanup policy","path":path,"projectPath":root,"threadId":tid,"threadTitle":t["title"],"bytes":0,"files":0}));
         if removed {
+            let mut db = s.db.lock().unwrap();
+            let tx = db.transaction().map_err(|e| e.to_string())?;
+            t = get(&tx, "thread", &tid)?;
             t["worktreePath"] = Value::Null;
             t["ownedWorktree"] = json!(false);
             t["updatedAt"] = json!(iso(now));
             put(&tx, "thread", &tid, &tid, &t)?;
             append(&tx, &tid, "thread.metadata-updated", t.clone(), &t)?;
+            tx.commit().map_err(|e| e.to_string())?;
         }
     }
-    tx.commit().map_err(|e| e.to_string())?;
     Ok(entries)
 }
