@@ -141,6 +141,7 @@ pub fn update(s: &State, p: &Value) -> Result<Value, String> {
             }
         }
     }
+    normalize_preferences(&previous, &mut v, &patch)?;
     crate::profile::atomic_json(&s.dir.join("settings.json"), &v).map_err(|e| e.to_string())?;
     s.notify();
     redact(&mut v);
@@ -171,9 +172,9 @@ fn preserve_environment(old: &Value, patch: &mut Value) {
     }
 }
 pub fn config(s: &State) -> Result<Value, String> {
-    Ok(
-        json!({"environment":descriptor(s),"directEndpoints":direct_endpoints(s),"auth":auth_descriptor(),"cwd":std::env::current_dir().unwrap_or_default(),"keybindingsConfigPath":s.dir.join("keybindings.json"),"keybindings":[],"issues":[],"providers":s.provider.lock().unwrap().as_ref().map(|p|p.config()).unwrap_or_default(),"availableEditors":[],"observability":{"logsDirectoryPath":s.dir.join("logs"),"localTracingEnabled":false,"otlpTracesEnabled":false,"otlpMetricsEnabled":false,"otlpLogsEnabled":false},"settings":get(s)?,"shellResumeCompletionMarker":true,"threadResumeCompletionMarker":true,"shellThreadFamilies":false,"shellOlderSettled":false,"threadSnapshotPagination":false}),
-    )
+    let mut config = json!({"environment":descriptor(s),"directEndpoints":direct_endpoints(s),"auth":auth_descriptor(),"cwd":std::env::current_dir().unwrap_or_default(),"keybindingsConfigPath":s.dir.join("keybindings.json"),"keybindings":[],"issues":[],"providers":s.provider.lock().unwrap().as_ref().map(|p|p.config()).unwrap_or_default(),"availableEditors":[],"observability":{"logsDirectoryPath":s.dir.join("logs"),"localTracingEnabled":false,"otlpTracesEnabled":false,"otlpMetricsEnabled":false,"otlpLogsEnabled":false},"settings":get(s)?,"shellResumeCompletionMarker":true,"threadResumeCompletionMarker":true,"shellThreadFamilies":false,"shellOlderSettled":false,"threadSnapshotPagination":false});
+    startup_catalog(s, &mut config);
+    Ok(config)
 }
 
 fn redact_secret(v: &mut Value) {
@@ -272,4 +273,197 @@ fn direct_endpoints(s: &State) -> Vec<Value> {
         let _ = s;
         Vec::new()
     }
+}
+
+fn normalize_preferences(old: &Value, next: &mut Value, patch: &Value) -> Result<(), String> {
+    let migration = &patch["migrateModelPreferences"];
+    for key in ["favorites", "providerModelPreferences"] {
+        next[key] = patch
+            .get(key)
+            .or_else(|| old.get(key).filter(|v| !v.is_null()))
+            .or_else(|| migration.get(key))
+            .cloned()
+            .unwrap_or(Value::Null);
+    }
+    for (key, flag) in [
+        ("setModelFavorites", "favorite"),
+        ("setModelsHidden", "hidden"),
+    ] {
+        if let Some(changes) = patch.get(key) {
+            for change in changes.as_array().ok_or("model changes must be an array")? {
+                let provider = change["provider"]
+                    .as_str()
+                    .filter(|v| !v.trim().is_empty())
+                    .ok_or("provider required")?;
+                let model = change["model"]
+                    .as_str()
+                    .filter(|v| !v.trim().is_empty())
+                    .ok_or("model required")?;
+                let enabled = change[flag].as_bool().ok_or("model flag must be boolean")?;
+                if key == "setModelFavorites" {
+                    let mut favorites = next["favorites"].as_array().cloned().unwrap_or_default();
+                    let exists = favorites
+                        .iter()
+                        .any(|v| v["provider"] == provider && v["model"] == model);
+                    if enabled && !exists {
+                        favorites.push(json!({"provider":provider,"model":model}));
+                    }
+                    if !enabled {
+                        favorites.retain(|v| v["provider"] != provider || v["model"] != model);
+                    }
+                    next["favorites"] = json!(favorites);
+                } else {
+                    if !next["providerModelPreferences"].is_object() {
+                        next["providerModelPreferences"] = json!({});
+                    }
+                    if !next["providerModelPreferences"][provider].is_object() {
+                        next["providerModelPreferences"][provider] =
+                            json!({"hiddenModels":[],"modelOrder":[]});
+                    }
+                    let mut hidden = next["providerModelPreferences"][provider]["hiddenModels"]
+                        .as_array()
+                        .cloned()
+                        .unwrap_or_default();
+                    hidden.retain(|v| v != model);
+                    if enabled {
+                        hidden.push(json!(model));
+                    }
+                    next["providerModelPreferences"][provider]["hiddenModels"] = json!(hidden);
+                }
+            }
+        }
+    }
+    if let Some(order) = patch.get("setProviderModelOrder") {
+        let provider = order["provider"].as_str().ok_or("provider required")?;
+        let models = order["modelOrder"]
+            .as_array()
+            .filter(|a| a.iter().all(Value::is_string))
+            .ok_or("modelOrder must contain strings")?;
+        if !next["providerModelPreferences"].is_object() {
+            next["providerModelPreferences"] = json!({});
+        }
+        if !next["providerModelPreferences"][provider].is_object() {
+            next["providerModelPreferences"][provider] = json!({"hiddenModels":[]});
+        }
+        next["providerModelPreferences"][provider]["modelOrder"] = json!(models);
+    }
+    for key in [
+        "setModelFavorites",
+        "setModelsHidden",
+        "setProviderModelOrder",
+        "migrateModelPreferences",
+    ] {
+        next.as_object_mut().unwrap().remove(key);
+    }
+    if let Some(instances) = next["providerInstances"].as_object_mut() {
+        for instance in instances.values_mut() {
+            if let Some(enabled) = instance["config"]["enabled"].as_bool() {
+                instance["enabled"] = json!(instance["enabled"] != false && enabled);
+                instance["config"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("enabled");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn startup_catalog(s: &State, config: &mut Value) {
+    let projects = crate::projects::snapshot(s).unwrap_or(Value::Null);
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    for provider in config["providers"].as_array_mut().into_iter().flatten() {
+        let driver = provider["driver"].as_str().unwrap_or("");
+        if !matches!(driver, "codex" | "claudeAgent") {
+            continue;
+        }
+        let mut roots = Vec::new();
+        if let Some(home) = &home {
+            roots.push((home.clone(), "user"));
+        }
+        for p in projects["projects"].as_array().into_iter().flatten() {
+            if let Some(root) = p["workspaceRoot"].as_str() {
+                roots.push((root.into(), "project"));
+            }
+        }
+        let mut skills = provider["skills"].as_array().cloned().unwrap_or_default();
+        let mut commands = provider["slashCommands"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        for (root, scope) in roots {
+            let native = if driver == "codex" {
+                ".codex"
+            } else {
+                ".claude"
+            };
+            for directory in [
+                root.join(native).join("skills"),
+                root.join(".agents/skills"),
+            ] {
+                let Ok(entries) = std::fs::read_dir(directory) else {
+                    continue;
+                };
+                for entry in entries.take(512).flatten() {
+                    let path = entry.path().join("SKILL.md");
+                    let Some((name, description)) =
+                        catalog_header(&path, entry.file_name().to_string_lossy().as_ref())
+                    else {
+                        continue;
+                    };
+                    if skills.iter().any(|v| v["name"] == name) {
+                        continue;
+                    }
+                    skills.push(json!({"name":name,"description":description,"path":path,"scope":scope,"enabled":true}));
+                }
+            }
+            if driver == "claudeAgent" {
+                if let Ok(entries) = std::fs::read_dir(root.join(native).join("commands")) {
+                    for entry in entries.take(512).flatten() {
+                        let path = entry.path();
+                        if path.extension().is_none_or(|e| e != "md") {
+                            continue;
+                        }
+                        let name = path.file_stem().unwrap_or_default().to_string_lossy();
+                        if let Some((name, description)) = catalog_header(&path, &name) {
+                            if !commands.iter().any(|v| v["name"] == name) {
+                                commands.push(json!({"name":name,"description":description}));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        skills.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+        commands.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+        provider["skills"] = json!(skills);
+        provider["slashCommands"] = json!(commands);
+    }
+}
+fn catalog_header(path: &std::path::Path, fallback: &str) -> Option<(String, String)> {
+    use std::io::Read;
+    let file = std::fs::File::open(path).ok()?;
+    if !file.metadata().ok()?.is_file() {
+        return None;
+    }
+    let mut text = String::new();
+    file.take(8192).read_to_string(&mut text).ok()?;
+    let mut name = fallback.to_owned();
+    let mut description = String::new();
+    if let Some(header) = text
+        .strip_prefix("---\n")
+        .and_then(|t| t.split_once("\n---").map(|p| p.0))
+    {
+        for line in header.lines() {
+            if let Some((key, value)) = line.split_once(':') {
+                let value = value.trim().trim_matches(['\'', '"']);
+                match key.trim() {
+                    "name" => name = value.to_owned(),
+                    "description" => description = value.to_owned(),
+                    _ => {}
+                }
+            }
+        }
+    }
+    (!name.trim().is_empty()).then_some((name, description))
 }

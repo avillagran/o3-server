@@ -537,3 +537,27 @@ fn forced_project_delete_removes_thread_shells_atomically() {
     assert!(shell["projects"].as_array().unwrap().is_empty());
     assert!(shell["threads"].as_array().unwrap().is_empty());
 }
+
+#[test]
+fn settings_model_preference_mutations_are_normalized_and_persisted() {
+    let e = setup("model-preferences");
+    let patch = json!({"setModelFavorites":[{"provider":"codex","model":"test","favorite":true},{"provider":"codex","model":"test","favorite":true}],"setModelsHidden":[{"provider":"codex","model":"other","hidden":true}],"setProviderModelOrder":{"provider":"codex","modelOrder":["test","other"]},"providerInstances":{"custom":{"driver":"codex","config":{"enabled":false}}}});
+    let r = e
+        .conn
+        .rpc("server.updateSettings", json!({"patch":patch}))
+        .unwrap();
+    assert_eq!(r["favorites"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        r["providerModelPreferences"]["codex"]["hiddenModels"],
+        json!(["other"])
+    );
+    assert_eq!(
+        r["providerModelPreferences"]["codex"]["modelOrder"],
+        json!(["test", "other"])
+    );
+    assert_eq!(r["providerInstances"]["custom"]["enabled"], false);
+    assert!(r.get("setModelFavorites").is_none());
+    let r=e.conn.rpc("server.updateSettings",json!({"patch":{"setModelFavorites":[{"provider":"codex","model":"test","favorite":false}]}})).unwrap();
+    assert_eq!(r["favorites"], json!([]));
+    assert_eq!(e.conn.rpc("server.getSettings", json!({})).unwrap(), r);
+}

@@ -78,7 +78,11 @@ fn uploaded_images_files_and_context_reach_both_native_transports() {
                         config["providers"][0]["slashCommands"][0]["name"],
                         "compact"
                     );
-                    assert_eq!(config["providers"][0]["skills"][0]["name"], "test-skill");
+                    assert!(config["providers"][0]["skills"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|s| s["name"] == "test-skill"));
                     assert_eq!(
                         config["providers"][0]["usageLimits"]["windows"][0]["usedPercent"],
                         12.0
@@ -372,4 +376,56 @@ fn both_plan_acceptances_dispatch_implementation_and_complete_source_plan() {
             .unwrap();
         assert_eq!(p["thread"]["title"], "plan-proof");
     }
+}
+
+#[test]
+fn startup_catalog_exposes_project_skills_and_commands_before_any_turn() {
+    let server = support::start(|state| {
+        *state.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::Providers {
+            claude: Some(Arc::new(o3_server::claude::ClaudeProvider::new(
+                "/nonexistent".into(),
+            ))),
+            codex: Arc::new(o3_server::codex::CodexProvider::new(
+                "/nonexistent".into(),
+                None,
+            )),
+        }));
+    });
+    let root = server.dir.join("catalog");
+    std::fs::create_dir_all(root.join(".claude/skills/proof")).unwrap();
+    std::fs::create_dir_all(root.join(".claude/commands")).unwrap();
+    std::fs::write(
+        root.join(".claude/skills/proof/SKILL.md"),
+        "---\nname: o3-proof-skill\ndescription: Startup proof\n---\nBody",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join(".claude/commands/o3-proof-command.md"),
+        "---\ndescription: Startup command\n---\nBody",
+    )
+    .unwrap();
+    let c = server.connect();
+    c.rpc("projects.mutate",json!({"type":"project.create","commandId":"catalog","projectId":"p","title":"Catalog","workspaceRoot":root})).unwrap();
+    let config = c.rpc("server.getConfig", json!({})).unwrap();
+    let claude = config["providers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["driver"] == "claudeAgent")
+        .unwrap();
+    let skill = claude["skills"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["name"] == "o3-proof-skill")
+        .unwrap();
+    assert_eq!(skill["enabled"], true);
+    assert_eq!(skill["scope"], "project");
+    assert_eq!(skill["description"], "Startup proof");
+    assert!(skill["path"].as_str().unwrap().ends_with("SKILL.md"));
+    assert!(claude["slashCommands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|p| p["name"] == "o3-proof-command"));
 }
