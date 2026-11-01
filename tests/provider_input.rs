@@ -60,6 +60,18 @@ fn uploaded_images_files_and_context_reach_both_native_transports() {
                     shell["threads"][0]["latestRunCompletedAt"],
                     p["runs"][0]["completedAt"]
                 );
+                let run = &p["runs"][0];
+                assert!(run["activeAttemptId"].is_string(), "{p}");
+                let attempt = &p["attempts"][0];
+                assert_eq!(attempt["id"], run["activeAttemptId"]);
+                assert_eq!(attempt["status"], "completed");
+                assert_eq!(attempt["providerInstanceId"], instance);
+                assert_eq!(p["providerTurns"][0]["runAttemptId"], attempt["id"]);
+                assert_eq!(p["providerThreads"][0]["id"], run["providerThreadId"]);
+                assert_eq!(
+                    p["thread"]["activeProviderThreadId"],
+                    run["providerThreadId"]
+                );
                 if instance == "claudeAgent" {
                     let config = c.rpc("server.getConfig", json!({})).unwrap();
                     assert_eq!(

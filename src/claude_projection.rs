@@ -17,7 +17,7 @@ fn item(db: &Connection, tid: &str, rid: &str, id: &str, at: &str) -> Result<Val
         )
         .map_err(|e| e.to_string())?;
     Ok(
-        json!({"id":id,"threadId":tid,"runId":rid,"nodeId":rid,"providerThreadId":null,"providerTurnId":rid,"nativeItemRef":null,"parentItemId":null,"ordinal":ordinal,"status":"running","title":null,"startedAt":at,"completedAt":null,"updatedAt":at}),
+        json!({"id":id,"threadId":tid,"runId":rid,"nodeId":rid,"providerThreadId":get(db,"runs",rid).ok().map(|r|r["providerThreadId"].clone()),"providerTurnId":rid,"nativeItemRef":null,"parentItemId":null,"ordinal":ordinal,"status":"running","title":null,"startedAt":at,"completedAt":null,"updatedAt":at}),
     )
 }
 pub(crate) fn save_item(db: &Connection, tid: &str, t: &Value, mut v: Value) -> Result<(), String> {
@@ -61,6 +61,11 @@ pub(crate) fn persist(
             t["activeProviderThreadId"] = json!(id);
             run["providerThreadId"] = json!(id);
             run["rootNodeId"] = json!(rid);
+            let aid = format!("attempt-{rid}");
+            run["activeAttemptId"] = json!(aid);
+            let attempt = json!({"id":aid,"runId":rid,"attemptOrdinal":1,"providerInstanceId":t["providerInstanceId"],"providerThreadId":id,"reason":"initial","rootNodeId":rid,"providerTurnId":rid,"status":"running","startedAt":at,"completedAt":null});
+            put(db, "attempts", &aid, tid, &attempt)?;
+            append(db, tid, "attempt.updated", attempt, t)?;
             put(db, "thread", tid, tid, t)?;
             append(db, tid, "thread.metadata-updated", t.clone(), t)?;
             let capabilities: Value =
@@ -70,10 +75,11 @@ pub(crate) fn persist(
             let session = json!({"id":id,"driver":"claudeAgent","providerInstanceId":t["providerInstanceId"],"status":"running","cwd":cwd,"model":t["modelSelection"]["model"],"capabilities":capabilities,"createdAt":at,"updatedAt":at,"lastError":null});
             put(db, "providerSessions", id, tid, &session)?;
             append(db, tid, "provider-session.updated", session, t)?;
-            let p = json!({"id":id,"driver":"claudeAgent","providerInstanceId":t["providerInstanceId"],"providerSessionId":id,"appThreadId":tid,"ownerNodeId":rid,"nativeThreadRef":reference(&json!(id)),"nativeConversationHeadRef":null,"status":"active","firstRunOrdinal":run["ordinal"],"lastRunOrdinal":run["ordinal"],"handoffIds":[],"forkedFrom":null,"createdAt":at,"updatedAt":at});
+            let previous = get(db, "providerThreads", id).unwrap_or(Value::Null);
+            let p = json!({"id":id,"driver":"claudeAgent","providerInstanceId":t["providerInstanceId"],"providerSessionId":id,"appThreadId":tid,"ownerNodeId":rid,"nativeThreadRef":reference(&json!(id)),"nativeConversationHeadRef":null,"status":"active","firstRunOrdinal":previous.get("firstRunOrdinal").unwrap_or(&run["ordinal"]),"lastRunOrdinal":run["ordinal"],"handoffIds":[],"forkedFrom":null,"createdAt":previous.get("createdAt").unwrap_or(&json!(at)),"updatedAt":at});
             put(db, "providerThreads", id, tid, &p)?;
             append(db, tid, "provider-thread.updated", p, t)?;
-            let turn = json!({"id":rid,"providerThreadId":id,"nodeId":rid,"runAttemptId":null,"nativeTurnRef":null,"ordinal":run["ordinal"],"status":"running","startedAt":at,"completedAt":null});
+            let turn = json!({"id":rid,"providerThreadId":id,"nodeId":rid,"runAttemptId":aid,"nativeTurnRef":null,"ordinal":run["ordinal"],"status":"running","startedAt":at,"completedAt":null});
             put(db, "providerTurns", rid, tid, &turn)?;
             append(db, tid, "provider-turn.updated", turn, t)?;
             let node = json!({"id":rid,"threadId":tid,"runId":rid,"parentNodeId":null,"rootNodeId":rid,"kind":"root_turn","status":"running","countsForRun":true,"providerThreadId":id,"providerTurnId":rid,"nativeItemRef":null,"runtimeRequestId":null,"checkpointScopeId":null,"startedAt":at,"completedAt":null});
@@ -290,6 +296,13 @@ pub(crate) fn finish(
     at: &str,
     status: &str,
 ) -> Result<(), String> {
+    let aid = format!("attempt-{rid}");
+    if let Ok(mut a) = get(db, "attempts", &aid) {
+        a["status"] = json!(status);
+        a["completedAt"] = json!(at);
+        put(db, "attempts", &aid, tid, &a)?;
+        append(db, tid, "attempt.updated", a, t)?;
+    }
     for (kind, event) in [
         ("nodes", "node.updated"),
         ("providerTurns", "provider-turn.updated"),

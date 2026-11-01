@@ -86,6 +86,7 @@ pub(crate) fn persist(
         "o3/binding" => {
             let mut t = thread.clone();
             t["codexNativeThreadId"] = json!(native_thread);
+            t["activeProviderThreadId"] = json!(pt);
             put(db, "thread", tid, tid, &t)?;
             run["providerThreadId"] = json!(pt);
             record(
@@ -94,7 +95,7 @@ pub(crate) fn persist(
                 &t,
                 "providerThreads",
                 "provider-thread.updated",
-                json!({"id":pt,"appThreadId":tid,"driver":"codex","ownerNodeId":null,"nativeConversationHeadRef":null,"firstRunOrdinal":run["ordinal"],"lastRunOrdinal":run["ordinal"],"handoffIds":[],"forkedFrom":null,"providerInstanceId":"codex","providerSessionId":session_id,"nativeThreadRef":{"driver":"codex","nativeId":native_thread,"strength":"strong"},"status":"active","createdAt":at,"updatedAt":at}),
+                json!({"id":pt,"appThreadId":tid,"driver":"codex","ownerNodeId":null,"nativeConversationHeadRef":null,"firstRunOrdinal":run["ordinal"],"lastRunOrdinal":run["ordinal"],"handoffIds":[],"forkedFrom":null,"providerInstanceId":thread["providerInstanceId"],"providerSessionId":session_id,"nativeThreadRef":{"driver":"codex","nativeId":native_thread,"strength":"strong"},"status":"active","createdAt":at,"updatedAt":at}),
             )?;
             record(
                 db,
@@ -102,7 +103,7 @@ pub(crate) fn persist(
                 &t,
                 "providerSessions",
                 "provider-session.updated",
-                json!({"id":session_id,"driver":"codex","providerInstanceId":"codex","cwd":p["cwd"],"model":thread["modelSelection"]["model"],"capabilities":serde_json::from_str::<Value>(include_str!("codex-capabilities.json")).unwrap(),"lastError":null,"status":"ready","createdAt":at,"updatedAt":at}),
+                json!({"id":session_id,"driver":"codex","providerInstanceId":thread["providerInstanceId"],"cwd":p["cwd"],"model":thread["modelSelection"]["model"],"capabilities":serde_json::from_str::<Value>(include_str!("codex-capabilities.json")).unwrap(),"lastError":null,"status":"ready","createdAt":at,"updatedAt":at}),
             )?;
         }
         "turn/started" | "turn/completed" => {
@@ -146,7 +147,7 @@ pub(crate) fn persist(
                 thread,
                 "attempts",
                 "attempt.updated",
-                json!({"id":format!("attempt-{rid}"),"runId":rid,"attemptOrdinal":1,"providerInstanceId":"codex","providerThreadId":pt,"reason":"initial","rootNodeId":rid,"providerTurnId":pv,"status":run["status"],"startedAt":at,"completedAt":if completed{json!(at)}else{Value::Null}}),
+                json!({"id":format!("attempt-{rid}"),"runId":rid,"attemptOrdinal":1,"providerInstanceId":thread["providerInstanceId"],"providerThreadId":pt,"reason":"initial","rootNodeId":rid,"providerTurnId":pv,"status":run["status"],"startedAt":at,"completedAt":if completed{json!(at)}else{Value::Null}}),
             )?;
             if completed {
                 run["status"] = json!("running");
@@ -323,8 +324,9 @@ pub(crate) fn persist(
             )?;
         }
         "account/rateLimits/updated" => {
-            let mut session = get(db, "providerSessions", &session_id)
-                .unwrap_or(json!({"id":session_id,"providerInstanceId":"codex"}));
+            let mut session = get(db, "providerSessions", &session_id).unwrap_or(
+                json!({"id":session_id,"providerInstanceId":thread["providerInstanceId"]}),
+            );
             session["rateLimits"] = p["rateLimits"].clone();
             session["updatedAt"] = json!(at);
             record(

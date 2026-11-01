@@ -1,4 +1,5 @@
 //! Terminal conformance: the real `t3-protocol` client against o3-server's PTY layer.
+mod common;
 mod support;
 use serde_json::{json, Value};
 use std::{path::PathBuf, time::Duration};
@@ -509,4 +510,28 @@ fn output_flow_control_bounds_unacknowledged_chunks() {
             }
         }
     });
+}
+
+#[test]
+fn provider_instance_environment_reaches_pty_and_explicit_env_wins() {
+    let e = common::setup("terminal-provider-env");
+    let cwd = e.dir("workspace");
+    e.conn.rpc("server.updateSettings", json!({"patch":{"providerInstances":{"custom":{"driver":"codex","environment":[{"name":"O3_ENV_PROOF","value":"instance"},{"name":"O3_SECRET_PROOF","value":"private","sensitive":true}]}}}})).unwrap();
+    e.conn.rpc("terminal.open", json!({"threadId":"t","terminalId":"env","cwd":cwd,"providerInstanceId":"custom","env":{"O3_ENV_PROOF":"explicit"}})).unwrap();
+    e.conn.rpc("terminal.write", json!({"threadId":"t","terminalId":"env","data":"printf 'RESULT:%s:%s\\n' \"$O3_ENV_PROOF\" \"$O3_SECRET_PROOF\"\n"})).unwrap();
+    let items = common::collect(
+        &e.conn,
+        "terminal.attach",
+        json!({"threadId":"t","terminalId":"env"}),
+        |v| v.to_string().contains("RESULT:explicit:private"),
+    );
+    assert!(
+        items
+            .iter()
+            .any(|v| v.to_string().contains("RESULT:explicit:private")),
+        "{items:?}"
+    );
+    e.conn
+        .rpc("terminal.close", json!({"threadId":"t","terminalId":"env"}))
+        .unwrap();
 }

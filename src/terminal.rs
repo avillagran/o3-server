@@ -789,7 +789,7 @@ struct Launch {
     rows: Option<u16>,
     env: Option<BTreeMap<String, String>>,
 }
-fn launch_of(p: &Value, cwd_required: bool) -> Result<Launch, Value> {
+fn launch_of(s: &State, p: &Value, cwd_required: bool) -> Result<Launch, Value> {
     let (thread, terminal) = key_of(p)?;
     Ok(Launch {
         cwd: if cwd_required || p.get("cwd").is_some() {
@@ -800,10 +800,31 @@ fn launch_of(p: &Value, cwd_required: bool) -> Result<Launch, Value> {
         worktree: opt_path(p, "worktreePath")?,
         cols: dim(p, "cols", 1000, None)?,
         rows: dim(p, "rows", 500, None)?,
-        env: env_of(p)?,
+        env: provider_env(s, p)?,
         thread,
         terminal,
     })
+}
+
+fn provider_env(s: &State, p: &Value) -> Result<Option<BTreeMap<String, String>>, Value> {
+    let mut env = BTreeMap::new();
+    if let Some(id) = p["providerInstanceId"].as_str() {
+        let settings = crate::settings::read(s).map_err(|e| invalid(&e))?;
+        for var in settings["providerInstances"][id]["environment"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            if let (Some(name), Some(value)) = (var["name"].as_str(), var["value"].as_str()) {
+                if name.is_empty() || name.contains(['=', '\0']) || value.contains('\0') {
+                    return Err(invalid("invalid provider environment"));
+                }
+                env.insert(name.to_owned(), value.to_owned());
+            }
+        }
+    }
+    env.extend(env_of(p)?.unwrap_or_default());
+    Ok((!env.is_empty()).then_some(env))
 }
 
 fn spawn_env(runtime: &Option<BTreeMap<String, String>>) -> Vec<(String, String)> {
@@ -1050,10 +1071,11 @@ impl Manager {
     /// `terminal.attach`: the session to stream, `None` when it was closed and the client only resumes.
     fn attach_locked(
         self: &Arc<Self>,
+        s: &State,
         p: &Value,
         resume: bool,
     ) -> Result<Option<Arc<Session>>, Value> {
-        let l = launch_of(p, false)?;
+        let l = launch_of(s, p, false)?;
         let key = (l.thread.clone(), l.terminal.clone());
         let restart_if_stopped = p["restartIfNotRunning"] == true;
         let Some(session) = self.get(&key) else {
@@ -1167,7 +1189,7 @@ pub async fn call(s: &Arc<State>, tag: &str, p: &Value) -> Result<Value, Value> 
     let m = s.streams.terminals.clone();
     match tag {
         "terminal.open" => {
-            let l = launch_of(p, true)?;
+            let l = launch_of(s, p, true)?;
             let _guard = m.lifecycle.lock().await;
             let sess = m.open_locked(&l)?;
             Ok(sess.snapshot())
@@ -1231,7 +1253,7 @@ pub async fn call(s: &Arc<State>, tag: &str, p: &Value) -> Result<Value, Value> 
             Ok(Value::Null)
         }
         "terminal.restart" => {
-            let l = launch_of(p, true)?;
+            let l = launch_of(s, p, true)?;
             if l.cols.is_none() || l.rows.is_none() {
                 return Err(invalid("cols and rows required"));
             }
@@ -1489,7 +1511,7 @@ pub async fn open_stream(s: &Arc<State>, tag: &str, p: &Value) -> Result<Cursor,
             cursor.key = key.clone();
             let _guard = m.lifecycle.lock().await;
             let session = if kind == Kind::Attach {
-                m.attach_locked(p, p["resume"] == true)?
+                m.attach_locked(s, p, p["resume"] == true)?
             } else {
                 Some(m.require(&key)?)
             };
