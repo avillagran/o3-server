@@ -31,13 +31,17 @@ pub fn resolve(name: &Path) -> Option<PathBuf> {
                 candidate.parent()?.parent()?.parent()?
             };
             for alias in ["global", "latest"] {
-                let real = root
+                let install = root
                     .join("installs")
                     .join(candidate.file_name()?)
-                    .join(alias)
-                    .join(candidate.file_name()?);
-                if executable(&real) {
-                    return real.canonicalize().ok();
+                    .join(alias);
+                for real in [
+                    install.join("bin").join(candidate.file_name()?),
+                    install.join(candidate.file_name()?),
+                ] {
+                    if executable(&real) {
+                        return real.canonicalize().ok();
+                    }
                 }
             }
             continue;
@@ -58,7 +62,7 @@ mod tests {
             crate::store::random_id().unwrap()
         ));
         let wrapper = root.join("command-wrappers/bin/codex");
-        let real = root.join("installs/codex/global/codex");
+        let real = root.join("installs/codex/global/bin/codex");
         std::fs::create_dir_all(wrapper.parent().unwrap()).unwrap();
         std::fs::create_dir_all(real.parent().unwrap()).unwrap();
         for (path, body) in [

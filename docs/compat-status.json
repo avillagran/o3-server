@@ -689,7 +689,7 @@
     "server.getConfig": {
       "status": "partial",
       "priority": "P0",
-      "note": "Isolated nightly differential proves authenticated real-client read. CLI default-scope bug fixed. Minimal capability advertisement, provider/config catalog fields and newer settings differ; unsupported capabilities remain absent/off. See docs/CONFORMANCE.md."
+      "note": "Isolated nightly differential proves authenticated real-client read. CLI default-scope bug fixed. Minimal capability advertisement, provider/config catalog fields and newer settings differ; unsupported capabilities remain absent/off. See docs/CONFORMANCE.md. Claude default is now claudeAgent (legacy aliases retained); Codex discovery is lazy, both providers reap after 60 s idle; native executable resolver bypasses mise shims."
     },
     "server.getDatabaseStorage": {
       "status": "skip",

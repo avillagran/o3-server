@@ -60,8 +60,9 @@ rewind is not implemented.
   client revision. Snapshot tests carry the reference decoder extracted from
   lib-t3-rust 1500d06, whose newer API lacks the bridge catalog module.
   Pin published revisions before distribution.
-- No upstream T3 conformance run, desktop/Android end-to-end run, systemd install
-  or production deployment. No real T3 profile or running service was accessed.
+- Partial isolated upstream differential evidence is now recorded in CONFORMANCE.md.
+  Desktop/Android end-to-end, full native inference parity and production deployment
+  remain unverified. The real user T3 profile and running service were not accessed.
 
 ## Verification and memory
 
@@ -90,3 +91,9 @@ RssAnon 29,420 KiB after churn (under both 50 MB and 50 MiB). The bridge
 published its isolated endpoint before load. Claude was available with unknown
 authentication; the Codex probe reported error in the empty isolated profile.
 Neither adapter performed inference in this memory workload.
+
+
+Operational checkpoint: provider discovery is lazy and uses resolved native executables,
+not HOME-sensitive mise wrappers. Codex's app-server and cached Claude sessions expire
+after 60 seconds idle. Claude's advertised default instance is claudeAgent; old claude
+and claude-code selections remain aliases. See CONFORMANCE.md for scope and evidence.
