@@ -137,9 +137,9 @@
       "note": "o3-server runs no MCP app host; answers McpAppRequestError(provider-unsupported). tests/admin_reads.rs."
     },
     "orchestration.dispatchCommand": {
-      "status": "done",
+      "status": "partial",
       "priority": "P0",
-      "note": "Reader-equivalent: both native attachment steering paths, scoped exact-operation consent and mode/model revocation; real Connection/native peers in orchestration_readers/provider_input plus background/active_recovery. Broad glob policies and original-process delivery guarantees are accepted differences with reader/recovery evidence in CONFORMANCE.md."
+      "note": "Demoted by independent audit: acceptForSession grant dies with idle reaping and is untested; title regeneration is advertised but truncates text. Reader-equivalent: both native attachment steering paths, scoped exact-operation consent and mode/model revocation; real Connection/native peers in orchestration_readers/provider_input plus background/active_recovery. Broad glob policies and original-process delivery guarantees are accepted differences with reader/recovery evidence in CONFORMANCE.md."
     },
     "orchestration.getArchivedShellSnapshot": {
       "status": "partial",
@@ -187,9 +187,9 @@
       "note": "No client call site in inventory."
     },
     "orchestration.launchThread": {
-      "status": "done",
+      "status": "partial",
       "priority": "P0",
-      "note": "Reader-equivalent: reused initial-message model override, strong imported native mapping/resume and deterministic generateTitle, receipt replay; both native peers and real Connection in orchestration_readers, workspace rollback/reuse in provider_input. Semantic title wording accepted in CONFORMANCE.md."
+      "note": "Demoted by independent audit: generateTitle only truncates; tests covered launch fields no client can send. Reader-equivalent: reused initial-message model override, strong imported native mapping/resume and deterministic generateTitle, receipt replay; both native peers and real Connection in orchestration_readers, workspace rollback/reuse in provider_input. Semantic title wording accepted in CONFORMANCE.md."
     },
     "orchestration.searchThread": {
       "status": "partial",
@@ -687,9 +687,9 @@
       "note": "No client call site in inventory."
     },
     "server.getConfig": {
-      "status": "done",
+      "status": "partial",
       "priority": "P0",
-      "note": "Reader-equivalent: instance routing with isolated binary/env/home pools; startup native commands/skills/account/models and Codex tier descriptors; editor discovery; normalized settings. Real Connection and native-peer tests in server_config; per-field audit and explicitly accepted capability/optional differences in CONFORMANCE.md."
+      "note": "Demoted by independent audit: implemented capabilities are not advertised (projectSettingsOverrides, storageCleanup, worktreesDirectory, projectWorktreeCleanup); no provider setup, versionAdvisory or auth.canLogout. Reader-equivalent: instance routing with isolated binary/env/home pools; startup native commands/skills/account/models and Codex tier descriptors; editor discovery; normalized settings. Real Connection and native-peer tests in server_config; per-field audit and explicitly accepted capability/optional differences in CONFORMANCE.md."
     },
     "server.getDatabaseStorage": {
       "status": "skip",
@@ -837,9 +837,9 @@
       "note": "No client call site in inventory."
     },
     "server.updateSettings": {
-      "status": "done",
+      "status": "partial",
       "priority": "P1",
-      "note": "Reader-equivalent: normalized native/scoped settings, idle compatibility, background presets/custom overrides and legacy derivation, model selection/preferences, instance mutation/redaction and entry replacement. Real Connection/native_settings tests prove read-back and atomic rejection; accepted unconsumed fields in CONFORMANCE.md."
+      "note": "Demoted by independent audit: backgroundActivityProfile and text-generation settings are shown by clients but have no effect. Reader-equivalent: normalized native/scoped settings, idle compatibility, background presets/custom overrides and legacy derivation, model selection/preferences, instance mutation/redaction and entry replacement. Real Connection/native_settings tests prove read-back and atomic rejection; accepted unconsumed fields in CONFORMANCE.md."
     },
     "server.upsertKeybinding": {
       "status": "done",
@@ -902,9 +902,9 @@
       "note": "No client call site in inventory."
     },
     "subscribeServerConfig": {
-      "status": "done",
+      "status": "partial",
       "priority": "P1",
-      "note": "Reader-equivalent: initial snapshot and typed provider/settings/keybinding changes, lossless coalesced snapshots; opt-in quota source and theme replacement events. Proactive native/hub quotas only while usageLimitSources subscribers exist; cancellation aborts probes. Real Connection tests plus real quota reducer and HTTP hub peer; optional theme differences documented in CONFORMANCE.md."
+      "note": "Demoted by independent audit: inherits the getConfig capability gap. Reader-equivalent: initial snapshot and typed provider/settings/keybinding changes, lossless coalesced snapshots; opt-in quota source and theme replacement events. Proactive native/hub quotas only while usageLimitSources subscribers exist; cancellation aborts probes. Real Connection tests plus real quota reducer and HTTP hub peer; optional theme differences documented in CONFORMANCE.md."
     },
     "subscribeServerLifecycle": {
       "status": "skip",
