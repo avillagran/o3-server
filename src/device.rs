@@ -117,6 +117,12 @@ async fn detail(p: &Value) -> Reply {
     )
 }
 pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
+    if matches!(tag, "device.open" | "device.action" | "device.detail") {
+        let settings = crate::settings::read(s).map_err(invalid)?;
+        if settings["deviceEnabled"] == false {
+            return Err(unavailable("devices are disabled"));
+        }
+    }
     match tag {
         "device.list" => {
             if p.get("updateTool").is_some() || p.get("retryHostId").is_some() {

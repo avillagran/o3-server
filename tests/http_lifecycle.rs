@@ -42,3 +42,31 @@ async fn public_http_churn_does_not_start_repository_identity_polling() {
     drop(state);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[tokio::test]
+async fn slow_headers_are_closed_and_pairing_attempts_are_bounded() {
+    let root = std::env::temp_dir().join(o3_server::store::random_id().unwrap());
+    let state = Arc::new(o3_server::store::State::open(&root).unwrap());
+    let (mut client, server) = tokio::io::duplex(4096);
+    let task = tokio::spawn(o3_server::serve_io(server, state.clone()));
+    client.write_all(b"GET / HTTP/1.1\r\nHost:").await.unwrap();
+    let mut bytes = Vec::new();
+    tokio::time::timeout(Duration::from_secs(8), client.read_to_end(&mut bytes))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(task.await.unwrap().is_err());
+    let mut limited = false;
+    for _ in 0..35 {
+        let (mut c, io) = tokio::io::duplex(4096);
+        let task = tokio::spawn(o3_server::serve_io(io, state.clone()));
+        c.write_all(b"POST /oauth/token HTTP/1.1\r\nHost: local\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await.unwrap();
+        let mut reply = Vec::new();
+        c.read_to_end(&mut reply).await.unwrap();
+        limited |= reply.starts_with(b"HTTP/1.1 429");
+        task.await.unwrap().unwrap();
+    }
+    assert!(limited);
+    drop(state);
+    std::fs::remove_dir_all(root).unwrap();
+}

@@ -370,7 +370,12 @@ pub async fn upload(s: &State, token: &str, request: Request<Incoming>) -> Respo
             "Failed to persist upload.",
         );
     }
-    let result = store(request.into_body(), &part, &final_path, size).await;
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        store(request.into_body(), &part, &final_path, size),
+    )
+    .await
+    .unwrap_or_else(|_| Err((StatusCode::REQUEST_TIMEOUT, "Upload timed out".into())));
     let _ = tokio::fs::remove_file(&part).await;
     match result {
         Ok(()) => status_only(StatusCode::NO_CONTENT),

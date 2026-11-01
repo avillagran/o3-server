@@ -27,6 +27,7 @@ pub const STANDARD_SCOPES: [&str; 16] = [
 ];
 
 pub struct State {
+    pub(crate) http: crate::http::Limits,
     #[cfg(feature = "bridge")]
     pub bridge_endpoints: Mutex<Vec<Value>>,
     pub db: Mutex<Connection>,
@@ -128,6 +129,7 @@ impl State {
         let streams = crate::streams::Hub::new();
         streams.terminals.restore(&dir.join("terminal-history"))?;
         Ok(Self {
+            http: crate::http::Limits::default(),
             #[cfg(feature = "bridge")]
             bridge_endpoints: Mutex::new(Vec::new()),
             settings_lock: Mutex::new(()),

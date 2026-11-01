@@ -12,7 +12,7 @@ use hyper::{
     service::service_fn,
     Method, Request, Response, StatusCode,
 };
-use hyper_util::rt::TokioIo;
+use hyper_util::rt::{TokioIo, TokioTimer};
 use serde_json::{json, Value};
 use sha1::{Digest, Sha1};
 use std::{convert::Infallible, sync::Arc};
@@ -21,6 +21,27 @@ use tokio_tungstenite::{tungstenite::protocol::Role, WebSocketStream};
 
 type Reply = Response<Body>;
 const AUTH_BODY_LIMIT: usize = 64 * 1024;
+
+pub(crate) struct Limits {
+    connections: Arc<tokio::sync::Semaphore>,
+    peers: std::sync::Mutex<
+        std::collections::HashMap<std::net::IpAddr, std::sync::Weak<tokio::sync::Semaphore>>,
+    >,
+    token_window: std::sync::Mutex<(std::time::Instant, usize)>,
+}
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            connections: Arc::new(tokio::sync::Semaphore::new(128)),
+            peers: Default::default(),
+            token_window: std::sync::Mutex::new((std::time::Instant::now(), 0)),
+        }
+    }
+}
+type Lease = Arc<(
+    tokio::sync::OwnedSemaphorePermit,
+    Option<tokio::sync::OwnedSemaphorePermit>,
+)>;
 
 fn json_reply(status: StatusCode, body: String) -> Reply {
     let mut response = Response::new(body::full(body));
@@ -52,15 +73,28 @@ fn query(request: &Request<Incoming>, name: &str) -> Option<String> {
 }
 
 async fn body(request: Request<Incoming>) -> Option<Bytes> {
-    Limited::new(request.into_body(), AUTH_BODY_LIMIT)
-        .collect()
-        .await
-        .ok()
-        .map(|b| b.to_bytes())
+    tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        Limited::new(request.into_body(), AUTH_BODY_LIMIT).collect(),
+    )
+    .await
+    .ok()?
+    .ok()
+    .map(|b| b.to_bytes())
 }
 
 /// `POST /oauth/token`: RFC 8693 exchange of a pairing secret for a bearer session.
 async fn token(state: &State, request: Request<Incoming>) -> Reply {
+    {
+        let mut window = state.http.token_window.lock().unwrap();
+        if window.0.elapsed() >= std::time::Duration::from_secs(1) {
+            *window = (std::time::Instant::now(), 0);
+        }
+        if window.1 >= 30 {
+            return json_reply(StatusCode::TOO_MANY_REQUESTS, "{}".into());
+        }
+        window.1 += 1;
+    }
     let Some(form) = body(request).await else {
         return json_reply(
             StatusCode::BAD_REQUEST,
@@ -115,8 +149,10 @@ fn upgrade(state: Arc<State>, session: Value, mut request: Request<Incoming>) ->
     hash.update(key.as_bytes());
     hash.update(b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
     let accept = base64::engine::general_purpose::STANDARD.encode(hash.finalize());
+    let lease = request.extensions().get::<Lease>().cloned();
     let upgrading = hyper::upgrade::on(&mut request);
     tokio::task::spawn(async move {
+        let _lease = lease;
         if let Ok(upgraded) = upgrading.await {
             rpc::run(
                 WebSocketStream::from_raw_socket(
@@ -180,15 +216,12 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
                 return Ok(unauthorized());
             };
             let socket = path == "/api/device-hub/vendor/serve-emu/ws";
-            if let Some(r) = scope_reply(
-                &session,
-                if socket {
-                    "orchestration:operate"
-                } else {
-                    "orchestration:read"
-                },
-            ) {
+            if let Some(r) = scope_reply(&session, "orchestration:operate") {
                 return Ok(r);
+            }
+            let settings = crate::settings::read(&state).unwrap_or_default();
+            if settings["deviceEnabled"] == false || settings["deviceAgentAccessEnabled"] == false {
+                return Ok(json_reply(StatusCode::FORBIDDEN, "{}".into()));
             }
             let target = json!({"deviceId":query(&request,"device").unwrap_or_default(),"hostId":query(&request,"hostId").unwrap_or_else(||"local".into())});
             let serial = match crate::device::id(&target) {
@@ -205,13 +238,23 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
                 };
                 let accept =
                     tokio_tungstenite::tungstenite::handshake::derive_accept_key(key.as_bytes());
+                let lease = request.extensions().get::<Lease>().cloned();
                 let upgrade = hyper::upgrade::on(&mut request);
                 tokio::spawn(async move {
+                    let _lease = lease;
                     use futures_util::{SinkExt, StreamExt};
                     if let Ok(io) = upgrade.await {
-                        let mut ws =
-                            WebSocketStream::from_raw_socket(TokioIo::new(io), Role::Server, None)
-                                .await;
+                        let mut ws = WebSocketStream::from_raw_socket(
+                            TokioIo::new(io),
+                            Role::Server,
+                            Some(
+                                tokio_tungstenite::tungstenite::protocol::WebSocketConfig::default(
+                                )
+                                .max_message_size(Some(4096))
+                                .max_frame_size(Some(4096)),
+                            ),
+                        )
+                        .await;
                         // Input-only socket; snapshots remain available over HTTP. No video worker.
                         while let Some(Ok(message)) = ws.next().await {
                             if message.is_close() {
@@ -385,11 +428,34 @@ pub async fn serve_io<I>(io: I, state: Arc<State>) -> std::io::Result<()>
 where
     I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
+    serve_connection(io, state, None).await
+}
+async fn serve_connection<I>(
+    io: I,
+    state: Arc<State>,
+    peer: Option<tokio::sync::OwnedSemaphorePermit>,
+) -> std::io::Result<()>
+where
+    I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    let permit = state
+        .http
+        .connections
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| std::io::Error::other("connection limit"))?;
+    let lease = Arc::new((permit, peer));
     state.start_checkpointer();
     crate::scheduled::ensure_started(&state);
     crate::projects::ensure_identity_watcher(&state);
-    let service = service_fn(move |request| route(state.clone(), request));
+    let service = service_fn(move |mut request: Request<Incoming>| {
+        request.extensions_mut().insert(lease.clone());
+        route(state.clone(), request)
+    });
     hyper::server::conn::http1::Builder::new()
+        .timer(TokioTimer::new())
+        .header_read_timeout(std::time::Duration::from_secs(5))
+        .max_buf_size(32 * 1024)
         .serve_connection(TokioIo::new(io), service)
         .with_upgrades()
         .await
@@ -409,11 +475,27 @@ pub async fn serve(listener: TcpListener, state: Arc<State>) -> std::io::Result<
     crate::scheduled::ensure_started(&state);
     crate::projects::ensure_identity_watcher(&state);
     loop {
-        let (socket, _) = listener.accept().await?;
+        let (socket, address) = listener.accept().await?;
+        let peer = {
+            let mut peers = state.http.peers.lock().unwrap();
+            peers.retain(|_, v| v.strong_count() > 0);
+            let semaphore = peers
+                .get(&address.ip())
+                .and_then(std::sync::Weak::upgrade)
+                .unwrap_or_else(|| {
+                    let sem = Arc::new(tokio::sync::Semaphore::new(16));
+                    peers.insert(address.ip(), Arc::downgrade(&sem));
+                    sem
+                });
+            match semaphore.try_acquire_owned() {
+                Ok(p) => p,
+                Err(_) => continue,
+            }
+        };
         let _ = socket.set_nodelay(true);
         let state = state.clone();
         tokio::spawn(async move {
-            let _ = serve_io(socket, state).await;
+            let _ = serve_connection(socket, state, Some(peer)).await;
             crate::heap::collect();
         });
     }
