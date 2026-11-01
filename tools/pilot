@@ -127,7 +127,7 @@ log = open(pilot / "server.log", "ab")
 process = subprocess.Popen([binary, "serve", "--host", "127.0.0.1", "--port", "0"], env=env, stdin=subprocess.DEVNULL,
                            stdout=log, stderr=log, start_new_session=True)
 runtime = profile / "userdata" / "server-runtime.json"
-deadline = time.monotonic() + 40
+deadline = time.monotonic() + 600  # first start on a large history builds indexes
 origin = None
 while time.monotonic() < deadline:
     if process.poll() is not None:
