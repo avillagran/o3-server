@@ -741,3 +741,38 @@ fn review_diffs_include_untracked_files_and_stay_in_known_workspaces() {
         json!([])
     );
 }
+
+#[test]
+fn z_status_reports_host_and_pull_request_and_local_only_skips_host() {
+    let e = setup("host-status");
+    let root = e.dir("repo");
+    repo(&root);
+    write(&root.join("a"), "a\n");
+    commit_all(&root, "initial");
+    git(
+        &root,
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/owner/repo.git",
+        ],
+    );
+    let script = bin_dir().join("gh");
+    let previous = std::fs::read(&script).unwrap();
+    std::fs::write(&script,b"#!/bin/sh\necho '[{\"number\":7,\"title\":\"Proof\",\"url\":\"https://github.com/owner/repo/pull/7\",\"baseRefName\":\"main\",\"headRefName\":\"feature\",\"state\":\"OPEN\",\"isDraft\":false,\"updatedAt\":null}]'\n").unwrap();
+    let r = e
+        .conn
+        .rpc("vcs.refreshStatus", json!({"cwd":root}))
+        .unwrap();
+    std::fs::write(&script, previous).unwrap();
+    assert_eq!(r["sourceControlProvider"]["kind"], "github");
+    assert_eq!(r["pr"]["number"], 7);
+    assert_eq!(r["pr"]["state"], "open");
+    let r = e
+        .conn
+        .rpc("vcs.refreshStatus", json!({"cwd":root,"localOnly":true}))
+        .unwrap();
+    assert!(r["pr"].is_null());
+    assert_eq!(r["sourceControlProvider"]["name"], "GitHub");
+}

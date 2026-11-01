@@ -394,6 +394,47 @@ pub async fn refresh_status(p: Value) -> Reply {
             }
         }
     }
+    let identity = crate::projects::repository_identity(&root.to_string_lossy()).await;
+    if let Some(kind) = identity["provider"].as_str() {
+        let (name, base) = if kind == "github" {
+            ("GitHub", "https://github.com")
+        } else {
+            ("GitLab", "https://gitlab.com")
+        };
+        v["sourceControlProvider"] = json!({"kind":kind,"name":name,"baseUrl":base});
+        if kind == "github" && p["localOnly"] != true {
+            if let Some(head) = st.head.as_deref() {
+                let result = proc::run(
+                    "gh",
+                    &root,
+                    &[
+                        "pr",
+                        "list",
+                        "--head",
+                        head,
+                        "--state",
+                        "all",
+                        "--limit",
+                        "1",
+                        "--json",
+                        "number,title,url,baseRefName,headRefName,state,isDraft,updatedAt",
+                    ],
+                    Opts::READ,
+                    &[],
+                )
+                .await;
+                if let Ok(o) = result {
+                    if o.ok() {
+                        if let Ok(rows) = serde_json::from_slice::<Vec<Value>>(&o.stdout) {
+                            if let Some(pr) = rows.first() {
+                                v["pr"] = json!({"number":pr["number"],"title":pr["title"],"url":pr["url"],"baseRef":pr["baseRefName"],"headRef":pr["headRefName"],"state":pr["state"].as_str().unwrap_or("OPEN").to_lowercase(),"isDraft":pr["isDraft"],"updatedAt":pr["updatedAt"]});
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     Ok(v)
 }
 

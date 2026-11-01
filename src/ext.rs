@@ -43,7 +43,7 @@ pub async fn call(s: &State, tag: &str, p: Value) -> Result<Value, Value> {
         ),
         "attachments.createUploadUrl" => assets::create_upload_url(s, &p),
         "attachments.delete" => assets::delete_attachment(s, &p),
-        "assets.createUrl" => assets::create_url(s, &p),
+        "assets.createUrl" => assets::create_url_async(s, &p).await,
         "projects.readFile" => Box::pin(files::read_file(p)).await,
         "projects.searchEntries" => Box::pin(files::search_entries(p)).await,
         "filesystem.browse" => Box::pin(files::browse(p)).await,

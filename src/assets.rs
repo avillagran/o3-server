@@ -631,6 +631,66 @@ fn favicon_ext_ok(p: &str) -> bool {
         )
 }
 
+/// Credentialed media is fetched once into the private profile, then served through an expiring grant.
+pub async fn create_url_async(s: &State, p: &Value) -> Reply {
+    let resource = &p["resource"];
+    if resource["_tag"] != "github-media" {
+        return create_url(s, p);
+    }
+    let raw = resource["url"]
+        .as_str()
+        .ok_or_else(|| invalid("url required"))?;
+    let url = url::Url::parse(raw).map_err(|_| invalid("invalid media URL"))?;
+    if url.scheme() != "https"
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.port().is_some()
+        || !matches!(
+            url.host_str(),
+            Some(
+                "github.com"
+                    | "private-user-images.githubusercontent.com"
+                    | "user-images.githubusercontent.com"
+            )
+        )
+    {
+        return Err(invalid("unsupported media host"));
+    }
+    let cwd = resource["cwd"]
+        .as_str()
+        .ok_or_else(|| invalid("cwd required"))?;
+    let o = crate::proc::run(
+        "gh",
+        Path::new(cwd),
+        &["api", raw],
+        crate::proc::Opts {
+            timeout: std::time::Duration::from_secs(30),
+            cap: 10 * 1024 * 1024,
+            allow_truncate: false,
+        },
+        &[],
+    )
+    .await
+    .map_err(|_| asset_err("AssetWorkspaceResolutionError", resource))?;
+    if !o.ok() {
+        return Err(asset_err("AssetWorkspaceAssetNotFoundError", resource));
+    }
+    let dir = s.dir.join("asset-media");
+    std::fs::create_dir_all(&dir).map_err(|_| invalid("asset cache unavailable"))?;
+    let file = dir.join(format!(
+        "{}.png",
+        random_id().map_err(|_| invalid("asset id unavailable"))?
+    ));
+    std::fs::write(&file, &o.stdout).map_err(|_| invalid("asset cache write failed"))?;
+    let expires = now_ms() + ASSET_TTL_MS;
+    let (claims, name, revision) =
+        media_claims(&file, false, expires).ok_or_else(|| invalid("asset cache unavailable"))?;
+    let token = sign(s, &claims).map_err(|_| invalid("asset signing failed"))?;
+    Ok(
+        json!({"relativeUrl":format!("{ASSET_PREFIX}{token}/{name}"),"expiresAt":expires,"fileRevision":revision}),
+    )
+}
+
 pub fn create_url(s: &State, p: &Value) -> Reply {
     let resource = &p["resource"];
     let tag = resource["_tag"]
@@ -787,6 +847,79 @@ pub fn create_url(s: &State, p: &Value) -> Reply {
                     json!({"version":1,"kind":"workspace-file-exact","workspaceRoot":real_root.to_string_lossy(),"relativePath":rel,"expiresAt":expires})
                 };
             }
+        }
+        "native-app-icon" => {
+            let app = &resource["app"];
+            let id = app["appId"]
+                .as_str()
+                .or_else(|| app["displayName"].as_str())
+                .filter(|v| {
+                    !v.is_empty()
+                        && v.len() <= 512
+                        && v.bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+                })
+                .ok_or_else(|| invalid("invalid application reference"))?;
+            let mut roots = Vec::new();
+            if let Some(data) = std::env::var_os("XDG_DATA_HOME") {
+                roots.push(PathBuf::from(data));
+            }
+            if let Some(home) = std::env::var_os("HOME") {
+                roots.push(PathBuf::from(home).join(".local/share"));
+            }
+            roots.extend([
+                PathBuf::from("/usr/local/share"),
+                PathBuf::from("/usr/share"),
+            ]);
+            let mut icon = None;
+            for root in &roots {
+                let desktop = root
+                    .join("applications")
+                    .join(format!("{}.desktop", id.trim_end_matches(".desktop")));
+                if let Ok(text) = std::fs::read_to_string(desktop) {
+                    icon = text
+                        .lines()
+                        .find_map(|line| line.strip_prefix("Icon=").map(str::to_owned));
+                    if icon.is_some() {
+                        break;
+                    }
+                }
+            }
+            let icon = icon.unwrap_or_else(|| id.to_owned());
+            let mut found = None;
+            if Path::new(&icon).is_absolute() {
+                found = Some(PathBuf::from(&icon));
+            } else if !icon.contains('/') {
+                'search: for root in roots {
+                    for size in [
+                        "scalable", "256x256", "128x128", "64x64", "48x48", "32x32", "16x16",
+                    ] {
+                        for ext in ["png", "svg"] {
+                            let path = root.join(format!("icons/hicolor/{size}/apps/{icon}.{ext}"));
+                            if path.is_file() {
+                                found = Some(path);
+                                break 'search;
+                            }
+                        }
+                    }
+                    let path = root.join(format!("pixmaps/{icon}.png"));
+                    if path.is_file() {
+                        found = Some(path);
+                        break;
+                    }
+                }
+            }
+            let file = found
+                .filter(|p| mime_for(&p.to_string_lossy()).is_some_and(|m| m.starts_with("image/")))
+                .ok_or_else(|| not_found("AssetWorkspaceAssetNotFoundError"))?;
+            let real = std::fs::canonicalize(file)
+                .map_err(|_| not_found("AssetWorkspaceAssetNotFoundError"))?;
+            let (c, name, rev) = media_claims(&real, false, expires)
+                .ok_or_else(|| not_found("AssetWorkspaceAssetNotFoundError"))?;
+            claims = c;
+            file_name = name;
+            revision = Some(rev);
+            dims = image_dimensions(&real);
         }
         "project-favicon" => {
             let cwd = text("cwd", 1024).ok_or_else(|| invalid("cwd is required"))?;
