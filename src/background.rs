@@ -119,7 +119,7 @@ pub(crate) async fn refresh_health(s: std::sync::Arc<crate::store::State>) {
             stamp = current;
         }
         let settings = &cached;
-        let profile = crate::settings::background_resolved(&settings);
+        let profile = crate::settings::background_resolved(settings);
         let now = tokio::time::Instant::now();
         if prior != profile {
             health = now

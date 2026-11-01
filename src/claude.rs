@@ -204,7 +204,11 @@ impl ClaudeProvider {
             let text = content[0]["text"].as_str().unwrap().to_owned();
             content[0]["text"] = json!(format!("{text}\n\nultrathink"));
         }
-        let existing = self.sessions.lock().unwrap().remove(&input.thread_id);
+        let existing = if input.runtime_mode == "text-only" {
+            None
+        } else {
+            self.sessions.lock().unwrap().remove(&input.thread_id)
+        };
         let mut session = if let Some(mut s) = existing {
             if input.native_session_id.is_none() && !s.native.is_empty() {
                 input.native_session_id = Some(s.native.clone());
@@ -758,6 +762,62 @@ mod tests {
             .unwrap();
         assert!(provider.sessions.lock().unwrap().is_empty());
         assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists());
+    }
+    #[tokio::test]
+    async fn text_generation_cannot_remove_a_colliding_conversation_session() {
+        let dir = std::env::temp_dir()
+            .join(crate::store::random_id().unwrap())
+            .join("text-generation");
+        std::fs::create_dir_all(&dir).unwrap();
+        let binary =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/input/text-only.py");
+        let provider = ClaudeProvider::new(binary);
+        let mut child = Command::new("sleep")
+            .arg("60")
+            .process_group(0)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let pid = child.id().unwrap();
+        let session = Session {
+            stdin: child.stdin.take().unwrap(),
+            stdout: BufReader::new(child.stdout.take().unwrap()),
+            child,
+            buffer: vec![],
+            native: "conversation".into(),
+            cwd: PathBuf::new(),
+            options: Value::Null,
+            idle_since: tokio::time::Instant::now(),
+        };
+        provider
+            .sessions
+            .lock()
+            .unwrap()
+            .insert("collision".into(), session);
+        let input = RunInput {
+            provider_instance_id: "claudeAgent".into(),
+            native_session_id: None,
+            thread_id: "collision".into(),
+            run_id: "collision".into(),
+            cwd: dir.clone(),
+            text: "title".into(),
+            model_selection: json!({"model":"test"}),
+            runtime_mode: "text-only".into(),
+            interaction_mode: "default".into(),
+            attachment_root: dir.clone(),
+            attachments: json!([]),
+            context: None,
+        };
+        let (out, _events) = mpsc::channel(16);
+        let (_control, controls) = mpsc::channel(1);
+        let (_cancel, cancel) = watch::channel(false);
+        provider.run(input, out, controls, cancel).await.unwrap();
+        assert!(provider.sessions.lock().unwrap().contains_key("collision"));
+        assert!(std::path::Path::new(&format!("/proc/{pid}")).exists());
+        provider.shutdown().await;
+        std::fs::remove_dir_all(dir.parent().unwrap()).unwrap();
     }
     #[test]
     fn replay_real_partial_text_tools_results_and_usage() {

@@ -76,7 +76,7 @@
     "profile": "balanced",
     "overrides": {}
   },
-  "automaticGitFetchInterval": 300000,
+  "automaticGitFetchInterval": 30000,
   "providerHealthRefreshInterval": 300000,
   "backgroundActivityProfile": "balanced",
   "textGenerationModelSelection": null

@@ -507,108 +507,15 @@ impl Provider for CodexProvider {
         control: mpsc::Receiver<ProviderControl>,
         cancel: watch::Receiver<bool>,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
-        let mut cancel = cancel;
         Box::pin(async move {
-            if input.runtime_mode != "text-only" {
-                return self.run(input, output, control, cancel).await;
+            if input.runtime_mode == "text-only" {
+                // Neither shell_tool nor apply_patch_freeform disables the entire
+                // native tool surface. Fail closed before submitting untrusted data.
+                return Err(
+                    "Codex text generation unavailable: no verified tool-free transport".into(),
+                );
             }
-            // A dedicated ephemeral CLI cannot share, evict or park conversation processes.
-            let home = input.cwd.join("credentials");
-            std::fs::create_dir(&home).map_err(|e| e.to_string())?;
-            let env_home = self
-                .environment
-                .iter()
-                .find(|(k, _)| k == "CODEX_HOME")
-                .map(|(_, v)| std::path::PathBuf::from(v));
-            if let Some(source) = codex_home(env_home.as_deref().or(self.home.as_deref())) {
-                if source.join("auth.json").is_file() {
-                    std::fs::copy(source.join("auth.json"), home.join("auth.json"))
-                        .map_err(|e| e.to_string())?;
-                    use std::os::unix::fs::PermissionsExt;
-                    std::fs::set_permissions(
-                        home.join("auth.json"),
-                        std::fs::Permissions::from_mode(0o600),
-                    )
-                    .map_err(|e| e.to_string())?;
-                }
-            }
-            let mut cmd = Command::new(&self.executable);
-            cmd.envs(self.environment.iter().cloned())
-                .env("CODEX_HOME", &home)
-                .current_dir(&input.cwd)
-                .args([
-                    "-a",
-                    "never",
-                    "exec",
-                    "--ephemeral",
-                    "--skip-git-repo-check",
-                    "--sandbox",
-                    "read-only",
-                    "--disable",
-                    "shell_tool",
-                    "--disable",
-                    "apply_patch_freeform",
-                    "-c",
-                    "web_search=\"disabled\"",
-                    "--json",
-                    "--model",
-                ])
-                .arg(
-                    input.model_selection["model"]
-                        .as_str()
-                        .ok_or("missing text model")?,
-                )
-                .arg("-")
-                .stdin(std::process::Stdio::piped())
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::null())
-                .kill_on_drop(true);
-            let mut child = cmd.spawn().map_err(|e| e.to_string())?;
-            use tokio::io::AsyncWriteExt;
-            let mut stdin = child.stdin.take().ok_or("missing stdin")?;
-            stdin
-                .write_all(input.text.as_bytes())
-                .await
-                .map_err(|e| e.to_string())?;
-            drop(stdin);
-            let mut reader = BufReader::new(child.stdout.take().ok_or("missing stdout")?);
-            let mut buffer = Vec::new();
-            let mut text = String::new();
-            loop {
-                buffer.clear();
-                let n = tokio::select! {
-                    _ = cancel.changed() => { let _ = child.kill().await; return Ok(()); },
-                    _ = output.closed() => { let _ = child.kill().await; return Ok(()); },
-                    n = reader.read_until(b'\n', &mut buffer) => n.map_err(|e|e.to_string())?,
-                };
-                if n == 0 {
-                    break;
-                }
-                if n > MAX_FRAME {
-                    let _ = child.kill().await;
-                    return Err("text frame too large".into());
-                }
-                let v: Value = serde_json::from_slice(&buffer).map_err(|e| e.to_string())?;
-                if v["type"] == "item.completed" && v["item"]["type"] == "agent_message" {
-                    text = v["item"]["text"]
-                        .as_str()
-                        .unwrap_or("")
-                        .chars()
-                        .take(4096)
-                        .collect();
-                }
-            }
-            if !child.wait().await.map_err(|e| e.to_string())?.success() {
-                return Err("text generation failed".into());
-            }
-            output
-                .send(ProviderEvent::TextDelta(text))
-                .await
-                .map_err(|e| e.to_string())?;
-            output
-                .send(ProviderEvent::Completed)
-                .await
-                .map_err(|e| e.to_string())
+            self.run(input, output, control, cancel).await
         })
     }
 }

@@ -223,25 +223,24 @@ pub(crate) fn start(
                 }
                 continue;
             }
-            if !buffered.is_empty()
+            let flush = !buffered.is_empty()
                 && (streaming == "paragraph"
                     || matches!(
                         event,
                         ProviderEvent::Completed
                             | ProviderEvent::Failed(_)
                             | ProviderEvent::Interrupted
-                    ))
-            {
-                if persist(
+                    ));
+            if flush
+                && persist(
                     &s,
                     &tid,
                     &rid,
                     ProviderEvent::TextDelta(std::mem::take(&mut buffered)),
                 )
                 .is_err()
-                {
-                    break;
-                }
+            {
+                break;
             }
             if matches!(
                 event,

@@ -15,6 +15,9 @@ pub(crate) fn fallback(text: &str) -> String {
         .collect()
 }
 pub(crate) fn start(s: Arc<State>, tid: String, request: String, text: String) {
+    if text.trim().is_empty() {
+        return;
+    }
     let Ok(handle) = tokio::runtime::Handle::try_current() else {
         return;
     };
@@ -151,10 +154,18 @@ mod tests {
             let state = State::open(&dir).unwrap();
             let binary = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("tests/fixtures/input/text-only.py");
+            let marker = dir.join("text-peer");
+            let environment = vec![(
+                "O3_TEXT_PEER_MARKER".into(),
+                marker.to_string_lossy().into_owned(),
+            )];
             *state.provider.lock().unwrap() = Some(if codex {
-                Arc::new(crate::codex::CodexProvider::new(binary, None))
+                Arc::new(
+                    crate::codex::CodexProvider::new(binary, None)
+                        .with_environment(environment.clone()),
+                )
             } else {
-                Arc::new(crate::claude::ClaudeProvider::new(binary))
+                Arc::new(crate::claude::ClaudeProvider::new(binary).with_environment(environment))
             });
             let input = RunInput {
                 provider_instance_id: if codex { "codex" } else { "claudeAgent" }.into(),
@@ -170,7 +181,22 @@ mod tests {
                 attachments: json!([]),
                 context: None,
             };
-            assert_eq!(bounded(&state, input).await.as_deref(), Some("Safe title"));
+            assert_eq!(
+                bounded(&state, input).await.as_deref(),
+                if codex { None } else { Some("Safe title") }
+            );
+            assert_eq!(
+                marker.exists(),
+                !codex,
+                "Codex generation must not launch a process"
+            );
+            if !codex {
+                let pid = std::fs::read_to_string(&marker).unwrap();
+                assert!(
+                    !std::path::Path::new(&format!("/proc/{pid}")).exists(),
+                    "text process was parked"
+                );
+            }
             assert_eq!(
                 std::fs::read_dir(dir.join("text-generation"))
                     .unwrap()

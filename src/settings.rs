@@ -733,7 +733,7 @@ fn normalize(v: &mut Value, patch: &Value) -> Result<(), String> {
 fn background_preset(profile: &str) -> Value {
     let performance = profile == "performance";
     let battery = profile == "battery-saver";
-    json!({"automaticGitFetchInterval":if performance {15000}else if battery {0}else{300000},"providerHealthRefreshInterval":if performance {60000}else if battery {900000}else{300000},"hostPowerMonitorActiveInterval":if battery {60000}else{30000},"hostPowerMonitorIdleInterval":if performance {120000}else if battery {600000}else{300000},"idleClientTtl":45000,"pauseWhenHostLocked":true,"pauseWhenHostLowPower":!performance,"pauseWhenClientLowPower":!performance,"pauseWhenOnBattery":battery})
+    json!({"automaticGitFetchInterval":if performance {15000}else if battery {0}else{30000},"providerHealthRefreshInterval":if performance {60000}else if battery {900000}else{300000},"hostPowerMonitorActiveInterval":if battery {60000}else{30000},"hostPowerMonitorIdleInterval":if performance {120000}else if battery {600000}else{300000},"idleClientTtl":45000,"pauseWhenHostLocked":true,"pauseWhenHostLowPower":!performance,"pauseWhenClientLowPower":!performance,"pauseWhenOnBattery":battery})
 }
 pub(crate) fn background_resolved(v: &Value) -> Value {
     let activity = &v["backgroundActivity"];

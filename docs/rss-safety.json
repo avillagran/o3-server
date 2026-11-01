@@ -1,0 +1,30 @@
+{
+  "date": "2026-11-01",
+  "binary_sha256": "34d5442cb8c467e16f9485d620ebdba5d05c09b4840890cc734a4e594a66b531",
+  "measurement": "Linux process HWM; server only; provider children excluded",
+  "synthetic": {
+    "hwm_kib": 16460,
+    "completed": true,
+    "under_50_mb": true
+  },
+  "copied_profile": {
+    "hwm_kib": 19952,
+    "snapshot_ms": 497.63,
+    "completed": true,
+    "under_50_mb": true
+  },
+  "tests": {
+    "default_passed": 177,
+    "no_default_passed": 175,
+    "ignored_each": 6,
+    "strict_clippy_both": true,
+    "native_claude_turn": true,
+    "native_codex_turn": true
+  },
+  "limitations": [
+    "Codex generated text fails closed pending verified tool-free transport",
+    "Agent browser service unavailable",
+    "No compatibility rows promoted",
+    "An earlier profile sample exceeded the separate 500 ms latency budget at 539.44 ms; latency varies"
+  ]
+}

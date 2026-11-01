@@ -256,12 +256,10 @@ fn main() -> std::io::Result<()> {
             .await
             .map_err(std::io::Error::other)?;
             // block_on runs on the main thread, outside the runtime worker park hooks.
-            let result = loop {
-                tokio::select! {
-                    result=&mut serving=>break result.map_err(std::io::Error::other)?,
-                    _=interrupt.recv()=>break Ok(()),
-                    _=term.recv()=>break Ok(()),
-                }
+            let result = tokio::select! {
+                result=&mut serving=>result.map_err(std::io::Error::other)?,
+                _=interrupt.recv()=>Ok(()),
+                _=term.recv()=>Ok(()),
             };
             if !serving.is_finished() {
                 serving.abort();

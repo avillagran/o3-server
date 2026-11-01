@@ -97,7 +97,7 @@ pub fn decorate(s: &State, config: &mut Value) {
         p["auth"]["canLogout"] = json!(supported && installed);
         p["versionAdvisory"] = json!({"status":"unknown","currentVersion":p["version"],"latestVersion":null,
             "updateCommand":if managed&&installable {json!("Managed provider update")}else if p["driver"]=="claudeAgent" {json!("claude update")}else{Value::Null},
-            "canUpdate":installed&&(p["driver"]=="claudeAgent"||managed&&installable),"canInstallVersion":managed&&installable,
+            "canUpdate":installed&&(p["driver"]=="claudeAgent"||managed&&installable),"canInstallVersion":installable&&(managed||!installed),
             "checkedAt":p["checkedAt"],"message":"Latest-version lookup is unavailable; installed version is reported by the native CLI."});
         if let Some(advisory) = s
             .streams
@@ -719,10 +719,18 @@ async fn update_provider(s: &Arc<State>, p: &Value) -> Reply {
     let fail = |reason: &str| json!({"_tag":"ServerProviderUpdateError","provider":provider,"reason":reason,"message":format!("Provider update failed for {provider}: {reason}")});
     let instance = p["instanceId"].as_str().unwrap_or(provider);
     let settings = crate::settings::read(s).map_err(|e| fail(&e))?;
-    if managed_binary(s, instance).is_some_and(|path| {
-        settings["providerInstances"][instance]["config"]["binaryPath"]
-            == path.to_string_lossy().as_ref()
-    }) {
+    let missing_builtin = matches!(instance, "codex" | "claudeAgent")
+        && driver(s, instance, "update")
+            .is_ok_and(|d| crate::executable::resolve(&d.binary).is_none());
+    if missing_builtin
+        || managed_binary(s, instance).is_some_and(|path| {
+            settings["providerInstances"][instance]["config"]["binaryPath"]
+                == path.to_string_lossy().as_ref()
+        })
+    {
+        if provider != instance {
+            return Err(fail("Provider driver does not match built-in instance"));
+        }
         let mut changes = s.streams.changed.subscribe();
         start_managed(s, instance, p["targetVersion"].as_str())
             .await

@@ -1573,6 +1573,24 @@ async fn review_guide(s: &State, tag: &str, p: &Value) -> Reply {
     Ok(value)
 }
 
+fn strip_agent_credits(text: &str) -> String {
+    text.lines()
+        .filter(|line| {
+            let l = line.trim().to_ascii_lowercase();
+            !(l.starts_with("co-authored-by:")
+                && ["claude", "codex", "copilot", "noreply@anthropic"]
+                    .iter()
+                    .any(|name| l.contains(name))
+                || l.starts_with("generated with ")
+                || l.starts_with("generated-with:")
+                || l.starts_with("🤖 generated"))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1600,22 +1618,4 @@ mod tests {
         assert_eq!(category("docs/x.md"), "docs");
         assert_eq!(category("a/__mocks__/b.ts"), "mocks");
     }
-}
-
-fn strip_agent_credits(text: &str) -> String {
-    text.lines()
-        .filter(|line| {
-            let l = line.trim().to_ascii_lowercase();
-            !(l.starts_with("co-authored-by:")
-                && ["claude", "codex", "copilot", "noreply@anthropic"]
-                    .iter()
-                    .any(|name| l.contains(name))
-                || l.starts_with("generated with ")
-                || l.starts_with("generated-with:")
-                || l.starts_with("🤖 generated"))
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-        .trim()
-        .to_owned()
 }

@@ -756,11 +756,9 @@ reads/checks/stack actions (`pull_requests`, `vcs_compat`), settlement and order
 (`thread_commands`), storage/scoped settings (`client_readers`), quota/themes
 (`server_config`), OTLP probes (`admin_reads`) and command output (`command_output`).
 The real scoped writer now writes and resolves a project override and changes the
-worktree directory; cleanup invocation is also exercised. The final reader sweep
-keeps `storageCleanup` and `projectWorktreeCleanup` explicitly false: their policies
-only round trip and manual cleanup only removes old logs. `storageCleanupRun` and
-`worktreesDirectory` are true. Policy/worktree collection remains a consumed gap;
-config/settings rows remain partial.
+worktree directory; cleanup invocation is also exercised. The later storage-policy implementation supersedes this early limitation: both
+`storageCleanup` and `projectWorktreeCleanup` are true and execute owned-worktree
+policies; the collector releases the database lock around Git subprocesses.
 
 ### Provider setup reader closure
 
@@ -902,9 +900,9 @@ storage, version-check, activity, generation and create-import entries:
 | Row | Decision | Reader evidence / remaining boundary |
 |---|---|---|
 | orchestration.launchThread | Promote | Actual ThreadLaunch creation, reuse and receipt replay; projection/timeline/queue/sidebar; title generation, rename race and fallback; native worktree rollback and steering peers remain covered by their integration tests. The launch-only native import extension is not used as client evidence. |
-| server.getConfig | Promote | Actual provider_instances, models, native/scoped settings and storage readers on unary output and real config snapshots; setup capability gates, version advisories and cleanup behavior covered by the new tests. Managed install remains explicitly unavailable. |
-| server.updateSettings | Promote | Actual native/scoped/storage writers and readers drive policies, background Git/power activity and bounded title/SCM/review generation, including failure fallback and model options. |
-| subscribeServerConfig | Promote | The same config readers execute on its real snapshot; existing quota reducer tests cover providerStatuses and usageLimitSourcesUpdated; theme and settings delta tests remain green. |
+| server.getConfig | Keep partial (re-audit supersedes promotion) | Actual provider_instances, models, native/scoped settings and storage readers on unary output and real config snapshots; setup capability gates, version advisories and cleanup behavior covered by the new tests. Managed built-in installs and pinned updates now execute; external/custom setup and browser-service limits keep the row partial. |
+| server.updateSettings | Keep partial (re-audit supersedes promotion) | Actual native/scoped/storage writers and readers drive policies, background Git/power activity and bounded title/SCM/review generation, including failure fallback and model options. |
+| subscribeServerConfig | Keep partial (re-audit supersedes promotion) | The same config readers execute on its real snapshot; existing quota reducer tests cover providerStatuses and usageLimitSourcesUpdated; theme and settings delta tests remain green. |
 | orchestration.dispatchCommand | Keep partial | Create-import gap closed with actual ThreadCreate/projection/timeline/queue. Native acknowledgement after a crash still has a delivery-uncertain boundary; no exactly-once control claim. |
 | orchestration.subscribeShell | Keep partial, unchanged | No real exhausted-provider frame; synthetic failure evidence remains explicitly insufficient. |
 
@@ -933,3 +931,61 @@ configurations, as do formatting and diff checks. The inventories were rerun:
 Both isolated short native Claude/Codex turns passed via `tools/live-chat-e2e`.
 
 Release `tools/bench-rss` completed with bridge enabled: HWM 15748 KiB (16.13 MB), below 50 MB; 1,000 messages, 20 threads, three subscribers and 1,000 unary calls. Provider registration/probes are included; inference is excluded. Aggregate evidence: [rss-orchestration.json](rss-orchestration.json).
+
+
+### Safety and settings follow-up (2026-11-01)
+
+No row is promoted by this work. The earlier promotion table and validation counts
+are historical; `compat-status.json` is authoritative. Config and settings rows
+remain partial until all client-read gaps have effect coverage.
+
+- Text generation uses one active slot and at most four waiting callers, an empty
+  data-directory cwd, a bounded lifetime, and thread-derived default selection.
+  Claude CLI peers assert the exact tool-disable, MCP-disable, hook-disable and
+  no-session-persistence argv; successful text processes exit rather than park.
+  A live-child regression proves a colliding request cannot remove a conversation
+  session from the pool.
+  Codex generation **fails closed before process launch**: disabling shell and
+  freeform patch flags does not prove that every native tool is absent. Titles
+  and SCM use deterministic fallbacks. Normal Codex conversation turns remain
+  supported. This is an explicit incomplete item, not a tool-free parity claim.
+- Discovery waits for demand. Background health/version/fetch work sleeps without
+  a connected RPC client or active run, and uses deadlines rather than a 100 ms
+  timer. Fetch requires a reported project view, with T3’s 30-second balanced
+  default. Settings cache invalidates on
+  file change; checkpoint and identity workers suspend at idle. The idle poll test
+  checks the background worker specifically, not intrinsic bridge heartbeats.
+- Worktree collection reserves mutations separately, releases the DB before Git,
+  and reacquires it to save results. `storage_lock` holds a slow Git peer while a
+  projection read succeeds; `storage_policies` retains real-Git safety coverage.
+- Recovery clears abandoned title busy flags. Limit failures with a known reset
+  can snooze and retry according to settings; unknown reset times never cause an
+  automatic retry. Automatic retries are new turns with an inspect-before-repeat
+  instruction, not exactly-once execution. Restart continuation can be disabled.
+- Response publication follows paragraph/turn selection; real native-settings
+  writer coverage checks the intermediate and completed projections. Merge/squash
+  credits are filtered with explicit gh subject/body arguments; rebase credit
+  removal is refused. Worktrees initialize top-level/recursive submodules or skip
+  them, inheriting project settings and t3.json. Full cross-provider reader effect
+  coverage of these policies is still incomplete.
+- No agent-browser service exists. `agentBrowserAccess:false` and `settingsSupport`
+  explicitly report the browser setting and project override as unavailable. The
+  added support fields are not proof that existing clients hide the control.
+- Missing built-in CLIs can be installed with npm under versioned data-directory
+  prefixes, scripts disabled. Updates switch the configured binary after success;
+  old executables remain intact. Missing built-ins also accept pinned installation.
+  Managed install/pinned-update argv and the real
+  provider reader are tested. External/custom installations are not replaced;
+  unsupported update/version/remove operations remain honestly unavailable.
+
+
+Final follow-up validation: **177 default / 175 no-default tests pass**, with six
+opt-ins ignored in each; strict all-target Clippy passes in both configurations,
+formatting and diff checks pass, and `tools/gen-compat` completes. Isolated short
+native Claude and Codex turns completed through the real client. Both release
+RSS modes completed: **16,460 KiB (16.86 MB) synthetic** and **19,952 KiB (20.43 MB)
+copied-profile** server HWM, excluding provider child RSS. The final copied-profile
+snapshot was 497.63 ms. An earlier sample failed the tool's separate 500 ms latency
+budget at 539.44 ms while remaining under the memory budget; this is not a claim
+of invariant latency. Only aggregate measurements are published in
+[rss-safety.json](rss-safety.json); private records and local source paths are omitted.

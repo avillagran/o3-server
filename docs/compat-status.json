@@ -689,7 +689,7 @@
     "server.getConfig": {
       "status": "partial",
       "priority": "P0",
-      "note": "Demoted by re-audit: setup.canInstall, canInstallVersion and Codex canUpdate are read by clients and are false. Final client-read sweep: provider_instances/models/native/scoped/storage readers execute on unary output and real config snapshots. Policies, latest-version checks, activity profiles and generation settings execute with behavior coverage. Managed installation is explicitly unavailable. See CONFORMANCE.md."
+      "note": "Partial: managed built-in installation and versioned pinned updates have real provider-reader and npm-argv coverage; external/custom CLI updates remain unavailable where ownership is unknown. Agent browser service is unavailable. See CONFORMANCE.md."
     },
     "server.getDatabaseStorage": {
       "status": "skip",
@@ -839,7 +839,7 @@
     "server.updateSettings": {
       "status": "partial",
       "priority": "P1",
-      "note": "Demoted by re-audit: seven client-rendered settings are stored but not executed. Actual native/scoped/storage writers and readers drive storage/worktree policies, version-check enablement, Git and power activity, title/SCM/review generation with model options and failure fallback. Final client-read sweep has zero remaining consumed gaps; see CONFORMANCE.md."
+      "note": "Partial: execution covers limit snoozing/recovery, restart continuation, response publication, merge-credit filtering and worktree submodules. Agent browser service is explicitly unavailable; not all settings have exhaustive client-reader effect coverage. Codex text generation fails closed pending a verified tool-free transport."
     },
     "server.upsertKeybinding": {
       "status": "done",
@@ -904,7 +904,7 @@
     "subscribeServerConfig": {
       "status": "partial",
       "priority": "P1",
-      "note": "Demoted by re-audit: carries the same config snapshot. Actual native/scoped/storage/provider_instances/models readers execute on real snapshots; quota reducer covers providerStatuses and usageLimitSourcesUpdated, with settings/theme deltas covered separately. Final client-read sweep has zero remaining consumed gaps; see CONFORMANCE.md."
+      "note": "Partial: same honest config/settings limits as unary config, including unavailable agent browser service and external/custom managed setup paths. Existing native/scoped/storage/provider readers and typed deltas remain covered."
     },
     "subscribeServerLifecycle": {
       "status": "skip",

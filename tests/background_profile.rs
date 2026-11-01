@@ -38,6 +38,10 @@ fn profile_controls_real_health_probes_and_readers_observe_versions() {
     let polls = Arc::new(AtomicUsize::new(0));
     let s = support::start(|s| *s.provider.lock().unwrap() = Some(Arc::new(Health(polls.clone()))));
     let c = s.connect();
+    assert_eq!(
+        c.rpc("server.getSettings", json!({})).unwrap()["automaticGitFetchInterval"],
+        30000
+    );
     let _connected = support::keep_connected(s.connect());
     for (profile, ms) in [("performance", 60000), ("battery-saver", 900000)] {
         let config = c.rpc("server.getConfig", json!({})).unwrap();

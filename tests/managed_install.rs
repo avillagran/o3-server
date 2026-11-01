@@ -99,6 +99,19 @@ manifest.write_text(json.dumps({'version':version}))
     assert_eq!(updated["installedVersion"], "2.0.0");
     assert_ne!(updated["executablePath"], old);
     assert!(std::path::Path::new(&old).is_file());
+    c.rpc("server.updateSettings",json!({"patch":{"providerInstances":{"codex":{"driver":"codex","enabled":true,"config":{"binaryPath":s.dir.join("missing-again")}}}}})).unwrap();
+    let missing = c.rpc("server.getConfig", json!({})).unwrap();
+    assert!(missing["providers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|p| p["instanceId"] == "codex" && p["versionAdvisory"]["canInstallVersion"] == true));
+    c.rpc(
+        "server.updateProvider",
+        json!({"provider":"codex","instanceId":"codex","targetVersion":"2.0.0"}),
+    )
+    .unwrap();
+    assert_eq!(wait()["installedVersion"], "2.0.0");
     assert!(c
         .rpc(
             "server.updateProvider",
