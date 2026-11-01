@@ -110,7 +110,9 @@ pub(crate) fn shell_thread(db: &Connection, t: &Value) -> Result<Value> {
         t["pendingRuntimeRequest"] =
             json!({"id":request["id"],"kind":request["kind"],"createdAt":request["createdAt"]});
     }
-    t["hasActionableProposedPlan"] = json!(false);
+    t["hasActionableProposedPlan"] = json!(list(db, "plans", Some(tid), 1000)?
+        .iter()
+        .any(|p| p["status"] == "active"));
     t["itemCount"] = json!(count);
     t["visibleItemCount"] = json!(count);
     Ok(t)
@@ -424,7 +426,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                     .try_reserve_owned()
                     .map_err(|_| "provider control busy")?;
                 let mid = c["messageId"].as_str().ok_or("messageId required")?;
-                let m = json!({"id":mid,"threadId":tid,"runId":rid,"nodeId":null,"role":"user","text":text,"attachments":[],"streaming":false,"createdBy":"user","creationSource":"web","createdAt":at,"updatedAt":at});
+                let m = json!({"id":mid,"threadId":tid,"runId":rid,"nodeId":rid,"role":"user","text":text,"attachments":[],"streaming":false,"createdBy":"user","creationSource":"web","createdAt":at,"updatedAt":at});
                 put(&tx, "messages", mid, tid, &m)?;
                 append(&tx, tid, "message.updated", m.clone(), &t)?;
                 let mut item = message_item(&tx, tid, &m)?;
@@ -744,7 +746,7 @@ fn stage_message(
     }
     let run_id = random_id()?;
     let mid = c["messageId"].as_str().ok_or("messageId required")?;
-    let mut m = json!({"id":mid,"threadId":tid,"runId":run_id,"nodeId":null,"role":"user","text":c["text"],"attachments":c["attachments"],"streaming":false,"createdBy":"user","creationSource":"web","createdAt":at,"updatedAt":at});
+    let mut m = json!({"id":mid,"threadId":tid,"runId":run_id,"nodeId":run_id,"role":"user","text":c["text"],"attachments":c["attachments"],"streaming":false,"createdBy":"user","creationSource":"web","createdAt":at,"updatedAt":at});
     if let Some(reference) = c.get("sourcePlanRef") {
         m["sourcePlanRef"] = reference.clone();
     }
@@ -772,6 +774,18 @@ fn stage_message(
         run["status"] = json!("queued");
         run["queuePosition"] = json!(crate::thread_commands::next_queue_position(tx, tid)?);
         run["queueHeld"] = json!(false);
+    }
+    if !queued {
+        let aid = format!("attempt-{run_id}");
+        run["activeAttemptId"] = json!(aid);
+        run["rootNodeId"] = json!(run_id);
+        run["providerThreadId"] = t["activeProviderThreadId"].clone();
+        let attempt = json!({"id":aid,"runId":run_id,"attemptOrdinal":1,"providerInstanceId":t["providerInstanceId"],"providerThreadId":run["providerThreadId"],"reason":"initial","rootNodeId":run_id,"providerTurnId":null,"status":"pending","startedAt":null,"completedAt":null});
+        put(tx, "attempts", &aid, tid, &attempt)?;
+        append(tx, tid, "attempt.updated", attempt, t)?;
+        let node = json!({"id":run_id,"threadId":tid,"runId":run_id,"parentNodeId":null,"rootNodeId":run_id,"kind":"root_turn","status":"pending","countsForRun":true,"providerThreadId":run["providerThreadId"],"providerTurnId":null,"nativeItemRef":null,"runtimeRequestId":null,"checkpointScopeId":null,"startedAt":null,"completedAt":null});
+        put(tx, "nodes", &run_id, tid, &node)?;
+        append(tx, tid, "node.updated", node, t)?;
     }
     put(tx, "runs", &run_id, tid, &run)?;
     let seq = append(tx, tid, "run.created", run, t)?;

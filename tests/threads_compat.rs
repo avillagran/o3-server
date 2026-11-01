@@ -561,3 +561,42 @@ fn settings_model_preference_mutations_are_normalized_and_persisted() {
     assert_eq!(r["favorites"], json!([]));
     assert_eq!(e.conn.rpc("server.getSettings", json!({})).unwrap(), r);
 }
+
+#[test]
+fn pending_identity_and_stream_metadata_are_ordered_on_the_shared_sequence() {
+    let e = setup("pending-identity");
+    e.project("p", &e.dir("workspace"));
+    e.thread("t", "p");
+    let before = e
+        .conn
+        .request_json("GET", "/api/orchestration/shell", None, true)
+        .unwrap()["snapshotSequence"]
+        .clone();
+    e.message("t", "m", "pending identity");
+    let p = e
+        .conn
+        .rpc("orchestration.getThreadProjection", json!({"threadId":"t"}))
+        .unwrap();
+    let run = &p["runs"][0];
+    let attempt = &p["attempts"][0];
+    assert_eq!(run["activeAttemptId"], attempt["id"]);
+    assert_eq!(attempt["status"], "pending");
+    assert_eq!(p["messages"][0]["nodeId"], run["rootNodeId"]);
+    let items = collect(
+        &e.conn,
+        "orchestration.subscribeThread",
+        json!({"threadId":"t","afterSequence":before,"requestCompletionMarker":true}),
+        |v| v["kind"] == "synchronized",
+    );
+    let mut sequence = before.as_i64().unwrap();
+    for item in items.iter().filter(|v| v["kind"] == "event") {
+        assert!(item["sequence"].as_i64().unwrap() > sequence);
+        sequence = item["sequence"].as_i64().unwrap();
+        assert_eq!(item["event"]["threadId"], "t");
+        assert_eq!(item["event"]["providerInstanceId"], "scripted");
+        if item["event"]["payload"]["runId"].is_string() {
+            assert_eq!(item["event"]["runId"], run["id"]);
+        }
+    }
+    assert!(sequence > before.as_i64().unwrap());
+}

@@ -81,7 +81,7 @@ pub(crate) fn persist(
         .or_else(|| p["item"]["id"].as_str())
         .unwrap_or(native_turn);
     let id = format!("codex-item-{rid}-{native_item}");
-    let mut base = json!({"id":id,"threadId":tid,"runId":rid,"nodeId":rid,"providerThreadId":pt,"providerTurnId":pv,"nativeItemRef":{"driver":"codex","nativeId":native_item,"strength":"strong"},"parentItemId":null,"ordinal":0,"status":"running","title":null,"startedAt":at,"completedAt":null,"updatedAt":at});
+    let mut base = json!({"id":id,"threadId":tid,"runId":rid,"nodeId":rid,"providerThreadId":pt,"providerTurnId":pv,"nativeItemRef":{"driver":"codex","nativeId":native_item,"strength":"strong"},"parentItemId":null,"ordinal":db.query_row("SELECT coalesce(max(json_extract(body,'$.ordinal')),-1)+1 FROM records WHERE kind='turnItems' AND thread_id=?",[tid],|r|r.get::<_,i64>(0)).map_err(|e|e.to_string())?,"status":"running","title":null,"startedAt":at,"completedAt":null,"updatedAt":at});
     match method {
         "o3/binding" => {
             let mut t = thread.clone();
