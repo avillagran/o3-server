@@ -684,7 +684,7 @@ impl o3_server::provider::Provider for Statuses {
     }
 }
 #[test]
-fn config_stream_sends_typed_provider_statuses_then_snapshots() {
+fn config_stream_sends_typed_provider_and_settings_updates() {
     let statuses = Arc::new(Statuses(Default::default()));
     let s = start(|state| *state.provider.lock().unwrap() = Some(statuses.clone()));
     let c = s.connect();
@@ -706,14 +706,18 @@ fn config_stream_sends_typed_provider_statuses_then_snapshots() {
     assert!(t3_protocol::quota_sources::apply(&mut state, &first));
     assert!(t3_protocol::quota_sources::apply(&mut state, &event));
     assert_eq!(state["providers"][0]["instanceId"], "codex");
-    // A settings change is not provider-only: the full replacement snapshot.
+    // Settings deltas use the typed payload consumed by config projections.
     c.rpc(
         "server.updateSettings",
         json!({"patch":{"defaultTheme":"dark"}}),
     )
     .unwrap();
     let next = stream.next(T);
-    assert_eq!(next["type"], "snapshot");
-    assert_eq!(next["config"]["settings"]["defaultTheme"], "dark");
+    assert_eq!(next["type"], "settingsUpdated");
+    assert_eq!(
+        next["payload"]["settings"],
+        c.rpc("server.getSettings", json!({})).unwrap()
+    );
+    assert_eq!(next["payload"]["settings"]["defaultTheme"], "dark");
     stream.cancel();
 }

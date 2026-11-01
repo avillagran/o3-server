@@ -904,7 +904,7 @@
     "subscribeServerConfig": {
       "status": "partial",
       "priority": "P1",
-      "note": "Connection tests: initial snapshot; provider-only changes emit the typed providerStatuses event that lib quota_sources::apply consumes, other changes a replacement snapshot (also accepts the server.subscribeServerConfig alias). Still partial: usageLimitSourcesUpdated sources (Android quota strip subscribes with usageLimitSources) and typed settingsUpdated/keybindingsUpdated/environmentThemesUpdated events."
+      "note": "Connection tests: initial snapshot; provider-only changes emit the typed providerStatuses event that lib quota_sources::apply consumes, other changes a replacement snapshot (also accepts the server.subscribeServerConfig alias). Still partial: usageLimitSourcesUpdated sources (Android quota strip subscribes with usageLimitSources) and typed settingsUpdated/keybindingsUpdated/environmentThemesUpdated events. Typed settings/keybindings deltas implemented; quota and theme source projection remain partial."
     },
     "subscribeServerLifecycle": {
       "status": "skip",

@@ -444,3 +444,12 @@ Terminal closure validation: 143 tests passed, five opt-in tests ignored; strict
 all-target/all-feature clippy, format and diff checks passed. The completed
 release RSS probe (bridge, 20 threads, 1000 messages, three subscribers, no
 inference) measured 39164 KiB HWM, below 50 MB.
+
+## Typed config deltas (2026-11-01)
+Provider-only, settings-only and keybinding-only changes now use typed payloads;
+coalesced unrelated changes retain a replacement snapshot. Real Connection test
+`config_stream_sends_typed_provider_and_settings_updates` checks settings against
+getSettings and applies provider events through quota_sources. Reference reader:
+client-runtime/src/state/serverConfigProjection.ts reads payload.settings and
+payload.keybindings/issues. Row remains partial: quota sources and environment
+themes are not projected yet.

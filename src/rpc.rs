@@ -213,23 +213,37 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                 if version != sub.version {
                     sub.version = version;
                     settings::config(&s).ok().map(|v| {
-                        // Only the provider list changed: send the typed event clients apply
-                        // in place (lib-t3-rust quota_sources::apply); anything else is a replacement snapshot.
-                        let only_providers = sub.last_config.as_ref().is_some_and(|old| {
-                            let strip = |c: &Value| {
-                                let mut c = c.clone();
-                                if let Some(o) = c.as_object_mut() {
-                                    o.remove("providers");
+                        // Emit a typed delta only when it describes the entire change.
+                        // Coalesced changes retain the lossless replacement snapshot.
+                        let fields = [
+                            ("providers", "providerStatuses", "providers"),
+                            ("settings", "settingsUpdated", "settings"),
+                            ("keybindings", "keybindingsUpdated", "keybindings"),
+                        ];
+                        let delta = sub.last_config.as_ref().and_then(|old| {
+                            fields.iter().find_map(|(field, tag, key)| {
+                                let mut before = old.clone();
+                                let mut after = v.clone();
+                                for c in [&mut before, &mut after] {
+                                    let o = c.as_object_mut()?;
+                                    o.remove(*field);
+                                    if *field == "keybindings" {
+                                        o.remove("issues");
+                                    }
                                 }
-                                c
-                            };
-                            strip(old) == strip(&v) && old["providers"] != v["providers"]
+                                if before != after || old[*field] == v[*field] {
+                                    return None;
+                                }
+                                let mut payload = json!({});
+                                payload[*key] = v[*field].clone();
+                                if *field == "keybindings" {
+                                    payload["issues"] = v["issues"].clone();
+                                }
+                                Some(json!({"version":1,"type":tag,"payload":payload}))
+                            })
                         });
-                        let event = if only_providers {
-                            json!({"version":1,"type":"providerStatuses","payload":{"providers":v["providers"]}})
-                        } else {
-                            json!({"version":1,"type":"snapshot","config":v})
-                        };
+                        let event = delta
+                            .unwrap_or_else(|| json!({"version":1,"type":"snapshot","config":v}));
                         sub.last_config = Some(v);
                         event
                     })
