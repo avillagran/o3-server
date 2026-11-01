@@ -947,7 +947,7 @@ remain partial until all client-read gaps have effect coverage.
   session from the pool.
   Codex generation **fails closed before process launch**: disabling shell and
   freeform patch flags does not prove that every native tool is absent. Titles
-  and SCM use deterministic fallbacks. Normal Codex conversation turns remain
+  and SCM use an explicitly selected safe text provider, otherwise their own thread's safe provider, otherwise deterministic local fallbacks. An installed unrelated provider is never selected implicitly. Normal Codex conversation turns remain
   supported. This is an explicit incomplete item, not a tool-free parity claim.
 - Discovery waits for demand. Background health/version/fetch work sleeps without
   a connected RPC client or active run, and uses deadlines rather than a 100 ms

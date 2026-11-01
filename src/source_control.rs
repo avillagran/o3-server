@@ -34,19 +34,19 @@ pub(crate) async fn generate(s: &State, root: &Path, kind: &str, data: &str) -> 
     } else {
         "sourceControlWriterModelSelection"
     };
-    let selection = if settings[key].is_object() {
-        settings[key].clone()
-    } else {
-        if settings["textGenerationModelSelection"].is_object() {
-            settings["textGenerationModelSelection"].clone()
-        } else {
-            let db = s.db.lock().unwrap();
-            let body: Option<String> = db.query_row("SELECT body FROM records WHERE kind='thread' AND (json_extract(body,'$.worktreePath')=? OR json_extract(body,'$.projectId') IN (SELECT id FROM records WHERE kind='project' AND json_extract(body,'$.workspaceRoot')=?)) ORDER BY rowid DESC LIMIT 1", rusqlite::params![root.to_string_lossy(),root.to_string_lossy()], |r|r.get(0)).ok();
-            body.and_then(|b| serde_json::from_str::<Value>(&b).ok())
-                .map(|t| t["modelSelection"].clone())
-                .unwrap_or(Value::Null)
-        }
+    let own = {
+        let db = s.db.lock().unwrap();
+        let body: Option<String> = db.query_row("SELECT body FROM records WHERE kind='thread' AND (json_extract(body,'$.worktreePath')=? OR json_extract(body,'$.projectId') IN (SELECT id FROM records WHERE kind='project' AND json_extract(body,'$.workspaceRoot')=?)) ORDER BY rowid DESC LIMIT 1", rusqlite::params![root.to_string_lossy(),root.to_string_lossy()], |r|r.get(0)).ok();
+        body.and_then(|b| serde_json::from_str::<Value>(&b).ok())
+            .map(|t| t["modelSelection"].clone())
+            .unwrap_or(Value::Null)
     };
+    let preferred = if settings[key].is_object() {
+        &settings[key]
+    } else {
+        &settings["textGenerationModelSelection"]
+    };
+    let selection = crate::title::selection(s, preferred, &own)?;
     let style = &settings["sourceControlWritingStyle"];
     let instructions = if review {
         settings["reviewGuideInstructions"].as_str().unwrap_or("")
