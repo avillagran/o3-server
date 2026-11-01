@@ -80,7 +80,7 @@ fn real_settings_and_action_readers_cover_commit_review_and_failure_paths() {
     for (key, value) in [
         (
             "sourceControlWriterModelSelection",
-            json!({"instanceId":"codex","model":"writer","options":[{"id":"reasoningEffort","value":"low"}]}),
+            json!({"instanceId":"claudeAgent","model":"reviewer","options":[{"id":"reasoningEffort","value":"low"}]}),
         ),
         (
             "reviewGuideModelSelection",
@@ -142,7 +142,7 @@ fn real_settings_and_action_readers_cover_commit_review_and_failure_paths() {
     assert_eq!(c.rpc("pullRequests.reviewGuide", p).unwrap(), review);
     let traces = seen.lock().unwrap();
     assert_eq!(traces.len(), 2);
-    assert_eq!(traces[0]["selection"]["model"], "writer");
+    assert_eq!(traces[0]["selection"]["model"], "reviewer");
     assert!(traces[0]["selection"]["options"].is_array());
     assert!(traces[0]["text"]
         .as_str()
@@ -176,7 +176,7 @@ fn real_settings_and_action_readers_cover_commit_review_and_failure_paths() {
         .unwrap()
         .contains("Required validation section"));
     drop(traces);
-    c.rpc("server.updateSettings",json!({"patch":{"sourceControlWriterModelSelection":{"instanceId":"codex","model":"fail"}}})).unwrap();
+    c.rpc("server.updateSettings",json!({"patch":{"sourceControlWriterModelSelection":{"instanceId":"claudeAgent","model":"fail"}}})).unwrap();
     std::fs::write(root.join("a"), "third").unwrap();
     run("fallback", "commit", false, None);
     assert_eq!(git(&root, &["log", "-1", "--format=%s"]), "Update a");

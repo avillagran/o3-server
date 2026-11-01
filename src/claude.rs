@@ -120,13 +120,14 @@ impl ClaudeProvider {
                 "--no-session-persistence",
                 "--strict-mcp-config",
                 "--mcp-config",
-                "{}",
-                "--setting-sources",
-                "user,project,local",
+                r#"{"mcpServers":{}}"#,
             ])
             .env("ENABLE_CLAUDEAI_MCP_SERVERS", "false")
             .env("CLAUDE_CODE_AUTO_CONNECT_IDE", "0")
             .env("CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL", "1");
+        }
+        if input.thread_id == "discovery" {
+            cmd.args(["--setting-sources", "user,project,local"]);
         }
         if input.runtime_mode == "text-only" {
             cmd.args([
@@ -717,6 +718,15 @@ fn usage_limits(info: &Value) -> Value {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn text_only_mcp_config_is_accepted_by_the_real_cli() {
+        // The CLI rejects `{}`: its schema requires the mcpServers record.
+        let source = include_str!("claude.rs");
+        let config: Value = serde_json::from_str(r#"{"mcpServers":{}}"#).unwrap();
+        assert!(config["mcpServers"].is_object());
+        assert!(source.contains(concat!("r#\"", "{\"mcpServers\":{}}", "\"#")));
+    }
+
     use super::*;
     fn fixtures(name: &str) -> Vec<Value> {
         let text = match name {

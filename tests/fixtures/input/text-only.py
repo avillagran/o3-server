@@ -8,7 +8,7 @@ if 'exec' in args:
     raise AssertionError('Codex text-only transport must fail closed before launching')
 else:
     assert args[:10] == ['-p','--input-format','stream-json','--output-format','stream-json','--verbose','--include-partial-messages','--permission-prompt-tool','stdio','--allow-dangerously-skip-permissions'],args
-    assert args[10:] == ['--model','test','--permission-mode','default','--no-session-persistence','--strict-mcp-config','--mcp-config','{}','--setting-sources','user,project,local','--tools','','--disable-slash-commands','--setting-sources','','--settings','{"disableAllHooks":true}'],args
+    assert args[10:] == ['--model','test','--permission-mode','default','--no-session-persistence','--strict-mcp-config','--mcp-config','{"mcpServers":{}}','--tools','','--disable-slash-commands','--setting-sources','','--settings','{"disableAllHooks":true}'],args
     assert os.listdir('.') == [],os.listdir('.')
     for line in sys.stdin:
         v=json.loads(line)

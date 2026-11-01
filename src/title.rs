@@ -100,6 +100,21 @@ pub(crate) async fn bounded(s: &State, input: RunInput) -> Option<String> {
         .as_object_mut()?
         .remove("nativeForkSource");
     let provider = s.provider.lock().unwrap().clone()?;
+    // Codex has no verified tool-free transport, so it refuses text generation. Its default
+    // selection must not silently turn every generated title into truncated text.
+    let installed = |p: &serde_json::Value| p["installed"] == true && p["enabled"] != false;
+    let configured = provider.config();
+    let codex = configured
+        .iter()
+        .any(|p| p["instanceId"] == input.provider_instance_id.as_str() && p["driver"] == "codex");
+    if codex
+        && configured
+            .iter()
+            .any(|p| p["instanceId"] == "claudeAgent" && installed(p))
+    {
+        input.provider_instance_id = "claudeAgent".into();
+        input.model_selection = json!({"instanceId":"claudeAgent","model":"haiku"});
+    }
     let (out, mut events) = tokio::sync::mpsc::channel(16);
     let (control, controls) = tokio::sync::mpsc::channel(1);
     let (cancel, cancellation) = tokio::sync::watch::channel(false);
