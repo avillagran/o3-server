@@ -250,3 +250,23 @@ fn auth_leaves_no_files_in_a_profile_owned_by_another_live_server() {
         .collect();
     assert_eq!(names, ["server-runtime.json"], "{names:?}");
 }
+
+#[test]
+fn help_anywhere_prints_usage_and_touches_nothing() {
+    for args in [
+        vec!["--help"],
+        vec!["-h"],
+        vec!["auth", "session", "issue", "--help"],
+        vec!["auth", "pairing", "create", "--help"],
+        vec!["auth", "session", "revoke", "--help"],
+        vec!["import", "--help"],
+    ] {
+        let p = Profile::new();
+        let out = p.cmd().args(&args).output().unwrap();
+        let stdout = String::from_utf8(out.stdout).unwrap();
+        assert!(out.status.success(), "{args:?}");
+        assert!(stdout.starts_with("Usage: o3-server"), "{args:?}: {stdout}");
+        assert!(!stdout.contains("token\""), "{args:?}: {stdout}");
+        assert!(!p.0.join("userdata").exists(), "{args:?} created a profile");
+    }
+}

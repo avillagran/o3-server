@@ -7,6 +7,20 @@ static MEASURED: memory::Measured = memory::Measured;
 #[cfg(not(feature = "memory-diagnostics"))]
 #[global_allocator]
 static GLOBAL: std::alloc::System = std::alloc::System;
+const USAGE: &str = "\
+Usage: o3-server [COMMAND] [OPTIONS]
+
+Commands:
+  serve                     Run the server (default)
+  import --from PATH        Import a T3 statev2.sqlite, read-only
+  auth session issue        Issue a bearer session
+  auth session list         List sessions
+  auth session revoke ID    Revoke a session
+  auth pairing create       Create a one-time pairing credential
+  service install           Install the user service
+
+The profile comes from T3CODE_HOME (default ~/.t3).
+";
 fn option<'a>(a: &'a [String], name: &str) -> Option<&'a str> {
     a.windows(2).find(|w| w[0] == name).map(|w| w[1].as_str())
 }
@@ -29,6 +43,11 @@ fn ttl(s: &str) -> std::io::Result<i64> {
 fn main() -> std::io::Result<()> {
     o3_server::heap::configure();
     let args: Vec<_> = std::env::args().skip(1).collect();
+    // Before any command runs: `auth session issue --help` must never mint a credential.
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        print!("{USAGE}");
+        return Ok(());
+    }
     if args.first().map(String::as_str) == Some("__ssh-helper") {
         match args.get(1).map(String::as_str) {
             Some("runtime-port") => {

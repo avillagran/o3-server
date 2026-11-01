@@ -368,3 +368,36 @@ PullRequestsViewModelTest failures reproduce with unmodified AppScreens; the eig
 was a visual timeout that passed on retry. Details are in the Android branch
 `docs/O3-SERVER-REGRESSION.md`; the broad client suite is not green. All isolated processes and
 credential copies are removed at close; raw evidence stays local.
+
+## Physical phone over the public route (2026-11-01)
+
+Release `f10e96a`, Android 16 physical phone on Wi-Fi with its everyday O3 Android
+build (installed from a client branch that lacks `feat/o3-server`), connected through
+the public OmaBridge gateway to the embedded node of the pilot profile, which holds the
+imported real history (372 threads, 2.4 MB shell snapshot). Scratch project only; no
+real thread was written. Evidence is private: it shows real history.
+
+| Flow | Result |
+|---|---|
+| Pairing by link, then confirm | PASS, listed as `o3-server · T3 o3-0.1.0`, Connected |
+| Claude Haiku thread, reply, generated title | PASS, reply in 6 s |
+| Supervised write approved in-app | PASS, pending card, approved, exact bytes on disk |
+| Terminal | PASS, real PTY, `TERM_42` from a command typed on the phone |
+| Codex thread and reply | PASS, under 9 s; prompt as title is the expected fallback |
+| Image attachment | PASS, reply "Blue", attachment present in the projection |
+| Server memory | RSS 16.4 to 18.5 MB across all flows, peak 26.6 MB (snapshot to the phone) |
+| Real Wi-Fi cut and recovery | **NOT DEMONSTRATED.** Mobile data was off, so the phone had no network during the cut, the scheduled send never reached the server, and Android turned wireless debugging off with Wi-Fi, ending the session before recovery could be observed |
+
+Client findings, none attributable to the server:
+
+- Home spins at 250 to 500 % CPU and 400 to 550 MB and drops typed search text. The
+  same happens with `o3-server` removed and only T3 environments left, so it predates
+  this server. Thread screens stay around 13 %.
+- While Home is starved it does not show a newly added environment or new threads
+  until the app restarts. Cause of this link not proven.
+- Send stays disabled while the keyboard holds composing text; committing it enables
+  the button.
+- On the environments page the add button covers the last row's delete button.
+
+Server defect found and fixed: `auth session issue --help` issued a real session
+instead of printing help. `--help` and `-h` now print usage before any command runs.
