@@ -90,3 +90,34 @@ pub(crate) fn finish(
     }
     refresh(db, tid, t, at)
 }
+
+/// Provider health probes follow the effective activity profile even without a quota subscriber.
+/// No automatic git fetch or host-power monitoring is implied by this timer.
+pub(crate) async fn refresh_health(s: std::sync::Arc<crate::store::State>) {
+    let mut changes = s.changed.subscribe();
+    let interval = |s: &crate::store::State| {
+        crate::settings::read(s)
+            .ok()
+            .and_then(|v| v["providerHealthRefreshInterval"].as_u64())
+            .unwrap_or(300_000)
+    };
+    let delay = |ms: u64| {
+        std::time::Duration::from_millis(if ms == 0 { u64::MAX / 2 } else { ms.max(1000) })
+    };
+    let mut ms = interval(&s);
+    let mut next = tokio::time::Instant::now() + delay(ms);
+    loop {
+        tokio::select! {
+            _=tokio::time::sleep_until(next)=>{
+                let provider=s.provider.lock().unwrap().clone();
+                if let Some(p)=provider {let _=tokio::time::timeout(std::time::Duration::from_secs(20),p.refresh()).await;s.notify();}
+                next=tokio::time::Instant::now()+delay(ms);
+            }
+            result=changes.changed()=>{
+                if result.is_err(){return}
+                let current=interval(&s);
+                if current!=ms{ms=current;next=tokio::time::Instant::now()+delay(ms);}
+            }
+        }
+    }
+}

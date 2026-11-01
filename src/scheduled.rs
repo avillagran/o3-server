@@ -352,6 +352,7 @@ pub fn ensure_started(s: &Arc<State>) {
     {
         return;
     }
+    tokio::spawn(crate::background::refresh_health(s.clone()));
     let s = s.clone();
     tokio::spawn(async move {
         loop {

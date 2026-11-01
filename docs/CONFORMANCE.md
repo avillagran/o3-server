@@ -788,3 +788,13 @@ separate native processes are observed and reaped by the actual idle timer.
 The second identical operation completes without UI intervention; a changed
 operation remains pending and requires a fresh client approval. All resulting
 pending/cleared states are consumed by `approvals::pending`.
+
+### Effective background activity
+
+`backgroundActivityProfile` now controls real periodic provider health probes,
+including with no quota subscription. `tests/background_profile.rs` writes presets
+with `native_settings::patch`, reads them back with `native_settings::snapshot`,
+and verifies refresh-driven version changes via `provider_instances::projection`.
+An accelerated custom interval fires; zero stops it; restoring it restarts it.
+Battery/performance resolve to 900,000/60,000 ms respectively. This does not claim
+automatic git fetch or host-power monitoring; those settings remain an open gap.
