@@ -644,5 +644,60 @@ fn source_control_discovery_has_honest_git_probe_and_option_encoding() {
     assert_eq!(git["version"]["_tag"], "Some");
     assert_eq!(git["detail"]["_tag"], "None");
     assert_eq!(v["versionControlSystems"][1]["implemented"], false);
-    assert!(v["sourceControlProviders"].is_array());
+    // Host CLIs depend on the machine: assert shape and the missing/unknown invariant, not presence.
+    let providers = v["sourceControlProviders"].as_array().unwrap();
+    let kinds: Vec<_> = providers.iter().map(|p| p["kind"].as_str().unwrap()).collect();
+    assert_eq!(kinds, ["github", "gitlab", "azure-devops"]);
+    assert_eq!(providers[0]["label"], "GitHub");
+    assert_eq!(providers[0]["executable"], "gh");
+    for p in providers {
+        assert!(p["installHint"].as_str().unwrap().starts_with("Install"));
+        assert!(matches!(p["status"].as_str(), Some("available" | "missing")));
+        assert!(matches!(p["auth"]["status"].as_str(), Some("authenticated" | "unauthenticated" | "unknown")));
+        if p["status"] == "missing" {
+            assert_eq!(p["auth"]["status"], "unknown");
+        }
+    }
+}
+struct Statuses(std::sync::Mutex<Vec<Value>>);
+impl o3_server::provider::Provider for Statuses {
+    fn config(&self) -> Vec<Value> {
+        self.0.lock().unwrap().clone()
+    }
+    fn execute<'a>(
+        &'a self,
+        input: o3_server::provider::RunInput,
+        output: tokio::sync::mpsc::Sender<o3_server::provider::ProviderEvent>,
+        control: tokio::sync::mpsc::Receiver<o3_server::provider::ProviderControl>,
+        cancel: tokio::sync::watch::Receiver<bool>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'a>> {
+        o3_server::provider::ScriptedProvider.execute(input, output, control, cancel)
+    }
+}
+#[test]
+fn config_stream_sends_typed_provider_statuses_then_snapshots() {
+    let statuses = Arc::new(Statuses(Default::default()));
+    let s = start(|state| *state.provider.lock().unwrap() = Some(statuses.clone()));
+    let c = s.connect();
+    let mut stream = subscribe(s.connect(), "server.subscribeServerConfig", json!({}));
+    let first = stream.next(T);
+    assert_eq!(first["type"], "snapshot");
+    // A provider-only change is the typed event `lib-t3-rust` applies in place.
+    let provider = json!({"instanceId":"codex","driver":"codex","enabled":true,"installed":true,"availability":"ready","auth":{"status":"authenticated"}});
+    statuses.0.lock().unwrap().push(provider.clone());
+    s.state.notify();
+    let event = stream.next(T);
+    assert_eq!(event["type"], "providerStatuses", "{}", event["type"]);
+    assert_eq!(event["version"], 1);
+    assert_eq!(event["payload"]["providers"], c.rpc("server.getConfig", json!({})).unwrap()["providers"]);
+    let mut state = json!({});
+    assert!(t3_protocol::quota_sources::apply(&mut state, &first));
+    assert!(t3_protocol::quota_sources::apply(&mut state, &event));
+    assert_eq!(state["providers"][0]["instanceId"], "codex");
+    // A settings change is not provider-only: the full replacement snapshot.
+    c.rpc("server.updateSettings", json!({"patch":{"defaultTheme":"dark"}})).unwrap();
+    let next = stream.next(T);
+    assert_eq!(next["type"], "snapshot");
+    assert_eq!(next["config"]["settings"]["defaultTheme"], "dark");
+    stream.cancel();
 }

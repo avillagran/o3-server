@@ -758,6 +758,74 @@ pub async fn discover() -> Reply {
         };
         systems.push(json!({"kind":kind,"label":label,"executable":kind,"implemented":implemented,"status":status,"version":option(version),"installHint":hint,"detail":option(detail)}));
     }
-    // Host adapters/auth discovery are not implemented; do not claim their availability.
-    Ok(json!({"versionControlSystems":systems,"sourceControlProviders":[]}))
+    let option = |v: Option<String>| match v {
+        Some(v) if !v.trim().is_empty() => json!({"_tag":"Some","value":v.trim()}),
+        _ => json!({"_tag":"None"}),
+    };
+    let probe = || Opts {
+        timeout: std::time::Duration::from_secs(20),
+        cap: 16_000,
+        allow_truncate: true,
+    };
+    let mut providers = Vec::new();
+    // CLI-backed hosts, as upstream: version probe, then a read-only auth status. Never logs in.
+    for (kind, label, exe, auth_args, hint) in [
+        (
+            "github",
+            "GitHub",
+            "gh",
+            &["auth", "status", "--json", "hosts"][..],
+            "Install the GitHub command-line tool (`gh`) via https://cli.github.com/ or your package manager (for example `brew install gh`).",
+        ),
+        (
+            "gitlab",
+            "GitLab",
+            "glab",
+            &["auth", "status"][..],
+            "Install the GitLab command-line tool (`glab`) via https://gitlab.com/gitlab-org/cli or your package manager (for example `brew install glab`).",
+        ),
+        (
+            "azure-devops",
+            "Azure DevOps",
+            "az",
+            &["account", "show", "--query", "user.name", "-o", "tsv"][..],
+            "Install the Azure command-line tools (`az`), then enable Azure DevOps support with `az extension add --name azure-devops`.",
+        ),
+    ] {
+        let version = proc::run(exe, Path::new("/"), &["--version"], probe(), &[]).await;
+        let (status, version, detail) = match version {
+            Ok(o) if o.ok() => ("available", o.text().lines().next().map(str::to_owned), None),
+            Ok(o) => ("missing", None, Some(o.stderr)),
+            Err(e) => ("missing", None, Some(format!("{e:?}"))),
+        };
+        let mut auth = json!({"status":"unknown","account":{"_tag":"None"},"host":{"_tag":"None"},"detail":{"_tag":"None"}});
+        if status == "available" {
+            match proc::run(exe, Path::new("/"), auth_args, probe(), &[]).await {
+                Ok(o) if o.ok() => {
+                    auth["status"] = json!("authenticated");
+                    let text = o.text();
+                    if kind == "github" {
+                        if let Ok(v) = serde_json::from_str::<Value>(&text) {
+                            let entry = v["hosts"].as_object().into_iter().flatten().flat_map(|(h, list)| {
+                                list.as_array().into_iter().flatten().map(move |e| (h.clone(), e.clone()))
+                            }).find(|(_, e)| e["active"] == true && e["state"] == "success");
+                            if let Some((host, e)) = entry {
+                                auth["host"] = option(Some(host));
+                                auth["account"] = option(e["login"].as_str().map(str::to_owned));
+                            }
+                        }
+                    } else if kind == "azure-devops" {
+                        auth["account"] = option(Some(text));
+                    }
+                }
+                Ok(o) => {
+                    auth["status"] = json!("unauthenticated");
+                    auth["detail"] = option(Some(o.stderr.chars().take(500).collect()));
+                }
+                Err(_) => {}
+            }
+        }
+        providers.push(json!({"kind":kind,"label":label,"executable":exe,"status":status,"version":option(version),"installHint":hint,"detail":option(detail),"auth":auth}));
+    }
+    Ok(json!({"versionControlSystems":systems,"sourceControlProviders":providers}))
 }

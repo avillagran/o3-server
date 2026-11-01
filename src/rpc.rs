@@ -19,6 +19,8 @@ struct Subscription {
     /// Progress items of a producer task (`git.runStackedAction`) instead of log replay.
     events: Option<tokio::sync::mpsc::Receiver<crate::stacked::Item>>,
     live: Option<crate::streams::Live>,
+    /// Last config this subscriber saw, to send a typed `providerStatuses` event when only providers changed.
+    last_config: Option<Value>,
 }
 fn exit(id: &Value, result: Result<Value, Value>) -> Value {
     json!({"_tag":"Exit","requestId":id,"exit":match result {Ok(Value::Null)=>json!({"_tag":"Success"}),Ok(v)=>json!({"_tag":"Success","value":v}),Err(e)=>json!({"_tag":"Failure","cause":[{"_tag":"Fail","error":e}]})}})
@@ -209,9 +211,27 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                 let version = *changed.borrow();
                 if version != sub.version {
                     sub.version = version;
-                    settings::config(&s)
-                        .ok()
-                        .map(|v| json!({"version":1,"type":"snapshot","config":v}))
+                    settings::config(&s).ok().map(|v| {
+                        // Only the provider list changed: send the typed event clients apply
+                        // in place (lib-t3-rust quota_sources::apply); anything else is a replacement snapshot.
+                        let only_providers = sub.last_config.as_ref().is_some_and(|old| {
+                            let strip = |c: &Value| {
+                                let mut c = c.clone();
+                                if let Some(o) = c.as_object_mut() {
+                                    o.remove("providers");
+                                }
+                                c
+                            };
+                            strip(old) == strip(&v) && old["providers"] != v["providers"]
+                        });
+                        let event = if only_providers {
+                            json!({"version":1,"type":"providerStatuses","payload":{"providers":v["providers"]}})
+                        } else {
+                            json!({"version":1,"type":"snapshot","config":v})
+                        };
+                        sub.last_config = Some(v);
+                        event
+                    })
                 } else {
                     None
                 }
@@ -310,7 +330,7 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                                     if crate::streams::is_live_tag(tag) {
                                         if subscriptions.len()>=64||subscriptions.contains_key(&id.to_string()) {if send(&mut ws,exit(&id,Err(error("subscription limit or duplicate id".into())))).await.is_err(){return}continue;}
                                         match crate::streams::open(&s,tag,p).await {
-                                            Ok(live)=>{subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid:None,cursor:0,waiting:false,initial:None,marker:false,version:0,snapshot:None,events:None,live:Some(live)});}
+                                            Ok(live)=>{subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid:None,cursor:0,waiting:false,initial:None,marker:false,version:0,snapshot:None,events:None,live:Some(live),last_config:None});}
                                             Err(e)=>{if send(&mut ws,exit(&id,Err(e))).await.is_err(){return}}
                                         }
                                         continue;
@@ -320,7 +340,7 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                                         if let Err(e)=crate::stacked::validate(p){if send(&mut ws,exit(&id,Err(e))).await.is_err(){return}continue;}
                                         let (queue,rx)=tokio::sync::mpsc::channel(16);
                                         tokio::spawn(crate::stacked::run(p.clone(),crate::stacked::Tx{queue,wake:wake.clone()}));
-                                        subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid:None,cursor:0,waiting:false,initial:None,marker:false,version:0,snapshot:None,live:None,events:Some(rx)});
+                                        subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid:None,cursor:0,waiting:false,initial:None,marker:false,version:0,snapshot:None,live:None,events:Some(rx),last_config:None});
                                     }else if crate::ext::handles(tag) {
                                         if inflight.load(std::sync::atomic::Ordering::Relaxed)>=16 {if send(&mut ws,exit(&id,Err(error("too many concurrent requests on this socket".into())))).await.is_err(){return}continue;}
                                         inflight.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
@@ -341,8 +361,9 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                                                 Err(e)=>{if send(&mut ws,exit(&id,Err(error(e)))).await.is_err(){return}continue;}
                                             }
                                         }
-                                        let initial=if config {settings::config(&s).ok().map(|c|json!({"version":1,"type":"snapshot","config":c}))}else{None};
-                                        subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid,cursor:after.unwrap_or(boundary),waiting:false,initial,snapshot,live:None,events:None,marker:p["requestCompletionMarker"]==true,version});
+                                        let first_config=if config {settings::config(&s).ok()}else{None};
+                                        let initial=first_config.clone().map(|c|json!({"version":1,"type":"snapshot","config":c}));
+                                        subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid,cursor:after.unwrap_or(boundary),waiting:false,initial,snapshot,live:None,events:None,marker:p["requestCompletionMarker"]==true,version,last_config:first_config});
                                     }else{let result=match crate::routes::call(&s,tag,p).await{Some(r)=>r,None=>dispatch(&s,tag,p)};if send(&mut ws,exit(&id,result)).await.is_err(){return}}
                                 },_=>{}
                             }
