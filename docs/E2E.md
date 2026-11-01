@@ -215,3 +215,14 @@ Reproduce with SDK at `$HOME/.android-sdk` and `W=/var/tmp/o3-build/android`: cr
 ## Android new-thread follow-up (2026-11-01)
 
 Release `a2a0ccd`, isolated profile, Android 34 emulator and debug APK: pairing and seeded project listing passed. The new-thread picker lists Claude and Codex models; a new Claude Haiku 5.5 thread and a new Codex GPT-6.1-Sol thread each rendered a real reply. An image pushed to the emulator was selected and sent in the Codex thread; its reply correctly identified the blue image. Terminal opened in the project directory; command execution was not tested. Server VmHWM was 33,432 KiB during the run, excluding provider processes. Earlier approval and reconnect results are documented above; they were not repeated in this follow-up. No server defect was established.
+
+## Android terminal follow-up (2026-11-01)
+
+Release `4fc1ec9`, isolated profile and Android 34 emulator: direct pairing via
+ADB reverse and seeded thread passed. The app terminal executed
+`echo o3-terminal-ok` and displayed its output. Server VmHWM was 30,348 KiB;
+no inference was run. Reverse was removed and the server and emulator stopped.
+Android OmaBridge pairing, catalog and a real Haiku turn were not exercised;
+no conclusion about bridge connectivity or emulator network blocking is supported.
+No server or Android bug was established. Emulator crash data was confined to the
+isolated disk-backed directory using a private mount namespace.
