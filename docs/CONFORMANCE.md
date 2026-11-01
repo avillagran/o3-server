@@ -396,3 +396,24 @@ Kept partial, reader and reason:
 - thread.user-input.dismiss: native delivery to the provider and recovery are unfinished (`lib-t3-rust/src/questions.rs:48`).
 - thread.fork, thread.model-selection.set: native resume-at mapping and cross-provider handoff.
 - updateSettings, vcs.refreshStatus: settings normalization; GitLab/self-hosted change requests.
+
+## Stacked-action reader closure (2026-11-01)
+
+`tests/vcs_compat.rs::stacked_blank_message_is_scoped_and_cancel_stops_hook`
+uses the pinned real Connection with directory-isolated Git state. A whitespace
+message deterministically becomes `Update <path>` (or a file count); selected
+paths exclude unrelated staged files from that subject. No inference is needed
+for this fallback. Closing/interruption of the subscription drops the producer;
+subprocess process groups stop the running Git step and its hook descendants.
+The test cancels inside a sleeping pre-commit hook and verifies both unchanged
+HEAD and absence of its delayed marker. Existing tests cover positive stacked
+commit/push/PR paths and error receipts. `git.runStackedAction` is promoted using
+that evidence and the hook-event unused-reader exception documented above.
+Items 2–5 of the requested follow-up remain pending; no other row is promoted.
+
+Validation: full default-feature suite 142 passed / 5 opt-in ignored; strict
+all-target clippy passed. `tools/bench-rss` completed with bridge enabled,
+1000 messages, 20 threads, 3 subscribers and 1000 unary calls: VmHWM 40692 KiB
+(41.67 MB), below 50 MB. Inference excluded. Aggregate output retained locally
+at `/var/tmp/o3-build/sweep-rss.log`; this is the synthetic workload, not a new
+real-profile measurement.

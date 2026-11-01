@@ -84,6 +84,7 @@ async fn read_capped<R: AsyncRead + Unpin>(mut r: R, cap: usize) -> (Vec<u8>, bo
 
 fn base_command(program: &str, cwd: &Path, args: &[&str]) -> tokio::process::Command {
     let mut c = tokio::process::Command::new(program);
+    c.process_group(0);
     c.args(args)
         .current_dir(cwd)
         .stdin(Stdio::null())
@@ -121,6 +122,16 @@ pub async fn git_env(
     Box::pin(run("git", cwd, &full, opts, env)).await
 }
 
+// Kill hooks and transport descendants too when a caller cancels the future.
+struct ProcessGroup(u32);
+impl Drop for ProcessGroup {
+    fn drop(&mut self) {
+        unsafe {
+            libc::kill(-(self.0 as i32), libc::SIGKILL);
+        }
+    }
+}
+
 pub async fn run(
     program: &str,
     cwd: &Path,
@@ -135,6 +146,7 @@ pub async fn run(
     let mut child = command
         .spawn()
         .map_err(|e| RunError::Spawn(e.to_string()))?;
+    let _group = ProcessGroup(child.id().expect("spawned child"));
     let stdout = child.stdout.take().expect("piped");
     let stderr = child.stderr.take().expect("piped");
     // Boxed: debug builds give big futures big frames, and sockets run on small stacks.

@@ -107,9 +107,9 @@
       "note": "No client call site in inventory."
     },
     "git.runStackedAction": {
-      "status": "partial",
+      "status": "done",
       "priority": "P1",
-      "note": "Real-client stream test: commit, commit_push, push, commit_push_pr (with gh), featureBranch, filePaths subset, up-to-date and no-change results, action_failed with the failing phase, request validation, path confinement. Not done: hook_* events, generated commit messages, cancellation of a running step (an Interrupt stops sending events but the step finishes), PR creation without gh."
+      "note": "Real-client tests cover commit/push/PR progress, scoped blank-message deterministic fallback, validation and cancellation during a running hook (no commit or surviving descendant). PR operations require gh; unavailable CLI returns an error. hook_* events accepted as unused by the reader sweep; see CONFORMANCE.md."
     },
     "guestShare.create": {
       "status": "skip",

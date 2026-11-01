@@ -131,7 +131,10 @@ fn slug(text: &str) -> String {
 }
 
 pub async fn run(p: Value, tx: Tx) {
-    let result = drive(p, tx.clone()).await;
+    let result = tokio::select! {
+        result = drive(p, tx.clone()) => result,
+        _ = tx.queue.closed() => return,
+    };
     let _ = tx.send(Item::End(result)).await;
 }
 
@@ -297,7 +300,12 @@ async fn steps(
             let subject = match &message {
                 Some(m) => m.clone(),
                 None => {
-                    let names = out(op, root, &["diff", "--cached", "--name-only"], Opts::READ)
+                    let mut names_args = vec!["diff", "--cached", "--name-only"];
+                    if let Some(s) = &specs {
+                        names_args.push("--");
+                        names_args.extend(s.iter().map(String::as_str));
+                    }
+                    let names = out(op, root, &names_args, Opts::READ)
                         .await
                         .map_err(step_err)?
                         .text();

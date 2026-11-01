@@ -776,3 +776,55 @@ fn z_status_reports_host_and_pull_request_and_local_only_skips_host() {
     assert!(r["pr"].is_null());
     assert_eq!(r["sourceControlProvider"]["name"], "GitHub");
 }
+
+#[test]
+fn stacked_blank_message_is_scoped_and_cancel_stops_hook() {
+    use std::{
+        cell::Cell,
+        os::unix::fs::PermissionsExt,
+        time::{Duration, Instant},
+    };
+    let e = setup("stacked-cancel");
+    let r = seeded(&e, "repo");
+    write(&r.join("a.txt"), "changed\n");
+    write(&r.join("b.txt"), "also changed\n");
+    git(&r, &["add", "b.txt"]);
+    let ev = run_action(
+        &e,
+        json!({"actionId":"blank","cwd":s(&r),"action":"commit","commitMessage":"  ","filePaths":["a.txt"]}),
+    );
+    assert_eq!(
+        ev.last().unwrap()["result"]["commit"]["subject"],
+        "Update a.txt"
+    );
+    assert_eq!(
+        git(&r, &["log", "-1", "--format=%s"]).trim(),
+        "Update a.txt"
+    );
+    let head = git(&r, &["rev-parse", "HEAD"]);
+    let hook = r.join(".git/hooks/pre-commit");
+    write(
+        &hook,
+        "#!/bin/sh\necho started > hook-started\nsleep 3\necho survived > hook-survived\n",
+    );
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let done = Cell::new(false);
+    let started = Instant::now();
+    e.conn
+        .subscribe(
+            "git.runStackedAction",
+            json!({"actionId":"cancel","cwd":s(&r),"action":"commit"}),
+            || done.get(),
+            |_| {
+                if r.join("hook-started").exists() {
+                    done.set(true);
+                }
+                assert!(started.elapsed() < Duration::from_secs(10));
+                Ok(())
+            },
+        )
+        .unwrap();
+    std::thread::sleep(Duration::from_secs(4));
+    assert!(!r.join("hook-survived").exists());
+    assert_eq!(git(&r, &["rev-parse", "HEAD"]), head);
+}
