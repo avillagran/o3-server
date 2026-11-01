@@ -79,3 +79,31 @@ Final `tools/bench-rss` release workload: VmHWM 39,404 KiB (40.35 MB), below 50 
 active, providers registered/probed, inference excluded. See rss-measurement.json.
 
 The final desktop E2E also verifies that an explicit standalone route state directory overrides embedded auto-discovery. Desktop OmaBridge-filtered tests: 20 pass.
+
+## Native input / atomic launch checkpoint (2026-11-01)
+
+New deterministic real-client coverage in `tests/provider_input.rs`:
+
+- Actual upload -> Claude base64 image / Codex localImage, file path readable by
+  native tool, serialized composer context; native peer asserts the payload.
+- Injected SQL failure after thread/message staging rolls back records/events/
+  receipts; same launch retry produces one run and retains initial context.
+- Claude AskUserQuestion projects through `t3_protocol::questions::pending`, then
+  `questions::command` answers without a permission decision; native peer checks
+  question-text keys and multi-answer joining.
+- Pinned Claude catalog and native slash/skill listings in getConfig; effort and
+  fastMode argv checked by the peer; shell user/run timestamps checked over HTTP.
+
+Two short authenticated turns completed (Claude haiku and Codex gpt-6.1-sol), each
+returning `O3_OK` through the real Connection. Reproduce with `tools/live-chat-e2e`:
+it builds with nice/-j4, uses disk-backed temporary HOME/T3/provider directories,
+copies only auth files, and deletes the isolated credentials afterward. This is
+not live proof of attachments, plan workflow, persistent approval or recovery.
+
+Final deterministic suite: 105 passed, 4 opt-ins ignored with bridge; 104 passed,
+4 ignored without default features. Strict all-target Clippy, fmt and diff checks
+pass. The isolated live runner passed both real turns and now explicitly shuts
+both native drivers down before removing its profile (an initial successful-turn
+run hit a cleanup race). The real desktop backend bridge E2E passes all reported
+status/read/identity/peers/publication/pairing/QUIC checks. QML and Android UI remain
+unverified; no emulators, services, real T3 profile or systemd units were used.

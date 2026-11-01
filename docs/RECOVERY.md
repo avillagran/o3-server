@@ -29,3 +29,9 @@ This is a durable handoff journal, not exactly-once native delivery or a replay 
 The native protocols do not expose an idempotent command acknowledgement across
 restarts. Records are retained in SQLite; retention/GC and frontend presentation of
 the new error metadata remain future work. Never claim full native chat parity.
+
+Launch checkpoint: the thread, initial message/context/run, event rows and launch
+receipt now share one transaction. Native execution starts after commit. A failed
+run insert leaves none of those records; retrying the same launch creates one run.
+This improves database atomicity, not crash replay of committed native starts or
+filesystem rollback of a newly prepared worktree.

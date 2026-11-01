@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+"""Inventory consumers of differing P0 field names in the retained differential report.
+This identifies candidates to inspect; a zero-match field is not automatic acceptance.
+"""
+import json, pathlib, subprocess
+root=pathlib.Path(__file__).resolve().parent.parent
+report=json.loads((root/'docs/conformance-report.json').read_text())
+methods={'orchestration.dispatchCommand','orchestration.launchThread','orchestration.subscribeShell','orchestration.subscribeThread','server.getConfig'}
+fields=set()
+def differences(a,b):
+    if isinstance(a,dict) and isinstance(b,dict):
+        for key in a.keys()|b.keys():
+            if key.startswith('$'):continue
+            if key not in a or key not in b or a[key]!=b[key]:
+                fields.add(key)
+                differences(a.get(key),b.get(key))
+    elif isinstance(a,list) and isinstance(b,list):
+        for x,y in zip(a,b): differences(x,y)
+for row in report['results']:
+    if row['surface'] in methods: differences(row['o3'],row['upstream'])
+roots=[root.parent/name for name in ['lib-t3-rust','omarchy-t3-code','ot3-android']]
+lines=['# P0 field consumer audit','', 'Source: retained nightly 3991 shape report; not a new differential run. Grep is conservative: field names anywhere in client source count as possible reads. No differences are accepted solely on this inventory.','', '| Field | lib-t3-rust | desktop | Android |','|---|---|---|---|']
+for field in sorted(fields-{'items','error','projection','snapshot'}):
+    cells=[]
+    for path in roots:
+        sources=[path/p for p in ['src','ui','bindings','app/src/main','core/src/main','t3-lib/src/main'] if (path/p).is_dir()]
+        if not sources: raise RuntimeError(f'no source roots: {path}')
+        r=subprocess.run(['rg','-l','-F',field,*map(str,sources),'--glob','*.rs','--glob','*.qml','--glob','*.kt'],capture_output=True,text=True)
+        if r.returncode not in (0,1): raise RuntimeError(r.stderr)
+        files=r.stdout.splitlines()
+        cells.append(', '.join('`'+str(pathlib.Path(f).relative_to(path))+'`' for f in files[:3])+(' …' if len(files)>3 else '') if files else 'no match')
+    lines.append('| `'+field+'` | '+' | '.join(cells)+' |')
+(root/'docs/P0-FIELD-AUDIT.md').write_text('\n'.join(lines)+'\n')
+print(f'{len(lines)-6} field names audited')

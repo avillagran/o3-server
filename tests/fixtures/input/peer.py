@@ -31,6 +31,9 @@ for line in sys.stdin:
         if m != 'turn/start':
             print(json.dumps({'id':i,'result':result}),flush=True)
             continue
+    if claude:
+        assert sys.argv[sys.argv.index('--effort')+1] == 'high'
+        assert json.loads(sys.argv[sys.argv.index('--settings')+1])['fastMode'] is True
     assert 'context-proof' in content[0]['text']
     assert content[0]['text'].startswith('input-proof')
     image = content[1]

@@ -250,3 +250,20 @@ New local proof: 101 tests pass (3 ignored), including durable restart IDs for b
 adapters and receipt/outbox rollback/reopen. Native desktop embedded management,
 pairing/approval and control-socket T3 pair/forward pass (E2E.md). Durable handoff
 journaling does not certify exactly-once native delivery; see RECOVERY.md.
+
+## Daily-chat checkpoint, 2026-11-01
+
+`tests/provider_input.rs` uses the pinned real Connection, actual upload HTTP calls,
+and deterministic native CLI peers. It verifies image/file/context delivery to both
+adapters, injected launch rollback and retry, and Claude structured questions via
+`t3_protocol::questions`. Claude's catalog comes from the local pinned 3726 manifest;
+option compilation is tested, with actual CLI arguments checked by the peer.
+Shell user/run timestamps used by desktop sidebar now reflect stored records.
+
+`tools/audit-client-fields` inventories differing P0 field names from the retained
+3991 report across shared library, desktop and Android source (including Kotlin).
+This is an inventory, not a fresh differential run or proof that a field is unused.
+No row is promoted on negative grep evidence. Full upstream attempt identity,
+stream metadata/order, worktree failure cleanup, startup native discovery/settings
+and daily chat features listed in IMPLEMENTATION remain open. P0 stays 0 done / 5
+partial; do not describe this as complete daily-use parity.

@@ -35,7 +35,7 @@ fn uploaded_images_files_and_context_reach_both_native_transports() {
                 std::io::Cursor::new(b"file-proof"),
             )
             .unwrap();
-        c.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"create","threadId":"t","projectId":"p","title":"Input","modelSelection":{"instanceId":instance,"model":"test"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
+        c.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"create","threadId":"t","projectId":"p","title":"Input","modelSelection":{"instanceId":instance,"model":"test","options":[{"id":"effort","value":"high"},{"id":"fastMode","value":true}]},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
         c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"send","messageId":"m","threadId":"t","text":"input-proof","context":{"records":[{"kind":"terminal","text":"context-proof"}]},"attachments":[image,file],"dispatchMode":{"type":"start_immediately"}})).unwrap();
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
@@ -49,6 +49,17 @@ fn uploaded_images_files_and_context_reach_both_native_transports() {
                     .unwrap()
                     .iter()
                     .any(|m| m["text"] == "verified-input"));
+                let shell = c
+                    .request_json("GET", "/api/orchestration/shell", None, true)
+                    .unwrap();
+                assert_eq!(
+                    shell["threads"][0]["latestUserAuthoredMessageAt"],
+                    p["messages"][0]["createdAt"]
+                );
+                assert_eq!(
+                    shell["threads"][0]["latestRunCompletedAt"],
+                    p["runs"][0]["completedAt"]
+                );
                 if instance == "claudeAgent" {
                     let config = c.rpc("server.getConfig", json!({})).unwrap();
                     assert_eq!(
@@ -150,10 +161,12 @@ fn claude_structured_question_displays_and_accepts_client_answers() {
 #[ignore = "uses installed Claude and Codex credentials for two short real turns"]
 fn live_claude_and_codex_through_real_client() {
     for (instance, model) in [("claudeAgent", "haiku"), ("codex", "gpt-6.1-sol")] {
+        let claude = o3_server::claude::ClaudeProvider::discover().map(Arc::new);
+        let codex = Arc::new(o3_server::codex::CodexProvider::default());
         let server = support::start(|s| {
             *s.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::Providers {
-                claude: o3_server::claude::ClaudeProvider::discover().map(Arc::new),
-                codex: Arc::new(o3_server::codex::CodexProvider::default()),
+                claude: claude.clone(),
+                codex: codex.clone(),
             }));
         });
         let c = server.connect();
@@ -182,6 +195,20 @@ fn live_claude_and_codex_through_real_client() {
                     "{instance}: no expected response"
                 );
                 eprintln!("{instance}: real turn completed");
+                // Wait for the run supervisor to return the idle session to its pool.
+                while !server.state.active.lock().unwrap().is_empty() {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap()
+                    .block_on(async {
+                        if let Some(claude) = &claude {
+                            claude.shutdown().await;
+                        }
+                        codex.shutdown().await;
+                    });
                 break;
             }
             assert!(Instant::now() < deadline, "{instance}: live timeout");

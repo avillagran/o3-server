@@ -37,6 +37,12 @@ impl ClaudeProvider {
             sessions: std::sync::Arc::new(Mutex::new(HashMap::new())),
         }
     }
+    pub async fn shutdown(&self) {
+        let sessions = std::mem::take(&mut *self.sessions.lock().unwrap());
+        for (_, mut session) in sessions {
+            session.stop().await;
+        }
+    }
     fn expire_idle(
         &self,
         thread_id: String,

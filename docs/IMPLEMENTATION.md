@@ -100,3 +100,28 @@ and claude-code selections remain aliases. See CONFORMANCE.md for scope and evid
 Current local validation: 101 tests pass, 3 live/reference tests ignored; strict clippy passes. Desktop embedded management has isolated real-client proof (E2E.md). See RECOVERY.md for handoff guarantees and remaining gaps.
 
 Final no-default-features validation: 100 tests pass, 3 ignored. Desktop OmaBridge-filtered tests: 20 pass. The complete desktop suite was not run.
+
+## Daily-chat implementation checkpoint (2026-11-01)
+
+Launch now stages thread creation, the initial user message/context/run, events and
+receipt in one SQLite transaction, then starts the adapter. Fault injection through
+the real client proves rollback and idempotent retry. Worktree preparation remains
+outside SQLite and can leave a prepared worktree after a later database failure.
+
+Uploaded attachments resolve only through the profile attachment store; client paths
+are ignored, and symlink entries are refused. Claude receives supported images as
+bounded base64 blocks (5 MiB/image, 8 MiB/frame), Codex as localImage inputs. Other
+files are supplied as quoted local file references for native tools. Composer context
+is serialized into a user text block; provider-specific skill/mention expansion is
+not yet implemented. Tests cover actual upload -> real Connection -> native peer.
+
+Claude AskUserQuestion projects structured questions recognized by the shared client
+helper and converts string/array answers to SDK answers keyed by question text.
+The pinned reference manifest supplies model IDs and capability descriptors; effort,
+fastMode, thinking and context-window settings reach CLI argv. Option changes cause
+an idle resume instead of silently retaining the previous process settings. Native
+slash-command/skill lists become available after a real session init, not at startup.
+
+This checkpoint does not close all five P0 rows or the remaining P1 partials. In
+particular persistent permission rules, active recovery, full plan workflow, usage
+summary/quota, generated titles and safe automatic settlement remain open.
