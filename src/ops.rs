@@ -582,19 +582,36 @@ fn usage(p: &Value) -> Reply {
 // ---------------------------------------------------------------- storage cleanup
 
 /// Removes log files of this profile older than two weeks; nothing else is ever deleted.
-fn cleanup(s: &State) -> Reply {
+pub(crate) fn cleanup(s: &State) -> Reply {
+    let settings = crate::settings::read(s).map_err(|e| invalid(&e))?;
     let started = iso(now_ms());
     let (mut entries, mut removed, mut kept, mut failed, mut freed) =
         (Vec::new(), 0u64, 0u64, 0u64, 0u64);
-    let mut stack = vec![s.dir.join("logs")];
-    while let Some(dir) = stack.pop() {
+    let mut stack = vec![(
+        s.dir.join("logs"),
+        "logs",
+        settings["storageCleanup"]["logsAfterDays"]
+            .as_i64()
+            .map(|d| d * 86_400_000)
+            .unwrap_or(LOG_RETENTION_MS),
+    )];
+    if let Some(days) = settings["storageCleanup"]["browserArtifactsAfterDays"].as_i64() {
+        stack.push((
+            s.dir.join("browser-artifacts"),
+            "browserArtifacts",
+            days * 86_400_000,
+        ));
+    }
+    while let Some((dir, kind, retention)) = stack.pop() {
         let Ok(read) = std::fs::read_dir(&dir) else {
             continue;
         };
         for e in read.flatten() {
-            let Ok(meta) = e.metadata() else { continue };
+            let Ok(meta) = std::fs::symlink_metadata(e.path()) else {
+                continue;
+            };
             if meta.is_dir() && !meta.file_type().is_symlink() {
-                stack.push(e.path());
+                stack.push((e.path(), kind, retention));
                 continue;
             }
             if !meta.is_file() {
@@ -605,7 +622,7 @@ fn cleanup(s: &State) -> Reply {
                 .ok()
                 .and_then(|m| m.elapsed().ok())
                 .map_or(0, |d| d.as_millis() as i64);
-            if age < LOG_RETENTION_MS {
+            if age < retention {
                 kept += 1;
                 continue;
             }
@@ -613,7 +630,7 @@ fn cleanup(s: &State) -> Reply {
                 Ok(()) => {
                     removed += 1;
                     freed += meta.len();
-                    ("removed", "older than 14 days")
+                    ("removed", "retention policy")
                 }
                 Err(_) => {
                     failed += 1;
@@ -621,10 +638,21 @@ fn cleanup(s: &State) -> Reply {
                 }
             };
             if entries.len() < MAX_REPORT_ENTRIES {
-                entries.push(json!({"kind":"logs","outcome":outcome,"reason":reason,"path":e.path(),"projectPath":null,"threadId":null,"threadTitle":null,"bytes":meta.len(),"files":1}));
+                entries.push(json!({"kind":kind,"outcome":outcome,"reason":reason,"path":e.path(),"projectPath":null,"threadId":null,"threadTitle":null,"bytes":meta.len(),"files":1}));
             }
         }
     }
+    for entry in crate::storage::worktrees(s, &settings).map_err(|e| invalid(&e))? {
+        if entry["outcome"] == "removed" {
+            removed += 1;
+        } else {
+            failed += 1;
+        }
+        if entries.len() < MAX_REPORT_ENTRIES {
+            entries.push(entry);
+        }
+    }
+    s.notify();
     let omitted = (removed + failed).saturating_sub(entries.len() as u64);
     let report = json!({"trigger":"manual","startedAt":started,"finishedAt":iso(now_ms()),"entries":entries,"counts":{"removed":removed,"kept":kept,"failed":failed},"omittedCount":omitted,"bytesFreed":freed});
     {

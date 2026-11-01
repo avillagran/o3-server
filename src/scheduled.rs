@@ -353,6 +353,27 @@ pub fn ensure_started(s: &Arc<State>) {
         return;
     }
     tokio::spawn(crate::background::refresh_health(s.clone()));
+    let cleanup_state = s.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            let s = cleanup_state.clone();
+            let _ = tokio::task::spawn_blocking(move || {
+                let enabled = crate::settings::read(&s).is_ok_and(|v| {
+                    v["storageCleanup"]
+                        .as_object()
+                        .is_some_and(|r| r.values().any(|v| v.is_number() || v == true))
+                        || v["projectSettingsOverrides"].as_object().is_some_and(|r| {
+                            r.values().any(|v| v["worktreeCleanup"]["mode"] == "custom")
+                        })
+                });
+                if enabled {
+                    let _ = crate::ops::cleanup(&s);
+                }
+            })
+            .await;
+        }
+    });
     let s = s.clone();
     tokio::spawn(async move {
         loop {

@@ -126,11 +126,11 @@ fn real_builders_and_readers_consume_server_output() {
     }
     assert_eq!(
         t3_protocol::storage_settings::capabilities(&config)["storageCleanup"],
-        false
+        true
     );
     assert_eq!(
         t3_protocol::storage_settings::capabilities(&config)["projectWorktreeCleanup"],
-        false
+        true
     );
     assert!(t3_protocol::scoped_settings::write_patch(
         &json!({"action":"update","key":"storageCleanup.logsAfterDays","value":14}),
@@ -139,7 +139,7 @@ fn real_builders_and_readers_consume_server_output() {
         None,
         true
     )
-    .is_err());
+    .is_ok());
     c.rpc("server.runStorageCleanup", json!({})).unwrap();
     orchestration::dispatch(
         &c,

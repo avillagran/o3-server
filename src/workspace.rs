@@ -8,6 +8,9 @@ pub struct Prepared {
     owned: Option<(PathBuf, PathBuf, Option<String>)>,
 }
 impl Prepared {
+    pub fn is_owned(&self) -> bool {
+        self.owned.is_some()
+    }
     pub fn commit(&mut self) {
         self.owned = None;
     }

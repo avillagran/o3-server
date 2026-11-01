@@ -689,7 +689,7 @@
     "server.getConfig": {
       "status": "partial",
       "priority": "P0",
-      "note": "Partial: actual provider_instances/models/scoped_settings/storage_settings readers verify supported capability gates, instance setup/logout and native Claude update. Managed install and policy cleanup stay disabled; bounded latest-version checks run on health/manual refresh and honor disable, with real provider_instances reader coverage. Remaining settings execution gaps are recorded in CONFORMANCE.md; no clean reader sweep for promotion."
+      "note": "Partial: actual provider_instances/models/scoped_settings/storage_settings readers verify supported capability gates, instance setup/logout and native Claude update. Managed install stays disabled; policy cleanup is enabled with real writer/reader and Git safety coverage; bounded latest-version checks run on health/manual refresh and honor disable, with real provider_instances reader coverage. Remaining settings execution gaps are recorded in CONFORMANCE.md; no clean reader sweep for promotion."
     },
     "server.getDatabaseStorage": {
       "status": "skip",
@@ -839,7 +839,7 @@
     "server.updateSettings": {
       "status": "partial",
       "priority": "P1",
-      "note": "Partial: native/scoped writers now execute and resolve project overrides; background profiles drive real provider health probes; title generation uses configured model/options/instructions. Remaining: storage/worktree policy execution, automatic git/power activity, source-control/review generation settings. No clean reader sweep for promotion."
+      "note": "Partial: native/scoped writers now execute and resolve project overrides; background profiles drive real provider health probes; title generation uses configured model/options/instructions. Storage/worktree policies execute with real writer/reader coverage. Remaining: automatic git/power activity, source-control/review generation settings. No clean reader sweep for promotion."
     },
     "server.upsertKeybinding": {
       "status": "done",

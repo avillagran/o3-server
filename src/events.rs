@@ -992,6 +992,9 @@ pub fn launch(s: &std::sync::Arc<State>, p: &Value) -> Result<Value> {
             append(&tx, &tid, "thread.created", thread.clone(), &thread)?;
             thread
         };
+        if prepared.is_owned() {
+            thread["ownedWorktree"] = json!(true);
+        }
         if p.get("initialMessage").is_some() {
             thread["modelSelection"] = p["modelSelection"].clone();
             thread["providerInstanceId"] = p["modelSelection"]["instanceId"].clone();

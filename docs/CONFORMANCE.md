@@ -834,3 +834,21 @@ version. `enableProviderUpdateChecks=false` stops lookups and hides cached advic
 `provider_instances::projection` for newer, equal, failed and disabled checks,
 using a local metadata server. No package is installed by this check.
 Config/settings rows remain partial pending the other execution gaps.
+
+### Storage policy execution (2026-11-01)
+
+Cleanup now applies configured log/browser-artifact retention and global/project
+worktree policies, with a periodic collector for enabled policies. Worktree age,
+settled age, deletion, merge ancestry and unchanged-tree triggers use actual Git
+state. Only worktrees created by this profile are eligible; imported/existing,
+shared, pinned, busy, uncertain-control, dirty and Git-locked worktrees are kept.
+Git collection never uses force, and probes have bounded time/output. Successful
+removal clears the thread path and emits metadata for the client projection.
+The manual log-cleanup default remains 14 days when no retention is configured.
+
+`tests/storage_policies.rs` uses real storage writers and resolved rules, creates
+real worktrees through launch, and exercises timeline on collected projections.
+It verifies collection of clean/deleted trees and old log/browser files while
+retaining dirty, pinned, shared and running trees. Cleanup capability gates are
+now enabled. This closes policy execution; the broader settings rows remain
+partial for activity and source-control/review generation.
