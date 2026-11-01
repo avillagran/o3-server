@@ -237,3 +237,21 @@ no como resultado del emulador. No hay conclusión sobre si esa ruta funciona co
 ## Android public-route pilot (2026-11-01)
 
 O3 Android on an Android 34 emulator paired with `https://stream.villagranquiroz.cl:39671/`, loaded the shell, and created a new Claude Haiku 5.5 thread in a scratch project. A real reply rendered. After disabling and re-enabling Wi-Fi and mobile data, the app displayed Connected after 2.0 seconds; the offline state was not observed, so this is not proof of a disconnected-to-reconnected transition. Pilot VmHWM was 61,464 KiB, including its earlier lifetime and excluding provider processes. The pilot shell contains the owner's real history; no screenshots were taken. The test project and thread were deleted and the test session revoked. No defect was established.
+
+## P0 launch and stream validation (2026-11-01)
+
+Two isolated short authenticated turns pass through `tools/live-chat-e2e`:
+Claude and Codex both complete through the pinned real Connection. No claim of
+live background-task, permission-rule or quota-exhaustion coverage is made.
+
+Final deterministic suites: 149 passed / 5 ignored with default features,
+147 passed / 5 ignored without defaults. Strict all-target/all-feature Clippy,
+format, diff checks and `tools/gen-compat` pass. Positive Connection regressions
+cover launch filesystem rollback/reuse and client stream cursor/projection order.
+All five P0 rows remain partial with explicit consumed gaps in CONFORMANCE.md.
+
+The same new release binary passes both `tools/bench-rss` modes: synthetic HWM
+16,148 KiB (16.54 MB), isolated copied-history HWM 20,068 KiB (20.55 MB).
+Aggregate-only samples and the binary digest are in `rss-synthetic-measurement.json`
+and `rss-measurement.json`. Provider inference is excluded from those RSS probes.
+No emulator, public route, deployment, running service or active T3 profile used.

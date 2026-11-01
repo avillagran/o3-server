@@ -1,54 +1,69 @@
 {
-  "measured_at_utc": "2026-11-01T04:53:40Z",
-  "binary_sha256": "ef7b7e1700cd9301119344a3ca29a5c87491cdf97ce96979c3ecf337d56df523",
-  "binary": "/var/tmp/o3-build/main/release/o3-server",
-  "binary_bytes": 12790216,
-  "seed_messages": 1000,
-  "threads": 20,
-  "subscribers": 3,
-  "unary_calls": 1000,
-  "text_bytes_per_message": 1000,
-  "cold_kib": {
-    "VmHWM": 15520,
-    "VmRSS": 15520,
-    "RssAnon": 7080
+  "measured_at_utc": "2026-11-01T08:37:43Z",
+  "binary_sha256": "cb25b7887574a5344603e96c063bef85ae28216efb0f35397ec07ba4b4f430ce",
+  "profile_counts": {
+    "messages": 10605,
+    "project": 23,
+    "thread": 374,
+    "turnItems": 67250,
+    "visibleTurnItems": 67250
   },
-  "seeded_kib": {
-    "VmHWM": 34624,
-    "VmRSS": 34624,
-    "RssAnon": 22656
+  "biggest_thread_items": 8264,
+  "idle_kib": {
+    "VmHWM": 18180,
+    "VmRSS": 13864,
+    "RssAnon": 2516,
+    "RssFile": 11348,
+    "THP_enabled": 0,
+    "Threads": 5,
+    "AnonHugePages": 0,
+    "Pss_Anon": 2516
   },
-  "subscribed_kib": {
-    "VmHWM": 39164,
-    "VmRSS": 33504,
-    "RssAnon": 21536
+  "after_snapshot_kib": {
+    "VmHWM": 18180,
+    "VmRSS": 14348,
+    "RssAnon": 2552,
+    "RssFile": 11796,
+    "THP_enabled": 0,
+    "Threads": 5,
+    "AnonHugePages": 0,
+    "Pss_Anon": 2552
   },
-  "after_churn_kib": {
-    "VmHWM": 39164,
-    "VmRSS": 33452,
-    "RssAnon": 21484
+  "thread_open_kib": {
+    "VmHWM": 20068,
+    "VmRSS": 16820,
+    "RssAnon": 4960,
+    "RssFile": 11860,
+    "THP_enabled": 0,
+    "Threads": 6,
+    "AnonHugePages": 0,
+    "Pss_Anon": 4960
   },
-  "snapshot_messages": [
-    10,
-    10,
-    10
-  ],
-  "under_50_mib": true,
-  "under_50_mb": true,
-  "providers": [
-    {
-      "instanceId": "claudeAgent",
-      "installed": true,
-      "status": "warning"
-    },
-    {
-      "instanceId": "codex",
-      "installed": true,
-      "status": "warning"
-    }
-  ],
+  "after_disconnect_kib": {
+    "VmHWM": 20068,
+    "VmRSS": 15140,
+    "RssAnon": 3088,
+    "RssFile": 12052,
+    "THP_enabled": 0,
+    "Threads": 4,
+    "AnonHugePages": 0,
+    "Pss_Anon": 3088
+  },
+  "snapshot_ms": 285.5,
   "bridge_enabled": true,
-  "provider_workload": "registered and probed; inference excluded (defer_start)",
-  "measurement": "Linux /proc/PID/status; disk profile under /var/tmp",
+  "client": "real omarchy-t3-client snapshot/watch",
+  "measurement": "Linux /proc/PID/status, isolated SQLite backup; server only (provider subprocess excluded)",
+  "heap_samples": [],
+  "lifetime_hwm_kib": 20068,
+  "under_50_mb": true,
+  "relay": "none",
+  "bridged_kib": {},
+  "native_turn": false,
+  "bridged_unary_calls": 0,
+  "idle_settle_seconds": 0.2,
+  "disconnect_settle_seconds": 3,
+  "under_35_mb_idle": true,
+  "disconnect_within_3_mb_idle": true,
+  "under_500_ms_snapshot": true,
   "allocator_env": {}
 }

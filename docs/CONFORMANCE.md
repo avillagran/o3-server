@@ -516,3 +516,20 @@ and per-record causal order hold. This exception does not permit stale updates,
 dropped required records, or advancing past data absent from a replacement snapshot.
 The shell/thread rows remain partial for their explicit background/identity/quota
 gaps; a generic demand for all interleavings is no longer a reason for partial.
+
+## P0 decision after launch and stream fixes (2026-11-01)
+
+All five rows were reconsidered under the reader rule; none is promoted:
+
+| Row | Remaining consumed behavior |
+|---|---|
+| dispatchCommand | Native background ownership/settlement, attachment steering and delivery acknowledgement; broad permission rules/revocation. `lib-t3-rust/src/queue.rs`, `sidebar.rs`, `approvals.rs` consume execution/approval state. |
+| launchThread | Reused initial-message model override and imported-native/generateTitle preparation; the real-client launch builder accepts these fields (`src/api/orchestration.rs`). Workspace rollback and empty-thread reuse now have positive Connection coverage. |
+| subscribeShell | Native background tasks and provider quota failure/reset. Desktop `src/lib.rs:674` holds background work and `:731` reads `usageLimitResetAt`. |
+| subscribeThread | Pre-binding identity and native background lifecycle/recovery. `lib-t3-rust/src/queue.rs:7`, `timeline.rs:227` and desktop `src/lib.rs:511` resolve the active provider thread. |
+| getConfig | Custom instances, complete startup native discovery, tier descriptors, proactive quota refresh and settings normalization. `lib-t3-rust/src/provider_instances.rs`, `scoped_settings.rs` and `native_settings.rs` read instance configuration and scoped overrides. |
+
+Stream interleavings are governed by the explicit reader contract above rather than
+an unbounded equivalence claim. Exact original-inference reattachment is not promised:
+RECOVERY.md documents native continuation as a new turn. Remaining native control
+uncertainty and client-visible background recovery are still actual gaps.

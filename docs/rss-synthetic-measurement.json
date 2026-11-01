@@ -1,32 +1,44 @@
 {
-  "measured_at_utc": "2026-11-01T01:18:52Z",
-  "binary_sha256": "4760f139a770cf14d65b725909026a435b8878c3d8ae6b010397f4ad52913d1a",
+  "measured_at_utc": "2026-11-01T08:37:27Z",
+  "binary_sha256": "cb25b7887574a5344603e96c063bef85ae28216efb0f35397ec07ba4b4f430ce",
   "binary": "/var/tmp/o3-build/main/release/o3-server",
-  "binary_bytes": 12178696,
+  "binary_bytes": 12730168,
   "seed_messages": 1000,
   "threads": 20,
   "subscribers": 3,
   "unary_calls": 1000,
   "text_bytes_per_message": 1000,
   "cold_kib": {
-    "VmHWM": 15232,
-    "VmRSS": 15232,
-    "RssAnon": 6896
+    "VmHWM": 9000,
+    "VmRSS": 9000,
+    "RssAnon": 940,
+    "RssFile": 8060,
+    "THP_enabled": 0,
+    "Threads": 4
   },
   "seeded_kib": {
-    "VmHWM": 31780,
-    "VmRSS": 31496,
-    "RssAnon": 19884
+    "VmHWM": 14024,
+    "VmRSS": 13952,
+    "RssAnon": 2104,
+    "RssFile": 11848,
+    "THP_enabled": 0,
+    "Threads": 5
   },
   "subscribed_kib": {
-    "VmHWM": 42444,
-    "VmRSS": 35968,
-    "RssAnon": 24356
+    "VmHWM": 16148,
+    "VmRSS": 14668,
+    "RssAnon": 2820,
+    "RssFile": 11848,
+    "THP_enabled": 0,
+    "Threads": 6
   },
   "after_churn_kib": {
-    "VmHWM": 42444,
-    "VmRSS": 32848,
-    "RssAnon": 21236
+    "VmHWM": 16148,
+    "VmRSS": 14584,
+    "RssAnon": 2736,
+    "RssFile": 11848,
+    "THP_enabled": 0,
+    "Threads": 6
   },
   "snapshot_messages": [
     10,
@@ -48,6 +60,7 @@
     }
   ],
   "bridge_enabled": true,
+  "gateway_hosting": false,
   "provider_workload": "registered and probed; inference excluded (defer_start)",
   "measurement": "Linux /proc/PID/status; disk profile under /var/tmp",
   "allocator_env": {}
