@@ -87,6 +87,11 @@ fn search_threads_uses_fts_and_respects_thread_state() {
         search(json!({"query":"quokka","projectIds":["p2"]}))["matches"][0]["threadId"],
         "t3"
     );
+    e.message("t2", "accent", "Configuración del café-scheduler");
+    for query in ["figuracion", "cafe-sched", "fé-sched"] {
+        let r = search(json!({"query":query}));
+        assert_eq!(r["matches"][0]["threadId"], "t2", "{r}");
+    }
     // FTS syntax in user text is inert.
     for q in [
         "\"unbalanced",

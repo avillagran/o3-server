@@ -1087,3 +1087,12 @@ Targeted stress: terminal flow control **10/10**, real Git pull **20/20**, resol
 **16,432 KiB (16.83 MB) HWM**, below 50 MB, with 20 threads, 1000 messages,
 three subscribers and 1000 unary calls. Inference is excluded from that workload;
 provider child memory is excluded. Aggregate evidence: [rss-implementation.json](rss-implementation.json).
+
+## Reader-gap implementation (2026-11-01)
+
+1. Search keeps FTS candidates and verifies folded substrings, with a fallback
+   capped at 4096 recent messages, 64K characters per fallback row and 8 MiB of
+   candidate text per request. Titles use accent/case folding and exact/prefix/
+   substring priority; single-project filters and subagent exclusion apply.
+   Full palette word-boundary, recency, branch and pick scoring remains partial.
+   The complete default all-target suite passed before this item's commit.

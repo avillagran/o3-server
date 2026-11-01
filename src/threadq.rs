@@ -89,6 +89,29 @@ fn match_expression(query: &str) -> Option<String> {
     (!terms.is_empty()).then(|| terms.join(" "))
 }
 
+/// Accent/case folding used by the palette, preserving compatibility characters
+/// whose decomposition would expand the source character.
+fn fold_search(text: &str) -> String {
+    use unicode_normalization::{char::is_combining_mark, UnicodeNormalization};
+    text.chars()
+        .map(|c| {
+            let folded: String = c
+                .to_string()
+                .nfkd()
+                .filter(|c| !is_combining_mark(*c))
+                .collect::<String>()
+                .to_lowercase()
+                .replace('ς', "σ")
+                .replace(['‘', '’'], "'");
+            if folded.chars().count() == 1 {
+                folded
+            } else {
+                c.to_lowercase().collect()
+            }
+        })
+        .collect()
+}
+
 pub fn search_threads(s: &State, p: &Value) -> Reply {
     let fail = |m: &str| json!({"_tag":"OrchestrationSearchThreadsError","message":m});
     let query = p["query"]
@@ -105,6 +128,10 @@ pub fn search_threads(s: &State, p: &Value) -> Reply {
         events::get(&db, "thread", tid).ok().filter(|t| {
             t["deletedAt"].is_null()
                 && t["archivedAt"].is_null()
+                && p["projectId"]
+                    .as_str()
+                    .is_none_or(|id| t["projectId"] == id)
+                && t["lineage"]["relationshipToParent"] != "subagent"
                 && projects
                     .as_ref()
                     .is_none_or(|ps| t["projectId"].as_str().is_some_and(|p| ps.contains(&p)))
@@ -112,11 +139,10 @@ pub fn search_threads(s: &State, p: &Value) -> Reply {
     };
     let mut matches: Vec<Value> = Vec::new();
     if p["titlesOnly"] != true {
-        let Some(expr) = match_expression(query) else {
-            return Ok(json!({"matches":[]}));
-        };
+        let expr = match_expression(query).unwrap_or_else(|| "\"\"".into());
+        let needle = fold_search(query);
         let mut q = db
-            .prepare("SELECT thread_id, message_id, role, created_at, snippet(thread_search, 0, '', '', '…', 24), bm25(thread_search) FROM thread_search WHERE thread_search MATCH ?1 ORDER BY bm25(thread_search) LIMIT 1000")
+            .prepare("SELECT thread_id,message_id,role,created_at,text,rank FROM (SELECT thread_id,message_id,role,created_at,text,bm25(thread_search) AS rank FROM thread_search WHERE thread_search MATCH ?1 ORDER BY rank LIMIT 1000) UNION ALL SELECT thread_id,message_id,role,created_at,substr(text,1,65536),0.0 FROM (SELECT * FROM thread_search ORDER BY rowid DESC LIMIT 4096)")
             .map_err(|e| fail(&e.to_string()))?;
         let rows = q
             .query_map([expr], |r| {
@@ -132,7 +158,16 @@ pub fn search_threads(s: &State, p: &Value) -> Reply {
             .map_err(|e| fail(&e.to_string()))?;
         // Best message per thread; `hits` counts the thread's matching messages.
         let mut seen: std::collections::HashMap<String, usize> = Default::default();
+        let mut message_ids = std::collections::HashSet::new();
+        let mut scanned_bytes = 0usize;
         for (tid, mid, role, at, snippet, rank) in rows.flatten() {
+            scanned_bytes += snippet.len();
+            if scanned_bytes > 8 * 1024 * 1024 {
+                break;
+            }
+            if !message_ids.insert(mid.clone()) || !fold_search(&snippet).contains(&needle) {
+                continue;
+            }
             if let Some(&i) = seen.get(&tid) {
                 matches[i]["hits"] = json!(matches[i]["hits"].as_i64().unwrap_or(1) + 1);
                 continue;
@@ -143,7 +178,7 @@ pub fn search_threads(s: &State, p: &Value) -> Reply {
         }
     }
     {
-        let needle = query.to_lowercase().replace('ς', "σ");
+        let needle = fold_search(query);
         let mut q = db
             .prepare("SELECT thread_id, body FROM records WHERE kind='thread' ORDER BY rowid DESC")
             .map_err(|e| fail(&e.to_string()))?;
@@ -156,12 +191,12 @@ pub fn search_threads(s: &State, p: &Value) -> Reply {
             };
             if t["title"]
                 .as_str()
-                .is_some_and(|title| title.to_lowercase().replace('ς', "σ").contains(&needle))
+                .is_some_and(|title| fold_search(title).contains(&needle))
                 && live(&tid).is_some()
             {
                 // A title hit outranks a body hit for the same thread.
                 matches.retain(|m| m["threadId"] != tid);
-                matches.insert(0, json!({"threadId":tid,"projectId":t["projectId"],"source":"user","snippet":t["title"].as_str().unwrap_or("").chars().take(240).collect::<String>(),"messageCreatedAt":null,"quality":1.0,"hits":1}));
+                matches.push(json!({"threadId":tid,"projectId":t["projectId"],"source":"user","snippet":t["title"].as_str().unwrap_or("").chars().take(240).collect::<String>(),"messageCreatedAt":null,"quality":if fold_search(t["title"].as_str().unwrap_or("")) == needle { 4.0 } else if fold_search(t["title"].as_str().unwrap_or(" ")).starts_with(&needle) { 3.0 } else { 2.0 },"hits":1}));
             }
         }
     }
@@ -190,6 +225,12 @@ pub fn search_threads(s: &State, p: &Value) -> Reply {
             }
         }
     }
+    matches.sort_by(|a, b| {
+        b["quality"]
+            .as_f64()
+            .unwrap_or(0.0)
+            .total_cmp(&a["quality"].as_f64().unwrap_or(0.0))
+    });
     matches.truncate(limit);
     for m in &matches {
         if !threads.iter().any(|t| t["id"] == m["threadId"]) {
