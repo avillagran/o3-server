@@ -27,6 +27,7 @@ pub struct Runtime {
 
 pub fn handles(tag: &str) -> bool {
     crate::pullreq::handles(tag) || crate::setup::handles(tag) || crate::keybind::handles(tag)
+        || crate::sessions::handles(tag)
 }
 
 pub async fn call(s: &Arc<State>, tag: &str, p: Value) -> Reply {
@@ -34,6 +35,8 @@ pub async fn call(s: &Arc<State>, tag: &str, p: Value) -> Reply {
         crate::pullreq::call(s, tag, &p).await
     } else if crate::keybind::handles(tag) {
         crate::keybind::call(s, tag, &p)
+    } else if crate::sessions::handles(tag) {
+        crate::sessions::call(s, tag, &p).await
     } else {
         crate::setup::call(s, tag, &p).await
     }

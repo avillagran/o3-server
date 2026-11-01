@@ -2,14 +2,14 @@
   "_doc": "Priorities from client-usage.md table surfaces; unused=skip. Done means covered by real Connection tests. Partial notes list known limits.",
   "methods": {
     "agentSessions.import": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "tests/agent_sessions.rs: imports transcripts of the last 30 days (max 100) as threads with the last 200 text messages and the native session id so the provider resumes; idempotent. Tool calls and thinking are not reconstructed; transcripts are never written."
     },
     "agentSessions.scan": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "tests/agent_sessions.rs: scans $CLAUDE_CONFIG_DIR/projects and $CODEX_HOME/sessions (bounded files/bytes/line length, read-only, nothing cached), groups by directory, reports matching projects and alreadyImported."
     },
     "assets.createUrl": {
       "status": "partial",
