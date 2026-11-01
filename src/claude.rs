@@ -22,6 +22,7 @@ struct Session {
     buffer: Vec<u8>,
     native: String,
     cwd: PathBuf,
+    options: Value,
     idle_since: tokio::time::Instant,
 }
 impl ClaudeProvider {
@@ -57,6 +58,7 @@ impl ClaudeProvider {
         })
     }
     async fn spawn(&self, input: &RunInput) -> Result<Session, String> {
+        let (model, effort, settings, _) = crate::claude_models::compile(&input.model_selection)?;
         let mut cmd = Command::new(&self.binary);
         cmd.args([
             "-p",
@@ -71,7 +73,7 @@ impl ClaudeProvider {
             "--allow-dangerously-skip-permissions",
         ])
         .arg("--model")
-        .arg(model(input))
+        .arg(model)
         .arg("--permission-mode")
         .arg(mode(input))
         .process_group(0)
@@ -80,6 +82,10 @@ impl ClaudeProvider {
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true);
+        if let Some(effort) = effort {
+            cmd.arg("--effort").arg(effort);
+        }
+        cmd.arg("--settings").arg(settings.to_string());
         if let Some(id) = &input.native_session_id {
             cmd.arg("--resume").arg(id);
         }
@@ -93,6 +99,7 @@ impl ClaudeProvider {
             buffer: Vec::new(),
             native: input.native_session_id.clone().unwrap_or_default(),
             cwd: input.cwd.clone(),
+            options: input.model_selection["options"].clone(),
             idle_since: tokio::time::Instant::now(),
         };
         s.send(json!({"type":"control_request","request_id":"initialize","request":{"subtype":"initialize"}})).await?;
@@ -122,7 +129,11 @@ impl ClaudeProvider {
         if *cancel.borrow() {
             return Ok(());
         }
-        let content = crate::provider_input::content(&input, true)?;
+        let mut content = crate::provider_input::content(&input, true)?;
+        if crate::claude_models::compile(&input.model_selection)?.3 {
+            let text = content[0]["text"].as_str().unwrap().to_owned();
+            content[0]["text"] = json!(format!("{text}\n\nultrathink"));
+        }
         if input.model_selection["instanceId"]
             .as_str()
             .is_some_and(|s| !matches!(s, "claudeAgent" | "claude" | "claude-code"))
@@ -134,10 +145,13 @@ impl ClaudeProvider {
             if input.native_session_id.is_none() && !s.native.is_empty() {
                 input.native_session_id = Some(s.native.clone());
             }
-            if s.cwd == input.cwd && s.child.try_wait().map_err(|e| e.to_string())?.is_none() {
+            if s.cwd == input.cwd
+                && s.options == input.model_selection["options"]
+                && s.child.try_wait().map_err(|e| e.to_string())?.is_none()
+            {
                 s.control(
                     "model",
-                    json!({"subtype":"set_model","model":model(&input)}),
+                    json!({"subtype":"set_model","model":crate::claude_models::compile(&input.model_selection)?.0}),
                 )
                 .await?;
                 s.control(
@@ -169,10 +183,16 @@ impl ClaudeProvider {
                             return Ok(false);
                         },
                         Some(ProviderControl::Steer(text))=>session.prompt(&text).await?,
-                        Some(ProviderControl::Respond{request_id,decision,feedback,answers:_})=>{
+                        Some(ProviderControl::Respond{request_id,decision,feedback,answers})=>{
                             let native=request_id.strip_prefix(&format!("{}:",input.run_id)).ok_or("foreign Claude request")?;
                             let updated=pending.remove(native).ok_or("unknown Claude request")?;
-                            let mut response=permission_response(native,&decision,feedback.as_deref(),updated["input"].clone());
+                            let mut tool_input=updated["input"].clone();
+                            let mut decision=decision;
+                            if updated["tool_name"]=="AskUserQuestion" && answers.is_some() {
+                                tool_input["answers"]=sdk_answers(answers.as_ref().unwrap())?;
+                                decision=json!("accept");
+                            }
+                            let mut response=permission_response(native,&decision,feedback.as_deref(),tool_input);
                             if decision=="acceptForSession" {
                                 if let Some(suggestions)=updated["permission_suggestions"].as_array() {
                                     let permissions:Vec<Value>=suggestions.iter().cloned().map(|mut p|{p["destination"]=json!("session");p}).collect();
@@ -254,12 +274,6 @@ impl TurnBoundary {
     fn ready(&self) -> bool {
         self.terminal.is_some() && self.tasks.is_empty()
     }
-}
-fn model(input: &RunInput) -> &str {
-    input.model_selection["modelId"]
-        .as_str()
-        .or_else(|| input.model_selection["model"].as_str())
-        .unwrap_or("haiku")
 }
 fn mode(input: &RunInput) -> &str {
     if input.interaction_mode == "plan" {
@@ -361,6 +375,26 @@ pub(crate) fn permission_response(
     );
     json!({"type":"control_response","response":{"subtype":"success","request_id":id,"response":if allow {json!({"behavior":"allow","updatedInput":input})}else{json!({"behavior":"deny","message":feedback.unwrap_or("Permission denied by user")})}}})
 }
+fn sdk_answers(answers: &Value) -> Result<Value, String> {
+    let answers = answers.as_object().ok_or("answers must be an object")?;
+    let mut result = serde_json::Map::new();
+    for (key, value) in answers {
+        let text = if let Some(text) = value.as_str() {
+            text.to_owned()
+        } else if let Some(values) = value.as_array() {
+            values
+                .iter()
+                .map(|v| v.as_str().ok_or("answer must be text"))
+                .collect::<Result<Vec<_>, _>>()?
+                .join(", ")
+        } else {
+            return Err("answer must be text".into());
+        };
+        result.insert(key.clone(), json!(text));
+    }
+    Ok(Value::Object(result))
+}
+
 pub(crate) fn decode(v: &Value) -> Vec<ProviderEvent> {
     let mut out = Vec::new();
     match v["type"].as_str().unwrap_or("") {
@@ -445,7 +479,7 @@ pub(crate) fn decode(v: &Value) -> Vec<ProviderEvent> {
     out
 }
 pub fn config(installed: bool) -> Value {
-    json!({"instanceId":"claudeAgent","driver":"claudeAgent","displayName":"Claude Code","enabled":installed,"installed":installed,"version":null,"status":if installed {"warning"}else{"disabled"},"auth":{"status":"unknown"},"checkedAt":crate::store::iso(crate::store::now_ms()),"message":"Direct CLI adapter; authentication checked at execution. No MCP bridge or crash recovery.","models":[{"slug":"haiku","name":"Haiku (CLI alias)","isCustom":false,"isDefault":true,"capabilities":null},{"slug":"sonnet","name":"Sonnet (CLI alias)","isCustom":false,"capabilities":null},{"slug":"opus","name":"Opus (CLI alias)","isCustom":false,"capabilities":null}],"supportedRuntimeModes":["approval-required","auto-accept-edits","full-access"],"supportsConversationRollback":false,"nativeSessions":{"canList":false,"canLoad":false,"canResume":true}})
+    json!({"instanceId":"claudeAgent","driver":"claudeAgent","displayName":"Claude Code","enabled":installed,"installed":installed,"version":null,"status":if installed {"warning"}else{"disabled"},"auth":{"status":"unknown"},"checkedAt":crate::store::iso(crate::store::now_ms()),"message":"Direct CLI adapter; authentication checked at execution. No MCP bridge or crash recovery.","models":crate::claude_models::models(),"supportedRuntimeModes":["approval-required","auto-accept-edits","full-access"],"supportsConversationRollback":false,"nativeSessions":{"canList":false,"canLoad":false,"canResume":true}})
 }
 
 #[cfg(test)]
@@ -481,6 +515,7 @@ mod tests {
             buffer: vec![],
             native: "fixture".into(),
             cwd: PathBuf::new(),
+            options: Value::Null,
             idle_since: stamp,
         };
         provider
@@ -566,6 +601,7 @@ mod tests {
             buffer: vec![],
             native: String::new(),
             cwd: PathBuf::new(),
+            options: Value::Null,
             idle_since: tokio::time::Instant::now(),
         };
         assert!(s.frame().await.unwrap_err().contains("invalid JSON"));
@@ -584,6 +620,7 @@ mod tests {
             buffer: vec![],
             native: String::new(),
             cwd: PathBuf::new(),
+            options: Value::Null,
             idle_since: tokio::time::Instant::now(),
         };
         assert!(s.frame().await.unwrap_err().contains("exceeds"));

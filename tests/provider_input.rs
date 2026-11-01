@@ -69,14 +69,114 @@ fn launch_initial_message_and_receipt_roll_back_together_and_retry_once() {
     {
         let db = server.state.db.lock().unwrap();
         for table in ["records", "events", "receipts"] {
-            assert_eq!(db.query_row(&format!("SELECT count(*) FROM {table}"), [], |r|r.get::<_,i64>(0)).unwrap(),0);
+            assert_eq!(
+                db.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r
+                    .get::<_, i64>(0))
+                    .unwrap(),
+                0
+            );
         }
         db.execute_batch("DROP TRIGGER reject_run").unwrap();
     }
     assert!(server.state.active.lock().unwrap().is_empty());
-    let result = c.rpc("orchestration.launchThread",launch.clone()).unwrap();
-    assert_eq!(result["projection"]["messages"][0]["context"]["proof"], "retained");
-    assert_eq!(c.rpc("orchestration.launchThread",launch).unwrap(), result);
+    let result = c.rpc("orchestration.launchThread", launch.clone()).unwrap();
+    assert_eq!(
+        result["projection"]["messages"][0]["context"]["proof"],
+        "retained"
+    );
+    assert_eq!(c.rpc("orchestration.launchThread", launch).unwrap(), result);
     let db = server.state.db.lock().unwrap();
-    assert_eq!(db.query_row("SELECT count(*) FROM records WHERE kind='runs'", [], |r|r.get::<_,i64>(0)).unwrap(),1);
+    assert_eq!(
+        db.query_row("SELECT count(*) FROM records WHERE kind='runs'", [], |r| {
+            r.get::<_, i64>(0)
+        })
+        .unwrap(),
+        1
+    );
+}
+
+#[test]
+fn claude_structured_question_displays_and_accepts_client_answers() {
+    let server = support::start(|s| {
+        *s.provider.lock().unwrap() = Some(Arc::new(o3_server::claude::ClaudeProvider::new(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/input/peer.py"),
+        )));
+    });
+    let c = server.connect();
+    c.rpc("orchestration.launchThread",json!({"commandId":"launch","threadId":"t","projectId":"p","title":"Question","modelSelection":{"instanceId":"claudeAgent","model":"test"},"runtimeMode":"approval-required","interactionMode":"plan","workspaceStrategy":{"type":"root"},"initialMessage":{"text":"question-proof","attachments":[]}})).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let request = loop {
+        let p = c
+            .rpc("orchestration.getThreadProjection", json!({"threadId":"t"}))
+            .unwrap();
+        assert_ne!(p["runs"][0]["status"], "failed", "{p}");
+        let questions = t3_protocol::questions::pending(&p);
+        if !questions.as_array().unwrap().is_empty() {
+            assert_eq!(questions[0]["questions"][0]["id"], "Which approach?");
+            assert_eq!(questions[0]["questions"][0]["multiSelect"], true);
+            break questions[0]["requestId"].clone();
+        }
+        assert!(Instant::now() < deadline, "{p}");
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    // Exactly the client helper's answer shape: no permission decision.
+    let mut command=t3_protocol::questions::command(&json!({"thread":"t","runtimeRequestId":request,"action":"respond","answers":{"Which approach?":["Simple","Safe"]}})).unwrap();
+    command["commandId"] = json!("answer");
+    c.rpc("orchestration.dispatchCommand", command).unwrap();
+    loop {
+        let p = c
+            .rpc("orchestration.getThreadProjection", json!({"threadId":"t"}))
+            .unwrap();
+        assert_ne!(p["runs"][0]["status"], "failed", "{p}");
+        if p["runs"][0]["status"] == "completed" {
+            break;
+        }
+        assert!(Instant::now() < deadline, "{p}");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+#[ignore = "uses installed Claude and Codex credentials for two short real turns"]
+fn live_claude_and_codex_through_real_client() {
+    for (instance, model) in [("claudeAgent", "haiku"), ("codex", "gpt-6.1-sol")] {
+        let server = support::start(|s| {
+            *s.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::Providers {
+                claude: o3_server::claude::ClaudeProvider::discover().map(Arc::new),
+                codex: Arc::new(o3_server::codex::CodexProvider::default()),
+            }));
+        });
+        let c = server.connect();
+        let cwd = server.dir.join("workspace");
+        std::fs::create_dir_all(&cwd).unwrap();
+        c.rpc("projects.mutate",json!({"type":"project.create","commandId":"project","projectId":"p","title":"Live","workspaceRoot":cwd})).unwrap();
+        c.rpc("orchestration.launchThread",json!({"commandId":"launch","threadId":"t","projectId":"p","title":"Live","modelSelection":{"instanceId":instance,"model":model,"options":[]},"runtimeMode":"full-access","interactionMode":"default","workspaceStrategy":{"type":"root"},"initialMessage":{"text":"Reply with exactly O3_OK. Do not use tools.","attachments":[]}})).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(90);
+        loop {
+            let p = c
+                .rpc("orchestration.getThreadProjection", json!({"threadId":"t"}))
+                .unwrap();
+            assert_ne!(
+                p["runs"][0]["status"], "failed",
+                "{instance}: {}",
+                p["runs"][0]["error"]
+            );
+            if p["runs"][0]["status"] == "completed" {
+                assert!(
+                    p["messages"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|m| m["role"] == "assistant"
+                            && m["text"].as_str().is_some_and(|t| t.contains("O3_OK"))),
+                    "{instance}: no expected response"
+                );
+                eprintln!("{instance}: real turn completed");
+                break;
+            }
+            assert!(Instant::now() < deadline, "{instance}: live timeout");
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }
 }

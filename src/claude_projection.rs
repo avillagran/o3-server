@@ -222,11 +222,19 @@ pub(crate) fn persist(
         }
         "permission" => {
             let id = f["request_id"].as_str().ok_or("request id missing")?;
-            let req = json!({"id":id,"nodeId":rid,"providerTurnId":rid,"nativeRequestRef":reference(&f["native_id"]),"kind":"permission","status":"pending","responseCapability":{"type":"live","providerSessionId":t["activeProviderThreadId"],"supportsFeedback":true},"createdAt":at,"resolvedAt":null});
+            let user = f["request"]["tool_name"] == "AskUserQuestion";
+            let req = json!({"id":id,"nodeId":rid,"providerTurnId":rid,"nativeRequestRef":reference(&f["native_id"]),"kind":if user {"user_input"}else{"permission"},"status":"pending","responseCapability":{"type":"live","providerSessionId":t["activeProviderThreadId"],"supportsFeedback":true},"createdAt":at,"resolvedAt":null});
             put(db, "runtimeRequests", id, tid, &req)?;
             append(db, tid, "runtime-request.updated", req, t)?;
             let mut i = item(db, tid, rid, &format!("approval-{id}"), at)?;
-            i["type"] = json!("approval_request");
+            i["type"] = json!(if user {
+                "user_input_request"
+            } else {
+                "approval_request"
+            });
+            if user {
+                i["questions"] = questions(&f["request"]["input"]);
+            }
             i["requestId"] = json!(id);
             i["requestKind"] = json!("permission");
             i["prompt"] = json!(format!(
@@ -292,4 +300,19 @@ pub(crate) fn finish(
         save_item(db, tid, t, v)?;
     }
     Ok(())
+}
+
+fn questions(input: &Value) -> Value {
+    json!(input["questions"].as_array().into_iter().flatten().enumerate().filter_map(|(index,q)| {
+        let text = q["question"].as_str()?.trim();
+        if text.is_empty() { return None; }
+        let options:Vec<Value> = q["options"].as_array().into_iter().flatten().filter_map(|o| {
+            let label = o["label"].as_str()?.trim();
+            if label.is_empty() { return None; }
+            let mut option=json!({"label":label,"description":o["description"].as_str().filter(|d| !d.trim().is_empty()).unwrap_or(label)});
+            if let Some(preview)=o["preview"].as_str() { option["preview"]=json!(preview); }
+            Some(option)
+        }).collect();
+        Some(json!({"id":text,"question":text,"header":q["header"].as_str().filter(|h| !h.trim().is_empty()).map(str::to_owned).unwrap_or(format!("Question {}",index+1)),"options":options,"multiSelect":q["multiSelect"]==true}))
+    }).collect::<Vec<_>>())
 }

@@ -6,10 +6,17 @@ claude = '-p' in sys.argv
 for line in sys.stdin:
     f = json.loads(line)
     if claude:
+        if f['type'] == 'control_response':
+            assert f['response']['response']['updatedInput']['answers'] == {'Which approach?':'Simple, Safe'}
+            print(json.dumps({'type':'result','subtype':'success','session_id':'native','usage':{}}),flush=True)
+            continue
         if f['type'] == 'control_request':
             print(json.dumps({'type':'control_response','response':{'subtype':'success','request_id':f['request_id']}}), flush=True)
             continue
         content = f['message']['content']
+        if content[0]['text'] == 'question-proof':
+            print(json.dumps({'type':'control_request','request_id':'question','request':{'subtype':'can_use_tool','tool_name':'AskUserQuestion','input':{'questions':[{'question':'Which approach?','header':'Approach','multiSelect':True,'options':[{'label':'Simple','description':'Fewer parts'},{'label':'Safe','description':'Keep setup'}]}]}}}),flush=True)
+            continue
     else:
         m, i = f.get('method'), f.get('id')
         if m == 'initialized': continue
