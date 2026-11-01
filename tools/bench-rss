@@ -6,7 +6,7 @@ if '--profile' in sys.argv:
  from rss_profile import run
  # Keep the existing sampler shared by both workloads.
  def profile_memory(pid):
-  return {k:int(v.split()[0]) for k,v in (line.split(':',1) for line in pathlib.Path(f'/proc/{pid}/status').read_text().splitlines() if ':' in line) if k in ('VmRSS','VmHWM','RssAnon')}
+  return {k:int(v.split()[0]) for k,v in (line.split(':',1) for line in pathlib.Path(f'/proc/{pid}/status').read_text().splitlines() if ':' in line) if k in ('VmRSS','VmHWM','RssAnon','RssFile','Threads','THP_enabled')}
  run(profile_memory)
  sys.exit(0)
 repo=pathlib.Path(__file__).resolve().parent.parent
@@ -44,7 +44,7 @@ class WS:
  def rpc(self,tag,payload):
   self.send({'_tag':'Request','id':'1','tag':tag,'payload':payload,'headers':[]});v=self.recv();assert v['exit']['_tag']=='Success',v;return v['exit']['value']
 def memory(pid):
- return {k:int(v.split()[0]) for k,v in (line.split(':',1) for line in pathlib.Path(f'/proc/{pid}/status').read_text().splitlines() if ':' in line) if k in ('VmRSS','VmHWM','RssAnon')}
+ return {k:int(v.split()[0]) for k,v in (line.split(':',1) for line in pathlib.Path(f'/proc/{pid}/status').read_text().splitlines() if ':' in line) if k in ('VmRSS','VmHWM','RssAnon','RssFile','Threads','THP_enabled')}
 with tempfile.TemporaryDirectory(prefix='o3-rss-',dir='/var/tmp/o3-build') as temp:
  env={**os.environ,'T3CODE_HOME':temp,'HOME':temp,'CODEX_HOME':str(pathlib.Path(temp)/'codex'),'CLAUDE_CONFIG_DIR':str(pathlib.Path(temp)/'claude')}
  token=subprocess.check_output([str(binary),'auth','session','issue','--scope','orchestration:read','--scope','orchestration:operate','--scope','providers:manage','--token-only'],env=env,text=True).strip()

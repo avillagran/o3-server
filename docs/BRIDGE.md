@@ -187,3 +187,9 @@ off HWM **36,220 KiB (37.09 MB)**; live gateway on **34,404 KiB (35.23 MB)**.
 Both are below 50 MB. Sample variation exceeds the small listener overhead;
 these numbers do not establish that enabling a gateway reduces memory.
 Full aggregates and binary hash: `rss-bridge-hosting.json`.
+
+`tools/bench-rss --profile <private-copy> --bridge-public` now measures a public
+relay-configured embedded host, a separate authenticated Rust QUIC client,
+largest-thread/shell subscriptions and a short native Claude turn. It does not
+start a gateway, force relay-only transport, or verify Android/WAN behavior.
+See RSS.md for the allocator ablation and process memory limits.
