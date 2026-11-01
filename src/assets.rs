@@ -586,6 +586,18 @@ pub fn required_scope(p: &Value) -> &'static str {
 
 fn protected_path(s: &State, real: &Path) -> bool {
     std::fs::canonicalize(&s.asset_profile_root).is_ok_and(|r| real.starts_with(r))
+        || std::env::var_os("HOME")
+            .and_then(|h| std::fs::canonicalize(h).ok())
+            .is_some_and(|home| {
+                real.strip_prefix(home).ok().is_some_and(|rel| {
+                    !rel.starts_with(".local/share/icons")
+                        && !rel.starts_with(".local/share/pixmaps")
+                        && rel
+                            .components()
+                            .next()
+                            .is_none_or(|c| c.as_os_str().to_string_lossy().starts_with('.'))
+                })
+            })
         || real.components().any(|c| {
             let name = c.as_os_str().to_string_lossy();
             matches!(
@@ -1753,6 +1765,24 @@ mod boundary_tests {
             )
             .unwrap();
         assert!(allowed_file(&s, &private).is_none());
+        if let Some(home) = std::env::var_os("HOME") {
+            for relative in [
+                ".git-credentials",
+                ".docker/config.json",
+                ".kube/config",
+                ".pypirc",
+                ".local/share/keyrings/key",
+                ".mozilla/profile",
+                ".password-store/key",
+                ".cargo/credentials.toml",
+                ".bash_history",
+            ] {
+                assert!(
+                    protected_path(&s, &PathBuf::from(&home).join(relative)),
+                    "{relative}"
+                );
+            }
+        }
         assert!(create_url(&s, &json!({"resource":{"_tag":"draft-workspace-file","cwd":base.join("profile"),"path":private}})).is_err());
         drop(s);
         std::fs::remove_dir_all(base).unwrap();
