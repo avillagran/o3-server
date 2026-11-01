@@ -123,7 +123,7 @@ pub fn search_threads(s: &State, p: &Value) -> Reply {
     let projects: Option<Vec<&str>> = p["projectIds"]
         .as_array()
         .map(|a| a.iter().filter_map(Value::as_str).collect());
-    let db = s.db.lock().unwrap();
+    let db = s.reader.lock().unwrap();
     let live = |tid: &str| -> Option<Value> {
         events::get(&db, "thread", tid).ok().filter(|t| {
             t["deletedAt"].is_null()
@@ -142,7 +142,7 @@ pub fn search_threads(s: &State, p: &Value) -> Reply {
         let expr = match_expression(query).unwrap_or_else(|| "\"\"".into());
         let needle = fold_search(query);
         let mut q = db
-            .prepare("SELECT thread_id,message_id,role,created_at,text,rank FROM (SELECT thread_id,message_id,role,created_at,text,bm25(thread_search) AS rank FROM thread_search WHERE thread_search MATCH ?1 ORDER BY rank LIMIT 1000) UNION ALL SELECT thread_id,message_id,role,created_at,substr(text,1,65536),0.0 FROM (SELECT * FROM thread_search ORDER BY rowid DESC LIMIT 4096)")
+            .prepare("SELECT thread_id,message_id,role,created_at,text,rank FROM (SELECT thread_id,message_id,role,created_at,substr(text,1,65536) AS text,bm25(thread_search) AS rank FROM thread_search WHERE thread_search MATCH ?1 ORDER BY rank LIMIT 1000) UNION ALL SELECT thread_id,message_id,role,created_at,substr(text,1,65536),0.0 FROM (SELECT * FROM thread_search ORDER BY rowid DESC LIMIT 4096)")
             .map_err(|e| fail(&e.to_string()))?;
         let rows = q
             .query_map([expr], |r| {
@@ -180,12 +180,17 @@ pub fn search_threads(s: &State, p: &Value) -> Reply {
     {
         let needle = fold_search(query);
         let mut q = db
-            .prepare("SELECT thread_id, body FROM records WHERE kind='thread' ORDER BY rowid DESC")
+            .prepare("SELECT thread_id, body FROM records WHERE kind='thread' AND length(body)<=65536 ORDER BY rowid DESC LIMIT 4096")
             .map_err(|e| fail(&e.to_string()))?;
         let rows = q
             .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
             .map_err(|e| fail(&e.to_string()))?;
+        let mut scanned_bytes = 0usize;
         for (tid, body) in rows.flatten() {
+            scanned_bytes += body.len();
+            if scanned_bytes > 8 * 1024 * 1024 {
+                break;
+            }
             let Ok(t) = serde_json::from_str::<Value>(&body) else {
                 continue;
             };
@@ -586,11 +591,22 @@ pub fn search_thread(s: &State, p: &Value) -> Reply {
         .ok_or_else(|| fail("query must be 1-200 characters"))?
         .to_lowercase()
         .replace('ς', "σ");
-    let db = s.db.lock().unwrap();
+    let db = s.reader.lock().unwrap();
     events::get(&db, "thread", tid).map_err(|e| fail(&e))?;
     let mut navigation = Vec::new();
     let mut total = 0usize;
-    let mut rows = records(&db, "visibleTurnItems", tid);
+    let mut q = db.prepare("SELECT body FROM records WHERE kind='visibleTurnItems' AND thread_id=? AND length(body)<=262144 ORDER BY rowid DESC LIMIT 4096").map_err(|e| fail(&e.to_string()))?;
+    let mut budget = 0usize;
+    let mut rows: Vec<Value> = q
+        .query_map([tid], |r| r.get::<_, String>(0))
+        .map_err(|e| fail(&e.to_string()))?
+        .flatten()
+        .take_while(|body| {
+            budget += body.len();
+            budget <= 8 * 1024 * 1024
+        })
+        .filter_map(|body| serde_json::from_str(&body).ok())
+        .collect();
     rows.sort_by_key(|r| r["position"].as_i64().unwrap_or(0));
     let folded: std::collections::HashSet<String> = rows
         .iter()
@@ -672,4 +688,20 @@ pub fn search_thread(s: &State, p: &Value) -> Reply {
     Ok(
         json!({"snapshotSequence":events::sequence(&db).map_err(|e|fail(&e))?,"totalMatches":total,"activeIndex":active,"navigation":navigation,"match":found}),
     )
+}
+
+#[cfg(test)]
+mod reader_search_tests {
+    use super::*;
+    #[test]
+    fn search_does_not_take_the_writer_mutex() {
+        let root = std::env::temp_dir().join(crate::store::random_id().unwrap());
+        let state = State::open(&root).unwrap();
+        let writer = state.db.lock().unwrap();
+        assert!(search_threads(&state, &json!({"query":"missing"})).is_ok());
+        assert!(search_thread(&state, &json!({"threadId":"missing", "query":"x"})).is_err());
+        drop(writer);
+        drop(state);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
