@@ -1046,7 +1046,7 @@
     "message.dispatch": {
       "status": "partial",
       "priority": "P0",
-      "note": "Remaining: attachment steering, complete attempt identity and active execution recovery. Native uploaded images/files and serialized context are implemented; receipt-atomic control outbox records uncertain handoffs without blind replay."
+      "note": "Native uploaded images/files, serialized context and attachment steering (direct and queued promotion) are implemented with deterministic native-peer coverage in tests/orchestration_readers.rs; no real CLI attachment-steering capture. Remaining: complete attempt identity and exact active execution recovery. Receipt-atomic control outbox records uncertain handoffs without blind replay."
     },
     "notification.delivery.accept": {
       "status": "skip",

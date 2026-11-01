@@ -1023,3 +1023,67 @@ diff and compatibility generation passed. Release bench-rss completed with
 20 threads, 1000 messages, three subscribers and 1000 unary calls: VmHWM
 16,044 KiB (16.43 MB), below both 50 MB and 50 MiB. Providers were registered
 and probed, without inference; this is not a live-inference memory bound.
+
+## Implementation follow-up (2026-11-01, after edca82f)
+
+No compatibility row is promoted by this follow-up. The following is the complete
+remaining P0/P1 inventory, plus the two explicitly requested P2 rows. A successful
+transport call or scripted adapter does not close an unserved client reader.
+
+| Surface | Precise remaining reason |
+|---|---|
+| `assets.createUrl` | MCP HTML resource grants do not implement full app HTML injection; native icon theme/platform discovery, media host parity and cache cleanup remain incomplete. |
+| `orchestration.dispatchCommand` | `src/outbox.rs` persists a receipt and adapter-channel handoff, not native execution acknowledgement; `src/recovery.rs` reports uncertain delivery rather than replaying controls into a new turn. |
+| `orchestration.searchThread` | `src/threadq.rs::search_thread` searches literal message text/plan markdown. It does not use the clients' rendered markdown/context/skills segments or folded-answer exclusions. |
+| `orchestration.searchThreads` | `src/threadq.rs::match_expression` uses ANDed FTS token prefixes and bm25; clients' substring/folded-text and title ranking parity is unproved. |
+| `orchestration.subscribeCommandOutput` | Claude Bash output is projected at tool completion, not streamed live; complete VT folding is unavailable. |
+| `orchestration.subscribeShell` | No real captured exhausted-provider frame; quota/error reset coverage uses synthetic native frames. Retains its honest partial. |
+| `orchestration.subscribeThread` | Owned-work readers run, but the retained real-T3 differential still differs in metadata/ordering. Completion replay on two real short turns does not certify concurrent stream interleavings. |
+| `pullRequests.list` | One combined gh search expression was checked against real gh, but the full query/filter result space has no actual client-reader closure; other host adapters remain unsupported. |
+| `server.discoverSourceControl` | GitHub/GitLab/Azure CLI descriptors exist; Bitbucket/Forgejo/GitCafe API-token providers offered by the desktop have no adapter. |
+| `server.getConfig` | `settingsSupport` explicitly reports the unavailable agent browser executor. Custom/external CLI ownership/update paths and complete provider catalog metadata are not implemented. |
+| `server.updateProvider` | Real isolated npm installation/version execution covers managed built-ins. Native `claude update` remains scripted-only; running it would mutate the installed CLI. Custom/external ownership remains unknown. |
+| `server.updateSettings` | Browser access has no executor; exhaustive setting-effect reader coverage is absent. `src/codex.rs` refuses text generation because a tool-free transport has not been verified; no alternate provider is chosen. |
+| `subscribeServerConfig` | Shares unary config limits; typed config/quota deltas do not supply the unavailable browser executor or external CLI management. |
+| `vcs.refreshStatus` | GitLab/self-hosted change-request metadata and host error/status parity are unavailable. |
+| `message.dispatch` | Attachment steering has deterministic native-peer coverage in `tests/orchestration_readers.rs`, not a real CLI capture. Exact native execution recovery and attempt identity across recovery remain incomplete. No blind replay or provider rerouting is introduced. |
+| `run.interrupt` | Adapter channel reservation is not native acknowledgement. A crash between execution and durable acknowledgement cannot be resolved exactly once by the current native protocol. |
+| `runtime-request.respond` | Broad approval-rule/revocation UI and restart acknowledgement are incomplete. Recovery cancels stale native approval channels and requires fresh authorization. |
+| `thread.fork` | Latest native forks and explicit transcript handoff exist; native resume-at-message mapping for historical points is unavailable. |
+| `thread.model-selection.set` | Same-session idle model changes exist; cross-provider context handoff is unavailable. |
+| `thread.user-input.dismiss` | `src/events.rs` can cancel the local request and hand off a native response; restart cannot establish whether that native response was consumed. |
+
+Test-race work:
+
+- Terminal flow control now subscribes and acknowledges its initial frame before
+  producing the burst. A separate producer-completion file separates a quiet
+  socket from a finished shell. The post-ACK check uses the real terminal Output
+  reader and split printf arguments, so input echo cannot satisfy the assertion.
+  The retained old failure log reported zero received chunks; no production
+  flow-control defect was reproduced and none is claimed fixed.
+- The executable resolver test uses an installed ELF via a private symlink instead
+  of immediately executing a newly written script. This removes the write/exec
+  race from that fixture; it does not add retries to production process spawning.
+  Concurrent fork inheritance of a writable descriptor is a possible ETXTBSY
+  mechanism, not a proven diagnosis of the historical failure.
+- The VCS pull test uses separate repositories, explicit main/upstream branches,
+  real git and serialized server mutations. No reproducible failure or captured
+  original assertion establishes a cause. Stress results below do not certify
+  that the historical failure was fixed.
+
+The isolated live test now feeds actual native Claude and Codex output from
+subscribeThread replay through the pinned lib-t3-rust projection reducer,
+timeline, queue, sidebar and awareness readers. Its assertions concern the
+requested response and completed state, not fabricated native frames. These
+short turns do not cover approval recovery, historical forks, exhausted quota,
+all config fields, stream ordering parity or full interchangeability.
+
+Follow-up validation: **185 default / 183 no-default tests passed**, with ten
+explicit opt-ins ignored in each suite. Both strict all-target Clippy feature
+configurations, format, diff checks and `tools/gen-compat` passed. The isolated
+real Claude/Codex two-turn test passed separately with the new reader checks.
+Targeted stress: terminal flow control **10/10**, real Git pull **20/20**, resolver
+**20/20**; no VCS failure was reproduced. Release `tools/bench-rss` completed:
+**16,432 KiB (16.83 MB) HWM**, below 50 MB, with 20 threads, 1000 messages,
+three subscribers and 1000 unary calls. Inference is excluded from that workload;
+provider child memory is excluded. Aggregate evidence: [rss-implementation.json](rss-implementation.json).
