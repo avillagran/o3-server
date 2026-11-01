@@ -10,7 +10,7 @@
 | `send` con respuesta real de Claude | `omarchy-t3-client watch` real | PASS |
 | Visor: `bounded`, `subscribeThread`, proyección en vivo | `omarchy-t3-client watch` real | PASS |
 | Interfaz QML (carga, barra lateral, hilo, composer, respuesta real) | O3 desktop, QML real | PASS, ver «QML real» abajo |
-| Android | O3 Android | sin probar, pospuesto hasta tener la versión operativa |
+| Android | O3 Android | parcial: emparejamiento y shell vacío; chat sin verificar (ver abajo) |
 | OmaBridge status/read/identity/peers/publish/pair | `omarchy-t3-client` real | PASS aislado; detalles abajo |
 
 Memoria de `o3-server`: reposo 29,7-32 MB sin hijos; pico 38,6 MB con turnos de Claude y Codex; 37,9 MB con el
@@ -201,5 +201,7 @@ changes or real ~/.t3 access. Only private isolated copies and aggregate RSS evi
 were used for history validation.
 
 ## Android partial run (2026-11-01)
+
+Follow-up: the recorded `o3-e2e` AVD and a reproducible launch command were not found under `/var/tmp/o3-build/android` or the default AVD directory. T3 device access was disabled. No emulator or server was started in this follow-up; seeded chat, approvals and reconnect remain unverified.
 
 Isolated release `0e51b3c`, existing debug APK, Android 34 x86_64: direct pairing via ADB reverse and the empty shell passed. New-thread screen showed no projects in the fresh profile; thread, real turn, approval, restart/reconnect and embedded OmaBridge remain untested. Server VmHWM at this point was 30,344 KiB; no inference. Emulator and server stopped. An initial emulator launch reported a crash database under `/tmp` despite `TMPDIR`; it was stopped, and subsequent launches used a private mount namespace mapping `/tmp` to the approved test directory with crash reporting disabled. No compatibility conclusion beyond the tested flows.
