@@ -989,3 +989,37 @@ snapshot was 497.63 ms. An earlier sample failed the tool's separate 500 ms late
 budget at 539.44 ms while remaining under the memory budget; this is not a claim
 of invariant latency. Only aggregate measurements are published in
 [rss-safety.json](rss-safety.json); private records and local source paths are omitted.
+
+
+### Third-audit implementation validation
+
+Signed file grants require filesystem scope, canonical registered boundaries, and
+session validity at download. Profile and credential paths are excluded; symlink
+changes and traversal are rejected by real-client regressions. Device captures
+require operation scope and enabled device access; socket input rechecks disable
+and session revocation. Public connections, headers, bodies and pairing attempts
+are bounded, including upgraded connections.
+
+Text generation never selects an unrelated provider implicitly. Safe configured
+text selection takes precedence, then a safe thread-owned provider, then local
+fallback. Installed CLI opt-ins exercise Claude text-only production argv, Codex
+schema generation and handshake, and gh combined review/filter queries with API
+debug evidence. Real npm installation of both built-ins passed in private prefixes
+and both binaries executed --version; no real installation was updated.
+
+Background ownership scenarios now run the actual lib projection reducer, timeline,
+queue, sidebar and awareness readers before and after completion or interrupt;
+restart also runs timeline and queue readers. The subscribeThread row remains
+partial because broader upstream metadata and stream ordering differences remain.
+No row is promoted to done solely from new transport assertions. Wireless ADB
+serials with spaces and parentheses work in server discovery and detail RPCs; the
+pinned lib's device-hub URL builder still rejects those serials.
+
+Final implementation checks: 185 default tests and 183 no-default tests passed;
+ten opt-ins were ignored in each default run. Five relevant opt-ins were then
+executed successfully (real npm, gh API query, Claude text-only turn, Codex schema
+and handshake). Strict all-target Clippy passed in both configurations; format,
+diff and compatibility generation passed. Release bench-rss completed with
+20 threads, 1000 messages, three subscribers and 1000 unary calls: VmHWM
+16,044 KiB (16.43 MB), below both 50 MB and 50 MiB. Providers were registered
+and probed, without inference; this is not a live-inference memory bound.

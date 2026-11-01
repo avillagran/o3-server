@@ -240,6 +240,8 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
                     tokio_tungstenite::tungstenite::handshake::derive_accept_key(key.as_bytes());
                 let lease = request.extensions().get::<Lease>().cloned();
                 let upgrade = hyper::upgrade::on(&mut request);
+                let device_state = state.clone();
+                let device_session = session.clone();
                 tokio::spawn(async move {
                     let _lease = lease;
                     use futures_util::{SinkExt, StreamExt};
@@ -260,6 +262,8 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
                             if message.is_close() {
                                 break;
                             }
+                            let settings = crate::settings::read(&device_state).unwrap_or_default();
+                            if settings["deviceEnabled"] == false || settings["deviceAgentAccessEnabled"] == false || device_session["sid"].as_str().is_none_or(|sid| !device_state.db.lock().unwrap().query_row("SELECT EXISTS(SELECT 1 FROM auth_sessions WHERE session_id=? AND revoked_at IS NULL AND expires_at>?)", rusqlite::params![sid, now_ms()], |r| r.get::<_,bool>(0)).unwrap_or(false)) { break; }
                             if let Ok(text) = message.to_text() {
                                 if text.len() > 4096 {
                                     break;

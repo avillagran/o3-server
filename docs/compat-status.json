@@ -14,7 +14,7 @@
     "assets.createUrl": {
       "status": "partial",
       "priority": "P1",
-      "note": "Real-client tests cover all resource tags including native-app-icon (app-id/display-name), tool-output-image and credentialed github-media, plus Range/HEAD and signed grants. Still partial: MCP app HTML injection, full native icon theme/platform discovery, media types/host adapter parity and cache cleanup."
+      "note": "Real-client tests cover all resource tags including native-app-icon (app-id/display-name), tool-output-image and credentialed github-media, plus Range/HEAD and signed grants. Still partial: MCP app HTML injection, full native icon theme/platform discovery, media types/host adapter parity and cache cleanup. File resources require filesystem:read dynamically; signed downloads recheck session/scope and canonical registered boundaries. Tool-output images require orchestration:read."
     },
     "assets.persistChatAttachments": {
       "status": "skip",
@@ -229,7 +229,7 @@
     "orchestration.subscribeThread": {
       "status": "partial",
       "priority": "P0",
-      "note": "Demoted by third audit: background ownership evidence is raw JSON, no client reader runs on it; the real-T3 differential still reports it different. Real Connection coverage: stable provider-thread identity before native binding, updated in place; durable Claude Bash/Task and Codex owned items stay visible after turn result, stream roster removal and interrupt. Restart closes lost ownership explicitly; only bound native conversations continue in a new turn (RECOVERY.md). Existing client reducer/cursor/replay/attempt/context/item coverage remains; interleavings follow CONFORMANCE.md."
+      "note": "Real lib projection reducer, timeline, queue, sidebar and awareness readers now consume owned Claude Bash/Task and Codex command scenarios through Connection snapshots and replay: running until ownership ends; completion/interrupt and restart loss are explicit. Retained partial: upstream differential metadata/ordering and broader interleavings remain open."
     },
     "preview.adjust": {
       "status": "done",
@@ -484,7 +484,7 @@
     "pullRequests.list": {
       "status": "partial",
       "priority": "P2",
-      "note": "Demoted by third audit: reviewing plus any filter passes --search twice and gh keeps only the last. tests/pull_requests.rs: real client against a scripted gh (argv logged; bodies on stdin, never argv). GitHub only; other hosts answer PullRequestUnavailableError(provider-unsupported), missing/signed-out gh cli-missing/cli-unauthenticated. Capabilities advertise only what gh can do (no diff, no thread resolve, no comment edit)."
+      "note": "Review involvement and filters share one --search expression; opt-in installed gh with GH_DEBUG=api confirms both qualifiers reach GitHub. Real Connection fixture coverage remains; no new full client-reader parity promotion."
     },
     "pullRequests.listStats": {
       "status": "skip",
@@ -824,7 +824,7 @@
     "server.updateProvider": {
       "status": "partial",
       "priority": "P2",
-      "note": "Demoted by third audit: managed branch fails on real npm; Claude branch tested only against a script. tests/provider_setup.rs: runs 'claude update' for the claudeAgent driver and returns the provider list; other drivers and pinned versions answer ServerProviderUpdateError with a reason."
+      "note": "Managed installs and pinned updates validate --version before switching the private configured binary, preserving other instances. Real npm installs both built-ins in isolated prefixes; native claude update remains fixture-covered, so this row stays partial."
     },
     "server.updateServer": {
       "status": "skip",

@@ -95,7 +95,9 @@ fn main() -> std::io::Result<()> {
     } else {
         None
     };
-    let state = o3_server::store::State::open(Path::new(&dir)).map_err(std::io::Error::other)?;
+    let mut state =
+        o3_server::store::State::open(Path::new(&dir)).map_err(std::io::Error::other)?;
+    state.asset_profile_root = base.clone();
     if args.first().map(String::as_str) == Some("import") {
         let source =
             option(&args, "--from").ok_or_else(|| std::io::Error::other("--from is required"))?;

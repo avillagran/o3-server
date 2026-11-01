@@ -484,7 +484,8 @@ fn output_flow_control_bounds_unacknowledged_chunks() {
         ws.send(Message::Text(json!({"_tag":"Request","id":"a","tag":"terminal.attach","payload":{"threadId":"t1","terminalId":"term-1"},"headers":[]}).to_string().into())).await.unwrap();
         let mut chunks = 0;
         let mut bytes = 0;
-        while let Ok(Some(Ok(m))) = tokio::time::timeout(Duration::from_millis(800), ws.next()).await {
+        // Initial delivery may wait for the busy test runtime; the flow-control quiet window starts after the first chunk.
+        while let Ok(Some(Ok(m))) = tokio::time::timeout(if chunks == 0 { Duration::from_secs(10) } else { Duration::from_millis(800) }, ws.next()).await {
             let text = m.into_text().unwrap();
             let v: Value = serde_json::from_str(&text).unwrap();
             if v["_tag"] == "Chunk" {

@@ -83,6 +83,33 @@ esac
     )
     .unwrap();
     ws.close(None).unwrap();
+    let grant = c
+        .request_json(
+            "POST",
+            "/api/auth/pairing-token",
+            Some(&json!({"scopes":["orchestration:read"]})),
+            false,
+        )
+        .unwrap();
+    let ro = support::pair(&server.base, grant["credential"].as_str().unwrap()).unwrap();
+    let ro_access = ro.device_hub("/api/device-hub", "local").unwrap();
+    assert!(ro
+        .device_screenshot(
+            &ro_access,
+            t3_protocol::device_hub::Platform::Android,
+            "phone"
+        )
+        .is_err());
+    t3_protocol::api::device::configure(&c, Some(false), Some(false), None).unwrap();
+    assert!(c
+        .device_screenshot(&access, t3_protocol::device_hub::Platform::Android, "phone")
+        .is_err());
+    assert!(c
+        .rpc(
+            "device.action",
+            json!({"deviceId":"phone","type":"launchApp","appId":"app.test"})
+        )
+        .is_err());
     t3_protocol::api::device::close(&c, "thread", None, None, Some(false)).unwrap();
     assert!(c.rpc("device.easAccount", json!({})).is_err());
     drop(stream);

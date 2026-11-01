@@ -70,3 +70,36 @@ async fn slow_headers_are_closed_and_pairing_attempts_are_bounded() {
     drop(state);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[tokio::test]
+async fn connection_limit_releases_permits_when_clients_disconnect() {
+    let root = std::env::temp_dir().join(o3_server::store::random_id().unwrap());
+    let state = Arc::new(o3_server::store::State::open(&root).unwrap());
+    let mut clients = Vec::new();
+    let mut tasks = Vec::new();
+    for _ in 0..128 {
+        let (c, io) = tokio::io::duplex(4096);
+        clients.push(c);
+        tasks.push(tokio::spawn(o3_server::serve_io(io, state.clone())));
+    }
+    tokio::task::yield_now().await;
+    let (_c, io) = tokio::io::duplex(4096);
+    assert!(o3_server::serve_io(io, state.clone()).await.is_err());
+    drop(clients);
+    for task in tasks {
+        let _ = task.await.unwrap();
+    }
+    let (mut c, io) = tokio::io::duplex(4096);
+    let task = tokio::spawn(o3_server::serve_io(io, state.clone()));
+    c.write_all(
+        b"GET /.well-known/t3/environment HTTP/1.1\r\nHost: local\r\nConnection: close\r\n\r\n",
+    )
+    .await
+    .unwrap();
+    let mut bytes = Vec::new();
+    c.read_to_end(&mut bytes).await.unwrap();
+    assert!(bytes.starts_with(b"HTTP/1.1 200"));
+    task.await.unwrap().unwrap();
+    drop(state);
+    std::fs::remove_dir_all(root).unwrap();
+}

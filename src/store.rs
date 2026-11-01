@@ -41,6 +41,7 @@ pub struct State {
     pub environment_id: String,
     pub label: String,
     pub dir: PathBuf,
+    pub asset_profile_root: PathBuf,
     pub(crate) settings_cache: Mutex<crate::settings::Cache>,
     pub provider: Mutex<Option<std::sync::Arc<dyn crate::provider::Provider>>>,
     pub active: Mutex<
@@ -150,6 +151,7 @@ impl State {
             environment_id,
             label,
             dir: dir.into(),
+            asset_profile_root: dir.into(),
             settings_cache: Mutex::new(None),
         })
     }

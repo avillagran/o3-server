@@ -584,11 +584,36 @@ pub fn required_scope(p: &Value) -> &'static str {
     }
 }
 
+fn protected_path(s: &State, real: &Path) -> bool {
+    std::fs::canonicalize(&s.asset_profile_root).is_ok_and(|r| real.starts_with(r))
+        || real.components().any(|c| {
+            let name = c.as_os_str().to_string_lossy();
+            matches!(
+                name.as_ref(),
+                ".ssh"
+                    | ".aws"
+                    | ".codex"
+                    | ".claude"
+                    | ".gnupg"
+                    | ".config"
+                    | ".git"
+                    | ".netrc"
+                    | ".npmrc"
+                    | "secrets"
+            ) || name == ".env"
+                || name.starts_with(".env.")
+        })
+}
 // Recompute canonical boundaries on every request, including signed downloads.
 fn allowed_file(s: &State, path: &Path) -> Option<PathBuf> {
     let real = std::fs::canonicalize(path).ok()?;
-    let attachments = std::fs::canonicalize(attachments_dir(s)).ok();
-    let cache = std::fs::canonicalize(s.dir.join("asset-media")).ok();
+    let profile = std::fs::canonicalize(&s.dir).ok()?;
+    let attachments = std::fs::canonicalize(attachments_dir(s))
+        .ok()
+        .filter(|r| *r == profile.join("attachments"));
+    let cache = std::fs::canonicalize(s.dir.join("asset-media"))
+        .ok()
+        .filter(|r| *r == profile.join("asset-media"));
     if attachments
         .iter()
         .chain(cache.iter())
@@ -596,17 +621,7 @@ fn allowed_file(s: &State, path: &Path) -> Option<PathBuf> {
     {
         return Some(real);
     }
-    if std::fs::canonicalize(&s.dir).is_ok_and(|r| real.starts_with(r)) {
-        return None;
-    }
-    if real.components().any(|c| {
-        matches!(
-            c.as_os_str().to_str(),
-            Some(
-                ".ssh" | ".aws" | ".codex" | ".claude" | ".gnupg" | ".config" | ".env" | "secrets"
-            )
-        )
-    }) {
+    if protected_path(s, &real) {
         return None;
     }
     let db = s.db.lock().ok()?;
@@ -1040,6 +1055,8 @@ pub fn create_url(s: &State, p: &Value) -> Reply {
             expires = (now / FAVICON_BUCKET_MS + 2) * FAVICON_BUCKET_MS;
             match found {
                 Some((real, rel)) => {
+                    allowed_file(s, &real)
+                        .ok_or_else(|| not_found("AssetWorkspacePathValidationError"))?;
                     source = Some(rel.clone());
                     let digest = sha256_file(&real).map_err(|e| json!({"_tag":"AssetProjectFaviconInspectionError","resource":resource,"cause":e.to_string()}))?;
                     file_name = format!(
@@ -1218,6 +1235,9 @@ fn resolve(s: &State, token: &str, rest: &str) -> Option<Resolved> {
             }
             let real = std::fs::canonicalize(&fp).ok().filter(|r| *r == fp)?;
             if c["icon"] == true {
+                if protected_path(s, &real) {
+                    return None;
+                }
                 if !real
                     .components()
                     .any(|p| p.as_os_str() == "icons" || p.as_os_str() == "pixmaps")
@@ -1560,4 +1580,28 @@ fn safe_download_mime(m: &str) -> bool {
                 .all(|c| c.is_ascii_alphanumeric() || b"/!#$&^.+-_".contains(&c))
     });
     shape && m != "text/html" && !m.contains("/xml") && !m.ends_with("+xml")
+}
+
+#[cfg(test)]
+mod boundary_tests {
+    use super::*;
+    #[test]
+    fn profile_parent_stays_private_even_when_registered_as_a_workspace() {
+        let base = std::env::temp_dir().join(random_id().unwrap());
+        let mut s = State::open(&base.join("profile/userdata")).unwrap();
+        s.asset_profile_root = base.join("profile");
+        let private = base.join("profile/private.png");
+        std::fs::write(&private, b"private").unwrap();
+        s.db.lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO records(kind,id,thread_id,body) VALUES('project','p','',?)",
+                [json!({"id":"p","workspaceRoot":base.join("profile")}).to_string()],
+            )
+            .unwrap();
+        assert!(allowed_file(&s, &private).is_none());
+        assert!(create_url(&s, &json!({"resource":{"_tag":"draft-workspace-file","cwd":base.join("profile"),"path":private}})).is_err());
+        drop(s);
+        std::fs::remove_dir_all(base).unwrap();
+    }
 }

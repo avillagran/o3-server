@@ -70,7 +70,9 @@ fn safe_selection(config: &[serde_json::Value], model: &serde_json::Value) -> bo
     config
         .iter()
         .find(|p| p["instanceId"] == id)
-        .is_none_or(|p| p["driver"] != "codex" && p["installed"] != false && p["enabled"] != false)
+        .is_none_or(|p| {
+            p["driver"] == "claudeAgent" && p["installed"] != false && p["enabled"] != false
+        })
 }
 pub(crate) fn selection(
     s: &State,

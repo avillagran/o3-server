@@ -1251,10 +1251,8 @@ async fn list(s: &State, p: &Value) -> Reply {
         .iter()
         .map(|a| a.to_string())
         .collect();
-        match involvement {
-            "authored" => args.extend(["--author".into(), "@me".into()]),
-
-            _ => {}
+        if involvement == "authored" {
+            args.extend(["--author".into(), "@me".into()]);
         }
         if let Some(author) = p["filters"]["author"]
             .as_str()

@@ -18,6 +18,26 @@ fn first(c: &t3_protocol::Connection, tag: &str, p: Value) -> Value {
     .unwrap();
     out.unwrap()
 }
+fn readers(c: &t3_protocol::Connection, working: bool) -> Value {
+    let p =
+        first(c, "orchestration.subscribeThread", json!({"threadId":"t"}))["projection"].clone();
+    let view = t3_protocol::timeline::view(
+        &p,
+        &json!({}),
+        &t3_protocol::timeline::Render::neutral(false),
+    )
+    .unwrap();
+    assert_eq!(view["threadState"]["working"], working, "{view}");
+    assert_eq!(view["threadState"]["activeRunId"].is_string(), working);
+    assert_eq!(t3_protocol::queue::derive(&p)["items"], json!([]));
+    let shell = first(c, "orchestration.subscribeShell", json!({}))["snapshot"].clone();
+    let rows = t3_protocol::sidebar::view::rows(&shell, "test", 0).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["working"], working, "{rows:?}");
+    let phase = t3_protocol::awareness::phase(&shell["threads"][0]);
+    assert_eq!(phase == Some("running"), working);
+    p
+}
 fn wait(mut f: impl FnMut() -> bool) {
     let end = std::time::Instant::now() + std::time::Duration::from_secs(15);
     while !f() {
@@ -112,7 +132,7 @@ fn owned_background_work_and_prebinding_identity_through_real_client() {
                 .as_array()
                 .is_some_and(|a| !a.is_empty())
         });
-        let p = projection();
+        let p = readers(&c, true);
         assert_eq!(p["providerThreads"].as_array().unwrap().len(), 1);
         assert_eq!(p["providerThreads"][0]["id"], id);
         assert_eq!(
@@ -194,6 +214,17 @@ fn owned_background_work_and_prebinding_identity_through_real_client() {
         )
         .unwrap();
         let event = event.unwrap();
+        let mut mirror = p.clone();
+        assert!(t3_protocol::projection::apply(&mut mirror, &event["event"]));
+        assert_eq!(
+            mirror["providerThreads"][0]["pendingBackgroundTasks"],
+            json!([])
+        );
+        let final_p = readers(&c, false);
+        assert_eq!(
+            final_p["providerThreads"][0]["pendingBackgroundTasks"],
+            json!([])
+        );
         assert_eq!(event["event"]["type"], "provider-thread.updated");
         assert!(
             event["event"]["payload"]["pendingBackgroundTasks"]
@@ -309,6 +340,14 @@ fn restart_closes_background_ownership_without_inventing_a_native_binding() {
         let s = o3_server::store::State::open(&dir).unwrap();
         o3_server::recovery::recover(&mut s.db.lock().unwrap()).unwrap();
         let p = o3_server::events::projection(&s, "t").unwrap();
+        let view = t3_protocol::timeline::view(
+            &p,
+            &json!({}),
+            &t3_protocol::timeline::Render::neutral(false),
+        )
+        .unwrap();
+        assert_eq!(view["threadState"]["working"], bound);
+        assert_eq!(t3_protocol::queue::derive(&p)["items"], json!([]));
         assert_eq!(
             p["runs"][0]["status"],
             if bound { "starting" } else { "failed" }
