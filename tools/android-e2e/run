@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+"""Resumable isolated Android E2E operations; see README.md. Never selects another device."""
+import os, sys, pathlib, subprocess, json, time, re, shutil
+import signal
+W=pathlib.Path('/var/tmp/o3-build/android'); W.mkdir(parents=True,exist_ok=True)
+SDK=pathlib.Path.home()/'.android-sdk'; BIN='/var/tmp/o3-build/main/release/o3-server'
+env={**os.environ,'TMPDIR':str(W/'tmp'),'ANDROID_SDK_ROOT':str(SDK),'ANDROID_AVD_HOME':str(W/'avd'),'ANDROID_EMULATOR_HOME':str(W/'emu')}
+for d in ['tmp','avd','emu','profile','evidence','home']: (W/d).mkdir(exist_ok=True)
+def adb(*args,**kw):return subprocess.run([str(SDK/'platform-tools/adb'),'-s','emulator-5570',*args],check=True,**kw)
+def launch(cmd,name,e=env):
+    marker=W/f'{name}.pid'
+    if marker.exists() and pathlib.Path(f'/proc/{marker.read_text()}').exists():
+        raise RuntimeError(f'{name} is already running')
+    p=subprocess.Popen(cmd,env=e,stdout=open(W/'evidence'/f'{name}.log','ab'),stderr=subprocess.STDOUT,start_new_session=True)
+    (W/f'{name}.pid').write_text(str(p.pid)); print(name,p.pid)
+def serverenv():
+    h=W/'home'
+    return {**env,'HOME':str(h),'T3CODE_HOME':str(W/'profile'),'CLAUDE_CONFIG_DIR':str(h/'.claude'),'CODEX_HOME':str(h/'.codex'),'XDG_CONFIG_HOME':str(h/'config'),'XDG_DATA_HOME':str(h/'data'),'XDG_STATE_HOME':str(h/'state'),'PATH':str(W/'bin')+':'+env['PATH']}
+def cli(*args,**kw):return subprocess.run([BIN,*args],env=serverenv(),check=True,**kw)
+def stop(name):
+    f=W/f'{name}.pid'
+    if f.exists():
+        pid=int(f.read_text()); expected={'server':BIN,'emulator':'emulator','sampler':str(pathlib.Path(__file__).resolve().with_name('sample'))}[name]
+        try:
+            cmd=pathlib.Path(f'/proc/{pid}/cmdline').read_bytes().decode()
+            if expected not in cmd: raise RuntimeError('PID identity mismatch')
+            os.killpg(pid,signal.SIGTERM)
+        except ProcessLookupError: pass
+        except FileNotFoundError: pass
+        f.unlink()
+def capture(name):
+    adb('shell','uiautomator','dump','/sdcard/o3-e2e.xml',stdout=subprocess.DEVNULL)
+    xml=adb('exec-out','cat','/sdcard/o3-e2e.xml',capture_output=True).stdout
+    (W/'evidence'/f'{name}.xml').write_bytes(xml)
+    (W/'evidence'/f'{name}.time').write_text(str(time.time()))
+    (W/'evidence'/f'{name}.png').write_bytes(adb('exec-out','screencap','-p',capture_output=True).stdout)
+    import xml.etree.ElementTree as ET
+    for n in ET.fromstring(xml).iter('node'):
+        a=n.attrib
+        if a.get('text') or a.get('content-desc') or a.get('class','').endswith('EditText'): print(a.get('text'),a.get('content-desc'),a.get('class'),a.get('bounds'))
+cmd=sys.argv[1]; a=sys.argv[2:]
+if cmd=='avd':
+    subprocess.run([str(SDK/'cmdline-tools/latest/bin/avdmanager'),'create','avd','-n','o3-e2e','-k','system-images;android-34;google_apis;x86_64','-p',str(W/'avd/o3-e2e.avd'),'--force'],input='no\n',text=True,env=env,check=True)
+elif cmd=='emulator':
+    # Emulator crashpad hardcodes /tmp. Confine it to disk with a private mount namespace.
+    launch(['unshare','-Urm','sh','-c','mount --bind "$TMPDIR" /tmp && exec "$ANDROID_SDK_ROOT/emulator/emulator" -avd o3-e2e -port 5570 -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -memory 3072 -cores 4 -no-snapshot'],'emulator')
+elif cmd=='server': launch([BIN,'serve','--host','127.0.0.1','--port','38900'],'server',serverenv())
+elif cmd=='auth':
+    for folder,name in [('.claude','.credentials.json'),('.codex','auth.json')]:
+        dst=W/'home'/folder/name; dst.parent.mkdir(mode=0o700,exist_ok=True); shutil.copyfile(pathlib.Path.home()/folder/name,dst);dst.chmod(0o600)
+    with open(W/'session','w') as out: cli('auth','session','issue','--token-only',stdout=out)
+    (W/'session').chmod(0o600)
+elif cmd=='pair':
+    out=cli('auth','pairing','create','--label','android-e2e','--ttl','1h',capture_output=True,text=True).stdout
+    (W/'pairing').write_text(out);(W/'pairing').chmod(0o600);print('Pairing credential saved privately')
+elif cmd=='capture':capture(a[0])
+elif cmd=='adb':adb(*a)
+elif cmd=='sample': launch([sys.executable,str(pathlib.Path(__file__).resolve().with_name('sample'))],'sampler')
+elif cmd=='hwm':
+    s=pathlib.Path('/proc/'+(W/'server.pid').read_text()+'/status').read_text();v='\n'.join(x for x in s.splitlines() if x.startswith(('VmHWM:','VmRSS:')));print(v);(W/'evidence'/'hwm.txt').write_text(v)
+elif cmd=='stop-server':stop('server')
+elif cmd=='cleanup':
+    # Attempt every cleanup even if one device/server operation has already stopped.
+    for action in [lambda: adb('reverse','--remove','tcp:38900'),
+                   lambda: adb('shell','pm','clear','dev.avillagran.ot3android'),
+                   lambda: stop('sampler'), lambda: stop('server'), lambda: adb('emu','kill')]:
+        try: action()
+        except (subprocess.CalledProcessError, OSError) as error: print(error, file=sys.stderr)
+    for p in [W/'home/.claude/.credentials.json',W/'home/.codex/auth.json',W/'session',W/'pairing']:
+        p.unlink(missing_ok=True)
+    shutil.rmtree(W/'profile',ignore_errors=True)
+else: raise SystemExit('Unknown operation')

@@ -1,4 +1,7 @@
-const [tok,cwd]=process.argv.slice(2);const base='127.0.0.1:38900';
+import fs from 'node:fs';
+const args=process.argv.slice(2);
+const [tok,cwd]=args[0]==='--session-file' ? [fs.readFileSync(args[1],'utf8').trim(),args[2]] : args;
+const base='127.0.0.1:38900';
 const ws=new WebSocket(`ws://${base}/ws?orchestrationProtocol=2`,{headers:{Authorization:`Bearer ${tok}`}});
 let n=1;const pend={};const rpc=(tag,payload)=>new Promise((r,j)=>{const id=String(n++);pend[id]=[r,j];ws.send(JSON.stringify({_tag:'Request',id,tag,payload,headers:[]}))});
 const seen=[];let threadId='th-'+Date.now();let done;const fin=new Promise(r=>done=r);

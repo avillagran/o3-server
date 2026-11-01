@@ -1,0 +1,7 @@
+#!/usr/bin/env python3
+"""Type slowly enough for Compose state updates on the constrained emulator."""
+import subprocess,sys,time,pathlib
+adb=[str(pathlib.Path.home()/'.android-sdk/platform-tools/adb'),'-s','emulator-5570','shell','input','text']
+for char in ' '.join(sys.argv[1:]):
+    subprocess.run(adb+["'"+('%s' if char==' ' else char).replace("'","'\\''")+"'"],check=True,stdout=subprocess.DEVNULL)
+    time.sleep(.06)

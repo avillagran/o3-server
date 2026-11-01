@@ -1,0 +1,26 @@
+{
+  "server_head": "ee306a74834160e023a8ad1d11ead1797a81c3c1",
+  "release_sha256": "4d85bd018d48575ba773c5b089f74809efdc96f59b93845da75e2af0951ce68a",
+  "flows": {
+    "haiku": "PASS",
+    "summary_title": "PASS",
+    "codex_expected_fallback_title": "PASS",
+    "approved_write": "PASS",
+    "image": "PASS",
+    "terminal": "PASS",
+    "restart_same_thread": "PASS",
+    "offline_label": "PASS",
+    "inference_memory": "PASS"
+  },
+  "claude_title": "Water Cycle Explained in One Sentence",
+  "offline_observed_seconds": [
+    4.22,
+    13.45
+  ],
+  "connected_observed_seconds": 35.99,
+  "max_sampled_hwm_kib": 17332,
+  "max_during_inference_kib": 16900,
+  "measurement": "/proc/PID/status sampled at 250ms; server only, provider children excluded",
+  "server_bug": null,
+  "client_bug": "AppScreens.kt graph-owner lookup during graph removal; guarded in Android feat/o3-server"
+}

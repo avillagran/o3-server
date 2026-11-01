@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+"""Sample only the helper-owned server PID across restarts (five minutes)."""
+import time,pathlib,json
+w=pathlib.Path('/var/tmp/o3-build/android'); p=w/'evidence/memory.ndjson'
+for _ in range(1200):
+ try:
+  pid=(w/'server.pid').read_text();s=pathlib.Path('/proc/'+pid+'/status').read_text();d={'at':time.time(),'pid':int(pid)}
+  for l in s.splitlines():
+   if l.startswith(('VmHWM:','VmRSS:')):k,v,*_=l.split();d[k[:-1]]=int(v)
+  with p.open('a') as f:f.write(json.dumps(d)+'\n')
+ except FileNotFoundError:pass
+ time.sleep(.25)

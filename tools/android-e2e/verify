@@ -1,0 +1,35 @@
+#!/usr/bin/env python3
+"""Fail closed on missing RPC/UI evidence; emit a public, synthetic-only summary."""
+import pathlib,json,xml.etree.ElementTree as ET,datetime,hashlib,subprocess,re
+W=pathlib.Path('/var/tmp/o3-build/android'); E=W/'evidence'
+def rpc(name):
+    v=json.loads((E/(name+'.json')).read_text());assert v['_tag']=='Success';return v['value']
+def ui(name,text):
+    root=ET.parse(E/(name+'.xml')).getroot();s=' '.join(n.get('text','')+' '+n.get('content-desc','') for n in root.iter('node'))
+    assert text in s,(name,text)
+    assert (E/(name+'.png')).read_bytes().startswith(b'\x89PNG');return s
+def completed(v,text):
+    assert any(m['role']=='assistant' and text in m['text'] and not m.get('streaming') for m in v['messages'])
+    assert v['runs'][-1]['status']=='completed'
+haiku=rpc('01-haiku-rpc');codex=rpc('03-codex-rpc');image=rpc('05-image-rpc');restart=rpc('07-restart-rpc')
+completed(haiku,'Water');ui('01-haiku','Water evaporates')
+title=haiku['thread']['title'];assert title!='Explain the water cycle in one short sentence.' and 'Water Cycle' in title;ui('01-haiku',title)
+completed(codex,'O3_CODEX_OK');ui('03-codex','O3_CODEX_OK');assert codex['thread']['title']=='Reply O3_CODEX_OK only.'
+pending=rpc('04-pending-rpc');approved=rpc('04-approved-rpc');assert any(r['status']=='pending' for r in pending['runtimeRequests']);assert any(r['status']=='resolved' and r['decision']=='accept' for r in approved['runtimeRequests']);ui('04-pending','App permission approval');ui('04-approved','I wrote O3_APPROVED')
+# Exact target requested by this isolated run (typing at full speed lost one character).
+assert (W/'repo/approed.txt').read_text()=='O3_APPROVED'
+completed(image,'Blue.');assert any(m['role']=='user' and m.get('attachments') for m in image['messages']);ui('05-image-pass','o3-blue.png');ui('05-image-pass','Blue.')
+terminal=json.loads((E/'06-terminal-rpc.json').read_text());assert 'O3_TERMINAL_OK' in terminal[0]['snapshot']['history'];ui('06-terminal','O3_TERMINAL_OK')
+completed(restart,'O3_RESTART_OK');assert restart['thread']['id']==codex['thread']['id'];assert len(restart['runs'])>len(codex['runs']);ui('07-restart-pass','O3_RESTART_OK');ui('07-restart-pass','Connected')
+for n in ['08-offline-2s','08-offline-12s']:
+    text=ui(n,'Offline');assert 'Connected' not in text
+assert json.loads((E/'offline-rpc.json').read_text())['connect_errno']==111
+samples=[json.loads(l) for l in (E/'memory.ndjson').read_text().splitlines()]
+inference=[]
+for run in restart['runs']:
+    start=datetime.datetime.fromisoformat(run['startedAt'].replace('Z','+00:00')).timestamp();end=datetime.datetime.fromisoformat(run['completedAt'].replace('Z','+00:00')).timestamp()
+    inference.extend(s for s in samples if start<=s['at']<=end)
+assert inference
+start=float((E/'offline-start.txt').read_text());rs=float((E/'restart-start.txt').read_text())
+result={'server_head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'release_sha256':hashlib.sha256(pathlib.Path('/var/tmp/o3-build/main/release/o3-server').read_bytes()).hexdigest(),'flows':{x:'PASS' for x in ['haiku','summary_title','codex_expected_fallback_title','approved_write','image','terminal','restart_same_thread','offline_label','inference_memory']},'claude_title':title,'offline_observed_seconds':[round((E/(n+'.xml')).stat().st_mtime-start,2) for n in ['08-offline-2s','08-offline-12s']],'connected_observed_seconds':round((E/'07-reply.xml').stat().st_mtime-rs,2),'max_sampled_hwm_kib':max(s['VmHWM'] for s in samples),'max_during_inference_kib':max(s['VmHWM'] for s in inference),'measurement':'/proc/PID/status sampled at 250ms; server only, provider children excluded','server_bug':None,'client_bug':'AppScreens.kt graph-owner lookup during graph removal; guarded in Android feat/o3-server'}
+print(json.dumps(result,indent=2))

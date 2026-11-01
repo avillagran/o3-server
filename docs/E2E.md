@@ -10,7 +10,7 @@
 | `send` con respuesta real de Claude | `omarchy-t3-client watch` real | PASS |
 | Visor: `bounded`, `subscribeThread`, proyección en vivo | `omarchy-t3-client watch` real | PASS |
 | Interfaz QML (carga, barra lateral, hilo, composer, respuesta real) | O3 desktop, QML real | PASS, ver «QML real» abajo |
-| Android | O3 Android | Verificado en commits anteriores: pairing, chat, aprobación, reconexión, nuevos hilos Claude/Codex, adjunto, terminal y ruta pública. En la versión actual solo pairing, proyecto, hilo y modelos (ver abajo) |
+| Android | O3 Android | PASS sobre release `ee306a7`: nuevos hilos Haiku/Codex, título Claude, aprobación en app, imagen, terminal, reinicio y estado offline observado; ver «Android complete regression» y evidencia |
 | OmaBridge status/read/identity/peers/publish/pair | `omarchy-t3-client` real | PASS aislado; detalles abajo |
 
 Memoria de `o3-server`: reposo 29,7-32 MB sin hijos; pico 38,6 MB con turnos de Claude y Codex; 37,9 MB con el
@@ -316,3 +316,55 @@ Claude credential copy was deleted by the runner; QML server VmHWM was not captu
 The Android server and emulator were stopped and copied credentials deleted. No full
 suite was run because no server fix was made; the requested Android regression remains
 incomplete.
+
+## Android complete regression (2026-11-01)
+
+Release main `ee306a74834160e023a8ad1d11ead1797a81c3c1`, Android 34 Google APIs
+x86_64, serial **emulator-5570**, isolated profile/workspace under
+`/var/tmp/o3-build/android`, loopback port 38900 + ADB reverse only. No physical
+phone, running T3/OmaBridge/pilot or public route used. The original Android checkout
+was left unchanged; the fixed client lives in `/var/tmp/o3-build/android/client`,
+branch `feat/o3-server`, pushed at `a1c97c6ac1a1ab127491d149674adea6d851c1de`
+(base `a56791c`).
+
+| Flow | Result and evidence |
+|---|---|
+| New Claude Haiku thread + real reply | PASS — in-app creation, completed RPC run, [screenshot](android-e2e/01-haiku.png) |
+| Real summary title | PASS — “Water Cycle Explained in One Sentence”; differs from the user prompt, RPC thread title matches screenshot |
+| New Codex GPT-6.1-Sol thread + reply | PASS — `O3_CODEX_OK`; [screenshot](android-e2e/03-codex.png). Title is the prompt: expected local fallback, not a generated summary |
+| Supervised file write approved in-app | PASS — [pending request](android-e2e/04-pending.png), RPC pending → resolved/accept, [completed](android-e2e/04-approved.png), exact disk bytes `O3_APPROVED` in scratch `repo/approed.txt` |
+| Image attachment | PASS — selected synthetic blue PNG, user RPC message has an attachment, real reply “Blue.”; [screenshot](android-e2e/05-image-pass.png) |
+| Terminal echo | PASS — real app terminal and RPC `terminal.observe` history contain `O3_TERMINAL_OK`; [screenshot](android-e2e/06-terminal.png) |
+| Server restart / same-thread reply | PASS — automatic recovery observed by 35.99 s after restart; `O3_RESTART_OK` on same thread, all four Codex RPC runs completed; [screenshot](android-e2e/07-restart-pass.png) |
+| Server down / Connected label | PASS — port refused connections; app was “Offline · retrying” at [4.22 s](android-e2e/08-offline-2s.png) and [13.45 s](android-e2e/08-offline-12s.png). No stale Connected label established. These are observation bounds, not exact transition times |
+| Server memory during inference | PASS — max sampled **16,900 KiB (17.31 MB)** inside completed Codex run intervals; max sampled over both server lifetimes **17,332 KiB (17.75 MB)**. 250 ms `/proc/PID/status` sampling; provider children excluded |
+
+[Sanitized machine-readable report](android-e2e/result.json), including the release
+binary digest. Raw XML/PNG, RPC projections, logcat, server logs, timing and memory
+samples remain in `/var/tmp/o3-build/android/evidence/`; they are synthetic isolated
+test state, not the owner's history. Each flow is checked against both RPC and UI by
+`tools/android-e2e/verify`; the resumable operations and reproduction instructions are
+in [tools/android-e2e/README.md](../tools/android-e2e/README.md).
+
+Client defect: the prior logcat establishes `IllegalArgumentException` at
+`AppScreens.kt:55`, looking up a ChatsGraph owner after navigation removed it.
+The Android branch guards a missing/destroyed owner and skips the outgoing screen's
+composition. Its real-emulator navigation instrumentation passes **3/3**, including
+startup pairing while the Chats graph is being replaced. Targeted navigation/visual
+unit tests pass 24/24 on Java21; the final APK rebuild succeeds. No o3-server defect was
+established. The regression's functional screenshots use the rebuilt fixed client.
+
+Harness details: slow character entry avoids dropping characters under Compose state
+updates (the approved target above intentionally records the actual typo received).
+The first image attempt was sent before the attachment chip appeared and received
+“I don’t see an image attached”; after waiting for the chip, the attachment passed.
+At 22.20 s after restart the app still showed retry backoff; at 35.99 s it was Connected.
+No claim of immediate reconnect or of exact offline detection latency is made.
+
+Server full default suite: **185 passed, 10 ignored, zero failed**, `TMPDIR` and cargo
+target on disk. No Rust change was required. Android APK build and core unit tests
+pass (541 total, 190 skipped). Broader app unit suite: 585 tests, 16 skipped, eight initial failures. Seven
+PullRequestsViewModelTest failures reproduce with unmodified AppScreens; the eighth
+was a visual timeout that passed on retry. Details are in the Android branch
+`docs/O3-SERVER-REGRESSION.md`; the broad client suite is not green. All isolated processes and
+credential copies are removed at close; raw evidence stays local.
