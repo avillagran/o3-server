@@ -32,6 +32,8 @@ fn reused_launch_import_title_and_native_attachment_steering() {
                 }))
             });
             let c = s.connect();
+            // This steering peer has one fixed native id; title failure is isolated.
+            c.rpc("server.updateSettings",json!({"patch":{"textGenerationModelSelection":{"instanceId":"unavailable","model":"none"}}})).unwrap();
             c.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"create","threadId":"t","projectId":"p","title":"Original","modelSelection":{"instanceId":instance,"model":"old"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
             let launch = json!({"commandId":"launch","threadId":"t","projectId":"p","title":"Seed","reuseExistingThread":true,"generateTitle":true,"modelSelection":{"instanceId":instance,"model":"override"},"workspaceStrategy":{"type":"root"},"importedNativeThread":{"ref":{"driver":instance,"nativeId":"native","strength":"strong"},"metadata":{"title":"Imported"}},"initialMessage":{"text":"hold","attachments":[]}});
             let result = c.rpc("orchestration.launchThread", launch.clone()).unwrap();

@@ -73,3 +73,5 @@ pub mod device;
 mod background;
 
 mod config_sources;
+
+mod title;

@@ -524,7 +524,7 @@ All five rows were reconsidered under the reader rule; none is promoted:
 | Row | Remaining consumed behavior |
 |---|---|
 | dispatchCommand | Native background ownership/settlement, attachment steering and delivery acknowledgement; broad permission rules/revocation. `lib-t3-rust/src/queue.rs`, `sidebar.rs`, `approvals.rs` consume execution/approval state. |
-| launchThread | Reused initial-message model override and imported-native/generateTitle preparation; the real-client launch builder accepts these fields (`src/api/orchestration.rs`). Workspace rollback and empty-thread reuse now have positive Connection coverage. |
+| launchThread | Reused initial-message model override and generateTitle preparation use the launch contract. importedNativeThread is a server extension on launch, absent from the client builder; it is not reader-equivalence evidence. Workspace rollback and empty-thread reuse now have positive Connection coverage. |
 | subscribeShell | Native background tasks and provider quota failure/reset. Desktop `src/lib.rs:674` holds background work and `:731` reads `usageLimitResetAt`. |
 | subscribeThread | Pre-binding identity and native background lifecycle/recovery. `lib-t3-rust/src/queue.rs:7`, `timeline.rs:227` and desktop `src/lib.rs:511` resolve the active provider thread. |
 | getConfig | Custom instances, complete startup native discovery, tier descriptors, proactive quota refresh and settings normalization. `lib-t3-rust/src/provider_instances.rs`, `scoped_settings.rs` and `native_settings.rs` read instance configuration and scoped overrides. |
@@ -686,9 +686,9 @@ peers for both providers. Reused launch applies the requested model before stagi
 the initial run; the peer asserts the override on Codex turn/start. Imported strong
 native references and metadata are stored before the initial run, and Codex resumes
 the imported id. Launch receipt replay returns the original result. generateTitle
-uses the same bounded first-message title policy as thread.metadata.update; semantic
-provider-generated titles remain an accepted difference (no client relies on title
-wording). Existing provider_input tests cover workspace rollback and occupied reuse.
+uses an isolated bounded provider turn with a deterministic fallback, as does
+thread.metadata.update; semantic titles and their input settings are client-read
+behavior and are not an accepted difference. Existing provider_input tests cover workspace rollback and occupied reuse.
 Direct and queued-to-active steering now deliver uploaded image/file bytes and
 serialized context through Claude user content and Codex turn/steer. Invalid/missing
 uploads fail before the durable control handoff. Message projections retain uploads.
@@ -769,3 +769,14 @@ rejects managed installation). Version status is truthfully `unknown`, retaining
 the installed version without inventing a latest version. Update state transitions
 through running and succeeded/failed. Latest-version background checks remain an
 open settings gap; capability gating is not an accepted substitute for that work.
+
+### Title generation contract
+
+`tests/title_generation.rs` uses the actual launch/action builders and checks
+initial and regenerated semantic titles, configured model/options/instructions,
+failure fallback, and a rename racing generation. It applies the server's real
+metadata events through `projection::apply`, observing request/start and completion
+in `titleRegeneration`. Completion uses `thread.title.regeneration.complete` with
+a matching requestId; stale completion cannot overwrite a manual rename. Each
+short provider turn is independent of the conversation native session, capped at
+20 seconds / 4 KiB output, and never answers tool/permission requests.

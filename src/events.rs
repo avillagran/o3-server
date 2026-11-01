@@ -360,22 +360,29 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
         "thread.metadata.update" => {
             if c["regenerateTitle"] == true {
                 let text: Option<String> = tx.query_row("SELECT json_extract(body,'$.text') FROM records WHERE kind='messages' AND thread_id=? AND json_extract(body,'$.role')='user' ORDER BY rowid LIMIT 1",[tid],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
-                let title = text
-                    .as_deref()
-                    .unwrap_or("")
-                    .split_whitespace()
-                    .collect::<Vec<_>>()
-                    .join(" ");
+                let title = crate::title::fallback(text.as_deref().unwrap_or(""));
                 if title.is_empty() {
                     return Err("send a message before generating a title".into());
                 }
-                t["title"] = json!(title.chars().take(80).collect::<String>());
+                t["title"] = json!(title);
+                t["titleRegeneration"] = json!({"requestId":cid,"startedAt":at});
+            }
+            if c.get("title").is_some() {
                 t["titleRegeneration"] = Value::Null;
             }
             for k in ["title", "branch", "worktreePath", "limitRecovery"] {
                 if let Some(v) = c.get(k) {
                     t[k] = v.clone()
                 }
+            }
+            "thread.metadata-updated"
+        }
+        "thread.title.regeneration.complete" => {
+            if t["titleRegeneration"]["requestId"] == c["requestId"] && c["requestId"].is_string() {
+                if let Some(title) = c["title"].as_str().filter(|s| !s.trim().is_empty()) {
+                    t["title"] = json!(crate::title::fallback(title));
+                }
+                t["titleRegeneration"] = Value::Null;
             }
             "thread.metadata-updated"
         }
@@ -675,6 +682,13 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
     tx.commit().map_err(|e| e.to_string())?;
     drop(db);
     s.notify();
+    if c["regenerateTitle"] == true {
+        let text = {
+            let db = s.db.lock().unwrap();
+            db.query_row("SELECT json_extract(body,'$.text') FROM records WHERE kind='messages' AND thread_id=? AND json_extract(body,'$.role')='user' ORDER BY rowid LIMIT 1",[tid],|r|r.get::<_,String>(0)).unwrap_or_default()
+        };
+        crate::title::start(s.clone(), tid.into(), cid.into(), text);
+    }
     Ok(result)
 }
 
@@ -948,6 +962,7 @@ pub fn launch(s: &std::sync::Arc<State>, p: &Value) -> Result<Value> {
                 let title = text.split_whitespace().collect::<Vec<_>>().join(" ");
                 if !title.is_empty() {
                     thread["title"] = json!(title.chars().take(80).collect::<String>());
+                    thread["titleRegeneration"] = json!({"requestId":cid,"startedAt":at});
                 }
             }
         }
@@ -1009,6 +1024,11 @@ pub fn launch(s: &std::sync::Arc<State>, p: &Value) -> Result<Value> {
         }
     };
     s.notify();
+    if p["generateTitle"] == true {
+        if let Some(text) = p["initialMessage"]["text"].as_str() {
+            crate::title::start(s.clone(), tid.clone(), cid.into(), text.into());
+        }
+    }
     if let Some((rid, text)) = start {
         crate::provider::start(s.clone(), tid, rid, text);
     }
