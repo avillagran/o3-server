@@ -469,3 +469,9 @@ the missing kinds listed by desktop T3AddProject.qml. Bitbucket availability is
 independent of CLI installation, matching reference discovery.ts's API branch.
 Row remains partial: credential/API validation and fj fallback are unavailable;
 new host authentication stays explicitly unknown rather than inferred from exits.
+
+Validation of reader follow-up: targeted real-client tests pass; full suite 144
+passed, 5 opt-in ignored (initial resolver-fixture ETXTBSY; complete rerun passed).
+fmt/diff checks pass. tools/gen-compat regenerated. tools/bench-rss completed with
+bridge enabled, 1000 messages, 3 subscribers, no inference: HWM 41896 KiB
+(42.90 MB), below 50 MB. No rows promoted; P1 methods remain 23/31 done.
