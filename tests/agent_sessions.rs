@@ -89,4 +89,5 @@ fn scan_groups_transcripts_by_directory_and_import_creates_resumable_threads() {
     assert_eq!(mine["alreadyImported"], false, "the old session is still not imported");
     // The transcripts themselves are never modified.
     assert!(std::fs::read_to_string(claude.join("projects/-work/aaaa.jsonl")).unwrap().contains("meta noise"));
+    let _ = std::fs::remove_dir_all(&history);
 }

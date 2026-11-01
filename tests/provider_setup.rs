@@ -135,4 +135,5 @@ esac"#,
     assert_eq!(ok["exit"]["cause"][0]["error"]["reason"], "unsupported_distribution");
     let missing = raw_exit(&server, "server.prepareAcpRegistryAgent", json!({"agentId":"zzz"}));
     assert_eq!(missing["exit"]["cause"][0]["error"]["reason"], "agent_not_found");
+    let _ = std::fs::remove_dir_all(&bin);
 }

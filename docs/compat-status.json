@@ -42,39 +42,39 @@
       "note": "No client call site in inventory."
     },
     "device.action": {
-      "status": "todo",
+      "status": "skip",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "Needs a device hub (adb, simulators, SSH/EAS hosts), too heavy for this server; answers DeviceToolUnavailableError and no device capability is advertised. tests/admin_reads.rs."
     },
     "device.close": {
-      "status": "todo",
+      "status": "skip",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "Needs a device hub (adb, simulators, SSH/EAS hosts), too heavy for this server; answers DeviceToolUnavailableError and no device capability is advertised. tests/admin_reads.rs."
     },
     "device.configure": {
-      "status": "todo",
+      "status": "skip",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "Needs a device hub (adb, simulators, SSH/EAS hosts), too heavy for this server; answers DeviceToolUnavailableError and no device capability is advertised. tests/admin_reads.rs."
     },
     "device.detail": {
-      "status": "todo",
+      "status": "skip",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "Needs a device hub (adb, simulators, SSH/EAS hosts), too heavy for this server; answers DeviceToolUnavailableError and no device capability is advertised. tests/admin_reads.rs."
     },
     "device.easAccount": {
-      "status": "todo",
+      "status": "skip",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "Needs Expo/EAS device hosts; answers DeviceEasAccountError. tests/admin_reads.rs."
     },
     "device.list": {
-      "status": "todo",
+      "status": "skip",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "Needs a device hub (adb, simulators, SSH/EAS hosts), too heavy for this server; answers DeviceToolUnavailableError and no device capability is advertised. tests/admin_reads.rs."
     },
     "device.open": {
-      "status": "todo",
+      "status": "skip",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "Needs a device hub (adb, simulators, SSH/EAS hosts), too heavy for this server; answers DeviceToolUnavailableError and no device capability is advertised. tests/admin_reads.rs."
     },
     "device.shutdown": {
       "status": "skip",
@@ -82,9 +82,9 @@
       "note": "No client call site in inventory."
     },
     "device.testHost": {
-      "status": "todo",
+      "status": "skip",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "Needs a device hub (adb, simulators, SSH/EAS hosts), too heavy for this server; answers DeviceToolUnavailableError and no device capability is advertised. tests/admin_reads.rs."
     },
     "filesystem.browse": {
       "status": "done",
@@ -112,19 +112,19 @@
       "note": "Real-client stream test: commit, commit_push, push, commit_push_pr (with gh), featureBranch, filePaths subset, up-to-date and no-change results, action_failed with the failing phase, request validation, path confinement. Not done: hook_* events, generated commit messages, cancellation of a running step (an Interrupt stops sending events but the step finishes), PR creation without gh."
     },
     "guestShare.create": {
-      "status": "todo",
+      "status": "skip",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "Guest links need T3 Connect (out of scope); answers GuestShareCreateError(disabled) and guestSharingEnabled stays off. tests/admin_reads.rs."
     },
     "mcpApps.callTool": {
-      "status": "todo",
+      "status": "skip",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "o3-server runs no MCP app host; answers McpAppRequestError(provider-unsupported). tests/admin_reads.rs."
     },
     "mcpApps.readResource": {
-      "status": "todo",
+      "status": "skip",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "o3-server runs no MCP app host; answers McpAppRequestError(provider-unsupported). tests/admin_reads.rs."
     },
     "mcpApps.toolInfo": {
       "status": "skip",
@@ -132,9 +132,9 @@
       "note": "No client call site in inventory."
     },
     "mcpApps.updateModelContext": {
-      "status": "todo",
+      "status": "skip",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "o3-server runs no MCP app host; answers McpAppRequestError(provider-unsupported). tests/admin_reads.rs."
     },
     "orchestration.dispatchCommand": {
       "status": "partial",
@@ -152,9 +152,9 @@
       "note": "Real Connection Codex execution captures Git refs and verifies baseline-to-turn diff. Checkpoint retention and overlapping-workspace isolation remain."
     },
     "orchestration.getOlderSettledThreads": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "tests/admin_reads.rs: pages settled top-level threads below the cursor (settledAt desc, id asc), limit 0 returns per-project counts, project filter. Snapshots never omit older settled threads, so capabilities.shellOlderSettled stays false."
     },
     "orchestration.getThreadFamily": {
       "status": "skip",
@@ -177,9 +177,9 @@
       "note": "Real-client test: item by id for its own thread, null otherwise. The revision argument is ignored."
     },
     "orchestration.getWorkflowScript": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "tests/admin_reads.rs: reads .js files below $CLAUDE_CONFIG_DIR|~/.claude/projects, 256 KiB cap, T3's typed OrchestrationGetWorkflowScriptError reasons."
     },
     "orchestration.getWorktreeThreadIds": {
       "status": "skip",
@@ -207,9 +207,9 @@
       "note": "Real-client tests cover match metadata (threadId/projectId/source/snippet/messageCreatedAt/messageId/hits/quality), supplemental thread shells and snapshotSequence, project filters and olderSettledBefore/environmentLabel. Still partial: FTS prefix matching/ranking differs from upstream substring/folded text and title ranking; returned matches are consumed."
     },
     "orchestration.stopWorkflow": {
-      "status": "todo",
+      "status": "skip",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "No provider control stops a workflow; answers OrchestrationV2StopWorkflowError(unsupported). tests/admin_reads.rs."
     },
     "orchestration.subscribeArchivedShell": {
       "status": "skip",
@@ -292,14 +292,14 @@
       "note": "No client call site in inventory."
     },
     "projectClone.start": {
-      "status": "todo",
+      "status": "partial",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "tests/admin_reads.rs: git clone of remoteUrl or github owner/name, blocks until it ends (capabilities.projectCloneTracking stays off, no progress stream); refuses non-empty destinations and removes a failed clone."
     },
     "projects.createNew": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "tests/admin_reads.rs: creates <base>/projects/<slug> (atomic claim, -2.. suffixes), git init, README, assets/icon.svg, first commit (commitError reported, not fatal), then the project. Folder slug folds common Latin accents only (no full NFKD)."
     },
     "projects.ensureScratch": {
       "status": "skip",
@@ -312,9 +312,9 @@
       "note": "No client call site in inventory."
     },
     "projects.listIgnoredFiles": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "tests/admin_reads.rs: git ls-files --others --ignored --directory, files only, 200 max, lstat sizes; non-repositories answer an empty list."
     },
     "projects.mutate": {
       "status": "done",
@@ -657,9 +657,9 @@
       "note": "No client call site in inventory."
     },
     "server.checkOtlpEndpoint": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "tests/admin_reads.rs: POSTs an empty export through curl (no redirects, 5 s): Accepted with latency, Rejected with status, Unreachable with timedOut."
     },
     "server.commitDesktopUpdate": {
       "status": "skip",
@@ -697,9 +697,9 @@
       "note": "No client call site in inventory."
     },
     "server.getHostResources": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "tests/admin_reads.rs: CPU utilisation sampled over 100 ms from /proc/stat (null if unreadable), memory from /proc/meminfo."
     },
     "server.getProcessDiagnostics": {
       "status": "done",
@@ -772,9 +772,9 @@
       "note": "Real Connection Codex-peer test probes the registered drivers and returns both provider descriptors; Claude authentication is checked at execution and reported unknown beforehand."
     },
     "server.refreshUsageRates": {
-      "status": "todo",
+      "status": "partial",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "tests/admin_reads.rs: answers pricing status 'unavailable' (no price list is fetched or bundled), same as getUsageSummary."
     },
     "server.removeKeybinding": {
       "status": "done",
@@ -877,9 +877,9 @@
       "note": "No client call site in inventory."
     },
     "subscribeDeviceState": {
-      "status": "todo",
+      "status": "skip",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "Needs a device hub (adb, simulators, SSH/EAS hosts), too heavy for this server; answers DeviceToolUnavailableError and no device capability is advertised. tests/admin_reads.rs."
     },
     "subscribeDiscoveredLocalServers": {
       "status": "done",
@@ -927,9 +927,9 @@
       "note": "No client call site in inventory."
     },
     "subscribeWorktreeSetup": {
-      "status": "todo",
+      "status": "partial",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "tests/admin_reads.rs: worktree preparation is not staged, so no setup is ever running: cancel answers cancelled:false and the stream sends null once."
     },
     "terminal.attach": {
       "status": "partial",
@@ -1012,9 +1012,9 @@
       "note": "Real-client test: local switch, remote-only ref becomes a tracking branch, unknown ref refused."
     },
     "worktreeSetup.cancel": {
-      "status": "todo",
+      "status": "partial",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "tests/admin_reads.rs: worktree preparation is not staged, so no setup is ever running: cancel answers cancelled:false and the stream sends null once."
     }
   },
   "commands": {

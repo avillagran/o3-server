@@ -30,6 +30,7 @@ pub mod p2;
 pub mod pullreq;
 pub mod keybind;
 pub mod sessions;
+pub mod misc;
 pub mod preview;
 pub mod setup;
 pub mod files;

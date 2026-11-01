@@ -30,6 +30,7 @@ pub fn handles(tag: &str) -> bool {
     crate::pullreq::handles(tag) || crate::setup::handles(tag) || crate::keybind::handles(tag)
         || crate::sessions::handles(tag)
         || crate::preview::handles(tag)
+        || crate::misc::handles(tag)
 }
 
 pub async fn call(s: &Arc<State>, tag: &str, p: Value) -> Reply {
@@ -41,6 +42,8 @@ pub async fn call(s: &Arc<State>, tag: &str, p: Value) -> Reply {
         crate::sessions::call(s, tag, &p).await
     } else if crate::preview::handles(tag) {
         crate::preview::call(s, tag, &p)
+    } else if crate::misc::handles(tag) {
+        crate::misc::call(s, tag, &p).await
     } else {
         crate::setup::call(s, tag, &p).await
     }
@@ -54,6 +57,13 @@ pub enum Stream {
     Setup(crate::setup::Cursor),
     Preview(crate::preview::Cursor),
     Servers(crate::preview::Servers),
+    Once(Once),
+}
+
+/// A stream that sends one value and then stays open without doing any work.
+pub struct Once {
+    value: Option<Value>,
+    waiting: bool,
 }
 
 pub fn is_stream(tag: &str) -> bool {
@@ -63,12 +73,20 @@ pub fn is_stream(tag: &str) -> bool {
             | "provider.install.subscribe"
             | "subscribePreviewEvents"
             | "subscribeDiscoveredLocalServers"
+            | "subscribeWorktreeSetup"
+            | "subscribeDeviceState"
     )
 }
 
 pub fn open(s: &Arc<State>, tag: &str, p: &Value) -> Result<Stream, Value> {
     Ok(match tag {
         "subscribePreviewEvents" => Stream::Preview(crate::preview::open_events(s)),
+        // Worktree preparation is not staged: no setup is ever running, which the stream says with null.
+        "subscribeWorktreeSetup" => {
+            str_field(p, "threadId")?;
+            Stream::Once(Once { value: Some(Value::Null), waiting: false })
+        }
+        "subscribeDeviceState" => return Err(crate::misc::device_unavailable()),
         "subscribeDiscoveredLocalServers" => {
             Stream::Servers(crate::preview::Servers::new(&p["configuredUrls"]))
         }
@@ -82,6 +100,13 @@ impl Stream {
             Stream::Setup(c) => c.next(s),
             Stream::Preview(c) => c.next(s),
             Stream::Servers(c) => c.next(s),
+            Stream::Once(o) => match o.value.take() {
+                Some(v) if !o.waiting => {
+                    o.waiting = true;
+                    crate::terminal::Step::Values(vec![v])
+                }
+                _ => crate::terminal::Step::Idle,
+            },
         }
     }
     pub fn ack(&mut self) {
@@ -89,6 +114,7 @@ impl Stream {
             Stream::Setup(c) => c.ack(),
             Stream::Preview(c) => c.ack(),
             Stream::Servers(c) => c.ack(),
+            Stream::Once(o) => o.waiting = false,
         }
     }
     pub fn is_full(&self) -> bool {
@@ -96,6 +122,7 @@ impl Stream {
             Stream::Setup(c) => c.is_full(),
             Stream::Preview(c) => c.is_full(),
             Stream::Servers(c) => c.is_full(),
+            Stream::Once(o) => o.waiting,
         }
     }
 }

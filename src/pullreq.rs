@@ -1231,7 +1231,7 @@ async fn prepare_thread(s: &State, p: &Value) -> Reply {
         let directory = crate::settings::read(s)
             .ok()
             .and_then(|v| v["worktreesDirectory"].as_str().filter(|d| !d.is_empty()).map(PathBuf::from))
-            .unwrap_or(s.dir.join("worktrees"));
+            .unwrap_or_else(|| s.dir.parent().unwrap_or(&s.dir).join("worktrees"));
         let name = p["threadId"].as_str().map(|t| t.bytes().map(|b| format!("{b:02x}")).collect::<String>()).unwrap_or_else(|| format!("pr-{number}"));
         let path = directory.join(name);
         std::fs::create_dir_all(&directory).map_err(|e| git_error(&e.to_string()))?;
