@@ -151,7 +151,7 @@ fn github_pull_requests_through_gh_argv() {
     assert!(err.contains("PullRequestUnavailableError"), "{err}");
     // The client reports only the tag; the typed body is read in-process from the same profile.
     let direct = |tag: &str, p: Value| {
-        let st = o3_server::store::State::open(&e.state).unwrap();
+        let st = std::sync::Arc::new(o3_server::store::State::open(&e.state).unwrap());
         tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(o3_server::ext::call(&st, tag, p)).unwrap_err()
     };
     let body = direct("pullRequests.list", json!({"state":"open","projectId":"p2"}));

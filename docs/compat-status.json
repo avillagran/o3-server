@@ -342,9 +342,9 @@
       "note": "No client call site in inventory."
     },
     "provider.auth.cancel": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "tests/provider_setup.rs: real-client sign-in against a scripted CLI (URL surfaced, terminal answer, verify, wrong code fails, cancel kills the child, logout, one flow per instance). Child exists only while a flow runs. Credentials-type responses are refused."
     },
     "provider.auth.complete": {
       "status": "skip",
@@ -352,24 +352,24 @@
       "note": "No client call site in inventory."
     },
     "provider.auth.logout": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "tests/provider_setup.rs: real-client sign-in against a scripted CLI (URL surfaced, terminal answer, verify, wrong code fails, cancel kills the child, logout, one flow per instance). Child exists only while a flow runs. Credentials-type responses are refused."
     },
     "provider.auth.respond": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "tests/provider_setup.rs: real-client sign-in against a scripted CLI (URL surfaced, terminal answer, verify, wrong code fails, cancel kills the child, logout, one flow per instance). Child exists only while a flow runs. Credentials-type responses are refused."
     },
     "provider.auth.start": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "tests/provider_setup.rs: real-client sign-in against a scripted CLI (URL surfaced, terminal answer, verify, wrong code fails, cancel kills the child, logout, one flow per instance). Child exists only while a flow runs. Credentials-type responses are refused."
     },
     "provider.auth.subscribe": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "tests/provider_setup.rs: real-client sign-in against a scripted CLI (URL surfaced, terminal answer, verify, wrong code fails, cancel kills the child, logout, one flow per instance). Child exists only while a flow runs. Credentials-type responses are refused."
     },
     "provider.chatgpt.handoff.subscribe": {
       "status": "skip",
@@ -397,24 +397,24 @@
       "note": "No client call site in inventory."
     },
     "provider.install.cancel": {
-      "status": "todo",
+      "status": "skip",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "o3-server does not download or unpack provider CLIs (needs an HTTPS client and archive handling); answers ProviderSetupError and the capability stays off. Install the CLI on the server yourself."
     },
     "provider.install.remove": {
-      "status": "todo",
+      "status": "skip",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "o3-server does not download or unpack provider CLIs (needs an HTTPS client and archive handling); answers ProviderSetupError and the capability stays off. Install the CLI on the server yourself."
     },
     "provider.install.start": {
-      "status": "todo",
+      "status": "skip",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "o3-server does not download or unpack provider CLIs (needs an HTTPS client and archive handling); answers ProviderSetupError and the capability stays off. Install the CLI on the server yourself."
     },
     "provider.install.subscribe": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "tests/provider_setup.rs: reports the CLI found on PATH (installedVersion, source local, canRemove false); phase stays idle because o3-server never downloads provider CLIs."
     },
     "provider.uploadFeedback": {
       "status": "skip",
@@ -757,9 +757,9 @@
       "note": "No client call site in inventory."
     },
     "server.prepareAcpRegistryAgent": {
-      "status": "todo",
+      "status": "partial",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "tests/provider_setup.rs: npx/uvx agents verify that the runner exists and answer prepared; binary distributions answer unsupported_distribution. o3-server has no ACP provider driver, so a prepared agent cannot be started yet."
     },
     "server.probe": {
       "status": "skip",
@@ -802,9 +802,9 @@
       "note": "tests/ops.rs: removes profile log files older than 14 days; worktree and browser-artifact cleanup do not exist."
     },
     "server.searchAcpRegistry": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "tests/provider_setup.rs: registry fetched with curl (O3_ACP_REGISTRY_URL overrides the CDN URL for tests), agents without a supported distribution dropped, icons restricted to the official CDN."
     },
     "server.setAcpRegistryProvider": {
       "status": "skip",
@@ -822,9 +822,9 @@
       "note": "No client call site in inventory."
     },
     "server.updateProvider": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "tests/provider_setup.rs: runs 'claude update' for the claudeAgent driver and returns the provider list; other drivers and pinned versions answer ServerProviderUpdateError with a reason."
     },
     "server.updateServer": {
       "status": "skip",

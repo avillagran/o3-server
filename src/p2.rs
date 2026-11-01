@@ -3,6 +3,7 @@
 //! carry one hook each. Nothing here runs while idle: state is created on first use and streams are
 //! polled only by sockets that opened them.
 use crate::store::State;
+use std::sync::Arc;
 use serde_json::{json, Value};
 use std::{
     collections::{HashMap, VecDeque},
@@ -20,14 +21,54 @@ pub fn not_implemented(message: impl Into<String>) -> Value {
 
 /// Mutable state of the surfaces below. Every field is empty until a client uses the feature.
 #[derive(Default)]
-pub struct Runtime {}
-
-pub fn handles(tag: &str) -> bool {
-    crate::pullreq::handles(tag)
+pub struct Runtime {
+    pub setup: crate::setup::Registry,
 }
 
-pub async fn call(s: &State, tag: &str, p: Value) -> Reply {
-    crate::pullreq::call(s, tag, &p).await
+pub fn handles(tag: &str) -> bool {
+    crate::pullreq::handles(tag) || crate::setup::handles(tag)
+}
+
+pub async fn call(s: &Arc<State>, tag: &str, p: Value) -> Reply {
+    if crate::pullreq::handles(tag) {
+        crate::pullreq::call(s, tag, &p).await
+    } else {
+        crate::setup::call(s, tag, &p).await
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Streams
+
+/// Live subscriptions of this module. All are bounded: one chunk outstanding per subscriber.
+pub enum Stream {
+    Setup(crate::setup::Cursor),
+}
+
+pub fn is_stream(tag: &str) -> bool {
+    matches!(tag, "provider.auth.subscribe" | "provider.install.subscribe")
+}
+
+pub fn open(s: &Arc<State>, tag: &str, p: &Value) -> Result<Stream, Value> {
+    Ok(Stream::Setup(crate::setup::open_stream(s, tag, p)?))
+}
+
+impl Stream {
+    pub fn next(&mut self, s: &State) -> crate::terminal::Step {
+        match self {
+            Stream::Setup(c) => c.next(s),
+        }
+    }
+    pub fn ack(&mut self) {
+        match self {
+            Stream::Setup(c) => c.ack(),
+        }
+    }
+    pub fn is_full(&self) -> bool {
+        match self {
+            Stream::Setup(c) => c.is_full(),
+        }
+    }
 }
 
 // Small bounded helpers shared by the modules.

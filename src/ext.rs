@@ -1,6 +1,7 @@
 //! Dispatch for RPCs that need I/O or subprocesses. `rpc.rs` runs these on spawned tasks so a slow
 //! `git pull` never stalls the rest of a socket.
 use crate::{assets, files, review, store::State, threadq, vcs};
+use std::sync::Arc;
 use serde_json::Value;
 
 pub const STREAM_ACTION: &str = "git.runStackedAction";
@@ -36,7 +37,7 @@ pub fn handles(tag: &str) -> bool {
     )
 }
 
-pub async fn call(s: &State, tag: &str, p: Value) -> Result<Value, Value> {
+pub async fn call(s: &Arc<State>, tag: &str, p: Value) -> Result<Value, Value> {
     match tag {
         "projects.mutate" => crate::projects::mutate_resolved(s, &p).await.map_err(
             |message| serde_json::json!({"_tag":"ProjectMutationError","message":message}),

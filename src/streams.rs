@@ -11,6 +11,7 @@ pub struct Hub {
     pub terminals: Arc<terminal::Manager>,
     pub commands: command_output::Hub,
     pub ops: crate::ops::Ops,
+    pub p2: crate::p2::Runtime,
 }
 impl Hub {
     pub fn new() -> Self {
@@ -19,6 +20,7 @@ impl Hub {
             terminals: terminal::Manager::new(changed.clone()),
             commands: command_output::Hub::new(changed.clone()),
             ops: crate::ops::Ops::new(changed.clone()),
+            p2: Default::default(),
             changed,
         }
     }
@@ -39,6 +41,7 @@ pub enum Live {
     Terminal(terminal::Cursor),
     Command(command_output::Cursor),
     Report(ReportCursor),
+    P2(crate::p2::Stream),
 }
 
 impl Live {
@@ -46,6 +49,7 @@ impl Live {
         match self {
             Live::Terminal(c) => c.next(s),
             Live::Command(c) => c.next(s),
+            Live::P2(c) => c.next(s),
             Live::Report(c) => {
                 if c.waiting {
                     return Step::Idle;
@@ -64,6 +68,7 @@ impl Live {
         match self {
             Live::Terminal(c) => c.ack(),
             Live::Command(c) => c.ack(),
+            Live::P2(c) => c.ack(),
             Live::Report(c) => c.waiting = false,
         }
     }
@@ -72,13 +77,15 @@ impl Live {
         match self {
             Live::Terminal(c) => c.is_full(),
             Live::Command(c) => c.is_full(),
+            Live::P2(c) => c.is_full(),
             Live::Report(c) => c.waiting,
         }
     }
 }
 
 pub fn is_live_tag(tag: &str) -> bool {
-    matches!(
+    crate::p2::is_stream(tag)
+        || matches!(
         tag,
         "terminal.attach"
             | "terminal.observe"
@@ -90,7 +97,9 @@ pub fn is_live_tag(tag: &str) -> bool {
 }
 
 pub async fn open(s: &Arc<State>, tag: &str, p: &Value) -> Result<Live, Value> {
-    if tag == "server.getStorageCleanupReport" {
+    if crate::p2::is_stream(tag) {
+        crate::p2::open(s, tag, p).map(Live::P2)
+    } else if tag == "server.getStorageCleanupReport" {
         Ok(Live::Report(ReportCursor {
             seen: None,
             waiting: false,
