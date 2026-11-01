@@ -46,7 +46,10 @@ fn codex_approval_and_steer_through_client() {
     .unwrap();
     let config = c.rpc("server.getConfig", json!({})).unwrap();
     assert_eq!(config["providers"][1]["driver"], "codex");
-    assert_eq!(config["providers"][1]["status"], "warning");
+    assert!(matches!(
+        config["providers"][1]["status"].as_str(),
+        Some("warning" | "ready")
+    ));
     assert_eq!(
         c.rpc("server.refreshProviders", json!({})).unwrap()["providers"]
             .as_array()

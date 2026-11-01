@@ -521,8 +521,23 @@ pub(crate) fn decode(v: &Value) -> Vec<ProviderEvent> {
     }
     out
 }
+/// Evidence the CLI can sign in, without launching it. Clients hide the models of a provider
+/// that is not `ready`, so a lazy provider cannot wait for its first turn to report it.
+fn credentials_present() -> bool {
+    const ENV: [&str; 4] = [
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+    ];
+    let dir = std::env::var_os("CLAUDE_CONFIG_DIR")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".claude")));
+    ENV.iter().any(|v| std::env::var_os(v).is_some())
+        || dir.is_some_and(|d| d.join(".credentials.json").is_file())
+}
 pub fn config(installed: bool) -> Value {
-    json!({"instanceId":"claudeAgent","driver":"claudeAgent","displayName":"Claude Code","enabled":installed,"installed":installed,"version":null,"status":if installed {"warning"}else{"disabled"},"auth":{"status":"unknown"},"checkedAt":crate::store::iso(crate::store::now_ms()),"message":"Direct CLI adapter; authentication checked at execution. Native-session continuation after restart; no inference reattachment.","slashCommands":[{"name":"compact","description":"Compact conversation history"}],"skills":[],"slashCommandsPending":true,"models":crate::claude_models::models(),"supportedRuntimeModes":["approval-required","auto-accept-edits","full-access"],"supportsConversationRollback":false,"nativeSessions":{"canList":false,"canLoad":false,"canResume":true}})
+    json!({"instanceId":"claudeAgent","driver":"claudeAgent","displayName":"Claude Code","enabled":installed,"installed":installed,"version":null,"status":if !installed {"disabled"}else if credentials_present() {"ready"}else{"warning"},"auth":{"status":"unknown"},"checkedAt":crate::store::iso(crate::store::now_ms()),"message":"Direct CLI adapter; authentication checked at execution. Native-session continuation after restart; no inference reattachment.","slashCommands":[{"name":"compact","description":"Compact conversation history"}],"skills":[],"slashCommandsPending":true,"models":crate::claude_models::models(),"supportedRuntimeModes":["approval-required","auto-accept-edits","full-access"],"supportsConversationRollback":false,"nativeSessions":{"canList":false,"canLoad":false,"canResume":true}})
 }
 
 fn usage_limits(info: &Value) -> Value {

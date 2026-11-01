@@ -44,6 +44,16 @@ pub struct CodexProvider {
     client: tokio::sync::Mutex<Option<Client>>,
     descriptor: std::sync::Arc<Mutex<Value>>,
 }
+fn codex_home(home: Option<&std::path::Path>) -> Option<PathBuf> {
+    home.map(PathBuf::from)
+        .or_else(|| std::env::var_os("CODEX_HOME").map(PathBuf::from))
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".codex")))
+}
+/// Clients hide a provider's models until it is `ready`; this needs no app-server.
+fn credentials_present(home: Option<&std::path::Path>) -> bool {
+    std::env::var_os("OPENAI_API_KEY").is_some()
+        || codex_home(home).is_some_and(|d| d.join("auth.json").is_file())
+}
 /// Codex's own catalog cache, so selecting a model never needs the 400 MB app-server.
 fn model_capabilities(m: &Value) -> Value {
     let efforts = m["supportedReasoningEfforts"]
@@ -71,11 +81,7 @@ fn model_capabilities(m: &Value) -> Value {
     json!({"optionDescriptors":descriptors})
 }
 fn cached_models(home: Option<&std::path::Path>) -> Value {
-    let dir = home
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("CODEX_HOME").map(PathBuf::from))
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".codex")));
-    let cache = dir
+    let cache = codex_home(home)
         .and_then(|d| std::fs::read(d.join("models_cache.json")).ok())
         .and_then(|b| serde_json::from_slice::<Value>(&b).ok());
     let mut models: Vec<&Value> = cache
@@ -132,7 +138,13 @@ impl CodexProvider {
         }
         let mut d = self.descriptor.lock().unwrap();
         d["installed"] = json!(installed);
-        d["status"] = json!(if installed { "warning" } else { "disabled" });
+        d["status"] = json!(
+            match (installed, credentials_present(self.home.as_deref())) {
+                (false, _) => "disabled",
+                (true, true) => "ready",
+                (true, false) => "warning",
+            }
+        );
         d["auth"] = json!({"status":"unknown"});
         d["message"] = json!(if installed {
             "Codex available; starts on first turn, authentication checked then"
@@ -537,6 +549,33 @@ mod tests {
             attachments: json!([]),
             context: None,
         }
+    }
+    #[tokio::test]
+    async fn signed_in_lazy_provider_is_selectable_by_clients_without_spawning() {
+        let dir = std::env::temp_dir().join(format!("o3-codex-ready-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cache =
+            json!({"models":[{"slug":"a","display_name":"A","visibility":"list","priority":1}]});
+        std::fs::write(dir.join("models_cache.json"), cache.to_string()).unwrap();
+        let script =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/codex/mock-server.py");
+        let provider = CodexProvider::new(script, Some(dir.clone()));
+        provider.probe().await.unwrap();
+        // HOME and OPENAI_API_KEY can sign a developer in, so only assert the file-based branch.
+        if std::env::var_os("OPENAI_API_KEY").is_none() {
+            assert_eq!(provider.config()[0]["status"], "warning");
+        }
+        std::fs::write(dir.join("auth.json"), "{}").unwrap();
+        provider.probe().await.unwrap();
+        assert!(
+            provider.client.lock().await.is_none(),
+            "readiness spawned app-server"
+        );
+        let config = provider.config();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(config[0]["status"], "ready");
+        // The real client rule: only `ready` providers offer their models.
+        assert_eq!(config[0]["models"][0]["slug"], "a");
     }
     #[test]
     fn models_come_from_the_cache_without_spawning() {
