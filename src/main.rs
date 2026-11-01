@@ -1,4 +1,10 @@
 use std::{path::Path, sync::Arc};
+#[cfg(feature = "memory-diagnostics")]
+mod memory;
+#[cfg(feature = "memory-diagnostics")]
+#[global_allocator]
+static MEASURED: memory::Measured = memory::Measured;
+#[cfg(not(feature = "memory-diagnostics"))]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 fn option<'a>(a: &'a [String], name: &str) -> Option<&'a str> {
@@ -173,6 +179,8 @@ fn main() -> std::io::Result<()> {
         .or_else(|| std::env::var("T3CODE_HOST").ok())
         .unwrap_or("127.0.0.1".into());
     tokio::runtime::Builder::new_multi_thread().worker_threads(2).max_blocking_threads(2).thread_stack_size(512 * 1024).enable_all().build()?.block_on(async {
+        #[cfg(feature = "memory-diagnostics")]
+        memory::start();
         let codex=Arc::new(o3_server::codex::CodexProvider::default());
         *state.provider.lock().unwrap()=Some(Arc::new(o3_server::provider::Providers { claude: o3_server::claude::ClaudeProvider::discover().map(Arc::new), codex: codex.clone() }));
         let mut term=tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;

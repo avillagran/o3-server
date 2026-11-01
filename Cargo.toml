@@ -6,6 +6,7 @@ license = "MIT"
 description = "Lean Rust server, wire-compatible with T3 Code clients, with OmaBridge built in"
 
 [features]
+memory-diagnostics = []
 default = ["bridge"]
 bridge = ["dep:omabridge", "dep:anyhow", "dep:t3-protocol"]
 
