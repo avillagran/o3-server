@@ -139,7 +139,7 @@
     "orchestration.dispatchCommand": {
       "status": "partial",
       "priority": "P0",
-      "note": "Remaining native chat differences (2026-10-31): native attachments/additional context, persistent approvals, structured Claude questions, permission/setup policy, full attempt/subagent settlement and upstream inference parity. Receipt-atomic control outbox now records uncertain handoffs after restart, but native exactly-once execution/replay is unproven. tests/core.rs + provider restart test; docs/RECOVERY.md. Uploaded images/files and composer context now reach both native transports in real Connection peer tests; short real Claude/Codex turns pass. Upstream attempt identity, persistent approvals and active recovery remain partial."
+      "note": "Remaining: persistent approval policy; complete plan acceptance flow; full attempt/provider-thread identity and subagent settlement; native attachment steering; active execution recovery/control delivery acknowledgement. Uploaded attachments, composer context and structured questions are implemented (tests/provider_input.rs); see RECOVERY.md for delivery ambiguity."
     },
     "orchestration.getArchivedShellSnapshot": {
       "status": "partial",
@@ -189,7 +189,7 @@
     "orchestration.launchThread": {
       "status": "partial",
       "priority": "P0",
-      "note": "Remaining difference (2026-10-31): events::launch commits thread.create, initial message.dispatch and launch receipt separately; failure/crash can leave a thread without its first message, workspace cleanup is not atomic, and reuse does not update all upstream metadata. Empty-launch differential evidence only; not done. Real-client injected SQL failure now proves thread, initial message (including context), events and launch receipt commit or roll back together; provider starts only after commit. Worktree preparation/cleanup and reused-thread metadata remain partial."
+      "note": "Remaining: worktree preparation failure cleanup and reused-thread metadata parity. Thread, first message/context, run, events and receipt are transaction-atomic; provider starts after commit (tests/provider_input.rs)."
     },
     "orchestration.searchThread": {
       "status": "partial",
@@ -224,12 +224,12 @@
     "orchestration.subscribeShell": {
       "status": "partial",
       "priority": "P0",
-      "note": "Remaining difference (2026-10-31): bounded initial-order differential and local replay/markers pass, but upstream shell metadata and repository-identity replacement snapshots differ (docs/conformance-report.json). No full stream equivalence proof; remains partial. Shell now supplies latest user/authored timestamps and latest run requested/started/completed/activity/error metadata used by client sidebar. P0-FIELD-AUDIT.md inventories retained differential field consumers. Full metadata/order parity remains open."
+      "note": "Remaining: repository identity replacement metadata and full shell metadata/ordering parity. Latest user/run timestamps are implemented. Retained field consumers: P0-FIELD-AUDIT.md; bounded stream evidence does not certify all interleavings."
     },
     "orchestration.subscribeThread": {
       "status": "partial",
       "priority": "P0",
-      "note": "Remaining difference (2026-10-31): local full/compact decoding, history/replay and completion markers pass; upstream thread/run/item fields, attempt identities and stream ordering differ. Bounded differential cannot prove arbitrary replay/interleavings; remains partial. AskUserQuestion now projects user_input_request with question-text IDs; real client questions helper responds to the native peer. Full attempt/provider-thread identity and upstream ordering remain open."
+      "note": "Remaining: complete attempt/provider-thread identity, background/subagent settlement and upstream ordering parity. Full/compact snapshots, replay, completion markers and structured questions have real-client coverage."
     },
     "preview.adjust": {
       "status": "todo",
@@ -689,7 +689,7 @@
     "server.getConfig": {
       "status": "partial",
       "priority": "P0",
-      "note": "Isolated nightly differential proves authenticated real-client read. CLI default-scope bug fixed. Minimal capability advertisement, provider/config catalog fields and newer settings differ; unsupported capabilities remain absent/off. See docs/CONFORMANCE.md. Claude default is now claudeAgent (legacy aliases retained); Codex discovery is lazy, both providers reap after 60 s idle; native executable resolver bypasses mise shims. Embedded desktop status/read/identity/peers/publication pass via tools/desktop-bridge-e2e; this does not close provider/config catalog metadata parity. Claude models/options now derive from the pinned 3726 manifest, not bare aliases. Effort maps, fastMode, thinking and context suffixes compile to CLI settings; option changes restart/resume idle native session. Native slash commands/skills populate after first turn. Startup discovery, custom instance settings, quota and normalization remain partial."
+      "note": "Remaining: startup native command/skill discovery, custom instance configuration, quota refresh/notification and settings normalization. Pinned Claude model/options manifest and post-init command/skill discovery are implemented; Codex is lazy and provider idle sessions reap after 60 seconds."
     },
     "server.getDatabaseStorage": {
       "status": "skip",
@@ -1046,7 +1046,7 @@
     "message.dispatch": {
       "status": "partial",
       "priority": "P0",
-      "note": "Real Connection Claude/scripted/Codex peer execution, queue and steer; restart supervisor preserves native session IDs for both adapters. Receipt-atomic control outbox retains ambiguous delivery, without blind replay. Native attachments/context and upstream chat parity remain; docs/RECOVERY.md. Native uploaded images/files and serialized composer context delivered; real-client peer coverage plus two short real provider turns. Steering attachments remain unsupported."
+      "note": "Remaining: attachment steering, complete attempt identity and active execution recovery. Native uploaded images/files and serialized context are implemented; receipt-atomic control outbox records uncertain handoffs without blind replay."
     },
     "notification.delivery.accept": {
       "status": "skip",
@@ -1116,12 +1116,12 @@
     "run.interrupt": {
       "status": "partial",
       "priority": "P0",
-      "note": "Real Connection Codex stdio-peer test: live approval nodes/items, numeric native ID reply and idempotent receipt; answer/elicitation shapes unit-tested. Crash recovery remains. Receipt-atomic control outbox persists pending/handoff; restart reports delivery-unknown. Native execution acknowledgement and safe replay remain unavailable."
+      "note": "Remaining: native acknowledgement/replay after crash. Receipt-atomic control outbox persists uncertain delivery and restart reports delivery-unknown; live native control covered by Codex peer."
     },
     "runtime-request.respond": {
       "status": "partial",
       "priority": "P0",
-      "note": "Observed can_use_tool allow/deny mapping; fixture approval projection and Connection responses. Live test approves Write; persistent approvals and structured questions remain. Pending requests now carry an explicit restart cancellation reason; receipt-atomic outbox retains ambiguous answers rather than silently forgetting them. Exactly-once native approval replay remains unsupported. Claude AskUserQuestion answers now map string/array client responses to SDK question-text keys; client helper integration passes. acceptAlways remains rejected."
+      "note": "Remaining: persistent native approvals and complete plan acceptance workflow; native response acknowledgement/replay after restart. Structured Claude questions and explicit cancellation reasons are implemented; acceptAlways is currently rejected."
     },
     "subagent.stop": {
       "status": "partial",
