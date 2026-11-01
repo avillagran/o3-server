@@ -137,6 +137,38 @@ pub fn cli(args: &[String]) -> std::io::Result<()> {
         );
         return Ok(());
     }
+    if args
+        .iter()
+        .any(|a| matches!(a.as_str(), "forward" | "t3-pair"))
+    {
+        let opt = |key: &str| args.windows(2).find(|w| w[0] == key).map(|w| w[1].clone());
+        let peer = opt("--peer").ok_or_else(|| std::io::Error::other("peer required"))?;
+        let peer = omabridge::find_peer(&store, &peer)
+            .map_err(std::io::Error::other)?
+            .id;
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .max_blocking_threads(2)
+            .enable_all()
+            .build()?;
+        return runtime.block_on(async {
+            if args.iter().any(|a| a == "t3-pair") {
+                let pairing = omabridge::t3_pair_through_server(&store, &peer).await
+                    .ok_or_else(|| std::io::Error::other("embedded control socket unavailable"))?.map_err(std::io::Error::other)?;
+                println!("{}", serde_json::to_string(&pairing)?);
+                return Ok(());
+            }
+            let service = opt("--service").unwrap_or_else(|| "t3".into());
+            let listen = opt("--listen").unwrap_or_else(|| "127.0.0.1:0".into()).parse().map_err(std::io::Error::other)?;
+            let (mut socket, local) = omabridge::forward_through_server(&store, &peer, &service, listen, None).await
+                .ok_or_else(|| std::io::Error::other("embedded control socket unavailable"))?.map_err(std::io::Error::other)?;
+            println!("{}", serde_json::json!({"event":"forwarding","listen":local.to_string(),"peer":peer,"service":service}));
+            use tokio::io::AsyncReadExt;
+            let mut sink = [0;64];
+            while socket.read(&mut sink).await? > 0 {}
+            Err(std::io::Error::other("embedded server stopped"))
+        });
+    }
     let mut raw = Vec::new();
     std::io::stdin().take(65537).read_to_end(&mut raw)?;
     let request = if raw.len() <= 65536 {

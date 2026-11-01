@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+"""Isolated native desktop management against the embedded bridge (no services)."""
+import json, os, pathlib, subprocess, tempfile, time
+root = pathlib.Path('/var/tmp/o3-build')
+server = pathlib.Path(os.environ.get('O3_BIN', str(root / 'main/debug/o3-server'))).resolve()
+client = pathlib.Path(os.environ.get('O3_DESKTOP_BIN', str(root / 'main/debug/omarchy-t3-client'))).resolve()
+with tempfile.TemporaryDirectory(prefix='db-', dir=root) as temp:
+    p = pathlib.Path(temp)
+    (p/'bin').mkdir()
+    (p/'bin/t3').symlink_to(server)
+    env = {**os.environ, 'HOME':temp, 'T3CODE_HOME':str(p/'t3'), 'XDG_CONFIG_HOME':str(p/'config'),
+           'XDG_DATA_HOME':str(p/'data'), 'XDG_STATE_HOME':str(p/'state'), 'XDG_RUNTIME_DIR':str(p/'run'),
+           'CODEX_HOME':str(p/'codex'), 'CLAUDE_CONFIG_DIR':str(p/'claude'), 'TMPDIR':str(root/'tmp'),
+           'PATH':str(p/'bin')+':/usr/bin:/bin'}
+    process = subprocess.Popen([str(server),'serve','--port','0'], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        deadline = time.monotonic()+30
+        while not (p/'t3/omabridge/host.json').exists() or not (p/'t3/omabridge/control.sock').exists():
+            assert process.poll() is None and time.monotonic()<deadline
+            time.sleep(.05)
+        def call(command, request=None):
+            out = subprocess.check_output([str(client),command], input=json.dumps(request) if request else None, text=True, env=env, timeout=40)
+            return json.loads(out)
+        status=call('omabridge-status')
+        assert status['available'] and status['identity'] and status['peers']==[], status
+        def manage(request):
+            result=call('omabridge-manage', request)
+            assert result['status']==0, result
+            return result['output']
+        read=manage({'action':'read'})
+        assert read['published']['backend']=='embedded', read
+        manage({'action':'unpublish','confirmed':True})
+        manage({'action':'publish','confirmed':True,'t3':True,'ssh':False,'mcp':False})
+        manage({'action':'invite','confirmed':True,'services':['t3'],'directory':temp})
+        print(json.dumps({'status':'pass','available':True,'identity':True,'peers':0,'read':True,'publish':True,'unpublish':True}))
+    finally:
+        process.terminate()
+        try: process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill(); process.wait()

@@ -43,7 +43,7 @@ strip = true
 
 # Local co-development only: replace with a pinned upstream git rev before release.
 [patch.crates-io]
-omabridge = { path = "/var/tmp/o3-build/embed/omabridge" }
+omabridge = { path = "../omabridge-embed" }
 
 [profile.dev]
 debug = 0
