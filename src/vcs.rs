@@ -791,6 +791,16 @@ pub async fn discover() -> Reply {
             &["account", "show", "--query", "user.name", "-o", "tsv"][..],
             "Install the Azure command-line tools (`az`), then enable Azure DevOps support with `az extension add --name azure-devops`.",
         ),
+        (
+            "forgejo", "Forgejo / Gitea", "tea",
+            &["login", "status", "--output", "json"][..],
+            "Install tea and run `tea login add` for your Forgejo or Gitea server.",
+        ),
+        (
+            "gitcafe", "GitCafe", "cafe",
+            &["--host", "https://git.cafe/api", "auth", "status", "--json"][..],
+            "Install the GitCafe CLI with `bun install -g @gitcafe/cli`, then run `cafe auth login --host https://git.cafe/api`.",
+        ),
     ] {
         let version = proc::run(exe, Path::new("/"), &["--version"], probe(), &[]).await;
         let (status, version, detail) = match version {
@@ -825,7 +835,17 @@ pub async fn discover() -> Reply {
                 Err(_) => {}
             }
         }
+        if matches!(kind, "forgejo" | "gitcafe") && status == "available" {
+            // Exit status alone cannot distinguish offline/refused/unparseable auth.
+            auth["status"] = json!("unknown");
+        }
         providers.push(json!({"kind":kind,"label":label,"executable":exe,"status":status,"version":option(version),"installHint":hint,"detail":option(detail),"auth":auth}));
     }
+    // API-backed provider: availability does not depend on a local executable.
+    // Authentication is unknown until an API credential probe is implemented.
+    providers.push(json!({"kind":"bitbucket","label":"Bitbucket","status":"available",
+        "version":{"_tag":"None"},"installHint":"Add a Bitbucket token in Settings → Source Control.",
+        "detail":{"_tag":"None"},"auth":{"status":"unknown","account":{"_tag":"None"},
+        "host":{"_tag":"Some","value":"bitbucket.org"},"detail":{"_tag":"None"}}}));
     Ok(json!({"versionControlSystems":systems,"sourceControlProviders":providers}))
 }

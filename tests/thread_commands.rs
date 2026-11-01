@@ -650,11 +650,25 @@ fn source_control_discovery_has_honest_git_probe_and_option_encoding() {
         .iter()
         .map(|p| p["kind"].as_str().unwrap())
         .collect();
-    assert_eq!(kinds, ["github", "gitlab", "azure-devops"]);
+    assert_eq!(
+        kinds,
+        [
+            "github",
+            "gitlab",
+            "azure-devops",
+            "forgejo",
+            "gitcafe",
+            "bitbucket"
+        ]
+    );
+    let bitbucket = providers.last().unwrap();
+    assert_eq!(bitbucket["status"], "available");
+    assert_eq!(bitbucket["auth"]["status"], "unknown");
+    assert!(bitbucket.get("executable").is_none());
     assert_eq!(providers[0]["label"], "GitHub");
     assert_eq!(providers[0]["executable"], "gh");
     for p in providers {
-        assert!(p["installHint"].as_str().unwrap().starts_with("Install"));
+        assert!(!p["installHint"].as_str().unwrap().is_empty());
         assert!(matches!(
             p["status"].as_str(),
             Some("available" | "missing")

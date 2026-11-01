@@ -461,3 +461,11 @@ hits, and folds Greek final sigma consistently with searchThread. Real Connectio
 body-only competitor, an interior title substring, case folding and titlesOnly.
 Both search rows remain partial: complete upstream ranking, body substring/folding
 and rendered/context segmentation still require implementation and reader evidence.
+
+## Add-project discovery entries (2026-11-01)
+Real Connection discovery test now checks Forgejo/Gitea (`tea`), GitCafe (`cafe`)
+and Bitbucket (API, no executable), alongside existing CLI providers. These are
+the missing kinds listed by desktop T3AddProject.qml. Bitbucket availability is
+independent of CLI installation, matching reference discovery.ts's API branch.
+Row remains partial: credential/API validation and fj fallback are unavailable;
+new host authentication stays explicitly unknown rather than inferred from exits.
