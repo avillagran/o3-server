@@ -174,6 +174,31 @@ pub(crate) async fn bounded(s: &State, input: RunInput) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    #[ignore = "one installed Claude Haiku text-only turn with production argv"]
+    async fn live_claude_text_only_argv_acceptance() {
+        let dir = std::env::temp_dir().join(crate::store::random_id().unwrap());
+        let state = State::open(&dir).unwrap();
+        *state.provider.lock().unwrap() =
+            Some(Arc::new(crate::claude::ClaudeProvider::discover().unwrap()));
+        let input = RunInput {
+            provider_instance_id: "claudeAgent".into(),
+            native_session_id: None,
+            thread_id: "title-live".into(),
+            run_id: "title-live".into(),
+            cwd: dir.clone(),
+            text: "Reply with exactly OK. Do not use tools.".into(),
+            model_selection: json!({"instanceId":"claudeAgent","model":"haiku"}),
+            runtime_mode: "text-only".into(),
+            interaction_mode: "default".into(),
+            attachment_root: dir.clone(),
+            attachments: json!([]),
+            context: None,
+        };
+        assert_eq!(bounded(&state, input).await.as_deref(), Some("OK"));
+        drop(state);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn consent_selection_never_chooses_an_unrequested_provider() {
         let dir = std::env::temp_dir().join(crate::store::random_id().unwrap());

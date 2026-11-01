@@ -719,7 +719,7 @@ fn usage_limits(info: &Value) -> Value {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn text_only_mcp_config_is_accepted_by_the_real_cli() {
+    fn text_only_mcp_config_literal_has_the_required_schema() {
         // The CLI rejects `{}`: its schema requires the mcpServers record.
         let source = include_str!("claude.rs");
         let config: Value = serde_json::from_str(r#"{"mcpServers":{}}"#).unwrap();

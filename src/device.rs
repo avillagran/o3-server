@@ -58,7 +58,7 @@ pub fn id(p: &Value) -> Result<&str, Value> {
     if s.len() > 256
         || !s
             .bytes()
-            .all(|c| c.is_ascii_alphanumeric() || b"._:-".contains(&c))
+            .all(|c| c.is_ascii_alphanumeric() || b"._:- ()".contains(&c))
         || s.starts_with('-')
     {
         return Err(invalid("invalid deviceId"));
@@ -76,11 +76,17 @@ pub async fn state(s: &State) -> Reply {
             Ok(b) => {
                 status = "ready";
                 for line in String::from_utf8_lossy(&b).lines().skip(1).take(2048) {
-                    let fields: Vec<_> = line.split_whitespace().collect();
-                    if fields.len() < 2 || fields[1] != "device" {
+                    let (serial, rest) = line
+                        .split_once('\t')
+                        .or_else(|| line.split_once(' '))
+                        .unwrap_or(("", ""));
+                    let fields: Vec<_> = rest.split_whitespace().collect();
+                    if serial.is_empty()
+                        || id(&json!({"deviceId":serial})).is_err()
+                        || fields.first() != Some(&"device")
+                    {
                         continue;
                     }
-                    let serial = fields[0];
                     let name = fields
                         .iter()
                         .find_map(|s| s.strip_prefix("model:"))

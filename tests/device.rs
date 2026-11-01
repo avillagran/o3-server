@@ -15,9 +15,11 @@ fn connected_adb_contract() {
 echo "$*" >> '{}'
 case "$*" in
 "devices -l") printf 'List of devices attached
-phone device model:Pixel
+phone	device model:Pixel
+adb-proof (2)._adb-tls-connect._tcp	device model:Wireless
 locked unauthorized
 ';;
+"-s adb-proof (2)._adb-tls-connect._tcp get-state") echo device;;
 "-s phone get-state") echo device;;
 "-s phone shell wm size") echo 'Physical size: 1080x1920';;
 "-s phone exec-out screencap -p") printf '\211PNG\r\n\032\nFAKE';;
@@ -38,8 +40,21 @@ esac
     );
     let c = server.connect();
     let list = t3_protocol::api::device::list(&c, None, Some(true), None).unwrap();
-    assert_eq!(list["devices"].as_array().unwrap().len(), 1);
+    assert_eq!(list["devices"].as_array().unwrap().len(), 2);
     assert_eq!(list["devices"][0]["id"], "phone");
+    assert_eq!(
+        list["devices"][1]["id"],
+        "adb-proof (2)._adb-tls-connect._tcp"
+    );
+    assert_eq!(
+        c.rpc(
+            "device.detail",
+            json!({"deviceId":"adb-proof (2)._adb-tls-connect._tcp"})
+        )
+        .unwrap()["deviceId"],
+        "adb-proof (2)._adb-tls-connect._tcp"
+    );
+    // The pinned lib's hub URL builder rejects spaces; exercise hub transport with its supported serial.
     let mut stream = support::subscribe(server.connect(), "subscribeDeviceState", json!({}));
     assert_eq!(stream.next(Duration::from_secs(15))["hostStatus"], "ready");
     t3_protocol::api::device::configure(&c, None, Some(true), Some(true)).unwrap();

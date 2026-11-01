@@ -1132,6 +1132,13 @@ fn requested_projects(s: &State, p: &Value) -> Vec<Project> {
     }
 }
 
+fn list_search_terms(p: &Value, involvement: &str) -> Vec<String> {
+    let mut terms = search_terms(p);
+    if involvement == "reviewing" {
+        terms.insert(0, "review-requested:@me".into());
+    }
+    terms
+}
 fn search_terms(p: &Value) -> Vec<String> {
     let mut terms = Vec::new();
     let f = &p["filters"];
@@ -1246,7 +1253,7 @@ async fn list(s: &State, p: &Value) -> Reply {
         .collect();
         match involvement {
             "authored" => args.extend(["--author".into(), "@me".into()]),
-            "reviewing" => args.extend(["--search".into(), "review-requested:@me".into()]),
+
             _ => {}
         }
         if let Some(author) = p["filters"]["author"]
@@ -1264,7 +1271,7 @@ async fn list(s: &State, p: &Value) -> Reply {
             };
             args.extend(["--author".into(), author]);
         }
-        let terms = search_terms(p);
+        let terms = list_search_terms(p, involvement);
         if !terms.is_empty() {
             args.extend(["--search".into(), terms.join(" ")]);
         }
@@ -1594,6 +1601,47 @@ fn strip_agent_credits(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reviewing_and_filters_share_one_search_expression() {
+        assert_eq!(
+            list_search_terms(
+                &json!({"filters":{"draft":"hide"},"query":"label:bug"}),
+                "reviewing"
+            ),
+            ["review-requested:@me", "draft:false", "label:bug"]
+        );
+    }
+    #[test]
+    #[ignore = "read-only query with installed authenticated gh and GH_DEBUG=api"]
+    fn live_gh_merged_search_reaches_the_real_api() {
+        let terms = list_search_terms(&json!({"filters":{"draft":"hide"}}), "reviewing").join(" ");
+        let binary = crate::executable::resolve(std::path::Path::new("gh")).unwrap();
+        let output = std::process::Command::new(binary)
+            .args([
+                "pr",
+                "list",
+                "--repo",
+                "avillagran/o3-server",
+                "--search",
+                &terms,
+                "--limit",
+                "1",
+                "--json",
+                LIST_FIELDS,
+            ])
+            .env("GH_DEBUG", "api")
+            .output()
+            .unwrap();
+        let debug = String::from_utf8_lossy(&output.stderr);
+        assert!(output.status.success(), "gh query failed");
+        assert!(
+            debug.contains("review-requested:@me") && debug.contains("draft:false"),
+            "both qualifiers must reach GitHub"
+        );
+        assert!(serde_json::from_slice::<Value>(&output.stdout)
+            .unwrap()
+            .is_array());
+    }
     #[test]
     fn remotes_parse() {
         for (u, h, r) in [
