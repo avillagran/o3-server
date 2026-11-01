@@ -12,6 +12,8 @@ fn preview_registry_events_and_refusal_of_the_server_runtime() {
     let server = start(|_| {});
     let c = server.connect();
     let mut events = subscribe(server.connect(), "subscribePreviewEvents", json!({}));
+    // This stream sends no first item to wait on, and requests on separate sockets do not order.
+    std::thread::sleep(std::time::Duration::from_millis(200));
 
     let opened = c
         .rpc(

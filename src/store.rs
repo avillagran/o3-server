@@ -30,6 +30,8 @@ pub struct State {
     #[cfg(feature = "bridge")]
     pub bridge_endpoints: Mutex<Vec<Value>>,
     pub db: Mutex<Connection>,
+    pub(crate) reader: Mutex<Connection>,
+    checkpoint_started: std::sync::atomic::AtomicBool,
     pub signing_key: Vec<u8>,
     pub environment_id: String,
     pub label: String,
@@ -77,7 +79,7 @@ pub fn random_id() -> Result<String, String> {
 }
 
 const SCHEMA: &str = "
-PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA journal_size_limit=33554432; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA cache_size=-512; PRAGMA mmap_size=0;
+PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA journal_size_limit=33554432; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA wal_autocheckpoint=0; PRAGMA cache_size=-512; PRAGMA mmap_size=0;
 CREATE TABLE IF NOT EXISTS auth_sessions(
   session_id TEXT PRIMARY KEY, subject TEXT NOT NULL, scopes TEXT NOT NULL, method TEXT NOT NULL,
   client TEXT NOT NULL, issued_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, revoked_at INTEGER);
@@ -91,6 +93,14 @@ impl State {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
         let db = Connection::open(dir.join("o3.sqlite")).map_err(|e| e.to_string())?;
         db.execute_batch(SCHEMA).map_err(|e| e.to_string())?;
+        let reader = Connection::open_with_flags(
+            dir.join("o3.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .map_err(|e| e.to_string())?;
+        reader
+            .execute_batch("PRAGMA cache_size=-512; PRAGMA mmap_size=0;")
+            .map_err(|e| e.to_string())?;
         let signing_key = auth::load_or_create_key(&dir.join("secrets/server-signing-key.bin"))
             .map_err(|e| e.to_string())?;
         let id_path = dir.join("environment-id");
@@ -113,12 +123,49 @@ impl State {
             active: Mutex::new(std::collections::BTreeMap::new()),
             changed,
             streams: crate::streams::Hub::new(),
+            reader: Mutex::new(reader),
+            checkpoint_started: std::sync::atomic::AtomicBool::new(false),
             db: Mutex::new(db),
             signing_key,
             environment_id,
             label,
             dir: dir.into(),
         })
+    }
+
+    /// Backpressure on blocking workers, outside the receipt transaction.
+    pub fn wait_for_wal_budget(&self) {
+        // Backpressure before opening a write transaction. A single transaction can
+        // exceed the budget; pinned readers delay reclamation rather than grow WAL forever.
+        let wal = self.dir.join("o3.sqlite-wal");
+        while std::fs::metadata(&wal).is_ok_and(|m| m.len() > 32 * 1024 * 1024) {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+
+    /// Separate connection and OS thread: checkpoint I/O never runs in a commit or Tokio worker.
+    pub fn start_checkpointer(self: &std::sync::Arc<Self>) {
+        if self
+            .checkpoint_started
+            .swap(true, std::sync::atomic::Ordering::Relaxed)
+        {
+            return;
+        }
+        let weak = std::sync::Arc::downgrade(self);
+        let path = self.dir.join("o3.sqlite");
+        std::thread::Builder::new().name("sqlite-checkpoint".into()).stack_size(256 * 1024).spawn(move || {
+            let Ok(db) = Connection::open(path) else { return };
+            let _ = db.execute_batch("PRAGMA busy_timeout=0; PRAGMA journal_size_limit=33554432; PRAGMA wal_autocheckpoint=0;");
+            while weak.strong_count() != 0 {
+                let _ = db.execute_batch("PRAGMA wal_checkpoint(PASSIVE);");
+                // PASSIVE never waits for readers. At the budget, try reclaiming
+                // the file; busy_timeout=0 keeps pinned snapshots nonblocking.
+                if db.path().is_some_and(|p| std::fs::metadata(format!("{p}-wal")).is_ok_and(|m| m.len() > 32 * 1024 * 1024)) {
+                    let _ = db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        }).expect("start SQLite checkpointer");
     }
 
     /// A one-use pairing secret, as `/api/auth/pairing-token` hands out.
@@ -191,12 +238,12 @@ impl State {
 
     fn live(&self, claims: Value, now: i64) -> Option<Value> {
         let sid = claims["sid"].as_str()?;
-        self.db.lock().unwrap().query_row(
+        self.reader.lock().unwrap().query_row(
             "SELECT 1 FROM auth_sessions WHERE session_id=? AND revoked_at IS NULL AND expires_at>?",
             params![sid, now], |_| Ok(()),
         ).optional().ok()??;
         let (scopes, subject): (String, String) = self
-            .db
+            .reader
             .lock()
             .unwrap()
             .query_row(

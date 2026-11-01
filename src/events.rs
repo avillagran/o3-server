@@ -135,7 +135,7 @@ pub(crate) fn shell_thread(db: &Connection, t: &Value) -> Result<Value> {
     Ok(t)
 }
 pub fn shell(s: &State) -> Result<Value> {
-    let db = s.db.lock().unwrap();
+    let db = s.reader.lock().unwrap();
     shell_db(&db)
 }
 pub(crate) fn shell_db(db: &Connection) -> Result<Value> {
@@ -157,7 +157,7 @@ pub(crate) fn shell_db(db: &Connection) -> Result<Value> {
     )
 }
 pub fn projection(s: &State, tid: &str) -> Result<Value> {
-    let db = s.db.lock().unwrap();
+    let db = s.reader.lock().unwrap();
     projection_db(&db, tid)
 }
 pub(crate) fn projection_db(db: &Connection, tid: &str) -> Result<Value> {
@@ -186,7 +186,7 @@ pub(crate) fn projection_db(db: &Connection, tid: &str) -> Result<Value> {
     Ok(p)
 }
 pub fn bounded(s: &State, tid: &str) -> Result<Value> {
-    let db = s.db.lock().unwrap();
+    let db = s.reader.lock().unwrap();
     let p = projection_db(&db, tid)?;
     let (cursor, more) = history_boundary(&db, tid)?;
     Ok(
@@ -213,7 +213,7 @@ fn history_boundary(db: &Connection, tid: &str) -> Result<(Option<String>, bool)
 }
 pub fn history(s: &State, tid: &str, cursor: &str) -> Result<Value> {
     let anchor: i64 = cursor.parse().map_err(|_| "invalid history cursor")?;
-    let db = s.db.lock().unwrap();
+    let db = s.reader.lock().unwrap();
     get(&db, "thread", tid)?;
     let (lower, more) = crate::snapshot::boundary(&db, tid, anchor)?;
     let mut q=db.prepare("SELECT body FROM records WHERE kind='visibleTurnItems' AND thread_id=? AND rowid<? AND rowid>=? ORDER BY rowid DESC").map_err(|e|e.to_string())?;
@@ -235,7 +235,7 @@ pub fn history(s: &State, tid: &str, cursor: &str) -> Result<Value> {
 }
 
 pub fn next(s: &State, after: i64, tid: Option<&str>, shell: bool) -> Result<Option<(i64, Value)>> {
-    let db = s.db.lock().unwrap();
+    let db = s.reader.lock().unwrap();
     let column = if shell { "shell" } else { "body" };
     let sql=format!("SELECT sequence,{column} FROM events WHERE sequence>? AND (?2 IS NULL OR thread_id=?2) AND {column} IS NOT NULL ORDER BY sequence LIMIT 1");
     let row: Option<(i64, String)> = db

@@ -104,6 +104,7 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
     s: Arc<State>,
     session: Value,
 ) {
+    s.start_checkpointer();
     let mut changed = s.changed.subscribe();
     let mut live_changed = s.streams.changed.subscribe();
     let mut subscriptions: BTreeMap<String, Subscription> = BTreeMap::new();
@@ -349,7 +350,7 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                                     }else if matches!(tag,"orchestration.subscribeShell"|"orchestration.subscribeThread"|"server.subscribeServerConfig"|"subscribeServerConfig") {
                                         if subscriptions.len()>=64||subscriptions.contains_key(&id.to_string()) {if send(&mut ws,exit(&id,Err(error("subscription limit or duplicate id".into())))).await.is_err(){return}continue;}
                                         // Register notification receiver before any snapshot; no await until cursor is installed.
-                                        let version=*changed.borrow();let seq=events::sequence(&s.db.lock().unwrap()).unwrap_or(0);let after=p["afterSequence"].as_i64().filter(|v|*v<=seq);
+                                        let version=*changed.borrow();let seq=events::sequence(&s.reader.lock().unwrap()).unwrap_or(0);let after=p["afterSequence"].as_i64().filter(|v|*v<=seq);
                                         let tid=if tag=="orchestration.subscribeThread" {p["threadId"].as_str().map(str::to_owned)}else{None};
                                         let config=matches!(tag,"server.subscribeServerConfig"|"subscribeServerConfig");
                                         if tag=="orchestration.subscribeThread" && tid.is_none() {if send(&mut ws,exit(&id,Err(error("threadId required".into())))).await.is_err(){return}continue;}
@@ -364,7 +365,19 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                                         let first_config=if config {settings::config(&s).ok()}else{None};
                                         let initial=first_config.clone().map(|c|json!({"version":1,"type":"snapshot","config":c}));
                                         subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid,cursor:after.unwrap_or(boundary),waiting:false,initial,snapshot,live:None,events:None,marker:p["requestCompletionMarker"]==true,version,last_config:first_config});
-                                    }else{let result=match crate::routes::call(&s,tag,p).await{Some(r)=>r,None=>dispatch(&s,tag,p)};if send(&mut ws,exit(&id,result)).await.is_err(){return}}
+                                    }else{
+                                        if inflight.load(std::sync::atomic::Ordering::Relaxed)>=16 {if send(&mut ws,exit(&id,Err(error("too many concurrent requests on this socket".into())))).await.is_err(){return}continue;}
+                                        inflight.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
+                                        let (state,tag,p,tx,count)=(s.clone(),tag.to_owned(),p.clone(),done_tx.clone(),inflight.clone());
+                                        tokio::spawn(async move {
+                                            let result=match crate::routes::call(&state,&tag,&p).await {
+                                                Some(r)=>r,
+                                                None=>tokio::task::spawn_blocking(move || { if matches!(tag.as_str(),"orchestration.dispatchCommand"|"orchestration.launchThread"|"projects.mutate") {state.wait_for_wal_budget();} dispatch(&state,&tag,&p) }).await.unwrap_or_else(|e|Err(error(e.to_string())))
+                                            };
+                                            count.fetch_sub(1,std::sync::atomic::Ordering::Relaxed);
+                                            let _=tx.send(exit(&id,result));
+                                        });
+                                    }
                                 },_=>{}
                             }
                         }
@@ -372,5 +385,101 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod isolation_tests {
+    use super::*;
+    use tokio_tungstenite::tungstenite::protocol::Role;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn slow_writes_leave_ping_and_unrelated_read_responsive() {
+        let dir = std::env::temp_dir().join(crate::store::random_id().unwrap());
+        let state = Arc::new(State::open(&dir).unwrap());
+        let token = state
+            .issue_session(
+                "test",
+                &crate::store::STANDARD_SCOPES.map(str::to_owned),
+                60_000,
+                "test",
+            )
+            .unwrap();
+        let session = state.session(&token).unwrap();
+        let (locked_tx, locked_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let writer_state = state.clone();
+        let writer = std::thread::spawn(move || {
+            let mut db = writer_state.db.lock().unwrap();
+            let tx = db.transaction().unwrap();
+            tx.execute(
+                "INSERT INTO receipts(command_id,result) VALUES('slow-writer','null')",
+                [],
+            )
+            .unwrap();
+            locked_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+            tx.commit().unwrap();
+        });
+        locked_rx.recv().unwrap();
+        let (client, server) = tokio::io::duplex(65536);
+        let server = WebSocketStream::from_raw_socket(server, Role::Server, None).await;
+        let mut client = WebSocketStream::from_raw_socket(client, Role::Client, None).await;
+        let task = tokio::spawn(run(server, state, session));
+        // Both worker threads used to be vulnerable to synchronous SQLite busy waits.
+        for id in 0..2 {
+            client.send(Message::Text(json!({"_tag":"Request","id":id,"tag":"orchestration.dispatchCommand","payload":{"type":"thread.create","commandId":format!("slow-{id}"),"threadId":format!("t-{id}"),"projectId":"p","title":"slow","modelSelection":{"instanceId":"scripted","model":"test","options":[]},"runtimeMode":"full-access","interactionMode":"default"}}).to_string().into())).await.unwrap();
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        client
+            .send(Message::Text(json!({"_tag":"Ping"}).to_string().into()))
+            .await
+            .unwrap();
+        client
+            .send(Message::Text(
+                json!({"_tag":"Request","id":"read","tag":"server.getSettings","payload":{}})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            let mut pong = false;
+            let mut read = false;
+            while !pong || !read {
+                let Message::Text(text) = client.next().await.unwrap().unwrap() else {
+                    continue;
+                };
+                let v: Value = serde_json::from_str(&text).unwrap();
+                pong |= v["_tag"] == "Pong";
+                if v["requestId"] == "read" {
+                    assert_eq!(v["exit"]["_tag"], "Success");
+                    read = true;
+                }
+                assert!(
+                    v["requestId"] != 0 && v["requestId"] != 1,
+                    "write completed while blocked: {v}"
+                );
+            }
+        })
+        .await
+        .expect("socket stalled behind a write");
+        release_tx.send(()).unwrap();
+        writer.join().unwrap();
+        for _ in 0..2 {
+            let v = tokio::time::timeout(std::time::Duration::from_secs(5), client.next())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            let Message::Text(text) = v else {
+                panic!("expected receipt")
+            };
+            let v: Value = serde_json::from_str(&text).unwrap();
+            assert_eq!(v["exit"]["_tag"], "Success", "{v}");
+        }
+        client.close(None).await.unwrap();
+        task.await.unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

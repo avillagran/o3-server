@@ -298,6 +298,7 @@ pub async fn serve_io<I>(io: I, state: Arc<State>) -> std::io::Result<()>
 where
     I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
+    state.start_checkpointer();
     crate::scheduled::ensure_started(&state);
     let weak = Arc::downgrade(&state);
     tokio::spawn(async move {
@@ -335,6 +336,7 @@ pub async fn serve(listener: TcpListener, state: Arc<State>) -> std::io::Result<
         .map_err(std::io::Error::other)?;
     crate::recovery::resume(&state).map_err(std::io::Error::other)?;
     crate::heap::collect();
+    state.start_checkpointer();
     crate::scheduled::ensure_started(&state);
     let weak = Arc::downgrade(&state);
     tokio::spawn(async move {
