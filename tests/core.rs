@@ -391,3 +391,97 @@ fn control_outbox_is_receipt_atomic_and_restart_reports_uncertain_delivery() {
     drop(s);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn restart_finalizes_streaming_transcript_and_provider_nodes() {
+    let dir = directory();
+    let s = State::open(&dir).unwrap();
+    {
+        let db = s.db.lock().unwrap();
+        for (kind, id, value) in [
+            (
+                "thread",
+                "t",
+                json!({"id":"t","providerInstanceId":"claudeAgent"}),
+            ),
+            (
+                "runs",
+                "r",
+                json!({"id":"r","threadId":"t","status":"running"}),
+            ),
+            (
+                "nodes",
+                "r",
+                json!({"id":"r","runId":"r","status":"running"}),
+            ),
+            (
+                "providerTurns",
+                "r",
+                json!({"id":"r","runId":"r","status":"running"}),
+            ),
+            (
+                "messages",
+                "assistant-r",
+                json!({"id":"assistant-r","threadId":"t","runId":"r","role":"assistant","text":"partial","streaming":true}),
+            ),
+            (
+                "turnItems",
+                "tool",
+                json!({"id":"tool","threadId":"t","runId":"r","type":"command_execution","status":"running"}),
+            ),
+        ] {
+            db.execute(
+                "INSERT INTO records VALUES(?,?,?,?)",
+                rusqlite::params![kind, id, "t", value.to_string()],
+            )
+            .unwrap();
+        }
+    }
+    o3_server::recovery::recover(&mut s.db.lock().unwrap()).unwrap();
+    let db = s.db.lock().unwrap();
+    for (kind, id) in [
+        ("runs", "r"),
+        ("nodes", "r"),
+        ("providerTurns", "r"),
+        ("turnItems", "tool"),
+    ] {
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(
+                &db.query_row(
+                    "SELECT body FROM records WHERE kind=? AND id=?",
+                    [kind, id],
+                    |r| r.get::<_, String>(0)
+                )
+                .unwrap()
+            )
+            .unwrap()["status"],
+            "failed"
+        );
+    }
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(
+            &db.query_row(
+                "SELECT body FROM records WHERE kind='messages' AND id='assistant-r'",
+                [],
+                |r| r.get::<_, String>(0)
+            )
+            .unwrap()
+        )
+        .unwrap()["streaming"],
+        false
+    );
+    let count: i64 = db
+        .query_row("SELECT count(*) FROM events", [], |r| r.get(0))
+        .unwrap();
+    drop(db);
+    o3_server::recovery::recover(&mut s.db.lock().unwrap()).unwrap();
+    assert_eq!(
+        s.db.lock()
+            .unwrap()
+            .query_row("SELECT count(*) FROM events", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        count
+    );
+    drop(s);
+    std::fs::remove_dir_all(dir).unwrap();
+}

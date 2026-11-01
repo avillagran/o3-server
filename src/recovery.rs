@@ -26,6 +26,54 @@ pub fn recover(db: &mut Connection) -> Result<(), String> {
                 v["status"] = json!("failed");
                 v["completedAt"] = json!(iso(now_ms()));
                 v["error"] = json!("server restarted during execution");
+                if let Ok(t) = events::get(&tx, "thread", &tid) {
+                    let at = v["completedAt"].as_str().unwrap();
+                    crate::projection::finish(&tx, &tid, &id, &t, at, "failed")?;
+                    let mut child_cursor = 0i64;
+                    loop {
+                        let row=tx.query_row("SELECT rowid,kind,id,body FROM records WHERE thread_id=? AND rowid>? AND kind IN ('nodes','attempts','subagents') AND (json_extract(body,'$.runId')=? OR json_extract(body,'$.parentNodeId')=?) AND json_extract(body,'$.status') IN ('running','starting','waiting','pending') ORDER BY rowid LIMIT 1",rusqlite::params![tid,child_cursor,id,id],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?))).optional().map_err(|e|e.to_string())?;
+                        let Some((cursor, kind, child, body)) = row else {
+                            break;
+                        };
+                        child_cursor = cursor;
+                        let mut child_value: Value =
+                            serde_json::from_str(&body).map_err(|e| e.to_string())?;
+                        child_value["status"] = json!("failed");
+                        child_value["completedAt"] = json!(at);
+                        child_value["updatedAt"] = json!(at);
+                        events::put(&tx, &kind, &child, &tid, &child_value)?;
+                        events::append(
+                            &tx,
+                            &tid,
+                            match kind.as_str() {
+                                "nodes" => "node.updated",
+                                "attempts" => "attempt.updated",
+                                _ => "subagent.updated",
+                            },
+                            child_value,
+                            &t,
+                        )?;
+                    }
+                    let mut q=tx.prepare("SELECT id,body FROM records WHERE kind='messages' AND thread_id=? AND json_extract(body,'$.runId')=? AND json_extract(body,'$.streaming')=1").map_err(|e|e.to_string())?;
+                    let rows = q
+                        .query_map([&tid, &id], |r| {
+                            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+                        })
+                        .map_err(|e| e.to_string())?
+                        .collect::<std::result::Result<Vec<_>, _>>()
+                        .map_err(|e| e.to_string())?;
+                    drop(q);
+                    for (mid, body) in rows {
+                        let mut m: Value =
+                            serde_json::from_str(&body).map_err(|e| e.to_string())?;
+                        m["streaming"] = json!(false);
+                        m["updatedAt"] = json!(at);
+                        events::put(&tx, "messages", &mid, &tid, &m)?;
+                        events::append(&tx, &tid, "message.updated", m.clone(), &t)?;
+                        let item = events::message_item(&tx, &tid, &m)?;
+                        events::append(&tx, &tid, "turn-item.updated", item, &t)?;
+                    }
+                }
                 "run.updated"
             }
             "runtimeRequests" if v["status"] == "pending" => {
