@@ -791,16 +791,6 @@ pub async fn discover() -> Reply {
             &["account", "show", "--query", "user.name", "-o", "tsv"][..],
             "Install the Azure command-line tools (`az`), then enable Azure DevOps support with `az extension add --name azure-devops`.",
         ),
-        (
-            "forgejo", "Forgejo / Gitea", "tea",
-            &["login", "status", "--output", "json"][..],
-            "Install tea and run `tea login add` for your Forgejo or Gitea server.",
-        ),
-        (
-            "gitcafe", "GitCafe", "cafe",
-            &["--host", "https://git.cafe/api", "auth", "status", "--json"][..],
-            "Install the GitCafe CLI with `bun install -g @gitcafe/cli`, then run `cafe auth login --host https://git.cafe/api`.",
-        ),
     ] {
         let version = proc::run(exe, Path::new("/"), &["--version"], probe(), &[]).await;
         let (status, version, detail) = match version {
@@ -828,9 +818,9 @@ pub async fn discover() -> Reply {
                         auth["account"] = option(Some(text));
                     }
                 }
-                Ok(o) => {
+                Ok(_o) => {
                     auth["status"] = json!("unauthenticated");
-                    auth["detail"] = option(Some(o.stderr.chars().take(500).collect()));
+                    auth["detail"] = option(Some("Credential probe failed; inspect the CLI locally.".into()));
                 }
                 Err(_) => {}
             }
@@ -841,11 +831,143 @@ pub async fn discover() -> Reply {
         }
         providers.push(json!({"kind":kind,"label":label,"executable":exe,"status":status,"version":option(version),"installHint":hint,"detail":option(detail),"auth":auth}));
     }
-    // API-backed provider: availability does not depend on a local executable.
-    // Authentication is unknown until an API credential probe is implemented.
-    providers.push(json!({"kind":"bitbucket","label":"Bitbucket","status":"available",
-        "version":{"_tag":"None"},"installHint":"Add a Bitbucket token in Settings → Source Control.",
-        "detail":{"_tag":"None"},"auth":{"status":"unknown","account":{"_tag":"None"},
-        "host":{"_tag":"Some","value":"bitbucket.org"},"detail":{"_tag":"None"}}}));
+    for (kind, label, token_env, endpoint) in [
+        (
+            "bitbucket",
+            "Bitbucket",
+            "BITBUCKET_ACCESS_TOKEN",
+            Some("https://api.bitbucket.org/2.0/user".to_owned()),
+        ),
+        (
+            "forgejo",
+            "Forgejo / Gitea",
+            "FORGEJO_TOKEN",
+            std::env::var("FORGEJO_URL").ok().and_then(|url| {
+                let mut url = url::Url::parse(&url).ok()?;
+                if url.scheme() != "https"
+                    || !url.username().is_empty()
+                    || url.password().is_some()
+                    || url.query().is_some()
+                    || url.fragment().is_some()
+                {
+                    return None;
+                }
+                url.set_path(&format!("{}/api/v1/user", url.path().trim_end_matches('/')));
+                Some(url.to_string())
+            }),
+        ),
+        ("gitcafe", "GitCafe", "CAFE_TOKEN", None),
+    ] {
+        let token = std::env::var(token_env)
+            .ok()
+            .filter(|s| !s.trim().is_empty());
+        let mut auth = json!({"status":"unknown","account":{"_tag":"None"},"host":{"_tag":"None"},"detail":{"_tag":"None"}});
+        if let Some(endpoint) = endpoint.as_deref() {
+            auth["host"] = option(
+                url::Url::parse(endpoint)
+                    .ok()
+                    .and_then(|u| u.host_str().map(str::to_owned)),
+            );
+            if let Some(token) = token.as_deref() {
+                auth = api_token_auth(endpoint, token).await;
+            } else {
+                auth["status"] = json!("unauthenticated");
+            }
+        }
+        let detail = if kind == "gitcafe" {
+            "API credential validation is unavailable; token presence does not prove authentication."
+        } else if kind == "forgejo" && auth["host"]["_tag"] == "None" {
+            "Configure an explicit HTTPS FORGEJO_URL; credentials are never sent to repository-selected hosts."
+        } else {
+            "Environment credentials supported; desktop credential storage is not implemented."
+        };
+        providers.push(json!({"kind":kind,"label":label,"status":"available","version":{"_tag":"None"},"installHint":format!("Configure {token_env} on the server."),"detail":option(Some(detail.into())),"auth":auth}));
+    }
     Ok(json!({"versionControlSystems":systems,"sourceControlProviders":providers}))
+}
+
+/// Credential probes never return response bodies, transport errors, or tokens.
+async fn api_token_auth(endpoint: &str, token: &str) -> Value {
+    let option = |v: Option<String>| {
+        v.map(|v| json!({"_tag":"Some","value":v}))
+            .unwrap_or_else(|| json!({"_tag":"None"}))
+    };
+    let host = url::Url::parse(endpoint)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_owned));
+    let mut auth = json!({"status":"unknown","account":{"_tag":"None"},"host":option(host),"detail":{"_tag":"None"}});
+    let Ok(client) = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+    else {
+        return auth;
+    };
+    let Ok(mut response) = client
+        .get(endpoint)
+        .bearer_auth(token)
+        .header("Accept", "application/json")
+        .send()
+        .await
+    else {
+        return auth;
+    };
+    if response.status().as_u16() == 401 {
+        auth["status"] = json!("unauthenticated");
+        return auth;
+    }
+    if !response.status().is_success() {
+        return auth;
+    }
+    let mut body = Vec::new();
+    while let Ok(Some(chunk)) = response.chunk().await {
+        if body.len() + chunk.len() > 65536 {
+            return auth;
+        }
+        body.extend_from_slice(&chunk);
+    }
+    if let Ok(user) = serde_json::from_slice::<Value>(&body) {
+        let account = ["login", "username", "account_id"]
+            .into_iter()
+            .find_map(|k| user[k].as_str())
+            .filter(|s| !s.is_empty() && s.len() <= 200 && *s != token);
+        if let Some(account) = account {
+            auth["status"] = json!("authenticated");
+            auth["account"] = option(Some(account.into()));
+        }
+    }
+    auth
+}
+
+#[cfg(test)]
+mod token_tests {
+    use super::*;
+    #[tokio::test]
+    async fn token_status_is_bounded_and_never_echoes_body_or_credential() {
+        for (status, body, expected) in [
+            ("200 OK", r#"{"login":"reader"}"#, "authenticated"),
+            ("401 Unauthorized", "fixture-secret", "unauthenticated"),
+            ("403 Forbidden", "fixture-secret", "unknown"),
+            ("200 OK", "fixture-secret", "unknown"),
+        ] {
+            use std::io::{Read, Write};
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            let worker = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut bytes = [0; 4096];
+                let _ = stream.read(&mut bytes);
+                write!(
+                    stream,
+                    "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .unwrap();
+            });
+            let auth = api_token_auth(&format!("http://{address}/user"), "fixture-secret").await;
+            assert_eq!(auth["status"], expected);
+            assert!(!auth.to_string().contains("fixture-secret"));
+            worker.join().unwrap();
+        }
+    }
 }

@@ -637,7 +637,7 @@ fn thread_find_navigates_occurrences_wraps_and_confines_to_thread() {
 #[test]
 fn source_control_discovery_has_honest_git_probe_and_option_encoding() {
     let (_s, c) = server(false);
-    let v = c.rpc("server.discoverSourceControl", json!({})).unwrap();
+    let v = t3_protocol::api::server::discover_source_control(&c).unwrap();
     let git = &v["versionControlSystems"][0];
     assert_eq!(git["kind"], "git");
     assert_eq!(git["status"], "available");
@@ -656,14 +656,17 @@ fn source_control_discovery_has_honest_git_probe_and_option_encoding() {
             "github",
             "gitlab",
             "azure-devops",
+            "bitbucket",
             "forgejo",
-            "gitcafe",
-            "bitbucket"
+            "gitcafe"
         ]
     );
-    let bitbucket = providers.last().unwrap();
+    let bitbucket = providers.iter().find(|p| p["kind"] == "bitbucket").unwrap();
     assert_eq!(bitbucket["status"], "available");
-    assert_eq!(bitbucket["auth"]["status"], "unknown");
+    assert!(matches!(
+        bitbucket["auth"]["status"].as_str(),
+        Some("authenticated" | "unauthenticated" | "unknown")
+    ));
     assert!(bitbucket.get("executable").is_none());
     assert_eq!(providers[0]["label"], "GitHub");
     assert_eq!(providers[0]["executable"], "gh");

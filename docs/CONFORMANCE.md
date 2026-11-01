@@ -1112,3 +1112,13 @@ provider child memory is excluded. Aggregate evidence: [rss-implementation.json]
    emitted tool_use at 1.97 s and both output lines in one tool_result at 4.00 s;
    partial stream frames carried tool input JSON, not command output. Consequently
    Claude command output remains completion-only on this observed protocol.
+
+4. Bitbucket, Forgejo and GitCafe are advertised independently of CLI installation.
+   Bitbucket bearer tokens (`BITBUCKET_ACCESS_TOKEN`) and Forgejo bearer tokens
+   (`FORGEJO_TOKEN` plus explicit HTTPS `FORGEJO_URL`) have bounded, nonredirecting
+   identity probes. 401 means unauthenticated; forbidden, offline, malformed and
+   oversized responses mean unknown. No raw body, token or transport error is
+   returned. GitCafe API validation and desktop credential storage remain
+   unavailable and explicitly unknown; no authenticated-provider parity is claimed.
+   The discovery RPC runs through the actual lib API reader; local HTTP failure
+   fixtures verify classification/redaction, not live token acceptance by hosts.
