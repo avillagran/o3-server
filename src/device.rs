@@ -238,7 +238,7 @@ pub fn subscribe(s: &Arc<State>) -> Cursor {
     }
 }
 impl Cursor {
-    pub fn next(&mut self) -> crate::terminal::Step {
+    pub fn poll(&mut self) -> crate::terminal::Step {
         if !self.waiting && self.rx.has_changed().unwrap_or(false) {
             let v = self.rx.borrow_and_update().clone();
             if let Some(v) = v {

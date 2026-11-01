@@ -104,7 +104,7 @@ pub fn open(s: &Arc<State>, tag: &str, p: &Value) -> Result<Stream, Value> {
 impl Stream {
     pub fn next(&mut self, s: &State) -> crate::terminal::Step {
         match self {
-            Stream::Device(c) => c.next(),
+            Stream::Device(c) => c.poll(),
             Stream::Setup(c) => c.next(s),
             Stream::Preview(c) => c.next(s),
             Stream::Servers(c) => c.next(s),

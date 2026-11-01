@@ -69,7 +69,7 @@ esac
     .unwrap();
     ws.close(None).unwrap();
     t3_protocol::api::device::close(&c, "thread", None, None, Some(false)).unwrap();
-    assert!(c.rpc("device.easAccount",json!({})).is_err());
+    assert!(c.rpc("device.easAccount", json!({})).is_err());
     drop(stream);
     std::thread::sleep(Duration::from_millis(300));
     let before = std::fs::read(&log).unwrap();
