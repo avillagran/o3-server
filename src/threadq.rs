@@ -141,8 +141,9 @@ pub fn search_threads(s: &State, p: &Value) -> Reply {
             seen.insert(tid.clone(), matches.len());
             matches.push(json!({"threadId":tid,"projectId":thread["projectId"],"source":role,"snippet":snippet.chars().take(240).collect::<String>(),"messageCreatedAt":at,"quality":-rank,"hits":1,"messageId":mid}));
         }
-    } else {
-        let needle = query.to_lowercase();
+    }
+    {
+        let needle = query.to_lowercase().replace('ς', "σ");
         let mut q = db
             .prepare("SELECT thread_id, body FROM records WHERE kind='thread' ORDER BY rowid DESC")
             .map_err(|e| fail(&e.to_string()))?;
@@ -155,10 +156,12 @@ pub fn search_threads(s: &State, p: &Value) -> Reply {
             };
             if t["title"]
                 .as_str()
-                .is_some_and(|title| title.to_lowercase().contains(&needle))
+                .is_some_and(|title| title.to_lowercase().replace('ς', "σ").contains(&needle))
                 && live(&tid).is_some()
             {
-                matches.push(json!({"threadId":tid,"projectId":t["projectId"],"source":"user","snippet":t["title"].as_str().unwrap_or("").chars().take(240).collect::<String>(),"messageCreatedAt":null}));
+                // A title hit outranks a body hit for the same thread.
+                matches.retain(|m| m["threadId"] != tid);
+                matches.insert(0, json!({"threadId":tid,"projectId":t["projectId"],"source":"user","snippet":t["title"].as_str().unwrap_or("").chars().take(240).collect::<String>(),"messageCreatedAt":null,"quality":1.0,"hits":1}));
             }
         }
     }

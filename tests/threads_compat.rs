@@ -630,3 +630,24 @@ fn search_returns_supplemental_shell_fields_for_old_settled_threads() {
     assert_eq!(found["threads"][0]["id"], "t");
     assert!(found["threads"][0]["settledAt"].is_string());
 }
+
+#[test]
+fn search_titles_participate_in_default_search_with_folded_substrings() {
+    let e = setup("title-search");
+    e.project("p1", &e.dir("p"));
+    e.thread("title", "p1");
+    e.thread("body", "p1");
+    e.message("body", "m1", "scheduler");
+    e.conn.rpc("orchestration.dispatchCommand", json!({"type":"thread.metadata.update","commandId":"title-update","threadId":"title","title":"Scheduler Σίσυφος"})).unwrap();
+    for (query, titles_only) in [("scheduler", false), ("HEDUL", false), ("ΣΊΣΥΦΟΣ", true)] {
+        let r = e
+            .conn
+            .rpc(
+                "orchestration.searchThreads",
+                json!({"query":query,"titlesOnly":titles_only}),
+            )
+            .unwrap();
+        assert_eq!(r["matches"][0]["threadId"], "title", "{r}");
+        assert_eq!(r["threads"][0]["id"], "title");
+    }
+}

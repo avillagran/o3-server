@@ -453,3 +453,11 @@ getSettings and applies provider events through quota_sources. Reference reader:
 client-runtime/src/state/serverConfigProjection.ts reads payload.settings and
 payload.keybindings/issues. Row remains partial: quota sources and environment
 themes are not projected yet.
+
+## Search title coverage (2026-11-01)
+Default search now includes title substring matches, ranks them ahead of message
+hits, and folds Greek final sigma consistently with searchThread. Real Connection
+`search_titles_participate_in_default_search_with_folded_substrings` covers a
+body-only competitor, an interior title substring, case folding and titlesOnly.
+Both search rows remain partial: complete upstream ranking, body substring/folding
+and rendered/context segmentation still require implementation and reader evidence.
