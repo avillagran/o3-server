@@ -107,3 +107,8 @@ both native drivers down before removing its profile (an initial successful-turn
 run hit a cleanup race). The real desktop backend bridge E2E passes all reported
 status/read/identity/peers/publication/pairing/QUIC checks. QML and Android UI remain
 unverified; no emulators, services, real T3 profile or systemd units were used.
+
+Final release `tools/bench-rss`: HWM 42,052 KiB = 43.06 MB, below the decimal
+50 MB budget. Bridge active; 20 threads, 1,000 deferred messages, 3 subscribers,
+1,000 unary calls; provider inference excluded. Exact binary digest and /proc
+samples are in `rss-measurement.json`.
