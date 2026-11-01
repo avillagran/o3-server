@@ -106,6 +106,8 @@ pub fn authorize(session: &Value, tag: &str, p: &Value) -> Result<(), Value> {
         if p.get("scripts").is_some() {
             check("settings:write")?;
         }
+    } else if tag == "assets.createUrl" {
+        check(crate::assets::required_scope(p))?;
     } else if let Some(scope) = scopes::required(tag) {
         check(scope)?;
     }
@@ -401,7 +403,8 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                                     }else if crate::ext::handles(tag) {
                                         if inflight.load(std::sync::atomic::Ordering::Relaxed)>=16 {if send(&mut ws,exit(&id,Err(error("too many concurrent requests on this socket".into())))).await.is_err(){return}continue;}
                                         inflight.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
-                                        let (s2,tag2,p2,tx2,count)=(s.clone(),tag.to_owned(),p.clone(),done_tx.clone(),inflight.clone());
+                                        let (s2,tag2,mut p2,tx2,count)=(s.clone(),tag.to_owned(),p.clone(),done_tx.clone(),inflight.clone());
+                                        if matches!(tag,"assets.createUrl"|"attachments.createUploadUrl") { p2["_assetSession"] = session["sid"].clone(); }
                                         tokio::spawn(async move{let r=crate::ext::call(&s2,&tag2,p2).await;count.fetch_sub(1,std::sync::atomic::Ordering::Relaxed);let _=tx2.send(exit(&id,r));});
                                     }else if matches!(tag,"orchestration.subscribeShell"|"orchestration.subscribeThread"|"server.subscribeServerConfig"|"subscribeServerConfig") {
                                         if subscriptions.len()>=64||subscriptions.contains_key(&id.to_string()) {if send(&mut ws,exit(&id,Err(error("subscription limit or duplicate id".into())))).await.is_err(){return}continue;}

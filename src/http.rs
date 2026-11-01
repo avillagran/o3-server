@@ -479,28 +479,28 @@ async fn auth_route(s: &State, session: &Value, request: Request<Incoming>) -> R
                     }
                 }
             }
-            match s.issue_pairing(p["label"].as_str(), 300000) {
-                Ok(v) => {
-                    let scopes = p
-                        .get("scopes")
-                        .unwrap_or(&session["scopes"])
-                        .as_array()
-                        .map(|a| {
-                            a.iter()
-                                .filter_map(Value::as_str)
-                                .collect::<Vec<_>>()
-                                .join(" ")
-                        })
-                        .unwrap_or_default();
-                    let _ = s.db.lock().unwrap().execute(
-                        "UPDATE auth_pairing_links SET scopes=? WHERE id=?",
-                        rusqlite::params![scopes, v["id"].as_str()],
-                    );
-                    json_reply(StatusCode::OK, v.to_string())
-                }
+            let scopes = p
+                .get("scopes")
+                .unwrap_or(&session["scopes"])
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .unwrap_or_default();
+            match s.issue_pairing_scoped(
+                p["label"].as_str(),
+                300000,
+                &scopes,
+                session["sub"].as_str().unwrap_or("client"),
+            ) {
+                Ok(v) => json_reply(StatusCode::OK, v.to_string()),
                 Err(_) => json_reply(StatusCode::INTERNAL_SERVER_ERROR, "{}".into()),
             }
         }
+
         (Method::GET, "/api/auth/clients") => {
             let db = s.db.lock().unwrap();
             let mut q=db.prepare("SELECT session_id,subject,scopes,client,issued_at,expires_at FROM auth_sessions WHERE revoked_at IS NULL AND expires_at>?").unwrap();

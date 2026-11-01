@@ -66,6 +66,12 @@ fn verify(s: &State, token: &str, kind_ok: impl Fn(&str) -> bool) -> Option<Valu
     m.update(payload.as_bytes());
     m.verify_slice(&B64.decode(sig).ok()?).ok()?;
     let claims: Value = serde_json::from_slice(&B64.decode(payload).ok()?).ok()?;
+    if let Some(sid) = claims["sessionId"].as_str() {
+        let valid: bool = s.db.lock().ok()?.query_row("SELECT EXISTS(SELECT 1 FROM auth_sessions WHERE session_id=? AND revoked_at IS NULL AND expires_at>?)", rusqlite::params![sid,now_ms()], |r| r.get(0)).ok()?;
+        if !valid {
+            return None;
+        }
+    }
     (claims["version"] == 1
         && kind_ok(claims["kind"].as_str()?)
         && claims["expiresAt"].as_i64()? > now_ms())
@@ -263,7 +269,7 @@ pub fn create_upload_url(s: &State, p: &Value) -> Reply {
         format!("pending-{uuid}")
     };
     let expires = now + UPLOAD_TTL_MS;
-    let claims = json!({"version":1,"kind":"attachment-upload","type":kind,"attachmentId":id,"name":name,"mimeType":mime,"sizeBytes":size,"expiresAt":expires});
+    let claims = json!({"version":1,"kind":"attachment-upload","sessionId":p["_assetSession"],"type":kind,"attachmentId":id,"name":name,"mimeType":mime,"sizeBytes":size,"expiresAt":expires});
     let token = sign(s, &claims)
         .map_err(|e| json!({"_tag":"AttachmentUploadSigningKeyError","cause":e.to_string()}))?;
     Ok(
@@ -565,6 +571,57 @@ fn thread_root(s: &State, thread_id: &str) -> Option<PathBuf> {
     project["workspaceRoot"].as_str().map(PathBuf::from)
 }
 
+pub fn required_scope(p: &Value) -> &'static str {
+    if p["resource"]["_tag"] == "tool-output-image" {
+        "orchestration:read"
+    } else {
+        "filesystem:read"
+    }
+}
+
+// Recompute canonical boundaries on every request, including signed downloads.
+fn allowed_file(s: &State, path: &Path) -> Option<PathBuf> {
+    let real = std::fs::canonicalize(path).ok()?;
+    let attachments = std::fs::canonicalize(attachments_dir(s)).ok();
+    let cache = std::fs::canonicalize(s.dir.join("asset-media")).ok();
+    if attachments
+        .iter()
+        .chain(cache.iter())
+        .any(|r| real.starts_with(r) && real != *r)
+    {
+        return Some(real);
+    }
+    if std::fs::canonicalize(&s.dir).is_ok_and(|r| real.starts_with(r)) {
+        return None;
+    }
+    if real.components().any(|c| {
+        matches!(
+            c.as_os_str().to_str(),
+            Some(
+                ".ssh" | ".aws" | ".codex" | ".claude" | ".gnupg" | ".config" | ".env" | "secrets"
+            )
+        )
+    }) {
+        return None;
+    }
+    let db = s.db.lock().ok()?;
+    let mut q = db
+        .prepare("SELECT body FROM records WHERE kind IN ('project','thread')")
+        .ok()?;
+    let rows = q.query_map([], |r| r.get::<_, String>(0)).ok()?;
+    for row in rows.flatten() {
+        let v: Value = serde_json::from_str(&row).ok()?;
+        for key in ["workspaceRoot", "worktreePath"] {
+            if let Some(root) = v[key].as_str().and_then(|r| std::fs::canonicalize(r).ok()) {
+                if real.starts_with(&root) && real != root {
+                    return Some(real);
+                }
+            }
+        }
+    }
+    None
+}
+
 fn real_dir(root: &Path) -> Option<PathBuf> {
     std::fs::canonicalize(root).ok().filter(|r| r.is_dir())
 }
@@ -683,8 +740,10 @@ pub async fn create_url_async(s: &State, p: &Value) -> Reply {
     ));
     std::fs::write(&file, &o.stdout).map_err(|_| invalid("asset cache write failed"))?;
     let expires = now_ms() + ASSET_TTL_MS;
-    let (claims, name, revision) =
+    let (mut claims, name, revision) =
         media_claims(&file, false, expires).ok_or_else(|| invalid("asset cache unavailable"))?;
+    claims["sessionId"] = p["_assetSession"].clone();
+    claims["requiredScope"] = json!("filesystem:read");
     let token = sign(s, &claims).map_err(|_| invalid("asset signing failed"))?;
     Ok(
         json!({"relativeUrl":format!("{ASSET_PREFIX}{token}/{name}"),"expiresAt":expires,"fileRevision":revision}),
@@ -721,6 +780,7 @@ pub fn create_url(s: &State, p: &Value) -> Reply {
                 text("attachmentId", 256).ok_or_else(|| invalid("attachmentId is required"))?;
             let path =
                 attachment_path(s, &id).ok_or_else(|| not_found("AssetAttachmentNotFoundError"))?;
+            allowed_file(s, &path).ok_or_else(|| not_found("AssetWorkspacePathValidationError"))?;
             let ext = parse_id(&id).and_then(|(_, e)| e);
             let generic = ext.is_some();
             let mime = text("mimeType", 100);
@@ -799,6 +859,9 @@ pub fn create_url(s: &State, p: &Value) -> Reply {
                     .ok()
                     .filter(|r| r.is_file())
                     .ok_or_else(|| asset_err("AssetWorkspaceAssetNotFoundError", resource))?;
+                if allowed_file(s, &real).is_none() {
+                    return Err(not_found("AssetWorkspacePathValidationError"));
+                }
                 if !download && !previewable(&real.to_string_lossy()) {
                     return Err(not_found("AssetPreviewTypeValidationError"));
                 }
@@ -829,6 +892,8 @@ pub fn create_url(s: &State, p: &Value) -> Reply {
                 }
                 let (real, rel) = workspace_file(&real_root, &rel)
                     .ok_or_else(|| not_found("AssetWorkspaceAssetNotFoundError"))?;
+                allowed_file(s, &real)
+                    .ok_or_else(|| not_found("AssetWorkspacePathValidationError"))?;
                 dims = image_dimensions(&real);
                 file_name = Path::new(&rel)
                     .file_name()
@@ -944,6 +1009,7 @@ pub fn create_url(s: &State, p: &Value) -> Reply {
             let (c, name, rev) = media_claims(&real, false, expires)
                 .ok_or_else(|| not_found("AssetWorkspaceAssetNotFoundError"))?;
             claims = c;
+            claims["icon"] = json!(true);
             file_name = name;
             revision = Some(rev);
             dims = image_dimensions(&real);
@@ -1014,6 +1080,18 @@ pub fn create_url(s: &State, p: &Value) -> Reply {
             )
         }
     }
+    if let Some(root) = claims["workspaceRoot"].as_str() {
+        // Even draft cwd roots must refer to a registered workspace.
+        if allowed_file(s, &Path::new(root).join(".")).is_none() {
+            let db = s.db.lock().unwrap();
+            let known: bool = db.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind IN ('project','thread') AND (json_extract(body,'$.workspaceRoot')=?1 OR json_extract(body,'$.worktreePath')=?1))", [root], |r| r.get(0)).unwrap_or(false);
+            if !known {
+                return Err(invalid("unregistered workspace"));
+            }
+        }
+    }
+    claims["sessionId"] = p["_assetSession"].clone();
+    claims["requiredScope"] = json!(required_scope(p));
     claims["expiresAt"] = json!(expires);
     let token = sign(s, &claims).map_err(
         |e| json!({"_tag":"AssetSigningKeyLoadError","resource":resource,"cause":e.to_string()}),
@@ -1076,6 +1154,28 @@ enum Resolved {
 
 fn resolve(s: &State, token: &str, rest: &str) -> Option<Resolved> {
     let c = verify(s, token, |_| true)?;
+    let expected = if c["kind"] == "tool-output-image" {
+        "orchestration:read"
+    } else {
+        "filesystem:read"
+    };
+    if c["requiredScope"] != expected {
+        return None;
+    }
+    if let Some(sid) = c["sessionId"].as_str() {
+        let scopes: String =
+            s.db.lock()
+                .ok()?
+                .query_row(
+                    "SELECT scopes FROM auth_sessions WHERE session_id=?",
+                    [sid],
+                    |r| r.get(0),
+                )
+                .ok()?;
+        if !scopes.split_whitespace().any(|v| v == expected) {
+            return None;
+        }
+    }
     let decoded = percent_decode(rest)?;
     let file = |path: PathBuf, root: Option<PathBuf>| {
         Some(Resolved::File {
@@ -1090,6 +1190,7 @@ fn resolve(s: &State, token: &str, rest: &str) -> Option<Resolved> {
     match c["kind"].as_str()? {
         "attachment" => {
             let path = attachment_path(s, c["attachmentId"].as_str()?)?;
+            allowed_file(s, &path)?;
             Some(Resolved::File {
                 path,
                 download: c["download"] == true,
@@ -1102,6 +1203,7 @@ fn resolve(s: &State, token: &str, rest: &str) -> Option<Resolved> {
         "project-favicon" => {
             let root = c["workspaceRoot"].as_str()?;
             let (real, _) = workspace_file(Path::new(root), c["relativePath"].as_str()?)?;
+            allowed_file(s, &real)?;
             file(real, real_dir(Path::new(root)))
         }
         "media-file-exact" => {
@@ -1110,6 +1212,17 @@ fn resolve(s: &State, token: &str, rest: &str) -> Option<Resolved> {
                 return None;
             }
             let real = std::fs::canonicalize(&fp).ok().filter(|r| *r == fp)?;
+            if c["icon"] == true {
+                if !real
+                    .components()
+                    .any(|p| p.as_os_str() == "icons" || p.as_os_str() == "pixmaps")
+                    || !favicon_ext_ok(&real.to_string_lossy())
+                {
+                    return None;
+                }
+            } else {
+                allowed_file(s, &real)?;
+            }
             let download = c["download"] == true;
             if !download && !previewable(&real.to_string_lossy()) {
                 return None;
@@ -1136,6 +1249,7 @@ fn resolve(s: &State, token: &str, rest: &str) -> Option<Resolved> {
             }
             let root = c["workspaceRoot"].as_str()?;
             let (real, _) = workspace_file(Path::new(root), rel)?;
+            allowed_file(s, &real)?;
             file(real, real_dir(Path::new(root)))
         }
         "workspace-file" => {
@@ -1162,6 +1276,7 @@ fn resolve(s: &State, token: &str, rest: &str) -> Option<Resolved> {
             };
             let root = c["workspaceRoot"].as_str()?;
             let (real, _) = workspace_file(Path::new(root), &joined)?;
+            allowed_file(s, &real)?;
             file(real, real_dir(Path::new(root)))
         }
         "tool-output-image" => {

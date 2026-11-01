@@ -197,10 +197,19 @@ impl State {
 
     /// A one-use pairing secret, as `/api/auth/pairing-token` hands out.
     pub fn issue_pairing(&self, label: Option<&str>, ttl_ms: i64) -> Result<Value, String> {
+        self.issue_pairing_scoped(label, ttl_ms, &STANDARD_SCOPES.join(" "), "owner")
+    }
+    pub fn issue_pairing_scoped(
+        &self,
+        label: Option<&str>,
+        ttl_ms: i64,
+        scopes: &str,
+        subject: &str,
+    ) -> Result<Value, String> {
         let (id, credential, now) = (random_id()?, random_id()?, now_ms());
         self.db.lock().unwrap().execute(
             "INSERT INTO auth_pairing_links(id,credential,scopes,subject,label,created_at,expires_at) VALUES(?,?,?,?,?,?,?)",
-            params![id, credential, STANDARD_SCOPES.join(" "), "owner", label, now, now + ttl_ms],
+            params![id, credential, scopes, subject, label, now, now + ttl_ms],
         ).map_err(|e| e.to_string())?;
         let mut result =
             json!({ "id": id, "credential": credential, "expiresAt": iso(now + ttl_ms) });

@@ -13,8 +13,9 @@ fn png() -> Vec<u8> {
     // 1x1 RGBA PNG.
     STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==").unwrap()
 }
-fn sign(env: &Env, claims: serde_json::Value) -> String {
+fn sign(env: &Env, mut claims: serde_json::Value) -> String {
     let key = std::fs::read(env.state.join("secrets/asset-access-signing-key.bin")).unwrap();
+    claims["requiredScope"] = json!("filesystem:read");
     let payload = B64.encode(claims.to_string());
     let mut m = Hmac::<Sha256>::new_from_slice(&key).unwrap();
     m.update(payload.as_bytes());
@@ -484,6 +485,7 @@ fn workspace_assets_are_signed_confined_and_path_traversal_safe() {
         200
     );
     let empty = e.dir("emptyproj");
+    e.project("empty", &empty);
     let none = e
         .conn
         .rpc(
@@ -935,5 +937,81 @@ fn open_in_editor_launches_argv_without_a_shell() {
             )
             .is_err(),
         "an editor that is not installed fails loudly"
+    );
+}
+
+#[test]
+fn file_asset_grants_require_filesystem_scope_and_registered_boundaries() {
+    let e = setup("asset-boundaries");
+    let root = e.dir("workspace");
+    e.project("p", &root);
+    e.thread("t", "p");
+    write(&root.join("ok.png"), png());
+    let outside = e.scratch.join("outside.png");
+    write(&outside, png());
+    std::os::unix::fs::symlink(&outside, root.join("escape.png")).unwrap();
+    let grant = e
+        .conn
+        .request_json(
+            "POST",
+            "/api/auth/pairing-token",
+            Some(&json!({"scopes":["orchestration:read"]})),
+            false,
+        )
+        .unwrap();
+    let ro = t3_protocol::pair_bearer(
+        &e.base,
+        grant["credential"].as_str().unwrap(),
+        None,
+        &Default::default(),
+        &Default::default(),
+    )
+    .unwrap()
+    .connection(&Default::default())
+    .unwrap();
+    for path in [
+        outside,
+        root.join("../outside.png"),
+        root.join("escape.png"),
+        e.state.join("secrets/server-signing-key.bin"),
+        e.state.join("o3.sqlite"),
+    ] {
+        for tag in ["media-file", "workspace-file", "draft-workspace-file"] {
+            let p = json!({"resource":{"_tag":tag,"threadId":"t","cwd":root,"path":path,"disposition":"attachment"}});
+            assert!(ro.rpc("assets.createUrl", p.clone()).is_err(), "{p}");
+            assert!(e.conn.rpc("assets.createUrl", p).is_err(), "{tag} {path:?}");
+        }
+        assert!(ro
+            .rpc(
+                "assets.createUrl",
+                json!({"resource":{"_tag":"attachment","attachmentId":path}})
+            )
+            .is_err());
+    }
+    assert!(ro.rpc("assets.createUrl",json!({"resource":{"_tag":"media-file","threadId":"t","path":"ok.png","disposition":"attachment"}})).is_err());
+    let good = e.conn.rpc("assets.createUrl",json!({"resource":{"_tag":"media-file","threadId":"t","path":"ok.png","disposition":"attachment"}})).unwrap();
+    assert_eq!(
+        http(
+            &e.base,
+            "GET",
+            good["relativeUrl"].as_str().unwrap(),
+            &[],
+            b""
+        )
+        .0,
+        200
+    );
+    std::fs::remove_file(root.join("ok.png")).unwrap();
+    std::os::unix::fs::symlink(e.state.join("o3.sqlite"), root.join("ok.png")).unwrap();
+    assert_eq!(
+        http(
+            &e.base,
+            "GET",
+            good["relativeUrl"].as_str().unwrap(),
+            &[],
+            b""
+        )
+        .0,
+        404
     );
 }
