@@ -359,3 +359,40 @@ materialized-shell implementation failed the real-profile benchmark (72.36 MB HW
 and was corrected; the final profile probe passes at 46.24 MB HWM. See RSS.md for
 limits and raw aggregate artifacts. Snapshot replacement can coalesce intermediate
 shell updates; its sequence boundary prevents replaying those updates afterward.
+
+## P0/P1 reader sweep (2026-10-31)
+
+For each P0/P1 row not done, the remaining differences were grepped (`rg -n`, all spellings)
+in lib-t3-rust (`src`, `bindings`), omarchy-t3-code (`src`, `ui`) and ot3-android (`app`, `core`).
+Only a difference no client reads is accepted; a read keeps the row partial.
+
+Accepted differences (row promoted):
+- `secrets.answerRequest`: agent-side consumption of the saved secret file. Readers of
+  `secret_request` are `lib-t3-rust/src/timeline.rs:297`, `omarchy-t3-code/src/lib.rs:572` and
+  `write.rs:456` (secret-answer); they use the item status and a `null` reply, never the stored
+  value or its path. Nothing in the three clients reads the file. Caveat: no o3 adapter emits
+  `secret_request` items yet, so an agent cannot ask for a secret; the RPC itself is conformant.
+- `git.runStackedAction` hook events (`hook_started|hook_output|hook_finished`): only
+  `lib-t3-rust/src/api/streams.rs:321` names them in a tag list; no desktop or Android hit.
+  Not enough to promote the row, because clients read the generated commit message path
+  (both UIs label the message "optional") and cancellation.
+
+Implemented because a client reads it:
+- `server.discoverSourceControl` now reports GitHub, GitLab and Azure DevOps CLI descriptors with
+  read-only auth status (`omarchy-t3-code/src/write.rs:75` reads `kind`, `status`, `auth.status`).
+- `subscribeServerConfig` sends the typed `providerStatuses` event for provider-only changes
+  (`lib-t3-rust/src/quota_sources.rs:127`), covered in `tests/thread_commands.rs`.
+
+Kept partial, reader and reason:
+- discoverSourceControl: `T3AddProject.qml:50` lists Bitbucket/Forgejo/GitCafe, API-token providers are not reported.
+- subscribeServerConfig: `usageLimitSourcesUpdated` (Android `NativeT3Transport.kt:181`) has no source.
+- assets.createUrl: MCP app HTML (`omarchy-t3-code/src/write.rs:399` mcp-app) and icon theme discovery.
+- git.runStackedAction: both git UIs expect generated messages when blank; cancel does not stop a step.
+- orchestration.dispatchCommand / launchThread / subscribeShell / subscribeThread / getConfig, message.dispatch,
+  run.interrupt, runtime-request.respond: consumed gaps listed under Client-read audit update.
+- searchThread/searchThreads: Android `MessageSearch.kt` reads match segmentation and ranking.
+- subscribeCommandOutput: Claude output arrives at tool completion, not streaming.
+- terminal.open/attach: scrollback is not restored after a server restart.
+- thread.user-input.dismiss: native delivery to the provider and recovery are unfinished (`lib-t3-rust/src/questions.rs:48`).
+- thread.fork, thread.model-selection.set: native resume-at mapping and cross-provider handoff.
+- updateSettings, vcs.refreshStatus: settings normalization; GitLab/self-hosted change requests.

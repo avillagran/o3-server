@@ -647,9 +647,9 @@
       "note": "tests/ops.rs: interval and fixed_time (UTC) schedules, commandId idempotency, requireExisting. Webhook schedules are refused."
     },
     "secrets.answerRequest": {
-      "status": "partial",
+      "status": "done",
       "priority": "P1",
-      "note": "tests/ops.rs: save/decline of secret_request items, value in a 0600 file only, typed failures. No adapter consumes the file yet."
+      "note": "tests/ops.rs: save/decline of secret_request items, value in a 0600 file only, typed failures (not_found, already_answered, agent_stopped). Clients (desktop write.rs secret-answer, lib timeline) read only the status item and a null reply; agent-side consumption of the stored value is server-internal and no adapter emits secret_request yet (see CONFORMANCE.md accepted differences)."
     },
     "server.acceptAcpRegistryUrlAuth": {
       "status": "skip",
@@ -679,7 +679,7 @@
     "server.discoverSourceControl": {
       "status": "partial",
       "priority": "P1",
-      "note": "Real Connection + nightly differential: bounded git/jj executable/version probes, Effect Option encoding, honest implementation flags. Host-provider discovery/auth adapters are absent (sourceControlProviders=[]); upstream includes GitHub/GitLab descriptors. See docs/CONFORMANCE.md."
+      "note": "Real Connection + nightly differential: git/jj probes plus GitHub (gh), GitLab (glab) and Azure DevOps (az) descriptors with read-only auth status (never logs in), Effect Option encoding. Still partial: API-token providers (Bitbucket, Forgejo, GitCafe) are not reported, and desktop add-project lists them."
     },
     "server.getBackgroundPolicy": {
       "status": "skip",
@@ -904,7 +904,7 @@
     "subscribeServerConfig": {
       "status": "partial",
       "priority": "P1",
-      "note": "Connection test: initial config snapshot; changes emit replacement snapshots rather than typed incremental config events. Also accepts server.subscribeServerConfig alias used by client inventory."
+      "note": "Connection tests: initial snapshot; provider-only changes emit the typed providerStatuses event that lib quota_sources::apply consumes, other changes a replacement snapshot (also accepts the server.subscribeServerConfig alias). Still partial: usageLimitSourcesUpdated sources (Android quota strip subscribes with usageLimitSources) and typed settingsUpdated/keybindingsUpdated/environmentThemesUpdated events."
     },
     "subscribeServerLifecycle": {
       "status": "skip",
