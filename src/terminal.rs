@@ -403,6 +403,7 @@ pub struct Session {
     st: Mutex<SessionState>,
     notify: Notifier,
     global: Arc<Mutex<Ring>>,
+    persistence: Mutex<Option<std::path::PathBuf>>,
 }
 
 #[derive(Default)]
@@ -487,6 +488,7 @@ impl Session {
             terminal_id: terminal.into(),
             notify,
             global,
+            persistence: Mutex::new(None),
             st: Mutex::new(SessionState {
                 cwd: cwd.into(),
                 worktree_path: worktree,
@@ -526,6 +528,18 @@ impl Session {
 
     /// Records one event under the session lock, in both replay logs, and wakes subscribers.
     fn publish(&self, st: &mut SessionState, mut event: Value, seq: u64) {
+        if let Some(path) = self.persistence.lock().unwrap().as_ref() {
+            let result = if st.closed {
+                std::fs::remove_file(path)
+            } else {
+                let temp = path.with_extension("pending");
+                std::fs::write(&temp, self.snapshot_of(st).to_string())
+                    .and_then(|_| std::fs::rename(temp, path))
+            };
+            if let Err(error) = result {
+                eprintln!("terminal history persistence failed: {error}");
+            }
+        }
         event["threadId"] = json!(self.thread_id);
         event["terminalId"] = json!(self.terminal_id);
         event["sequence"] = json!(seq);
@@ -682,6 +696,7 @@ pub struct Manager {
     lifecycle: tokio::sync::Mutex<()>,
     shell: Mutex<Option<String>>,
     poller: std::sync::atomic::AtomicBool,
+    history_dir: Mutex<Option<std::path::PathBuf>>,
 }
 
 fn terr(tag: &str, fields: Value) -> Value {
@@ -865,8 +880,80 @@ impl Manager {
             lifecycle: tokio::sync::Mutex::new(()),
             shell: Mutex::new(None),
             poller: std::sync::atomic::AtomicBool::new(false),
+            history_dir: Mutex::new(None),
         })
     }
+    /// Restore bounded snapshots only: processes and environment are never resurrected.
+    pub fn restore(&self, dir: &Path) -> Result<(), String> {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+            .map_err(|e| e.to_string())?;
+        *self.history_dir.lock().unwrap() = Some(dir.to_owned());
+        for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            if entry.path().extension().is_none_or(|x| x != "json")
+                || entry.metadata().map_err(|e| e.to_string())?.len()
+                    > 6 * HISTORY_BYTES as u64 + 65536
+            {
+                continue;
+            }
+            let Ok(v) = std::fs::read(entry.path())
+                .and_then(|b| serde_json::from_slice::<Value>(&b).map_err(std::io::Error::other))
+            else {
+                continue;
+            };
+            let Ok((thread, terminal)) = key_of(&v) else {
+                continue;
+            };
+            let Some(cwd) = v["cwd"].as_str() else {
+                continue;
+            };
+            let sess = Session::new(
+                &thread,
+                &terminal,
+                cwd,
+                v["worktreePath"].as_str().map(str::to_owned),
+                None,
+                v["cols"]
+                    .as_u64()
+                    .unwrap_or(DEFAULT_COLS as u64)
+                    .clamp(1, 1000) as u16,
+                v["rows"]
+                    .as_u64()
+                    .unwrap_or(DEFAULT_ROWS as u64)
+                    .clamp(1, 500) as u16,
+                self.notify.clone(),
+                self.global.clone(),
+            );
+            {
+                let mut st = sess.st.lock().unwrap();
+                st.status = "exited";
+                st.history.append(v["history"].as_str().unwrap_or(""));
+                st.seq = v["sequence"].as_u64().unwrap_or(0);
+                st.updated_at = v["updatedAt"].as_str().unwrap_or("").to_owned();
+            }
+            *sess.persistence.lock().unwrap() = Some(entry.path());
+            self.sessions
+                .lock()
+                .unwrap()
+                .insert((thread, terminal), sess);
+            self.evict_inactive();
+        }
+        self.evict_inactive();
+        Ok(())
+    }
+
+    fn history_path(&self, thread: &str, terminal: &str) -> Option<std::path::PathBuf> {
+        use sha2::{Digest, Sha256};
+        let key = serde_json::to_vec(&(thread, terminal)).unwrap();
+        self.history_dir
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|d| d.join(format!("{:x}.json", Sha256::digest(key))))
+    }
+
     /// Overrides the shell program (otherwise `$SHELL`, then `bash`).
     pub fn set_shell(&self, shell: &str) {
         *self.shell.lock().unwrap() = Some(shell.into());
@@ -924,6 +1011,9 @@ impl Manager {
         for (_, k) in inactive.drain(..inactive.len() - MAX_INACTIVE) {
             if let Some(s) = sessions.remove(&k) {
                 s.st.lock().unwrap().closed = true;
+                if let Some(path) = s.persistence.lock().unwrap().as_ref() {
+                    let _ = std::fs::remove_file(path);
+                }
             }
             closed.insert(k);
         }
@@ -992,7 +1082,7 @@ impl Manager {
     }
 
     fn new_session(&self, l: &Launch, cols: u16, rows: u16) -> Arc<Session> {
-        Session::new(
+        let sess = Session::new(
             &l.thread,
             &l.terminal,
             &l.cwd,
@@ -1002,7 +1092,9 @@ impl Manager {
             rows,
             self.notify.clone(),
             self.global.clone(),
-        )
+        );
+        *sess.persistence.lock().unwrap() = self.history_path(&l.thread, &l.terminal);
+        sess
     }
 
     /// `terminal.open`: start, or reconcile with, the session named by the input.
@@ -1034,7 +1126,9 @@ impl Manager {
                 .worktree
                 .clone()
                 .unwrap_or_else(|| st.worktree_path.clone());
-            let changed = st.cwd != l.cwd || st.env != l.env || st.worktree_path != next_worktree;
+            let changed = st.cwd != l.cwd
+                || (st.proc.is_some() && st.env != l.env)
+                || st.worktree_path != next_worktree;
             if changed {
                 Session::stop_process(&mut st);
                 st.cwd = l.cwd.clone();
@@ -1045,8 +1139,6 @@ impl Manager {
             } else if matches!(st.status, "exited" | "error") {
                 st.env = l.env.clone();
                 st.worktree_path = next_worktree;
-                st.history.clear();
-                st.pending_ctl.clear();
             }
             if st.proc.is_none() {
                 (target.0, target.1, true)

@@ -932,9 +932,9 @@
       "note": "tests/admin_reads.rs: worktree preparation is not staged, so no setup is ever running: cancel answers cancelled:false and the stream sends null once."
     },
     "terminal.attach": {
-      "status": "partial",
+      "status": "done",
       "priority": "P1",
-      "note": "tests/terminal.rs: snapshot then live tail without loss/duplication, resume, restartIfNotRunning, 8-chunk/64 KiB window. Same gaps as terminal.open. Differential fix: snapshots include current cols/rows; nightly 3991 simple open/attach shapes match. Selected provider environment (including sensitive values) is applied; explicit terminal env wins, covered by real PTY/client test. Restart-persistent scrollback remains unsupported."
+      "note": "tests/terminal.rs: snapshot then live tail without loss/duplication, resume, restartIfNotRunning, 8-chunk/64 KiB window. Same gaps as terminal.open. Differential fix: snapshots include current cols/rows; nightly 3991 simple open/attach shapes match. Selected provider environment (including sensitive values) is applied; explicit terminal env wins, covered by real PTY/client test. Bounded atomic profile snapshots restore scrollback without PID/environment; real-client state-reopen test covers open/attach, trimming, clear and close."
     },
     "terminal.clear": {
       "status": "done",
@@ -952,9 +952,9 @@
       "note": "tests/terminal.rs: read-only snapshot + tail with terminal:read; a lagging subscriber is resynchronised with a snapshot."
     },
     "terminal.open": {
-      "status": "partial",
+      "status": "done",
       "priority": "P1",
-      "note": "tests/terminal.rs. Real PTY, process group, bounded scrollback. history is not persisted across a server restart. Differential fix: snapshots include current cols/rows; nightly 3991 simple open/attach shapes match. Selected provider environment (including sensitive values) is applied; explicit terminal env wins, covered by real PTY/client test. Restart-persistent scrollback remains unsupported."
+      "note": "tests/terminal.rs. Real PTY, process group, bounded scrollback. Differential fix: snapshots include current cols/rows; nightly 3991 simple open/attach shapes match. Selected provider environment (including sensitive values) is applied; explicit terminal env wins, covered by real PTY/client test. Bounded atomic profile snapshots restore scrollback without PID/environment; real-client state-reopen test covers open/attach, trimming, clear and close."
     },
     "terminal.resize": {
       "status": "done",

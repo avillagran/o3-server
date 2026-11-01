@@ -535,3 +535,61 @@ fn provider_instance_environment_reaches_pty_and_explicit_env_wins() {
         .rpc("terminal.close", json!({"threadId":"t","terminalId":"env"}))
         .unwrap();
 }
+
+#[test]
+fn bounded_history_survives_state_reopen_for_attach_and_open() {
+    let (s, cwd) = server();
+    let c = s.connect();
+    open(&c, "persist", "term-1", &cwd);
+    let mut tail = attach(s.connect(), "persist", "term-1", json!({}));
+    tail.next(T);
+    write(&c, "persist", "term-1", "i=0; while [ $i -lt 6000 ]; do echo \"history-$i-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"; i=$((i+1)); done; echo PERSIST-DONE; exit\n");
+    tail.until(T, |e| {
+        e["type"] == "exited" || e["snapshot"]["status"] == "exited"
+    });
+    let history_dir = s.dir.join("terminal-history");
+    // A new State and server read the on-disk snapshot, with no shared terminal manager.
+    let recovered = start(|state| state.streams.terminals.restore(&history_dir).unwrap());
+    let mut resumed = attach(
+        recovered.connect(),
+        "persist",
+        "term-1",
+        json!({"resume":true}),
+    );
+    let event = resumed.next(T);
+    let snap = &event["snapshot"];
+    let history = snap["history"].as_str().unwrap();
+    assert!(history.len() <= 512 * 1024);
+    assert!(history.contains("history-5999-"));
+    assert!(!history.contains("history-0-"));
+    assert_eq!(snap["status"], "exited");
+    assert!(snap["pid"].is_null());
+    let opened = open(&recovered.connect(), "persist", "term-1", &cwd);
+    assert!(opened["history"]
+        .as_str()
+        .unwrap()
+        .contains("history-5999-"));
+    recovered
+        .connect()
+        .rpc(
+            "terminal.clear",
+            json!({"threadId":"persist","terminalId":"term-1"}),
+        )
+        .unwrap();
+    let cleared = start(|state| state.streams.terminals.restore(&history_dir).unwrap());
+    let mut resumed = attach(
+        cleared.connect(),
+        "persist",
+        "term-1",
+        json!({"resume":true}),
+    );
+    assert_eq!(resumed.next(T)["snapshot"]["history"], "");
+    recovered
+        .connect()
+        .rpc(
+            "terminal.close",
+            json!({"threadId":"persist","terminalId":"term-1"}),
+        )
+        .unwrap();
+    assert_eq!(std::fs::read_dir(history_dir).unwrap().count(), 0);
+}

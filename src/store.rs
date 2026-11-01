@@ -118,6 +118,8 @@ impl State {
         let label = std::env::var("O3_LABEL").unwrap_or_else(|_| "o3-server".into());
         let (changed, _) = tokio::sync::watch::channel(0);
         crate::events::initialize(&db)?;
+        let streams = crate::streams::Hub::new();
+        streams.terminals.restore(&dir.join("terminal-history"))?;
         Ok(Self {
             #[cfg(feature = "bridge")]
             bridge_endpoints: Mutex::new(Vec::new()),
@@ -125,7 +127,7 @@ impl State {
             provider: Mutex::new(None),
             active: Mutex::new(std::collections::BTreeMap::new()),
             changed,
-            streams: crate::streams::Hub::new(),
+            streams,
             reader: Mutex::new(reader),
             checkpoint_started: std::sync::atomic::AtomicBool::new(false),
             db: Mutex::new(db),

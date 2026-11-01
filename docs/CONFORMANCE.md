@@ -392,7 +392,7 @@ Kept partial, reader and reason:
   run.interrupt, runtime-request.respond: consumed gaps listed under Client-read audit update.
 - searchThread/searchThreads: Android `MessageSearch.kt` reads match segmentation and ranking.
 - subscribeCommandOutput: Claude output arrives at tool completion, not streaming.
-- terminal.open/attach: scrollback is not restored after a server restart.
+- terminal.open/attach: closed by the bounded history recovery evidence below.
 - thread.user-input.dismiss: native delivery to the provider and recovery are unfinished (`lib-t3-rust/src/questions.rs:48`).
 - thread.fork, thread.model-selection.set: native resume-at mapping and cross-provider handoff.
 - updateSettings, vcs.refreshStatus: settings normalization; GitLab/self-hosted change requests.
@@ -417,3 +417,25 @@ all-target clippy passed. `tools/bench-rss` completed with bridge enabled,
 (41.67 MB), below 50 MB. Inference excluded. Aggregate output retained locally
 at `/var/tmp/o3-build/sweep-rss.log`; this is the synthetic workload, not a new
 real-profile measurement.
+
+
+## Terminal history reader closure (2026-11-01)
+
+The terminal readers consume snapshot history and live output
+(`lib-t3-rust/src/domain/terminal.rs`,
+`ot3-android/core/src/main/kotlin/dev/avillagran/ot3android/core/terminal/TerminalSession.kt`).
+Atomic snapshots in the private profile retain at most 512 KiB / 5000 lines per
+terminal. Startup restores stopped snapshots, never PIDs or provider environment.
+Open preserves recovered history; explicit restart and changed cwd/environment
+still clear it. Clear persists an empty history; close and inactive eviction remove
+the saved snapshot. Recovery is server-restart persistence, not power-loss durability.
+The real-client test
+`bounded_history_survives_state_reopen_for_attach_and_open` reconstructs state from
+disk and verifies the trimmed tail, stopped attach, open, clear and close.
+Both P1 rows are promoted by this reader evidence.
+
+## Unreproduced VCS test failure (2026-11-01)
+
+`pull_reports_state_and_branch_changes_against_the_default_branch` failed once
+in a full suite run on `b16facb`. It could not be reproduced in 66 stress runs
+or three full suite runs. Cause unknown.
