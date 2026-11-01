@@ -13,6 +13,8 @@ const MAX_FRAME: usize = 1024 * 1024;
 const MAX_SESSIONS: usize = 16;
 pub struct ClaudeProvider {
     binary: PathBuf,
+    environment: Vec<(String, String)>,
+    launch_args: Vec<String>,
     metadata: Mutex<Value>,
     sessions: std::sync::Arc<Mutex<HashMap<String, Session>>>,
 }
@@ -33,9 +35,19 @@ impl ClaudeProvider {
     pub fn new(binary: PathBuf) -> Self {
         Self {
             binary,
+            environment: Vec::new(),
+            launch_args: Vec::new(),
             metadata: Mutex::new(json!({})),
             sessions: std::sync::Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+    pub fn with_launch_args(mut self, args: Vec<String>) -> Self {
+        self.launch_args = args;
+        self
+    }
+    pub fn with_environment(mut self, environment: Vec<(String, String)>) -> Self {
+        self.environment = environment;
+        self
     }
     pub async fn shutdown(&self) {
         let sessions = std::mem::take(&mut *self.sessions.lock().unwrap());
@@ -66,8 +78,11 @@ impl ClaudeProvider {
         })
     }
     async fn spawn(&self, input: &RunInput) -> Result<Session, String> {
-        let (model, effort, settings, _) = crate::claude_models::compile(&input.model_selection)?;
+        let (model, effort, mut settings, _) =
+            crate::claude_models::compile(&input.model_selection)?;
         let mut cmd = Command::new(&self.binary);
+        cmd.envs(self.environment.iter().cloned());
+        cmd.args(&self.launch_args);
         cmd.args([
             "-p",
             "--input-format",
@@ -92,6 +107,20 @@ impl ClaudeProvider {
         .kill_on_drop(true);
         if let Some(effort) = effort {
             cmd.arg("--effort").arg(effort);
+        }
+        if input.thread_id == "discovery" {
+            settings["disableAllHooks"] = json!(true);
+            cmd.args([
+                "--no-session-persistence",
+                "--strict-mcp-config",
+                "--mcp-config",
+                "{}",
+                "--setting-sources",
+                "user,project,local",
+            ])
+            .env("ENABLE_CLAUDEAI_MCP_SERVERS", "false")
+            .env("CLAUDE_CODE_AUTO_CONNECT_IDE", "0")
+            .env("CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL", "1");
         }
         cmd.arg("--settings").arg(settings.to_string());
         if let Some(id) = input.model_selection["nativeForkSource"].as_str() {
@@ -121,6 +150,22 @@ impl ClaudeProvider {
                     if v["response"]["subtype"] != "success" {
                         return Err("Claude initialize rejected".into());
                     }
+                    let response = &v["response"]["response"];
+                    let mut metadata = self.metadata.lock().unwrap();
+                    if let Some(commands) = response["commands"].as_array() {
+                        metadata["slashCommands"] = json!(commands.iter().map(|c| {
+                            let mut command = json!({"name":c["name"],"description":c["description"]});
+                            if let Some(hint)=c["argumentHint"].as_str() {command["input"]=json!({"hint":hint});}
+                            command
+                        }).collect::<Vec<_>>());
+                        metadata["slashCommandsPending"] = json!(false);
+                    }
+                    if let Some(account) = response.get("account").filter(|v|v.is_object()) {
+                        let authenticated = account["email"].is_string() || account["subscriptionType"].is_string() || account["tokenSource"].as_str().is_some_and(|s|s!="none") || account["apiKeySource"].as_str().is_some_and(|s|s!="none") || account["apiProvider"].as_str().is_some_and(|s|s!="firstParty");
+                        metadata["auth"] = json!({"status":if authenticated {"authenticated"}else{"unauthenticated"}});
+                        for key in ["email","workspaceId"] { if let Some(value)=account.get(key).filter(|v|v.is_string()) {metadata["auth"][key]=value.clone();} }
+                        metadata["status"] = json!(if authenticated {"ready"}else{"warning"});
+                    }
                     return Ok::<_, String>(());
                 }
             }
@@ -143,12 +188,6 @@ impl ClaudeProvider {
         if crate::claude_models::compile(&input.model_selection)?.3 {
             let text = content[0]["text"].as_str().unwrap().to_owned();
             content[0]["text"] = json!(format!("{text}\n\nultrathink"));
-        }
-        if input.model_selection["instanceId"]
-            .as_str()
-            .is_some_and(|s| !matches!(s, "claudeAgent" | "claude" | "claude-code"))
-        {
-            return Err("unsupported provider instance".into());
         }
         let existing = self.sessions.lock().unwrap().remove(&input.thread_id);
         let mut session = if let Some(mut s) = existing {
@@ -407,6 +446,75 @@ impl Session {
     }
 }
 impl Provider for ClaudeProvider {
+    fn discover<'a>(
+        &'a self,
+        cwd: PathBuf,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            let input = RunInput {
+                provider_instance_id: "claudeAgent".into(),
+                native_session_id: None,
+                thread_id: "discovery".into(),
+                run_id: "discovery".into(),
+                cwd,
+                text: String::new(),
+                model_selection: json!({"model":"haiku","options":[]}),
+                runtime_mode: "approval-required".into(),
+                interaction_mode: "default".into(),
+                attachment_root: PathBuf::new(),
+                attachments: json!([]),
+                context: None,
+            };
+            let mut session = self.spawn(&input).await?;
+            session.stop().await;
+            Ok(())
+        })
+    }
+
+    fn poll_usage<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            let dir = self
+                .environment
+                .iter()
+                .find(|(k, _)| k == "CLAUDE_CONFIG_DIR")
+                .map(|(_, v)| PathBuf::from(v))
+                .or_else(|| std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from))
+                .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".claude")))
+                .ok_or("Claude home unavailable")?;
+            let credentials: Value = serde_json::from_slice(
+                &std::fs::read(dir.join(".credentials.json"))
+                    .map_err(|_| "Claude OAuth credentials unavailable")?,
+            )
+            .map_err(|_| "Claude OAuth credentials invalid")?;
+            let token = credentials["claudeAiOauth"]["accessToken"]
+                .as_str()
+                .ok_or("Claude OAuth token unavailable")?;
+            let usage = crate::config_sources::request(
+                "https://api.anthropic.com/api/oauth/usage",
+                token,
+                &[
+                    "anthropic-beta: oauth-2025-04-20",
+                    "User-Agent: claude-code/2.1.273",
+                ],
+                None,
+            )
+            .await
+            .map_err(|_| "Claude quota request failed")?;
+            let mut windows = Vec::new();
+            for (key, kind, label) in [
+                ("five_hour", "session", "Session"),
+                ("seven_day", "weekly", "Weekly"),
+            ] {
+                if let Some(used) = usage[key]["utilization"].as_f64() {
+                    windows.push(json!({"id":key,"kind":kind,"label":label,"usedPercent":used.clamp(0.,100.),"resetsAt":usage[key]["resets_at"]}));
+                }
+            }
+            self.metadata.lock().unwrap()["usageLimits"] =
+                json!({"checkedAt":crate::store::iso(crate::store::now_ms()),"windows":windows});
+            Ok(())
+        })
+    }
+
     fn config(&self) -> Vec<Value> {
         let mut descriptor = config(true);
         for (key, value) in self.metadata.lock().unwrap().as_object().unwrap() {
@@ -559,7 +667,9 @@ fn credentials_present() -> bool {
         || dir.is_some_and(|d| d.join(".credentials.json").is_file())
 }
 pub fn config(installed: bool) -> Value {
-    json!({"instanceId":"claudeAgent","driver":"claudeAgent","displayName":"Claude Code","enabled":installed,"installed":installed,"version":null,"status":if !installed {"disabled"}else if credentials_present() {"ready"}else{"warning"},"auth":{"status":"unknown"},"checkedAt":crate::store::iso(crate::store::now_ms()),"message":"Direct CLI adapter; authentication checked at execution. Native-session continuation after restart; no inference reattachment.","slashCommands":[{"name":"compact","description":"Compact conversation history"}],"skills":[],"slashCommandsPending":true,"models":crate::claude_models::models(),"supportedRuntimeModes":["approval-required","auto-accept-edits","full-access"],"supportsConversationRollback":false,"nativeSessions":{"canList":false,"canLoad":false,"canResume":true}})
+    static CHECKED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    let checked = CHECKED.get_or_init(|| crate::store::iso(crate::store::now_ms()));
+    json!({"instanceId":"claudeAgent","driver":"claudeAgent","displayName":"Claude Code","enabled":installed,"installed":installed,"version":null,"status":if !installed {"disabled"}else if credentials_present() {"ready"}else{"warning"},"auth":{"status":"unknown"},"checkedAt":checked,"message":"Direct CLI adapter; authentication checked at execution. Native-session continuation after restart; no inference reattachment.","slashCommands":[{"name":"compact","description":"Compact conversation history"}],"skills":[],"slashCommandsPending":true,"models":crate::claude_models::models(),"supportedRuntimeModes":["approval-required","auto-accept-edits","full-access"],"supportsConversationRollback":false,"nativeSessions":{"canList":false,"canLoad":false,"canResume":true}})
 }
 
 fn usage_limits(info: &Value) -> Value {

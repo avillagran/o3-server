@@ -1,0 +1,51 @@
+{
+  "measured_at_utc": "2026-11-01T09:30:47Z",
+  "binary_sha256": "15348923776447de79a27c67492a4c8e7a0e412cb8f7aa16b2fbc299f2398fa8",
+  "binary_bytes": 12933528,
+  "seed_messages": 1000,
+  "threads": 20,
+  "subscribers": 3,
+  "unary_calls": 1000,
+  "text_bytes_per_message": 1000,
+  "cold_kib": {
+    "VmHWM": 9664,
+    "VmRSS": 9664,
+    "RssAnon": 952,
+    "RssFile": 8712,
+    "THP_enabled": 0,
+    "Threads": 4
+  },
+  "seeded_kib": {
+    "VmHWM": 14304,
+    "VmRSS": 14240,
+    "RssAnon": 2200,
+    "RssFile": 12040,
+    "THP_enabled": 0,
+    "Threads": 5
+  },
+  "subscribed_kib": {
+    "VmHWM": 15780,
+    "VmRSS": 14960,
+    "RssAnon": 2920,
+    "RssFile": 12040,
+    "THP_enabled": 0,
+    "Threads": 6
+  },
+  "after_churn_kib": {
+    "VmHWM": 15780,
+    "VmRSS": 14908,
+    "RssAnon": 2868,
+    "RssFile": 12040,
+    "THP_enabled": 0,
+    "Threads": 6
+  },
+  "snapshot_messages": [
+    10,
+    10,
+    10
+  ],
+  "under_50_mb": true,
+  "bridge_enabled": true,
+  "gateway_hosting": false,
+  "provider_workload": "registered and probed; inference excluded (defer_start)"
+}

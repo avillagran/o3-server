@@ -49,6 +49,7 @@ struct Subscription {
     live: Option<crate::streams::Live>,
     /// Last config this subscriber saw, to send a typed `providerStatuses` event when only providers changed.
     last_config: Option<Value>,
+    sources: Option<crate::config_sources::Sources>,
 }
 fn exit(id: &Value, result: Result<Value, Value>) -> Value {
     json!({"_tag":"Exit","requestId":id,"exit":match result {Ok(Value::Null)=>json!({"_tag":"Success"}),Ok(v)=>json!({"_tag":"Success","value":v}),Err(e)=>json!({"_tag":"Failure","cause":[{"_tag":"Fail","error":e}]})}})
@@ -234,6 +235,8 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                 }
             } else if let Some(v) = sub.initial.take() {
                 Some(v)
+            } else if let Some(value) = sub.sources.as_mut().and_then(|s| s.next()) {
+                Some(value)
             } else if matches!(
                 sub.tag.as_str(),
                 "server.subscribeServerConfig" | "subscribeServerConfig"
@@ -273,6 +276,11 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                         });
                         let event = delta
                             .unwrap_or_else(|| json!({"version":1,"type":"snapshot","config":v}));
+                        if event["type"] == "snapshot" {
+                            if let Some(sources) = sub.sources.as_mut() {
+                                sources.replay();
+                            }
+                        }
                         sub.last_config = Some(v);
                         event
                     })
@@ -374,7 +382,7 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                                     if crate::streams::is_live_tag(tag) {
                                         if subscriptions.len()>=64||subscriptions.contains_key(&id.to_string()) {if send(&mut ws,exit(&id,Err(error("subscription limit or duplicate id".into())))).await.is_err(){return}continue;}
                                         match crate::streams::open(&s,tag,p).await {
-                                            Ok(live)=>{subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid:None,cursor:0,waiting:false,initial:None,marker:false,version:0,snapshot:None,events:None,live:Some(live),last_config:None});}
+                                            Ok(live)=>{subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid:None,cursor:0,waiting:false,initial:None,marker:false,version:0,snapshot:None,events:None,live:Some(live),last_config:None,sources:None});}
                                             Err(e)=>{if send(&mut ws,exit(&id,Err(e))).await.is_err(){return}}
                                         }
                                         continue;
@@ -384,7 +392,7 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                                         if let Err(e)=crate::stacked::validate(p){if send(&mut ws,exit(&id,Err(e))).await.is_err(){return}continue;}
                                         let (queue,rx)=tokio::sync::mpsc::channel(16);
                                         tokio::spawn(crate::stacked::run(p.clone(),crate::stacked::Tx{queue,wake:wake.clone()}));
-                                        subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid:None,cursor:0,waiting:false,initial:None,marker:false,version:0,snapshot:None,live:None,events:Some(rx),last_config:None});
+                                        subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid:None,cursor:0,waiting:false,initial:None,marker:false,version:0,snapshot:None,live:None,events:Some(rx),last_config:None,sources:None});
                                     }else if crate::ext::handles(tag) {
                                         if inflight.load(std::sync::atomic::Ordering::Relaxed)>=16 {if send(&mut ws,exit(&id,Err(error("too many concurrent requests on this socket".into())))).await.is_err(){return}continue;}
                                         inflight.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
@@ -407,7 +415,7 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                                         }
                                         let first_config=if config {settings::config(&s).ok()}else{None};
                                         let initial=first_config.clone().map(|c|json!({"version":1,"type":"snapshot","config":c}));
-                                        subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid,cursor:after.unwrap_or(boundary),waiting:false,initial,snapshot,live:None,events:None,marker:p["requestCompletionMarker"]==true,version,last_config:first_config});
+                                        subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid,cursor:after.unwrap_or(boundary),waiting:false,initial,snapshot,live:None,events:None,marker:p["requestCompletionMarker"]==true,version,last_config:first_config,sources:if config && (p["usageLimitSources"]==true || p["environmentThemes"]==true) {Some(crate::config_sources::Sources::start(s.clone(),wake.clone(),p["usageLimitSources"]==true,p["environmentThemes"]==true))}else{None}});
                                     }else{
                                         if inflight.load(std::sync::atomic::Ordering::Relaxed)>=16 {if send(&mut ws,exit(&id,Err(error("too many concurrent requests on this socket".into())))).await.is_err(){return}continue;}
                                         inflight.fetch_add(1,std::sync::atomic::Ordering::Relaxed);

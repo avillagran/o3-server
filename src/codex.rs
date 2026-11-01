@@ -40,6 +40,8 @@ impl Client {
 pub struct CodexProvider {
     executable: PathBuf,
     home: Option<PathBuf>,
+    environment: Vec<(String, String)>,
+    launch_args: Vec<String>,
     idle_timeout: std::time::Duration,
     client: tokio::sync::Mutex<Option<Client>>,
     descriptor: std::sync::Arc<Mutex<Value>>,
@@ -78,6 +80,30 @@ fn model_capabilities(m: &Value) -> Value {
     if !options.is_empty() {
         descriptors.push(json!({"id":"reasoningEffort","label":"Reasoning","type":"select","options":options,"currentValue":current}));
     }
+    let tiers = m
+        .get("serviceTiers")
+        .or_else(|| m.get("service_tiers"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_else(|| {
+            m["additionalSpeedTiers"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|id| json!({"id":id,"name":id}))
+                .collect()
+        });
+    if !tiers.is_empty() {
+        let default = m["defaultServiceTier"].as_str().unwrap_or("default");
+        let mut options =
+            vec![json!({"id":"default","label":"Standard","isDefault":default=="default"})];
+        options.extend(
+            tiers
+                .iter()
+                .map(|t| json!({"id":t["id"],"label":t["name"],"isDefault":t["id"]==default})),
+        );
+        descriptors.push(json!({"id":"serviceTier","label":"Service Tier","type":"select","options":options,"currentValue":default}));
+    }
     json!({"optionDescriptors":descriptors})
 }
 fn cached_models(home: Option<&std::path::Path>) -> Value {
@@ -114,6 +140,8 @@ impl CodexProvider {
         Self {
             executable: crate::executable::resolve(&executable).unwrap_or(executable),
             home,
+            environment: Vec::new(),
+            launch_args: Vec::new(),
             idle_timeout: std::time::Duration::from_secs(60),
             client: tokio::sync::Mutex::new(None),
             descriptor: std::sync::Arc::new(Mutex::new(json!({
@@ -125,8 +153,15 @@ impl CodexProvider {
             }))),
         }
     }
+    pub fn with_launch_args(mut self, args: Vec<String>) -> Self {
+        self.launch_args = args;
+        self
+    }
+    pub fn with_environment(mut self, environment: Vec<(String, String)>) -> Self {
+        self.environment = environment;
+        self
+    }
     pub async fn probe(&self) -> Result<(), String> {
-        let installed = crate::executable::resolve(&self.executable).is_some();
         if self
             .client
             .lock()
@@ -136,6 +171,10 @@ impl CodexProvider {
         {
             return Ok(());
         }
+        self.probe_cached()
+    }
+    pub fn probe_cached(&self) -> Result<(), String> {
+        let installed = crate::executable::resolve(&self.executable).is_some();
         let mut d = self.descriptor.lock().unwrap();
         d["installed"] = json!(installed);
         d["status"] = json!(
@@ -179,6 +218,7 @@ impl CodexProvider {
             Ok(c) => *guard = Some(c.clone()),
             Err(e) => {
                 let mut d = self.descriptor.lock().unwrap();
+                d["installed"] = json!(crate::executable::resolve(&self.executable).is_some());
                 d["status"] = json!("error");
                 d["message"] = json!(e);
                 d["models"] = json!([]);
@@ -188,6 +228,7 @@ impl CodexProvider {
     }
     async fn launch(&self) -> Result<Client, String> {
         let mut cmd = Command::new(&self.executable);
+        cmd.envs(self.environment.iter().cloned());
         cmd.arg("app-server")
             .arg("--stdio")
             .stdin(std::process::Stdio::piped())
@@ -197,6 +238,7 @@ impl CodexProvider {
         if let Some(home) = &self.home {
             cmd.env("CODEX_HOME", home);
         }
+        cmd.args(&self.launch_args);
         let child = cmd
             .spawn()
             .map_err(|e| format!("Cannot spawn Codex: {e}"))?;
@@ -219,6 +261,11 @@ impl CodexProvider {
             .and_then(|a| a.split_whitespace().next()));
         let authenticated = !auth["account"].is_null() || auth["requiresOpenaiAuth"] == false;
         d["auth"] = json!({"status":if authenticated{"authenticated"}else{"unauthenticated"}});
+        for key in ["email", "workspaceId"] {
+            if let Some(value) = auth["account"].get(key).filter(|v| v.is_string()) {
+                d["auth"][key] = value.clone();
+            }
+        }
         d["status"] = json!(if authenticated { "ready" } else { "warning" });
         d["message"] = json!(if authenticated {
             "Codex app-server initialized"
@@ -238,12 +285,6 @@ impl CodexProvider {
     ) -> Result<(), String> {
         if *cancel.borrow() || output.is_closed() {
             return Ok(());
-        }
-        if input.model_selection["instanceId"]
-            .as_str()
-            .is_some_and(|id| id != "codex")
-        {
-            return Err("Codex adapter cannot execute another provider instance".into());
         }
         if !matches!(
             input.runtime_mode.as_str(),
@@ -280,6 +321,9 @@ impl CodexProvider {
             output.send(ProviderEvent::Codex(json!({"method":"o3/binding","params":{"threadId":tid,"cwd":input.cwd}}))).await.map_err(|_|"receiver closed")?;
             let effort=input.model_selection["options"].as_array().and_then(|a|a.iter().find(|v|v["id"]=="reasoningEffort")).map(|v|v["value"].clone());
             let mut turn_params=json!({"threadId":tid,"input":content,"model":input.model_selection["model"],"effort":effort});
+            if let Some(tier) = input.model_selection["options"].as_array().and_then(|a| a.iter().find(|v| v["id"] == "serviceTier")).and_then(|v| v["value"].as_str()) {
+                turn_params["serviceTier"] = if tier == "default" { Value::Null } else { json!(tier) };
+            }
             if input.interaction_mode=="plan" {turn_params["collaborationMode"]=json!({"mode":"plan","settings":{"model":input.model_selection["model"],"reasoning_effort":effort,"developer_instructions":null}});}
             let response=c.call("turn/start",turn_params).await?;
             let turn=response["turn"]["id"].as_str().ok_or("Codex turn id missing")?.to_owned();
@@ -352,7 +396,106 @@ impl CodexProvider {
     }
 }
 impl Provider for CodexProvider {
+    fn discover<'a>(
+        &'a self,
+        cwd: PathBuf,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            let discovery = Self::new(self.executable.clone(), self.home.clone())
+                .with_environment(self.environment.clone())
+                .with_launch_args(self.launch_args.clone());
+            let result = async {
+                let c = discovery.connection().await?;
+                if let Ok(skills) = c.call("skills/list", json!({"cwds":[cwd]})).await {
+                    let values: Vec<Value> = skills["data"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .flat_map(|r| r["skills"].as_array().into_iter().flatten())
+                        .cloned()
+                        .collect();
+                    discovery.descriptor.lock().unwrap()["skills"] = json!(values);
+                }
+                if let Ok(config) = c.call("config/read", json!({"includeLayers":false})).await {
+                    if let Some(tier) = config["config"]["service_tier"].as_str() {
+                        let mut descriptor = discovery.descriptor.lock().unwrap();
+                        for model in descriptor["models"].as_array_mut().into_iter().flatten() {
+                            for option in model["capabilities"]["optionDescriptors"]
+                                .as_array_mut()
+                                .into_iter()
+                                .flatten()
+                                .filter(|d| d["id"] == "serviceTier")
+                            {
+                                let target = if tier == "fast"
+                                    && option["options"]
+                                        .as_array()
+                                        .into_iter()
+                                        .flatten()
+                                        .any(|o| o["id"] == "priority")
+                                {
+                                    "priority"
+                                } else {
+                                    tier
+                                };
+                                if option["options"]
+                                    .as_array()
+                                    .into_iter()
+                                    .flatten()
+                                    .any(|o| o["id"] == target)
+                                {
+                                    option["currentValue"] = json!(target);
+                                    for value in
+                                        option["options"].as_array_mut().into_iter().flatten()
+                                    {
+                                        value["isDefault"] = json!(value["id"] == target);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Ok::<_, String>(())
+            }
+            .await;
+            discovery.shutdown().await;
+            if self
+                .client
+                .lock()
+                .await
+                .as_ref()
+                .is_none_or(|c| c.0.is_closed())
+            {
+                *self.descriptor.lock().unwrap() = discovery.descriptor.lock().unwrap().clone();
+            }
+            result
+        })
+    }
+
+    fn refresh<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(self.probe())
+    }
+    fn poll_usage<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            // Quota readers do not keep the inference actor alive between refreshes.
+            let probe = Self::new(self.executable.clone(), self.home.clone())
+                .with_environment(self.environment.clone())
+                .with_launch_args(self.launch_args.clone());
+            let result = async {
+                let c = probe.connection().await?;
+                let response = c.call("account/rateLimits/read", json!({})).await?;
+                self.descriptor.lock().unwrap()["usageLimits"] =
+                    usage_limits(&response["rateLimits"]);
+                Ok::<_, String>(())
+            }
+            .await;
+            probe.shutdown().await;
+            result
+        })
+    }
     fn config(&self) -> Vec<Value> {
+        if self.descriptor.lock().unwrap()["message"] == "Codex has not been probed" {
+            let _ = self.probe_cached();
+        }
         let d = self.descriptor.lock().unwrap().clone();
         vec![d]
     }
@@ -476,7 +619,9 @@ async fn actor(
         .unwrap_or_else(|| "Codex idle or stopped; starts on next turn".into());
     {
         let mut d = descriptor.lock().unwrap();
-        d["status"] = json!(if failed { "error" } else { "warning" });
+        if failed {
+            d["status"] = json!("error");
+        }
         d["message"] = json!(reason);
     }
     for (_, reply) in calls {

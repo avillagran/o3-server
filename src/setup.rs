@@ -79,6 +79,7 @@ struct Driver {
     instance: String,
     kind: &'static str, // "claudeAgent" | "codex"
     binary: PathBuf,
+    environment: Vec<(String, String)>,
 }
 
 fn instance_id(p: &Value) -> Result<&str, Value> {
@@ -119,22 +120,12 @@ fn driver(s: &State, instance: &str, operation: &str) -> Result<Driver, Value> {
         },
     };
     let name = if kind == "codex" { "codex" } else { "claude" };
-    let binary = configured["config"]["binaryPath"]
-        .as_str()
-        .filter(|b| !b.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| which(name))
-        .ok_or_else(|| {
-            setup_error(
-                instance,
-                operation,
-                &format!("The {name} CLI is not installed or not on PATH."),
-            )
-        })?;
+    let binary = crate::provider::instance_binary(configured, name);
     Ok(Driver {
         instance: instance.into(),
         kind,
         binary,
+        environment: crate::provider::instance_environment(configured),
     })
 }
 
@@ -282,7 +273,8 @@ async fn auth_start(s: &Arc<State>, p: &Value) -> Reply {
         &["auth", "login"]
     };
     let mut cmd = tokio::process::Command::new(&d.binary);
-    cmd.args(args)
+    cmd.envs(d.environment.iter().cloned())
+        .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -440,13 +432,14 @@ async fn verify(d: &Driver) -> bool {
     } else {
         &["auth", "status"]
     };
-    run_quiet(&d.binary, args, Duration::from_secs(20))
+    run_quiet(d, args, Duration::from_secs(20))
         .await
         .is_some_and(|(code, _)| code == 0)
 }
 
-async fn run_quiet(bin: &PathBuf, args: &[&str], timeout: Duration) -> Option<(i32, String)> {
-    let mut cmd = tokio::process::Command::new(bin);
+async fn run_quiet(d: &Driver, args: &[&str], timeout: Duration) -> Option<(i32, String)> {
+    let mut cmd = tokio::process::Command::new(&d.binary);
+    cmd.envs(d.environment.iter().cloned());
     cmd.args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -539,7 +532,7 @@ async fn auth_logout(s: &Arc<State>, p: &Value) -> Reply {
     } else {
         &["auth", "logout"]
     };
-    let (code, text) = run_quiet(&d.binary, args, Duration::from_secs(30))
+    let (code, text) = run_quiet(&d, args, Duration::from_secs(30))
         .await
         .ok_or_else(|| setup_error(&d.instance, "auth.logout", "The CLI did not answer."))?;
     if code != 0 {
@@ -577,7 +570,7 @@ async fn install_state(s: &Arc<State>, instance: &str) -> Reply {
             return Err(e);
         }
     };
-    let version = run_quiet(&d.binary, &["--version"], Duration::from_secs(10))
+    let version = run_quiet(&d, &["--version"], Duration::from_secs(10))
         .await
         .and_then(|(code, text)| {
             (code == 0)
@@ -626,7 +619,7 @@ async fn update_provider(s: &Arc<State>, p: &Value) -> Reply {
     if d.kind != "claudeAgent" {
         return Err(fail("the instance does not use the Claude driver"));
     }
-    let (code, text) = run_quiet(&d.binary, &["update"], Duration::from_secs(300))
+    let (code, text) = run_quiet(&d, &["update"], Duration::from_secs(300))
         .await
         .ok_or_else(|| fail("`claude update` did not finish"))?;
     if code != 0 {
@@ -830,6 +823,7 @@ impl Cursor {
             let state = match d {
                 Ok(d) => {
                     let version = std::process::Command::new(&d.binary)
+                        .envs(d.environment.iter().cloned())
                         .arg("--version")
                         .stdin(Stdio::null())
                         .output()

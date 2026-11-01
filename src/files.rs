@@ -598,6 +598,17 @@ fn which(command: &str) -> Option<PathBuf> {
         })
 }
 
+pub(crate) fn available_editors() -> Vec<&'static str> {
+    EDITORS
+        .iter()
+        .filter(|(_, commands, _)| {
+            commands
+                .iter()
+                .any(|c| crate::executable::resolve(std::path::Path::new(c)).is_some())
+        })
+        .map(|(id, _, _)| *id)
+        .collect()
+}
 pub async fn open_in_editor(p: Value) -> Reply {
     let fail = |m: String| json!({"_tag":"ExternalLauncherError","message":m});
     let cwd = p["cwd"].as_str().map(str::trim).filter(|s| !s.is_empty());

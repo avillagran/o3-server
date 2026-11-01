@@ -47,6 +47,28 @@ pub trait Provider: Send + Sync + 'static {
     fn refresh<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(async { Ok(()) })
     }
+    fn discover<'a>(
+        &'a self,
+        _cwd: std::path::PathBuf,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        self.refresh()
+    }
+    fn poll_usage<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        self.refresh()
+    }
+    fn discover_defaults<'a>(
+        &'a self,
+        cwd: std::path::PathBuf,
+        _excluded: Vec<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        self.discover(cwd)
+    }
+    fn poll_defaults<'a>(
+        &'a self,
+        _excluded: Vec<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        self.poll_usage()
+    }
     fn config(&self) -> Vec<serde_json::Value> {
         Vec::new()
     }
@@ -405,6 +427,63 @@ pub struct Providers {
     pub codex: std::sync::Arc<crate::codex::CodexProvider>,
 }
 impl Provider for Providers {
+    fn discover_defaults<'a>(
+        &'a self,
+        cwd: std::path::PathBuf,
+        excluded: Vec<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            if !excluded.iter().any(|i| i == "codex") {
+                let _ = self.codex.discover(cwd.clone()).await;
+            }
+            if !excluded.iter().any(|i| i == "claudeAgent") {
+                if let Some(p) = &self.claude {
+                    let _ = p.discover(cwd).await;
+                }
+            }
+            Ok(())
+        })
+    }
+    fn poll_defaults<'a>(
+        &'a self,
+        excluded: Vec<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            if !excluded.iter().any(|i| i == "codex") {
+                let _ = self.codex.poll_usage().await;
+            }
+            if !excluded.iter().any(|i| i == "claudeAgent") {
+                if let Some(p) = &self.claude {
+                    let _ = p.poll_usage().await;
+                }
+            }
+            Ok(())
+        })
+    }
+
+    fn discover<'a>(
+        &'a self,
+        cwd: std::path::PathBuf,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            let _ = self.codex.discover(cwd.clone()).await;
+            if let Some(claude) = &self.claude {
+                let _ = claude.discover(cwd).await;
+            }
+            Ok(())
+        })
+    }
+
+    fn poll_usage<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            let _ = self.codex.poll_usage().await;
+            if let Some(claude) = &self.claude {
+                let _ = claude.poll_usage().await;
+            }
+            Ok(())
+        })
+    }
+
     fn config(&self) -> Vec<serde_json::Value> {
         let mut result = self
             .claude
@@ -626,4 +705,341 @@ mod restart_tests {
             std::fs::remove_dir_all(dir).unwrap();
         }
     }
+}
+
+/// Instance registry. Each configured identity owns its own native process/session pool.
+/// Replacing settings retires the old pool after its in-flight run releases it.
+pub struct ConfiguredProviders {
+    pub defaults: std::sync::Arc<dyn Provider>,
+    pub directory: std::path::PathBuf,
+    instances: std::sync::Mutex<std::collections::BTreeMap<String, Instance>>,
+    discovered_defaults: std::sync::atomic::AtomicBool,
+}
+struct Instance {
+    settings: serde_json::Value,
+    discovered: bool,
+    provider: Option<std::sync::Arc<dyn Provider>>,
+    binary: std::path::PathBuf,
+}
+impl ConfiguredProviders {
+    pub fn new(defaults: std::sync::Arc<dyn Provider>, directory: std::path::PathBuf) -> Self {
+        Self {
+            defaults,
+            directory,
+            instances: Default::default(),
+            discovered_defaults: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+    fn settings(&self) -> serde_json::Value {
+        std::fs::read(self.directory.join("settings.json"))
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_else(|| serde_json::json!({}))
+    }
+    fn sync(&self) -> serde_json::Value {
+        use serde_json::json;
+        let settings = self.settings();
+        let mut cache = self.instances.lock().unwrap();
+        cache.retain(|id, _| settings["providerInstances"].get(id).is_some());
+        for (id, entry) in settings["providerInstances"]
+            .as_object()
+            .into_iter()
+            .flatten()
+        {
+            if cache.get(id).is_some_and(|i| i.settings == *entry) {
+                continue;
+            }
+            let driver = entry["driver"].as_str().unwrap_or("");
+            let name = if driver == "codex" { "codex" } else { "claude" };
+            let binary = instance_binary(entry, name);
+            let env = instance_environment(entry);
+            let home = env
+                .iter()
+                .find(|(k, _)| {
+                    k == if driver == "codex" {
+                        "CODEX_HOME"
+                    } else {
+                        "CLAUDE_CONFIG_DIR"
+                    }
+                })
+                .map(|(_, v)| std::path::PathBuf::from(v));
+            let args = launch_args(entry["config"]["launchArgs"].as_str().unwrap_or(""))
+                .unwrap_or_default();
+            let provider: Option<std::sync::Arc<dyn Provider>> = match driver {
+                "codex" => Some(std::sync::Arc::new(
+                    crate::codex::CodexProvider::new(binary.clone(), home)
+                        .with_environment(env)
+                        .with_launch_args(args.clone()),
+                )),
+                "claudeAgent" => Some(std::sync::Arc::new(
+                    crate::claude::ClaudeProvider::new(binary.clone())
+                        .with_environment(env)
+                        .with_launch_args(args.clone()),
+                )),
+                _ => None,
+            };
+            cache.insert(
+                id.clone(),
+                Instance {
+                    settings: entry.clone(),
+                    discovered: false,
+                    provider,
+                    binary,
+                },
+            );
+        }
+        json!(settings)
+    }
+}
+impl Provider for ConfiguredProviders {
+    fn discover<'a>(
+        &'a self,
+        cwd: std::path::PathBuf,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            self.sync();
+            if !self
+                .discovered_defaults
+                .swap(true, std::sync::atomic::Ordering::Relaxed)
+            {
+                let excluded = self.instances.lock().unwrap().keys().cloned().collect();
+                let _ = self.defaults.discover_defaults(cwd.clone(), excluded).await;
+            }
+            let providers: Vec<_> = self
+                .instances
+                .lock()
+                .unwrap()
+                .values_mut()
+                .filter_map(|i| {
+                    if i.discovered || i.settings["enabled"] == false {
+                        return None;
+                    }
+                    i.discovered = true;
+                    i.provider.clone()
+                })
+                .collect();
+            for p in providers {
+                let _ = p.discover(cwd.clone()).await;
+            }
+            Ok(())
+        })
+    }
+    fn poll_usage<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            self.sync();
+            let settings = self.settings();
+            let providers: Vec<_> = self
+                .instances
+                .lock()
+                .unwrap()
+                .values()
+                .filter(|i| i.settings["enabled"] != false)
+                .filter_map(|i| i.provider.clone())
+                .collect();
+            let excluded = settings["providerInstances"]
+                .as_object()
+                .into_iter()
+                .flatten()
+                .map(|(id, _)| id.clone())
+                .collect();
+            let _ = self.defaults.poll_defaults(excluded).await;
+            for p in providers {
+                let _ = p.poll_usage().await;
+            }
+            Ok(())
+        })
+    }
+
+    fn config(&self) -> Vec<serde_json::Value> {
+        use serde_json::json;
+        self.sync();
+        let instances = self.instances.lock().unwrap();
+        let mut result = self.defaults.config();
+        for (id, instance) in instances.iter() {
+            result.retain(|p| p["instanceId"] != *id);
+            let mut descriptor = instance.provider.as_ref().and_then(|p| p.config().into_iter().next()).unwrap_or_else(|| json!({"models":[],"slashCommands":[],"skills":[],"status":"disabled","installed":false}));
+            descriptor["installed"] = serde_json::json!(
+                instance.provider.is_some()
+                    && crate::executable::resolve(&instance.binary).is_some()
+            );
+            if descriptor["installed"] == false {
+                descriptor["status"] = serde_json::json!("disabled");
+            }
+            descriptor["instanceId"] = json!(id);
+            descriptor["driver"] = instance.settings["driver"].clone();
+            if let Some(color) = instance.settings.get("accentColor") {
+                descriptor["accentColor"] = color.clone();
+            }
+            descriptor["displayName"] = instance
+                .settings
+                .get("displayName")
+                .cloned()
+                .unwrap_or_else(|| json!(id));
+            descriptor["enabled"] = json!(
+                instance.settings["enabled"] != false
+                    && instance.settings["config"]["enabled"] != false
+            );
+            if descriptor["enabled"] == false {
+                descriptor["status"] = json!("disabled");
+            }
+            result.push(descriptor);
+        }
+        result
+    }
+    fn refresh<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            self.sync();
+            self.defaults.refresh().await?;
+            let providers: Vec<_> = self
+                .instances
+                .lock()
+                .unwrap()
+                .values()
+                .filter_map(|i| i.provider.clone())
+                .collect();
+            for p in providers {
+                let _ = p.refresh().await;
+            }
+            Ok(())
+        })
+    }
+    fn execute<'a>(
+        &'a self,
+        input: RunInput,
+        output: mpsc::Sender<ProviderEvent>,
+        control: mpsc::Receiver<ProviderControl>,
+        cancel: watch::Receiver<bool>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        self.sync();
+        let selected = {
+            let instances = self.instances.lock().unwrap();
+            instances
+                .get(
+                    if matches!(
+                        input.provider_instance_id.as_str(),
+                        "claude" | "claude-code"
+                    ) {
+                        "claudeAgent"
+                    } else {
+                        &input.provider_instance_id
+                    },
+                )
+                .map(|i| {
+                    if i.settings["enabled"] == false || i.settings["config"]["enabled"] == false {
+                        Err("provider instance is disabled".to_owned())
+                    } else if crate::executable::resolve(&i.binary).is_none() {
+                        Err("provider binary is unavailable".to_owned())
+                    } else {
+                        i.provider
+                            .clone()
+                            .ok_or_else(|| "unsupported provider driver".to_owned())
+                    }
+                })
+        };
+        match selected {
+            None => self.defaults.execute(input, output, control, cancel),
+            Some(selected) => {
+                Box::pin(async move { selected?.execute(input, output, control, cancel).await })
+            }
+        }
+    }
+}
+
+/// Shell-style argument words, without shell evaluation or command substitution.
+pub(crate) fn launch_args(text: &str) -> Result<Vec<String>, String> {
+    let mut result = Vec::new();
+    let mut word = String::new();
+    let mut quote = None;
+    let mut escape = false;
+    let mut started = false;
+    for c in text.chars() {
+        if escape {
+            word.push(c);
+            escape = false;
+            started = true;
+            continue;
+        }
+        if c == '\\' && quote != Some('\'') {
+            escape = true;
+            started = true;
+            continue;
+        }
+        if quote == Some(c) {
+            quote = None;
+            continue;
+        }
+        if quote.is_none() && matches!(c, '\'' | '"') {
+            quote = Some(c);
+            started = true;
+            continue;
+        }
+        if c.is_whitespace() && quote.is_none() {
+            if started {
+                result.push(std::mem::take(&mut word));
+                started = false;
+            }
+        } else {
+            word.push(c);
+            started = true;
+        }
+    }
+    if escape || quote.is_some() {
+        return Err("unterminated provider launch arguments".into());
+    }
+    if started {
+        result.push(word);
+    }
+    Ok(result)
+}
+
+pub(crate) fn instance_environment(entry: &serde_json::Value) -> Vec<(String, String)> {
+    let mut env: Vec<(String, String)> = entry["environment"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|v| Some((v["name"].as_str()?.into(), v["value"].as_str()?.into())))
+        .collect();
+    let key = if entry["driver"] == "codex" {
+        "CODEX_HOME"
+    } else {
+        "CLAUDE_CONFIG_DIR"
+    };
+    if let Some(home) = entry["config"]
+        .get("shadowHomePath")
+        .filter(|v| v.as_str().is_some_and(|s| !s.is_empty()))
+        .unwrap_or(&entry["config"]["homePath"])
+        .as_str()
+        .filter(|s| !s.is_empty())
+    {
+        env.retain(|(k, _)| k != key);
+        env.push((key.into(), expand_home(home).to_string_lossy().into_owned()));
+    }
+    env
+}
+pub(crate) fn expand_home(path: &str) -> std::path::PathBuf {
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Some(home) = std::env::var_os("HOME") {
+            return std::path::PathBuf::from(home).join(rest);
+        }
+    }
+    path.into()
+}
+pub(crate) fn instance_binary(entry: &serde_json::Value, name: &str) -> std::path::PathBuf {
+    let text = entry["config"]["binaryPath"]
+        .as_str()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(name);
+    let path = expand_home(text);
+    if path.components().count() == 1 {
+        if let Some(paths) = instance_environment(entry)
+            .iter()
+            .find(|(k, _)| k == "PATH")
+            .map(|(_, v)| v)
+        {
+            return std::env::split_paths(paths)
+                .find_map(|dir| crate::executable::resolve(&dir.join(&path)))
+                .unwrap_or(path);
+        }
+    }
+    crate::executable::resolve(&path).unwrap_or(path)
 }

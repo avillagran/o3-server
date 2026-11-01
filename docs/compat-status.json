@@ -687,9 +687,9 @@
       "note": "No client call site in inventory."
     },
     "server.getConfig": {
-      "status": "partial",
+      "status": "done",
       "priority": "P0",
-      "note": "Real-client tests cover startup project commands/skills, Claude pinned catalog, native Codex reasoning descriptors, quota/context usage and enabled feature flags. Still partial: custom provider instances, complete startup native discovery, service-tier metadata, full settings normalization and proactive quota refresh."
+      "note": "Reader-equivalent: instance routing with isolated binary/env/home pools; startup native commands/skills/account/models and Codex tier descriptors; editor discovery; normalized settings. Real Connection and native-peer tests in server_config; per-field audit and explicitly accepted capability/optional differences in CONFORMANCE.md."
     },
     "server.getDatabaseStorage": {
       "status": "skip",
@@ -837,9 +837,9 @@
       "note": "No client call site in inventory."
     },
     "server.updateSettings": {
-      "status": "partial",
+      "status": "done",
       "priority": "P1",
-      "note": "Connection tests: provider instance create/upsert/remove, redacted environment preservation, entry replacement/null removal, directory history, primitive type checks. Full upstream normalization/model preferences/background policy remain. Real-client tests additionally cover favorite/hidden-model/order mutations, migration fields and folding config.enabled into instance.enabled. Full background/scoped schema normalization remains incomplete."
+      "note": "Reader-equivalent: normalized native/scoped settings, idle compatibility, background presets/custom overrides and legacy derivation, model selection/preferences, instance mutation/redaction and entry replacement. Real Connection/native_settings tests prove read-back and atomic rejection; accepted unconsumed fields in CONFORMANCE.md."
     },
     "server.upsertKeybinding": {
       "status": "done",
@@ -902,9 +902,9 @@
       "note": "No client call site in inventory."
     },
     "subscribeServerConfig": {
-      "status": "partial",
+      "status": "done",
       "priority": "P1",
-      "note": "Connection tests: initial snapshot; provider-only changes emit the typed providerStatuses event that lib quota_sources::apply consumes, other changes a replacement snapshot (also accepts the server.subscribeServerConfig alias). Still partial: usageLimitSourcesUpdated sources (Android quota strip subscribes with usageLimitSources) and typed settingsUpdated/keybindingsUpdated/environmentThemesUpdated events. Typed settings/keybindings deltas implemented; quota and theme source projection remain partial."
+      "note": "Reader-equivalent: initial snapshot and typed provider/settings/keybinding changes, lossless coalesced snapshots; opt-in quota source and theme replacement events. Proactive native/hub quotas only while usageLimitSources subscribers exist; cancellation aborts probes. Real Connection tests plus real quota reducer and HTTP hub peer; optional theme differences documented in CONFORMANCE.md."
     },
     "subscribeServerLifecycle": {
       "status": "skip",

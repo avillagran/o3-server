@@ -18,6 +18,7 @@ pub fn read(s: &State) -> Result<Value, String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => return Err(e.to_string()),
     }
+    normalize(&mut v, &json!({}))?;
     Ok(v)
 }
 pub fn merge(dst: &mut Value, patch: &Value) {
@@ -136,14 +137,40 @@ pub fn update(s: &State, p: &Value) -> Result<Value, String> {
     let defaults: Value = serde_json::from_str(include_str!("settings-defaults.json")).unwrap();
     for (key, value) in patch.as_object().unwrap() {
         if let Some(default) = defaults.get(key).filter(|v| !v.is_null()) {
-            if std::mem::discriminant(default) != std::mem::discriminant(value) {
+            if !(key == "sidebarAutoSettleAfterDays" && value.is_null())
+                && std::mem::discriminant(default) != std::mem::discriminant(value)
+            {
                 return Err(format!("invalid settings type: {key}"));
             }
         }
     }
+    if let Some(overrides) = patch["backgroundActivity"].get("overrides") {
+        v["backgroundActivity"]["overrides"] = overrides.clone();
+    }
+    if let Some(selection) = patch.get("textGenerationModelSelection") {
+        if selection.get("options").is_none()
+            && (selection.get("model").is_some() || selection.get("instanceId").is_some())
+        {
+            v["textGenerationModelSelection"]["options"] = json!([]);
+        }
+    }
     normalize_preferences(&previous, &mut v, &patch)?;
+    normalize(&mut v, &patch)?;
     crate::profile::atomic_json(&s.dir.join("settings.json"), &v).map_err(|e| e.to_string())?;
     s.notify();
+    if patch.get("providerInstances").is_some() || p.get("providerInstanceMutation").is_some() {
+        if let (Ok(runtime), Some(provider)) = (
+            tokio::runtime::Handle::try_current(),
+            s.provider.lock().unwrap().clone(),
+        ) {
+            let changed = s.changed.clone();
+            let cwd = std::env::current_dir().unwrap_or_else(|_| s.dir.clone());
+            runtime.spawn(async move {
+                let _ = provider.discover(cwd).await;
+                changed.send_modify(|v| *v = v.wrapping_add(1));
+            });
+        }
+    }
     redact(&mut v);
     Ok(v)
 }
@@ -173,7 +200,7 @@ fn preserve_environment(old: &Value, patch: &mut Value) {
 }
 pub fn config(s: &State) -> Result<Value, String> {
     let (keybindings, issues) = crate::keybind::resolved(s);
-    let mut config = json!({"environment":descriptor(s),"directEndpoints":direct_endpoints(s),"auth":auth_descriptor(),"cwd":std::env::current_dir().unwrap_or_default(),"keybindingsConfigPath":s.dir.join("keybindings.json"),"keybindings":keybindings,"issues":issues,"providers":s.provider.lock().unwrap().as_ref().map(|p|p.config()).unwrap_or_default(),"availableEditors":[],"observability":{"logsDirectoryPath":s.dir.join("logs"),"localTracingEnabled":false,"otlpTracesEnabled":false,"otlpMetricsEnabled":false,"otlpLogsEnabled":false},"settings":get(s)?,"shellResumeCompletionMarker":true,"threadResumeCompletionMarker":true,"shellThreadFamilies":false,"shellOlderSettled":false,"threadSnapshotPagination":false});
+    let mut config = json!({"environment":descriptor(s),"directEndpoints":direct_endpoints(s),"auth":auth_descriptor(),"cwd":std::env::current_dir().unwrap_or_default(),"keybindingsConfigPath":s.dir.join("keybindings.json"),"keybindings":keybindings,"issues":issues,"providers":s.provider.lock().unwrap().as_ref().map(|p|p.config()).unwrap_or_default(),"availableEditors":crate::files::available_editors(),"observability":{"logsDirectoryPath":s.dir.join("logs"),"localTracingEnabled":false,"otlpTracesEnabled":false,"otlpMetricsEnabled":false,"otlpLogsEnabled":false},"settings":get(s)?,"shellResumeCompletionMarker":true,"threadResumeCompletionMarker":true,"shellThreadFamilies":false,"shellOlderSettled":false,"threadSnapshotPagination":false});
     startup_catalog(s, &mut config);
     Ok(config)
 }
@@ -242,7 +269,12 @@ fn apply_entry_patches(old: &Value, next: &mut Value, patch: &Value) -> Result<(
         "defaultProjectScripts",
     ] {
         if let Some(value) = patch.get(field) {
-            next[field] = value.clone();
+            if field.ends_with("ModelSelection") && value.is_object() && old[field].is_object() {
+                next[field] = old[field].clone();
+                merge(&mut next[field], value);
+            } else {
+                next[field] = value.clone();
+            }
         }
     }
     if let Some(path) = patch["worktreesDirectory"]
@@ -372,13 +404,37 @@ fn normalize_preferences(old: &Value, next: &mut Value, patch: &Value) -> Result
 
 fn startup_catalog(s: &State, config: &mut Value) {
     let projects = crate::projects::snapshot(s).unwrap_or(Value::Null);
+    let settings = read(s).unwrap_or(json!({}));
     let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
     for provider in config["providers"].as_array_mut().into_iter().flatten() {
         let driver = provider["driver"].as_str().unwrap_or("");
         if !matches!(driver, "codex" | "claudeAgent") {
             continue;
         }
+        let id = provider["instanceId"].as_str().unwrap_or("");
+        let instance = &settings["providerInstances"][id];
+        let native_home = crate::provider::instance_environment(instance)
+            .iter()
+            .find(|(k, _)| {
+                k == if driver == "codex" {
+                    "CODEX_HOME"
+                } else {
+                    "CLAUDE_CONFIG_DIR"
+                }
+            })
+            .map(|(_, v)| std::path::PathBuf::from(v))
+            .or_else(|| {
+                std::env::var_os(if driver == "codex" {
+                    "CODEX_HOME"
+                } else {
+                    "CLAUDE_CONFIG_DIR"
+                })
+                .map(std::path::PathBuf::from)
+            });
         let mut roots = Vec::new();
+        if let Some(native_home) = native_home {
+            roots.push((native_home, "native"));
+        }
         if let Some(home) = &home {
             roots.push((home.clone(), "user"));
         }
@@ -399,7 +455,11 @@ fn startup_catalog(s: &State, config: &mut Value) {
                 ".claude"
             };
             for directory in [
-                root.join(native).join("skills"),
+                if scope == "native" {
+                    root.join("skills")
+                } else {
+                    root.join(native).join("skills")
+                },
                 root.join(".agents/skills"),
             ] {
                 let Ok(entries) = std::fs::read_dir(directory) else {
@@ -415,11 +475,15 @@ fn startup_catalog(s: &State, config: &mut Value) {
                     if skills.iter().any(|v| v["name"] == name) {
                         continue;
                     }
-                    skills.push(json!({"name":name,"description":description,"path":path,"scope":scope,"enabled":true}));
+                    skills.push(json!({"name":name,"description":description,"path":path,"scope":if scope == "native" {"user"} else {scope},"enabled":true}));
                 }
             }
             if driver == "claudeAgent" {
-                if let Ok(entries) = std::fs::read_dir(root.join(native).join("commands")) {
+                if let Ok(entries) = std::fs::read_dir(if scope == "native" {
+                    root.join("commands")
+                } else {
+                    root.join(native).join("commands")
+                }) {
                     for entry in entries.take(512).flatten() {
                         let path = entry.path();
                         if path.extension().is_none_or(|e| e != "md") {
@@ -467,4 +531,249 @@ fn catalog_header(path: &std::path::Path, fallback: &str) -> Option<(String, Str
         }
     }
     (!name.trim().is_empty()).then_some((name, description))
+}
+
+// Normalize the representation consumed by native_settings/scoped_settings and the
+// provider forms. This also runs on reads, including imported legacy settings.
+fn normalize(v: &mut Value, patch: &Value) -> Result<(), String> {
+    for value in v.as_object_mut().ok_or("invalid settings")?.values_mut() {
+        if let Some(text) = value.as_str() {
+            *value = json!(text.trim());
+        }
+    }
+    if let Some(days) = v["sidebarAutoSettleAfterDays"].as_u64() {
+        if !(1..=90).contains(&days) {
+            return Err("invalid sidebarAutoSettleAfterDays".into());
+        }
+    } else if !v["sidebarAutoSettleAfterDays"].is_null() {
+        return Err("invalid sidebarAutoSettleAfterDays".into());
+    }
+    for field in [
+        "defaultModelSelection",
+        "textGenerationModelSelection",
+        "sourceControlWriterModelSelection",
+        "reviewGuideModelSelection",
+    ] {
+        if let Some(selection) = v.get_mut(field).filter(|v| !v.is_null()) {
+            for key in ["instanceId", "model"] {
+                if !selection[key]
+                    .as_str()
+                    .is_some_and(|s| !s.trim().is_empty())
+                {
+                    return Err(format!("invalid {field}.{key}"));
+                }
+            }
+            if selection.get("options").is_none() {
+                selection["options"] = json!([]);
+            }
+        }
+    }
+    for (key, val) in v["storageCleanup"].as_object().into_iter().flatten() {
+        if key.ends_with("Days") {
+            let min = if key == "worktreeSettledAfterDays" {
+                0
+            } else {
+                1
+            };
+            if !val.is_null() && !val.as_u64().is_some_and(|n| (min..=3650).contains(&n)) {
+                return Err(format!("invalid {key}"));
+            }
+        } else if key != "worktreeKeepWhen" && !val.is_boolean() {
+            return Err(format!("invalid {key}"));
+        }
+    }
+    if let Some(text) = v["sourceControlWritingStyle"].as_str() {
+        v["sourceControlWritingStyle"] = json!({"mode":if text.is_empty(){"repo_conventions"}else{"custom"},"customInstructions":text,"followChangeRequestTemplates":true});
+    }
+
+    for (key, allowed) in [
+        ("responseStreamingMode", &["turn", "paragraph"][..]),
+        (
+            "defaultRuntimeMode",
+            &["full-access", "approval-required", "auto-accept-edits"],
+        ),
+        ("branchNamingMode", &["static", "semantic", "custom"]),
+        ("idleCompaction", &["onReturn", "beforeCacheExpires", "off"]),
+    ] {
+        if let Some(value) = v.get(key).filter(|v| !v.is_null()) {
+            if !value.as_str().is_some_and(|s| allowed.contains(&s)) {
+                return Err(format!("invalid {key}"));
+            }
+        }
+    }
+    let mode = patch
+        .get("idleCompaction")
+        .and_then(Value::as_str)
+        .or_else(|| {
+            patch
+                .get("compactIdleThreads")
+                .and_then(Value::as_bool)
+                .map(|v| if v { "beforeCacheExpires" } else { "onReturn" })
+        })
+        .or_else(|| v["idleCompaction"].as_str())
+        .unwrap_or(if v["compactIdleThreads"] == true {
+            "beforeCacheExpires"
+        } else {
+            "onReturn"
+        })
+        .to_owned();
+    v["compactIdleThreads"] = json!(mode == "beforeCacheExpires");
+    v["idleCompaction"] = json!(mode);
+    let background = &v["backgroundActivity"];
+    if background["schemaVersion"] != 1
+        || !matches!(
+            background["profile"].as_str(),
+            Some("performance" | "balanced" | "battery-saver" | "custom")
+        )
+    {
+        return Err("invalid backgroundActivity".into());
+    }
+    for (key, val) in background["overrides"].as_object().into_iter().flatten() {
+        if key.ends_with("Interval") || key == "idleClientTtl" {
+            if !val.is_u64() {
+                return Err(format!("invalid background override {key}"));
+            }
+        } else if !val.is_boolean() {
+            return Err(format!("invalid background override {key}"));
+        }
+    }
+    normalize_background(v, patch)?;
+    for (legacy, key) in [
+        (
+            "projectAgentBrowserAccessOverrides",
+            "enableAgentBrowserAccess",
+        ),
+        ("projectAutoPullOverrides", "defaultAutoPull"),
+        ("projectScriptOverrides", "defaultProjectScripts"),
+    ] {
+        for (id, value) in patch[legacy].as_object().into_iter().flatten() {
+            if !v["projectSettingsOverrides"][id].is_object() {
+                v["projectSettingsOverrides"][id] = json!({});
+            }
+            v["projectSettingsOverrides"][id][key] = value.clone();
+        }
+        let mut derived = json!({});
+        for (id, entry) in v["projectSettingsOverrides"]
+            .as_object()
+            .into_iter()
+            .flatten()
+        {
+            if let Some(value) = entry.get(key) {
+                derived[id] = value.clone();
+            }
+        }
+        v[legacy] = derived;
+    }
+    if let Some(instances) = v["providerInstances"].as_object_mut() {
+        for instance in instances.values_mut() {
+            if !instance.is_object() || !instance["driver"].is_string() {
+                return Err("invalid provider instance".into());
+            }
+            if !instance["config"].is_object() {
+                instance["config"] = json!({});
+            }
+            if instance.get("enabled").is_none() {
+                instance["enabled"] = json!(true);
+            }
+            if let Some(enabled) = instance["config"].get("enabled") {
+                instance["enabled"] = json!(instance["enabled"] != false && enabled != false);
+                instance["config"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("enabled");
+            }
+            if instance["environment"].is_null() {
+                instance["environment"] = json!([]);
+            }
+            for var in instance["environment"]
+                .as_array()
+                .ok_or("invalid environment")?
+            {
+                let name = var["name"].as_str().ok_or("invalid environment name")?;
+                if name.is_empty() || name.contains(['=', '\0']) || !var["value"].is_string() {
+                    return Err("invalid environment variable".into());
+                }
+            }
+            if let Some(args) = instance["config"]["launchArgs"].as_str() {
+                crate::provider::launch_args(args)?;
+            }
+            for key in ["binaryPath", "homePath", "shadowHomePath"] {
+                if let Some(value) = instance["config"].get_mut(key) {
+                    *value = json!(value.as_str().ok_or("invalid provider path")?.trim());
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn background_preset(profile: &str) -> Value {
+    let performance = profile == "performance";
+    let battery = profile == "battery-saver";
+    json!({"automaticGitFetchInterval":if performance {15000}else if battery {0}else{300000},"providerHealthRefreshInterval":if performance {60000}else if battery {900000}else{300000},"hostPowerMonitorActiveInterval":if battery {60000}else{30000},"hostPowerMonitorIdleInterval":if performance {120000}else if battery {600000}else{300000},"idleClientTtl":45000,"pauseWhenHostLocked":true,"pauseWhenHostLowPower":!performance,"pauseWhenClientLowPower":!performance,"pauseWhenOnBattery":battery})
+}
+fn normalize_background(v: &mut Value, patch: &Value) -> Result<(), String> {
+    let mut activity = v["backgroundActivity"].clone();
+    if patch.get("backgroundActivity").is_none()
+        && [
+            "backgroundActivityProfile",
+            "automaticGitFetchInterval",
+            "providerHealthRefreshInterval",
+        ]
+        .iter()
+        .any(|k| patch.get(*k).is_some())
+    {
+        let base = patch["backgroundActivityProfile"]
+            .as_str()
+            .or_else(|| activity["baseProfile"].as_str())
+            .or_else(|| activity["profile"].as_str())
+            .unwrap_or("balanced");
+        let overrides: serde_json::Map<String, Value> =
+            ["automaticGitFetchInterval", "providerHealthRefreshInterval"]
+                .into_iter()
+                .filter_map(|k| patch.get(k).map(|v| (k.to_owned(), v.clone())))
+                .collect();
+        activity = if overrides.is_empty() {
+            json!({"schemaVersion":1,"profile":base,"overrides":{}})
+        } else {
+            json!({"schemaVersion":1,"profile":"custom","baseProfile":base,"overrides":overrides})
+        };
+    }
+    let profile = activity["profile"]
+        .as_str()
+        .unwrap_or("balanced")
+        .to_owned();
+    let base = if profile == "custom" {
+        activity["baseProfile"].as_str().unwrap_or("balanced")
+    } else {
+        &profile
+    }
+    .to_owned();
+    if !matches!(base.as_str(), "balanced" | "performance" | "battery-saver") {
+        return Err("invalid background baseProfile".into());
+    }
+    let mut resolved = background_preset(&base);
+    if profile == "custom" {
+        merge(&mut resolved, &activity["overrides"]);
+    }
+    let matching = [base.as_str(), "balanced", "performance", "battery-saver"]
+        .into_iter()
+        .find(|p| background_preset(p) == resolved);
+    v["backgroundActivity"] = if let Some(profile) = matching {
+        json!({"schemaVersion":1,"profile":profile,"overrides":{}})
+    } else {
+        let preset = background_preset(&base);
+        let overrides: serde_json::Map<String, Value> = resolved
+            .as_object()
+            .unwrap()
+            .iter()
+            .filter(|(k, val)| preset[*k] != **val)
+            .map(|(k, val)| (k.clone(), val.clone()))
+            .collect();
+        json!({"schemaVersion":1,"profile":"custom","baseProfile":base,"overrides":overrides})
+    };
+    v["backgroundActivityProfile"] = json!(matching.unwrap_or(&base));
+    v["automaticGitFetchInterval"] = resolved["automaticGitFetchInterval"].clone();
+    v["providerHealthRefreshInterval"] = resolved["providerHealthRefreshInterval"].clone();
+    Ok(())
 }

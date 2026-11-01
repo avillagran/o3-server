@@ -194,10 +194,14 @@ fn main() -> std::io::Result<()> {
             #[cfg(feature = "memory-diagnostics")]
             memory::start();
             let codex = Arc::new(o3_server::codex::CodexProvider::default());
-            *state.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::Providers {
-                claude: o3_server::claude::ClaudeProvider::discover().map(Arc::new),
-                codex: codex.clone(),
-            }));
+            *state.provider.lock().unwrap() =
+                Some(Arc::new(o3_server::provider::ConfiguredProviders::new(
+                    Arc::new(o3_server::provider::Providers {
+                        claude: o3_server::claude::ClaudeProvider::discover().map(Arc::new),
+                        codex: codex.clone(),
+                    }),
+                    dir.clone(),
+                )));
             let mut term =
                 tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
             let mut interrupt =
@@ -206,10 +210,13 @@ fn main() -> std::io::Result<()> {
             let _guard = o3_server::profile::RuntimeGuard::write(&dir, listener.local_addr()?)?;
             eprintln!("o3-server listening on {}", listener.local_addr()?);
             let state = Arc::new(state);
-            let probe = codex.clone();
+            let probe = state.provider.lock().unwrap().clone().unwrap();
             let probe_state = state.clone();
             let probe_task = tokio::spawn(async move {
-                if let Err(e) = probe.probe().await {
+                if let Err(e) = probe
+                    .discover(std::env::current_dir().unwrap_or_else(|_| probe_state.dir.clone()))
+                    .await
+                {
                     eprintln!("Codex unavailable: {e}");
                 }
                 probe_state.notify();

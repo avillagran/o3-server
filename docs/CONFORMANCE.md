@@ -565,3 +565,115 @@ No real exhausted-quota failure was induced. Claude rejection resets are project
 from native rate_limit_event, but live rejection and Codex reset handling remain
 unproven. Thus subscribeThread is promoted under the reader rule; subscribeShell
 stays partial for quota failure/reset. Earlier P0 tables describe earlier checkpoints.
+
+## Config and settings reader checkpoint, 2026-11-01
+
+This checkpoint supersedes the config/settings open items in the older checkpoints.
+Scope: `server.getConfig`, `server.updateSettings`, `subscribeServerConfig` (both
+subscription spellings). The reproducible, per-field inventory is
+[CONFIG-READER-AUDIT.md](CONFIG-READER-AUDIT.md), generated with
+`tools/audit-config-readers` over shared-library `src`, desktop `src`/`ui`, and
+Android production Kotlin/Rust sources. It records 198 fields and alternative
+snake/kebab spellings. Grep locations alone are not semantic-reader evidence.
+
+Positive reader evidence:
+- `lib-t3-rust/src/provider_instances.rs:visible_instance/mutation` reads configured
+  instance identity, enabled state, binary/home/launch fields, environment redaction,
+  status and accent. Four real Connection launches use independent Claude/Codex
+  instance pools and a native peer that asserts its home and environment. Removing
+  an instance removes its descriptor; replacing settings retires its pool without
+  redirecting an already running turn. Setup subprocesses use the same environment.
+  Native/default aliases remain supported; disabled instances reject execution.
+- `lib-t3-rust/src/models.rs`, desktop `T3ModelOptions.qml` and Android
+  `ModelPresentation.kt` read model names and generic `optionDescriptors`, selected
+  values and defaults. Native Codex model discovery supplies reasoning and service
+  tier descriptors; the peer asserts `turn/start.serviceTier`. Native discovery uses
+  a separate process from inference/recovery and reaps it, with no user prompt.
+  Claude initializes the native control transport with hooks, MCP auto-connect and
+  session persistence disabled for discovery; it reads native commands/account
+  metadata. Native skills and the instance/user/project filesystem catalog are
+  combined. The fresh configured-instance test proves these catalogs exist before
+  its first inference request. Editor availability comes from executable discovery,
+  consumed by `lib-t3-rust/src/thread_details.rs:editors`.
+- `lib-t3-rust/src/native_settings.rs`, `settings.rs`, `storage_settings.rs` and
+  `scoped_settings.rs`, desktop `T3Preferences.qml`, and Android scoped/general
+  settings consume the normalized settings representation. Tests cover model
+  preference mutations, partial text-generation selection, instance enable folding,
+  null/entry replacement and redaction round trips, idle-compaction compatibility,
+  background presets/custom overrides and derived legacy fields, writing-style and
+  observability defaults, trimmed strings, scoped project overrides and atomic
+  rejection. Unknown future keys continue to round trip.
+- `lib-t3-rust/src/quota_sources.rs:apply/limits/sources` and `quota_present.rs`,
+  desktop `src/quota_sources.rs`, and Android `NativeT3Transport.kt:181`,
+  `UsageLimits.kt`/`QuotaStrip.kt` consume the snapshot/provider/settings events and
+  opt into `usageLimitSourcesUpdated`. Replacement snapshots replay the last extension observations so the real quota
+  reducer cannot silently clear their state. A local HTTP hub exercises the actual
+  management `auth-files`/`api-call` protocol, filtering disabled accounts,
+  Codex windows/reset time/credit count and failure projection. The test applies
+  the emitted event through the pinned real client's quota reducer and checks that
+  management credentials and redemption ids are absent from its public projection.
+  Native quotas refresh proactively only with `usageLimitSources:true`; settings
+  changes and the resolved health interval trigger refresh. Cancellation/socket
+  teardown aborts its task and owned request. Codex quota probes reap their separate
+  process. No quota polling task, timer, or request exists without an opted-in
+  subscription; theme-only subscriptions never refresh quotas.
+- Typed settings/keybinding/provider deltas retain a replacement snapshot for
+  coalesced changes. `environmentThemesUpdated` and `usageLimitSourcesUpdated`
+  are strictly opt-in, emitted after the initial snapshot. A guarded, bounded theme
+  reader detects creation/removal, rejects symlinks/FIFOs and sends replacement
+  arrays. Connection tests prove initial ordering, live theme replacement, quota
+  cancellation and that legacy subscribers do not receive extension events.
+
+Accepted differences under this reader scope (not blanket upstream parity):
+- Auth discovery hints `bootstrapMethods`, `sessionMethods`, `sessionCookieName`
+  and diagnostics hints `logsDirectoryPath`, `localTracingEnabled`,
+  `otlpTracesEnabled`, `otlpMetricsEnabled`, `otlpLogsEnabled` have no literal
+  reader in these clients (see the complete zero-match list in the inventory).
+  Bearer authentication remains covered by its existing real-client tests;
+  diagnostics hints stay conservative. Model `promptInjectedValues` has no literal
+  reader either; the pinned Claude manifest remains intact.
+- `directEndpoints`, `nativeSessions`, `canList`, `canResume`,
+  `reportsContextWindow`, `threadSnapshotPagination`: no client field reads in the
+  inventory. Existing conservative capability values remain; no paging/import or
+  native-session-list capability is inferred from this checkpoint.
+- `defaultThemeSetAt`, `cursorKeychainUsageEnabled`, `customModels`,
+  `previousWorktreesDirectories`, `usagePriceOverrides`, `usageModelAliases` and
+  `sourceControlHosts`: no direct production reader in these clients. Preserve
+  settings round trips; this checkpoint does not claim their unrelated execution
+  services. Default themes continue to round trip; Android's `Theme.kt` matches
+  theme names locally, and its `OmarchyThemeCatalog.kt` loads bundled assets.
+- `automaticGitFetchInterval`, `providerHealthRefreshInterval` and legacy project
+  browser/auto-pull maps have no direct reader; they are nevertheless derived from
+  the settings that native settings/scoped settings do read. Background host power
+  monitoring and Git fetch execution are separate operations, not config-reader
+  guarantees. Source quotas honor the normalized refresh interval.
+- `serviceTier`, `serviceTiers`, `defaultServiceTier` have no literal-name client
+  reads, but **are not omitted**: generic option descriptor readers consume their
+  model options. Native metadata is preserved rather than inventing tier support
+  for models that do not advertise it. `isCustom`/model aliases are not literal
+  reader dependencies; native/custom model identifiers are passed through.
+- Theme subscription flags/tags are exposed by `lib-t3-rust/src/api/streams.rs`
+  but no native client applies these remote palette events. Android's
+  `EnvironmentThemeReader.kt` separately reads host theme files through filesystem
+  RPCs, and also uses its bundled theme catalog. The opt-in event is implemented/tested, while full upstream
+  palette validation and reserved built-in palette ids beyond system/light/dark
+  remain outside reader equivalence.
+- Other driver families remain explicitly unavailable. The clients already gate
+  their operations on provider availability/install/setup capability; these rows
+  do not claim adding inference adapters or managed installers for those families.
+  Native version advisories/update installation are likewise capability gated.
+
+The three rows are promoted for these actual reader paths, not for matching negative
+probes. Native peers are deterministic protocol evidence, not a claim of fresh
+upstream inference or plan-exhaustion testing. Existing live inference evidence and
+remaining shell quota/reset/recovery limits retain their earlier scope.
+
+Final validation for this checkpoint: 156 default / 154 no-default tests pass,
+six opt-in tests ignored in each configuration; strict all-target Clippy passes in
+both configurations, as do formatting, generator and diff checks. Five added
+Connection tests include failed native discovery reporting an installed binary
+honestly, without claiming it is healthy. `tools/bench-rss` completed with HWM
+15780 KiB (16.16 MB), below 50 MB; the sanitized aggregate is
+[rss-config.json](rss-config.json). This workload excludes inference and its child
+process RSS; it does not certify live provider quota exhaustion/reset. No emulator,
+service/profile deployment or public route change was performed.

@@ -38,14 +38,22 @@
   "branchNamePrefix": "t3",
   "branchNameInstructions": "",
   "removeAgentCreditsOnMerge": false,
-  "sourceControlWritingStyle": {},
+  "sourceControlWritingStyle": {
+    "mode": "repo_conventions",
+    "customInstructions": "",
+    "followChangeRequestTemplates": true
+  },
   "sourceControlWriterModelSelection": null,
   "reviewGuidesEnabled": false,
   "reviewGuideModelSelection": null,
   "reviewGuideInstructions": "",
   "pullRequestMergeMethod": null,
   "providerInstances": {},
-  "observability": {},
+  "observability": {
+    "otlpTracesUrl": "",
+    "otlpMetricsUrl": "",
+    "otlpLogsUrl": ""
+  },
   "sourceControlHosts": {},
   "usageLimitSources": {},
   "cursorKeychainUsageEnabled": false,
@@ -62,7 +70,7 @@
     "logsAfterDays": null
   },
   "defaultRuntimeMode": "full-access",
-  "sidebarAutoSettleAfterDays": 7,
+  "sidebarAutoSettleAfterDays": 3,
   "backgroundActivity": {
     "schemaVersion": 1,
     "profile": "balanced",
@@ -73,7 +81,12 @@
   "backgroundActivityProfile": "balanced",
   "textGenerationModelSelection": {
     "instanceId": "codex",
-    "model": "gpt-5.4",
-    "options": []
+    "model": "gpt-6-luna",
+    "options": [
+      {
+        "id": "reasoningEffort",
+        "value": "low"
+      }
+    ]
   }
 }
