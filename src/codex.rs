@@ -44,6 +44,31 @@ pub struct CodexProvider {
     client: tokio::sync::Mutex<Option<Client>>,
     descriptor: std::sync::Arc<Mutex<Value>>,
 }
+/// Codex's own catalog cache, so selecting a model never needs the 400 MB app-server.
+fn cached_models(home: Option<&std::path::Path>) -> Value {
+    let dir = home
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("CODEX_HOME").map(PathBuf::from))
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".codex")));
+    let cache = dir
+        .and_then(|d| std::fs::read(d.join("models_cache.json")).ok())
+        .and_then(|b| serde_json::from_slice::<Value>(&b).ok());
+    let mut models: Vec<&Value> = cache
+        .as_ref()
+        .and_then(|c| c["models"].as_array())
+        .into_iter()
+        .flatten()
+        .filter(|m| m["visibility"] == "list" && m["slug"].is_string())
+        .collect();
+    models.sort_by_key(|m| m["priority"].as_i64().unwrap_or(i64::MAX));
+    Value::Array(
+        models
+            .iter()
+            .enumerate()
+            .map(|(i, m)| json!({"slug":m["slug"],"name":m["display_name"],"isCustom":false,"isDefault":i==0,"capabilities":null}))
+            .collect(),
+    )
+}
 impl Default for CodexProvider {
     fn default() -> Self {
         Self::new(
@@ -90,6 +115,9 @@ impl CodexProvider {
             "Codex binary not found"
         });
         d["checkedAt"] = json!(crate::store::iso(crate::store::now_ms()));
+        if d["models"].as_array().is_none_or(|m| m.is_empty()) {
+            d["models"] = cached_models(self.home.as_deref());
+        }
         if installed {
             Ok(())
         } else {
@@ -493,13 +521,31 @@ mod tests {
             context: None,
         }
     }
+    #[test]
+    fn models_come_from_the_cache_without_spawning() {
+        let dir = std::env::temp_dir().join(format!("o3-codex-cache-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cache = json!({"models":[
+            {"slug":"b","display_name":"B","visibility":"list","priority":2},
+            {"slug":"hidden","display_name":"H","visibility":"hide","priority":0},
+            {"slug":"a","display_name":"A","visibility":"list","priority":1}]});
+        std::fs::write(dir.join("models_cache.json"), cache.to_string()).unwrap();
+        let models = cached_models(Some(&dir));
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(models.as_array().unwrap().len(), 2);
+        assert_eq!(
+            (&models[0]["slug"], &models[0]["isDefault"]),
+            (&json!("a"), &json!(true))
+        );
+    }
     #[tokio::test]
     async fn discovery_is_lazy_and_idle_actor_exits_then_restarts() {
         let mut provider = CodexProvider::new(
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/codex/mock-server.py"),
             None,
         );
-        provider.idle_timeout = std::time::Duration::from_millis(20);
+        // Long enough to outlive the startup handshake on a loaded machine.
+        provider.idle_timeout = std::time::Duration::from_millis(500);
         provider.probe().await.unwrap();
         assert!(
             provider.client.lock().await.is_none(),
