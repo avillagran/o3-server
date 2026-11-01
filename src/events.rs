@@ -837,6 +837,7 @@ fn new_thread(db: &Connection, c: &Value, tid: &str, at: &str) -> Result<Value> 
 }
 
 pub fn launch(s: &std::sync::Arc<State>, p: &Value) -> Result<Value> {
+    let _launch = s.launch_lock.lock().unwrap();
     let cid = p["commandId"].as_str().ok_or("commandId required")?;
     if let Some(result) =
         s.db.lock()
@@ -872,52 +873,63 @@ pub fn launch(s: &std::sync::Arc<State>, p: &Value) -> Result<Value> {
             return Err("text and attachments required".into());
         }
     }
-    if !reuse {
-        let (path, branch) = crate::workspace::prepare(s, p, &tid)?;
-        create["worktreePath"] = path;
-        create["branch"] = branch;
-    }
-    let mut db = s.db.lock().unwrap();
-    let tx = db.transaction().map_err(|e| e.to_string())?;
-    // Recheck under the same lock as all writes, including concurrent retries.
-    if let Some(result) = tx
-        .query_row(
-            "SELECT result FROM receipts WHERE command_id=?",
-            [cid],
-            |r| r.get::<_, String>(0),
-        )
-        .optional()
-        .map_err(|e| e.to_string())?
-    {
-        return serde_json::from_str(&result).map_err(|e| e.to_string());
-    }
-    let at = iso(now_ms());
-    let mut thread = if reuse {
-        let existing = get(&tx, "thread", &tid)?;
-        if existing["projectId"] != p["projectId"] {
-            return Err("reuse project does not match thread".into());
+    let mut prepared = crate::workspace::prepare(s, p, &tid)?;
+    create["worktreePath"] = prepared.path.clone();
+    create["branch"] = prepared.branch.clone();
+    let result = (|| -> Result<_> {
+        let mut db = s.db.lock().unwrap();
+        let tx = db.transaction().map_err(|e| e.to_string())?;
+        let at = iso(now_ms());
+        let mut thread = if reuse {
+            let existing = get(&tx, "thread", &tid)?;
+            if existing["projectId"] != p["projectId"] {
+                return Err("reuse project does not match thread".into());
+            }
+            let occupied: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE thread_id=? AND kind IN ('messages','runs'))", [&tid], |r| r.get(0)).map_err(|e| e.to_string())?;
+            if occupied || !existing["archivedAt"].is_null() || !existing["deletedAt"].is_null() {
+                return Err("only an empty active thread can be reused".into());
+            }
+            let mut existing = existing;
+            existing["branch"] = prepared.branch.clone();
+            existing["worktreePath"] = prepared.path.clone();
+            existing["updatedAt"] = json!(at);
+            put(&tx, "thread", &tid, &tid, &existing)?;
+            append(&tx, &tid, "thread.updated", existing.clone(), &existing)?;
+            existing
+        } else {
+            let thread = new_thread(&tx, &create, &tid, &at)?;
+            put(&tx, "thread", &tid, &tid, &thread)?;
+            append(&tx, &tid, "thread.created", thread.clone(), &thread)?;
+            thread
+        };
+        let mut start = None;
+        if let Some(m) = p.get("initialMessage") {
+            let message = json!({"type":"message.dispatch","commandId":format!("{cid}:initial"),"threadId":tid,"messageId":m["messageId"].as_str().map(str::to_owned).unwrap_or(format!("message-{cid}")),"text":m["text"],"context":m["context"],"attachments":m["attachments"],"dispatchMode":{"type":"start_immediately"}});
+            let (_, rid, _) = stage_message(s, &tx, &message, &mut thread, &at)?;
+            start = Some((rid, m["text"].as_str().unwrap().to_owned()));
         }
-        existing
-    } else {
-        let thread = new_thread(&tx, &create, &tid, &at)?;
-        put(&tx, "thread", &tid, &tid, &thread)?;
-        append(&tx, &tid, "thread.created", thread.clone(), &thread)?;
-        thread
+        let result = json!({"threadId":tid,"projection":projection_db(&tx,&tid)?,"resumed":reuse});
+        tx.execute(
+            "INSERT INTO receipts VALUES(?,?)",
+            params![cid, result.to_string()],
+        )
+        .map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
+        drop(db);
+        Ok((result, start))
+    })();
+    let (result, start) = match result {
+        Ok(value) => {
+            prepared.commit();
+            value
+        }
+        Err(error) => {
+            return match prepared.rollback() {
+                Ok(()) => Err(error),
+                Err(cleanup) => Err(format!("{error}; worktree cleanup failed: {cleanup}")),
+            }
+        }
     };
-    let mut start = None;
-    if let Some(m) = p.get("initialMessage") {
-        let message = json!({"type":"message.dispatch","commandId":format!("{cid}:initial"),"threadId":tid,"messageId":m["messageId"].as_str().map(str::to_owned).unwrap_or(format!("message-{cid}")),"text":m["text"],"context":m["context"],"attachments":m["attachments"],"dispatchMode":{"type":"start_immediately"}});
-        let (_, rid, _) = stage_message(s, &tx, &message, &mut thread, &at)?;
-        start = Some((rid, m["text"].as_str().unwrap().to_owned()));
-    }
-    let result = json!({"threadId":tid,"projection":projection_db(&tx,&tid)?,"resumed":reuse});
-    tx.execute(
-        "INSERT INTO receipts VALUES(?,?)",
-        params![cid, result.to_string()],
-    )
-    .map_err(|e| e.to_string())?;
-    tx.commit().map_err(|e| e.to_string())?;
-    drop(db);
     s.notify();
     if let Some((rid, text)) = start {
         crate::provider::start(s.clone(), tid, rid, text);

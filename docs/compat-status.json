@@ -189,7 +189,7 @@
     "orchestration.launchThread": {
       "status": "partial",
       "priority": "P0",
-      "note": "Remaining: worktree preparation failure cleanup and reused-thread metadata parity. Thread, first message/context, run, events and receipt are transaction-atomic; provider starts after commit (tests/provider_input.rs)."
+      "note": "Real-client tests/provider_input.rs covers owned worktree/branch rollback after SQL failure, retry receipts, reused empty-thread workspace metadata, preserved title/model and refusal of occupied threads. Remaining: reused launch initial-message model override, imported-native-thread/generateTitle preparation parity. SQL launch remains transaction-atomic."
     },
     "orchestration.searchThread": {
       "status": "partial",

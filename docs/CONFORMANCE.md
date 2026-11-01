@@ -475,3 +475,19 @@ passed, 5 opt-in ignored (initial resolver-fixture ETXTBSY; complete rerun passe
 fmt/diff checks pass. tools/gen-compat regenerated. tools/bench-rss completed with
 bridge enabled, 1000 messages, 3 subscribers, no inference: HWM 41896 KiB
 (42.90 MB), below 50 MB. No rows promoted; P1 methods remain 23/31 done.
+
+## Launch workspace rollback (2026-11-01)
+
+`launch_worktree_failure_rolls_back_and_reuse_updates_workspace_only` uses the
+real Connection and an isolated Git repository. An injected run-insert failure
+removes only the newly created worktree and branch; retry creates one durable
+launch. Existing worktrees are never cleanup-owned. Launches serialize preparation
+and receipts so concurrent retries cannot remove another successful launch's tree.
+Cleanup errors are included in the launch error. Reuse requires an empty, active
+thread in the same project and records workspace metadata, retaining title/model
+as pinned ThreadLaunchService.ts does before initial-message dispatch.
+
+The row stays partial: the initial-message model override on reuse, imported-native
+launch and generateTitle preparation still need parity. Readers can send these
+through lib-t3-rust/src/api/orchestration.rs::ThreadLaunch and desktop src/write.rs.
+No crash-atomic filesystem/SQLite transaction is claimed.

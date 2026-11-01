@@ -2,18 +2,64 @@
 use crate::{events, store::State};
 use serde_json::Value;
 use std::{path::PathBuf, process::Command};
-pub fn prepare(s: &State, p: &Value, tid: &str) -> Result<(Value, Value), String> {
+pub struct Prepared {
+    pub path: Value,
+    pub branch: Value,
+    owned: Option<(PathBuf, PathBuf, Option<String>)>,
+}
+impl Prepared {
+    pub fn commit(&mut self) {
+        self.owned = None;
+    }
+    pub fn rollback(&mut self) -> Result<(), String> {
+        if let Some((root, path, branch)) = self.owned.take() {
+            if path.exists() {
+                git(
+                    &root,
+                    &[
+                        "worktree",
+                        "remove",
+                        "--force",
+                        "--",
+                        path.to_str().ok_or("invalid path")?,
+                    ],
+                )?;
+            }
+            if let Some(branch) = branch {
+                // Only a branch absent before this preparation can be owned here.
+                if git(
+                    &root,
+                    &["show-ref", "--verify", &format!("refs/heads/{branch}")],
+                )
+                .is_ok()
+                {
+                    git(&root, &["branch", "-D", "--", &branch])?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+pub fn prepare(s: &State, p: &Value, tid: &str) -> Result<Prepared, String> {
     let strategy = &p["workspaceStrategy"];
     let branch = strategy.get("branch").cloned().unwrap_or(Value::Null);
     match strategy["type"].as_str() {
-        Some("root") => Ok((Value::Null, branch)),
+        Some("root") => Ok(Prepared {
+            path: Value::Null,
+            branch,
+            owned: None,
+        }),
         Some("existing_worktree") => {
             let path = strategy["worktreePath"]
                 .as_str()
                 .ok_or("worktreePath required")?;
             let path = std::fs::canonicalize(path).map_err(|e| e.to_string())?;
             git(&path, &["rev-parse", "--show-toplevel"])?;
-            Ok((serde_json::json!(path), branch))
+            Ok(Prepared {
+                path: serde_json::json!(path),
+                branch,
+                owned: None,
+            })
         }
         Some("worktree") => {
             let project = events::get(
@@ -43,25 +89,46 @@ pub fn prepare(s: &State, p: &Value, tid: &str) -> Result<(Value, Value), String
             let checkout = path.to_str().ok_or("invalid worktree path")?;
             if path.exists() {
                 git(&path, &["rev-parse", "--show-toplevel"])?;
-                return Ok((serde_json::json!(path), branch));
+                return Ok(Prepared {
+                    path: serde_json::json!(path),
+                    branch,
+                    owned: None,
+                });
             }
             let base = if strategy["startFromOrigin"] == true {
                 format!("origin/{}", base.trim_start_matches("origin/"))
             } else {
                 base.to_owned()
             };
-            if let Some(branch) = branch.as_str() {
+            let owned_branch = branch
+                .as_str()
+                .filter(|b| {
+                    git(&root, &["show-ref", "--verify", &format!("refs/heads/{b}")]).is_err()
+                })
+                .map(str::to_owned);
+            let mut prepared = Prepared {
+                path: serde_json::json!(path),
+                branch: branch.clone(),
+                owned: Some((root.clone(), path.clone(), owned_branch)),
+            };
+            let result = if let Some(branch) = branch.as_str() {
                 git(
                     &root,
                     &["worktree", "add", "-b", branch, "--", checkout, &base],
-                )?;
+                )
             } else {
                 git(
                     &root,
                     &["worktree", "add", "--detach", "--", checkout, &base],
-                )?;
+                )
+            };
+            if let Err(error) = result {
+                return match prepared.rollback() {
+                    Ok(()) => Err(error),
+                    Err(cleanup) => Err(format!("{error}; worktree cleanup failed: {cleanup}")),
+                };
             }
-            Ok((serde_json::json!(path), branch))
+            Ok(prepared)
         }
         _ => Err("invalid workspace strategy".into()),
     }

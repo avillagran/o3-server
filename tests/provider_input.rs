@@ -449,3 +449,70 @@ fn startup_catalog_exposes_project_skills_and_commands_before_any_turn() {
         .iter()
         .any(|p| p["name"] == "o3-proof-command"));
 }
+
+#[test]
+fn launch_worktree_failure_rolls_back_and_reuse_updates_workspace_only() {
+    let server = support::start(|s| {
+        *s.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::ScriptedProvider));
+    });
+    let root = server.dir.join("repo");
+    std::fs::create_dir_all(&root).unwrap();
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    assert!(git(&["init", "-b", "main"]).status.success());
+    assert!(git(&[
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.invalid",
+        "commit",
+        "--allow-empty",
+        "-m",
+        "seed"
+    ])
+    .status
+    .success());
+    let c = server.connect();
+    c.rpc("projects.mutate", json!({"type":"project.create","commandId":"p","projectId":"p","title":"Test","workspaceRoot":root})).unwrap();
+    server.state.db.lock().unwrap().execute_batch("CREATE TRIGGER reject_run BEFORE INSERT ON records WHEN NEW.kind='runs' BEGIN SELECT RAISE(ABORT, 'injected'); END;").unwrap();
+    let launch = json!({"commandId":"launch","threadId":"t","projectId":"p","title":"Launch","modelSelection":{"instanceId":"scripted","model":"test"},"runtimeMode":"full-access","interactionMode":"default","workspaceStrategy":{"type":"worktree","baseRef":"main","branch":"launch-test"},"initialMessage":{"text":"hi","attachments":[]}});
+    assert!(c.rpc("orchestration.launchThread", launch.clone()).is_err());
+    assert!(!server.dir.join("worktrees/74").exists());
+    assert!(!git(&["show-ref", "--verify", "refs/heads/launch-test"])
+        .status
+        .success());
+    assert!(c
+        .rpc("orchestration.getThreadProjection", json!({"threadId":"t"}))
+        .is_err());
+    server
+        .state
+        .db
+        .lock()
+        .unwrap()
+        .execute_batch("DROP TRIGGER reject_run")
+        .unwrap();
+    let result = c.rpc("orchestration.launchThread", launch.clone()).unwrap();
+    let path = result["projection"]["thread"]["worktreePath"]
+        .as_str()
+        .unwrap();
+    assert!(std::path::Path::new(path).join(".git").exists());
+    assert_eq!(c.rpc("orchestration.launchThread", launch).unwrap(), result);
+    c.rpc("orchestration.dispatchCommand", json!({"type":"thread.create","commandId":"empty","threadId":"empty","projectId":"p","title":"Keep title","modelSelection":{"instanceId":"scripted","model":"original"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
+    let reuse = json!({"commandId":"reuse","threadId":"empty","reuseExistingThread":true,"projectId":"p","title":"Ignore title","modelSelection":{"instanceId":"scripted","model":"ignored"},"runtimeMode":"approval-required","interactionMode":"plan","workspaceStrategy":{"type":"existing_worktree","worktreePath":path,"branch":"launch-test"}});
+    let reused = c.rpc("orchestration.launchThread", reuse.clone()).unwrap();
+    let t = &reused["projection"]["thread"];
+    assert_eq!(t["title"], "Keep title");
+    assert_eq!(t["modelSelection"]["model"], "original");
+    assert_eq!(t["branch"], "launch-test");
+    assert_eq!(t["worktreePath"], path);
+    assert_eq!(c.rpc("orchestration.launchThread", reuse).unwrap(), reused);
+    let rejected = c.rpc("orchestration.launchThread", json!({"commandId":"occupied","threadId":"t","reuseExistingThread":true,"projectId":"p","workspaceStrategy":{"type":"root"}}));
+    assert!(rejected.is_err());
+    assert!(std::path::Path::new(path).exists());
+}
