@@ -263,7 +263,12 @@ pub(crate) fn start(
                 ProviderEvent::Codex(f) => f["params"]["o3RequestId"].as_str().map(str::to_owned),
                 _ => None,
             };
-            if persist(&s, &tid, &rid, event).is_err() {
+            let (ps, pt, pr) = (s.clone(), tid.clone(), rid.clone());
+            if tokio::task::spawn_blocking(move || persist(&ps, &pt, &pr, event))
+                .await
+                .unwrap_or_else(|e| Err(e.to_string()))
+                .is_err()
+            {
                 break;
             }
             if let Some(id) = request_id {

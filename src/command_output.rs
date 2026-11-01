@@ -13,7 +13,7 @@ use crate::{
 use serde_json::{json, Value};
 use std::{
     collections::{HashMap, VecDeque},
-    sync::Mutex,
+    sync::{Arc, Mutex},
 };
 
 const TAIL_BYTES: usize = 64 * 1024;
@@ -52,6 +52,15 @@ struct Tail {
 }
 impl Tail {
     fn push(&mut self, chunk: &str) {
+        let mut cut = chunk.len().saturating_sub(MAX_FINAL_BYTES);
+        while !chunk.is_char_boundary(cut) {
+            cut += 1;
+        }
+        if cut > 0 {
+            self.truncated = true;
+            self.escape.clear();
+        }
+        let chunk = &chunk[cut..];
         let plain = self.escape.is_empty()
             && !chunk.chars().any(|c| c.is_control() && c != '\n')
             && self.cursor == self.text.rsplit('\n').next().unwrap_or("").chars().count();
@@ -78,16 +87,11 @@ impl Tail {
                         let args = &self.escape[2..self.escape.len() - 1];
                         let n = args.parse::<usize>().unwrap_or(1).clamp(1, TAIL_BYTES);
                         match c {
-                            'G' => self.cursor = n - 1,
-                            'C' => self.cursor = self.cursor.saturating_add(n).min(TAIL_BYTES),
+                            'G' => self.cursor = (n - 1).min(line.len()),
+                            'C' => self.cursor = self.cursor.saturating_add(n).min(line.len()),
                             'D' => self.cursor = self.cursor.saturating_sub(n),
                             'K' if args == "2" => line.clear(),
                             'K' if args.is_empty() || args == "0" => line.truncate(self.cursor),
-                            'K' if args == "1" => {
-                                for ch in line.iter_mut().take(self.cursor + 1) {
-                                    *ch = ' ';
-                                }
-                            }
                             _ => {}
                         }
                         self.escape.clear();
@@ -171,7 +175,7 @@ impl Tail {
 
 #[derive(Default)]
 struct Tails {
-    live: HashMap<Key, Tail>,
+    live: HashMap<Key, Arc<Mutex<Tail>>>,
     order: VecDeque<Key>,
     finished: HashMap<Key, Tail>,
     finished_order: VecDeque<Key>,
@@ -194,7 +198,7 @@ impl Hub {
             return;
         }
         let key = (thread.to_owned(), item.to_owned());
-        {
+        let tail = {
             let mut t = self.tails.lock().unwrap();
             if !t.live.contains_key(&key) {
                 t.order.push_back(key.clone());
@@ -204,15 +208,19 @@ impl Hub {
                     }
                 }
             }
-            t.live.entry(key).or_default().push(chunk);
-        }
+            t.live.entry(key).or_default().clone()
+        };
+        tail.lock().unwrap().push(chunk);
         bump(&self.notify);
     }
     /// Keeps the tail briefly for settlements that carry no output of their own.
     pub fn finish(&self, thread: &str, item: &str) {
         let key = (thread.to_owned(), item.to_owned());
+        let tail = self.tails.lock().unwrap().live.get(&key).cloned();
+        let tail = tail.map(|tail| tail.lock().unwrap().clone());
         let mut t = self.tails.lock().unwrap();
-        if let Some(tail) = t.live.remove(&key) {
+        if let Some(tail) = tail {
+            t.live.remove(&key);
             t.order.retain(|k| *k != key);
             t.finished_order.push_back(key.clone());
             t.finished.insert(key, tail);
@@ -226,8 +234,11 @@ impl Hub {
         bump(&self.notify);
     }
     fn tail(&self, key: &Key) -> Option<Tail> {
-        let t = self.tails.lock().unwrap();
-        t.live.get(key).or_else(|| t.finished.get(key)).cloned()
+        let (live, finished) = {
+            let t = self.tails.lock().unwrap();
+            (t.live.get(key).cloned(), t.finished.get(key).cloned())
+        };
+        live.map(|t| t.lock().unwrap().clone()).or(finished)
     }
 }
 
@@ -235,29 +246,24 @@ fn active(status: &str) -> bool {
     matches!(status, "pending" | "running" | "waiting")
 }
 
-/// Last `MAX_FINAL_BYTES` of a persisted output, cut after a newline.
-fn persisted(output: Option<&str>) -> (String, bool) {
-    let Some(out) = output else {
-        return (String::new(), false);
-    };
-    if out.chars().any(|c| matches!(c, '\r' | '\x1b' | '\x08')) {
-        let mut folded = Tail::default();
-        folded.push(out);
-        return (folded.text, folded.truncated);
-    }
-    if out.len() <= MAX_FINAL_BYTES {
-        return (out.to_owned(), false);
-    }
-    let mut cut = out.len() - MAX_FINAL_BYTES;
+/// Bounded snapshot; persisted command output is already folded by the blocking producer.
+fn bounded_output(output: Option<&str>) -> (&str, bool) {
+    let out = output.unwrap_or("");
+    let mut cut = out.len().saturating_sub(MAX_FINAL_BYTES);
     while !out.is_char_boundary(cut) {
         cut += 1;
     }
-    if let Some(nl) = out[cut..].find('\n') {
-        if cut + nl + 1 < out.len() {
-            cut += nl + 1;
-        }
+    (&out[cut..], cut > 0)
+}
+fn persisted(output: Option<&str>) -> (String, bool) {
+    let (out, truncated) = bounded_output(output);
+    if out.chars().any(|c| matches!(c, '\r' | '\x1b' | '\x08')) {
+        let mut folded = Tail::default();
+        folded.push(out);
+        (folded.text, truncated || folded.truncated)
+    } else {
+        (out.to_owned(), truncated)
     }
-    (out[cut..].to_owned(), true)
 }
 
 pub struct Cursor {
@@ -299,7 +305,7 @@ impl Cursor {
                     json!({"kind":"replace","text":t.text,"truncated":t.truncated,"running":false})
                 }
                 (_, out) => {
-                    let (text, truncated) = persisted(out);
+                    let (text, truncated) = bounded_output(out);
                     json!({"kind":"replace","text":text,"truncated":truncated,"running":false})
                 }
             }
@@ -319,7 +325,7 @@ impl Cursor {
             }
         } else if self.replace {
             self.replace = false;
-            let (text, truncated) = persisted(item["output"].as_str());
+            let (text, truncated) = bounded_output(item["output"].as_str());
             json!({"kind":"replace","text":text,"truncated":truncated,"running":true})
         } else {
             return Step::Idle;
@@ -388,14 +394,16 @@ pub fn persist(s: &State, tid: &str, rid: &str, event: CommandEvent) -> Result<(
             exit_code,
             output,
         } => {
+            let tail = s.streams.commands.tail(&(tid.to_owned(), item_id.clone()));
+            let final_output = output
+                .or_else(|| tail.map(|t| t.text))
+                .map(|out| persisted(Some(&out)).0);
             {
                 let mut db = s.db.lock().unwrap();
                 let tx = db.transaction().map_err(|e| e.to_string())?;
                 let thread = get(&tx, "thread", tid)?;
                 let mut item = get(&tx, "turnItems", &item_id)?;
                 let at = iso(now_ms());
-                let tail = s.streams.commands.tail(&(tid.to_owned(), item_id.clone()));
-                let final_output = output.or_else(|| tail.map(|t| t.text));
                 item["status"] = json!(if exit_code.unwrap_or(0) == 0 {
                     "completed"
                 } else {
@@ -407,7 +415,7 @@ pub fn persist(s: &State, tid: &str, rid: &str, event: CommandEvent) -> Result<(
                     item["exitCode"] = json!(code);
                 }
                 if let Some(out) = final_output {
-                    item["output"] = json!(persisted(Some(&out)).0);
+                    item["output"] = json!(out);
                 }
                 store_item(&tx, tid, &item)?;
                 append(&tx, tid, "turn-item.updated", item, &thread)?;
@@ -491,6 +499,17 @@ impl crate::provider::Provider for ScriptedCommandProvider {
 #[cfg(test)]
 mod progress_tests {
     use super::*;
+    #[test]
+    fn adversarial_cursor_moves_are_linear_and_bounded() {
+        let input = "\x1b[65536Cx\n".repeat(100_000);
+        let start = std::time::Instant::now();
+        let mut tail = Tail::default();
+        tail.push(&input);
+        assert!(start.elapsed() < std::time::Duration::from_secs(2));
+        assert!(tail.text.len() <= TAIL_BYTES);
+        assert!(!tail.text.contains("  "));
+        assert!(persisted(Some(&input)).1);
+    }
     #[test]
     fn progress_rewrites_split_controls_and_bounds_unicode() {
         let mut t = Tail::default();
