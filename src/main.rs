@@ -27,6 +27,17 @@ fn ttl(s: &str) -> std::io::Result<i64> {
         .ok_or_else(|| std::io::Error::other("invalid TTL"))
 }
 fn main() -> std::io::Result<()> {
+    // mimalloc v2/v3 option 15: purge freed pages immediately. Keep an explicit
+    // operator setting; the default delayed purge otherwise needs more allocations
+    // on the same worker and can retain a finished snapshot indefinitely.
+    if std::env::var_os("MIMALLOC_PURGE_DELAY").is_none() {
+        unsafe extern "C" {
+            fn mi_option_set(option: libc::c_int, value: libc::c_long);
+        }
+        unsafe {
+            mi_option_set(15, 0);
+        }
+    }
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.first().map(String::as_str) == Some("__ssh-helper") {
         match args.get(1).map(String::as_str) {

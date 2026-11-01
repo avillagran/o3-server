@@ -32,12 +32,11 @@ pub fn initialize(db: &Connection) -> Result<(), String> {
         let mut q = db
             .prepare("SELECT thread_id, body FROM records WHERE kind='messages'")
             .map_err(|e| e.to_string())?;
-        let rows: Vec<(String, String)> = q
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
-            .map_err(|e| e.to_string())?
-            .flatten()
-            .collect();
-        for (tid, body) in rows {
+        let rows = q
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            let (tid, body) = row.map_err(|e| e.to_string())?;
             if let Ok(v) = serde_json::from_str::<Value>(&body) {
                 index_message(db, &tid, &v);
             }

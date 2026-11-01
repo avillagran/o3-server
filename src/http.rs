@@ -306,6 +306,16 @@ where
 }
 pub async fn serve(listener: TcpListener, state: Arc<State>) -> std::io::Result<()> {
     crate::recovery::recover(&mut state.db.lock().unwrap()).map_err(std::io::Error::other)?;
+    state
+        .db
+        .lock()
+        .unwrap()
+        .execute_batch("PRAGMA shrink_memory")
+        .map_err(std::io::Error::other)?;
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    unsafe {
+        libc::malloc_trim(0);
+    }
     crate::scheduled::ensure_started(&state);
     loop {
         let (socket, _) = listener.accept().await?;

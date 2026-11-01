@@ -5,6 +5,8 @@ use serde_json::{json, Value};
 type Result<T> = std::result::Result<T, String>;
 pub fn initialize(db: &Connection) -> Result<()> {
     db.execute_batch("CREATE TABLE IF NOT EXISTS records(kind TEXT NOT NULL,id TEXT NOT NULL,thread_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(kind,id)); CREATE INDEX IF NOT EXISTS records_thread ON records(thread_id,kind); CREATE TABLE IF NOT EXISTS events(sequence INTEGER PRIMARY KEY AUTOINCREMENT,thread_id TEXT NOT NULL,body TEXT NOT NULL,shell TEXT); CREATE TABLE IF NOT EXISTS receipts(command_id TEXT PRIMARY KEY,result TEXT NOT NULL);").map_err(|e|e.to_string())?;
+    // The partial index finds the latest user without reading assistant bodies.
+    db.execute_batch("CREATE INDEX IF NOT EXISTS records_user_message ON records(thread_id) WHERE kind='messages' AND json_extract(body,'$.role')='user';").map_err(|e|e.to_string())?;
     crate::threadq::initialize(db)
 }
 pub(crate) fn put(db: &Connection, kind: &str, id: &str, tid: &str, v: &Value) -> Result<()> {
@@ -29,7 +31,14 @@ pub(crate) fn get(db: &Connection, kind: &str, id: &str) -> Result<Value> {
     serde_json::from_str(&s).map_err(|e| e.to_string())
 }
 fn list(db: &Connection, kind: &str, tid: Option<&str>, limit: usize) -> Result<Vec<Value>> {
-    let mut q=db.prepare("SELECT body FROM records WHERE kind=? AND (?2 IS NULL OR thread_id=?2) ORDER BY rowid DESC LIMIT ?3").map_err(|e|e.to_string())?;
+    // A nullable OR hides the (thread_id,kind,rowid) index from SQLite and
+    // sorts every historical body into a temporary B-tree for each shell row.
+    let sql = if tid.is_some() {
+        "SELECT body FROM records WHERE kind=?1 AND thread_id=?2 ORDER BY rowid DESC LIMIT ?3"
+    } else {
+        "SELECT body FROM records WHERE kind=?1 AND ?2 IS NULL ORDER BY rowid DESC LIMIT ?3"
+    };
+    let mut q = db.prepare(sql).map_err(|e| e.to_string())?;
     let rows = q
         .query_map(params![kind, tid, limit], |r| r.get::<_, String>(0))
         .map_err(|e| e.to_string())?;

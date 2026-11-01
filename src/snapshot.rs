@@ -74,6 +74,14 @@ pub fn start(
         if let Err(e) = result {
             let _ = tx.blocking_send(Err(e));
         }
+        drop(out);
+        drop(db);
+        // SQLite uses libc, independently of the Rust mimalloc allocator. Return
+        // freed page/JSON/sort buffers after both completion and cancellation.
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
+        unsafe {
+            libc::malloc_trim(0);
+        }
     });
     Ok((seq, rx))
 }
