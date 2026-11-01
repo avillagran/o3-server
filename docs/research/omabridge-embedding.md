@@ -3,9 +3,9 @@
 Research note. Scope: how to run OmaBridge in the `o3-server` process instead of a separate `omabridge serve` service, what that needs, and what it costs.
 
 Sources read (all local, read-only):
-- `/home/node/Work/omabridge` at `cd0de3a` ("Release 0.2.4"). Crate `omabridge` 0.2.4, edition 2024, MSRV 1.91, iroh `=1.4.1` (`tls-ring`), hyper 1, tokio 1.
+- `~/Work/omabridge` at `cd0de3a` ("Release 0.2.4"). Crate `omabridge` 0.2.4, edition 2024, MSRV 1.91, iroh `=1.4.1` (`tls-ring`), hyper 1, tokio 1.
 - `~/Obsidian/Dev/Projects/omabridge/MEMORY.md` (grepped, not read whole).
-- Clients: `/home/node/Work/omarchy-t3-code/src/omabridge_*.rs` (o3 desktop, "D") and `/home/node/Work/t3code-nightly/apps/server/src/environment/OmaBridgeEndpoints.ts`.
+- Clients: `~/Work/omarchy-t3-code/src/omabridge_*.rs` (o3 desktop, "D") and `~/Work/t3code-nightly/apps/server/src/environment/OmaBridgeEndpoints.ts`.
 - Sibling notes in this directory: `client-usage.md`, `t3-wire-contract.md`.
 
 Line numbers refer to omabridge `cd0de3a` and will drift.

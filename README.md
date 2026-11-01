@@ -9,7 +9,7 @@ and O3 Android can talk to it like T3, with OmaBridge built in. Claude runs thro
 
 Not a finished replacement and not installed anywhere. T3 stays the daily server.
 
-- Compatibility: 78 of 203 RPCs done, 31 partial, 94 out of scope (no client uses them).
+- Compatibility: 78 of 203 RPCs done, 31 partial, 94 out of scope (77 no client uses, 17 answer T3's typed unavailable error).
   P0 is 0 of 5 done (daily chat, shell and thread streams, config, dispatch); P1 is 20 of 31.
   Full table and per-RPC limits: [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md); evidence and
   accepted differences: [docs/CONFORMANCE.md](docs/CONFORMANCE.md).

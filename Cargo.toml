@@ -12,7 +12,7 @@ bridge = ["dep:omabridge", "dep:anyhow", "dep:t3-protocol"]
 
 [dependencies]
 t3-protocol = { git = "https://github.com/avillagran/lib-t3-rust", rev = "8c80c4dc62414c454eaefb4706d973adf8d8ee74", optional = true }
-omabridge = { version = "0.2.4", default-features = false, features = ["embed"], optional = true }
+omabridge = { git = "https://github.com/avillagran/omabridge", rev = "44cc7fa7575c1256f4007be4823e3f455429175a", default-features = false, features = ["embed"], optional = true }
 anyhow = { version = "1", optional = true }
 libc = "0.2"
 tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "net", "io-util", "time", "sync", "macros", "signal", "process", "fs"] }
@@ -44,8 +44,6 @@ panic = "abort"
 strip = true
 
 # Local co-development only: replace with a pinned upstream git rev before release.
-[patch.crates-io]
-omabridge = { path = "../omabridge-embed" }
 
 [profile.dev]
 debug = 0

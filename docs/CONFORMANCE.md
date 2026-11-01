@@ -74,7 +74,7 @@ The installed native Codex 0.166.0 app-server --help was checked (supports --std
 
 Only the explicit version/optional differences below are accepted. Being observed on
 3991 does not by itself establish drift from 3726. Required pinned fields remain bugs.
-The pinned source is `/home/node/Work/t3-reference-3726`, contracts at 3f9448747.
+The pinned source is `~/Work/t3-reference-3726`, contracts at 3f9448747.
 
 - **Version drift:** server.getSettings is unknown on 3991. Keep it for the pinned client.
   Newer config/settings/capability fields are recorded, but need per-field validation

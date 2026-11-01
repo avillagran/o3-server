@@ -1,6 +1,6 @@
 # T3 nightly 3726 wire contract for server implementers
 
-Pinned upstream: `3f9448747bb8848050dc2cacf83affa6f94a66a1` (`v0.1.3-nightly.20261026.3726`). Research date: 2026-10-31. Paths without a root refer to `/home/node/Work/t3-reference-3726`; `lib:` means `/home/node/Work/lib-t3-rust`. Files missing from the sparse working tree were read from this commit with `git show`, not inferred from their imports. The active surface has **203 RPCs, 31 streams and 41 typed HTTP routes**, plus raw/media/guest/MCP routes. This is a protocol-2 spec; older orchestration APIs are not interchangeable with this version.
+Pinned upstream: `3f9448747bb8848050dc2cacf83affa6f94a66a1` (`v0.1.3-nightly.20261026.3726`). Research date: 2026-10-31. Paths without a root refer to `~/Work/t3-reference-3726`; `lib:` means `~/Work/lib-t3-rust`. Files missing from the sparse working tree were read from this commit with `git show`, not inferred from their imports. The active surface has **203 RPCs, 31 streams and 41 typed HTTP routes**, plus raw/media/guest/MCP routes. This is a protocol-2 spec; older orchestration APIs are not interchangeable with this version.
 
 ## 1. Bootstrap, listener, and durable state
 

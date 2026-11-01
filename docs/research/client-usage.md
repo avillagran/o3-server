@@ -5,9 +5,9 @@ clients touch at runtime. Sources read on 2026-10-31 (read-only):
 
 | Short | Path | What |
 |---|---|---|
-| `D/` | `/home/node/Work/omarchy-t3-code` | O3 desktop (Rust backend `omarchy-t3-client` + QML). Consumes `t3-protocol` vendored at `D/vendor/t3-protocol` (same source as L). |
-| `A/` | `/home/node/Work/ot3-android` | O3 Android (Kotlin). Consumes the lib via `t3-lib` AAR (JNI → `T3Client`). Core code in `A/core/src/main/kotlin/dev/avillagran/ot3android/core/` (`AC/`), UI in `A/app/src/main/kotlin/dev/avillagran/ot3android/` (`AA/`). |
-| `L/` | `/home/node/Work/lib-t3-rust` | The lib: `src/api/*` (typed RPCs, 105 registry rows + 13 streams), `src/wire.rs`, `src/stream.rs`, `src/lib.rs` (`Connection`), `tools/extract-t3-contract`. Pinned to `t3code@3f9448747` (`L/src/api/mod.rs` `CONTRACT`). Ground-truth shapes: `L/tests/fixtures/t3-contract.json`. |
+| `D/` | `~/Work/omarchy-t3-code` | O3 desktop (Rust backend `omarchy-t3-client` + QML). Consumes `t3-protocol` vendored at `D/vendor/t3-protocol` (same source as L). |
+| `A/` | `~/Work/ot3-android` | O3 Android (Kotlin). Consumes the lib via `t3-lib` AAR (JNI → `T3Client`). Core code in `A/core/src/main/kotlin/dev/avillagran/ot3android/core/` (`AC/`), UI in `A/app/src/main/kotlin/dev/avillagran/ot3android/` (`AA/`). |
+| `L/` | `~/Work/lib-t3-rust` | The lib: `src/api/*` (typed RPCs, 105 registry rows + 13 streams), `src/wire.rs`, `src/stream.rs`, `src/lib.rs` (`Connection`), `tools/extract-t3-contract`. Pinned to `t3code@3f9448747` (`L/src/api/mod.rs` `CONTRACT`). Ground-truth shapes: `L/tests/fixtures/t3-contract.json`. |
 
 Legend. **P0** = client cannot connect, or cannot do core chat. **P1** = daily feature. **P2** = rare, settings, admin.
 **unused** = wrapped in the lib, no client calls it. "D" = desktop, "A" = Android. A cell reads "yes" only when a

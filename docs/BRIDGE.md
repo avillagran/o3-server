@@ -136,10 +136,10 @@ host I/O pressure clears:
 ```sh
 CARGO_TARGET_DIR=/var/tmp/o3-build/main \
 TMPDIR=/var/tmp/o3-build/tmp \
-nice cargo test -j 4 --manifest-path /home/node/Work/omabridge-embed/Cargo.toml --locked
+nice cargo test -j 4 --manifest-path ~/Work/omabridge-embed/Cargo.toml --locked
 ```
 
 The integrated main workload and binary hash supersede these branch-local RSS
 figures; see rss-measurement.json and IMPLEMENTATION.md for current results.
 
-The registered local `feat/embed` worktree is now `/home/node/Work/omabridge-embed`, preserving commit 44cc7fa. Cargo no longer depends on the historical `/var/tmp` checkout. The cross-filesystem relocation used a copy plus `git worktree repair`; the old copy was byte-compared (excluding `.git`) and removed after repairing the registration. No push.
+The registered local `feat/embed` worktree is now `~/Work/omabridge-embed`, preserving commit 44cc7fa. Cargo no longer depends on the historical `/var/tmp` checkout. The cross-filesystem relocation used a copy plus `git worktree repair`; the old copy was byte-compared (excluding `.git`) and removed after repairing the registration. No push.

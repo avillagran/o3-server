@@ -2509,6 +2509,7 @@ dependencies = [
 [[package]]
 name = "omabridge"
 version = "0.2.4"
+source = "git+https://github.com/avillagran/omabridge?rev=44cc7fa7575c1256f4007be4823e3f455429175a#44cc7fa7575c1256f4007be4823e3f455429175a"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
