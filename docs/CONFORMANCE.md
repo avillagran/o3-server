@@ -366,7 +366,7 @@ For each P0/P1 row not done, the remaining differences were grepped (`rg -n`, al
 in lib-t3-rust (`src`, `bindings`), omarchy-t3-code (`src`, `ui`) and ot3-android (`app`, `core`).
 Only a difference no client reads is accepted; a read keeps the row partial.
 
-Accepted differences (row promoted):
+Accepted differences (only secrets.answerRequest is promoted):
 - `secrets.answerRequest`: agent-side consumption of the saved secret file. Readers of
   `secret_request` are `lib-t3-rust/src/timeline.rs:297`, `omarchy-t3-code/src/lib.rs:572` and
   `write.rs:456` (secret-answer); they use the item status and a `null` reply, never the stored

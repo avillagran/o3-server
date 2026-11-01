@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""Run o3-server beside T3 as a pilot: own port, own T3CODE_HOME, T3 history imported read-only.
+
+  tools/pilot [--t3-home DIR] [--bin PATH] [--no-import] [--ttl 30m]   start
+  tools/pilot --resume                                                  restart an existing pilot dir
+  tools/pilot --stop                                                    stop it (the dir is kept)
+
+The pilot dir is ~/.local/share/o3-pilot (override: O3_PILOT_DIR). Start refuses to touch an
+existing dir. The T3 profile is only read: its statev2.sqlite is opened read-only by
+`o3-server import`, and nothing else under it is opened, written or signalled.
+"""
+import argparse, json, os, pathlib, signal, socket, subprocess, sys, time
+
+home = pathlib.Path(os.environ.get("HOME", "/"))
+parser = argparse.ArgumentParser(prog="pilot", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+parser.add_argument("--stop", action="store_true", help="stop the pilot server")
+parser.add_argument("--resume", action="store_true", help="restart the server of an existing pilot dir; no import")
+parser.add_argument("--t3-home", help="T3 profile to import from (default $T3CODE_HOME or ~/.t3)")
+parser.add_argument("--bin", help="o3-server binary (default $O3_BIN, PATH, then /var/tmp/o3-build/main/release)")
+parser.add_argument("--no-import", action="store_true", help="start with an empty history")
+parser.add_argument("--ttl", default="30m", help="lifetime of the printed pairing link (default 30m)")
+args = parser.parse_args()
+
+pilot = pathlib.Path(os.environ.get("O3_PILOT_DIR") or home / ".local/share/o3-pilot").absolute()
+t3_home = pathlib.Path(args.t3_home or os.environ.get("T3CODE_HOME") or home / ".t3").absolute()
+state_file = pilot / "pilot.json"
+
+
+def fail(message):
+    sys.exit(f"pilot: {message}")
+
+
+def alive(pid):
+    try:
+        stat = pathlib.Path(f"/proc/{pid}/stat").read_text()
+    except OSError:
+        return False
+    return not stat.rsplit(") ", 1)[-1].startswith("Z")
+
+
+def owned(pid):
+    """The pid is an o3-server serving this pilot's profile (guards against pid reuse)."""
+    try:
+        cmd = pathlib.Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+        env = pathlib.Path(f"/proc/{pid}/environ").read_bytes().split(b"\0")
+    except OSError:
+        return False
+    return b"serve" in cmd and f"T3CODE_HOME={pilot / 't3home'}".encode() in env
+
+
+def read_state():
+    try:
+        return json.loads(state_file.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+if args.stop:
+    state = read_state()
+    if not state:
+        fail(f"no pilot at {pilot}")
+    pid = state["pid"]
+    if not alive(pid):
+        print(f"pilot: not running (pid {pid}); dir kept at {pilot}")
+    elif not owned(pid):
+        fail(f"pid {pid} is not this pilot's o3-server; not signalling it")
+    else:
+        os.kill(pid, signal.SIGTERM)
+        deadline = time.monotonic() + 20
+        while alive(pid) and time.monotonic() < deadline:
+            time.sleep(0.1)
+        if alive(pid):
+            os.kill(pid, signal.SIGKILL)
+            time.sleep(0.3)
+        print(f"pilot: stopped pid {pid}; dir kept at {pilot}")
+    sys.exit(0)
+
+if args.resume:
+    state = read_state()
+    if not state:
+        fail(f"{pilot} is not a pilot dir")
+    if alive(state["pid"]) and owned(state["pid"]):
+        fail(f"already running (pid {state['pid']}, {state['origin']}); use --stop first")
+elif pilot.exists():
+    fail(f"{pilot} already exists; refusing to overwrite it. Use --resume to restart it, or remove it yourself.")
+
+binary = args.bin or os.environ.get("O3_BIN")
+if not binary:
+    from shutil import which
+    binary = which("o3-server") or "/var/tmp/o3-build/main/release/o3-server"
+binary = str(pathlib.Path(binary).absolute())
+if not os.access(binary, os.X_OK):
+    fail(f"o3-server binary not found or not executable: {binary} (use --bin)")
+
+profile = pilot / "t3home"
+if t3_home == profile or pilot == t3_home or t3_home in pilot.parents or pilot in t3_home.parents:
+    fail("the pilot dir and the T3 profile must not contain each other")
+
+env = {**os.environ, "T3CODE_HOME": str(profile), "TMPDIR": str(pilot / "tmp")}
+for var in ("T3CODE_PORT", "T3CODE_HOST", "T3CODE_MODE"):
+    env.pop(var, None)
+if not args.resume:
+    pilot.mkdir(parents=True, mode=0o700)
+(pilot / "tmp").mkdir(mode=0o700, exist_ok=True)
+profile.mkdir(mode=0o700, exist_ok=True)
+
+
+def run(*cmd):
+    done = subprocess.run([binary, *cmd], env=env, capture_output=True, text=True, timeout=600)
+    if done.returncode:
+        fail(f"`o3-server {' '.join(cmd[:2])}` failed: {done.stderr.strip() or done.stdout.strip()}")
+    return done.stdout
+
+
+if not args.resume and not args.no_import:
+    source = t3_home / "userdata" / "statev2.sqlite"
+    if source.is_file():
+        counts = run("import", "--from", str(source))
+        print(f"pilot: imported T3 history (read-only): {counts.strip()}")
+    else:
+        print(f"pilot: no T3 history at {source}; starting empty")
+
+log = open(pilot / "server.log", "ab")
+# --port 0: the kernel picks a free port, so it can never collide with T3's.
+process = subprocess.Popen([binary, "serve", "--host", "127.0.0.1", "--port", "0"], env=env, stdin=subprocess.DEVNULL,
+                           stdout=log, stderr=log, start_new_session=True)
+runtime = profile / "userdata" / "server-runtime.json"
+deadline = time.monotonic() + 40
+origin = None
+while time.monotonic() < deadline:
+    if process.poll() is not None:
+        fail(f"server exited early; see {pilot / 'server.log'}")
+    try:
+        info = json.loads(runtime.read_text())
+        if info.get("pid") == process.pid:
+            with socket.create_connection(("127.0.0.1", info["port"]), timeout=1):
+                origin = info["origin"]
+                break
+    except (OSError, ValueError, KeyError):
+        pass
+    time.sleep(0.1)
+if not origin:
+    process.terminate()
+    fail(f"server did not become ready; see {pilot / 'server.log'}")
+
+state_file.write_text(json.dumps({"pid": process.pid, "origin": origin, "bin": binary, "t3Home": str(t3_home),
+                                  "startedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}) + "\n")
+state_file.chmod(0o600)
+try:
+    credential = json.loads(run("auth", "pairing", "create", "--label", "o3-pilot", "--ttl", args.ttl))["credential"]
+except (ValueError, KeyError):
+    credential = None
+
+print(f"""
+o3-server pilot running (pid {process.pid})
+  server   {origin}
+  profile  {profile}   (own T3CODE_HOME; your T3 at {t3_home} is untouched)
+  log      {pilot / 'server.log'}
+""")
+if credential:
+    print(f"""Add it as a connection in O3 desktop:
+  1. Settings -> Connections -> Add connection (the T3 "pair" flow).
+  2. Paste this one-time link (valid {args.ttl}; run `tools/pilot --resume` after --stop for a new one):
+       {origin}/pair#token={credential}
+     or enter host {origin} with pairing token {credential}.
+  3. Pick the new connection for a thread; T3 keeps serving the others.
+Stop with: tools/pilot --stop""")
+else:
+    print("Could not create a pairing link; run: T3CODE_HOME=" + str(profile) + f" {binary} auth pairing create")
