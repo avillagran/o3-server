@@ -77,8 +77,7 @@ pub fn start(
         }
         drop(out);
         drop(db);
-        // SQLite uses libc, independently of the Rust mimalloc allocator. Return
-        // freed page/JSON/sort buffers after both completion and cancellation.
+        // Return freed libc page/JSON/sort buffers after completion or cancellation.
         crate::heap::collect();
     });
     Ok((seq, rx))

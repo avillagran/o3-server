@@ -387,25 +387,7 @@ where
 {
     state.start_checkpointer();
     crate::scheduled::ensure_started(&state);
-    let weak = Arc::downgrade(&state);
-    tokio::spawn(async move {
-        let mut previous_roots = Vec::new();
-        loop {
-            let Some(state) = weak.upgrade() else { break };
-            let projects = crate::projects::snapshot(&state).unwrap_or(Value::Null);
-            let roots = projects["projects"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|p| p["workspaceRoot"].as_str().map(str::to_owned))
-                .collect::<Vec<_>>();
-            let force = roots != previous_roots;
-            let _ = crate::projects::refresh_identities_if_changed(&state, force).await;
-            previous_roots = roots;
-            drop(state);
-            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
-        }
-    });
+    crate::projects::ensure_identity_watcher(&state);
     let service = service_fn(move |request| route(state.clone(), request));
     hyper::server::conn::http1::Builder::new()
         .serve_connection(TokioIo::new(io), service)
@@ -425,25 +407,7 @@ pub async fn serve(listener: TcpListener, state: Arc<State>) -> std::io::Result<
     crate::heap::collect();
     state.start_checkpointer();
     crate::scheduled::ensure_started(&state);
-    let weak = Arc::downgrade(&state);
-    tokio::spawn(async move {
-        let mut previous_roots = Vec::new();
-        loop {
-            let Some(state) = weak.upgrade() else { break };
-            let projects = crate::projects::snapshot(&state).unwrap_or(Value::Null);
-            let roots = projects["projects"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|p| p["workspaceRoot"].as_str().map(str::to_owned))
-                .collect::<Vec<_>>();
-            let force = roots != previous_roots;
-            let _ = crate::projects::refresh_identities_if_changed(&state, force).await;
-            previous_roots = roots;
-            drop(state);
-            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
-        }
-    });
+    crate::projects::ensure_identity_watcher(&state);
     loop {
         let (socket, _) = listener.accept().await?;
         let _ = socket.set_nodelay(true);

@@ -239,3 +239,33 @@ pub(crate) async fn refresh_identities_if_changed(s: &State, force: bool) -> Res
     }
     Ok(())
 }
+
+/// One server-owned poller shared by every TCP and embedded bridge connection.
+pub(crate) fn ensure_identity_watcher(state: &std::sync::Arc<State>) {
+    if state
+        .identities_started
+        .swap(true, std::sync::atomic::Ordering::Relaxed)
+    {
+        return;
+    }
+    let weak = std::sync::Arc::downgrade(state);
+    tokio::spawn(async move {
+        let mut previous_roots = Vec::new();
+        loop {
+            let Some(state) = weak.upgrade() else { break };
+            let projects = crate::projects::snapshot(&state).unwrap_or(Value::Null);
+            let roots = projects["projects"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|p| p["workspaceRoot"].as_str().map(str::to_owned))
+                .collect::<Vec<_>>();
+            drop(projects);
+            let force = roots != previous_roots;
+            let _ = crate::projects::refresh_identities_if_changed(&state, force).await;
+            previous_roots = roots;
+            drop(state);
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        }
+    });
+}

@@ -6,7 +6,7 @@ mod memory;
 static MEASURED: memory::Measured = memory::Measured;
 #[cfg(not(feature = "memory-diagnostics"))]
 #[global_allocator]
-static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+static GLOBAL: std::alloc::System = std::alloc::System;
 fn option<'a>(a: &'a [String], name: &str) -> Option<&'a str> {
     a.windows(2).find(|w| w[0] == name).map(|w| w[1].as_str())
 }
@@ -27,14 +27,7 @@ fn ttl(s: &str) -> std::io::Result<i64> {
         .ok_or_else(|| std::io::Error::other("invalid TTL"))
 }
 fn main() -> std::io::Result<()> {
-    // mimalloc v2/v3 option 15: purge freed pages immediately. Keep an explicit
-    // operator setting; the default delayed purge otherwise needs more allocations
-    // on the same worker and can retain a finished snapshot indefinitely.
-    if std::env::var_os("MIMALLOC_PURGE_DELAY").is_none() {
-        unsafe {
-            libmimalloc_sys::mi_option_set(15, 0);
-        }
-    }
+    o3_server::heap::configure();
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.first().map(String::as_str) == Some("__ssh-helper") {
         match args.get(1).map(String::as_str) {
@@ -186,34 +179,86 @@ fn main() -> std::io::Result<()> {
         .map(str::to_owned)
         .or_else(|| std::env::var("T3CODE_HOST").ok())
         .unwrap_or("127.0.0.1".into());
-    tokio::runtime::Builder::new_multi_thread().worker_threads(2).max_blocking_threads(2).thread_stack_size(512 * 1024).enable_all().build()?.block_on(async {
-        #[cfg(feature = "memory-diagnostics")]
-        memory::start();
-        let codex=Arc::new(o3_server::codex::CodexProvider::default());
-        *state.provider.lock().unwrap()=Some(Arc::new(o3_server::provider::Providers { claude: o3_server::claude::ClaudeProvider::discover().map(Arc::new), codex: codex.clone() }));
-        let mut term=tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
-        let mut interrupt=tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
-        let listener=tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
-        let _guard=o3_server::profile::RuntimeGuard::write(&dir,listener.local_addr()?)?;
-        eprintln!("o3-server listening on {}",listener.local_addr()?);
-        let state = Arc::new(state);
-        let probe=codex.clone();let probe_state=state.clone();
-        let probe_task=tokio::spawn(async move { if let Err(e)=probe.probe().await {eprintln!("Codex unavailable: {e}");} probe_state.notify(); });
-        let mut serving=tokio::spawn(o3_server::serve(listener,state.clone()));
-        #[cfg(feature = "bridge")]
-        let bridge = o3_server::bridge::start_hosted(&option(&args, "--bridge-state-dir").map(std::path::PathBuf::from).unwrap_or_else(|| base.join("omabridge")), state.clone(), {
-            let mut options = omabridge::NetOptions::loopback();
-            if let Some(bind) = option(&args, "--bridge-bind") { options.bind = bind.parse().map_err(std::io::Error::other)?; }
-            if let Some(relay) = option(&args, "--bridge-relay") { options.relay = match relay { "none" => omabridge::Relay::Disabled, "public" => omabridge::Relay::Public, url => omabridge::Relay::Custom(url.parse().map_err(std::io::Error::other)?) }; }
-            options
-        }, option(&args, "--bridge-gateway-config").map(Path::new), args.iter().any(|a| a == "--bridge-relay-host")).await.map_err(std::io::Error::other)?;
-        let result = tokio::select! {result=&mut serving=>result.map_err(std::io::Error::other)?,_=interrupt.recv()=>Ok(()),_=term.recv()=>Ok(())};
-        if !serving.is_finished() { serving.abort(); let _=serving.await; }
-        #[cfg(feature = "bridge")]
-        bridge.shutdown().await;
-        probe_task.abort();
-        let _=probe_task.await;
-        codex.shutdown().await;
-        result
-    })
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .on_thread_park(o3_server::heap::on_thread_park)
+        .max_blocking_threads(2)
+        .thread_keep_alive(std::time::Duration::from_secs(1))
+        .on_thread_stop(o3_server::heap::collect)
+        .thread_stack_size(512 * 1024)
+        .enable_all()
+        .build()?
+        .block_on(async {
+            #[cfg(feature = "memory-diagnostics")]
+            memory::start();
+            let codex = Arc::new(o3_server::codex::CodexProvider::default());
+            *state.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::Providers {
+                claude: o3_server::claude::ClaudeProvider::discover().map(Arc::new),
+                codex: codex.clone(),
+            }));
+            let mut term =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+            let mut interrupt =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
+            let listener = tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
+            let _guard = o3_server::profile::RuntimeGuard::write(&dir, listener.local_addr()?)?;
+            eprintln!("o3-server listening on {}", listener.local_addr()?);
+            let state = Arc::new(state);
+            let probe = codex.clone();
+            let probe_state = state.clone();
+            let probe_task = tokio::spawn(async move {
+                if let Err(e) = probe.probe().await {
+                    eprintln!("Codex unavailable: {e}");
+                }
+                probe_state.notify();
+            });
+            let mut serving = tokio::spawn(o3_server::serve(listener, state.clone()));
+            #[cfg(feature = "bridge")]
+            let bridge = o3_server::bridge::start_hosted(
+                &option(&args, "--bridge-state-dir")
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|| base.join("omabridge")),
+                state.clone(),
+                {
+                    let mut options = omabridge::NetOptions::loopback();
+                    if let Some(bind) = option(&args, "--bridge-bind") {
+                        options.bind = bind.parse().map_err(std::io::Error::other)?;
+                    }
+                    if let Some(relay) = option(&args, "--bridge-relay") {
+                        options.relay = match relay {
+                            "none" => omabridge::Relay::Disabled,
+                            "public" => omabridge::Relay::Public,
+                            url => omabridge::Relay::Custom(
+                                url.parse().map_err(std::io::Error::other)?,
+                            ),
+                        };
+                    }
+                    options
+                },
+                option(&args, "--bridge-gateway-config").map(Path::new),
+                args.iter().any(|a| a == "--bridge-relay-host"),
+            )
+            .await
+            .map_err(std::io::Error::other)?;
+            // block_on runs on the main thread, outside the runtime worker park hooks.
+            let mut reclaim = tokio::time::interval(std::time::Duration::from_secs(1));
+            let result = loop {
+                tokio::select! {
+                    result=&mut serving=>break result.map_err(std::io::Error::other)?,
+                    _=interrupt.recv()=>break Ok(()),
+                    _=term.recv()=>break Ok(()),
+                    _=reclaim.tick()=>o3_server::heap::collect(),
+                }
+            };
+            if !serving.is_finished() {
+                serving.abort();
+                let _ = serving.await;
+            }
+            #[cfg(feature = "bridge")]
+            bridge.shutdown().await;
+            probe_task.abort();
+            let _ = probe_task.await;
+            codex.shutdown().await;
+            result
+        })
 }

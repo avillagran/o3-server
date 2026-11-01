@@ -6,6 +6,34 @@ use std::{collections::BTreeMap, sync::Arc};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
 pub const SERVER_VERSION: &str = concat!("o3-", env!("CARGO_PKG_VERSION"));
+// SQLite caches are useful while any client is active. Return their transient
+// pages when the last WebSocket leaves, including error and cancellation paths.
+struct ClientGuard(Arc<State>);
+impl ClientGuard {
+    fn new(state: Arc<State>) -> Self {
+        state
+            .rpc_clients
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Self(state)
+    }
+}
+impl Drop for ClientGuard {
+    fn drop(&mut self) {
+        if self
+            .0
+            .rpc_clients
+            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed)
+            == 1
+        {
+            if let Ok(db) = self.0.reader.lock() {
+                let _ = db.release_memory();
+            }
+            if let Ok(db) = self.0.db.lock() {
+                let _ = db.release_memory();
+            }
+        }
+    }
+}
 struct Subscription {
     id: Value,
     tag: String,
@@ -104,6 +132,7 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
     s: Arc<State>,
     session: Value,
 ) {
+    let _client = ClientGuard::new(s.clone());
     s.start_checkpointer();
     let mut changed = s.changed.subscribe();
     let mut live_changed = s.streams.changed.subscribe();
