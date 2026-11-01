@@ -1,42 +1,54 @@
 {
-  "measured_at_utc": "2026-11-01T01:18:46Z",
-  "binary_sha256": "4760f139a770cf14d65b725909026a435b8878c3d8ae6b010397f4ad52913d1a",
-  "profile_counts": {
-    "messages": 10605,
-    "project": 23,
-    "thread": 374,
-    "turnItems": 67250,
-    "visibleTurnItems": 67250
+  "measured_at_utc": "2026-11-01T04:53:40Z",
+  "binary_sha256": "ef7b7e1700cd9301119344a3ca29a5c87491cdf97ce96979c3ecf337d56df523",
+  "binary": "/var/tmp/o3-build/main/release/o3-server",
+  "binary_bytes": 12790216,
+  "seed_messages": 1000,
+  "threads": 20,
+  "subscribers": 3,
+  "unary_calls": 1000,
+  "text_bytes_per_message": 1000,
+  "cold_kib": {
+    "VmHWM": 15520,
+    "VmRSS": 15520,
+    "RssAnon": 7080
   },
-  "biggest_thread_items": 8264,
-  "idle_kib": {
-    "VmHWM": 31984,
-    "VmRSS": 31268,
-    "RssAnon": 20128
+  "seeded_kib": {
+    "VmHWM": 34624,
+    "VmRSS": 34624,
+    "RssAnon": 22656
   },
-  "after_snapshot_kib": {
-    "VmHWM": 34856,
-    "VmRSS": 29940,
-    "RssAnon": 18544
+  "subscribed_kib": {
+    "VmHWM": 39164,
+    "VmRSS": 33504,
+    "RssAnon": 21536
   },
-  "thread_open_kib": {
-    "VmHWM": 45160,
-    "VmRSS": 36696,
-    "RssAnon": 25300
+  "after_churn_kib": {
+    "VmHWM": 39164,
+    "VmRSS": 33452,
+    "RssAnon": 21484
   },
-  "after_disconnect_kib": {
-    "VmHWM": 45160,
-    "VmRSS": 33540,
-    "RssAnon": 22144
-  },
-  "snapshot_ms": 215.27,
-  "bridge_enabled": true,
-  "client": "real omarchy-t3-client snapshot/watch",
-  "measurement": "Linux /proc/PID/status, isolated SQLite backup; no inference",
-  "heap_samples": [],
+  "snapshot_messages": [
+    10,
+    10,
+    10
+  ],
+  "under_50_mib": true,
   "under_50_mb": true,
-  "under_35_mb_idle": true,
-  "disconnect_within_3_mb_idle": true,
-  "under_500_ms_snapshot": true,
+  "providers": [
+    {
+      "instanceId": "claudeAgent",
+      "installed": true,
+      "status": "warning"
+    },
+    {
+      "instanceId": "codex",
+      "installed": true,
+      "status": "warning"
+    }
+  ],
+  "bridge_enabled": true,
+  "provider_workload": "registered and probed; inference excluded (defer_start)",
+  "measurement": "Linux /proc/PID/status; disk profile under /var/tmp",
   "allocator_env": {}
 }

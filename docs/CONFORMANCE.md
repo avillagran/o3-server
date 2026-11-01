@@ -439,3 +439,8 @@ Both P1 rows are promoted by this reader evidence.
 `pull_reports_state_and_branch_changes_against_the_default_branch` failed once
 in a full suite run on `b16facb`. It could not be reproduced in 66 stress runs
 or three full suite runs. Cause unknown.
+
+Terminal closure validation: 143 tests passed, five opt-in tests ignored; strict
+all-target/all-feature clippy, format and diff checks passed. The completed
+release RSS probe (bridge, 20 threads, 1000 messages, three subscribers, no
+inference) measured 39164 KiB HWM, below 50 MB.
