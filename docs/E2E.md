@@ -298,3 +298,21 @@ one short real Codex turn completed through the real client in isolated provider
 homes; the combined opt-in test passed in 6.26 seconds. No emulator or installed
 service was used. This is conversation execution evidence, not an exhausted-quota
 capture or proof of native control acknowledgement after a crash.
+
+## Current-main partial client regression (2026-11-01)
+
+Release `d374f5a`, isolated profile and Android 34 emulator on port 5570: direct pairing,
+seeded project/thread display and the model picker (Claude and Codex categories, Haiku
+models) passed. New-thread messages, real Android replies, approval, title generation,
+attachment, terminal, restart/reconnect and an observed offline-to-online transition
+were not verified in this run. No server or client defect was established. Android
+server VmHWM was 14,864 KiB without inference; provider processes are excluded.
+
+The real QML runner passed discovery, seeded sidebar and thread rendering, composer
+submission, a real Haiku reply, and completed/idle state, with zero QML error lines.
+A temporary runner copy used the requested fixed port 38900 and isolated Android
+profile instead of the runner's usual ephemeral port and per-run T3 profile. Its
+Claude credential copy was deleted by the runner; QML server VmHWM was not captured.
+The Android server and emulator were stopped and copied credentials deleted. No full
+suite was run because no server fix was made; the requested Android regression remains
+incomplete.
