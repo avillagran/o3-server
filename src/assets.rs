@@ -736,6 +736,25 @@ fn bounded_text(path: impl AsRef<Path>) -> std::io::Result<String> {
     }
     Ok(text)
 }
+fn icon_allowed(real: &Path) -> bool {
+    let mut roots = vec![
+        PathBuf::from("/usr/share"),
+        PathBuf::from("/usr/local/share"),
+    ];
+    if let Some(home) = std::env::var_os("HOME") {
+        roots.push(PathBuf::from(home).join(".local/share"));
+    }
+    if let Some(data) = std::env::var_os("XDG_DATA_HOME") {
+        roots.push(data.into());
+    }
+    if let Some(data) = std::env::var_os("XDG_DATA_DIRS") {
+        roots.extend(std::env::split_paths(&data).take(32));
+    }
+    roots
+        .iter()
+        .flat_map(|r| [r.join("icons"), r.join("pixmaps")])
+        .any(|r| std::fs::canonicalize(r).is_ok_and(|r| real.starts_with(&r) && real != r))
+}
 fn themed_icon(roots: &[PathBuf], icon: &str) -> Option<PathBuf> {
     let config = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
@@ -1209,6 +1228,9 @@ pub fn create_url(s: &State, p: &Value) -> Reply {
                 .ok_or_else(|| not_found("AssetWorkspaceAssetNotFoundError"))?;
             let real = std::fs::canonicalize(file)
                 .map_err(|_| not_found("AssetWorkspaceAssetNotFoundError"))?;
+            if protected_path(s, &real) || !icon_allowed(&real) {
+                return Err(not_found("AssetWorkspaceAssetNotFoundError"));
+            }
             let (c, name, rev) = media_claims(&real, false, expires)
                 .ok_or_else(|| not_found("AssetWorkspaceAssetNotFoundError"))?;
             claims = c;
@@ -1421,11 +1443,7 @@ fn resolve(s: &State, token: &str, rest: &str) -> Option<Resolved> {
                 if protected_path(s, &real) {
                     return None;
                 }
-                if !real
-                    .components()
-                    .any(|p| p.as_os_str() == "icons" || p.as_os_str() == "pixmaps")
-                    || !favicon_ext_ok(&real.to_string_lossy())
-                {
+                if !icon_allowed(&real) || !favicon_ext_ok(&real.to_string_lossy()) {
                     return None;
                 }
             } else {
@@ -1811,6 +1829,17 @@ mod boundary_tests {
 mod media_cache_tests {
     use super::*;
     #[test]
+    fn icon_metadata_is_bounded_and_arbitrary_icon_directories_are_denied() {
+        let root = std::env::temp_dir().join(random_id().unwrap());
+        std::fs::create_dir_all(root.join("icons")).unwrap();
+        let path = root.join("icons/large.png");
+        std::fs::write(&path, vec![b'x'; 65537]).unwrap();
+        assert!(bounded_text(&path).is_err());
+        assert!(!icon_allowed(&path));
+        assert!(bounded_text(&root).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn expired_cache_is_collected_and_media_types_follow_content() {
         let root = std::env::temp_dir().join(random_id().unwrap());
         std::fs::create_dir_all(&root).unwrap();
@@ -1832,7 +1861,6 @@ mod media_cache_tests {
             std::fs::write(root.join(format!("{i}.png")), b"x").unwrap();
         }
         assert!(!media_cache_has_room(&root));
-
         assert_eq!(cached_media_extension(b"\xff\xd8\xffJPEG"), Some("jpg"));
         assert_eq!(cached_media_extension(b"\0\0\0\x18ftypisom"), Some("mp4"));
         assert_eq!(cached_media_extension(b"<html>login</html>"), None);
