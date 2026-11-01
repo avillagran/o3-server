@@ -10,13 +10,17 @@ pub fn recover(db: &mut Connection) -> Result<(), String> {
     use rusqlite::OptionalExtension;
     let mut cursor = 0i64;
     loop {
-        let row=tx.query_row("SELECT rowid,kind,id,thread_id,body FROM records WHERE rowid>? AND kind IN ('runs','runtimeRequests','providerSessions','controlOutbox') ORDER BY rowid LIMIT 1",[cursor],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?))).optional().map_err(|e|e.to_string())?;
+        let row=tx.query_row("SELECT rowid,kind,id,thread_id,body FROM records WHERE rowid>? AND kind IN ('runs','runtimeRequests','providerSessions','controlOutbox','thread') ORDER BY rowid LIMIT 1",[cursor],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?))).optional().map_err(|e|e.to_string())?;
         let Some((rowid, kind, id, tid, body)) = row else {
             break;
         };
         cursor = rowid;
         let mut v: Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
         let event = match kind.as_str() {
+            "thread" if !v["titleRegeneration"].is_null() => {
+                v["titleRegeneration"] = Value::Null;
+                "thread.metadata-updated"
+            }
             "runs"
                 if matches!(
                     v["status"].as_str(),
@@ -143,4 +147,29 @@ pub fn resume(state: &std::sync::Arc<crate::store::State>) -> Result<(), String>
             "The server restarted during your previous turn. Continue the interrupted task using this native session's history. Inspect current state before acting: previous tools may already have executed. Do not repeat completed work. Any old approval or question was cancelled; request fresh authorization or ask again where necessary.".into());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod title_tests {
+    use super::*;
+    #[test]
+    fn restart_clears_busy_title_without_changing_title_or_resurrecting_request() {
+        let dir = std::env::temp_dir().join(crate::store::random_id().unwrap());
+        let state = crate::store::State::open(&dir).unwrap();
+        {
+            let mut db = state.db.lock().unwrap();
+            let t =
+                json!({"id":"t","title":"Renamed","titleRegeneration":{"requestId":"dead-task"}});
+            events::put(&db, "thread", "t", "t", &t).unwrap();
+            recover(&mut db).unwrap();
+            let t = events::get(&db, "thread", "t").unwrap();
+            assert!(t["titleRegeneration"].is_null());
+            assert_eq!(t["title"], "Renamed");
+            let seq = events::sequence(&db).unwrap();
+            recover(&mut db).unwrap();
+            assert_eq!(events::sequence(&db).unwrap(), seq);
+        }
+        drop(state);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }
