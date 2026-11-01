@@ -65,3 +65,5 @@ mod approval_policy;
 mod settlement;
 
 pub mod heap;
+
+pub mod device;

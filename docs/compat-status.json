@@ -42,39 +42,39 @@
       "note": "No client call site in inventory."
     },
     "device.action": {
-      "status": "skip",
+      "status": "partial",
       "priority": "P2",
-      "note": "Needs a device hub (adb, simulators, SSH/EAS hosts), too heavy for this server; answers DeviceToolUnavailableError and no device capability is advertised. tests/admin_reads.rs."
+      "note": "tests/device.rs real t3-protocol client with fake adb on PATH: connected authorized local Android discovery, configure, sessions, detail, PNG screenshots, key input and subscription cancellation. No boot/shutdown, emulator creation, iOS, SSH/EAS, tool installation, H264 video, full detail/settings or action parity; unsupported operations return typed reasons. Per-subscription polling only while subscribed; no idle adb process. Desktop with installed decoder does not fall back to PNG."
     },
     "device.close": {
-      "status": "skip",
+      "status": "partial",
       "priority": "P2",
-      "note": "Needs a device hub (adb, simulators, SSH/EAS hosts), too heavy for this server; answers DeviceToolUnavailableError and no device capability is advertised. tests/admin_reads.rs."
+      "note": "tests/device.rs real t3-protocol client with fake adb on PATH: connected authorized local Android discovery, configure, sessions, detail, PNG screenshots, key input and subscription cancellation. No boot/shutdown, emulator creation, iOS, SSH/EAS, tool installation, H264 video, full detail/settings or action parity; unsupported operations return typed reasons. Per-subscription polling only while subscribed; no idle adb process. Desktop with installed decoder does not fall back to PNG."
     },
     "device.configure": {
-      "status": "skip",
+      "status": "partial",
       "priority": "P2",
-      "note": "Needs a device hub (adb, simulators, SSH/EAS hosts), too heavy for this server; answers DeviceToolUnavailableError and no device capability is advertised. tests/admin_reads.rs."
+      "note": "tests/device.rs real t3-protocol client with fake adb on PATH: connected authorized local Android discovery, configure, sessions, detail, PNG screenshots, key input and subscription cancellation. No boot/shutdown, emulator creation, iOS, SSH/EAS, tool installation, H264 video, full detail/settings or action parity; unsupported operations return typed reasons. Per-subscription polling only while subscribed; no idle adb process. Desktop with installed decoder does not fall back to PNG."
     },
     "device.detail": {
-      "status": "skip",
+      "status": "partial",
       "priority": "P2",
-      "note": "Needs a device hub (adb, simulators, SSH/EAS hosts), too heavy for this server; answers DeviceToolUnavailableError and no device capability is advertised. tests/admin_reads.rs."
+      "note": "tests/device.rs real t3-protocol client with fake adb on PATH: connected authorized local Android discovery, configure, sessions, detail, PNG screenshots, key input and subscription cancellation. No boot/shutdown, emulator creation, iOS, SSH/EAS, tool installation, H264 video, full detail/settings or action parity; unsupported operations return typed reasons. Per-subscription polling only while subscribed; no idle adb process. Desktop with installed decoder does not fall back to PNG."
     },
     "device.easAccount": {
-      "status": "skip",
+      "status": "partial",
       "priority": "P2",
-      "note": "Needs Expo/EAS device hosts; answers DeviceEasAccountError. tests/admin_reads.rs."
+      "note": "tests/device.rs real t3-protocol client with fake adb on PATH: connected authorized local Android discovery, configure, sessions, detail, PNG screenshots, key input and subscription cancellation. No boot/shutdown, emulator creation, iOS, SSH/EAS, tool installation, H264 video, full detail/settings or action parity; unsupported operations return typed reasons. Per-subscription polling only while subscribed; no idle adb process. Desktop with installed decoder does not fall back to PNG."
     },
     "device.list": {
-      "status": "skip",
+      "status": "partial",
       "priority": "P2",
-      "note": "Needs a device hub (adb, simulators, SSH/EAS hosts), too heavy for this server; answers DeviceToolUnavailableError and no device capability is advertised. tests/admin_reads.rs."
+      "note": "tests/device.rs real t3-protocol client with fake adb on PATH: connected authorized local Android discovery, configure, sessions, detail, PNG screenshots, key input and subscription cancellation. No boot/shutdown, emulator creation, iOS, SSH/EAS, tool installation, H264 video, full detail/settings or action parity; unsupported operations return typed reasons. Per-subscription polling only while subscribed; no idle adb process. Desktop with installed decoder does not fall back to PNG."
     },
     "device.open": {
-      "status": "skip",
+      "status": "partial",
       "priority": "P2",
-      "note": "Needs a device hub (adb, simulators, SSH/EAS hosts), too heavy for this server; answers DeviceToolUnavailableError and no device capability is advertised. tests/admin_reads.rs."
+      "note": "tests/device.rs real t3-protocol client with fake adb on PATH: connected authorized local Android discovery, configure, sessions, detail, PNG screenshots, key input and subscription cancellation. No boot/shutdown, emulator creation, iOS, SSH/EAS, tool installation, H264 video, full detail/settings or action parity; unsupported operations return typed reasons. Per-subscription polling only while subscribed; no idle adb process. Desktop with installed decoder does not fall back to PNG."
     },
     "device.shutdown": {
       "status": "skip",
@@ -82,9 +82,9 @@
       "note": "No client call site in inventory."
     },
     "device.testHost": {
-      "status": "skip",
+      "status": "partial",
       "priority": "P2",
-      "note": "Needs a device hub (adb, simulators, SSH/EAS hosts), too heavy for this server; answers DeviceToolUnavailableError and no device capability is advertised. tests/admin_reads.rs."
+      "note": "tests/device.rs real t3-protocol client with fake adb on PATH: connected authorized local Android discovery, configure, sessions, detail, PNG screenshots, key input and subscription cancellation. No boot/shutdown, emulator creation, iOS, SSH/EAS, tool installation, H264 video, full detail/settings or action parity; unsupported operations return typed reasons. Per-subscription polling only while subscribed; no idle adb process. Desktop with installed decoder does not fall back to PNG."
     },
     "filesystem.browse": {
       "status": "done",
@@ -877,9 +877,9 @@
       "note": "No client call site in inventory."
     },
     "subscribeDeviceState": {
-      "status": "skip",
+      "status": "partial",
       "priority": "P2",
-      "note": "Needs a device hub (adb, simulators, SSH/EAS hosts), too heavy for this server; answers DeviceToolUnavailableError and no device capability is advertised. tests/admin_reads.rs."
+      "note": "tests/device.rs real t3-protocol client with fake adb on PATH: connected authorized local Android discovery, configure, sessions, detail, PNG screenshots, key input and subscription cancellation. No boot/shutdown, emulator creation, iOS, SSH/EAS, tool installation, H264 video, full detail/settings or action parity; unsupported operations return typed reasons. Per-subscription polling only while subscribed; no idle adb process. Desktop with installed decoder does not fall back to PNG."
     },
     "subscribeDiscoveredLocalServers": {
       "status": "done",

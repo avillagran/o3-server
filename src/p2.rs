@@ -22,6 +22,7 @@ pub fn not_implemented(message: impl Into<String>) -> Value {
 /// Mutable state of the surfaces below. Every field is empty until a client uses the feature.
 #[derive(Default)]
 pub struct Runtime {
+    pub device: crate::device::Runtime,
     pub setup: crate::setup::Registry,
     pub preview: crate::preview::Manager,
 }
@@ -56,6 +57,7 @@ pub async fn call(s: &Arc<State>, tag: &str, p: Value) -> Reply {
 
 /// Live subscriptions of this module. All are bounded: one chunk outstanding per subscriber.
 pub enum Stream {
+    Device(crate::device::Cursor),
     Setup(crate::setup::Cursor),
     Preview(crate::preview::Cursor),
     Servers(crate::preview::Servers),
@@ -91,7 +93,7 @@ pub fn open(s: &Arc<State>, tag: &str, p: &Value) -> Result<Stream, Value> {
                 waiting: false,
             })
         }
-        "subscribeDeviceState" => return Err(crate::misc::device_unavailable()),
+        "subscribeDeviceState" => Stream::Device(crate::device::subscribe(s)),
         "subscribeDiscoveredLocalServers" => {
             Stream::Servers(crate::preview::Servers::new(&p["configuredUrls"]))
         }
@@ -102,6 +104,7 @@ pub fn open(s: &Arc<State>, tag: &str, p: &Value) -> Result<Stream, Value> {
 impl Stream {
     pub fn next(&mut self, s: &State) -> crate::terminal::Step {
         match self {
+            Stream::Device(c) => c.next(),
             Stream::Setup(c) => c.next(s),
             Stream::Preview(c) => c.next(s),
             Stream::Servers(c) => c.next(s),
@@ -116,6 +119,7 @@ impl Stream {
     }
     pub fn ack(&mut self) {
         match self {
+            Stream::Device(c) => c.ack(),
             Stream::Setup(c) => c.ack(),
             Stream::Preview(c) => c.ack(),
             Stream::Servers(c) => c.ack(),
@@ -124,6 +128,7 @@ impl Stream {
     }
     pub fn is_full(&self) -> bool {
         match self {
+            Stream::Device(c) => c.is_full(),
             Stream::Setup(c) => c.is_full(),
             Stream::Preview(c) => c.is_full(),
             Stream::Servers(c) => c.is_full(),

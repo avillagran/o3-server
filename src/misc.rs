@@ -31,6 +31,9 @@ pub fn handles(tag: &str) -> bool {
 }
 
 pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
+    if tag.starts_with("device.") {
+        return crate::device::call(s, tag, p).await;
+    }
     match tag {
         "server.getHostResources" => host_resources().await,
         "server.checkOtlpEndpoint" => check_otlp(p).await,

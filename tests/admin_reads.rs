@@ -318,7 +318,6 @@ fn admin_reads_project_helpers_and_unavailable_surfaces() {
 
     // Surfaces that need a runtime this server does not have answer T3's typed errors.
     for (tag, payload, error, reason) in [
-        ("device.list", json!({}), "DeviceToolUnavailableError", None),
         (
             "device.detail",
             json!({"hostId":"local","deviceId":"d"}),
@@ -356,11 +355,5 @@ fn admin_reads_project_helpers_and_unavailable_surfaces() {
             assert_eq!(error_of(&e)["reason"], reason, "{tag}");
         }
     }
-    let device = raw_exit(&server, "subscribeDeviceState", json!({}));
-    assert_eq!(
-        error_of(&device)["_tag"],
-        "DeviceToolUnavailableError",
-        "{device}"
-    );
     let _ = std::fs::remove_dir_all(&claude);
 }

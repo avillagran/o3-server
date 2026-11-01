@@ -154,7 +154,7 @@ fn upgrade(state: Arc<State>, session: Value, mut request: Request<Incoming>) ->
     response
 }
 
-async fn route(state: Arc<State>, request: Request<Incoming>) -> Result<Reply, Infallible> {
+async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Reply, Infallible> {
     let path = request.uri().path().to_owned();
     Ok(match (request.method().clone(), path.as_str()) {
         (Method::GET, "/.well-known/t3/environment") => json_reply(
@@ -171,6 +171,93 @@ async fn route(state: Arc<State>, request: Request<Incoming>) -> Result<Reply, I
         }
         (Method::GET | Method::HEAD, p) if p.starts_with(crate::assets::ASSET_PREFIX) => {
             Box::pin(crate::assets::serve(&state, &request)).await
+        }
+        (_, p) if p.starts_with("/api/device-hub/") => {
+            let session = query(&request, "wsTicket")
+                .and_then(|t| state.ticket_session(&t, "media"))
+                .or_else(|| bearer(&request).and_then(|t| state.session(t)));
+            let Some(session) = session else {
+                return Ok(unauthorized());
+            };
+            let socket = path == "/api/device-hub/vendor/serve-emu/ws";
+            if let Some(r) = scope_reply(
+                &session,
+                if socket {
+                    "orchestration:operate"
+                } else {
+                    "orchestration:read"
+                },
+            ) {
+                return Ok(r);
+            }
+            let target = json!({"deviceId":query(&request,"device").unwrap_or_default(),"hostId":query(&request,"hostId").unwrap_or_else(||"local".into())});
+            let serial = match crate::device::id(&target) {
+                Ok(s) => s.to_string(),
+                Err(e) => return Ok(json_reply(StatusCode::BAD_REQUEST, e.to_string())),
+            };
+            if socket && request.method() == Method::GET {
+                let Some(key) = request
+                    .headers()
+                    .get("sec-websocket-key")
+                    .and_then(|v| v.to_str().ok())
+                else {
+                    return Ok(json_reply(StatusCode::BAD_REQUEST, "{}".into()));
+                };
+                let accept =
+                    tokio_tungstenite::tungstenite::handshake::derive_accept_key(key.as_bytes());
+                let upgrade = hyper::upgrade::on(&mut request);
+                tokio::spawn(async move {
+                    use futures_util::{SinkExt, StreamExt};
+                    if let Ok(io) = upgrade.await {
+                        let mut ws =
+                            WebSocketStream::from_raw_socket(TokioIo::new(io), Role::Server, None)
+                                .await;
+                        // Input-only socket; snapshots remain available over HTTP. No video worker.
+                        while let Some(Ok(message)) = ws.next().await {
+                            if message.is_close() {
+                                break;
+                            }
+                            if let Ok(text) = message.to_text() {
+                                if text.len() > 4096 {
+                                    break;
+                                }
+                                if let Ok(v) = serde_json::from_str::<Value>(text) {
+                                    if let Err(e) = crate::device::input(&serial, &v).await {
+                                        let _ = ws
+                                            .send(tokio_tungstenite::tungstenite::Message::Text(
+                                                e.to_string().into(),
+                                            ))
+                                            .await;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+                Response::builder()
+                    .status(StatusCode::SWITCHING_PROTOCOLS)
+                    .header("upgrade", "websocket")
+                    .header("connection", "Upgrade")
+                    .header("sec-websocket-accept", accept)
+                    .body(body::full(""))
+                    .unwrap()
+            } else if path == "/api/device-hub/vendor/serve-emu/api/screenshot"
+                && request.method() == Method::POST
+            {
+                match crate::device::adb(&["-s", &serial, "exec-out", "screencap", "-p"]).await {
+                    Ok(png) if png.starts_with(b"\x89PNG\r\n\x1a\n") => Response::builder()
+                        .header("content-type", "image/png")
+                        .header("cache-control", "no-store")
+                        .body(body::full(png))
+                        .unwrap(),
+                    _ => json_reply(
+                        StatusCode::BAD_GATEWAY,
+                        json!({"reason":"ADB screenshot failed"}).to_string(),
+                    ),
+                }
+            } else {
+                json_reply(StatusCode::NOT_IMPLEMENTED,json!({"reason":"Only local Android screenshots and input are supported; H264 video and iOS are unavailable"}).to_string())
+            }
         }
         (_, "/ws") => {
             if query(&request, "orchestrationProtocol").as_deref() != Some("2") {
