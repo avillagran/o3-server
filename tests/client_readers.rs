@@ -93,6 +93,45 @@ fn real_builders_and_readers_consume_server_output() {
     )["fields"]
         .is_array());
     assert!(t3_protocol::storage_settings::capabilities(&config).is_object());
+    for key in [
+        "storageCleanup",
+        "storageCleanupRun",
+        "worktreesDirectory",
+        "projectWorktreeCleanup",
+    ] {
+        assert_eq!(
+            t3_protocol::storage_settings::capabilities(&config)[key],
+            true,
+            "{key}"
+        );
+    }
+    let project = json!({"id":"p","workspaceRoot":workspace});
+    let patch = t3_protocol::scoped_settings::write_patch(
+        &json!({"action":"update","key":"sidebarAutoSettleAfterDays","value":7}),
+        &config,
+        &raw,
+        Some(&project),
+        true,
+    )
+    .unwrap();
+    let saved = c.rpc("server.updateSettings", patch).unwrap();
+    let (effective, _, _) = t3_protocol::scoped_settings::effective(&saved, Some(&project), None);
+    assert_eq!(effective["sidebarAutoSettleAfterDays"], 7);
+    for (key, value) in [
+        ("worktreesDirectory", json!(s.dir.join("trees"))),
+        ("storageCleanup.logsAfterDays", json!(14)),
+    ] {
+        let patch = t3_protocol::scoped_settings::write_patch(
+            &json!({"action":"update","key":key,"value":value}),
+            &config,
+            &raw,
+            None,
+            true,
+        )
+        .unwrap();
+        c.rpc("server.updateSettings", patch).unwrap();
+    }
+    c.rpc("server.runStorageCleanup", json!({})).unwrap();
     use orchestration::{DispatchMode, MessageDispatch};
     orchestration::dispatch(
         &c,

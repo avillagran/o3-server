@@ -746,3 +746,16 @@ OmaBridge's old protocol dependency is patched to a small compatibility facade:
 it reexports the same current library (one FFI implementation), retaining only
 its removed MIT bridge_catalog module from `8c80c4d`. No client reader is copied
 or replaced by the facade. The current library is pinned by revision.
+
+### Capability gates
+
+The descriptor (also embedded in getConfig and subscribeServerConfig) now advertises
+attachment/file uploads and inline context (`asset_kinds`, `provider_input`), PR
+reads/checks/stack actions (`pull_requests`, `vcs_compat`), settlement and ordering
+(`thread_commands`), storage/scoped settings (`client_readers`), quota/themes
+(`server_config`), OTLP probes (`admin_reads`) and command output (`command_output`).
+The real scoped writer now writes and resolves a project override, changes the
+worktree directory and storage policy, and invokes cleanup. These are gate and
+round-trip evidence, not complete policy-effect evidence: manual cleanup still
+only removes old logs, so storage policy/worktree collection remains a consumed
+gap and the config/settings rows remain partial.
