@@ -360,9 +360,10 @@ pub fn ensure_started(s: &Arc<State>) {
             let s = cleanup_state.clone();
             let _ = tokio::task::spawn_blocking(move || {
                 let enabled = crate::settings::read(&s).is_ok_and(|v| {
-                    v["storageCleanup"]
-                        .as_object()
-                        .is_some_and(|r| r.values().any(|v| v.is_number() || v == true))
+                    v["worktreeCleanup"]["mode"] == "custom"
+                        || v["storageCleanup"]
+                            .as_object()
+                            .is_some_and(|r| r.values().any(|v| v.is_number() || v == true))
                         || v["projectSettingsOverrides"].as_object().is_some_and(|r| {
                             r.values().any(|v| v["worktreeCleanup"]["mode"] == "custom")
                         })

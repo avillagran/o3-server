@@ -63,6 +63,14 @@ impl Ops {
             .filter(|(until, r)| *until > now && r["visible"] == true)
             .count()
     }
+    pub(crate) fn client_low_power(&self) -> bool {
+        let now = now_ms();
+        self.clients
+            .lock()
+            .unwrap()
+            .values()
+            .any(|(until, v)| *until > now && v["visible"] == true && v["lowPowerMode"] == "true")
+    }
     pub fn report_version(&self) -> (u64, Option<Value>) {
         self.report.lock().unwrap().clone()
     }
@@ -114,8 +122,16 @@ fn report_activity(s: &State, p: &Value) -> Reply {
     let ttl = p["ttlMs"]
         .as_f64()
         .filter(|t| *t >= 0.0)
-        .unwrap_or(60_000.0)
-        .min(600_000.0) as i64;
+        .unwrap_or_else(|| {
+            crate::settings::read(s)
+                .map(|v| {
+                    crate::settings::background_resolved(&v)["idleClientTtl"]
+                        .as_f64()
+                        .unwrap_or(45000.0)
+                })
+                .unwrap_or(45000.0)
+        })
+        .clamp(1000.0, 120000.0) as i64;
     let mut clients = s.streams.ops.clients.lock().unwrap();
     let now = now_ms();
     clients.retain(|_, (until, _)| *until > now);

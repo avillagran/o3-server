@@ -852,3 +852,22 @@ It verifies collection of clean/deleted trees and old log/browser files while
 retaining dirty, pinned, shared and running trees. Cleanup capability gates are
 now enabled. This closes policy execution; the broader settings rows remain
 partial for activity and source-control/review generation.
+
+### Git and power activity execution (2026-11-01)
+
+Background profiles now schedule real serialized `git fetch --all --prune` for
+registered projects. The collector reads Linux battery status/capacity and the
+current login session's LockedHint on the configured active/idle monitor interval;
+unknown host observations do not invent a lock or battery state. Profile pause
+flags suspend Git/provider work for host lock, low battery, battery discharge,
+and unexpired visible client low-power reports. Zero intervals disable the job.
+Client TTL defaults follow the profile and are clamped to 1–120 seconds.
+
+`tests/activity_git.rs` writes profiles through the real native settings writer,
+verifies their reader projection, and proves actual remote-ref advancement after
+battery pause/resume using isolated repositories. Fetch leaves HEAD unchanged.
+`tests/background_profile.rs` uses the actual ClientActivity builder to pause and
+resume health probes as well as checking version output with the provider reader.
+The cleanup timer also recognizes a global custom worktree policy.
+Settings/config remain partial for source-control/review generation and the final
+independent reader sweep.

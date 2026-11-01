@@ -83,4 +83,17 @@ fn profile_controls_real_health_probes_and_readers_observe_versions() {
         assert!(Instant::now() < end);
         std::thread::sleep(Duration::from_millis(10));
     }
+    // A real activity builder pauses ongoing probes until the client clears low-power mode.
+    let mut activity=t3_protocol::api::server::ClientActivity::from_json(&json!({"clientId":"reader","clientKind":"web","visible":true,"focused":true,"recentlyInteracted":true,"scopes":[{"type":"provider-status"}],"observedAt":"2026-11-01T00:00:00Z","lowPowerMode":"true","ttlMs":10000})).unwrap();
+    t3_protocol::api::server::report_client_activity(&c, &activity).unwrap();
+    let before = polls.load(Ordering::SeqCst);
+    std::thread::sleep(Duration::from_millis(1400));
+    assert_eq!(polls.load(Ordering::SeqCst), before);
+    activity.low_power_mode = Some("false".into());
+    t3_protocol::api::server::report_client_activity(&c, &activity).unwrap();
+    let end = Instant::now() + Duration::from_secs(5);
+    while polls.load(Ordering::SeqCst) == before {
+        assert!(Instant::now() < end);
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }

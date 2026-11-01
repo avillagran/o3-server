@@ -91,34 +91,134 @@ pub(crate) fn finish(
     refresh(db, tid, t, at)
 }
 
-/// Provider health probes follow the effective activity profile even without a quota subscriber.
-/// No automatic git fetch or host-power monitoring is implied by this timer.
+/// Profile-controlled provider/git work, suspended by observed power/lock state.
 pub(crate) async fn refresh_health(s: std::sync::Arc<crate::store::State>) {
-    let mut changes = s.changed.subscribe();
-    let interval = |s: &crate::store::State| {
-        crate::settings::read(s)
-            .ok()
-            .and_then(|v| v["providerHealthRefreshInterval"].as_u64())
-            .unwrap_or(300_000)
-    };
-    let delay = |ms: u64| {
-        std::time::Duration::from_millis(if ms == 0 { u64::MAX / 2 } else { ms.max(1000) })
-    };
-    let mut ms = interval(&s);
-    let mut next = tokio::time::Instant::now() + delay(ms);
+    use std::time::Duration;
+    let delay = |ms: u64| Duration::from_millis(if ms == 0 { u64::MAX / 2 } else { ms.max(1000) });
+    let mut prior = Value::Null;
+    let mut health = tokio::time::Instant::now();
+    let mut fetch = health;
+    let mut power_at = health;
+    let mut power = (false, false, false);
     loop {
-        tokio::select! {
-            _=tokio::time::sleep_until(next)=>{
-                let provider=s.provider.lock().unwrap().clone();
-                if let Some(p)=provider {let _=tokio::time::timeout(std::time::Duration::from_secs(20),p.refresh()).await;s.notify();}
-                crate::setup::check_versions(&s).await;
-                next=tokio::time::Instant::now()+delay(ms);
+        let settings = crate::settings::read(&s).unwrap_or_default();
+        let profile = crate::settings::background_resolved(&settings);
+        let now = tokio::time::Instant::now();
+        if prior != profile {
+            health = now
+                + delay(
+                    profile["providerHealthRefreshInterval"]
+                        .as_u64()
+                        .unwrap_or(300000),
+                );
+            fetch = now
+                + delay(
+                    profile["automaticGitFetchInterval"]
+                        .as_u64()
+                        .unwrap_or(300000),
+                );
+            power_at = now;
+            prior = profile.clone();
+        }
+        if now >= power_at {
+            power = host_power().await;
+            let key = if s.streams.ops.active_clients() > 0 {
+                "hostPowerMonitorActiveInterval"
+            } else {
+                "hostPowerMonitorIdleInterval"
+            };
+            power_at = now + delay(profile[key].as_u64().unwrap_or(30000));
+        }
+        let paused = profile["pauseWhenHostLocked"] == true && power.0
+            || profile["pauseWhenHostLowPower"] == true && power.1
+            || profile["pauseWhenOnBattery"] == true && power.2
+            || profile["pauseWhenClientLowPower"] == true && s.streams.ops.client_low_power();
+        if !paused && now >= health {
+            let provider = s.provider.lock().unwrap().clone();
+            if let Some(p) = provider {
+                let _ = tokio::time::timeout(Duration::from_secs(20), p.refresh()).await;
             }
-            result=changes.changed()=>{
-                if result.is_err(){return}
-                let current=interval(&s);
-                if current!=ms{ms=current;next=tokio::time::Instant::now()+delay(ms);}
+            crate::setup::check_versions(&s).await;
+            s.notify();
+            health = tokio::time::Instant::now()
+                + delay(
+                    profile["providerHealthRefreshInterval"]
+                        .as_u64()
+                        .unwrap_or(300000),
+                );
+        }
+        if !paused && now >= fetch {
+            let roots = crate::projects::snapshot(&s)
+                .ok()
+                .and_then(|v| v["projects"].as_array().cloned())
+                .unwrap_or_default();
+            let mut seen = std::collections::HashSet::new();
+            for p in roots {
+                if let Some(root) = p["workspaceRoot"]
+                    .as_str()
+                    .filter(|r| seen.insert((*r).to_owned()))
+                {
+                    let root = std::path::Path::new(root);
+                    let _guard = crate::proc::lock_repo(root).await;
+                    let _ = crate::proc::git(
+                        root,
+                        &["fetch", "--all", "--prune"],
+                        crate::proc::Opts {
+                            timeout: Duration::from_secs(20),
+                            ..crate::proc::Opts::READ
+                        },
+                    )
+                    .await;
+                }
+            }
+            s.notify();
+            fetch = tokio::time::Instant::now()
+                + delay(
+                    profile["automaticGitFetchInterval"]
+                        .as_u64()
+                        .unwrap_or(300000),
+                );
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+async fn host_power() -> (bool, bool, bool) {
+    let root = std::env::var_os("O3_POWER_SUPPLY_DIRECTORY")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| "/sys/class/power_supply".into());
+    let mut battery = false;
+    let mut low = false;
+    if let Ok(entries) = std::fs::read_dir(root) {
+        for e in entries.flatten() {
+            let read = |name: &str| {
+                std::fs::read_to_string(e.path().join(name))
+                    .unwrap_or_default()
+                    .trim()
+                    .to_owned()
+            };
+            if read("type") == "Battery" && read("status") == "Discharging" {
+                battery = true;
+                low |= read("capacity").parse::<u8>().is_ok_and(|v| v <= 20);
             }
         }
     }
+    let mut locked = false;
+    if let Ok(session) = std::env::var("XDG_SESSION_ID") {
+        if !session.is_empty() && !session.starts_with('-') {
+            locked = crate::proc::run(
+                "loginctl",
+                std::path::Path::new("/"),
+                &["show-session", &session, "-p", "LockedHint", "--value"],
+                crate::proc::Opts {
+                    timeout: std::time::Duration::from_secs(2),
+                    cap: 1024,
+                    allow_truncate: false,
+                },
+                &[],
+            )
+            .await
+            .is_ok_and(|o| o.ok() && o.text().trim() == "yes");
+        }
+    }
+    (locked, low, battery)
 }

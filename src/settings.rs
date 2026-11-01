@@ -713,6 +713,18 @@ fn background_preset(profile: &str) -> Value {
     let battery = profile == "battery-saver";
     json!({"automaticGitFetchInterval":if performance {15000}else if battery {0}else{300000},"providerHealthRefreshInterval":if performance {60000}else if battery {900000}else{300000},"hostPowerMonitorActiveInterval":if battery {60000}else{30000},"hostPowerMonitorIdleInterval":if performance {120000}else if battery {600000}else{300000},"idleClientTtl":45000,"pauseWhenHostLocked":true,"pauseWhenHostLowPower":!performance,"pauseWhenClientLowPower":!performance,"pauseWhenOnBattery":battery})
 }
+pub(crate) fn background_resolved(v: &Value) -> Value {
+    let activity = &v["backgroundActivity"];
+    let mut resolved = background_preset(if activity["profile"] == "custom" {
+        activity["baseProfile"].as_str().unwrap_or("balanced")
+    } else {
+        activity["profile"].as_str().unwrap_or("balanced")
+    });
+    if activity["profile"] == "custom" {
+        merge(&mut resolved, &activity["overrides"]);
+    }
+    resolved
+}
 fn normalize_background(v: &mut Value, patch: &Value) -> Result<(), String> {
     let mut activity = v["backgroundActivity"].clone();
     if patch.get("backgroundActivity").is_none()
