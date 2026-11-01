@@ -9,7 +9,7 @@ The pilot dir is ~/.local/share/o3-pilot (override: O3_PILOT_DIR). Start refuses
 existing dir. The T3 profile is only read: its statev2.sqlite is opened read-only by
 `o3-server import`, and nothing else under it is opened, written or signalled.
 """
-import argparse, json, os, pathlib, signal, socket, subprocess, sys, time
+import argparse, hashlib, json, os, pathlib, signal, socket, subprocess, sys, time
 
 home = pathlib.Path(os.environ.get("HOME", "/"))
 parser = argparse.ArgumentParser(prog="pilot", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -123,33 +123,43 @@ if not args.resume and not args.no_import:
     else:
         print(f"pilot: no T3 history at {source}; starting empty")
 
-log = open(pilot / "server.log", "ab")
-# --port 0: the kernel picks a free port, so it can never collide with T3's.
 serve = [binary, "serve", "--host", "127.0.0.1", "--port", "0", "--bridge-state-dir", str(pilot / "bridge")]
 if args.bridge_relay != "none":
     serve += ["--bridge-relay", args.bridge_relay, "--bridge-bind", "0.0.0.0:0"]
-process = subprocess.Popen(serve, env=env, stdin=subprocess.DEVNULL,
-                           stdout=log, stderr=log, start_new_session=True)
 runtime = profile / "userdata" / "server-runtime.json"
+runtime.unlink(missing_ok=True)
+# A transient user unit outlives this shell: inside an agent or terminal session cgroup, the
+# server would receive SIGTERM when that session ends.
+default_dir = pilot == home / ".local/share/o3-pilot"
+unit = "o3-pilot" if default_dir else "o3-pilot-" + hashlib.sha256(str(pilot).encode()).hexdigest()[:12]
+subprocess.run(["systemctl", "--user", "reset-failed", unit], capture_output=True)
+log_path = pilot / "server.log"
+started = subprocess.run(["systemd-run", "--user", f"--unit={unit}", "--collect", "--quiet",
+                          f"--property=StandardOutput=append:{log_path}", f"--property=StandardError=append:{log_path}",
+                          "--setenv=T3CODE_HOME=" + str(profile), "--setenv=TMPDIR=" + str(pilot / "tmp"),
+                          "--setenv=HOME=" + str(home), "--setenv=PATH=" + os.environ.get("PATH", ""), *serve],
+                         capture_output=True, text=True)
+if started.returncode:
+    fail(f"systemd-run failed: {started.stderr.strip()}")
 deadline = time.monotonic() + 600  # first start on a large history builds indexes
 origin = None
 while time.monotonic() < deadline:
-    if process.poll() is not None:
-        fail(f"server exited early; see {pilot / 'server.log'}")
+    if subprocess.run(["systemctl", "--user", "is-active", "--quiet", unit]).returncode and not runtime.exists():
+        time.sleep(0.2)
     try:
         info = json.loads(runtime.read_text())
-        if info.get("pid") == process.pid:
-            with socket.create_connection(("127.0.0.1", info["port"]), timeout=1):
-                origin = info["origin"]
-                break
+        with socket.create_connection(("127.0.0.1", info["port"]), timeout=1):
+            origin = info["origin"]
+            server_pid = info["pid"]
+            break
     except (OSError, ValueError, KeyError):
         pass
     time.sleep(0.1)
 if not origin:
-    process.terminate()
+    subprocess.run(["systemctl", "--user", "stop", unit], capture_output=True)
     fail(f"server did not become ready; see {pilot / 'server.log'}")
 
-state_file.write_text(json.dumps({"pid": process.pid, "origin": origin, "bin": binary, "t3Home": str(t3_home),
+state_file.write_text(json.dumps({"pid": server_pid, "origin": origin, "bin": binary, "t3Home": str(t3_home),
                                   "startedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}) + "\n")
 state_file.chmod(0o600)
 try:
@@ -158,7 +168,7 @@ except (ValueError, KeyError):
     credential = None
 
 print(f"""
-o3-server pilot running (pid {process.pid})
+o3-server pilot running (pid {server_pid})
   server   {origin}
   profile  {profile}   (own T3CODE_HOME; your T3 at {t3_home} is untouched)
   log      {pilot / 'server.log'}
