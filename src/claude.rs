@@ -13,6 +13,7 @@ const MAX_FRAME: usize = 1024 * 1024;
 const MAX_SESSIONS: usize = 16;
 pub struct ClaudeProvider {
     binary: PathBuf,
+    metadata: Mutex<Value>,
     sessions: std::sync::Arc<Mutex<HashMap<String, Session>>>,
 }
 struct Session {
@@ -32,6 +33,7 @@ impl ClaudeProvider {
     pub fn new(binary: PathBuf) -> Self {
         Self {
             binary,
+            metadata: Mutex::new(json!({})),
             sessions: std::sync::Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -188,9 +190,11 @@ impl ClaudeProvider {
                             let updated=pending.remove(native).ok_or("unknown Claude request")?;
                             let mut tool_input=updated["input"].clone();
                             let mut decision=decision;
-                            if updated["tool_name"]=="AskUserQuestion" && answers.is_some() {
-                                tool_input["answers"]=sdk_answers(answers.as_ref().unwrap())?;
-                                decision=json!("accept");
+                            if updated["tool_name"]=="AskUserQuestion" {
+                                if let Some(answers)=answers.as_ref() {
+                                    tool_input["answers"]=sdk_answers(answers)?;
+                                    decision=json!("accept");
+                                }
                             }
                             let mut response=permission_response(native,&decision,feedback.as_deref(),tool_input);
                             if decision=="acceptForSession" {
@@ -205,6 +209,15 @@ impl ClaudeProvider {
                     },
                     frame=session.frame()=>{
                         let v=frame?;
+                        if v["type"]=="system" && v["subtype"]=="init" {
+                            let mut metadata=self.metadata.lock().unwrap();
+                            for (native,field) in [("slash_commands","slashCommands"),("skills","skills")] {
+                                if let Some(entries)=v[native].as_array() {
+                                    metadata[field]=json!(entries.iter().map(|entry| if let Some(name)=entry.as_str() {json!({"name":name,"description":""})} else {entry.clone()}).collect::<Vec<_>>());
+                                }
+                            }
+                            if let Some(version)=v["claude_code_version"].as_str() {metadata["version"]=json!(version);}
+                        }
                         if let Some(id)=v["session_id"].as_str() { session.native=id.into(); }
                         if v["type"]=="control_response" && v["response"]["subtype"]=="error" { return Err(format!("Claude control rejected: {}",v["response"]["error"])); }
                         if v["type"]=="control_request" {
@@ -353,6 +366,14 @@ impl Session {
     }
 }
 impl Provider for ClaudeProvider {
+    fn config(&self) -> Vec<Value> {
+        let mut descriptor = config(true);
+        for (key, value) in self.metadata.lock().unwrap().as_object().unwrap() {
+            descriptor[key] = value.clone();
+        }
+        vec![descriptor]
+    }
+
     fn execute<'a>(
         &'a self,
         input: RunInput,

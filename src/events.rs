@@ -64,9 +64,28 @@ pub(crate) fn shell_thread(db: &Connection, t: &Value) -> Result<Value> {
     t["latestVisibleMessage"] = m
         .map(|m| json!({"id":m["id"],"role":m["role"],"text":m["text"],"updatedAt":m["updatedAt"]}))
         .unwrap_or(Value::Null);
-    t["latestUserMessageAt"] = Value::Null;
+    let latest_user: Option<String> = db.query_row("SELECT json_extract(body,'$.createdAt') FROM records WHERE kind='messages' AND thread_id=? AND json_extract(body,'$.role')='user' ORDER BY rowid DESC LIMIT 1",[tid],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
+    t["latestUserMessageAt"] = json!(latest_user);
+    t["latestUserAuthoredMessageAt"] = json!(latest_user);
+    for field in [
+        "latestRunRequestedAt",
+        "latestRunStartedAt",
+        "latestRunCompletedAt",
+        "activityRunStartedAt",
+        "activityRunStatus",
+        "lastError",
+    ] {
+        t[field] = Value::Null;
+    }
+    t["latestRunStopRequested"] = json!(false);
     if let Some(run) = list(db, "runs", Some(tid), 1)?.pop() {
         t["latestRunId"] = run["id"].clone();
+        t["latestRunRequestedAt"] = run["requestedAt"].clone();
+        t["latestRunStartedAt"] = run["startedAt"].clone();
+        t["latestRunCompletedAt"] = run["completedAt"].clone();
+        t["activityRunStatus"] = run["status"].clone();
+        t["activityRunStartedAt"] = run["startedAt"].clone();
+        t["lastError"] = run["error"].clone();
         t["status"] = run["status"].clone();
         if matches!(
             run["status"].as_str(),

@@ -45,6 +45,7 @@ for line in sys.stdin:
     path = json.JSONDecoder().raw_decode(content[2]['text'].split('available at ',1)[1])[0]
     assert Path(path).read_text() == 'file-proof'
     if claude:
+        print(json.dumps({'type':'system','subtype':'init','session_id':'native','slash_commands':['compact'],'skills':['test-skill'],'claude_code_version':'fixture'}),flush=True)
         print(json.dumps({'type':'stream_event','event':{'type':'content_block_delta','delta':{'type':'text_delta','text':'verified-input'}}}),flush=True)
         print(json.dumps({'type':'result','subtype':'success','session_id':'native','usage':{}}),flush=True)
     else:

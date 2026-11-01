@@ -358,7 +358,11 @@ pub struct Providers {
 }
 impl Provider for Providers {
     fn config(&self) -> Vec<serde_json::Value> {
-        let mut result = vec![crate::claude::config(self.claude.is_some())];
+        let mut result = self
+            .claude
+            .as_ref()
+            .map(|p| p.config())
+            .unwrap_or_else(|| vec![crate::claude::config(false)]);
         result.extend(self.codex.config());
         result
     }

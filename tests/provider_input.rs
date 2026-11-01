@@ -49,6 +49,15 @@ fn uploaded_images_files_and_context_reach_both_native_transports() {
                     .unwrap()
                     .iter()
                     .any(|m| m["text"] == "verified-input"));
+                if instance == "claudeAgent" {
+                    let config = c.rpc("server.getConfig", json!({})).unwrap();
+                    assert_eq!(
+                        config["providers"][0]["slashCommands"][0]["name"],
+                        "compact"
+                    );
+                    assert_eq!(config["providers"][0]["skills"][0]["name"], "test-skill");
+                    assert!(config["providers"][0]["models"].as_array().unwrap().len() > 3);
+                }
                 break;
             }
             assert!(Instant::now() < deadline, "{p}");
