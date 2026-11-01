@@ -6,7 +6,7 @@ use serde_json::Value;
 pub const STREAM_ACTION: &str = "git.runStackedAction";
 
 pub fn handles(tag: &str) -> bool {
-    matches!(
+    crate::p2::handles(tag) || matches!(
         tag,
         "projects.mutate"
             | "attachments.createUploadUrl"
@@ -65,6 +65,7 @@ pub async fn call(s: &State, tag: &str, p: Value) -> Result<Value, Value> {
         "orchestration.getArchivedShellSnapshot" => threadq::archived_shell(s),
         "orchestration.getTurnItem" => threadq::turn_item(s, &p),
         "orchestration.getThreadProjection" => threadq::thread_projection(s, &p),
+        _ if crate::p2::handles(tag) => crate::p2::call(s, tag, p).await,
         _ => Err(
             serde_json::json!({"_tag":"RpcNotImplemented","message":format!("o3-server does not implement {tag}")}),
         ),

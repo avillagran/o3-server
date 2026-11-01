@@ -97,9 +97,9 @@
       "note": "Real-client test: file/directory/null, header MIME sniff for extensionless files, batch limit of 64."
     },
     "git.preparePullRequestThread": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "tests/pull_requests.rs: fetches pull/N/head from origin into refs/o3/pull/N, local mode refuses a dirty tree, worktree mode leaves the root checkout alone. GitHub remotes only."
     },
     "git.resolvePullRequest": {
       "status": "skip",
@@ -422,29 +422,29 @@
       "note": "No client call site in inventory."
     },
     "pullRequests.activity": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "tests/pull_requests.rs: real client against a scripted gh (argv logged; bodies on stdin, never argv). GitHub only; other hosts answer PullRequestUnavailableError(provider-unsupported), missing/signed-out gh cli-missing/cli-unauthenticated. Capabilities advertise only what gh can do (no diff, no thread resolve, no comment edit)."
     },
     "pullRequests.changeBreakdown": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "tests/pull_requests.rs: real client against a scripted gh (argv logged; bodies on stdin, never argv). GitHub only; other hosts answer PullRequestUnavailableError(provider-unsupported), missing/signed-out gh cli-missing/cli-unauthenticated. Capabilities advertise only what gh can do (no diff, no thread resolve, no comment edit)."
     },
     "pullRequests.checks": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "tests/pull_requests.rs: real client against a scripted gh (argv logged; bodies on stdin, never argv). GitHub only; other hosts answer PullRequestUnavailableError(provider-unsupported), missing/signed-out gh cli-missing/cli-unauthenticated. Capabilities advertise only what gh can do (no diff, no thread resolve, no comment edit)."
     },
     "pullRequests.comment": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "tests/pull_requests.rs: real client against a scripted gh (argv logged; bodies on stdin, never argv). GitHub only; other hosts answer PullRequestUnavailableError(provider-unsupported), missing/signed-out gh cli-missing/cli-unauthenticated. Capabilities advertise only what gh can do (no diff, no thread resolve, no comment edit)."
     },
     "pullRequests.detail": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "tests/pull_requests.rs: real client against a scripted gh (argv logged; bodies on stdin, never argv). GitHub only; other hosts answer PullRequestUnavailableError(provider-unsupported), missing/signed-out gh cli-missing/cli-unauthenticated. Capabilities advertise only what gh can do (no diff, no thread resolve, no comment edit)."
     },
     "pullRequests.diffFileContents": {
       "status": "skip",
@@ -457,9 +457,9 @@
       "note": "No client call site in inventory."
     },
     "pullRequests.filterOptions": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "tests/pull_requests.rs: real client against a scripted gh (argv logged; bodies on stdin, never argv). GitHub only; other hosts answer PullRequestUnavailableError(provider-unsupported), missing/signed-out gh cli-missing/cli-unauthenticated. Capabilities advertise only what gh can do (no diff, no thread resolve, no comment edit)."
     },
     "pullRequests.generateReviewGuide": {
       "status": "skip",
@@ -472,9 +472,9 @@
       "note": "No client call site in inventory."
     },
     "pullRequests.labelCandidates": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "tests/pull_requests.rs: real client against a scripted gh (argv logged; bodies on stdin, never argv). GitHub only; other hosts answer PullRequestUnavailableError(provider-unsupported), missing/signed-out gh cli-missing/cli-unauthenticated. Capabilities advertise only what gh can do (no diff, no thread resolve, no comment edit)."
     },
     "pullRequests.linkedThreads": {
       "status": "skip",
@@ -482,9 +482,9 @@
       "note": "No client call site in inventory."
     },
     "pullRequests.list": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "tests/pull_requests.rs: real client against a scripted gh (argv logged; bodies on stdin, never argv). GitHub only; other hosts answer PullRequestUnavailableError(provider-unsupported), missing/signed-out gh cli-missing/cli-unauthenticated. Capabilities advertise only what gh can do (no diff, no thread resolve, no comment edit)."
     },
     "pullRequests.listStats": {
       "status": "skip",
@@ -507,9 +507,9 @@
       "note": "No client call site in inventory."
     },
     "pullRequests.requestReviewers": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "tests/pull_requests.rs: real client against a scripted gh (argv logged; bodies on stdin, never argv). GitHub only; other hosts answer PullRequestUnavailableError(provider-unsupported), missing/signed-out gh cli-missing/cli-unauthenticated. Capabilities advertise only what gh can do (no diff, no thread resolve, no comment edit)."
     },
     "pullRequests.reviewGuide": {
       "status": "skip",
@@ -517,24 +517,24 @@
       "note": "No client call site in inventory."
     },
     "pullRequests.reviewerCandidates": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "tests/pull_requests.rs: real client against a scripted gh (argv logged; bodies on stdin, never argv). GitHub only; other hosts answer PullRequestUnavailableError(provider-unsupported), missing/signed-out gh cli-missing/cli-unauthenticated. Capabilities advertise only what gh can do (no diff, no thread resolve, no comment edit)."
     },
     "pullRequests.routing": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "tests/pull_requests.rs: real client against a scripted gh (argv logged; bodies on stdin, never argv). GitHub only; other hosts answer PullRequestUnavailableError(provider-unsupported), missing/signed-out gh cli-missing/cli-unauthenticated. Capabilities advertise only what gh can do (no diff, no thread resolve, no comment edit)."
     },
     "pullRequests.routingIdentity": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "tests/pull_requests.rs: real client against a scripted gh (argv logged; bodies on stdin, never argv). GitHub only; other hosts answer PullRequestUnavailableError(provider-unsupported), missing/signed-out gh cli-missing/cli-unauthenticated. Capabilities advertise only what gh can do (no diff, no thread resolve, no comment edit)."
     },
     "pullRequests.runAction": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "tests/pull_requests.rs: real client against a scripted gh (argv logged; bodies on stdin, never argv). GitHub only; other hosts answer PullRequestUnavailableError(provider-unsupported), missing/signed-out gh cli-missing/cli-unauthenticated. Capabilities advertise only what gh can do (no diff, no thread resolve, no comment edit)."
     },
     "pullRequests.setFilesViewed": {
       "status": "skip",
@@ -542,9 +542,9 @@
       "note": "No client call site in inventory."
     },
     "pullRequests.setLabels": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "tests/pull_requests.rs: real client against a scripted gh (argv logged; bodies on stdin, never argv). GitHub only; other hosts answer PullRequestUnavailableError(provider-unsupported), missing/signed-out gh cli-missing/cli-unauthenticated. Capabilities advertise only what gh can do (no diff, no thread resolve, no comment edit)."
     },
     "pullRequests.setReaction": {
       "status": "skip",
@@ -562,9 +562,9 @@
       "note": "No client call site in inventory."
     },
     "pullRequests.submitReview": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "tests/pull_requests.rs: real client against a scripted gh (argv logged; bodies on stdin, never argv). GitHub only; other hosts answer PullRequestUnavailableError(provider-unsupported), missing/signed-out gh cli-missing/cli-unauthenticated. Capabilities advertise only what gh can do (no diff, no thread resolve, no comment edit)."
     },
     "pullRequests.subscribeRefreshes": {
       "status": "skip",

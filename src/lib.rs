@@ -26,6 +26,8 @@ mod claude_projection;
 pub mod codex;
 mod codex_projection;
 pub mod ext;
+pub mod p2;
+pub mod pullreq;
 pub mod files;
 pub mod import;
 pub mod paths;
