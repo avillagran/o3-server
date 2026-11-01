@@ -237,3 +237,16 @@ labelled and does not promote a compatibility row to done.
 | `vcs.pull` | match | Matching rejection shape; not successful feature proof. |
 | `vcs.refreshStatus` | match | Matching sampled shape/order/status; bounded fixture only. |
 | `vcs.switchRef` | match | Matching sampled shape/order/status; bounded fixture only. |
+
+## Current P0 implementation checkpoint
+
+The five P0 method rows remain partial, with explicit current differences in
+compat-status.json / COMPATIBILITY.md: multi-commit launch/workspace side effects;
+shell metadata/repository replacement snapshots; thread field/order/attempt metadata;
+native chat attachments/policies/questions/settlement; config/provider catalog metadata.
+This checkpoint does not rerun the upstream differential or change its evidence.
+
+New local proof: 101 tests pass (3 ignored), including durable restart IDs for both
+adapters and receipt/outbox rollback/reopen. Native desktop embedded management,
+pairing/approval and control-socket T3 pair/forward pass (E2E.md). Durable handoff
+journaling does not certify exactly-once native delivery; see RECOVERY.md.

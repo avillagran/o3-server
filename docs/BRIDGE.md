@@ -3,7 +3,7 @@
 The default `bridge` Cargo feature runs OmaBridge on o3-server's two-worker Tokio runtime.
 `--no-default-features` removes it. No bridge executable or service is started by the server.
 
-The local development dependency is patched to `/var/tmp/o3-build/embed/omabridge`, branch
+The local development dependency is patched to `../omabridge-embed` (`~/Work/omabridge-embed`), branch
 `feat/embed`, commit `44cc7fa7575c1256f4007be4823e3f455429175a`. Before release, replace this patch with a published, pinned git revision.
 The real protocol client and bridge both use the pinned `t3-protocol` revision
 `8c80c4dc62414c454eaefb4706d973adf8d8ee74`: linking different revisions together fails
@@ -59,27 +59,23 @@ The control socket bind must succeed and its mode is 0600.
 The wire protocol of `peers`, `forward`, `connect`, `t3-pair` and remote `manage` is retained.
 The existing client-side `omabridge` CLI may still be used; the server does not need it.
 
-For a desktop using the embedded host, make these changes in
-`/home/node/Work/omarchy-t3-code` (not edited here):
+The desktop branch `feat/o3-server` now detects `<T3CODE_HOME>/omabridge` when
+`services.json` says `backend: embedded` and its control socket exists. The host
+writes a private `host.json` containing its executable path; desktop routes and
+management use that executable, passing the same explicit state directory.
+An explicit `OT3_OMABRIDGE_BIN` still takes precedence. Without embedded state,
+original T3 / standalone binary and XDG discovery is unchanged.
 
-1. `src/omabridge_route.rs`: configure `stateDir` to the same explicit directory used
-   by o3-server. The existing `wait_for_server`/`forward` protocol needs no changes.
-2. `src/omabridge_share.rs`: replace `After=... omabridge-serve.service` in generated
-   forward units with the actual o3-server unit, or remove the bridge-unit ordering.
-   Keep the `control.sock` readiness check and the client-side forward command.
-3. `src/omabridge_device.rs`: pass `--state-dir` when invoking `manage`; it currently
-   relies on CLI defaults. Use a CLI built from `feat/embed` for local publish/unpublish
-   against embedded state; older CLIs assume systemd and report already-running.
-4. Gate gateway/relay-host UI on returned capabilities and disable relay mode changes
-   when `published.backend == "embedded"`. Embedded mode rejects
-   `relay-set`, `relay-host`, `gateway-set`, `gateway-domain-set` with
-   `omabridge_embedded_unsupported`; configure relay at server startup instead.
-5. Keep the T3 executable/base-dir mapping pointed at o3-server for session list/revoke.
-   No label-format change is needed.
-
-Eliminating the client-side CLI as well requires replacing the desktop's CLI subprocesses
-with Store reads and JSON requests to the private control socket. This is separate from
-eliminating the host's bridge service/executable, which this implementation does.
+The host facade implements `manage`, `peers`, `forward` and `t3-pair`. Management
+uses `Manager::embedded`, with no systemd backend. Forward/pair use only the live
+control socket, never a second endpoint. Embedded management exposes the existing
+capability restrictions (relay/gateway changes remain unsupported).
+`tools/desktop-bridge-e2e` proves status, read, identity, empty peers,
+publish/unpublish, invitation creation, desktop pairing/approval and peer listing using the real desktop executable.
+`tests/bridge.rs` separately proves network pairing and forwarding with real protocol
+clients. The facade also passes T3 pairing and QUIC descriptor-forward checks. Persistent desktop sharing is not claimed: generated sharing units still
+name `omabridge-serve.service`, and their lifecycle has not been migrated/tested.
+No systemd units were edited or installed by this change.
 
 ## Verification and remaining limits
 
@@ -119,9 +115,9 @@ Branch-local validation before integration: o3-server had 23 passing tests with 
 All development commands must use disk-backed paths, for example:
 
 ```sh
-export CARGO_TARGET_DIR=/var/tmp/o3-build/embed/target
-export TMPDIR=/var/tmp/o3-build/embed/t
-cargo test --locked
+export CARGO_TARGET_DIR=/var/tmp/o3-build/main
+export TMPDIR=/var/tmp/o3-build/tmp
+nice cargo test -j 4 --locked
 ```
 
 The implementation worktrees are `/var/tmp/o3-build/embed/o3-server` and
@@ -138,10 +134,12 @@ pressure 40–60%) and also ended with the setup timeout after 343.49 seconds. N
 host I/O pressure clears:
 
 ```sh
-CARGO_TARGET_DIR=/var/tmp/o3-build/embed/target-omabridge \
-TMPDIR=/var/tmp/o3-build/embed/t \
-cargo test --manifest-path /var/tmp/o3-build/embed/omabridge/Cargo.toml --locked
+CARGO_TARGET_DIR=/var/tmp/o3-build/main \
+TMPDIR=/var/tmp/o3-build/tmp \
+nice cargo test -j 4 --manifest-path /home/node/Work/omabridge-embed/Cargo.toml --locked
 ```
 
 The integrated main workload and binary hash supersede these branch-local RSS
 figures; see rss-measurement.json and IMPLEMENTATION.md for current results.
+
+The registered local `feat/embed` worktree is now `/home/node/Work/omabridge-embed`, preserving commit 44cc7fa. Cargo no longer depends on the historical `/var/tmp` checkout. The cross-filesystem relocation used a copy plus `git worktree repair`; the old directory is an unused archival copy, not a registered worktree. No push.

@@ -1,32 +1,32 @@
 {
-  "measured_at_utc": "2026-10-31T23:40:15Z",
-  "binary_sha256": "d071cfde03063a6f20df55c32200d8522bed9cbae9cfe4a3f3c32f764016f7c3",
+  "measured_at_utc": "2026-11-01T00:17:44Z",
+  "binary_sha256": "1b46c614bbc3f7a26f9138cc6f5da35b744841c30a0a9c35011d1f3e73e16989",
   "binary": "/var/tmp/o3-build/main/release/o3-server",
-  "binary_bytes": 11909320,
+  "binary_bytes": 11986184,
   "seed_messages": 1000,
   "threads": 20,
   "subscribers": 3,
   "unary_calls": 1000,
   "text_bytes_per_message": 1000,
   "cold_kib": {
-    "VmHWM": 27508,
-    "VmRSS": 27508,
-    "RssAnon": 17188
+    "VmHWM": 22488,
+    "VmRSS": 22488,
+    "RssAnon": 13040
   },
   "seeded_kib": {
-    "VmHWM": 34256,
-    "VmRSS": 33988,
-    "RssAnon": 22644
+    "VmHWM": 36192,
+    "VmRSS": 35428,
+    "RssAnon": 24076
   },
   "subscribed_kib": {
-    "VmHWM": 41252,
-    "VmRSS": 40764,
-    "RssAnon": 29420
+    "VmHWM": 42284,
+    "VmRSS": 42284,
+    "RssAnon": 30932
   },
   "after_churn_kib": {
-    "VmHWM": 41252,
-    "VmRSS": 40764,
-    "RssAnon": 29420
+    "VmHWM": 42284,
+    "VmRSS": 42284,
+    "RssAnon": 30932
   },
   "snapshot_messages": [
     10,
@@ -36,31 +36,18 @@
   "under_50_mib": true,
   "providers": [
     {
-      "instanceId": "claude",
+      "instanceId": "claudeAgent",
       "installed": true,
       "status": "warning"
     },
     {
       "instanceId": "codex",
-      "installed": false,
-      "status": "error"
+      "installed": true,
+      "status": "warning"
     }
   ],
   "bridge_enabled": true,
   "provider_workload": "registered and probed; inference excluded (defer_start)",
   "measurement": "Linux /proc/PID/status; disk profile under /var/tmp",
-  "allocator_env": {},
-  "source_commit": "967d8c57c7771015fbf90910a78e57870745d73e",
-  "filesystem": "btrfs",
-  "units": "KiB for RSS/HWM/anonymous memory; bytes for binary size",
-  "build_features": [
-    "bridge"
-  ],
-  "bridge_readiness": "Isolated omabridge/endpoint.json published before workload",
-  "under_50_mb": true,
-  "limitations": [
-    "Provider inference and subprocess memory excluded; both providers registered and probed. Codex probe reported error in the isolated profile.",
-    "Clients use authenticated TCP/WebSocket; bridge is initialized but no bridged client load is included.",
-    "Single bounded workload, not a sustained peak-memory guarantee."
-  ]
+  "allocator_env": {}
 }

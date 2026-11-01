@@ -100,7 +100,7 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 
 | Estado | RPC | Prioridad | Tipo | Scope | Nota |
 |---|---|---|---|---|---|
-| 🟡 | `orchestration.dispatchCommand` | P0 | unary | `orchestration:operate` | Nightly differential proves thread.create and deferred message.dispatch receipts through real client; registry-driven negative P0/P1 command frames expose validation/error differences. Scripted/native-peer tests cover execution locally. Durable controls, native attachments and upstream inference/approval parity remain; see docs/CONFORMANCE.md. |
+| 🟡 | `orchestration.dispatchCommand` | P0 | unary | `orchestration:operate` | Remaining native chat differences (2026-10-31): native attachments/additional context, persistent approvals, structured Claude questions, permission/setup policy, full attempt/subagent settlement and upstream inference parity. Receipt-atomic control outbox now records uncertain handoffs after restart, but native exactly-once execution/replay is unproven. tests/core.rs + provider restart test; docs/RECOVERY.md. |
 | 🟡 | `orchestration.getArchivedShellSnapshot` | P2 | unary | `orchestration:read` | Real-client test: archived threads and projects with the shared sequence. Built from the in-memory shell assembly (10,000 thread cap), same limit as the live shell. |
 | ✅ | `orchestration.getFullThreadDiff` | P1 | unary | `orchestration:read` | Real Connection Codex execution captures Git refs and verifies baseline-to-turn diff. Checkpoint retention and overlapping-workspace isolation remain. |
 | ⬜ | `orchestration.getOlderSettledThreads` | P2 | unary | `orchestration:read` | Deferred; client-usage.md inventory. |
@@ -110,15 +110,15 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | ✅ | `orchestration.getTurnItem` | P1 | unary | `orchestration:read` | Real-client test: item by id for its own thread, null otherwise. The revision argument is ignored. |
 | ⬜ | `orchestration.getWorkflowScript` | P2 | unary | `orchestration:read` | Deferred; client-usage.md inventory. |
 | 🚫 | `orchestration.getWorktreeThreadIds` | unused | unary | `orchestration:read` | No client call site in inventory. |
-| 🟡 | `orchestration.launchThread` | P0 | unary | `orchestration:operate` | Isolated nightly differential exercises empty root-workspace launch via real client; projection optional-field differences remain. Initial-message atomicity/failure cleanup and reuse metadata remain (IMPLEMENTATION.md). Not certified done. |
+| 🟡 | `orchestration.launchThread` | P0 | unary | `orchestration:operate` | Remaining difference (2026-10-31): events::launch commits thread.create, initial message.dispatch and launch receipt separately; failure/crash can leave a thread without its first message, workspace cleanup is not atomic, and reuse does not update all upstream metadata. Empty-launch differential evidence only; not done. |
 | 🟡 | `orchestration.searchThread` | P1 | unary | `orchestration:read` | Real Connection + isolated nightly 3991 differential: literal transcript message/plan search, case folding, index/start/offset, wrap and bounded navigation implemented. tests/thread_commands.rs verifies ordering and isolation. Rich markdown/context/skills segmentation and folded-answer exclusion remain; not full conformance. |
 | 🚫 | `orchestration.searchThreadStream` | unused | stream | `orchestration:read` | No client call site in inventory. |
 | 🟡 | `orchestration.searchThreads` | P1 | unary | `orchestration:read` | Real-client test: SQLite FTS5 index kept by message writes and rebuilt when missing; best message per thread with hits/quality/snippet, prefix match, project filter, titlesOnly, archived/deleted excluded, FTS syntax inert. Not done: threads/olderSettled fields, environmentLabel. |
 | ⬜ | `orchestration.stopWorkflow` | P2 | unary | `orchestration:operate` | Deferred; client-usage.md inventory. |
 | 🚫 | `orchestration.subscribeArchivedShell` | unused | stream | `orchestration:read` | No client call site in inventory. |
 | 🟡 | `orchestration.subscribeCommandOutput` | P1 | stream | `orchestration:read` | Real Connection tests verify bounded command tails/replacement/final output. Real Claude Bash results and Codex command/outputDelta frames emit Command events. Claude output arrives at tool completion; no full VT folding. |
-| 🟡 | `orchestration.subscribeShell` | P0 | stream | `orchestration:read` | Isolated nightly differential exercises snapshot/next item order and real-client conformance-base subscription. Shell metadata and repository-identity replacement snapshots differ; replay/markers locally tested. See docs/CONFORMANCE.md. |
-| 🟡 | `orchestration.subscribeThread` | P0 | stream | `orchestration:read` | Isolated nightly differential exercises bounded initial stream and completion marker; full/compact decode and resume locally tested. Thread/run/item field and stream-order differences remain; see docs/CONFORMANCE.md. |
+| 🟡 | `orchestration.subscribeShell` | P0 | stream | `orchestration:read` | Remaining difference (2026-10-31): bounded initial-order differential and local replay/markers pass, but upstream shell metadata and repository-identity replacement snapshots differ (docs/conformance-report.json). No full stream equivalence proof; remains partial. |
+| 🟡 | `orchestration.subscribeThread` | P0 | stream | `orchestration:read` | Remaining difference (2026-10-31): local full/compact decoding, history/replay and completion markers pass; upstream thread/run/item fields, attempt identities and stream ordering differ. Bounded differential cannot prove arbitrary replay/interleavings; remains partial. |
 
 ## preview
 
@@ -255,7 +255,7 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | 🚫 | `server.disableAcpRegistryProvider` | unused | unary | `providers:manage` | No client call site in inventory. |
 | 🟡 | `server.discoverSourceControl` | P1 | unary | `orchestration:read` | Real Connection + nightly differential: bounded git/jj executable/version probes, Effect Option encoding, honest implementation flags. Host-provider discovery/auth adapters are absent (sourceControlProviders=[]); upstream includes GitHub/GitLab descriptors. See docs/CONFORMANCE.md. |
 | 🚫 | `server.getBackgroundPolicy` | unused | unary | `orchestration:read` | No client call site in inventory. |
-| 🟡 | `server.getConfig` | P0 | unary | `orchestration:read` | Isolated nightly differential proves authenticated real-client read. CLI default-scope bug fixed. Minimal capability advertisement, provider/config catalog fields and newer settings differ; unsupported capabilities remain absent/off. See docs/CONFORMANCE.md. Claude default is now claudeAgent (legacy aliases retained); Codex discovery is lazy, both providers reap after 60 s idle; native executable resolver bypasses mise shims. |
+| 🟡 | `server.getConfig` | P0 | unary | `orchestration:read` | Isolated nightly differential proves authenticated real-client read. CLI default-scope bug fixed. Minimal capability advertisement, provider/config catalog fields and newer settings differ; unsupported capabilities remain absent/off. See docs/CONFORMANCE.md. Claude default is now claudeAgent (legacy aliases retained); Codex discovery is lazy, both providers reap after 60 s idle; native executable resolver bypasses mise shims. Embedded desktop status/read/identity/peers/publication pass via tools/desktop-bridge-e2e; this does not close provider/config catalog metadata parity. |
 | 🚫 | `server.getDatabaseStorage` | unused | stream | `orchestration:read` | No client call site in inventory. |
 | ⬜ | `server.getHostResources` | P2 | unary | `orchestration:read` | Deferred; client-usage.md inventory. |
 | ✅ | `server.getProcessDiagnostics` | P2 | unary | `diagnostics:read` | tests/ops.rs: the server process tree from /proc, with Option encoding for pgid/error. |
@@ -343,7 +343,7 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | 🚫 | `delegated_task.completion-delivery.dispose` | unused | No client call site in inventory. |
 | 🚫 | `delegated_task.request` | unused | No client call site in inventory. |
 | 🚫 | `delegated_task.wake-policy` | unused | No client call site in inventory. |
-| 🟡 | `message.dispatch` | P0 | Real Connection tests exercise Claude/scripted and Codex execution, queue_after_active and steer_active; one shared queue advances after teardown. Provider-native attachments/context and durable control replay remain. |
+| 🟡 | `message.dispatch` | P0 | Real Connection Claude/scripted/Codex peer execution, queue and steer; restart supervisor preserves native session IDs for both adapters. Receipt-atomic control outbox retains ambiguous delivery, without blind replay. Native attachments/context and upstream chat parity remain; docs/RECOVERY.md. |
 | 🚫 | `notification.delivery.accept` | unused | No client call site in inventory. |
 | 🚫 | `prepared-run.fail` | unused | No client call site in inventory. |
 | 🚫 | `prepared-run.progress` | unused | No client call site in inventory. |
@@ -357,8 +357,8 @@ Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ni
 | ✅ | `queued-run.edit` | P1 | tests/thread_commands.rs |
 | ✅ | `queued-run.reorder` | P1 | tests/thread_commands.rs: user messages only; automatic completion deliveries are not modelled. |
 | ✅ | `queued-run.start` | unused | tests/thread_commands.rs |
-| 🟡 | `run.interrupt` | P0 | Real Connection Codex stdio-peer test: live approval nodes/items, numeric native ID reply and idempotent receipt; answer/elicitation shapes unit-tested. Crash recovery remains. |
-| 🟡 | `runtime-request.respond` | P0 | Observed can_use_tool allow/deny mapping; fixture approval projection and Connection responses. Live test approves Write; persistent approvals and structured questions remain. |
+| 🟡 | `run.interrupt` | P0 | Real Connection Codex stdio-peer test: live approval nodes/items, numeric native ID reply and idempotent receipt; answer/elicitation shapes unit-tested. Crash recovery remains. Receipt-atomic control outbox persists pending/handoff; restart reports delivery-unknown. Native execution acknowledgement and safe replay remain unavailable. |
+| 🟡 | `runtime-request.respond` | P0 | Observed can_use_tool allow/deny mapping; fixture approval projection and Connection responses. Live test approves Write; persistent approvals and structured questions remain. Pending requests now carry an explicit restart cancellation reason; receipt-atomic outbox retains ambiguous answers rather than silently forgetting them. Exactly-once native approval replay remains unsupported. |
 | 🟡 | `subagent.stop` | P2 | tests/thread_commands.rs: marks the subagent cancelled; no provider session is told. |
 | ✅ | `thread.active.reorder` | P1 | tests/thread_commands.rs |
 | ✅ | `thread.archive` | P1 | Real Connection lifecycle/idempotency test. |

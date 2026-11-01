@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Isolated native desktop management against the embedded bridge (no services)."""
-import json, os, pathlib, subprocess, tempfile, time
+import json, os, pathlib, subprocess, tempfile, time, urllib.request
 root = pathlib.Path('/var/tmp/o3-build')
 server = pathlib.Path(os.environ.get('O3_BIN', str(root / 'main/debug/o3-server'))).resolve()
 client = pathlib.Path(os.environ.get('O3_DESKTOP_BIN', str(root / 'main/debug/omarchy-t3-client'))).resolve()
@@ -31,8 +31,49 @@ with tempfile.TemporaryDirectory(prefix='db-', dir=root) as temp:
         assert read['published']['backend']=='embedded', read
         manage({'action':'unpublish','confirmed':True})
         manage({'action':'publish','confirmed':True,'t3':True,'ssh':False,'mcp':False})
-        manage({'action':'invite','confirmed':True,'services':['t3'],'directory':temp})
-        print(json.dumps({'status':'pass','available':True,'identity':True,'peers':0,'read':True,'publish':True,'unpublish':True}))
+        invitation=manage({'action':'invite','confirmed':True,'services':['t3'],'directory':temp})['created']['path']
+        guest=p/'guest'
+        guest.mkdir()
+        guest_env={**env,'HOME':str(guest),'T3CODE_HOME':str(guest/'t3'),
+                   'XDG_CONFIG_HOME':str(guest/'config'),'XDG_DATA_HOME':str(guest/'data'),
+                   'XDG_STATE_HOME':str(guest/'state'),'XDG_RUNTIME_DIR':str(guest/'run')}
+        guest_process=subprocess.Popen([str(server),'serve','--port','0'],env=guest_env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        try:
+            deadline=time.monotonic()+30
+            while not (guest/'t3/omabridge/control.sock').exists():
+                assert guest_process.poll() is None and time.monotonic()<deadline
+                time.sleep(.05)
+            def guest_manage(request):
+                result=json.loads(subprocess.check_output([str(client),'omabridge-manage'],input=json.dumps(request),text=True,env=guest_env,timeout=40))
+                assert result['status']==0,result
+                return result['output']
+            paired=guest_manage({'action':'pair','confirmed':True,'path':invitation})
+            pending=manage({'action':'read'})['pending']
+            assert len(pending)==1,pending
+            manage({'action':'approve','confirmed':True,'peer':pending[0]['id']})
+            if paired['paired']['status']=='pending':
+                paired=guest_manage({'action':'pair-retry','confirmed':True,'id':paired['paired']['id']})
+            assert paired['paired']['status']=='approved',paired
+            host=manage({'action':'read'})
+            assert len(host['peers'])==1
+            host_id=host['device']['id']
+            base=[str(server),'--state-dir',str(guest/'t3/omabridge')]
+            receipt=json.loads(subprocess.check_output(base+['t3-pair','--peer',host_id],env=guest_env,text=True,timeout=30))
+            assert receipt['credential']
+            forward=subprocess.Popen(base+['forward','--peer',host_id,'--service','t3','--listen','127.0.0.1:0'],env=guest_env,stdout=subprocess.PIPE,text=True)
+            try:
+                import select
+                assert select.select([forward.stdout],[],[],30)[0], 'forward readiness timeout'
+                ready=json.loads(forward.stdout.readline())
+                assert ready['event']=='forwarding',ready
+                descriptor=json.load(urllib.request.urlopen('http://'+ready['listen']+'/.well-known/t3/environment',timeout=15))
+                assert descriptor
+            finally:
+                forward.terminate();forward.wait(timeout=10)
+        finally:
+            guest_process.terminate()
+            guest_process.wait(timeout=10)
+        print(json.dumps({'status':'pass','available':True,'identity':True,'peers':0,'read':True,'publish':True,'unpublish':True,'pairing':True,'pairedPeers':1,'t3Pair':True,'forward':True}))
     finally:
         process.terminate()
         try: process.wait(timeout=10)

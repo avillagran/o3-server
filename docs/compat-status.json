@@ -139,7 +139,7 @@
     "orchestration.dispatchCommand": {
       "status": "partial",
       "priority": "P0",
-      "note": "Nightly differential proves thread.create and deferred message.dispatch receipts through real client; registry-driven negative P0/P1 command frames expose validation/error differences. Scripted/native-peer tests cover execution locally. Durable controls, native attachments and upstream inference/approval parity remain; see docs/CONFORMANCE.md."
+      "note": "Remaining native chat differences (2026-10-31): native attachments/additional context, persistent approvals, structured Claude questions, permission/setup policy, full attempt/subagent settlement and upstream inference parity. Receipt-atomic control outbox now records uncertain handoffs after restart, but native exactly-once execution/replay is unproven. tests/core.rs + provider restart test; docs/RECOVERY.md."
     },
     "orchestration.getArchivedShellSnapshot": {
       "status": "partial",
@@ -189,7 +189,7 @@
     "orchestration.launchThread": {
       "status": "partial",
       "priority": "P0",
-      "note": "Isolated nightly differential exercises empty root-workspace launch via real client; projection optional-field differences remain. Initial-message atomicity/failure cleanup and reuse metadata remain (IMPLEMENTATION.md). Not certified done."
+      "note": "Remaining difference (2026-10-31): events::launch commits thread.create, initial message.dispatch and launch receipt separately; failure/crash can leave a thread without its first message, workspace cleanup is not atomic, and reuse does not update all upstream metadata. Empty-launch differential evidence only; not done."
     },
     "orchestration.searchThread": {
       "status": "partial",
@@ -224,12 +224,12 @@
     "orchestration.subscribeShell": {
       "status": "partial",
       "priority": "P0",
-      "note": "Isolated nightly differential exercises snapshot/next item order and real-client conformance-base subscription. Shell metadata and repository-identity replacement snapshots differ; replay/markers locally tested. See docs/CONFORMANCE.md."
+      "note": "Remaining difference (2026-10-31): bounded initial-order differential and local replay/markers pass, but upstream shell metadata and repository-identity replacement snapshots differ (docs/conformance-report.json). No full stream equivalence proof; remains partial."
     },
     "orchestration.subscribeThread": {
       "status": "partial",
       "priority": "P0",
-      "note": "Isolated nightly differential exercises bounded initial stream and completion marker; full/compact decode and resume locally tested. Thread/run/item field and stream-order differences remain; see docs/CONFORMANCE.md."
+      "note": "Remaining difference (2026-10-31): local full/compact decoding, history/replay and completion markers pass; upstream thread/run/item fields, attempt identities and stream ordering differ. Bounded differential cannot prove arbitrary replay/interleavings; remains partial."
     },
     "preview.adjust": {
       "status": "todo",
@@ -689,7 +689,7 @@
     "server.getConfig": {
       "status": "partial",
       "priority": "P0",
-      "note": "Isolated nightly differential proves authenticated real-client read. CLI default-scope bug fixed. Minimal capability advertisement, provider/config catalog fields and newer settings differ; unsupported capabilities remain absent/off. See docs/CONFORMANCE.md. Claude default is now claudeAgent (legacy aliases retained); Codex discovery is lazy, both providers reap after 60 s idle; native executable resolver bypasses mise shims."
+      "note": "Isolated nightly differential proves authenticated real-client read. CLI default-scope bug fixed. Minimal capability advertisement, provider/config catalog fields and newer settings differ; unsupported capabilities remain absent/off. See docs/CONFORMANCE.md. Claude default is now claudeAgent (legacy aliases retained); Codex discovery is lazy, both providers reap after 60 s idle; native executable resolver bypasses mise shims. Embedded desktop status/read/identity/peers/publication pass via tools/desktop-bridge-e2e; this does not close provider/config catalog metadata parity."
     },
     "server.getDatabaseStorage": {
       "status": "skip",
@@ -1046,7 +1046,7 @@
     "message.dispatch": {
       "status": "partial",
       "priority": "P0",
-      "note": "Real Connection tests exercise Claude/scripted and Codex execution, queue_after_active and steer_active; one shared queue advances after teardown. Provider-native attachments/context and durable control replay remain."
+      "note": "Real Connection Claude/scripted/Codex peer execution, queue and steer; restart supervisor preserves native session IDs for both adapters. Receipt-atomic control outbox retains ambiguous delivery, without blind replay. Native attachments/context and upstream chat parity remain; docs/RECOVERY.md."
     },
     "notification.delivery.accept": {
       "status": "skip",
@@ -1116,12 +1116,12 @@
     "run.interrupt": {
       "status": "partial",
       "priority": "P0",
-      "note": "Real Connection Codex stdio-peer test: live approval nodes/items, numeric native ID reply and idempotent receipt; answer/elicitation shapes unit-tested. Crash recovery remains."
+      "note": "Real Connection Codex stdio-peer test: live approval nodes/items, numeric native ID reply and idempotent receipt; answer/elicitation shapes unit-tested. Crash recovery remains. Receipt-atomic control outbox persists pending/handoff; restart reports delivery-unknown. Native execution acknowledgement and safe replay remain unavailable."
     },
     "runtime-request.respond": {
       "status": "partial",
       "priority": "P0",
-      "note": "Observed can_use_tool allow/deny mapping; fixture approval projection and Connection responses. Live test approves Write; persistent approvals and structured questions remain."
+      "note": "Observed can_use_tool allow/deny mapping; fixture approval projection and Connection responses. Live test approves Write; persistent approvals and structured questions remain. Pending requests now carry an explicit restart cancellation reason; receipt-atomic outbox retains ambiguous answers rather than silently forgetting them. Exactly-once native approval replay remains unsupported."
     },
     "subagent.stop": {
       "status": "partial",

@@ -29,10 +29,9 @@ rewind is not implemented.
 
 ## Remaining gaps
 
-- Durable provider/control replay and active-session reconnection after restart.
+- Active inference recovery and native control replay after restart. Idle native IDs survive and are supplied to both adapters on the next message.
   Recovery marks orphan executions failed and requests cancelled; it does not
-  continue inference. A crash between a committed receipt and control delivery
-  still needs an outbox. Embedded hosts must recover before first transport.
+  continue inference. Receipt-committed controls now have a durable handoff journal; native delivery ambiguity and safe replay remain (RECOVERY.md). Embedded hosts must recover before first transport.
 - Provider-native attachments/additional context, full permission policy/setup
   flows, structured Claude questions, full attempt identity and background/subagent
   settlement. Codex authenticated inference/approvals and persisted-rollout resume
@@ -55,7 +54,7 @@ rewind is not implemented.
   Scheduled operations, usage/telemetry, PR watches, subagent control, VCS/editor
   variants and native fork semantics have the limits recorded per registry row.
 - OmaBridge fine-grained Cargo pruning, host-aware supervisor sync/rollback/rebind
-  and production desktop wiring remain (BRIDGE.md). OmaBridge uses the local
+  and full desktop sharing-unit wiring remain (BRIDGE.md). OmaBridge uses the local
   feat/embed checkout at 44cc7fa. Bridge and conformance transport use the same pinned
   client revision. Snapshot tests carry the reference decoder extracted from
   lib-t3-rust 1500d06, whose newer API lacks the bridge catalog module.
@@ -67,9 +66,9 @@ rewind is not implemented.
 ## Verification and memory
 
 Build and test with TMPDIR=/var/tmp/o3-build/tmp and
-CARGO_TARGET_DIR=/var/tmp/o3-build/main. Use nice cargo test -j 6 --tests,
-nice cargo clippy -j 6 --all-targets -- -D warnings, nice cargo fmt --check,
-and nice cargo build -j 6 --release --features bridge. Regenerate tools/gen-compat.
+CARGO_TARGET_DIR=/var/tmp/o3-build/main. Use nice cargo test -j 4 --tests,
+nice cargo clippy -j 4 --all-targets -- -D warnings, nice cargo fmt --check,
+and nice cargo build -j 4 --release --features bridge. Regenerate tools/gen-compat.
 Run nice tools/bench-rss /var/tmp/o3-build/main/release/o3-server afterward.
 
 Import uses SQLite read-only backup into TMPDIR, never the real T3 database for
@@ -97,3 +96,5 @@ Operational checkpoint: provider discovery is lazy and uses resolved native exec
 not HOME-sensitive mise wrappers. Codex's app-server and cached Claude sessions expire
 after 60 seconds idle. Claude's advertised default instance is claudeAgent; old claude
 and claude-code selections remain aliases. See CONFORMANCE.md for scope and evidence.
+
+Current local validation: 101 tests pass, 3 live/reference tests ignored; strict clippy passes. Desktop embedded management has isolated real-client proof (E2E.md). See RECOVERY.md for handoff guarantees and remaining gaps.

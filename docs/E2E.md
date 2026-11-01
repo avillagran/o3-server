@@ -11,7 +11,7 @@
 | Visor: `bounded`, `subscribeThread`, proyección en vivo | `omarchy-t3-client watch` real | PASS |
 | Interfaz QML | O3 desktop | sin probar |
 | Android | O3 Android | sin probar, pospuesto hasta tener la versión operativa |
-| Flujos OmaBridge del desktop | O3 desktop | sin probar; reporta `available: false` con estado aislado |
+| OmaBridge status/read/identity/peers/publish/pair | `omarchy-t3-client` real | PASS aislado; detalles abajo |
 
 Memoria de `o3-server`: reposo 29,7-32 MB sin hijos; pico 38,6 MB con turnos de Claude y Codex; 37,9 MB con el
 desktop conectado. Los procesos de proveedor son aparte (Claude CLI ~240 MB, Codex ~390 MB) y solo existen en uso.
@@ -46,3 +46,34 @@ status is promoted on this evidence.
 All test profile and build paths were under `/var/tmp/o3-build/e2e`; no installed
 service or real T3 profile was intentionally accessed. Credential copies were
 used only in the isolated profile and removed after the test.
+
+## Embedded desktop bridge checkpoint
+
+`tools/desktop-bridge-e2e` passes against the release host and rebuilt real desktop
+`/var/tmp/o3-build/e2e/desktop-target/debug/omarchy-t3-client`. The desktop changes
+are committed locally on `feat/o3-server`. Build commands used `nice cargo -j 4`,
+`CARGO_TARGET_DIR=/var/tmp/o3-build/main`, `TMPDIR=/var/tmp/o3-build/tmp`; the desktop
+executable was then copied to the specified E2E location.
+
+Reproduce with `O3_BIN=/var/tmp/o3-build/main/release/o3-server
+O3_DESKTOP_BIN=/var/tmp/o3-build/e2e/desktop-target/debug/omarchy-t3-client
+nice tools/desktop-bridge-e2e` (environment assignments and command on one line).
+The runner isolates HOME/XDG/T3CODE_HOME and a private PATH `t3` symlink, starts
+two embedded hosts, and stops both in finally blocks. No credentials imported.
+
+Verified: available/identity true, empty peers, read with embedded backend,
+unpublish/publish, invite creation, guest desktop pair, host desktop approval,
+guest retry to approved, and paired peer listing. The host facade also issues a
+T3 pairing through the guest's control socket and starts a QUIC forward that serves
+the real environment descriptor. Existing bridge integration tests independently
+exchange the pairing with the real protocol client. UI rendering and persistent
+desktop sharing units remain untested; no systemd units or services were touched.
+
+Final feature-enabled suite: 101 passed, 3 ignored (live/reference opt-ins), zero
+failures. Strict all-target clippy, fmt and diff checks pass. An earlier full run
+hit the pre-existing `scrollback_is_bounded_per_terminal` timing assumption; the
+terminal suite retry and final full suite pass. This does not certify that flake fixed.
+
+Final `tools/bench-rss` release workload: VmHWM 42,284 KiB (43.30 MB), below 50 MB;
+20 threads, 1,000 deferred messages, 3 subscribers, 1,000 settings calls. Bridge is
+active, providers registered/probed, inference excluded. See rss-measurement.json.
