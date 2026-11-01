@@ -893,3 +893,34 @@ model/options/instructions, actual Git commit body, fallback, branch prefix and
 semantic generation, PR template context, and generated/read-back review text.
 The existing title-generation readers remain exercised after sharing the bounded
 turn implementation. No config/settings promotion is made by this item alone.
+
+### Final client-read decisions (2026-11-01)
+
+The earlier open-gap lists above are historical. This sweep supersedes their
+storage, version-check, activity, generation and create-import entries:
+
+| Row | Decision | Reader evidence / remaining boundary |
+|---|---|---|
+| orchestration.launchThread | Promote | Actual ThreadLaunch creation, reuse and receipt replay; projection/timeline/queue/sidebar; title generation, rename race and fallback; native worktree rollback and steering peers remain covered by their integration tests. The launch-only native import extension is not used as client evidence. |
+| server.getConfig | Promote | Actual provider_instances, models, native/scoped settings and storage readers on unary output and real config snapshots; setup capability gates, version advisories and cleanup behavior covered by the new tests. Managed install remains explicitly unavailable. |
+| server.updateSettings | Promote | Actual native/scoped/storage writers and readers drive policies, background Git/power activity and bounded title/SCM/review generation, including failure fallback and model options. |
+| subscribeServerConfig | Promote | The same config readers execute on its real snapshot; existing quota reducer tests cover providerStatuses and usageLimitSourcesUpdated; theme and settings delta tests remain green. |
+| orchestration.dispatchCommand | Keep partial | Create-import gap closed with actual ThreadCreate/projection/timeline/queue. Native acknowledgement after a crash still has a delivery-uncertain boundary; no exactly-once control claim. |
+| orchestration.subscribeShell | Keep partial, unchanged | No real exhausted-provider frame; synthetic failure evidence remains explicitly insufficient. |
+
+Final collection refinements honor the selected keep policy for untracked/ignored
+files while retaining tracked changes, locks, pins, sharing and pending work.
+The collector skips the repository mutation lock rather than racing SCM operations;
+its real-Git test verifies both that lock and Git's persistent worktree lock.
+Automatic collection does not apply the manual log default to a disabled log policy,
+and recognizes global custom policies. Successful provider updates refresh installed
+versions and advisories before reporting the final configuration.
+
+Inventories remain source-consumer inventories, not proof by grep: the decisions
+above rely on executed client readers and the behavior tests described in each
+closure. No other partial RPC or command is promoted by this sweep.
+
+Reusing an empty owned thread with an existing workspace clears ownership unless
+the path is unchanged. The storage integration test verifies that this cannot
+make an external worktree eligible for collection. The activity test also reads
+`behindCount`/`aheadCount` through the actual VCS refresh API after automatic fetch.

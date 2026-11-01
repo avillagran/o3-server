@@ -87,6 +87,16 @@ pub(crate) fn worktrees(s: &State, settings: &Value) -> Result<Vec<Value>, Strin
         else {
             continue;
         };
+        let Some(common) = git(
+            &root,
+            &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        )
+        .and_then(|o| String::from_utf8(o.stdout).ok()) else {
+            continue;
+        };
+        let Some(_guard) = crate::proc::try_lock_common_dir(common.trim().into()) else {
+            continue;
+        };
         let mut effective = settings.clone();
         if let Some(overrides) =
             settings["projectSettingsOverrides"].get(t["projectId"].as_str().unwrap_or(""))
@@ -137,17 +147,14 @@ pub(crate) fn worktrees(s: &State, settings: &Value) -> Result<Vec<Value>, Strin
         if !eligible {
             continue;
         }
-        // Git refuses locked/dirty/nested worktrees; never force collection.
-        let removed = git(
-            &root,
-            &[
-                "worktree",
-                "remove",
-                "--",
-                path.to_str().ok_or("invalid path")?,
-            ],
-        )
-        .is_some();
+        // One force permits files the selected policy allows discarding. Git still
+        // refuses locked worktrees (which require two force flags).
+        let mut args = vec!["worktree", "remove"];
+        if keep != "any-local-files" {
+            args.push("--force");
+        }
+        args.extend(["--", path.to_str().ok_or("invalid path")?]);
+        let removed = git(&root, &args).is_some();
         entries.push(json!({"kind":"worktree","outcome":if removed{"removed"}else{"failed"},"reason":"cleanup policy","path":path,"projectPath":root,"threadId":tid,"threadTitle":t["title"],"bytes":0,"files":0}));
         if removed {
             t["worktreePath"] = Value::Null;

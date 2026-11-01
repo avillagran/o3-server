@@ -744,6 +744,11 @@ async fn update_provider(s: &Arc<State>, p: &Value) -> Reply {
                 .unwrap_or("`claude update` failed"),
         ));
     }
+    let registry = s.provider.lock().unwrap().clone();
+    if let Some(provider) = registry {
+        let _ = provider.refresh().await;
+    }
+    check_versions(s).await;
     s.notify();
     let providers = s
         .provider

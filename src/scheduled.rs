@@ -369,7 +369,7 @@ pub fn ensure_started(s: &Arc<State>) {
                         })
                 });
                 if enabled {
-                    let _ = crate::ops::cleanup(&s);
+                    let _ = crate::ops::cleanup_automatic(&s);
                 }
             })
             .await;

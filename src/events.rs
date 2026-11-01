@@ -980,6 +980,9 @@ pub fn launch(s: &std::sync::Arc<State>, p: &Value) -> Result<Value> {
                 return Err("only an empty active thread can be reused".into());
             }
             let mut existing = existing;
+            existing["ownedWorktree"] = json!(
+                existing["ownedWorktree"] == true && existing["worktreePath"] == prepared.path
+            );
             existing["branch"] = prepared.branch.clone();
             existing["worktreePath"] = prepared.path.clone();
             existing["updatedAt"] = json!(at);

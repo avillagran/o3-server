@@ -31,7 +31,17 @@ fn real_storage_writers_drive_collection_and_preserve_unsafe_worktrees() {
             true
         );
     }
-    for id in ["clean", "dirty", "pinned", "shared", "busy", "deleted"] {
+    for id in [
+        "clean",
+        "dirty",
+        "pinned",
+        "shared",
+        "busy",
+        "deleted",
+        "untracked",
+        "locked",
+        "reused",
+    ] {
         c.rpc("orchestration.launchThread",json!({"commandId":id,"threadId":id,"projectId":"p","title":id,"modelSelection":{"instanceId":"codex","model":"test"},"runtimeMode":"full-access","interactionMode":"default","workspaceStrategy":{"type":"worktree","baseRef":"HEAD"}})).unwrap();
     }
     let path = |id: &str| {
@@ -41,6 +51,26 @@ fn real_storage_writers_drive_collection_and_preserve_unsafe_worktrees() {
             .unwrap()
             .to_owned()
     };
+    std::fs::write(
+        Path::new(&path("untracked")).join("note"),
+        "keep unless configured",
+    )
+    .unwrap();
+    git(&root, &["worktree", "lock", &path("locked")]);
+    let external = s.dir.join("external");
+    git(
+        &root,
+        &[
+            "worktree",
+            "add",
+            "--detach",
+            external.to_str().unwrap(),
+            "HEAD",
+        ],
+    );
+    c.rpc("orchestration.launchThread",json!({"commandId":"reuse-external","threadId":"reused","reuseExistingThread":true,"projectId":"p","title":"Clean","modelSelection":{"instanceId":"codex","model":"test"},"runtimeMode":"full-access","interactionMode":"default","workspaceStrategy":{"type":"existing_worktree","worktreePath":external}})).unwrap();
+    assert!(!s.state.db.lock().unwrap().query_row("SELECT json_extract(body,'$.ownedWorktree') FROM records WHERE kind='thread' AND id='reused'",[],|r|r.get::<_,bool>(0)).unwrap());
+    // Reuse must not transfer ownership to an existing external worktree.
     let dirty = path("dirty");
     std::fs::write(Path::new(&dirty).join("a"), "changed").unwrap();
     c.rpc(
@@ -83,8 +113,20 @@ fn real_storage_writers_drive_collection_and_preserve_unsafe_worktrees() {
             .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 86400))
             .unwrap();
     }
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let guard = runtime.block_on(o3_server::proc::lock_repo(&root));
     let report = c.rpc("server.runStorageCleanup", json!({})).unwrap();
-    assert_eq!(report["counts"]["removed"], 4); // clean, deleted, log, browser artifact
+    assert_eq!(
+        report["counts"]["removed"], 2,
+        "repository mutation lock retains worktrees"
+    );
+    assert!(Path::new(&path("clean")).is_dir());
+    drop(guard);
+    let report = c.rpc("server.runStorageCleanup", json!({})).unwrap();
+    assert_eq!(report["counts"]["removed"], 2); // clean and deleted; log/browser files were collected in the first pass
     for id in ["clean", "deleted"] {
         let p = t3_protocol::api::orchestration::thread_projection(&c, id).unwrap();
         assert!(p["thread"]["worktreePath"].is_null());
@@ -96,9 +138,30 @@ fn real_storage_writers_drive_collection_and_preserve_unsafe_worktrees() {
         .unwrap()
         .is_object());
     }
-    for id in ["dirty", "pinned", "shared", "busy"] {
+    for id in [
+        "dirty",
+        "pinned",
+        "shared",
+        "busy",
+        "untracked",
+        "locked",
+        "reused",
+    ] {
         assert!(Path::new(&path(id)).is_dir(), "{id}");
     }
+    let patch = t3_protocol::storage_settings::patch(
+        &json!({"key":"storageCleanup.worktreeKeepWhen","value":"tracked-changes"}),
+    )
+    .unwrap();
+    c.rpc("server.updateSettings", patch).unwrap();
+    let report = c.rpc("server.runStorageCleanup", json!({})).unwrap();
+    assert_eq!(report["counts"]["removed"], 1);
+    assert!(
+        t3_protocol::api::orchestration::thread_projection(&c, "untracked").unwrap()["thread"]
+            ["worktreePath"]
+            .is_null()
+    );
+    assert!(Path::new(&path("locked")).is_dir());
     let saved = c.rpc("server.getSettings", json!({})).unwrap();
     assert_eq!(
         t3_protocol::storage_settings::resolved_rules(&saved).unwrap()["worktreeUnchanged"],

@@ -30,6 +30,13 @@ fn real_builders_and_readers_consume_server_output() {
         initial_message: None,
     };
     orchestration::launch_thread(&c, &launch).unwrap();
+    let mut reused = launch.clone();
+    reused.command_id = "reuse-reader".into();
+    reused.reuse_existing_thread = Some(true);
+    let result = orchestration::launch_thread(&c, &reused).unwrap();
+    assert_eq!(result["resumed"], true);
+    assert_eq!(orchestration::launch_thread(&c, &reused).unwrap(), result);
+
     let pin = Command::sidebar("settle", "settle", "t", None).unwrap();
     orchestration::dispatch(&c, &pin).unwrap();
     let p = orchestration::thread_projection(&c, "t").unwrap();
@@ -75,6 +82,36 @@ fn real_builders_and_readers_consume_server_output() {
     );
     let config = c.rpc("server.getConfig", json!({})).unwrap();
     let raw = c.rpc("server.getSettings", json!({})).unwrap();
+    let mut config_stream = support::subscribe(s.connect(), "subscribeServerConfig", json!({}));
+    let event = config_stream.next(std::time::Duration::from_secs(2));
+    let streamed = &event["config"];
+    let mut quota = Value::Null;
+    assert!(t3_protocol::quota_sources::apply(&mut quota, &event));
+    assert!(t3_protocol::native_settings::snapshot(&streamed["settings"])["fields"].is_array());
+    assert!(t3_protocol::scoped_settings::target_view(
+        &json!({"environmentId":"env"}),
+        streamed,
+        &streamed["settings"],
+        None,
+        None,
+        true
+    )["fields"]
+        .is_array());
+    assert!(
+        t3_protocol::provider_instances::projection(&streamed["settings"], streamed, true)
+            ["instances"]
+            .as_array()
+            .unwrap()
+            .len()
+            >= 2
+    );
+    assert_eq!(
+        t3_protocol::storage_settings::capabilities(streamed)["storageCleanup"],
+        true
+    );
+    assert!(t3_protocol::models::catalog(streamed)["providers"].is_array());
+    config_stream.cancel();
+
     assert!(
         t3_protocol::provider_instances::projection(&raw, &config, true)["instances"]
             .as_array()

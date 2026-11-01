@@ -597,20 +597,26 @@ fn usage(p: &Value) -> Reply {
 
 // ---------------------------------------------------------------- storage cleanup
 
-/// Removes log files of this profile older than two weeks; nothing else is ever deleted.
+/// Manual cleanup keeps the historical log default; automatic cleanup honors disabled policies.
 pub(crate) fn cleanup(s: &State) -> Reply {
+    cleanup_trigger(s, "manual")
+}
+pub(crate) fn cleanup_automatic(s: &State) -> Reply {
+    cleanup_trigger(s, "automatic")
+}
+fn cleanup_trigger(s: &State, trigger: &str) -> Reply {
     let settings = crate::settings::read(s).map_err(|e| invalid(&e))?;
     let started = iso(now_ms());
     let (mut entries, mut removed, mut kept, mut failed, mut freed) =
         (Vec::new(), 0u64, 0u64, 0u64, 0u64);
-    let mut stack = vec![(
-        s.dir.join("logs"),
-        "logs",
-        settings["storageCleanup"]["logsAfterDays"]
-            .as_i64()
-            .map(|d| d * 86_400_000)
-            .unwrap_or(LOG_RETENTION_MS),
-    )];
+    let mut stack = Vec::new();
+    if let Some(retention) = settings["storageCleanup"]["logsAfterDays"]
+        .as_i64()
+        .map(|d| d * 86_400_000)
+        .or_else(|| (trigger == "manual").then_some(LOG_RETENTION_MS))
+    {
+        stack.push((s.dir.join("logs"), "logs", retention));
+    }
     if let Some(days) = settings["storageCleanup"]["browserArtifactsAfterDays"].as_i64() {
         stack.push((
             s.dir.join("browser-artifacts"),
@@ -670,7 +676,7 @@ pub(crate) fn cleanup(s: &State) -> Reply {
     }
     s.notify();
     let omitted = (removed + failed).saturating_sub(entries.len() as u64);
-    let report = json!({"trigger":"manual","startedAt":started,"finishedAt":iso(now_ms()),"entries":entries,"counts":{"removed":removed,"kept":kept,"failed":failed},"omittedCount":omitted,"bytesFreed":freed});
+    let report = json!({"trigger":trigger,"startedAt":started,"finishedAt":iso(now_ms()),"entries":entries,"counts":{"removed":removed,"kept":kept,"failed":failed},"omittedCount":omitted,"bytesFreed":freed});
     {
         let mut r = s.streams.ops.report.lock().unwrap();
         r.0 += 1;
@@ -683,4 +689,31 @@ pub(crate) fn cleanup(s: &State) -> Reply {
 /// Fresh random id for rows this module creates.
 pub fn new_id() -> String {
     random_id().unwrap_or_default()
+}
+
+#[cfg(test)]
+mod cleanup_policy_tests {
+    use super::*;
+    #[test]
+    fn disabled_log_policy_does_not_inherit_manual_retention_in_background() {
+        let dir = std::env::temp_dir().join(format!("o3-log-policy-{}", new_id()));
+        let s = State::open(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("logs")).unwrap();
+        let path = dir.join("logs/old.log");
+        std::fs::write(&path, "old").unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() - Duration::from_secs(60 * 86400))
+            .unwrap();
+        let report = cleanup_automatic(&s).unwrap();
+        assert_eq!(report["trigger"], "automatic");
+        assert_eq!(report["counts"]["removed"], 0);
+        assert!(path.exists());
+        assert_eq!(cleanup(&s).unwrap()["counts"]["removed"], 1);
+        assert!(!path.exists());
+        drop(s);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

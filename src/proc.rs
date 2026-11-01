@@ -207,3 +207,13 @@ pub async fn lock_repo(cwd: &Path) -> OwnedMutexGuard<()> {
     };
     mutex.lock_owned().await
 }
+
+/// Cleanup must skip, rather than wait for, an in-flight repository mutation.
+pub(crate) fn try_lock_common_dir(key: PathBuf) -> Option<OwnedMutexGuard<()>> {
+    let mutex = {
+        let mut map = locks().lock().unwrap();
+        map.retain(|k, m| *k == key || Arc::strong_count(m) > 1);
+        map.entry(key).or_default().clone()
+    };
+    mutex.try_lock_owned().ok()
+}

@@ -76,6 +76,9 @@ fn power_profile_suspends_and_resumes_actual_git_fetch() {
         before,
         "fetch must preserve the checkout"
     );
+    let status = t3_protocol::api::vcs::refresh_status(&c, repo.to_str().unwrap()).unwrap();
+    assert_eq!(status["behindCount"], 1);
+    assert_eq!(status["aheadCount"], 0);
     let saved = c.rpc("server.getSettings", json!({})).unwrap();
     assert!(t3_protocol::native_settings::snapshot(&saved)["fields"]
         .as_array()

@@ -139,7 +139,7 @@
     "orchestration.dispatchCommand": {
       "status": "partial",
       "priority": "P0",
-      "note": "Partial after independent audit: actual client Command/approval/queue/timeline/sidebar/awareness readers now execute on server output; acceptForSession survives actual idle reap; semantic title generation honors settings and guarded completion. Imported native references on thread.create now share launch validation and atomic persistence, exercised with ThreadCreate and real projection/timeline/queue readers. Remaining: durable-versus-native control delivery boundary; no clean reader sweep for promotion. See CONFORMANCE.md."
+      "note": "Partial after independent audit: actual client Command/approval/queue/timeline/sidebar/awareness readers now execute on server output; acceptForSession survives actual idle reap; semantic title generation honors settings and guarded completion. Imported native references on thread.create now share launch validation and atomic persistence, exercised with ThreadCreate and real projection/timeline/queue readers. Remaining: durable-versus-native control delivery boundary; retained partial by the final reader sweep. See CONFORMANCE.md."
     },
     "orchestration.getArchivedShellSnapshot": {
       "status": "partial",
@@ -187,9 +187,9 @@
       "note": "No client call site in inventory."
     },
     "orchestration.launchThread": {
-      "status": "partial",
+      "status": "done",
       "priority": "P0",
-      "note": "Partial after independent audit: actual ThreadLaunch builder and lib projection/timeline readers verify generated titles, settings, fallback and rename race. Native steering/reuse tests remain separate; importedNativeThread on launch is an o3 extension absent from the client builder and is not conformance evidence. No promotion without a clean reader sweep."
+      "note": "Real ThreadLaunch builder covers creation, empty reuse and receipt replay; actual projection/timeline/queue/sidebar readers and title-generation tests cover settings, fallback and rename races. Worktree rollback and native steering peers remain covered. Final client-read sweep: zero remaining consumed gaps; see CONFORMANCE.md."
     },
     "orchestration.searchThread": {
       "status": "partial",
@@ -687,9 +687,9 @@
       "note": "No client call site in inventory."
     },
     "server.getConfig": {
-      "status": "partial",
+      "status": "done",
       "priority": "P0",
-      "note": "Partial: actual provider_instances/models/scoped_settings/storage_settings readers verify supported capability gates, instance setup/logout and native Claude update. Managed install stays disabled; policy cleanup is enabled with real writer/reader and Git safety coverage; bounded latest-version checks run on health/manual refresh and honor disable, with real provider_instances reader coverage. Remaining settings execution gaps are recorded in CONFORMANCE.md; no clean reader sweep for promotion."
+      "note": "Final client-read sweep: provider_instances/models/native/scoped/storage readers execute on unary output and real config snapshots. Policies, latest-version checks, activity profiles and generation settings execute with behavior coverage. Managed installation is explicitly unavailable. See CONFORMANCE.md."
     },
     "server.getDatabaseStorage": {
       "status": "skip",
@@ -837,9 +837,9 @@
       "note": "No client call site in inventory."
     },
     "server.updateSettings": {
-      "status": "partial",
+      "status": "done",
       "priority": "P1",
-      "note": "Partial: native/scoped writers now execute and resolve project overrides; background profiles drive real provider health probes; title generation uses configured model/options/instructions. Storage/worktree policies execute with real writer/reader coverage. Git fetch and host/client power pauses execute under activity profiles with real native settings readers. Source-control/review generation settings now drive bounded native turns; real native settings and StackedAction readers cover generated commits, fallback, branch names and PR templates. Final row decisions are in CONFORMANCE.md. No clean reader sweep for promotion."
+      "note": "Actual native/scoped/storage writers and readers drive storage/worktree policies, version-check enablement, Git and power activity, title/SCM/review generation with model options and failure fallback. Final client-read sweep has zero remaining consumed gaps; see CONFORMANCE.md."
     },
     "server.upsertKeybinding": {
       "status": "done",
@@ -902,9 +902,9 @@
       "note": "No client call site in inventory."
     },
     "subscribeServerConfig": {
-      "status": "partial",
+      "status": "done",
       "priority": "P1",
-      "note": "Partial with getConfig: shared descriptor and provider setup fields reach snapshots, quota reducer and actual native/scoped writers are exercised. Remaining config/settings execution gaps prevent promotion. See CONFORMANCE.md."
+      "note": "Actual native/scoped/storage/provider_instances/models readers execute on real snapshots; quota reducer covers providerStatuses and usageLimitSourcesUpdated, with settings/theme deltas covered separately. Final client-read sweep has zero remaining consumed gaps; see CONFORMANCE.md."
     },
     "subscribeServerLifecycle": {
       "status": "skip",
