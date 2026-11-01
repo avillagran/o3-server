@@ -17,6 +17,7 @@ parser.add_argument("--stop", action="store_true", help="stop the pilot server")
 parser.add_argument("--resume", action="store_true", help="restart the server of an existing pilot dir; no import")
 parser.add_argument("--t3-home", help="T3 profile to import from (default $T3CODE_HOME or ~/.t3)")
 parser.add_argument("--bin", help="o3-server binary (default $O3_BIN, PATH, then /var/tmp/o3-build/main/release)")
+parser.add_argument("--bridge-relay", default="none", help="OmaBridge relay: none, public or an HTTPS URL (default none)")
 parser.add_argument("--no-import", action="store_true", help="start with an empty history")
 parser.add_argument("--ttl", default="30m", help="lifetime of the printed pairing link (default 30m)")
 args = parser.parse_args()
@@ -124,7 +125,10 @@ if not args.resume and not args.no_import:
 
 log = open(pilot / "server.log", "ab")
 # --port 0: the kernel picks a free port, so it can never collide with T3's.
-process = subprocess.Popen([binary, "serve", "--host", "127.0.0.1", "--port", "0"], env=env, stdin=subprocess.DEVNULL,
+serve = [binary, "serve", "--host", "127.0.0.1", "--port", "0", "--bridge-state-dir", str(pilot / "bridge")]
+if args.bridge_relay != "none":
+    serve += ["--bridge-relay", args.bridge_relay, "--bridge-bind", "0.0.0.0:0"]
+process = subprocess.Popen(serve, env=env, stdin=subprocess.DEVNULL,
                            stdout=log, stderr=log, start_new_session=True)
 runtime = profile / "userdata" / "server-runtime.json"
 deadline = time.monotonic() + 600  # first start on a large history builds indexes
