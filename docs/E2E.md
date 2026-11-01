@@ -9,7 +9,7 @@
 | Descubrimiento por perfil y `t3` (symlink), `snapshot` en `ready` | `omarchy-t3-client` real | PASS |
 | `send` con respuesta real de Claude | `omarchy-t3-client watch` real | PASS |
 | Visor: `bounded`, `subscribeThread`, proyección en vivo | `omarchy-t3-client watch` real | PASS |
-| Interfaz QML | O3 desktop | sin probar |
+| Interfaz QML (carga, barra lateral, hilo, composer, respuesta real) | O3 desktop, QML real | PASS, ver «QML real» abajo |
 | Android | O3 Android | sin probar, pospuesto hasta tener la versión operativa |
 | OmaBridge status/read/identity/peers/publish/pair | `omarchy-t3-client` real | PASS aislado; detalles abajo |
 
@@ -17,6 +17,44 @@ Memoria de `o3-server`: reposo 29,7-32 MB sin hijos; pico 38,6 MB con turnos de 
 desktop conectado. Los procesos de proveedor son aparte (Claude CLI ~240 MB, Codex ~390 MB) y solo existen en uso.
 
 Nota: `scrollback_is_bounded_per_terminal` falló una vez dentro de la suite completa bajo carga y pasó 3/3 en solitario.
+
+## QML real del desktop, 2026-11-01 (`tools/qml-e2e`)
+
+El QML real de O3 desktop (rama `feat/o3-server`, `5fbfbba`, worktree `/var/tmp/o3-build/qml/desktop`, sin tocar
+`~/Work/omarchy-t3-code`) contra el binario release de `main` y el `omarchy-t3-client` real, todo aislado.
+
+| Flujo | Resultado |
+|---|---|
+| La app carga sin errores QML causados por datos del servidor (0 líneas `ReferenceError`/`TypeError`/`Binding loop`/`ERROR`) | PASS |
+| Entorno `local` `ready` por descubrimiento (`t3` en `PATH` + `T3CODE_HOME`) | PASS |
+| La barra lateral muestra el hilo sembrado (árbol de ítems + captura `docs/qml-e2e/01-sidebar.png`) | PASS |
+| Abrir el hilo renderiza el mensaje de usuario y la respuesta de asistente sembrada | PASS |
+| El composer envía (Enter real) un mensaje y llega una respuesta real de haiku, que se renderiza | PASS |
+| El hilo queda `completed`, sin `working` (captura `docs/qml-e2e/04-idle.png`) | PASS |
+
+Cómo corre: `tools/qml-e2e` (requiere el worktree y los binarios indicados; `--keep` conserva el directorio de la corrida).
+Todo vive en `/var/tmp/o3-build/qml/run-*` (HOME, XDG, `T3CODE_HOME`, capturas, config de quickshell); se copia solo
+`.credentials.json` de Claude al `CLAUDE_CONFIG_DIR` aislado y se borra al terminar. Se siembra con el worker real
+(`add-project`, `new-thread`, `send`) y un turno de haiku; el driver `tools/qml-e2e.qml` monta `T3Panel` + `T3Backend`
+reales y usa el teclado real del composer.
+
+Por qué no `QT_QPA_PLATFORM=offscreen`: `T3Panel` usa `PinnedKeyboardPanel` (`PanelWindow`), que sin un compositor
+con layer-shell falla con «No PanelWindow backend loaded» y `T3Panel` no carga. Por eso se levanta un Hyprland propio
+en modo headless (`HYPRLAND_HEADLESS_ONLY=1`, seat `noop`, `XDG_RUNTIME_DIR` propio vía el symlink corto
+`/var/tmp/o3-build/qml/q` porque el socket de Hyprland tiene límite de longitud, y `hyprctl output create headless`).
+Su backend DRM se ancla (`AQ_DRM_DEVICES`) a una GPU sin pantalla conectada: solo aporta el asignador de buffers y la
+GPU que maneja la pantalla del usuario no se abre. (Un primer intento sin ese anclaje enumeró la GPU del monitor real
+sin ser master, sin efecto observado; no se repite.) Las capturas son `grim` sobre ese compositor privado, con píxeles reales.
+
+Aviso sobre la verificación: «renderiza» se comprueba contra el árbol de ítems visibles de la ventana (texto del
+burbuja del usuario y texto del asistente distinto del prompt) y se confirma con la captura. Un primer borrador de
+la comprobación contaba apariciones del texto en el JSON del transcript y dio un falso PASS con el turno aún en curso;
+se corrigió a exigir un mensaje `role=assistant` terminado.
+
+Sin errores atribuibles al servidor. Ruido no causado por él: `usedbeforedeclared` en `NativeUsageLimits.js` y
+`ot3-dictate` no construido (helper opcional), ambos del desktop e ignorables aquí; los avisos de Hyprland en las capturas
+son del compositor privado. Memoria no medida en esta corrida. Android y los demás flujos (aprobaciones, adjuntos,
+terminal, git, ajustes en la UI) siguen sin probarse en QML.
 
 ## Corrida parcial anterior
 

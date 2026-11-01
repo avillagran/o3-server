@@ -1,0 +1,232 @@
+#!/usr/bin/env python3
+"""Run O3 desktop's real QML against an isolated o3-server, headless.
+
+The QML needs a layer-shell compositor (PanelWindow), which Qt's offscreen platform lacks, so a
+private Hyprland runs with its headless backend (HYPRLAND_HEADLESS_ONLY, noop seat: it opens no
+input device and never talks to the user's session) inside the run's own XDG_RUNTIME_DIR. Its DRM
+backend is pinned to a GPU with no connected display (it only supplies the buffer allocator), so
+the GPU that drives the user's screen is never opened.
+
+Everything (HOME, XDG dirs, T3CODE_HOME, screenshots, the quickshell config folder)
+lives under a fresh /var/tmp/o3-build/qml/run-* directory; the user's Wayland session,
+D-Bus, ~/.t3 and installed app are never touched. One real haiku turn seeds the thread,
+a second is sent from the real composer; both use a credential copy removed afterwards.
+
+  O3_BIN=...            o3-server binary   (default /var/tmp/o3-build/main/release/o3-server)
+  O3_DESKTOP=...        desktop worktree   (default /var/tmp/o3-build/qml/desktop, branch feat/o3-server)
+  O3_DESKTOP_BIN=...    omarchy-t3-client  (default /var/tmp/o3-build/e2e/desktop-target/debug/omarchy-t3-client)
+  --keep                keep the run directory (it holds screenshots and logs)
+"""
+import json, os, pathlib, shutil, signal, subprocess, sys, tempfile, time, uuid
+
+here = pathlib.Path(__file__).resolve().parent
+base = pathlib.Path('/var/tmp/o3-build/qml')
+server = os.environ.get('O3_BIN', '/var/tmp/o3-build/main/release/o3-server')
+desktop = pathlib.Path(os.environ.get('O3_DESKTOP', str(base / 'desktop')))
+client = os.environ.get('O3_DESKTOP_BIN', '/var/tmp/o3-build/e2e/desktop-target/debug/omarchy-t3-client')
+keep = '--keep' in sys.argv
+omarchy = pathlib.Path('/usr/share/omarchy/shell')
+real_home = pathlib.Path.home()
+claude = subprocess.run(['mise', 'which', 'claude'], capture_output=True, text=True).stdout.strip()
+assert claude and pathlib.Path(claude).is_file(), 'claude CLI not found'
+
+run = pathlib.Path(tempfile.mkdtemp(prefix='run-', dir=base))
+for d in ('home', 'config', 'state', 'data', 'cache', 'rt', 'bin', 'shots', 'project', 'tmp', 't3', 'qs'):
+    (run / d).mkdir(mode=0o700)
+(run / 'bin/t3').symlink_to(server)
+(run / 'bin/claude').symlink_to(claude)
+# Only the Claude credential file is copied, into the isolated config dir; removed at exit.
+(run / 'claude').mkdir(mode=0o700)
+shutil.copyfile(real_home / '.claude/.credentials.json', run / 'claude/.credentials.json')
+(run / 'claude/.credentials.json').chmod(0o600)
+subprocess.run(['git', 'init', '-q', '-b', 'main', str(run / 'project')], check=True)
+(run / 'project/README.md').write_text('# E2E sample\n')
+subprocess.run(['git', '-C', str(run / 'project'), '-c', 'user.name=e2e', '-c', 'user.email=e2e@example.invalid',
+                'add', '-A'], check=True)
+subprocess.run(['git', '-C', str(run / 'project'), '-c', 'user.name=e2e', '-c', 'user.email=e2e@example.invalid',
+                'commit', '-q', '-m', 'init'], check=True)
+
+# Hyprland's socket path is length-limited: reach the runtime dir through a short symlink.
+rtlink = base / 'q'
+if rtlink.is_symlink() or rtlink.exists():
+    rtlink.unlink()
+rtlink.symlink_to(run / 'rt')
+env = {k: v for k, v in os.environ.items()
+       if k not in ('WAYLAND_DISPLAY', 'DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE', 'DBUS_SESSION_BUS_ADDRESS',
+                    'T3CODE_PORT', 'T3CODE_HOST', 'T3CODE_MODE', 'XDG_SESSION_TYPE', 'SWAYSOCK')}
+env.update(HOME=str(run / 'home'), T3CODE_HOME=str(run / 't3'), XDG_CONFIG_HOME=str(run / 'config'),
+           XDG_STATE_HOME=str(run / 'state'), XDG_DATA_HOME=str(run / 'data'), XDG_CACHE_HOME=str(run / 'cache'),
+           XDG_RUNTIME_DIR=str(rtlink), TMPDIR=str(run / 'tmp'), CLAUDE_CONFIG_DIR=str(run / 'claude'),
+           CODEX_HOME=str(run / 'codex'), PATH=f"{run / 'bin'}:/usr/bin:/bin")
+procs = []
+
+
+def log(msg):
+    print(f'qml-e2e: {msg}', flush=True)
+
+
+def cleanup():
+    for p in procs:
+        if p.poll() is None:
+            p.terminate()
+    for p in procs:
+        try:
+            p.wait(10)
+        except subprocess.TimeoutExpired:
+            p.kill()
+    shutil.rmtree(run / 'claude', ignore_errors=True)  # credential copy
+    if rtlink.is_symlink():
+        rtlink.unlink()
+    if not keep:
+        shutil.rmtree(run, ignore_errors=True)
+
+
+try:
+    srv = subprocess.Popen([server, 'serve', '--host', '127.0.0.1', '--port', '0'], env=env,
+                           stdout=open(run / 'server.log', 'wb'), stderr=subprocess.STDOUT)
+    procs.append(srv)
+    runtime = run / 't3/userdata/server-runtime.json'
+    deadline = time.monotonic() + 30
+    while not runtime.exists():
+        assert srv.poll() is None and time.monotonic() < deadline, 'server did not start'
+        time.sleep(.1)
+    time.sleep(.5)
+    log(f'server up: {json.loads(runtime.read_text()).get("origin")}')
+
+    # Seed through the real desktop worker: one project and one thread with one haiku turn.
+    worker = subprocess.Popen([client, 'watch'], env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                              stderr=open(run / 'seed-client.log', 'wb'), text=True, bufsize=1)
+    procs.append(worker)
+    import selectors
+    sel = selectors.DefaultSelector()
+    sel.register(worker.stdout, selectors.EVENT_READ)
+
+    def send(cmd):
+        worker.stdin.write(json.dumps(cmd) + '\n')
+        worker.stdin.flush()
+
+    def events(within):
+        end = time.monotonic() + within
+        while time.monotonic() < end:
+            if sel.select(0.5):
+                line = worker.stdout.readline()
+                if not line:
+                    return
+                try:
+                    yield json.loads(line)
+                except ValueError:
+                    pass
+
+    def wait_for(pred, within, what):
+        for ev in events(within):
+            if pred(ev):
+                return ev
+        raise AssertionError(f'timeout waiting for {what}')
+
+    wait_for(lambda e: e.get('type') == 'snapshot' and any(
+        x.get('id') == 'local' and x.get('state') == 'ready' for x in e['data'].get('environments', [])), 60, 'ready')
+    rid = str(uuid.uuid4())
+    send({'op': 'manage', 'action': 'add-project', 'environment': 'local', 'requestId': rid,
+          'workspaceRoot': str(run / 'project')})
+    ev = wait_for(lambda e: e.get('type') == 'action' and e['data'].get('requestId') == rid, 30, 'add-project')
+    project = ev['data']['result']['projectId']
+    model = {'instanceId': 'claude', 'model': 'haiku'}
+    rid = str(uuid.uuid4())
+    send({'op': 'manage', 'action': 'new-thread', 'environment': 'local', 'requestId': rid, 'projectId': project,
+          'title': 'E2E seed thread', 'modelSelection': model, 'runtimeMode': 'approval-required', 'branch': 'main'})
+    ev = wait_for(lambda e: e.get('type') == 'action' and e['data'].get('requestId') == rid, 30, 'new-thread')
+    assert not ev['data'].get('error'), ev
+    thread = ev['data']['result']['threadId']
+    log(f'seeded project {project[:24]}... thread {thread[:24]}...')
+    rid = str(uuid.uuid4())
+    send({'op': 'send', 'environment': 'local', 'thread': thread, 'requestId': rid, 'attachments': [],
+          'text': 'Reply with exactly the word SEEDOK and nothing else.', 'modelSelection': model})
+    ev = wait_for(lambda e: e.get('type') == 'action' and e['data'].get('requestId') == rid, 30, 'seed send')
+    assert not ev['data'].get('error'), ev
+    log('seed message accepted; waiting for the reply')
+    # The real haiku turn finishes when the thread reports idle with an assistant message.
+    done = False
+    for _ in range(60):
+        out = subprocess.run([client, 'messages', 'local', thread], env=env, capture_output=True, text=True, timeout=30).stdout
+        if 'SEEDOK' in out and out.count('SEEDOK') >= 2:
+            done = True
+            break
+        time.sleep(2)
+    assert done, 'no assistant reply to the seed message'
+    log('seed turn complete')
+    worker.terminate()
+    worker.wait(10)
+
+    # The quickshell config folder, as tools/test-qml builds it: omarchy's shell, the app, the driver.
+    qs = run / 'qs'
+    for d in ('Commons', 'Ui', 'plugins', 'services'):
+        (qs / d).symlink_to(omarchy / d)
+    (qs / 'UnderTest').symlink_to(desktop)
+    (qs / 'shell.qml').write_text('//@ pragma OmarchyLoadPatch\n//@ pragma RespectSystemStyle\n' + (here / 'qml-e2e.qml').read_text())
+    link = desktop / 'bin/omarchy-t3-client'
+    made_link = not link.exists()
+    if made_link:
+        link.symlink_to(client)
+    spare = [c for c in sorted(pathlib.Path('/sys/class/drm').glob('card[0-9]'))
+             if not any((x / 'status').read_text().strip() == 'connected' for x in c.glob(f'{c.name}-*'))]
+    assert spare, 'no GPU without a connected display to back the private compositor'
+    (run / 'hypr.conf').write_text('monitor=,1280x800@60,0x0,1\nmisc {\n disable_hyprland_logo = true\n disable_splash_rendering = true\n'
+                                   ' disable_autoreload = true\n enable_anr_dialog = false\n}\nanimations {\n enabled = false\n}\n')
+    henv = {'PATH': '/usr/bin:/bin', 'HOME': env['HOME'], 'XDG_RUNTIME_DIR': env['XDG_RUNTIME_DIR'],
+            'XDG_CONFIG_HOME': env['XDG_CONFIG_HOME'], 'HYPRLAND_HEADLESS_ONLY': '1', 'LIBSEAT_BACKEND': 'noop',
+            'HYPRLAND_NO_SD_NOTIFY': '1', 'HYPRLAND_NO_RT': '1', 'AQ_DRM_DEVICES': f'/dev/dri/{spare[0].name}'}
+    comp = subprocess.Popen(['nice', 'Hyprland', '-c', str(run / 'hypr.conf')], env=henv,
+                            stdout=open(run / 'hyprland.out', 'wb'), stderr=subprocess.STDOUT)
+    procs.append(comp)
+    deadline = time.monotonic() + 30
+    sigs = []
+    while not (run / 'rt/wayland-1').exists() or not sigs:
+        assert comp.poll() is None and time.monotonic() < deadline, 'private compositor did not start'
+        sigs = list((run / 'rt/hypr').glob('*/.socket.sock')) if (run / 'rt/hypr').exists() else []
+        time.sleep(.2)
+    sig = sigs[0].parent.name
+    cenv = {**henv, 'HYPRLAND_INSTANCE_SIGNATURE': sig}
+    subprocess.run(['hyprctl', 'output', 'create', 'headless'], env=cenv, check=True, capture_output=True)
+    log(f'private headless compositor up (backend GPU {spare[0].name})')
+    qenv = {**env, 'WAYLAND_DISPLAY': 'wayland-1', 'HYPRLAND_INSTANCE_SIGNATURE': sig, 'QT_QPA_PLATFORM': 'wayland',
+            'QT_QUICK_BACKEND': 'software', 'QT_QUICK_CONTROLS_STYLE': 'OmarchyT3',
+            'QML_IMPORT_PATH': str(desktop / 'ui/style'), 'OMARCHY_T3_LANGUAGE': 'en', 'QML_DISABLE_DISK_CACHE': '1',
+            'QML_E2E_SHOTS': str(run / 'shots'), 'QML_E2E_TITLE': 'E2E seed thread', 'QML_E2E_SEED_WORD': 'SEEDOK',
+            'QML_E2E_PING_WORD': 'E2EPING'}
+    qlog = run / 'quickshell.log'
+    try:
+        with open(qlog, 'wb') as out:
+            q = subprocess.Popen(['quickshell', '-n', '-p', str(qs)], env=qenv, stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT)
+            procs.append(q)
+            deadline = time.monotonic() + 300
+            import threading
+            def timeout_kill():
+                time.sleep(max(0, deadline - time.monotonic()))
+                if q.poll() is None:
+                    log('quickshell timed out')
+                    q.kill()
+            threading.Thread(target=timeout_kill, daemon=True).start()
+            for raw in q.stdout:
+                out.write(raw)
+                out.flush()
+                line = raw.decode(errors='replace')
+                if 'QML_E2E_SHOT ' in line:
+                    name = line.split('QML_E2E_SHOT ', 1)[1].strip()
+                    done = subprocess.run(['grim', str(run / 'shots' / f'{name}.png')], env=qenv, capture_output=True, text=True)
+                    log(f'screenshot {name}: {"ok" if done.returncode == 0 else done.stderr.strip()}')
+            q.wait()
+    finally:
+        if made_link:
+            link.unlink()
+    text = qlog.read_text(errors='replace')
+    for line in text.splitlines():
+        if 'QML_E2E_' in line:
+            print(line.split('QML_E2E_', 1)[1] and 'QML_E2E_' + line.split('QML_E2E_', 1)[1])
+    problems = [l for l in text.splitlines() if 'ERROR' in l or any(k in l for k in ('ReferenceError', 'TypeError', 'Binding loop', 'is not defined', 'Unable to assign', 'Cannot read property', 'Cannot assign'))]
+    log(f'{len(problems)} QML error lines; log: {qlog}')
+    for l in problems[:15]:
+        print('  ' + l[:240])
+    sys.exit(0 if 'QML_E2E_PASS' in text and not problems else 1)
+finally:
+    cleanup()
