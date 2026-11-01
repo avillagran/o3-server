@@ -225,8 +225,7 @@ pub(crate) async fn refresh_identities_if_changed(s: &State, force: bool) -> Res
         tx.execute("INSERT INTO events(thread_id,body) VALUES('', '{}')", [])
             .map_err(|e| e.to_string())?;
         let seq = tx.last_insert_rowid();
-        let snapshot = events::shell_db(&tx)?;
-        let item = json!({"kind":"snapshot","snapshot":snapshot,"resolvedRepositoryIdentityRoots":resolved.iter().map(|(_,root,_,_)|root).collect::<Vec<_>>()});
+        let item = json!({"kind":"repository-identities-resolved","resolvedRepositoryIdentityRoots":resolved.iter().map(|(_,root,_,_)|root).collect::<Vec<_>>()});
         tx.execute(
             "UPDATE events SET shell=? WHERE sequence=?",
             rusqlite::params![item.to_string(), seq],

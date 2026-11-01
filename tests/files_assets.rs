@@ -582,42 +582,24 @@ fn projects_over_http_publish_shell_events_and_validate_roots() {
         .map(|p| p["id"].as_str().unwrap())
         .collect();
     assert_eq!(ids, ["p1"]);
-    let mut seen = Vec::new();
-    let mut after = 0;
-    for _ in 0..32 {
-        let ev = collect(
-            &e.conn,
-            "orchestration.subscribeShell",
-            json!({"afterSequence":after}),
-            |_| true,
-        );
-        let Some(ev) = ev.into_iter().next() else {
-            break;
-        };
-        if ev["kind"] == "snapshot" {
-            after = ev["snapshot"]["snapshotSequence"].as_i64().unwrap();
-            continue;
-        }
-        after = ev["sequence"].as_i64().unwrap();
-        seen.push((
-            ev["kind"].as_str().unwrap().to_owned(),
-            ev["project"]["id"]
-                .as_str()
-                .or(ev["projectId"].as_str())
-                .unwrap_or("")
-                .to_owned(),
-        ));
-        if seen.last().unwrap().0 == "project.removed" {
-            break;
-        }
-    }
-    assert_eq!(
-        seen.first().unwrap(),
-        &("project.updated".into(), "p1".into())
+    let items = collect(
+        &e.conn,
+        "orchestration.subscribeShell",
+        json!({"afterSequence":0,"requestCompletionMarker":true}),
+        |v| v["kind"] == "synchronized",
     );
+    assert!(items
+        .iter()
+        .any(|v| v["kind"] == "project.updated" && v["project"]["id"] == "p1"));
     assert!(
-        seen.contains(&("project.removed".into(), "p4".into())),
-        "{seen:?}"
+        items
+            .iter()
+            .any(|v| v["kind"] == "project.removed" && v["projectId"] == "p4"
+                || v["kind"] == "snapshot"
+                    && v["snapshot"]["projects"]
+                        .as_array()
+                        .is_some_and(|rows| rows.iter().all(|p| p["id"] != "p4"))),
+        "{items:?}"
     );
     // Reads need orchestration:read, mutations orchestration:operate.
     let grant = e

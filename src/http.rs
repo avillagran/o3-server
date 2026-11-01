@@ -283,6 +283,7 @@ async fn route(state: Arc<State>, request: Request<Incoming>) -> Result<Reply, I
                             compact_items: query(&request, "compactTurnItems").as_deref()
                                 == Some("1"),
                             compact_ids: query(&request, "compactIds").as_deref() == Some("1"),
+                            resolved_roots: Vec::new(),
                         },
                     )
                 }
@@ -300,11 +301,19 @@ where
     crate::scheduled::ensure_started(&state);
     let weak = Arc::downgrade(&state);
     tokio::spawn(async move {
-        let mut initial = true;
+        let mut previous_roots = Vec::new();
         loop {
             let Some(state) = weak.upgrade() else { break };
-            let _ = crate::projects::refresh_identities_if_changed(&state, initial).await;
-            initial = false;
+            let projects = crate::projects::snapshot(&state).unwrap_or(Value::Null);
+            let roots = projects["projects"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|p| p["workspaceRoot"].as_str().map(str::to_owned))
+                .collect::<Vec<_>>();
+            let force = roots != previous_roots;
+            let _ = crate::projects::refresh_identities_if_changed(&state, force).await;
+            previous_roots = roots;
             drop(state);
             tokio::time::sleep(std::time::Duration::from_secs(30)).await;
         }
@@ -328,11 +337,19 @@ pub async fn serve(listener: TcpListener, state: Arc<State>) -> std::io::Result<
     crate::scheduled::ensure_started(&state);
     let weak = Arc::downgrade(&state);
     tokio::spawn(async move {
-        let mut initial = true;
+        let mut previous_roots = Vec::new();
         loop {
             let Some(state) = weak.upgrade() else { break };
-            let _ = crate::projects::refresh_identities_if_changed(&state, initial).await;
-            initial = false;
+            let projects = crate::projects::snapshot(&state).unwrap_or(Value::Null);
+            let roots = projects["projects"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|p| p["workspaceRoot"].as_str().map(str::to_owned))
+                .collect::<Vec<_>>();
+            let force = roots != previous_roots;
+            let _ = crate::projects::refresh_identities_if_changed(&state, force).await;
+            previous_roots = roots;
             drop(state);
             tokio::time::sleep(std::time::Duration::from_secs(30)).await;
         }

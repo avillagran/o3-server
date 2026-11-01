@@ -172,6 +172,7 @@ async fn snapshot_is_consistent_and_chunks_are_bounded() {
             dedupe: true,
             compact_ids: true,
             compact_items: true,
+            resolved_roots: Vec::new(),
         },
         None,
     )

@@ -97,14 +97,14 @@ pub(crate) fn shell_thread(db: &Connection, t: &Value) -> Result<Value> {
             t[key] = Value::Null;
         }
     }
-    t["pendingBackgroundTasks"] = json!(list(db, "subagents", Some(tid), 1000)?
-        .into_iter()
-        .filter(|s| !matches!(
-            s["status"].as_str(),
-            Some("completed" | "cancelled" | "failed")
-        ))
-        .map(|s| json!({"kind":"subagent","taskId":s["id"],"awaited":true}))
-        .collect::<Vec<_>>());
+    let mut q=db.prepare("SELECT id FROM records WHERE kind='subagents' AND thread_id=? AND coalesce(json_extract(body,'$.status'),'pending') NOT IN ('completed','cancelled','failed') ORDER BY rowid LIMIT 1000").map_err(|e|e.to_string())?;
+    let tasks = q
+        .query_map([tid], |r| r.get::<_, String>(0))
+        .map_err(|e| e.to_string())?
+        .map(|id| id.map(|id| json!({"kind":"subagent","taskId":id,"awaited":true})))
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    t["pendingBackgroundTasks"] = json!(tasks);
     t["latestRunStopRequested"] = json!(false);
     if let Some(run) = list(db, "runs", Some(tid), 1)?.pop() {
         t["latestRunId"] = run["id"].clone();
@@ -129,9 +129,7 @@ pub(crate) fn shell_thread(db: &Connection, t: &Value) -> Result<Value> {
         t["pendingRuntimeRequest"] =
             json!({"id":request["id"],"kind":request["kind"],"createdAt":request["createdAt"]});
     }
-    t["hasActionableProposedPlan"] = json!(list(db, "plans", Some(tid), 1000)?
-        .iter()
-        .any(|p| p["status"] == "active"));
+    t["hasActionableProposedPlan"]=json!(db.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='plans' AND thread_id=? AND json_extract(body,'$.status')='active')",[tid],|r|r.get::<_,bool>(0)).map_err(|e|e.to_string())?);
     t["itemCount"] = json!(count);
     t["visibleItemCount"] = json!(count);
     Ok(t)

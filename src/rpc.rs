@@ -224,6 +224,26 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                 ) {
                     Ok(Some((seq, v))) => {
                         sub.cursor = seq;
+                        if v["kind"] == "repository-identities-resolved" {
+                            let opts = crate::snapshot::Options {
+                                resolved_roots: v["resolvedRepositoryIdentityRoots"]
+                                    .as_array()
+                                    .into_iter()
+                                    .flatten()
+                                    .filter_map(|v| v.as_str().map(str::to_owned))
+                                    .collect(),
+                                ..Default::default()
+                            };
+                            match crate::snapshot::start(&s, None, opts, Some(sub.id.clone())) {
+                                Ok((boundary, rx)) => {
+                                    sub.cursor = boundary;
+                                    sub.snapshot = Some(rx);
+                                    s.notify();
+                                }
+                                Err(_) => return,
+                            }
+                            continue;
+                        }
                         Some(if sub.tid.is_some() {
                             json!({"kind":"event","sequence":seq,"event":v})
                         } else {
@@ -315,7 +335,7 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                                         if tag=="orchestration.subscribeThread" && tid.is_none() {if send(&mut ws,exit(&id,Err(error("threadId required".into())))).await.is_err(){return}continue;}
                                         let mut snapshot=None;let mut boundary=seq;
                                         if !config && after.is_none() {
-                                            let opts=crate::snapshot::Options{bounded:p["acceptBoundedSnapshot"]==true,dedupe:p["acceptDedupedBodies"]==true,compact_items:p["acceptCompactTurnItems"]==true,compact_ids:p["acceptCompactIds"]==true};
+                                            let opts=crate::snapshot::Options{bounded:p["acceptBoundedSnapshot"]==true,dedupe:p["acceptDedupedBodies"]==true,compact_items:p["acceptCompactTurnItems"]==true,compact_ids:p["acceptCompactIds"]==true,resolved_roots:Vec::new()};
                                             match crate::snapshot::start(&s,tid.clone(),opts,Some(id.clone())) {
                                                 Ok((seq,rx))=>{boundary=seq;snapshot=Some(rx);},
                                                 Err(e)=>{if send(&mut ws,exit(&id,Err(error(e)))).await.is_err(){return}continue;}

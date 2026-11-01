@@ -11,6 +11,7 @@ pub struct Options {
     pub dedupe: bool,
     pub compact_items: bool,
     pub compact_ids: bool,
+    pub resolved_roots: Vec<String>,
 }
 const KINDS: &[&str] = &[
     "runs",
@@ -189,7 +190,13 @@ fn write_snapshot(
         raw(out, "}")?;
     } else {
         if rpc {
-            raw(out, "{\"kind\":\"snapshot\",\"snapshot\":")?;
+            raw(out, "{\"kind\":\"snapshot\",")?;
+            if !opts.resolved_roots.is_empty() {
+                raw(out, "\"resolvedRepositoryIdentityRoots\":")?;
+                emit(out, &json!(opts.resolved_roots))?;
+                raw(out, ",")?;
+            }
+            raw(out, "\"snapshot\":")?;
         }
         raw(
             out,
