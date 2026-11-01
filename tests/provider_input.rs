@@ -235,7 +235,62 @@ fn live_claude_and_codex_through_real_client() {
                             && m["text"].as_str().is_some_and(|t| t.contains("O3_OK"))),
                     "{instance}: no expected response"
                 );
-                eprintln!("{instance}: real turn completed");
+                // Replay real native events through the same reducer and view
+                // used by clients, rather than asserting only raw wire JSON.
+                let finished = std::cell::Cell::new(false);
+                let mut mirror = json!({});
+                let mut applied = 0;
+                c.subscribe(
+                    "orchestration.subscribeThread",
+                    json!({"threadId":"t","afterSequence":0}),
+                    || finished.get() || Instant::now() >= deadline,
+                    |event| {
+                        if let Some(event) = event {
+                            if event["type"] == "snapshot" {
+                                mirror = event["projection"].clone();
+                            } else if t3_protocol::projection::apply(&mut mirror, &event["event"]) {
+                                applied += 1;
+                            }
+                            finished.set(mirror["runs"].as_array().is_some_and(|runs| {
+                                runs.iter().any(|run| run["status"] == "completed")
+                            }));
+                        }
+                        Ok(())
+                    },
+                )
+                .unwrap();
+                assert!(
+                    finished.get() && applied > 0,
+                    "{instance}: native replay incomplete"
+                );
+                let view = t3_protocol::timeline::view(
+                    &mirror,
+                    &json!({}),
+                    &t3_protocol::timeline::Render::neutral(false),
+                )
+                .unwrap();
+                assert_eq!(view["threadState"]["working"], false);
+                assert!(
+                    view["messages"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|m| m["role"] == "assistant"
+                            && m["text"].as_str().is_some_and(|t| t.contains("O3_OK"))),
+                    "{instance}: real reply absent from client view"
+                );
+                assert_eq!(t3_protocol::queue::derive(&mirror)["items"], json!([]));
+                let shell = c
+                    .request_json("GET", "/api/orchestration/shell", None, true)
+                    .unwrap();
+                let rows = t3_protocol::sidebar::view::rows(&shell, "live", 0).unwrap();
+                assert_eq!(rows.len(), 1);
+                assert_eq!(rows[0]["working"], false);
+                assert_ne!(
+                    t3_protocol::awareness::phase(&shell["threads"][0]),
+                    Some("running")
+                );
+                eprintln!("{instance}: real turn completed; replay/timeline/queue/sidebar/awareness readers passed");
                 // Wait for the run supervisor to return the idle session to its pool.
                 while !server.state.active.lock().unwrap().is_empty() {
                     std::thread::sleep(Duration::from_millis(10));
