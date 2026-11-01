@@ -1,40 +1,41 @@
 //! Dispatch for RPCs that need I/O or subprocesses. `rpc.rs` runs these on spawned tasks so a slow
 //! `git pull` never stalls the rest of a socket.
 use crate::{assets, files, review, store::State, threadq, vcs};
-use std::sync::Arc;
 use serde_json::Value;
+use std::sync::Arc;
 
 pub const STREAM_ACTION: &str = "git.runStackedAction";
 
 pub fn handles(tag: &str) -> bool {
-    crate::p2::handles(tag) || matches!(
-        tag,
-        "projects.mutate"
-            | "attachments.createUploadUrl"
-            | "attachments.delete"
-            | "assets.createUrl"
-            | "projects.readFile"
-            | "projects.searchEntries"
-            | "filesystem.browse"
-            | "filesystem.getMetadata"
-            | "shell.openInEditor"
-            | "vcs.refreshStatus"
-            | "vcs.listRefs"
-            | "vcs.createRef"
-            | "vcs.switchRef"
-            | "vcs.pull"
-            | "vcs.init"
-            | "review.getDiffPreview"
-            | "review.getDiffFileContents"
-            | "orchestration.getTurnDiff"
-            | "orchestration.getFullThreadDiff"
-            | "orchestration.searchThreads"
-            | "orchestration.searchThread"
-            | "server.discoverSourceControl"
-            | "orchestration.getArchivedShellSnapshot"
-            | "orchestration.getTurnItem"
-            | "orchestration.getThreadProjection"
-    )
+    crate::p2::handles(tag)
+        || matches!(
+            tag,
+            "projects.mutate"
+                | "attachments.createUploadUrl"
+                | "attachments.delete"
+                | "assets.createUrl"
+                | "projects.readFile"
+                | "projects.searchEntries"
+                | "filesystem.browse"
+                | "filesystem.getMetadata"
+                | "shell.openInEditor"
+                | "vcs.refreshStatus"
+                | "vcs.listRefs"
+                | "vcs.createRef"
+                | "vcs.switchRef"
+                | "vcs.pull"
+                | "vcs.init"
+                | "review.getDiffPreview"
+                | "review.getDiffFileContents"
+                | "orchestration.getTurnDiff"
+                | "orchestration.getFullThreadDiff"
+                | "orchestration.searchThreads"
+                | "orchestration.searchThread"
+                | "server.discoverSourceControl"
+                | "orchestration.getArchivedShellSnapshot"
+                | "orchestration.getTurnItem"
+                | "orchestration.getThreadProjection"
+        )
 }
 
 pub async fn call(s: &Arc<State>, tag: &str, p: Value) -> Result<Value, Value> {

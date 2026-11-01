@@ -145,7 +145,11 @@ impl Gh {
             .map_err(|_| operation(op, "the GitHub CLI timed out", false))?
             .map_err(|e| operation(op, &e.to_string(), false))?;
         if out.stdout.len() > 8 * 1024 * 1024 {
-            return Err(operation(op, "the GitHub CLI answered too much data", false));
+            return Err(operation(
+                op,
+                "the GitHub CLI answered too much data",
+                false,
+            ));
         }
         if out.status.success() {
             return Ok(String::from_utf8_lossy(&out.stdout).into_owned());
@@ -173,7 +177,8 @@ impl Gh {
         if text.trim().is_empty() {
             return Ok(Value::Null);
         }
-        serde_json::from_str(&text).map_err(|e| operation(op, &format!("unreadable answer: {e}"), false))
+        serde_json::from_str(&text)
+            .map_err(|e| operation(op, &format!("unreadable answer: {e}"), false))
     }
 }
 
@@ -223,7 +228,8 @@ fn project(s: &State, id: &str) -> Result<Project, Value> {
 
 fn live_projects(s: &State) -> Vec<Project> {
     let db = s.db.lock().unwrap();
-    let Ok(mut q) = db.prepare("SELECT body FROM records WHERE kind='project' ORDER BY rowid") else {
+    let Ok(mut q) = db.prepare("SELECT body FROM records WHERE kind='project' ORDER BY rowid")
+    else {
         return Vec::new();
     };
     let Ok(rows) = q.query_map([], |r| r.get::<_, String>(0)) else {
@@ -426,13 +432,15 @@ fn checks_state(checks: &[Value]) -> Option<&'static str> {
         return None;
     }
     let any = |f: fn(&str) -> bool| checks.iter().any(|c| f(c["status"].as_str().unwrap_or("")));
-    Some(if any(|s| matches!(s, "failure" | "cancelled" | "action-required")) {
-        "failing"
-    } else if any(|s| s == "pending") {
-        "pending"
-    } else {
-        "passing"
-    })
+    Some(
+        if any(|s| matches!(s, "failure" | "cancelled" | "action-required")) {
+            "failing"
+        } else if any(|s| s == "pending") {
+            "pending"
+        } else {
+            "passing"
+        },
+    )
 }
 
 const DETAIL_FIELDS: &str = "number,title,body,url,author,state,isDraft,mergeable,mergeStateStatus,additions,deletions,changedFiles,headRefName,headRefOid,headRepository,headRepositoryOwner,baseRefName,createdAt,updatedAt,mergedAt,closedAt,reviewRequests,labels,statusCheckRollup,autoMergeRequest,reviewDecision";
@@ -477,11 +485,7 @@ async fn detail(pr: &Pr) -> Reply {
     ];
     let (v, repo) = tokio::join!(
         view(pr, DETAIL_FIELDS),
-        pr.gh.json(
-            "repo",
-            &repo_args,
-            None,
-        )
+        pr.gh.json("repo", &repo_args, None,)
     );
     let (v, repo) = (v?, repo?);
     let host = &pr.gh.host;
@@ -529,7 +533,9 @@ async fn detail(pr: &Pr) -> Reply {
 
 async fn checks(pr: &Pr) -> Reply {
     let v = view(pr, "state,statusCheckRollup").await?;
-    Ok(json!({"observedAt":crate::store::now_ms(),"state":state(&v["state"]),"checks":checks_of(&v["statusCheckRollup"])}))
+    Ok(
+        json!({"observedAt":crate::store::now_ms(),"state":state(&v["state"]),"checks":checks_of(&v["statusCheckRollup"])}),
+    )
 }
 
 async fn routing_identity(p: &Value) -> Reply {
@@ -547,8 +553,10 @@ async fn routing_identity(p: &Value) -> Reply {
 
 async fn routing(pr: &Pr) -> Reply {
     let login = viewer(&pr.gh).await?;
-    Ok(json!({"accountId":account_id(&pr.gh.host,&login),"host":pr.gh.host,"provider":"github","viewer":login,
-        "projectTitle":pr.project.title,"workspaceRoot":pr.project.root}))
+    Ok(
+        json!({"accountId":account_id(&pr.gh.host,&login),"host":pr.gh.host,"provider":"github","viewer":login,
+        "projectTitle":pr.project.title,"workspaceRoot":pr.project.root}),
+    )
 }
 
 // ---- activity ------------------------------------------------------------------------------
@@ -578,7 +586,10 @@ async fn activity(pr: &Pr) -> Reply {
         "-F",
         &format!("number={number}"),
     ];
-    let comments_path = format!("repos/{}/pulls/{}/comments?per_page=100", pr.repo, pr.number);
+    let comments_path = format!(
+        "repos/{}/pulls/{}/comments?per_page=100",
+        pr.repo, pr.number
+    );
     let comments_args = ["api", comments_path.as_str()];
     let (v, review_comments, threads) = tokio::join!(
         view(pr, "author,comments,reviews,commits,reviewRequests"),
@@ -606,7 +617,13 @@ async fn activity(pr: &Pr) -> Reply {
         }));
     }
     // Review comments are optional garnish: a failure here must not hide the rest of the page.
-    for c in review_comments.ok().as_ref().and_then(Value::as_array).into_iter().flatten() {
+    for c in review_comments
+        .ok()
+        .as_ref()
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
         comments.push(json!({
             "id":c["node_id"].as_str().map(str::to_owned).unwrap_or_else(||c["id"].to_string()),
             "kind":"review-comment","author":actor(host,&json!({"login":c["user"]["login"],"type":c["user"]["type"]})),
@@ -669,7 +686,12 @@ fn category(path: &str) -> &'static str {
     let p = path.to_lowercase();
     let file = p.rsplit('/').next().unwrap_or("");
     let ext = file.rsplit_once('.').map(|(_, e)| e).unwrap_or("");
-    if p.contains("/__mocks__/") || p.starts_with("__mocks__/") || file.contains(".mock.") || p.contains("/fixtures/") || p.contains("/mocks/") {
+    if p.contains("/__mocks__/")
+        || p.starts_with("__mocks__/")
+        || file.contains(".mock.")
+        || p.contains("/fixtures/")
+        || p.contains("/mocks/")
+    {
         "mocks"
     } else if p.contains("/test/")
         || p.contains("/tests/")
@@ -695,7 +717,10 @@ fn category(path: &str) -> &'static str {
         || ext == "snap"
     {
         "generated"
-    } else if matches!(ext, "md" | "mdx" | "rst" | "txt" | "adoc") || p.starts_with("docs/") || p.contains("/docs/") {
+    } else if matches!(ext, "md" | "mdx" | "rst" | "txt" | "adoc")
+        || p.starts_with("docs/")
+        || p.contains("/docs/")
+    {
         "docs"
     } else {
         "code"
@@ -713,9 +738,13 @@ async fn change_breakdown(pr: &Pr) -> Reply {
         totals.insert(key.into(), json!({"additions":0,"deletions":0}));
     }
     for f in &files {
-        let c = totals.get_mut(category(f["path"].as_str().unwrap_or(""))).unwrap();
-        c["additions"] = json!(c["additions"].as_u64().unwrap_or(0) + f["additions"].as_u64().unwrap_or(0));
-        c["deletions"] = json!(c["deletions"].as_u64().unwrap_or(0) + f["deletions"].as_u64().unwrap_or(0));
+        let c = totals
+            .get_mut(category(f["path"].as_str().unwrap_or("")))
+            .unwrap();
+        c["additions"] =
+            json!(c["additions"].as_u64().unwrap_or(0) + f["additions"].as_u64().unwrap_or(0));
+        c["deletions"] =
+            json!(c["deletions"].as_u64().unwrap_or(0) + f["deletions"].as_u64().unwrap_or(0));
     }
     Ok(Value::Object(totals))
 }
@@ -723,11 +752,17 @@ async fn change_breakdown(pr: &Pr) -> Reply {
 // ---- candidates ----------------------------------------------------------------------------
 
 async fn label_candidates(pr: &Pr) -> Reply {
-    let label_args = ["label", "list", "--repo", pr.repo.as_str(), "--json", "name,color,description", "--limit", "100"];
-    let (all, mine) = tokio::join!(
-        pr.gh.json("labels", &label_args, None),
-        view(pr, "labels")
-    );
+    let label_args = [
+        "label",
+        "list",
+        "--repo",
+        pr.repo.as_str(),
+        "--json",
+        "name,color,description",
+        "--limit",
+        "100",
+    ];
+    let (all, mine) = tokio::join!(pr.gh.json("labels", &label_args, None), view(pr, "labels"));
     let (all, mine) = (all?, mine?);
     let applied: Vec<&str> = mine["labels"]
         .as_array()
@@ -777,7 +812,9 @@ async fn reviewer_candidates(pr: &Pr) -> Reply {
 // ---- mutations -----------------------------------------------------------------------------
 
 fn body_of<'a>(p: &'a Value, key: &str, allow_empty: bool) -> Result<&'a str, Value> {
-    let b = p[key].as_str().ok_or_else(|| invalid(format!("{key} is required")))?;
+    let b = p[key]
+        .as_str()
+        .ok_or_else(|| invalid(format!("{key} is required")))?;
     if (b.is_empty() && !allow_empty) || b.chars().count() > 65_536 {
         return Err(invalid(format!("{key} is out of range")));
     }
@@ -789,7 +826,15 @@ async fn comment(pr: &Pr, p: &Value) -> Reply {
     pr.gh
         .run(
             "comment",
-            &["pr", "comment", &pr.n(), "--repo", &pr.repo, "--body-file", "-"],
+            &[
+                "pr",
+                "comment",
+                &pr.n(),
+                "--repo",
+                &pr.repo,
+                "--body-file",
+                "-",
+            ],
             Some(body),
         )
         .await?;
@@ -797,7 +842,12 @@ async fn comment(pr: &Pr, p: &Value) -> Reply {
 }
 
 fn review_location(pos: &Value) -> Result<(u64, &'static str), Value> {
-    let line = |k: &str| pos[k].as_u64().filter(|l| *l >= 1).ok_or_else(|| invalid("comment position is invalid"));
+    let line = |k: &str| {
+        pos[k]
+            .as_u64()
+            .filter(|l| *l >= 1)
+            .ok_or_else(|| invalid("comment position is invalid"))
+    };
     Ok(match pos["kind"].as_str() {
         Some("added") => (line("newLine")?, "RIGHT"),
         Some("deleted") => (line("oldLine")?, "LEFT"),
@@ -833,7 +883,16 @@ async fn submit_review(pr: &Pr, p: &Value) -> Reply {
         pr.gh
             .run(
                 "submit-review",
-                &["pr", "review", &pr.n(), "--repo", &pr.repo, flag, "--body-file", "-"],
+                &[
+                    "pr",
+                    "review",
+                    &pr.n(),
+                    "--repo",
+                    &pr.repo,
+                    flag,
+                    "--body-file",
+                    "-",
+                ],
                 Some(body),
             )
             .await?;
@@ -841,7 +900,10 @@ async fn submit_review(pr: &Pr, p: &Value) -> Reply {
     }
     let mut comments = Vec::new();
     for d in &drafts {
-        let path = d["path"].as_str().filter(|p| !p.is_empty()).ok_or_else(|| invalid("comment path is required"))?;
+        let path = d["path"]
+            .as_str()
+            .filter(|p| !p.is_empty())
+            .ok_or_else(|| invalid("comment path is required"))?;
         let text = body_of(d, "body", false)?;
         let (line, side) = review_location(&d["position"])?;
         let mut c = json!({"path":path,"body":text,"line":line,"side":side});
@@ -868,7 +930,11 @@ async fn submit_review(pr: &Pr, p: &Value) -> Reply {
 
 async fn run_action(pr: &Pr, p: &Value) -> Reply {
     if p.get("stackNumber").is_some_and(|v| !v.is_null()) {
-        return Err(operation("run-action", "Stacked pull request actions are not supported.", false));
+        return Err(operation(
+            "run-action",
+            "Stacked pull request actions are not supported.",
+            false,
+        ));
     }
     let n = pr.n();
     let repo = pr.repo.as_str();
@@ -886,7 +952,14 @@ async fn run_action(pr: &Pr, p: &Value) -> Reply {
             args.extend(["merge", &n, "--repo", repo, method.unwrap_or("--merge")]);
         }
         "enable-auto-merge" => {
-            args.extend(["merge", &n, "--repo", repo, "--auto", method.unwrap_or("--merge")]);
+            args.extend([
+                "merge",
+                &n,
+                "--repo",
+                repo,
+                "--auto",
+                method.unwrap_or("--merge"),
+            ]);
         }
         "disable-auto-merge" => args.extend(["merge", &n, "--repo", repo, "--disable-auto"]),
         "ready" => args.extend(["ready", &n, "--repo", repo]),
@@ -902,19 +975,41 @@ async fn run_action(pr: &Pr, p: &Value) -> Reply {
         "delete-branch" => {
             let v = view(pr, "headRefName,headRepository,headRepositoryOwner,state").await?;
             if lower(&v["state"]) == "open" {
-                return Err(operation("run-action", "Close or merge the pull request before deleting its branch.", false));
+                return Err(operation(
+                    "run-action",
+                    "Close or merge the pull request before deleting its branch.",
+                    false,
+                ));
             }
-            let branch = v["headRefName"].as_str().filter(|b| !b.is_empty()).ok_or_else(|| operation("run-action", "The head branch is unknown.", true))?;
-            let head = match (v["headRepositoryOwner"]["login"].as_str(), v["headRepository"]["name"].as_str()) {
+            let branch = v["headRefName"]
+                .as_str()
+                .filter(|b| !b.is_empty())
+                .ok_or_else(|| operation("run-action", "The head branch is unknown.", true))?;
+            let head = match (
+                v["headRepositoryOwner"]["login"].as_str(),
+                v["headRepository"]["name"].as_str(),
+            ) {
                 (Some(o), Some(nm)) => format!("{o}/{nm}"),
-                _ => return Err(operation("run-action", "The head repository was deleted.", true)),
+                _ => {
+                    return Err(operation(
+                        "run-action",
+                        "The head repository was deleted.",
+                        true,
+                    ))
+                }
             };
             let path = format!("repos/{head}/git/refs/heads/{branch}");
-            pr.gh.run("run-action", &["api", "-X", "DELETE", &path], None).await?;
+            pr.gh
+                .run("run-action", &["api", "-X", "DELETE", &path], None)
+                .await?;
             return Ok(Value::Null);
         }
         "revert" | "approve-workflows" => {
-            return Err(operation("run-action", &format!("The {action} action is not supported."), false))
+            return Err(operation(
+                "run-action",
+                &format!("The {action} action is not supported."),
+                false,
+            ))
         }
         _ => return Err(invalid("action is invalid")),
     }
@@ -923,32 +1018,65 @@ async fn run_action(pr: &Pr, p: &Value) -> Reply {
 }
 
 async fn request_reviewers(pr: &Pr, p: &Value) -> Reply {
-    let list = p["reviewers"].as_array().filter(|a| !a.is_empty() && a.len() <= 25).ok_or_else(|| invalid("reviewers is out of range"))?;
+    let list = p["reviewers"]
+        .as_array()
+        .filter(|a| !a.is_empty() && a.len() <= 25)
+        .ok_or_else(|| invalid("reviewers is out of range"))?;
     let (mut users, mut teams) = (Vec::new(), Vec::new());
     for r in list {
-        let id = r["id"].as_str().filter(|i| !i.is_empty()).ok_or_else(|| invalid("reviewer id is required"))?;
+        let id = r["id"]
+            .as_str()
+            .filter(|i| !i.is_empty())
+            .ok_or_else(|| invalid("reviewer id is required"))?;
         match r["kind"].as_str() {
             Some("user") => users.push(id.to_owned()),
             Some("team") => teams.push(id.rsplit('/').next().unwrap_or(id).to_owned()),
             _ => return Err(invalid("reviewer kind is invalid")),
         }
     }
-    let method = if p["requested"] == true { "POST" } else { "DELETE" };
+    let method = if p["requested"] == true {
+        "POST"
+    } else {
+        "DELETE"
+    };
     let path = format!("repos/{}/pulls/{}/requested_reviewers", pr.repo, pr.number);
     let payload = json!({"reviewers":users,"team_reviewers":teams}).to_string();
-    pr.gh.run("request-reviewers", &["api", "-X", method, &path, "--input", "-"], Some(&payload)).await?;
+    pr.gh
+        .run(
+            "request-reviewers",
+            &["api", "-X", method, &path, "--input", "-"],
+            Some(&payload),
+        )
+        .await?;
     Ok(Value::Null)
 }
 
 async fn set_labels(pr: &Pr, p: &Value) -> Reply {
-    let list = p["labels"].as_array().filter(|a| !a.is_empty() && a.len() <= 25).ok_or_else(|| invalid("labels is out of range"))?;
-    let names: Vec<&str> = list.iter().filter_map(Value::as_str).filter(|l| !l.trim().is_empty()).collect();
+    let list = p["labels"]
+        .as_array()
+        .filter(|a| !a.is_empty() && a.len() <= 25)
+        .ok_or_else(|| invalid("labels is out of range"))?;
+    let names: Vec<&str> = list
+        .iter()
+        .filter_map(Value::as_str)
+        .filter(|l| !l.trim().is_empty())
+        .collect();
     if names.len() != list.len() {
         return Err(invalid("labels must be non-empty strings"));
     }
     let joined = names.join(",");
-    let flag = if p["applied"] == true { "--add-label" } else { "--remove-label" };
-    pr.gh.run("set-labels", &["pr", "edit", &pr.n(), "--repo", &pr.repo, flag, &joined], None).await?;
+    let flag = if p["applied"] == true {
+        "--add-label"
+    } else {
+        "--remove-label"
+    };
+    pr.gh
+        .run(
+            "set-labels",
+            &["pr", "edit", &pr.n(), "--repo", &pr.repo, flag, &joined],
+            None,
+        )
+        .await?;
     Ok(Value::Null)
 }
 
@@ -959,7 +1087,12 @@ const LIST_FIELDS: &str = "number,title,url,author,headRefName,baseRefName,state
 fn requested_projects(s: &State, p: &Value) -> Vec<Project> {
     let mut wanted: Vec<String> = p["projectIds"]
         .as_array()
-        .map(|a| a.iter().filter_map(Value::as_str).map(str::to_owned).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
         .unwrap_or_default();
     if let Some(id) = p["projectId"].as_str() {
         wanted.push(id.into());
@@ -968,7 +1101,9 @@ fn requested_projects(s: &State, p: &Value) -> Vec<Project> {
     if wanted.is_empty() {
         all
     } else {
-        all.into_iter().filter(|pr| wanted.contains(&pr.id)).collect()
+        all.into_iter()
+            .filter(|pr| wanted.contains(&pr.id))
+            .collect()
     }
 }
 
@@ -982,7 +1117,9 @@ fn search_terms(p: &Value) -> Vec<String> {
     }
     match f["review"].as_str() {
         Some("none") => terms.push("review:none".into()),
-        Some(r @ ("approved" | "changes-requested" | "review-required")) => terms.push(format!("review:{}", r.replace('-', "_"))),
+        Some(r @ ("approved" | "changes-requested" | "review-required")) => {
+            terms.push(format!("review:{}", r.replace('-', "_")))
+        }
         _ => {}
     }
     match f["checks"].as_str() {
@@ -991,12 +1128,23 @@ fn search_terms(p: &Value) -> Vec<String> {
         _ => {}
     }
     for group in f["labels"].as_array().into_iter().flatten() {
-        let names: Vec<String> = group.as_array().into_iter().flatten().filter_map(Value::as_str).map(|l| format!("\"{}\"", l.replace('"', ""))).collect();
+        let names: Vec<String> = group
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(|l| format!("\"{}\"", l.replace('"', "")))
+            .collect();
         if !names.is_empty() {
             terms.push(format!("label:{}", names.join(",")));
         }
     }
-    for l in f["excludedLabels"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+    for l in f["excludedLabels"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+    {
         terms.push(format!("-label:\"{}\"", l.replace('"', "")));
     }
     if let Some(q) = p["query"].as_str().filter(|q| !q.trim().is_empty()) {
@@ -1006,7 +1154,9 @@ fn search_terms(p: &Value) -> Vec<String> {
 }
 
 async fn list(s: &State, p: &Value) -> Reply {
-    let state = p["state"].as_str().ok_or_else(|| invalid("state is required"))?;
+    let state = p["state"]
+        .as_str()
+        .ok_or_else(|| invalid("state is required"))?;
     if !matches!(state, "all" | "open" | "closed" | "merged") {
         return Err(invalid("state is invalid"));
     }
@@ -1040,7 +1190,10 @@ async fn list(s: &State, p: &Value) -> Reply {
             continue;
         }
         seen_repos.push((host.clone(), repo.clone()));
-        let gh = Gh { cwd: project.root.clone(), host: host.clone() };
+        let gh = Gh {
+            cwd: project.root.clone(),
+            host: host.clone(),
+        };
         let login = match viewer(&gh).await {
             Ok(l) => l,
             Err(e) => {
@@ -1051,17 +1204,39 @@ async fn list(s: &State, p: &Value) -> Reply {
         };
         viewers.insert(host.clone(), json!(login));
         let limit_text = (limit + 1).to_string();
-        let mut args: Vec<String> = ["pr", "list", "--repo", &repo, "--state", state, "--limit", &limit_text, "--json", LIST_FIELDS]
-            .iter()
-            .map(|a| a.to_string())
-            .collect();
+        let mut args: Vec<String> = [
+            "pr",
+            "list",
+            "--repo",
+            &repo,
+            "--state",
+            state,
+            "--limit",
+            &limit_text,
+            "--json",
+            LIST_FIELDS,
+        ]
+        .iter()
+        .map(|a| a.to_string())
+        .collect();
         match involvement {
             "authored" => args.extend(["--author".into(), "@me".into()]),
             "reviewing" => args.extend(["--search".into(), "review-requested:@me".into()]),
             _ => {}
         }
-        if let Some(author) = p["filters"]["author"].as_str().filter(|a| !a.trim().is_empty()) {
-            let author = if author.trim().trim_start_matches('@').eq_ignore_ascii_case("me") { login.clone() } else { author.trim().to_owned() };
+        if let Some(author) = p["filters"]["author"]
+            .as_str()
+            .filter(|a| !a.trim().is_empty())
+        {
+            let author = if author
+                .trim()
+                .trim_start_matches('@')
+                .eq_ignore_ascii_case("me")
+            {
+                login.clone()
+            } else {
+                author.trim().to_owned()
+            };
             args.extend(["--author".into(), author]);
         }
         let terms = search_terms(p);
@@ -1077,7 +1252,11 @@ async fn list(s: &State, p: &Value) -> Reply {
                 }
                 for r in rows.iter().take(limit as usize) {
                     let checks = checks_of(&r["statusCheckRollup"]);
-                    let requested = r["reviewRequests"].as_array().into_iter().flatten().any(|x| x["login"] == login.as_str());
+                    let requested = r["reviewRequests"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .any(|x| x["login"] == login.as_str());
                     let mut e = json!({
                         "provider":"github","host":host,"projectId":project.id,"projectTitle":project.title,"repository":repo,
                         "number":r["number"],"title":r["title"],"url":r["url"],"author":actor(&host,&r["author"]),
@@ -1115,7 +1294,9 @@ async fn list(s: &State, p: &Value) -> Reply {
         .iter()
         .map(|(h, n)| json!({"host":h,"kind":"github","searchesOnHost":false,"projectCount":n,"configured":viewers.contains_key(h),"detail":null}))
         .collect();
-    Ok(json!({"viewers":viewers,"providers":providers,"entries":entries,"errors":errors,"truncated":truncated,"nextCursors":{}}))
+    Ok(
+        json!({"viewers":viewers,"providers":providers,"entries":entries,"errors":errors,"truncated":truncated,"nextCursors":{}}),
+    )
 }
 
 fn state_of(v: &Value) -> &'static str {
@@ -1123,7 +1304,9 @@ fn state_of(v: &Value) -> &'static str {
 }
 
 async fn filter_options(s: &State, p: &Value) -> Reply {
-    let kind = p["kind"].as_str().ok_or_else(|| invalid("kind is required"))?;
+    let kind = p["kind"]
+        .as_str()
+        .ok_or_else(|| invalid("kind is required"))?;
     if !matches!(kind, "labels" | "authors") {
         return Err(invalid("kind is invalid"));
     }
@@ -1133,16 +1316,46 @@ async fn filter_options(s: &State, p: &Value) -> Reply {
     let mut seen = Vec::new();
     let mut first_error = None;
     for project in requested_projects(s, p) {
-        let Some((host, repo)) = remote(&project.root).await else { continue };
-        if !is_github(&host) || p["host"].as_str().is_some_and(|h| h != host) || seen.contains(&(host.clone(), repo.clone())) {
+        let Some((host, repo)) = remote(&project.root).await else {
+            continue;
+        };
+        if !is_github(&host)
+            || p["host"].as_str().is_some_and(|h| h != host)
+            || seen.contains(&(host.clone(), repo.clone()))
+        {
             continue;
         }
         seen.push((host.clone(), repo.clone()));
-        let gh = Gh { cwd: project.root.clone(), host: host.clone() };
+        let gh = Gh {
+            cwd: project.root.clone(),
+            host: host.clone(),
+        };
         let result = if kind == "labels" {
-            gh.json("filter-options", &["label", "list", "--repo", &repo, "--json", "name,color", "--limit", "100"], None).await
+            gh.json(
+                "filter-options",
+                &[
+                    "label",
+                    "list",
+                    "--repo",
+                    &repo,
+                    "--json",
+                    "name,color",
+                    "--limit",
+                    "100",
+                ],
+                None,
+            )
+            .await
         } else {
-            gh.json("filter-options", &["pr", "list", "--repo", &repo, "--state", "all", "--limit", "100", "--json", "author"], None).await
+            gh.json(
+                "filter-options",
+                &[
+                    "pr", "list", "--repo", &repo, "--state", "all", "--limit", "100", "--json",
+                    "author",
+                ],
+                None,
+            )
+            .await
         };
         match result {
             Ok(v) => {
@@ -1150,14 +1363,22 @@ async fn filter_options(s: &State, p: &Value) -> Reply {
                 truncated |= rows.len() >= 100;
                 for r in rows {
                     if kind == "labels" {
-                        if let Some(l) = label(&r).filter(|l| l["name"].as_str().is_some_and(|n| n.to_lowercase().contains(&query))) {
+                        if let Some(l) = label(&r).filter(|l| {
+                            l["name"]
+                                .as_str()
+                                .is_some_and(|n| n.to_lowercase().contains(&query))
+                        }) {
                             if !label_out.iter().any(|x| x["name"] == l["name"]) {
                                 label_out.push(l);
                             }
                         }
                     } else {
                         let a = actor(&host, &r["author"]);
-                        if a["login"].as_str().is_some_and(|n| n.to_lowercase().contains(&query)) && !author_out.iter().any(|x| x["login"] == a["login"]) {
+                        if a["login"]
+                            .as_str()
+                            .is_some_and(|n| n.to_lowercase().contains(&query))
+                            && !author_out.iter().any(|x| x["login"] == a["login"])
+                        {
                             author_out.push(a);
                         }
                     }
@@ -1181,7 +1402,9 @@ async fn filter_options(s: &State, p: &Value) -> Reply {
 async fn prepare_thread(s: &State, p: &Value) -> Reply {
     let cwd = PathBuf::from(str_field(p, "cwd")?);
     let reference = str_field(p, "reference")?.trim();
-    let mode = p["mode"].as_str().ok_or_else(|| invalid("mode is required"))?;
+    let mode = p["mode"]
+        .as_str()
+        .ok_or_else(|| invalid("mode is required"))?;
     if !matches!(mode, "local" | "worktree") {
         return Err(invalid("mode is invalid"));
     }
@@ -1194,24 +1417,49 @@ async fn prepare_thread(s: &State, p: &Value) -> Reply {
         .or_else(|| reference.rsplit('/').next().and_then(|n| n.parse().ok()))
         .filter(|n| *n >= 1)
         .ok_or_else(|| git_error("The pull request reference is not a number or URL."))?;
-    let (host, repo) = remote(&cwd).await.ok_or_else(|| git_error("The repository has no origin remote."))?;
+    let (host, repo) = remote(&cwd)
+        .await
+        .ok_or_else(|| git_error("The repository has no origin remote."))?;
     if !is_github(&host) {
-        return Err(git_error("Pull requests are only supported for GitHub remotes."));
+        return Err(git_error(
+            "Pull requests are only supported for GitHub remotes.",
+        ));
     }
-    let gh = Gh { cwd: cwd.clone(), host };
+    let gh = Gh {
+        cwd: cwd.clone(),
+        host,
+    };
     let n = number.to_string();
     let v = gh
         .json("resolve", &["pr", "view", &n, "--repo", &repo, "--json", "number,title,url,baseRefName,headRefName,state,isCrossRepository,headRepositoryOwner"], None)
         .await
         .map_err(|e| git_error(e["detail"].as_str().or(e["requirement"].as_str()).unwrap_or("The pull request could not be read.")))?;
-    let head = v["headRefName"].as_str().filter(|b| !b.is_empty() && !b.starts_with('-')).ok_or_else(|| git_error("The pull request has no head branch."))?.to_owned();
+    let head = v["headRefName"]
+        .as_str()
+        .filter(|b| !b.is_empty() && !b.starts_with('-'))
+        .ok_or_else(|| git_error("The pull request has no head branch."))?
+        .to_owned();
     let local = format!("pr/{number}");
     let refspec = format!("pull/{number}/head:refs/o3/pull/{number}");
-    let fetch = proc::git(&cwd, &["fetch", "--no-tags", "origin", &refspec, "--force"], Opts::NETWORK).await;
+    let fetch = proc::git(
+        &cwd,
+        &["fetch", "--no-tags", "origin", &refspec, "--force"],
+        Opts::NETWORK,
+    )
+    .await;
     match fetch {
         Ok(o) if o.ok() => {}
-        Ok(o) => return Err(git_error(&format!("Could not fetch the pull request: {}", o.stderr))),
-        Err(e) => return Err(git_error(&format!("Could not fetch the pull request: {e:?}"))),
+        Ok(o) => {
+            return Err(git_error(&format!(
+                "Could not fetch the pull request: {}",
+                o.stderr
+            )))
+        }
+        Err(e) => {
+            return Err(git_error(&format!(
+                "Could not fetch the pull request: {e:?}"
+            )))
+        }
     }
     let fetched = format!("refs/o3/pull/{number}");
     let resolved = json!({"number":number,"title":v["title"],"url":v["url"],"baseBranch":v["baseRefName"],"headBranch":head,"state":state(&v["state"])});
@@ -1219,7 +1467,10 @@ async fn prepare_thread(s: &State, p: &Value) -> Reply {
     let mut on_head = true;
     if mode == "local" {
         // Never disturb local work: only switch when the tree is clean.
-        let dirty = proc::git(&cwd, &["status", "--porcelain"], Opts::READ).await.map(|o| !o.text().trim().is_empty()).unwrap_or(true);
+        let dirty = proc::git(&cwd, &["status", "--porcelain"], Opts::READ)
+            .await
+            .map(|o| !o.text().trim().is_empty())
+            .unwrap_or(true);
         if dirty {
             return Err(git_error("The working tree has local changes; commit or stash them before checking out a pull request."));
         }
@@ -1230,25 +1481,44 @@ async fn prepare_thread(s: &State, p: &Value) -> Reply {
     } else {
         let directory = crate::settings::read(s)
             .ok()
-            .and_then(|v| v["worktreesDirectory"].as_str().filter(|d| !d.is_empty()).map(PathBuf::from))
+            .and_then(|v| {
+                v["worktreesDirectory"]
+                    .as_str()
+                    .filter(|d| !d.is_empty())
+                    .map(PathBuf::from)
+            })
             .unwrap_or_else(|| s.dir.parent().unwrap_or(&s.dir).join("worktrees"));
-        let name = p["threadId"].as_str().map(|t| t.bytes().map(|b| format!("{b:02x}")).collect::<String>()).unwrap_or_else(|| format!("pr-{number}"));
+        let name = p["threadId"]
+            .as_str()
+            .map(|t| t.bytes().map(|b| format!("{b:02x}")).collect::<String>())
+            .unwrap_or_else(|| format!("pr-{number}"));
         let path = directory.join(name);
         std::fs::create_dir_all(&directory).map_err(|e| git_error(&e.to_string()))?;
         let path_text = path.to_string_lossy().into_owned();
         if path.exists() {
-            let dirty = proc::git(&path, &["status", "--porcelain"], Opts::READ).await.map(|o| !o.text().trim().is_empty()).unwrap_or(true);
-            let moved = !dirty && matches!(proc::git(&path, &["checkout", "-B", &local, &fetched], Opts::WRITE).await, Ok(ref o) if o.ok());
+            let dirty = proc::git(&path, &["status", "--porcelain"], Opts::READ)
+                .await
+                .map(|o| !o.text().trim().is_empty())
+                .unwrap_or(true);
+            let moved = !dirty
+                && matches!(proc::git(&path, &["checkout", "-B", &local, &fetched], Opts::WRITE).await, Ok(ref o) if o.ok());
             on_head = moved;
         } else {
-            let added = proc::git(&cwd, &["worktree", "add", "-B", &local, "--", &path_text, &fetched], Opts::WRITE).await;
+            let added = proc::git(
+                &cwd,
+                &["worktree", "add", "-B", &local, "--", &path_text, &fetched],
+                Opts::WRITE,
+            )
+            .await;
             if !matches!(added, Ok(ref o) if o.ok()) {
                 return Err(git_error("Could not create the pull request worktree."));
             }
         }
         worktree = json!(path_text);
     }
-    Ok(json!({"pullRequest":resolved,"branch":local,"worktreePath":worktree,"isOnPullRequestHead":on_head}))
+    Ok(
+        json!({"pullRequest":resolved,"branch":local,"worktreePath":worktree,"isOnPullRequestHead":on_head}),
+    )
 }
 
 #[cfg(test)]
@@ -1259,7 +1529,11 @@ mod tests {
         for (u, h, r) in [
             ("git@github.com:o/r.git", "github.com", "o/r"),
             ("https://github.com/o/r", "github.com", "o/r"),
-            ("ssh://git@ghe.example.com:2222/o/r.git", "ghe.example.com", "o/r"),
+            (
+                "ssh://git@ghe.example.com:2222/o/r.git",
+                "ghe.example.com",
+                "o/r",
+            ),
         ] {
             assert_eq!(parse_remote(u), Some((h.into(), r.into())), "{u}");
         }

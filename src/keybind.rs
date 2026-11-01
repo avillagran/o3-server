@@ -50,7 +50,9 @@ fn path(s: &State) -> std::path::PathBuf {
 }
 
 fn same(a: &Value, b: &Value) -> bool {
-    a["command"] == b["command"] && a["key"] == b["key"] && a.get("when").filter(|w| !w.is_null()) == b.get("when").filter(|w| !w.is_null())
+    a["command"] == b["command"]
+        && a["key"] == b["key"]
+        && a.get("when").filter(|w| !w.is_null()) == b.get("when").filter(|w| !w.is_null())
 }
 
 /// A rule with trimmed strings and a known command, or why not.
@@ -59,7 +61,11 @@ fn validate(v: &Value) -> Result<Value, String> {
         match v.get(k).filter(|x| !x.is_null()) {
             None => Ok(None),
             Some(x) => {
-                let t = x.as_str().ok_or_else(|| format!("{k} must be a string"))?.trim().to_owned();
+                let t = x
+                    .as_str()
+                    .ok_or_else(|| format!("{k} must be a string"))?
+                    .trim()
+                    .to_owned();
                 if t.is_empty() || t.chars().count() > max {
                     Err(format!("{k} is out of range"))
                 } else {
@@ -97,7 +103,9 @@ fn known_command(c: &str) -> bool {
             !id.is_empty()
                 && id.len() <= 24
                 && id.as_bytes()[0].is_ascii_alphanumeric()
-                && id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+                && id
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
         })
 }
 
@@ -114,7 +122,8 @@ fn load_writable(s: &State) -> Result<Vec<Value>, Value> {
 }
 
 fn write(s: &State, rules: &[Value]) -> Result<(), Value> {
-    crate::profile::atomic_json(&path(s), &json!(rules)).map_err(|e| config_error(s, &e.to_string()))
+    crate::profile::atomic_json(&path(s), &json!(rules))
+        .map_err(|e| config_error(s, &e.to_string()))
 }
 
 /// `(resolved keybindings, issues)` for `server.getConfig`.
@@ -187,7 +196,8 @@ pub fn parse_shortcut(value: &str) -> Option<Value> {
     if tokens.is_empty() || tokens.iter().any(|t| t.is_empty()) {
         return None;
     }
-    let (mut key, mut meta, mut ctrl, mut shift, mut alt, mut modk) = (None::<String>, false, false, false, false, false);
+    let (mut key, mut meta, mut ctrl, mut shift, mut alt, mut modk) =
+        (None::<String>, false, false, false, false, false);
     for t in tokens {
         match t.as_str() {
             "cmd" | "meta" => meta = true,
@@ -207,7 +217,9 @@ pub fn parse_shortcut(value: &str) -> Option<Value> {
             }
         }
     }
-    Some(json!({"key":key?,"metaKey":meta,"ctrlKey":ctrl,"shiftKey":shift,"altKey":alt,"modKey":modk}))
+    Some(
+        json!({"key":key?,"metaKey":meta,"ctrlKey":ctrl,"shiftKey":shift,"altKey":alt,"modKey":modk}),
+    )
 }
 
 #[derive(Debug, PartialEq)]
@@ -244,7 +256,9 @@ fn tokenize(expr: &str) -> Option<Vec<Tok>> {
             i += 1;
         } else if c.is_ascii_alphabetic() || c == b'_' {
             let start = i;
-            while i < b.len() && (b[i].is_ascii_alphanumeric() || matches!(b[i], b'_' | b'.' | b'-')) {
+            while i < b.len()
+                && (b[i].is_ascii_alphanumeric() || matches!(b[i], b'_' | b'.' | b'-'))
+            {
                 i += 1;
             }
             out.push(Tok::Id(expr[start..i].to_owned()));
@@ -325,7 +339,14 @@ mod tests {
     #[test]
     fn shortcuts_and_when_expressions_parse() {
         let s = parse_shortcut("Mod+Shift+Esc").unwrap();
-        assert_eq!((s["key"].as_str(), s["modKey"].as_bool(), s["shiftKey"].as_bool()), (Some("escape"), Some(true), Some(true)));
+        assert_eq!(
+            (
+                s["key"].as_str(),
+                s["modKey"].as_bool(),
+                s["shiftKey"].as_bool()
+            ),
+            (Some("escape"), Some(true), Some(true))
+        );
         assert_eq!(parse_shortcut("mod++").unwrap()["key"], "+");
         assert!(parse_shortcut("a+b").is_none());
         assert_eq!(parse_when("!a && (b || c)").unwrap()["type"], "and");
@@ -336,6 +357,8 @@ mod tests {
     fn every_default_compiles() {
         let defaults: Vec<Value> = serde_json::from_str(DEFAULTS).unwrap();
         assert!(defaults.len() > 50);
-        assert!(defaults.iter().all(|d| compile(d).is_some() && known_command(d["command"].as_str().unwrap())));
+        assert!(defaults
+            .iter()
+            .all(|d| compile(d).is_some() && known_command(d["command"].as_str().unwrap())));
     }
 }

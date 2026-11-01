@@ -86,14 +86,14 @@ impl Live {
 pub fn is_live_tag(tag: &str) -> bool {
     crate::p2::is_stream(tag)
         || matches!(
-        tag,
-        "terminal.attach"
-            | "terminal.observe"
-            | "subscribeTerminalEvents"
-            | "subscribeTerminalMetadata"
-            | "orchestration.subscribeCommandOutput"
-            | "server.getStorageCleanupReport"
-    )
+            tag,
+            "terminal.attach"
+                | "terminal.observe"
+                | "subscribeTerminalEvents"
+                | "subscribeTerminalMetadata"
+                | "orchestration.subscribeCommandOutput"
+                | "server.getStorageCleanupReport"
+        )
 }
 
 pub async fn open(s: &Arc<State>, tag: &str, p: &Value) -> Result<Live, Value> {

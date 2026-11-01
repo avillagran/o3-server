@@ -3,8 +3,8 @@
 //! carry one hook each. Nothing here runs while idle: state is created on first use and streams are
 //! polled only by sockets that opened them.
 use crate::store::State;
-use std::sync::Arc;
 use serde_json::{json, Value};
+use std::sync::Arc;
 use std::{
     collections::{HashMap, VecDeque},
     time::{Duration, Instant},
@@ -27,7 +27,9 @@ pub struct Runtime {
 }
 
 pub fn handles(tag: &str) -> bool {
-    crate::pullreq::handles(tag) || crate::setup::handles(tag) || crate::keybind::handles(tag)
+    crate::pullreq::handles(tag)
+        || crate::setup::handles(tag)
+        || crate::keybind::handles(tag)
         || crate::sessions::handles(tag)
         || crate::preview::handles(tag)
         || crate::misc::handles(tag)
@@ -84,7 +86,10 @@ pub fn open(s: &Arc<State>, tag: &str, p: &Value) -> Result<Stream, Value> {
         // Worktree preparation is not staged: no setup is ever running, which the stream says with null.
         "subscribeWorktreeSetup" => {
             str_field(p, "threadId")?;
-            Stream::Once(Once { value: Some(Value::Null), waiting: false })
+            Stream::Once(Once {
+                value: Some(Value::Null),
+                waiting: false,
+            })
         }
         "subscribeDeviceState" => return Err(crate::misc::device_unavailable()),
         "subscribeDiscoveredLocalServers" => {

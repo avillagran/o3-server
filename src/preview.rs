@@ -87,17 +87,33 @@ pub fn normalize_url(raw: &str) -> Result<String, Value> {
         return Err(url_error(raw, "empty", None));
     }
     let lower = trimmed.to_lowercase();
-    let loopback = ["localhost", "127.0.0.1", "0.0.0.0", "[::1]", "[::]"].iter().any(|h| {
-        lower.strip_prefix(h).is_some_and(|rest| rest.is_empty() || rest.starts_with([':', '/']))
-    });
+    let loopback = ["localhost", "127.0.0.1", "0.0.0.0", "[::1]", "[::]"]
+        .iter()
+        .any(|h| {
+            lower
+                .strip_prefix(h)
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with([':', '/']))
+        });
     let has_scheme = trimmed.find("://").is_some_and(|i| {
         let scheme = &trimmed[..i];
-        !scheme.is_empty() && scheme.starts_with(|c: char| c.is_ascii_alphabetic()) && scheme.chars().all(|c| c.is_ascii_alphanumeric() || "+.-".contains(c))
+        !scheme.is_empty()
+            && scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+            && scheme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "+.-".contains(c))
     });
-    let candidate = if has_scheme { trimmed.to_owned() } else { format!("{}://{trimmed}", if loopback { "http" } else { "https" }) };
+    let candidate = if has_scheme {
+        trimmed.to_owned()
+    } else {
+        format!("{}://{trimmed}", if loopback { "http" } else { "https" })
+    };
     let parsed = url::Url::parse(&candidate).map_err(|_| url_error(raw, "parse", None))?;
     if !matches!(parsed.scheme(), "http" | "https") {
-        return Err(url_error(raw, "unsupported-protocol", Some(&format!("{}:", parsed.scheme()))));
+        return Err(url_error(
+            raw,
+            "unsupported-protocol",
+            Some(&format!("{}:", parsed.scheme())),
+        ));
     }
     if parsed.host_str().is_none() {
         return Err(url_error(raw, "parse", None));
@@ -116,7 +132,9 @@ fn viewport_ok(v: &Value) -> bool {
     }
 }
 
-const ZOOMS: [f64; 17] = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0];
+const ZOOMS: [f64; 17] = [
+    0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0,
+];
 
 pub fn call(s: &State, tag: &str, p: &Value) -> Reply {
     if tag == "preview.clearProfile" {
@@ -130,14 +148,21 @@ pub fn call(s: &State, tag: &str, p: &Value) -> Reply {
     let at = iso(now_ms());
     let result = match tag {
         "preview.list" => {
-            let mut sessions: Vec<Value> = g.sessions.iter().filter(|((t, _), _)| *t == thread).map(|(_, v)| v.clone()).collect();
+            let mut sessions: Vec<Value> = g
+                .sessions
+                .iter()
+                .filter(|((t, _), _)| *t == thread)
+                .map(|(_, v)| v.clone())
+                .collect();
             sessions.sort_by(|a, b| a["updatedAt"].as_str().cmp(&b["updatedAt"].as_str()));
             let epoch = g.epoch();
             return Ok(json!({"sessions":sessions,"serverEpoch":epoch,"revision":g.revision}));
         }
         "preview.open" => {
             if p["runtime"] == "server" {
-                return Err(json!({"_tag":"RpcNotImplemented","message":"This server has no server browser (capabilities.serverBrowser is off); open the preview with runtime \"desktop\"."}));
+                return Err(
+                    json!({"_tag":"RpcNotImplemented","message":"This server has no server browser (capabilities.serverBrowser is off); open the preview with runtime \"desktop\"."}),
+                );
             }
             if p["viewport"].is_object() && !viewport_ok(&p["viewport"]) {
                 return Err(invalid("viewport is invalid"));
@@ -158,14 +183,25 @@ pub fn call(s: &State, tag: &str, p: &Value) -> Reply {
                     snap[k] = p[k].clone();
                 }
             }
-            g.sessions.insert((thread.clone(), tab.clone()), snap.clone());
+            g.sessions
+                .insert((thread.clone(), tab.clone()), snap.clone());
             g.publish(json!({"type":"opened","threadId":thread,"tabId":tab,"createdAt":at,"snapshot":snap}));
             Ok(snap)
         }
         "preview.close" => {
             let targets: Vec<(String, String)> = match p["tabId"].as_str() {
-                Some(tab) => g.sessions.keys().filter(|(t, k)| *t == thread && k == tab).cloned().collect(),
-                None => g.sessions.keys().filter(|(t, _)| *t == thread).cloned().collect(),
+                Some(tab) => g
+                    .sessions
+                    .keys()
+                    .filter(|(t, k)| *t == thread && k == tab)
+                    .cloned()
+                    .collect(),
+                None => g
+                    .sessions
+                    .keys()
+                    .filter(|(t, _)| *t == thread)
+                    .cloned()
+                    .collect(),
             };
             for key in targets {
                 g.sessions.remove(&key);
@@ -184,7 +220,10 @@ pub fn call(s: &State, tag: &str, p: &Value) -> Reply {
                 "preview.navigate" => {
                     let url = normalize_url(str_field(p, "url")?)?;
                     let previous = snap["navStatus"]["title"].as_str().unwrap_or("").to_owned();
-                    let title = p["resolvedTitle"].as_str().map(str::to_owned).unwrap_or(previous);
+                    let title = p["resolvedTitle"]
+                        .as_str()
+                        .map(str::to_owned)
+                        .unwrap_or(previous);
                     snap["navStatus"] = json!({"_tag":"Success","url":url,"title":title});
                     snap["updatedAt"] = json!(at);
                     g.sessions.insert(key, snap.clone());
@@ -220,7 +259,10 @@ pub fn call(s: &State, tag: &str, p: &Value) -> Reply {
                     if p["hardReload"] == true {
                         request.insert("hardReload".into(), json!(true));
                     }
-                    if let Some(c) = p["clear"].as_str().filter(|c| matches!(*c, "cookies" | "cache")) {
+                    if let Some(c) = p["clear"]
+                        .as_str()
+                        .filter(|c| matches!(*c, "cookies" | "cache"))
+                    {
                         request.insert("clear".into(), json!(c));
                     }
                     if !request.is_empty() {
@@ -233,7 +275,10 @@ pub fn call(s: &State, tag: &str, p: &Value) -> Reply {
                 _ => {
                     // preview.reportStatus
                     let nav = &p["navStatus"];
-                    if !matches!(nav["_tag"].as_str(), Some("Idle" | "Loading" | "Success" | "LoadFailed")) {
+                    if !matches!(
+                        nav["_tag"].as_str(),
+                        Some("Idle" | "Loading" | "Success" | "LoadFailed")
+                    ) {
                         return Err(invalid("navStatus is invalid"));
                     }
                     snap["navStatus"] = nav.clone();
@@ -282,7 +327,10 @@ pub struct Cursor {
 }
 
 pub fn open_events(s: &State) -> Cursor {
-    Cursor { seen: s.streams.p2.preview.inner.lock().unwrap().revision, waiting: false }
+    Cursor {
+        seen: s.streams.p2.preview.inner.lock().unwrap().revision,
+        waiting: false,
+    }
 }
 
 impl Cursor {
@@ -291,7 +339,13 @@ impl Cursor {
             return Step::Idle;
         }
         let g = s.streams.p2.preview.inner.lock().unwrap();
-        let batch: Vec<Value> = g.ring.iter().filter(|(r, _)| *r > self.seen).take(BATCH).map(|(_, e)| e.clone()).collect();
+        let batch: Vec<Value> = g
+            .ring
+            .iter()
+            .filter(|(r, _)| *r > self.seen)
+            .take(BATCH)
+            .map(|(_, e)| e.clone())
+            .collect();
         let Some(last) = batch.last().and_then(|e| e["revision"].as_u64()) else {
             return Step::Idle;
         };
@@ -328,10 +382,24 @@ impl Drop for Servers {
 impl Servers {
     pub fn new(configured: &Value) -> Self {
         let shared: Shared = Arc::default();
-        let urls: Vec<String> = configured.as_array().map(|a| a.iter().filter_map(Value::as_str).take(32).map(str::to_owned).collect()).unwrap_or_default();
+        let urls: Vec<String> = configured
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(Value::as_str)
+                    .take(32)
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default();
         let probing = !urls.is_empty();
         let task = tokio::spawn(scan_loop(shared.clone(), urls, probing));
-        Self { shared, seen: 0, waiting: false, task }
+        Self {
+            shared,
+            seen: 0,
+            waiting: false,
+            task,
+        }
     }
     pub fn next(&mut self, _s: &State) -> Step {
         if self.waiting {
@@ -360,7 +428,9 @@ async fn scan_loop(shared: Shared, urls: Vec<String>, probing: bool) {
     let mut version = 0;
     loop {
         let urls2 = urls.clone();
-        let servers = tokio::task::spawn_blocking(move || scan_servers(&urls2)).await.unwrap_or_default();
+        let servers = tokio::task::spawn_blocking(move || scan_servers(&urls2))
+            .await
+            .unwrap_or_default();
         if last.as_ref() != Some(&servers) {
             version += 1;
             let mut list = json!({"servers":servers,"scannedAt":iso(now_ms())});
@@ -377,16 +447,24 @@ async fn scan_loop(shared: Shared, urls: Vec<String>, probing: bool) {
 fn listening() -> Vec<(u16, String)> {
     let mut out = Vec::new();
     for file in ["/proc/net/tcp", "/proc/net/tcp6"] {
-        let Ok(text) = std::fs::read_to_string(file) else { continue };
+        let Ok(text) = std::fs::read_to_string(file) else {
+            continue;
+        };
         for line in text.lines().skip(1) {
             let f: Vec<&str> = line.split_whitespace().collect();
             if f.len() < 10 || f[3] != "0A" {
                 continue;
             }
-            let Some((addr, port)) = f[1].rsplit_once(':') else { continue };
+            let Some((addr, port)) = f[1].rsplit_once(':') else {
+                continue;
+            };
             // Only sockets a local browser could reach: loopback or any address.
-            let local = addr.chars().all(|c| c == '0') || addr == "0100007F" || addr == "00000000000000000000000001000000";
-            let Ok(port) = u16::from_str_radix(port, 16) else { continue };
+            let local = addr.chars().all(|c| c == '0')
+                || addr == "0100007F"
+                || addr == "00000000000000000000000001000000";
+            let Ok(port) = u16::from_str_radix(port, 16) else {
+                continue;
+            };
             if local && port >= 1024 {
                 out.push((port, f[9].to_owned()));
             }
@@ -401,19 +479,40 @@ fn listening() -> Vec<(u16, String)> {
 fn owners(want: &[String]) -> BTreeMap<String, (u32, String)> {
     let mut found = BTreeMap::new();
     let mut budget = 50_000;
-    let Ok(procs) = std::fs::read_dir("/proc") else { return found };
+    let Ok(procs) = std::fs::read_dir("/proc") else {
+        return found;
+    };
     for entry in procs.flatten() {
-        let Some(pid) = entry.file_name().to_str().and_then(|n| n.parse::<u32>().ok()) else { continue };
-        let Ok(fds) = std::fs::read_dir(entry.path().join("fd")) else { continue };
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|n| n.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let Ok(fds) = std::fs::read_dir(entry.path().join("fd")) else {
+            continue;
+        };
         for fd in fds.flatten() {
             if budget == 0 {
                 return found;
             }
             budget -= 1;
-            let Ok(link) = std::fs::read_link(fd.path()) else { continue };
-            let Some(inode) = link.to_str().and_then(|l| l.strip_prefix("socket:[")).and_then(|l| l.strip_suffix(']')) else { continue };
+            let Ok(link) = std::fs::read_link(fd.path()) else {
+                continue;
+            };
+            let Some(inode) = link
+                .to_str()
+                .and_then(|l| l.strip_prefix("socket:["))
+                .and_then(|l| l.strip_suffix(']'))
+            else {
+                continue;
+            };
             if want.iter().any(|w| w == inode) && !found.contains_key(inode) {
-                let name = std::fs::read_to_string(entry.path().join("comm")).unwrap_or_default().trim().to_owned();
+                let name = std::fs::read_to_string(entry.path().join("comm"))
+                    .unwrap_or_default()
+                    .trim()
+                    .to_owned();
                 found.insert(inode.to_owned(), (pid, name));
             }
         }
@@ -427,10 +526,14 @@ fn owners(want: &[String]) -> BTreeMap<String, (u32, String)> {
 fn probe(port: u16) -> bool {
     use std::io::{Read, Write};
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
-    let Ok(mut s) = std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(400)) else { return false };
+    let Ok(mut s) = std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(400)) else {
+        return false;
+    };
     let _ = s.set_read_timeout(Some(Duration::from_millis(600)));
     let _ = s.set_write_timeout(Some(Duration::from_millis(400)));
-    if s.write_all(b"HEAD / HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n").is_err() {
+    if s.write_all(b"HEAD / HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+        .is_err()
+    {
         return false;
     }
     let mut buf = [0u8; 5];
@@ -446,17 +549,25 @@ fn scan_servers(configured: &[String]) -> Vec<Value> {
         if !probe(port) {
             continue;
         }
-        let (pid, name) = owner.get(&inode).cloned().map(|(p, n)| (Some(p), Some(n))).unwrap_or((None, None));
+        let (pid, name) = owner
+            .get(&inode)
+            .cloned()
+            .map(|(p, n)| (Some(p), Some(n)))
+            .unwrap_or((None, None));
         out.push(json!({"host":"localhost","port":port,"url":format!("http://localhost:{port}"),"processName":name.filter(|n|!n.is_empty()),"pid":pid,"terminal":null}));
     }
     // Configured URLs are probed only on loopback hosts.
     for raw in configured {
-        let Ok(u) = url::Url::parse(raw) else { continue };
+        let Ok(u) = url::Url::parse(raw) else {
+            continue;
+        };
         let Some(host) = u.host_str() else { continue };
         if !matches!(host, "localhost" | "127.0.0.1" | "[::1]" | "::1") {
             continue;
         }
-        let Some(port) = u.port_or_known_default() else { continue };
+        let Some(port) = u.port_or_known_default() else {
+            continue;
+        };
         if out.iter().any(|s| s["port"] == port) || !probe(port) {
             continue;
         }

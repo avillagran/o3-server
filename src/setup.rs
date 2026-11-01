@@ -100,12 +100,22 @@ fn driver(s: &State, instance: &str, operation: &str) -> Result<Driver, Value> {
         Some("claudeAgent") => "claudeAgent",
         Some("codex") => "codex",
         Some(other) => {
-            return Err(setup_error(instance, operation, &format!("o3-server has no setup flow for the {other} driver.")))
+            return Err(setup_error(
+                instance,
+                operation,
+                &format!("o3-server has no setup flow for the {other} driver."),
+            ))
         }
         None => match instance {
             "claudeAgent" | "claude" | "claude-code" => "claudeAgent",
             "codex" => "codex",
-            _ => return Err(setup_error(instance, operation, "Unknown provider instance.")),
+            _ => {
+                return Err(setup_error(
+                    instance,
+                    operation,
+                    "Unknown provider instance.",
+                ))
+            }
         },
     };
     let name = if kind == "codex" { "codex" } else { "claude" };
@@ -114,8 +124,18 @@ fn driver(s: &State, instance: &str, operation: &str) -> Result<Driver, Value> {
         .filter(|b| !b.is_empty())
         .map(PathBuf::from)
         .or_else(|| which(name))
-        .ok_or_else(|| setup_error(instance, operation, &format!("The {name} CLI is not installed or not on PATH.")))?;
-    Ok(Driver { instance: instance.into(), kind, binary })
+        .ok_or_else(|| {
+            setup_error(
+                instance,
+                operation,
+                &format!("The {name} CLI is not installed or not on PATH."),
+            )
+        })?;
+    Ok(Driver {
+        instance: instance.into(),
+        kind,
+        binary,
+    })
 }
 
 fn methods(d: &Driver) -> Value {
@@ -163,7 +183,10 @@ fn strip_ansi(text: &str) -> String {
 
 fn first_url(text: &str) -> Option<String> {
     let i = text.find("https://")?;
-    let url: String = text[i..].chars().take_while(|c| !c.is_whitespace() && *c != '"' && *c != '\'' && *c != '>').collect();
+    let url: String = text[i..]
+        .chars()
+        .take_while(|c| !c.is_whitespace() && *c != '"' && *c != '\'' && *c != '>')
+        .collect();
     (url.len() > 8 && url.len() <= 16_384).then_some(url)
 }
 fn device_code(text: &str) -> Option<String> {
@@ -173,8 +196,10 @@ fn device_code(text: &str) -> Option<String> {
             w.len() >= 9
                 && w.len() <= 16
                 && w.matches('-').count() == 1
-                && w.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '-')
-                && w.chars().any(|c| c.is_ascii_digit() || c.is_ascii_uppercase())
+                && w.chars()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '-')
+                && w.chars()
+                    .any(|c| c.is_ascii_digit() || c.is_ascii_uppercase())
         })
         .map(str::to_owned)
 }
@@ -187,7 +212,11 @@ pub async fn call(s: &Arc<State>, tag: &str, p: &Value) -> Reply {
         "provider.auth.logout" => auth_logout(s, p).await,
         "provider.install.start" | "provider.install.remove" => {
             let instance = instance_id(p)?;
-            let verb = if tag.ends_with("start") { "installed" } else { "removed" };
+            let verb = if tag.ends_with("start") {
+                "installed"
+            } else {
+                "removed"
+            };
             Err(setup_error(instance, tag, &format!("o3-server does not manage provider CLI installs; provider CLIs cannot be {verb} remotely. Install the CLI on the server yourself.")))
         }
         "provider.install.cancel" => {
@@ -207,7 +236,11 @@ async fn auth_start(s: &Arc<State>, p: &Value) -> Reply {
     let d = driver(s, instance_id(p)?, "auth.start")?;
     if let Some(m) = p["methodId"].as_str() {
         if m != "login" {
-            return Err(setup_error(&d.instance, "auth.start", "Unknown authentication method."));
+            return Err(setup_error(
+                &d.instance,
+                "auth.start",
+                "Unknown authentication method.",
+            ));
         }
     }
     let (tx, rx) = mpsc::channel::<Vec<u8>>(8);
@@ -215,8 +248,15 @@ async fn auth_start(s: &Arc<State>, p: &Value) -> Reply {
     let flow_id = random_id().map_err(|e| setup_error(&d.instance, "auth.start", &e))?;
     {
         let mut flows = s.streams.p2.setup.flows.lock().unwrap();
-        if flows.get(&d.instance).is_some_and(|f| matches!(f.phase, "starting" | "waiting" | "verifying")) {
-            return Err(setup_error(&d.instance, "auth.start", "A sign-in flow is already running for this provider."));
+        if flows
+            .get(&d.instance)
+            .is_some_and(|f| matches!(f.phase, "starting" | "waiting" | "verifying"))
+        {
+            return Err(setup_error(
+                &d.instance,
+                "auth.start",
+                "A sign-in flow is already running for this provider.",
+            ));
         }
         if flows.len() >= MAX_FLOWS && !flows.contains_key(&d.instance) {
             flows.retain(|_, f| matches!(f.phase, "starting" | "waiting" | "verifying"));
@@ -236,7 +276,11 @@ async fn auth_start(s: &Arc<State>, p: &Value) -> Reply {
             },
         );
     }
-    let args: &[&str] = if d.kind == "codex" { &["login", "--device-auth"] } else { &["auth", "login"] };
+    let args: &[&str] = if d.kind == "codex" {
+        &["login", "--device-auth"]
+    } else {
+        &["auth", "login"]
+    };
     let mut cmd = tokio::process::Command::new(&d.binary);
     cmd.args(args)
         .stdin(Stdio::piped())
@@ -249,7 +293,11 @@ async fn auth_start(s: &Arc<State>, p: &Value) -> Reply {
         Ok(c) => c,
         Err(e) => {
             s.streams.p2.setup.flows.lock().unwrap().remove(&d.instance);
-            return Err(setup_error(&d.instance, "auth.start", &format!("Could not start the CLI: {e}")));
+            return Err(setup_error(
+                &d.instance,
+                "auth.start",
+                &format!("Could not start the CLI: {e}"),
+            ));
         }
     };
     s.streams.p2.setup.touch(s);
@@ -276,7 +324,16 @@ async fn run_flow(
 ) {
     let mut stdin = child.stdin.take();
     let (out_tx, mut out_rx) = mpsc::channel::<String>(64);
-    for pipe in [child.stdout.take().map(|p| Box::new(p) as Box<dyn tokio::io::AsyncRead + Send + Unpin>), child.stderr.take().map(|p| Box::new(p) as _)].into_iter().flatten() {
+    for pipe in [
+        child
+            .stdout
+            .take()
+            .map(|p| Box::new(p) as Box<dyn tokio::io::AsyncRead + Send + Unpin>),
+        child.stderr.take().map(|p| Box::new(p) as _),
+    ]
+    .into_iter()
+    .flatten()
+    {
         let tx = out_tx.clone();
         tokio::spawn(async move {
             let mut lines = BufReader::new(pipe.take(1024 * 1024)).lines();
@@ -348,7 +405,12 @@ async fn run_flow(
                 update_flow(&s, &d, &flow_id, |f| {
                     f.phase = "failed";
                     f.input = None;
-                    let tail = f.output.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("The CLI exited without signing in.");
+                    let tail = f
+                        .output
+                        .lines()
+                        .rev()
+                        .find(|l| !l.trim().is_empty())
+                        .unwrap_or("The CLI exited without signing in.");
                     f.message = Some(tail.chars().take(500).collect());
                 });
             } else {
@@ -359,7 +421,11 @@ async fn run_flow(
                 let verified = verify(&d).await;
                 update_flow(&s, &d, &flow_id, |f| {
                     f.phase = if verified { "succeeded" } else { "failed" };
-                    f.message = Some(if verified { "Signed in.".into() } else { "The CLI finished but is still not signed in.".into() });
+                    f.message = Some(if verified {
+                        "Signed in.".into()
+                    } else {
+                        "The CLI finished but is still not signed in.".into()
+                    });
                 });
                 // Providers report their auth status in the config snapshot.
                 s.notify();
@@ -369,14 +435,28 @@ async fn run_flow(
 }
 
 async fn verify(d: &Driver) -> bool {
-    let args: &[&str] = if d.kind == "codex" { &["login", "status"] } else { &["auth", "status"] };
-    run_quiet(&d.binary, args, Duration::from_secs(20)).await.is_some_and(|(code, _)| code == 0)
+    let args: &[&str] = if d.kind == "codex" {
+        &["login", "status"]
+    } else {
+        &["auth", "status"]
+    };
+    run_quiet(&d.binary, args, Duration::from_secs(20))
+        .await
+        .is_some_and(|(code, _)| code == 0)
 }
 
 async fn run_quiet(bin: &PathBuf, args: &[&str], timeout: Duration) -> Option<(i32, String)> {
     let mut cmd = tokio::process::Command::new(bin);
-    cmd.args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true).env("NO_COLOR", "1");
-    let out = tokio::time::timeout(timeout, cmd.output()).await.ok()?.ok()?;
+    cmd.args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .env("NO_COLOR", "1");
+    let out = tokio::time::timeout(timeout, cmd.output())
+        .await
+        .ok()?
+        .ok()?;
     let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
     text.push_str(&String::from_utf8_lossy(&out.stderr));
     Some((out.status.code().unwrap_or(-1), text))
@@ -392,20 +472,44 @@ async fn auth_respond(s: &Arc<State>, p: &Value) -> Reply {
         let f = flows
             .get(&d.instance)
             .filter(|f| f.id == flow_id && matches!(f.phase, "starting" | "waiting"))
-            .ok_or_else(|| setup_error(&d.instance, "auth.respond", "No sign-in flow is waiting for a response."))?;
+            .ok_or_else(|| {
+                setup_error(
+                    &d.instance,
+                    "auth.respond",
+                    "No sign-in flow is waiting for a response.",
+                )
+            })?;
         (f.input.clone(), f.cancel.clone())
     };
     match response["type"].as_str() {
         Some("browser") if response["action"] == "decline" => cancel.notify_one(),
         Some("browser") if response["action"] == "accept" => {}
         Some("terminal") => {
-            let data = response["data"].as_str().ok_or_else(|| invalid("data is required"))?;
+            let data = response["data"]
+                .as_str()
+                .ok_or_else(|| invalid("data is required"))?;
             let Some(tx) = input else {
-                return Err(setup_error(&d.instance, "auth.respond", "The CLI is no longer reading input."));
+                return Err(setup_error(
+                    &d.instance,
+                    "auth.respond",
+                    "The CLI is no longer reading input.",
+                ));
             };
-            tx.send(data.as_bytes().to_vec()).await.map_err(|_| setup_error(&d.instance, "auth.respond", "The CLI is no longer reading input."))?;
+            tx.send(data.as_bytes().to_vec()).await.map_err(|_| {
+                setup_error(
+                    &d.instance,
+                    "auth.respond",
+                    "The CLI is no longer reading input.",
+                )
+            })?;
         }
-        Some("credentials") => return Err(setup_error(&d.instance, "auth.respond", "This provider does not take credentials through o3-server.")),
+        Some("credentials") => {
+            return Err(setup_error(
+                &d.instance,
+                "auth.respond",
+                "This provider does not take credentials through o3-server.",
+            ))
+        }
         _ => return Err(invalid("response is invalid")),
     }
     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -417,7 +521,10 @@ fn auth_cancel(s: &Arc<State>, p: &Value) -> Reply {
     let flow_id = str_field(p, "flowId")?;
     let cancel = {
         let flows = s.streams.p2.setup.flows.lock().unwrap();
-        flows.get(&d.instance).filter(|f| f.id == flow_id && matches!(f.phase, "starting" | "waiting" | "verifying")).map(|f| f.cancel.clone())
+        flows
+            .get(&d.instance)
+            .filter(|f| f.id == flow_id && matches!(f.phase, "starting" | "waiting" | "verifying"))
+            .map(|f| f.cancel.clone())
     };
     if let Some(c) = cancel {
         c.notify_one();
@@ -427,12 +534,23 @@ fn auth_cancel(s: &Arc<State>, p: &Value) -> Reply {
 
 async fn auth_logout(s: &Arc<State>, p: &Value) -> Reply {
     let d = driver(s, instance_id(p)?, "auth.logout")?;
-    let args: &[&str] = if d.kind == "codex" { &["logout"] } else { &["auth", "logout"] };
+    let args: &[&str] = if d.kind == "codex" {
+        &["logout"]
+    } else {
+        &["auth", "logout"]
+    };
     let (code, text) = run_quiet(&d.binary, args, Duration::from_secs(30))
         .await
         .ok_or_else(|| setup_error(&d.instance, "auth.logout", "The CLI did not answer."))?;
     if code != 0 {
-        return Err(setup_error(&d.instance, "auth.logout", text.trim().lines().last().unwrap_or("The CLI could not sign out.")));
+        return Err(setup_error(
+            &d.instance,
+            "auth.logout",
+            text.trim()
+                .lines()
+                .last()
+                .unwrap_or("The CLI could not sign out."),
+        ));
     }
     s.streams.p2.setup.flows.lock().unwrap().remove(&d.instance);
     s.streams.p2.setup.touch(s);
@@ -449,19 +567,41 @@ async fn install_state(s: &Arc<State>, instance: &str) -> Reply {
             // A missing CLI is a state, not a failure.
             let detail = e["detail"].as_str().unwrap_or("");
             if detail.contains("not installed") {
-                let kind = if instance == "codex" { "codex" } else { "claudeAgent" };
+                let kind = if instance == "codex" {
+                    "codex"
+                } else {
+                    "claudeAgent"
+                };
                 return Ok(install_json(kind, None, None, detail));
             }
             return Err(e);
         }
     };
-    let version = run_quiet(&d.binary, &["--version"], Duration::from_secs(10)).await.and_then(|(code, text)| {
-        (code == 0).then(|| text.split_whitespace().find(|w| w.chars().next().is_some_and(|c| c.is_ascii_digit())).map(str::to_owned)).flatten()
-    });
-    Ok(install_json(d.kind, Some(&d.binary), version, "Installed outside o3-server."))
+    let version = run_quiet(&d.binary, &["--version"], Duration::from_secs(10))
+        .await
+        .and_then(|(code, text)| {
+            (code == 0)
+                .then(|| {
+                    text.split_whitespace()
+                        .find(|w| w.chars().next().is_some_and(|c| c.is_ascii_digit()))
+                        .map(str::to_owned)
+                })
+                .flatten()
+        });
+    Ok(install_json(
+        d.kind,
+        Some(&d.binary),
+        version,
+        "Installed outside o3-server.",
+    ))
 }
 
-fn install_json(driver: &str, path: Option<&PathBuf>, version: Option<String>, message: &str) -> Value {
+fn install_json(
+    driver: &str,
+    path: Option<&PathBuf>,
+    version: Option<String>,
+    message: &str,
+) -> Value {
     json!({"driver":driver,"operationId":null,"phase":"idle","downloadedBytes":0,"totalBytes":null,"version":null,
         "installedVersion":version,"executablePath":path.map(|p|p.to_string_lossy().into_owned()),
         "source":path.map(|_|"local"),"canRemove":false,"message":message})
@@ -476,19 +616,35 @@ async fn update_provider(s: &Arc<State>, p: &Value) -> Reply {
         return Err(fail("o3-server can only update the Claude CLI (`claude update`); update this provider with its package manager"));
     }
     if p["targetVersion"].as_str().is_some() {
-        return Err(fail("the Claude CLI updates to its latest release; pinning a version is not supported"));
+        return Err(fail(
+            "the Claude CLI updates to its latest release; pinning a version is not supported",
+        ));
     }
     let instance = p["instanceId"].as_str().unwrap_or("claudeAgent");
-    let d = driver(s, instance, "update").map_err(|e| fail(e["detail"].as_str().unwrap_or("provider unavailable")))?;
+    let d = driver(s, instance, "update")
+        .map_err(|e| fail(e["detail"].as_str().unwrap_or("provider unavailable")))?;
     if d.kind != "claudeAgent" {
         return Err(fail("the instance does not use the Claude driver"));
     }
-    let (code, text) = run_quiet(&d.binary, &["update"], Duration::from_secs(300)).await.ok_or_else(|| fail("`claude update` did not finish"))?;
+    let (code, text) = run_quiet(&d.binary, &["update"], Duration::from_secs(300))
+        .await
+        .ok_or_else(|| fail("`claude update` did not finish"))?;
     if code != 0 {
-        return Err(fail(text.trim().lines().last().unwrap_or("`claude update` failed")));
+        return Err(fail(
+            text.trim()
+                .lines()
+                .last()
+                .unwrap_or("`claude update` failed"),
+        ));
     }
     s.notify();
-    let providers = s.provider.lock().unwrap().as_ref().map(|p| p.config()).unwrap_or_default();
+    let providers = s
+        .provider
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|p| p.config())
+        .unwrap_or_default();
     Ok(json!({"providers":providers}))
 }
 
@@ -501,41 +657,84 @@ fn registry_error(reason: &str, message: &str) -> Value {
 async fn fetch_registry() -> Result<Vec<Value>, Value> {
     let url = std::env::var("O3_ACP_REGISTRY_URL").unwrap_or_else(|_| REGISTRY_URL.into());
     let mut cmd = tokio::process::Command::new("curl");
-    cmd.args(["-fsSL", "--max-time", "20", "--max-filesize", "4194304", "--proto", "=http,https", "--", &url])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
+    cmd.args([
+        "-fsSL",
+        "--max-time",
+        "20",
+        "--max-filesize",
+        "4194304",
+        "--proto",
+        "=http,https",
+        "--",
+        &url,
+    ])
+    .stdin(Stdio::null())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::null())
+    .kill_on_drop(true);
     let out = tokio::time::timeout(Duration::from_secs(25), cmd.output())
         .await
         .map_err(|_| registry_error("registry_unavailable", "The ACP registry timed out."))?
-        .map_err(|e| registry_error("registry_unavailable", &format!("curl is required to read the ACP registry: {e}")))?;
+        .map_err(|e| {
+            registry_error(
+                "registry_unavailable",
+                &format!("curl is required to read the ACP registry: {e}"),
+            )
+        })?;
     if !out.status.success() {
-        return Err(registry_error("registry_unavailable", "The ACP registry could not be downloaded."));
+        return Err(registry_error(
+            "registry_unavailable",
+            "The ACP registry could not be downloaded.",
+        ));
     }
-    let v: Value = serde_json::from_slice(&out.stdout).map_err(|_| registry_error("registry_unavailable", "The ACP registry is not valid JSON."))?;
+    let v: Value = serde_json::from_slice(&out.stdout).map_err(|_| {
+        registry_error(
+            "registry_unavailable",
+            "The ACP registry is not valid JSON.",
+        )
+    })?;
     Ok(v["agents"].as_array().cloned().unwrap_or_default())
 }
 
 fn distribution(agent: &Value) -> Option<&'static str> {
     let d = &agent["distribution"];
-    ["npx", "uvx", "binary"].into_iter().find(|k| d.get(*k).is_some_and(|v| !v.is_null()))
+    ["npx", "uvx", "binary"]
+        .into_iter()
+        .find(|k| d.get(*k).is_some_and(|v| !v.is_null()))
 }
 
 async fn search_registry(p: &Value) -> Reply {
-    let query = p["query"].as_str().ok_or_else(|| invalid("query is required"))?.trim().to_lowercase();
+    let query = p["query"]
+        .as_str()
+        .ok_or_else(|| invalid("query is required"))?
+        .trim()
+        .to_lowercase();
     let limit = p["limit"].as_u64().unwrap_or(512).clamp(1, 512) as usize;
     let agents = fetch_registry().await?;
     let mut out = Vec::new();
     for a in agents {
-        let (Some(id), Some(name), Some(version)) = (a["id"].as_str(), a["name"].as_str(), a["version"].as_str()) else { continue };
-        let Some(dist) = distribution(&a) else { continue };
-        if !query.is_empty() && ![id, name, a["description"].as_str().unwrap_or("")].iter().any(|f| f.to_lowercase().contains(&query)) {
+        let (Some(id), Some(name), Some(version)) =
+            (a["id"].as_str(), a["name"].as_str(), a["version"].as_str())
+        else {
+            continue;
+        };
+        let Some(dist) = distribution(&a) else {
+            continue;
+        };
+        if !query.is_empty()
+            && ![id, name, a["description"].as_str().unwrap_or("")]
+                .iter()
+                .any(|f| f.to_lowercase().contains(&query))
+        {
             continue;
         }
         let icon = a["icon"].as_str().and_then(|i| {
             let u = url::Url::parse(i).ok()?;
-            (u.scheme() == "https" && u.host_str() == Some("cdn.agentclientprotocol.com") && u.port().is_none() && u.username().is_empty()).then(|| u.to_string())
+            (u.scheme() == "https"
+                && u.host_str() == Some("cdn.agentclientprotocol.com")
+                && u.port().is_none()
+                && u.username().is_empty())
+            .then(|| u.to_string())
         });
         out.push(json!({"id":id,"name":name,"version":version,"description":a["description"].as_str().unwrap_or(""),
             "authors":a["authors"].as_array().map(|x|x.iter().filter_map(Value::as_str).take(16).collect::<Vec<_>>()).unwrap_or_default(),
@@ -551,17 +750,33 @@ async fn search_registry(p: &Value) -> Reply {
 async fn prepare_registry_agent(p: &Value) -> Reply {
     let id = str_field(p, "agentId")?;
     let agents = fetch_registry().await?;
-    let agent = agents.iter().find(|a| a["id"] == id).ok_or_else(|| registry_error("agent_not_found", &format!("The ACP registry has no agent {id}.")))?;
-    let dist = distribution(agent).ok_or_else(|| registry_error("unsupported_distribution", "The agent has no supported distribution."))?;
+    let agent = agents.iter().find(|a| a["id"] == id).ok_or_else(|| {
+        registry_error(
+            "agent_not_found",
+            &format!("The ACP registry has no agent {id}."),
+        )
+    })?;
+    let dist = distribution(agent).ok_or_else(|| {
+        registry_error(
+            "unsupported_distribution",
+            "The agent has no supported distribution.",
+        )
+    })?;
     let version = agent["version"].as_str().unwrap_or("");
     match dist {
         "npx" | "uvx" => {
             if which(dist).is_none() {
-                return Err(registry_error("runner_unavailable", &format!("{dist} is not installed or not on PATH.")));
+                return Err(registry_error(
+                    "runner_unavailable",
+                    &format!("{dist} is not installed or not on PATH."),
+                ));
             }
             Ok(json!({"agentId":id,"version":version,"distribution":dist,"prepared":true}))
         }
-        _ => Err(registry_error("unsupported_distribution", "o3-server does not download or unpack binary ACP agents.")),
+        _ => Err(registry_error(
+            "unsupported_distribution",
+            "o3-server does not download or unpack binary ACP agents.",
+        )),
     }
 }
 
@@ -580,11 +795,21 @@ pub fn open_stream(s: &Arc<State>, tag: &str, p: &Value) -> Result<Cursor, Value
     let install = tag == "provider.install.subscribe";
     // Fail the subscription now for unknown instances (a missing CLI is still a valid state).
     if let Err(e) = driver(s, &instance, "subscribe") {
-        if !(install || e["detail"].as_str().is_some_and(|d| d.contains("not installed"))) {
+        if !(install
+            || e["detail"]
+                .as_str()
+                .is_some_and(|d| d.contains("not installed")))
+        {
             return Err(e);
         }
     }
-    Ok(Cursor { install, instance, seen: None, waiting: false, pending: None })
+    Ok(Cursor {
+        install,
+        instance,
+        seen: None,
+        waiting: false,
+        pending: None,
+    })
 }
 
 impl Cursor {
@@ -610,10 +835,29 @@ impl Cursor {
                         .output()
                         .ok()
                         .filter(|o| o.status.success())
-                        .and_then(|o| String::from_utf8_lossy(&o.stdout).split_whitespace().find(|w| w.chars().next().is_some_and(|c| c.is_ascii_digit())).map(str::to_owned));
-                    install_json(d.kind, Some(&d.binary), version, "Installed outside o3-server.")
+                        .and_then(|o| {
+                            String::from_utf8_lossy(&o.stdout)
+                                .split_whitespace()
+                                .find(|w| w.chars().next().is_some_and(|c| c.is_ascii_digit()))
+                                .map(str::to_owned)
+                        });
+                    install_json(
+                        d.kind,
+                        Some(&d.binary),
+                        version,
+                        "Installed outside o3-server.",
+                    )
                 }
-                Err(e) => install_json(if self.instance == "codex" { "codex" } else { "claudeAgent" }, None, None, e["detail"].as_str().unwrap_or("Not installed.")),
+                Err(e) => install_json(
+                    if self.instance == "codex" {
+                        "codex"
+                    } else {
+                        "claudeAgent"
+                    },
+                    None,
+                    None,
+                    e["detail"].as_str().unwrap_or("Not installed."),
+                ),
             };
             return Step::Values(vec![state]);
         }

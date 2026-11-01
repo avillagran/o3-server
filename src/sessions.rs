@@ -47,9 +47,14 @@ pub async fn call(s: &Arc<State>, tag: &str, p: &Value) -> Reply {
     let project = events::get(&s.db.lock().unwrap(), "project", &project_id)
         .ok()
         .filter(|v| v["deletedAt"].is_null())
-        .ok_or_else(|| json!({"_tag":"AgentSessionImportProjectNotFoundError","projectId":project_id}))?;
+        .ok_or_else(
+            || json!({"_tag":"AgentSessionImportProjectNotFoundError","projectId":project_id}),
+        )?;
     let root = project["workspaceRoot"].as_str().unwrap_or("").to_owned();
-    if p["expectedWorkspaceRoot"].as_str().is_some_and(|e| e != root) {
+    if p["expectedWorkspaceRoot"]
+        .as_str()
+        .is_some_and(|e| e != root)
+    {
         return Err(json!({"_tag":"AgentSessionImportProjectChangedError","projectId":project_id}));
     }
     if root.is_empty() {
@@ -99,7 +104,9 @@ fn mtime_ms(p: &Path) -> Option<i64> {
 /// Lines of `path`, each at most `max_line` bytes (longer ones are skipped, not buffered), reading
 /// at most `max_bytes`. `f` returns false to stop.
 fn for_each_line(path: &Path, max_bytes: u64, max_line: usize, mut f: impl FnMut(&[u8]) -> bool) {
-    let Ok(file) = std::fs::File::open(path) else { return };
+    let Ok(file) = std::fs::File::open(path) else {
+        return;
+    };
     let mut r = std::io::BufReader::with_capacity(64 * 1024, file.take(max_bytes));
     let (mut line, mut skipping) = (Vec::new(), false);
     loop {
@@ -147,7 +154,9 @@ fn head_cwd(path: &Path, source: &str) -> Option<(String, Option<String>)> {
     let mut bytes = 0;
     for_each_line(path, HEAD_BYTES as u64, HEAD_BYTES, |line| {
         bytes += line.len();
-        let Ok(v) = serde_json::from_slice::<Value>(line) else { return bytes < HEAD_BYTES };
+        let Ok(v) = serde_json::from_slice::<Value>(line) else {
+            return bytes < HEAD_BYTES;
+        };
         let (cwd, id) = if source == "codex" {
             if v["type"] != "session_meta" {
                 return true;
@@ -173,7 +182,11 @@ fn discover() -> (Vec<Transcript>, bool) {
             if !dir.path().is_dir() {
                 continue;
             }
-            for f in std::fs::read_dir(dir.path()).into_iter().flatten().flatten() {
+            for f in std::fs::read_dir(dir.path())
+                .into_iter()
+                .flatten()
+                .flatten()
+            {
                 let path = f.path();
                 let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                 if !name.ends_with(".jsonl") || name.starts_with("agent-") {
@@ -185,7 +198,14 @@ fn discover() -> (Vec<Transcript>, bool) {
                 }
                 if let (Some((cwd, id)), Some(m)) = (head_cwd(&path, "claude"), mtime_ms(&path)) {
                     let session = id.unwrap_or_else(|| name.trim_end_matches(".jsonl").to_owned());
-                    out.push(Transcript { source: "claudeAgent", instance: "claudeAgent", path, cwd, session, mtime_ms: m });
+                    out.push(Transcript {
+                        source: "claudeAgent",
+                        instance: "claudeAgent",
+                        path,
+                        cwd,
+                        session,
+                        mtime_ms: m,
+                    });
                 }
             }
         }
@@ -213,7 +233,14 @@ fn discover() -> (Vec<Transcript>, bool) {
                 count += 1;
                 if let (Some((cwd, id)), Some(m)) = (head_cwd(&path, "codex"), mtime_ms(&path)) {
                     let session = id.unwrap_or_else(|| name.trim_end_matches(".jsonl").to_owned());
-                    out.push(Transcript { source: "codex", instance: "codex", path, cwd, session, mtime_ms: m });
+                    out.push(Transcript {
+                        source: "codex",
+                        instance: "codex",
+                        path,
+                        cwd,
+                        session,
+                        mtime_ms: m,
+                    });
                 }
             }
         }
@@ -232,7 +259,11 @@ fn scan_result(s: &State, found: Vec<Transcript>, truncated: bool) -> Value {
             .ok()
             .map(|mut q| {
                 q.query_map([], |r| r.get::<_, String>(0))
-                    .map(|rows| rows.flatten().filter_map(|b| serde_json::from_str(&b).ok()).collect())
+                    .map(|rows| {
+                        rows.flatten()
+                            .filter_map(|b| serde_json::from_str(&b).ok())
+                            .collect()
+                    })
                     .unwrap_or_default()
             })
             .unwrap_or_default()
@@ -248,12 +279,19 @@ fn scan_result(s: &State, found: Vec<Transcript>, truncated: bool) -> Value {
             sources.sort();
             sources.dedup();
             let last = list.iter().map(|t| t.mtime_ms).max();
-            let project = projects.iter().find(|p| p["deletedAt"].is_null() && p["workspaceRoot"] == cwd.as_str());
+            let project = projects
+                .iter()
+                .find(|p| p["deletedAt"].is_null() && p["workspaceRoot"] == cwd.as_str());
             let imported = project.is_some() && {
                 let db = s.db.lock().unwrap();
-                list.iter().all(|t| events::get(&db, "thread", &thread_id(t)).is_ok())
+                list.iter()
+                    .all(|t| events::get(&db, "thread", &thread_id(t)).is_ok())
             };
-            let title = cwd.rsplit('/').find(|c| !c.is_empty()).unwrap_or(&cwd).to_owned();
+            let title = cwd
+                .rsplit('/')
+                .find(|c| !c.is_empty())
+                .unwrap_or(&cwd)
+                .to_owned();
             let mut c = json!({"path":cwd,"title":title,"sources":sources,"threadCount":list.len(),
                 "lastActiveAt":last.map(iso),"alreadyImported":imported});
             if let Some(id) = project.and_then(|p| p["id"].as_str()) {
@@ -290,10 +328,16 @@ fn text_of(content: &Value, kinds: &[&str]) -> String {
 }
 
 fn parse(t: &Transcript) -> Parsed {
-    let mut out = Parsed { title: None, model: None, messages: Vec::new() };
+    let mut out = Parsed {
+        title: None,
+        model: None,
+        messages: Vec::new(),
+    };
     let mut ring = std::collections::VecDeque::new();
     for_each_line(&t.path, MAX_FILE_BYTES, MAX_LINE, |line| {
-        let Ok(v) = serde_json::from_slice::<Value>(line) else { return true };
+        let Ok(v) = serde_json::from_slice::<Value>(line) else {
+            return true;
+        };
         let at = v["timestamp"].as_str().unwrap_or("").to_owned();
         let (user, text) = if t.source == "codex" {
             if v["type"] == "turn_context" && out.model.is_none() {
@@ -319,12 +363,18 @@ fn parse(t: &Transcript) -> Parsed {
             if v["isSidechain"] == true || v["isMeta"] == true || v["isCompactSummary"] == true {
                 return true;
             }
-            let role = v["message"]["role"].as_str().or_else(|| v["type"].as_str()).unwrap_or("");
+            let role = v["message"]["role"]
+                .as_str()
+                .or_else(|| v["type"].as_str())
+                .unwrap_or("");
             if !matches!(role, "user" | "assistant") {
                 return true;
             }
             if role == "assistant" && out.model.is_none() {
-                out.model = v["message"]["model"].as_str().filter(|m| !m.starts_with('<')).map(str::to_owned);
+                out.model = v["message"]["model"]
+                    .as_str()
+                    .filter(|m| !m.starts_with('<'))
+                    .map(str::to_owned);
             }
             (role == "user", text_of(&v["message"]["content"], &["text"]))
         };
@@ -368,7 +418,11 @@ fn import(s: &Arc<State>, project_id: &str, root: &str) -> Reply {
             .take(80)
             .collect();
         let model = parsed.model.clone().unwrap_or_else(|| {
-            if t.source == "codex" { "gpt-5-codex".into() } else { "haiku".into() }
+            if t.source == "codex" {
+                "gpt-5-codex".into()
+            } else {
+                "haiku".into()
+            }
         });
         let created = events::dispatch(
             s,
@@ -378,7 +432,9 @@ fn import(s: &Arc<State>, project_id: &str, root: &str) -> Reply {
                 "runtimeMode":"full-access","interactionMode":"default","branch":null,"worktreePath":null}),
         );
         if let Err(e) = created {
-            return Err(json!({"_tag":"AgentSessionScanError","operation":"read-projects","cause":e,"message":e}));
+            return Err(
+                json!({"_tag":"AgentSessionScanError","operation":"read-projects","cause":e,"message":e}),
+            );
         }
         write_messages(s, &tid, &t, &parsed)?;
         imported += 1;
@@ -392,13 +448,21 @@ fn write_messages(s: &State, tid: &str, t: &Transcript, parsed: &Parsed) -> Resu
     let mut db = s.db.lock().unwrap();
     let tx = db.transaction().map_err(|e| fail(e.to_string()))?;
     let mut thread = events::get(&tx, "thread", tid).map_err(fail)?;
-    let key = if t.source == "codex" { "codexNativeThreadId" } else { "activeProviderThreadId" };
+    let key = if t.source == "codex" {
+        "codexNativeThreadId"
+    } else {
+        "activeProviderThreadId"
+    };
     thread[key] = json!(t.session);
     thread["createdAt"] = json!(iso(t.mtime_ms));
     thread["updatedAt"] = json!(iso(t.mtime_ms));
     events::put(&tx, "thread", tid, tid, &thread).map_err(fail)?;
     for (i, (user, text, at)) in parsed.messages.iter().enumerate() {
-        let at = if at.is_empty() { iso(t.mtime_ms) } else { at.clone() };
+        let at = if at.is_empty() {
+            iso(t.mtime_ms)
+        } else {
+            at.clone()
+        };
         let id = format!("{tid}-m{i}");
         let m = json!({"id":id,"threadId":tid,"runId":null,"nodeId":null,"role":if *user{"user"}else{"assistant"},"text":text,
             "attachments":[],"streaming":false,"createdBy":if *user{"user"}else{"agent"},"creationSource":"web","createdAt":at,"updatedAt":at});

@@ -52,19 +52,22 @@ pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
             "_tag":"OrchestrationV2StopWorkflowError","threadId":p["threadId"],"subagentId":p["subagentId"],
             "reason":"unsupported","message":"This provider cannot stop a workflow."
         })),
-        "guestShare.create" => {
-            Err(json!({"_tag":"GuestShareCreateError","reason":"disabled","message":"Guest links are off."}))
-        }
+        "guestShare.create" => Err(
+            json!({"_tag":"GuestShareCreateError","reason":"disabled","message":"Guest links are off."}),
+        ),
         "mcpApps.callTool" | "mcpApps.readResource" | "mcpApps.updateModelContext" => Err(json!({
             "_tag":"McpAppRequestError","threadId":p["threadId"],"reason":"provider-unsupported",
             "message":"This thread's provider cannot run MCP app requests."
         })),
-        "device.easAccount" => Err(json!({"_tag":"DeviceEasAccountError","reason":DEVICE_REASON,"message":DEVICE_REASON})),
+        "device.easAccount" => Err(
+            json!({"_tag":"DeviceEasAccountError","reason":DEVICE_REASON,"message":DEVICE_REASON}),
+        ),
         _ => Err(device_unavailable()),
     }
 }
 
-const DEVICE_REASON: &str = "o3-server has no device hub: simulators, emulators and device hosts are not supported.";
+const DEVICE_REASON: &str =
+    "o3-server has no device hub: simulators, emulators and device hosts are not supported.";
 pub fn device_unavailable() -> Value {
     json!({"_tag":"DeviceToolUnavailableError","reason":DEVICE_REASON,"message":DEVICE_REASON})
 }
@@ -73,7 +76,13 @@ pub fn device_unavailable() -> Value {
 
 fn cpu_times() -> Option<(u64, u64)> {
     let text = std::fs::read_to_string("/proc/stat").ok()?;
-    let fields: Vec<u64> = text.lines().next()?.split_whitespace().skip(1).filter_map(|f| f.parse().ok()).collect();
+    let fields: Vec<u64> = text
+        .lines()
+        .next()?
+        .split_whitespace()
+        .skip(1)
+        .filter_map(|f| f.parse().ok())
+        .collect();
     if fields.len() < 5 {
         return None;
     }
@@ -91,10 +100,14 @@ async fn host_resources() -> Reply {
     let first = cpu_times();
     tokio::time::sleep(Duration::from_millis(100)).await;
     let utilization = match (first, cpu_times()) {
-        (Some((t0, i0)), Some((t1, i1))) if t1 > t0 => Some((1.0 - (i1 - i0) as f64 / (t1 - t0) as f64).clamp(0.0, 1.0)),
+        (Some((t0, i0)), Some((t1, i1))) if t1 > t0 => {
+            Some((1.0 - (i1 - i0) as f64 / (t1 - t0) as f64).clamp(0.0, 1.0))
+        }
         _ => None,
     };
-    let total = meminfo("MemTotal:").ok_or_else(|| json!({"_tag":"RpcInternalError","message":"/proc/meminfo is unreadable"}))?;
+    let total = meminfo("MemTotal:").ok_or_else(
+        || json!({"_tag":"RpcInternalError","message":"/proc/meminfo is unreadable"}),
+    )?;
     Ok(json!({
         "sampledAt":now_ms(),"cpuUtilization":utilization,
         "cpuCount":std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1),
@@ -114,24 +127,48 @@ async fn check_otlp(p: &Value) -> Reply {
     };
     let url = str_field(p, "url")?;
     let lower = url.to_lowercase();
-    if !(lower.starts_with("http://") || lower.starts_with("https://")) || url.len() > 2048 || url.chars().any(char::is_control) {
+    if !(lower.starts_with("http://") || lower.starts_with("https://"))
+        || url.len() > 2048
+        || url.chars().any(char::is_control)
+    {
         return Err(invalid("url must be http(s)"));
     }
     let started = std::time::Instant::now();
     let mut cmd = tokio::process::Command::new("curl");
     // No redirects are followed, the body is a valid empty export, and the output is only the status.
-    cmd.args(["-sS", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "5", "--proto", "=http,https", "-X", "POST", "-H", "content-type: application/json", "--data-binary", body, "--", url])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
+    cmd.args([
+        "-sS",
+        "-o",
+        "/dev/null",
+        "-w",
+        "%{http_code}",
+        "--max-time",
+        "5",
+        "--proto",
+        "=http,https",
+        "-X",
+        "POST",
+        "-H",
+        "content-type: application/json",
+        "--data-binary",
+        body,
+        "--",
+        url,
+    ])
+    .stdin(Stdio::null())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::null())
+    .kill_on_drop(true);
     let out = tokio::time::timeout(Duration::from_secs(8), cmd.output()).await;
     let Ok(Ok(out)) = out else {
         return Ok(json!({"_tag":"Unreachable","timedOut":out.is_err()}));
     };
     match out.status.code() {
         Some(0) => {
-            let status: u64 = String::from_utf8_lossy(&out.stdout).trim().parse().unwrap_or(0);
+            let status: u64 = String::from_utf8_lossy(&out.stdout)
+                .trim()
+                .parse()
+                .unwrap_or(0);
             Ok(if (200..300).contains(&status) {
                 json!({"_tag":"Accepted","latencyMs":started.elapsed().as_millis() as u64})
             } else {
@@ -156,18 +193,59 @@ async fn list_ignored(p: &Value) -> Reply {
     let root = paths::normalize(&paths::expand_home(&cwd));
     match std::fs::metadata(&root) {
         Ok(m) if m.is_dir() && root.is_absolute() => {}
-        Ok(m) if !m.is_dir() => return Err(entries_error(&cwd, "workspace_root_not_directory", format!("Workspace root is not a directory: {}", root.display()))),
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(entries_error(&cwd, "workspace_root_stat_failed", e.to_string())),
-        _ => return Err(entries_error(&cwd, "workspace_root_not_found", format!("Workspace root does not exist: {}", root.display()))),
+        Ok(m) if !m.is_dir() => {
+            return Err(entries_error(
+                &cwd,
+                "workspace_root_not_directory",
+                format!("Workspace root is not a directory: {}", root.display()),
+            ))
+        }
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            return Err(entries_error(
+                &cwd,
+                "workspace_root_stat_failed",
+                e.to_string(),
+            ))
+        }
+        _ => {
+            return Err(entries_error(
+                &cwd,
+                "workspace_root_not_found",
+                format!("Workspace root does not exist: {}", root.display()),
+            ))
+        }
     }
     // `--directory` folds a folder of nothing but ignored files into one `name/` entry, which is how
     // node_modules and build output drop out.
-    let opts = Opts { timeout: Duration::from_secs(10), cap: 4 * 1024 * 1024, allow_truncate: false };
-    let out = proc::git(&root, &["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "--no-empty-directory", "-z"], opts).await;
-    let Ok(out) = out.map(|o| o).and_then(|o| if o.ok() { Ok(o) } else { Err(proc::RunError::Timeout(0)) }) else {
+    let opts = Opts {
+        timeout: Duration::from_secs(10),
+        cap: 4 * 1024 * 1024,
+        allow_truncate: false,
+    };
+    let out = proc::git(
+        &root,
+        &[
+            "ls-files",
+            "--others",
+            "--ignored",
+            "--exclude-standard",
+            "--directory",
+            "--no-empty-directory",
+            "-z",
+        ],
+        opts,
+    )
+    .await;
+    // Not a repository (or git failed): there is nothing to list.
+    let Some(out) = out.ok().filter(proc::Out::ok) else {
         return Ok(json!({"files":[],"truncated":false}));
     };
-    let mut paths_found: Vec<String> = out.stdout.split(|b| *b == 0).filter(|e| !e.is_empty() && !e.ends_with(b"/")).map(|e| String::from_utf8_lossy(e).into_owned()).collect();
+    let mut paths_found: Vec<String> = out
+        .stdout
+        .split(|b| *b == 0)
+        .filter(|e| !e.is_empty() && !e.ends_with(b"/"))
+        .map(|e| String::from_utf8_lossy(e).into_owned())
+        .collect();
     paths_found.sort();
     let truncated = paths_found.len() > IGNORED_LIMIT;
     let files: Vec<Value> = paths_found
@@ -176,7 +254,8 @@ async fn list_ignored(p: &Value) -> Reply {
         .filter_map(|rel| {
             // lstat: a symlink usually points outside the workspace, where reads refuse to go.
             let meta = std::fs::symlink_metadata(root.join(rel)).ok()?;
-            meta.is_file().then(|| json!({"path":rel,"byteLength":meta.len()}))
+            meta.is_file()
+                .then(|| json!({"path":rel,"byteLength":meta.len()}))
         })
         .collect();
     Ok(json!({"files":files,"truncated":truncated}))
@@ -218,23 +297,45 @@ pub fn folder_name(name: &str) -> String {
         return "project".into();
     }
     let reserved = matches!(slug.as_str(), "con" | "prn" | "aux" | "nul")
-        || (slug.len() == 4 && (slug.starts_with("com") || slug.starts_with("lpt")) && slug.as_bytes()[3].is_ascii_digit() && slug.as_bytes()[3] != b'0');
-    if reserved { format!("{slug}-project") } else { slug }
+        || (slug.len() == 4
+            && (slug.starts_with("com") || slug.starts_with("lpt"))
+            && slug.as_bytes()[3].is_ascii_digit()
+            && slug.as_bytes()[3] != b'0');
+    if reserved {
+        format!("{slug}-project")
+    } else {
+        slug
+    }
 }
 
 const ICON_BACKGROUNDS: [&str; 15] = [
-    "#dc2626", "#ea580c", "#d97706", "#16a34a", "#059669", "#0d9488", "#0891b2", "#0284c7", "#2563eb", "#4f46e5", "#7c3aed", "#9333ea", "#c026d3", "#db2777", "#e11d48",
+    "#dc2626", "#ea580c", "#d97706", "#16a34a", "#059669", "#0d9488", "#0891b2", "#0284c7",
+    "#2563eb", "#4f46e5", "#7c3aed", "#9333ea", "#c026d3", "#db2777", "#e11d48",
 ];
 
 fn escape_xml(v: &str) -> String {
-    v.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+    v.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 fn icon_svg(name: &str) -> String {
-    let words = name.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty());
-    let mut initials: String = words.take(2).filter_map(|w| w.chars().next()).flat_map(char::to_uppercase).collect();
+    let words = name
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty());
+    let mut initials: String = words
+        .take(2)
+        .filter_map(|w| w.chars().next())
+        .flat_map(char::to_uppercase)
+        .collect();
     if initials.is_empty() {
-        initials = name.trim().chars().next().map(String::from).unwrap_or_else(|| "?".into());
+        initials = name
+            .trim()
+            .chars()
+            .next()
+            .map(String::from)
+            .unwrap_or_else(|| "?".into());
     }
     let mut hash: u32 = 0;
     for c in name.chars() {
@@ -250,10 +351,19 @@ fn icon_svg(name: &str) -> String {
 
 fn commit_failure(stderr: &str) -> String {
     let low = stderr.to_lowercase();
-    if low.contains("identity unknown") || low.contains("tell me who you are") || low.contains("no name was given") || low.contains("no email was given") {
+    if low.contains("identity unknown")
+        || low.contains("tell me who you are")
+        || low.contains("no name was given")
+        || low.contains("no email was given")
+    {
         return "Git has no name or email on this machine. Set user.name and user.email, then commit.".into();
     }
-    stderr.lines().map(str::trim).rfind(|l| !l.is_empty()).unwrap_or("Git could not make the first commit.").to_owned()
+    stderr
+        .lines()
+        .map(str::trim)
+        .rfind(|l| !l.is_empty())
+        .unwrap_or("Git could not make the first commit.")
+        .to_owned()
 }
 
 fn dispatch_error(message: &str) -> Value {
@@ -267,22 +377,33 @@ async fn create_new(s: &State, p: &Value) -> Reply {
     }
     let base = s.dir.parent().unwrap_or(&s.dir).to_path_buf();
     let root = base.join("projects");
-    std::fs::create_dir_all(&root).map_err(|e| dispatch_error(&format!("Could not create {}: {e}", root.display())))?;
+    std::fs::create_dir_all(&root)
+        .map_err(|e| dispatch_error(&format!("Could not create {}: {e}", root.display())))?;
     let slug = folder_name(&name);
     // `create_dir` is atomic: the first free name is ours.
     let mut folder = None;
     for attempt in 1..=100 {
-        let candidate = root.join(if attempt == 1 { slug.clone() } else { format!("{slug}-{attempt}") });
+        let candidate = root.join(if attempt == 1 {
+            slug.clone()
+        } else {
+            format!("{slug}-{attempt}")
+        });
         match std::fs::create_dir(&candidate) {
             Ok(()) => {
                 folder = Some(candidate);
                 break;
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(e) => return Err(dispatch_error(&format!("Could not create {}: {e}", candidate.display()))),
+            Err(e) => {
+                return Err(dispatch_error(&format!(
+                    "Could not create {}: {e}",
+                    candidate.display()
+                )))
+            }
         }
     }
-    let folder = folder.ok_or_else(|| dispatch_error(&format!("Every folder name for \"{slug}\" is taken.")))?;
+    let folder = folder
+        .ok_or_else(|| dispatch_error(&format!("Every folder name for \"{slug}\" is taken.")))?;
     let cleanup = |e: String| {
         let _ = std::fs::remove_dir_all(&folder);
         dispatch_error(&e)
@@ -292,18 +413,32 @@ async fn create_new(s: &State, p: &Value) -> Reply {
         return Err(cleanup("git init failed".into()));
     }
     let readme = format!("<img src=\"assets/icon.svg\" width=\"64\" height=\"64\" alt=\"\">\n\n# {name}\n\nCreated in o3-server.\n");
-    std::fs::create_dir_all(folder.join("assets")).and_then(|_| std::fs::write(folder.join("README.md"), readme)).and_then(|_| std::fs::write(folder.join("assets/icon.svg"), icon_svg(&name))).map_err(|e| cleanup(e.to_string()))?;
+    std::fs::create_dir_all(folder.join("assets"))
+        .and_then(|_| std::fs::write(folder.join("README.md"), readme))
+        .and_then(|_| std::fs::write(folder.join("assets/icon.svg"), icon_svg(&name)))
+        .map_err(|e| cleanup(e.to_string()))?;
     // Explicit filenames so global ignore rules cannot drop them.
-    let added = proc::git(&folder, &["add", "--force", "--", "README.md", "assets/icon.svg"], Opts::WRITE).await;
+    let added = proc::git(
+        &folder,
+        &["add", "--force", "--", "README.md", "assets/icon.svg"],
+        Opts::WRITE,
+    )
+    .await;
     if !matches!(added, Ok(ref o) if o.ok()) {
         return Err(cleanup("git add failed".into()));
     }
-    let commit_error = match proc::git(&folder, &["commit", "--message", "Initial commit"], Opts::WRITE).await {
+    let commit_error = match proc::git(
+        &folder,
+        &["commit", "--message", "Initial commit"],
+        Opts::WRITE,
+    )
+    .await
+    {
         Ok(o) if o.ok() => None,
         Ok(o) => Some(commit_failure(&o.stderr)),
         Err(_) => Some("Git could not make the first commit.".into()),
     };
-    let id = crate::store::random_id().map_err(|e| cleanup(e))?;
+    let id = crate::store::random_id().map_err(cleanup)?;
     let created = crate::projects::mutate_resolved(s, &json!({"type":"project.create","commandId":format!("named-project:{id}"),"projectId":id,"title":name,"workspaceRoot":folder,"scripts":[]})).await;
     if let Err(e) = created {
         return Err(cleanup(e));
@@ -324,39 +459,78 @@ fn repository_error(operation: &str, detail: &str) -> Value {
 async fn clone_start(s: &State, p: &Value) -> Reply {
     let project_id = str_field(p, "projectId")?.to_owned();
     let title = str_field(p, "title")?.to_owned();
-    let destination = paths::normalize(&paths::expand_home(str_field(p, "destinationPath")?.trim()));
+    let destination =
+        paths::normalize(&paths::expand_home(str_field(p, "destinationPath")?.trim()));
     if !destination.is_absolute() {
-        return Err(repository_error("clone", "The destination must be an absolute path."));
+        return Err(repository_error(
+            "clone",
+            "The destination must be an absolute path.",
+        ));
     }
-    let remote = match p["remoteUrl"].as_str().map(str::trim).filter(|u| !u.is_empty()) {
+    let remote = match p["remoteUrl"]
+        .as_str()
+        .map(str::trim)
+        .filter(|u| !u.is_empty())
+    {
         Some(url) => url.to_owned(),
         None => {
-            let repo = str_field(p, "repository").map_err(|_| repository_error("clone", "A remoteUrl or repository is required."))?;
+            let repo = str_field(p, "repository")
+                .map_err(|_| repository_error("clone", "A remoteUrl or repository is required."))?;
             if repo.split('/').count() != 2 || repo.starts_with('-') {
-                return Err(repository_error("clone", "The repository must be owner/name."));
+                return Err(repository_error(
+                    "clone",
+                    "The repository must be owner/name.",
+                ));
             }
-            if p["protocol"] == "ssh" { format!("git@github.com:{repo}.git") } else { format!("https://github.com/{repo}.git") }
+            if p["protocol"] == "ssh" {
+                format!("git@github.com:{repo}.git")
+            } else {
+                format!("https://github.com/{repo}.git")
+            }
         }
     };
     if remote.starts_with('-') || remote.chars().any(char::is_control) {
         return Err(repository_error("clone", "The remote URL is invalid."));
     }
-    if destination.exists() && destination.read_dir().map(|mut d| d.next().is_some()).unwrap_or(true) {
-        return Err(repository_error("clone", &format!("{} already exists and is not empty.", destination.display())));
+    if destination.exists()
+        && destination
+            .read_dir()
+            .map(|mut d| d.next().is_some())
+            .unwrap_or(true)
+    {
+        return Err(repository_error(
+            "clone",
+            &format!("{} already exists and is not empty.", destination.display()),
+        ));
     }
     if let Some(parent) = destination.parent() {
         std::fs::create_dir_all(parent).map_err(|e| repository_error("clone", &e.to_string()))?;
     }
     let dest_text = destination.to_string_lossy().into_owned();
     // The clone blocks until it ends (capabilities.projectCloneTracking is off): at most half an hour.
-    let opts = Opts { timeout: Duration::from_secs(1800), cap: 1024 * 1024, allow_truncate: true };
+    let opts = Opts {
+        timeout: Duration::from_secs(1800),
+        cap: 1024 * 1024,
+        allow_truncate: true,
+    };
     let parent = destination.parent().unwrap_or(Path::new("/")).to_path_buf();
-    let cloned = proc::git(&parent, &["clone", "--no-tags", "--", &remote, &dest_text], opts).await;
+    let cloned = proc::git(
+        &parent,
+        &["clone", "--no-tags", "--", &remote, &dest_text],
+        opts,
+    )
+    .await;
     match cloned {
         Ok(o) if o.ok() => {}
         Ok(o) => {
             let _ = std::fs::remove_dir_all(&destination);
-            let detail = o.stderr.trim().lines().last().unwrap_or("git clone failed").to_owned();
+            let detail = o
+                .stderr
+                .trim()
+                .lines()
+                .last()
+                .unwrap_or("git clone failed")
+                .to_owned();
             return Err(repository_error("clone", &detail));
         }
         Err(e) => {
@@ -375,21 +549,45 @@ async fn clone_start(s: &State, p: &Value) -> Reply {
 
 fn older_settled(s: &State, p: &Value) -> Reply {
     let fail = |m: &str| json!({"_tag":"OrchestrationV2GetShellSnapshotError","message":m});
-    let cut = p["before"]["settledAt"].as_str().ok_or_else(|| invalid("before.settledAt is required"))?;
+    let cut = p["before"]["settledAt"]
+        .as_str()
+        .ok_or_else(|| invalid("before.settledAt is required"))?;
     let after_id = p["before"]["threadId"].as_str();
-    let limit = p["limit"].as_u64().filter(|l| *l <= 50).ok_or_else(|| invalid("limit must be 0-50"))? as usize;
-    let projects: Option<Vec<&str>> = p["projectIds"].as_array().map(|a| a.iter().filter_map(Value::as_str).collect());
+    let limit = p["limit"]
+        .as_u64()
+        .filter(|l| *l <= 50)
+        .ok_or_else(|| invalid("limit must be 0-50"))? as usize;
+    let projects: Option<Vec<&str>> = p["projectIds"]
+        .as_array()
+        .map(|a| a.iter().filter_map(Value::as_str).collect());
     let shell = crate::events::shell(s).map_err(|m| fail(&m))?;
     let mut matching: Vec<Value> = shell["threads"]
         .as_array()
         .into_iter()
         .flatten()
-        .filter(|t| t["lineage"]["relationshipToParent"] != "subagent" && t["settledOverride"] == "settled")
-        .filter(|t| projects.as_ref().is_none_or(|ids| t["projectId"].as_str().is_some_and(|id| ids.contains(&id))))
-        .filter(|t| t["settledAt"].as_str().is_some_and(|at| at < cut || (at == cut && after_id.is_some_and(|id| t["id"].as_str().is_some_and(|tid| tid > id)))))
+        .filter(|t| {
+            t["lineage"]["relationshipToParent"] != "subagent" && t["settledOverride"] == "settled"
+        })
+        .filter(|t| {
+            projects
+                .as_ref()
+                .is_none_or(|ids| t["projectId"].as_str().is_some_and(|id| ids.contains(&id)))
+        })
+        .filter(|t| {
+            t["settledAt"].as_str().is_some_and(|at| {
+                at < cut
+                    || (at == cut
+                        && after_id.is_some_and(|id| t["id"].as_str().is_some_and(|tid| tid > id)))
+            })
+        })
         .cloned()
         .collect();
-    matching.sort_by(|a, b| b["settledAt"].as_str().cmp(&a["settledAt"].as_str()).then(a["id"].as_str().cmp(&b["id"].as_str())));
+    matching.sort_by(|a, b| {
+        b["settledAt"]
+            .as_str()
+            .cmp(&a["settledAt"].as_str())
+            .then(a["id"].as_str().cmp(&b["id"].as_str()))
+    });
     let seq = shell["snapshotSequence"].clone();
     if limit == 0 {
         let mut counts: Vec<(String, u64)> = Vec::new();
@@ -400,7 +598,9 @@ fn older_settled(s: &State, p: &Value) -> Reply {
                 None => counts.push((id, 1)),
             }
         }
-        return Ok(json!({"snapshotSequence":seq,"threads":[],"counts":counts.into_iter().map(|(p, n)| json!({"projectId":p,"count":n})).collect::<Vec<_>>()}));
+        return Ok(
+            json!({"snapshotSequence":seq,"threads":[],"counts":counts.into_iter().map(|(p, n)| json!({"projectId":p,"count":n})).collect::<Vec<_>>()}),
+        );
     }
     matching.truncate(limit);
     Ok(json!({"snapshotSequence":seq,"threads":matching,"counts":[]}))
@@ -423,11 +623,18 @@ async fn workflow_script(p: &Value) -> Reply {
     if candidate.extension().and_then(|e| e.to_str()) != Some("js") {
         return Err(script_error("invalid-path", &path));
     }
-    let config = std::env::var_os("CLAUDE_CONFIG_DIR").filter(|v| !v.is_empty()).map(std::path::PathBuf::from).or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".claude")));
-    let Some(root) = config.map(|c| c.join("projects")).and_then(|r| std::fs::canonicalize(r).ok()) else {
+    let config = std::env::var_os("CLAUDE_CONFIG_DIR")
+        .filter(|v| !v.is_empty())
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".claude")));
+    let Some(root) = config
+        .map(|c| c.join("projects"))
+        .and_then(|r| std::fs::canonicalize(r).ok())
+    else {
         return Err(script_error("root-unavailable", &path));
     };
-    let resolved = std::fs::canonicalize(candidate).map_err(|_| script_error("not-found", &path))?;
+    let resolved =
+        std::fs::canonicalize(candidate).map_err(|_| script_error("not-found", &path))?;
     let shown = resolved.to_string_lossy().into_owned();
     if !resolved.starts_with(&root) {
         return Err(script_error("outside-root", &shown));
