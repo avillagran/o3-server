@@ -70,3 +70,22 @@ recorded a pending sleep/reply task. The real server resumed it, was SIGKILLed
 after the run became running, and a second process resumed the same native
 session/run to `completed`. Scratch home/credentials were removed afterward.
 This verifies live native continuation, not preservation of the original inference.
+
+
+## Owned native background work
+
+`backgroundTasks` records retain run/provider-thread/task ownership and terminal
+status. Claude task_started/background_tasks_changed and task_notification, and
+Codex item started/completed frames, update provider-thread and thread rosters via
+ordinary projection events. A native turn result alone cannot settle the run while
+owned work remains. Interrupt/failure closes owned records; settlement age never
+wins over pending ownership. Duplicate Claude roster starts cannot resurrect an
+already completed task within the same run.
+
+Restart marks lost ownership failed with a channel-loss reason, clears its roster,
+and closes orphan items/nodes/attempts. It never claims the old command succeeded or
+reattaches its process. A bound native conversation may continue in a new turn as
+above; background side effects may already have happened and must be inspected.
+A reserved provider-thread ID has nativeThreadRef=null until binding and is never
+passed as a Claude resume ID. Native IDs resolve through the durable provider-thread
+record, with legacy imported-thread fallback; forking uses that same resolution.

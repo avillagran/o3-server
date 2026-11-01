@@ -284,7 +284,10 @@ impl CodexProvider {
             let response=c.call("turn/start",turn_params).await?;
             let turn=response["turn"]["id"].as_str().ok_or("Codex turn id missing")?.to_owned();
             active_turn=Some(turn.clone());
+            output.send(ProviderEvent::Codex(json!({"method":"turn/started","params":{"threadId":tid,"turn":response["turn"]}}))).await.map_err(|_|"receiver closed")?;
             let mut pending=HashMap::<String,(Value,String)>::new();
+            let mut owned=std::collections::HashSet::<String>::new();
+            let mut terminal=None;
             loop {
                 if *cancel.borrow() { let _=c.call("turn/interrupt",json!({"threadId":tid,"turnId":turn})).await; return Ok(()); }
                 tokio::select! {
@@ -317,6 +320,13 @@ impl CodexProvider {
                         }
                         let failure_message=frame["params"]["turn"]["error"]["message"].as_str().unwrap_or("Codex turn failed").to_owned();
                         let done=frame["method"]=="turn/completed";
+                        if let Some(id)=frame["params"]["item"]["id"].as_str() {
+                            if frame["method"]=="item/started" && matches!(frame["params"]["item"]["type"].as_str(),Some("commandExecution"|"collabAgentToolCall")) {
+                                if owned.len()>=64 {return Err("Codex owned item limit".into());}
+                                owned.insert(id.to_owned());
+                            }
+                            if frame["method"]=="item/completed" {owned.remove(id);}
+                        }
                         let failed=frame["params"]["turn"]["status"]=="failed";
                         let interrupted=frame["params"]["turn"]["status"]=="interrupted";
                         let text=frame["params"]["delta"].as_str().unwrap_or("").to_owned();
@@ -324,7 +334,8 @@ impl CodexProvider {
                         let event=if frame["method"]=="item/agentMessage/delta" {ProviderEvent::TextDelta(text)}else{ProviderEvent::Codex(frame)};
                         tokio::select! { r=output.send(event)=>r.map_err(|_|"receiver closed")?, _=cancel.changed()=>continue, _=output.closed()=>return Ok(()) }
                         for command in commands {output.send(ProviderEvent::Command(command)).await.map_err(|_|"receiver closed")?;}
-                        if done { terminal_received=true; output.send(if failed {ProviderEvent::Failed(failure_message)}else if interrupted{ProviderEvent::Interrupted}else{ProviderEvent::Completed}).await.map_err(|_|"receiver closed")?; return Ok(()); }
+                        if done {terminal=Some(if failed {ProviderEvent::Failed(failure_message)}else if interrupted{ProviderEvent::Interrupted}else{ProviderEvent::Completed});}
+                        if terminal.is_some() && owned.is_empty() { terminal_received=true; output.send(terminal.take().unwrap()).await.map_err(|_|"receiver closed")?; return Ok(()); }
                     }
                 }
             }

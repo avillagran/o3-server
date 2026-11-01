@@ -57,7 +57,12 @@ pub(crate) fn persist(
 ) -> Result<(), String> {
     match f["type"].as_str().unwrap_or("") {
         "session" => {
-            let id = f["session_id"].as_str().ok_or("session id missing")?;
+            let native = f["session_id"].as_str().ok_or("session id missing")?;
+            let owned = t["activeProviderThreadId"]
+                .as_str()
+                .unwrap_or(native)
+                .to_owned();
+            let id = owned.as_str();
             t["activeProviderThreadId"] = json!(id);
             run["providerThreadId"] = json!(id);
             run["rootNodeId"] = json!(rid);
@@ -76,7 +81,7 @@ pub(crate) fn persist(
             put(db, "providerSessions", id, tid, &session)?;
             append(db, tid, "provider-session.updated", session, t)?;
             let previous = get(db, "providerThreads", id).unwrap_or(Value::Null);
-            let p = json!({"id":id,"driver":"claudeAgent","providerInstanceId":t["providerInstanceId"],"providerSessionId":id,"appThreadId":tid,"ownerNodeId":rid,"nativeThreadRef":reference(&json!(id)),"nativeConversationHeadRef":null,"contextUsage":null,"goal":null,"nativeMetadata":null,"pendingBackgroundTasks":[],"status":"active","firstRunOrdinal":previous.get("firstRunOrdinal").unwrap_or(&run["ordinal"]),"lastRunOrdinal":run["ordinal"],"handoffIds":[],"forkedFrom":null,"createdAt":previous.get("createdAt").unwrap_or(&json!(at)),"updatedAt":at});
+            let p = json!({"id":id,"driver":"claudeAgent","providerInstanceId":t["providerInstanceId"],"providerSessionId":id,"appThreadId":tid,"ownerNodeId":rid,"nativeThreadRef":reference(&json!(native)),"nativeConversationHeadRef":null,"contextUsage":null,"goal":null,"nativeMetadata":null,"pendingBackgroundTasks":[],"status":"active","firstRunOrdinal":previous.get("firstRunOrdinal").unwrap_or(&run["ordinal"]),"lastRunOrdinal":run["ordinal"],"handoffIds":[],"forkedFrom":null,"createdAt":previous.get("createdAt").unwrap_or(&json!(at)),"updatedAt":at});
             put(db, "providerThreads", id, tid, &p)?;
             append(db, tid, "provider-thread.updated", p, t)?;
             let turn = json!({"id":rid,"providerThreadId":id,"nodeId":rid,"runAttemptId":aid,"nativeTurnRef":null,"ordinal":run["ordinal"],"status":"running","startedAt":at,"completedAt":null});
@@ -187,6 +192,11 @@ pub(crate) fn persist(
                     i["result"] = json!(text);
                 }
             }
+            let owned:bool=db.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='backgroundTasks' AND thread_id=? AND json_extract(body,'$.itemId')=? AND json_extract(body,'$.status')='running')",rusqlite::params![tid,id],|r|r.get(0)).map_err(|e|e.to_string())?;
+            if owned {
+                i["status"] = json!("running");
+                i["completedAt"] = Value::Null;
+            }
             if i["type"] == "subagent" {
                 let sub = json!({"id":id,"threadId":tid,"runId":rid,"parentNodeId":rid,"origin":"provider_native","createdBy":"agent","driver":"claudeAgent","providerInstanceId":t["providerInstanceId"],"providerThreadId":t["activeProviderThreadId"],"childThreadId":null,"nativeTaskRef":reference(native),"prompt":i["prompt"],"title":i["title"],"model":null,"status":i["status"],"result":i["result"],"startedAt":i["startedAt"],"completedAt":i["completedAt"],"updatedAt":at});
                 put(db, "subagents", &id, tid, &sub)?;
@@ -212,8 +222,65 @@ pub(crate) fn persist(
         }
         "task" => {
             let frame = &f["frame"];
-            let id = format!("tool-{rid}-{}", frame["tool_use_id"].as_str().unwrap_or(""));
+            let outcome = match frame["status"].as_str() {
+                Some("completed") => "completed",
+                Some("stopped" | "cancelled" | "killed") => "cancelled",
+                _ => "failed",
+            };
+            if frame["subtype"] == "background_tasks_changed" {
+                for task in frame["tasks"].as_array().into_iter().flatten() {
+                    crate::background::update(
+                        db,
+                        tid,
+                        rid,
+                        t,
+                        at,
+                        task["task_id"].as_str().ok_or("task id missing")?,
+                        if task["task_type"] == "local_bash" {
+                            "command"
+                        } else {
+                            "background_task"
+                        },
+                        false,
+                        "running",
+                        None,
+                    )?;
+                }
+            }
+            let task_id = frame["task_id"].as_str().unwrap_or("");
+            let id = get(db, "claudeTasks", task_id)
+                .ok()
+                .and_then(|v| v["itemId"].as_str().map(str::to_owned))
+                .unwrap_or_else(|| {
+                    format!("tool-{rid}-{}", frame["tool_use_id"].as_str().unwrap_or(""))
+                });
+            if matches!(
+                frame["subtype"].as_str(),
+                Some("task_started" | "task_notification")
+            ) {
+                crate::background::update(
+                    db,
+                    tid,
+                    rid,
+                    t,
+                    at,
+                    task_id,
+                    if frame["task_type"] == "local_bash" {
+                        "command"
+                    } else {
+                        "subagent"
+                    },
+                    frame["subtype"] == "task_notification",
+                    outcome,
+                    Some(&id),
+                )?;
+            }
             if frame["subtype"] == "task_started" {
+                if let Ok(mut i) = get(db, "turnItems", &id) {
+                    i["status"] = json!("running");
+                    i["completedAt"] = Value::Null;
+                    save_item(db, tid, t, i)?;
+                }
                 put(
                     db,
                     "claudeTasks",
@@ -224,7 +291,7 @@ pub(crate) fn persist(
             }
             if frame["subtype"] == "task_notification" {
                 if let Ok(mut sub) = get(db, "subagents", &id) {
-                    sub["status"] = frame["status"].clone();
+                    sub["status"] = json!(outcome);
                     sub["result"] = frame["summary"].clone();
                     sub["completedAt"] = json!(at);
                     sub["updatedAt"] = json!(at);
@@ -232,7 +299,7 @@ pub(crate) fn persist(
                     append(db, tid, "subagent.updated", sub, t)?;
                 }
                 if let Ok(mut i) = get(db, "turnItems", &id) {
-                    i["status"] = frame["status"].clone();
+                    i["status"] = json!(outcome);
                     i["result"] = frame["summary"].clone();
                     i["completedAt"] = json!(at);
                     i["updatedAt"] = json!(at);
@@ -268,6 +335,22 @@ pub(crate) fn persist(
             i["status"] = json!("pending");
             save_item(db, tid, t, i)?;
             run["status"] = json!("waiting");
+        }
+        "rate_limit" => {
+            let info = &f["info"];
+            t["usageLimitResetAt"] = if info["status"] == "rejected" {
+                info["resetsAt"]
+                    .as_i64()
+                    .and_then(|s| s.checked_mul(1000))
+                    .filter(|s| time::OffsetDateTime::from_unix_timestamp(*s / 1000).is_ok())
+                    .map(crate::store::iso)
+                    .map(Value::String)
+                    .unwrap_or(Value::Null)
+            } else {
+                Value::Null
+            };
+            put(db, "thread", tid, tid, t)?;
+            append(db, tid, "thread.metadata-updated", t.clone(), t)?;
         }
         "usage" => {
             // Store only the current result's accounting, never the CLI transcript.

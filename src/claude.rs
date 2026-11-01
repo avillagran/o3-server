@@ -287,20 +287,39 @@ impl ClaudeProvider {
 #[derive(Default)]
 struct TurnBoundary {
     tasks: std::collections::HashSet<String>,
+    ended: std::collections::HashSet<String>,
     terminal: Option<ProviderEvent>,
 }
 impl TurnBoundary {
     fn observe(&mut self, v: &Value) -> Result<(), String> {
         if v["type"] == "system" {
+            if v["subtype"] == "background_tasks_changed" {
+                for task in v["tasks"].as_array().into_iter().flatten() {
+                    if let Some(id) = task["task_id"].as_str() {
+                        if self.tasks.len() >= 64 && !self.tasks.contains(id) {
+                            return Err("Claude task limit reached".into());
+                        }
+                        if !self.ended.contains(id) {
+                            self.tasks.insert(id.into());
+                        }
+                    }
+                }
+            }
             if let Some(id) = v["task_id"].as_str() {
                 if v["subtype"] == "task_started" {
                     if self.tasks.len() >= 64 {
                         return Err("Claude task limit reached".into());
                     }
-                    self.tasks.insert(id.into());
+                    if !self.ended.contains(id) {
+                        self.tasks.insert(id.into());
+                    }
                 }
                 if v["subtype"] == "task_notification" {
                     self.tasks.remove(id);
+                    if self.ended.len() >= 1024 {
+                        return Err("Claude completed task limit reached".into());
+                    }
+                    self.ended.insert(id.into());
                 }
             }
         }
@@ -458,13 +477,16 @@ pub(crate) fn decode(v: &Value) -> Vec<ProviderEvent> {
                 }
             }
         }
+        "rate_limit_event" => out.push(ProviderEvent::Native(
+            json!({"type":"rate_limit","info":v["rate_limit_info"]}),
+        )),
         "system" if v["subtype"] == "init" => out.push(ProviderEvent::Native(
             json!({"type":"session","session_id":v["session_id"]}),
         )),
         "system"
             if matches!(
                 v["subtype"].as_str(),
-                Some("task_started" | "task_notification")
+                Some("task_started" | "task_notification" | "background_tasks_changed")
             ) =>
         {
             out.push(ProviderEvent::Native(json!({"type":"task","frame":v})))

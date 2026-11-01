@@ -139,7 +139,7 @@
     "orchestration.dispatchCommand": {
       "status": "partial",
       "priority": "P0",
-      "note": "Remaining: native attachment steering, full attempt/provider-thread identity, background/subagent settlement, exact inference reattachment (native-session continuation with a new turn is implemented; process-kill peers in tests/active_recovery.rs) and native delivery acknowledgement. Persistent exact-operation consent and both native plan acceptance flows have real-client peer coverage; broad native permission rules/revocation UI remain unsupported."
+      "note": "Durable native background ownership, delayed settlement and pre-binding identity have real-client peer coverage (tests/background.rs). Remaining: native attachment steering, exact inference reattachment (native-session continuation with a new turn is implemented; process-kill peers in tests/active_recovery.rs) and native delivery acknowledgement. Persistent exact-operation consent and both native plan acceptance flows have real-client peer coverage; broad native permission rules/revocation UI remain unsupported."
     },
     "orchestration.getArchivedShellSnapshot": {
       "status": "partial",
@@ -224,12 +224,12 @@
     "orchestration.subscribeShell": {
       "status": "partial",
       "priority": "P0",
-      "note": "Real-client tests cover repositoryIdentity replacement snapshots/resolved roots, timestamps, active plans, subagent summaries and client cursor/replay invariants (tests/thread_commands.rs). Remaining client-read gaps: native background-task lifecycle and usage-limit reset/failure status. Independent-operation interleavings are accepted per CONFORMANCE.md."
+      "note": "Real Connection coverage includes durable native background rosters, result-before-background-completion, interrupt, pre-binding identity, repository snapshots/resolved roots, timestamps/plans/subagents and cursor/replay invariants. Claude rate-limit signals project rejection reset timestamps and clear them on allowed signals. Remaining: live quota failure/reset proof and Codex quota failure/reset projection; independent interleavings follow CONFORMANCE.md."
     },
     "orchestration.subscribeThread": {
-      "status": "partial",
+      "status": "done",
       "priority": "P0",
-      "note": "Real-client native peers cover attempts, provider-thread links, context usage, item ordinals; thread_commands.rs verifies snapshot-before-tail, increasing sequence, ordered replay and the real client projection reducer. Remaining: complete native background lifecycle/recovery and pre-binding provider-thread identity. Independent-operation interleavings are accepted per CONFORMANCE.md."
+      "note": "Real Connection coverage: stable provider-thread identity before native binding, updated in place; durable Claude Bash/Task and Codex owned items stay visible after turn result, stream roster removal and interrupt. Restart closes lost ownership explicitly; only bound native conversations continue in a new turn (RECOVERY.md). Existing client reducer/cursor/replay/attempt/context/item coverage remains; interleavings follow CONFORMANCE.md."
     },
     "preview.adjust": {
       "status": "done",

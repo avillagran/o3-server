@@ -255,3 +255,17 @@ The same new release binary passes both `tools/bench-rss` modes: synthetic HWM
 Aggregate-only samples and the binary digest are in `rss-synthetic-measurement.json`
 and `rss-measurement.json`. Provider inference is excluded from those RSS probes.
 No emulator, public route, deployment, running service or active T3 profile used.
+
+
+### Native background shell (2026-11-01)
+
+`cargo test --test background live_claude_background_shell -- --ignored` passed
+with installed Claude Haiku in a scratch workspace: Bash run_in_background=true,
+`sleep 2; printf BACKGROUND_OK`, native task start/end observed, completion delayed
+until notification. No emulator, deployment, or active service was involved.
+
+Final validation: 151 default-feature tests and 149 no-default-feature tests pass
+(six opt-in tests ignored in each); strict all-target Clippy passes in both feature
+configurations, as do fmt and compatibility generation. `tools/bench-rss` completed:
+VmHWM 16,236 KiB (16.63 MB), bridge enabled, 20 threads, three subscribers and
+1,000 seeded messages; native inference excluded from that RSS workload.

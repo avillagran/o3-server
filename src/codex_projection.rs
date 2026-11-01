@@ -74,7 +74,10 @@ pub(crate) fn persist(
         .or_else(|| p["turn"]["id"].as_str())
         .unwrap_or("");
     let session_id = format!("codex-session-{tid}");
-    let pt = format!("codex-thread-{native_thread}");
+    let pt = thread["activeProviderThreadId"]
+        .as_str()
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("codex-thread-{native_thread}"));
     let pv = format!("codex-turn-{native_turn}");
     let native_item = p["itemId"]
         .as_str()
@@ -107,56 +110,63 @@ pub(crate) fn persist(
                 json!({"id":session_id,"driver":"codex","providerInstanceId":thread["providerInstanceId"],"cwd":p["cwd"],"model":thread["modelSelection"]["model"],"capabilities":serde_json::from_str::<Value>(include_str!("codex-capabilities.json")).unwrap(),"lastError":null,"status":"ready","createdAt":at,"updatedAt":at}),
             )?;
         }
-        "turn/started" | "turn/completed" => {
-            let completed = method == "turn/completed";
-            run["status"] = json!(if completed {
-                match p["turn"]["status"].as_str() {
-                    Some("failed") => "failed",
-                    Some("interrupted") => "interrupted",
-                    _ => "completed",
-                }
-            } else {
-                "running"
-            });
+        // A native turn result can precede item completion. The supervisor owns
+        // the terminal projection, after the adapter drains all owned items.
+        "turn/completed" => {}
+        "turn/started" => {
+            run["status"] = json!("running");
             run["rootNodeId"] = json!(rid);
             run["codexProviderTurnId"] = json!(pv);
             run["activeAttemptId"] = json!(format!("attempt-{rid}"));
-            run[if completed {
-                "completedAt"
-            } else {
-                "startedAt"
-            }] = json!(at);
-            record(
-                db,
-                tid,
-                thread,
-                "providerTurns",
-                "provider-turn.updated",
-                json!({"id":pv,"providerThreadId":pt,"nodeId":rid,"runAttemptId":format!("attempt-{rid}"),"ordinal":run["ordinal"],"nativeTurnRef":{"driver":"codex","nativeId":native_turn,"strength":"strong"},"status":run["status"],"startedAt":run["startedAt"],"completedAt":if completed{json!(at)}else{Value::Null}}),
-            )?;
-            record(
-                db,
-                tid,
-                thread,
-                "nodes",
-                "node.updated",
-                json!({"id":rid,"threadId":tid,"runId":rid,"parentNodeId":null,"rootNodeId":rid,"kind":"root_turn","status":run["status"],"countsForRun":true,"providerThreadId":pt,"providerTurnId":pv,"nativeItemRef":null,"runtimeRequestId":null,"checkpointScopeId":null,"startedAt":at,"completedAt":if completed{json!(at)}else{Value::Null}}),
-            )?;
-            record(
-                db,
-                tid,
-                thread,
-                "attempts",
-                "attempt.updated",
-                json!({"id":format!("attempt-{rid}"),"runId":rid,"attemptOrdinal":1,"providerInstanceId":thread["providerInstanceId"],"providerThreadId":pt,"reason":"initial","rootNodeId":rid,"providerTurnId":pv,"status":run["status"],"startedAt":run["startedAt"],"completedAt":if completed{json!(at)}else{Value::Null}}),
-            )?;
-            if completed {
-                run["status"] = json!("running");
+            run["startedAt"] = json!(at);
+            for (kind, event, v) in [
+                (
+                    "providerTurns",
+                    "provider-turn.updated",
+                    json!({"id":pv,"providerThreadId":pt,"nodeId":rid,"runAttemptId":format!("attempt-{rid}"),"ordinal":run["ordinal"],"nativeTurnRef":{"driver":"codex","nativeId":native_turn,"strength":"strong"},"status":"running","startedAt":at,"completedAt":null}),
+                ),
+                (
+                    "nodes",
+                    "node.updated",
+                    json!({"id":rid,"threadId":tid,"runId":rid,"parentNodeId":null,"rootNodeId":rid,"kind":"root_turn","status":"running","countsForRun":true,"providerThreadId":pt,"providerTurnId":pv,"nativeItemRef":null,"runtimeRequestId":null,"checkpointScopeId":null,"startedAt":at,"completedAt":null}),
+                ),
+                (
+                    "attempts",
+                    "attempt.updated",
+                    json!({"id":format!("attempt-{rid}"),"runId":rid,"attemptOrdinal":1,"providerInstanceId":thread["providerInstanceId"],"providerThreadId":pt,"reason":"initial","rootNodeId":rid,"providerTurnId":pv,"status":"running","startedAt":at,"completedAt":null}),
+                ),
+            ] {
+                record(db, tid, thread, kind, event, v)?;
             }
         }
         "item/started" | "item/completed" => {
             let n = &p["item"];
             let complete = method == "item/completed";
+            if matches!(
+                n["type"].as_str(),
+                Some("commandExecution" | "collabAgentToolCall")
+            ) {
+                crate::background::update(
+                    db,
+                    tid,
+                    rid,
+                    thread,
+                    at,
+                    n["id"].as_str().ok_or("item id missing")?,
+                    if n["type"] == "commandExecution" {
+                        "command"
+                    } else {
+                        "subagent"
+                    },
+                    complete,
+                    if n["status"] == "failed" {
+                        "failed"
+                    } else {
+                        "completed"
+                    },
+                    Some(&id),
+                )?;
+            }
             if let Ok(old) = get(db, "turnItems", &id) {
                 base = old;
             }

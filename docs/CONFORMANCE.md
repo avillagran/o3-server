@@ -533,3 +533,35 @@ Stream interleavings are governed by the explicit reader contract above rather t
 an unbounded equivalence claim. Exact original-inference reattachment is not promised:
 RECOVERY.md documents native continuation as a new turn. Remaining native control
 uncertainty and client-visible background recovery are still actual gaps.
+
+
+## Native background ownership and pre-binding identity (2026-11-01)
+
+Reader audit: `lib-t3-rust/src/sidebar.rs`, `sidebar/view.rs`, `awareness.rs`
+consume pendingBackgroundTasks/activityRunStatus/blockedOnThreadWait;
+`queue.rs`, `timeline.rs`, `compaction.rs`, `checkpoint_revert.rs` resolve
+activeProviderThreadId through providerThreads. Desktop `src/lib.rs` and
+`session_memory.rs` consume the same projections. Android uses the shared Rust
+reducers (its Kotlin UI does not introduce a separate native task roster).
+Attempts and nodes must retain the reserved provider-thread link before native init.
+Reference: ClaudeAdapterV2 task/roster handling and background Agent launch ACK;
+CodexAdapterV2 retains turn routes for late command items; Orchestrator derives
+pending work from the provider roster and child lifecycle.
+
+`tests/background.rs` uses the real protocol Connection and gated stdio peers.
+Before native init, the snapshot contains a non-null activeProviderThreadId and
+matching providerThreads/nodes/attempts, with a null nativeThreadRef. Binding updates
+that record in place. Claude Bash and Task launch ACKs and Codex command items can
+outlive the native result: run/root/attempt stay active, shell and thread snapshots
+show owned work, late completion updates the streamed roster, and interrupt closes
+ownership. SQLite restart tests fail lost work with an explicit reason; a reserved
+ID alone cannot trigger native resume. Existing SIGKILL continuation peers and stream
+reducer/cursor/replay tests still apply. Exact original-process reattachment remains
+excluded by RECOVERY.md, rather than advertised as recovered background execution.
+
+One opt-in real Claude Haiku background-shell check passed: launch `sleep 2` with
+run_in_background, receive native task start/end, complete only after notification.
+No real exhausted-quota failure was induced. Claude rejection resets are projected
+from native rate_limit_event, but live rejection and Codex reset handling remain
+unproven. Thus subscribeThread is promoted under the reader rule; subscribeShell
+stays partial for quota failure/reset. Earlier P0 tables describe earlier checkpoints.

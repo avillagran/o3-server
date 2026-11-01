@@ -97,11 +97,11 @@ pub(crate) fn shell_thread(db: &Connection, t: &Value) -> Result<Value> {
             t[key] = Value::Null;
         }
     }
-    let mut q=db.prepare("SELECT id FROM records WHERE kind='subagents' AND thread_id=? AND coalesce(json_extract(body,'$.status'),'pending') NOT IN ('completed','cancelled','failed') ORDER BY rowid LIMIT 1000").map_err(|e|e.to_string())?;
+    let mut q=db.prepare("SELECT body FROM records r WHERE kind IN ('subagents','backgroundTasks') AND thread_id=? AND (kind='backgroundTasks' OR NOT EXISTS(SELECT 1 FROM records b WHERE b.kind='backgroundTasks' AND b.thread_id=r.thread_id AND json_extract(b.body,'$.itemId')=r.id)) AND coalesce(json_extract(body,'$.status'),'pending') NOT IN ('completed','cancelled','failed','interrupted') ORDER BY rowid LIMIT 1000").map_err(|e|e.to_string())?;
     let tasks = q
         .query_map([tid], |r| r.get::<_, String>(0))
         .map_err(|e| e.to_string())?
-        .map(|id| id.map(|id| json!({"kind":"subagent","taskId":id,"awaited":true})))
+        .map(|body| body.map(|body| { let v:Value=serde_json::from_str(&body).unwrap_or(Value::Null); json!({"kind":v["kind"].as_str().unwrap_or("subagent"),"taskId":v["taskId"].as_str().or(v["id"].as_str()),"awaited":v["awaited"]==true}) }))
         .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
     t["pendingBackgroundTasks"] = json!(tasks);
@@ -793,6 +793,28 @@ fn stage_message(
         run["queueHeld"] = json!(false);
     }
     if !queued {
+        if t["activeProviderThreadId"]
+            .as_str()
+            .is_none_or(|id| get(tx, "providerThreads", id).is_err())
+        {
+            let native = crate::projection::native_id(tx, t);
+            let id = if let Some(id) = t["activeProviderThreadId"].as_str() {
+                id.to_owned()
+            } else {
+                format!("provider-thread-{}", crate::store::random_id()?)
+            };
+            t["activeProviderThreadId"] = json!(id);
+            let driver = if t["providerInstanceId"] == "codex" {
+                "codex"
+            } else {
+                "claudeAgent"
+            };
+            let p = json!({"id":id,"appThreadId":tid,"driver":driver,"providerInstanceId":t["providerInstanceId"],"providerSessionId":null,"ownerNodeId":run_id,"nativeThreadRef":native.map(|native|json!({"driver":driver,"nativeId":native,"strength":"strong"})),"nativeConversationHeadRef":null,"status":"active","firstRunOrdinal":ordinal,"lastRunOrdinal":ordinal,"handoffIds":[],"forkedFrom":null,"contextUsage":null,"goal":null,"nativeMetadata":null,"pendingBackgroundTasks":[],"createdAt":at,"updatedAt":at});
+            put(tx, "providerThreads", &id, tid, &p)?;
+            put(tx, "thread", tid, tid, t)?;
+            append(tx, tid, "provider-thread.updated", p, t)?;
+            append(tx, tid, "thread.metadata-updated", t.clone(), t)?;
+        }
         let aid = format!("attempt-{run_id}");
         run["activeAttemptId"] = json!(aid);
         run["rootNodeId"] = json!(run_id);

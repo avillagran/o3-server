@@ -753,12 +753,7 @@ fn fork(tx: &Connection, c: &Value) -> Result<i64> {
         .last()
         .is_some_and(|r| r["id"] == source_run["id"] && r["status"] == "completed")
     {
-        let key = if source["providerInstanceId"] == "codex" {
-            "codexNativeThreadId"
-        } else {
-            "activeProviderThreadId"
-        };
-        target["nativeForkSource"] = source[key].clone();
+        target["nativeForkSource"] = json!(crate::projection::native_id(tx, &source));
     }
     target["lineage"] = json!({"parentThreadId":source_id,"relationshipToParent":"fork","rootThreadId":source["lineage"]["rootThreadId"]});
     target["forkedFrom"] = json!({"type":"run","threadId":source_id,"runId":source_run["id"]});

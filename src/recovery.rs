@@ -75,15 +75,10 @@ pub fn recover(db: &mut Connection) -> Result<(), String> {
                     }
                 }
                 if let Ok(t) = events::get(&tx, "thread", &tid) {
-                    let key = if t["providerInstanceId"] == "codex" {
-                        "codexNativeThreadId"
-                    } else {
-                        "activeProviderThreadId"
-                    };
                     if matches!(
                         t["providerInstanceId"].as_str(),
                         Some("codex" | "claudeAgent" | "claude" | "claude-code")
-                    ) && t[key].as_str().is_some_and(|id| !id.is_empty())
+                    ) && crate::projection::native_id(&tx, &t).is_some_and(|id| !id.is_empty())
                     {
                         v["status"] = json!("starting");
                         v["completedAt"] = Value::Null;

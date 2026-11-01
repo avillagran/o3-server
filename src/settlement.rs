@@ -44,7 +44,7 @@ pub(crate) fn tick(s: &State, now: i64) -> Result<(), String> {
         else {
             continue;
         };
-        let blocked:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE thread_id=? AND ((kind='runs' AND json_extract(body,'$.status') NOT IN ('completed','rolled_back')) OR (kind='runtimeRequests' AND json_extract(body,'$.status')='pending') OR (kind='subagents' AND json_extract(body,'$.status') NOT IN ('completed','failed','cancelled')) OR (kind='controlOutbox' AND json_extract(body,'$.status') IN ('pending','delivery-unknown'))))",[&tid],|r|r.get(0)).map_err(|e|e.to_string())?;
+        let blocked:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE thread_id=? AND ((kind='runs' AND json_extract(body,'$.status') NOT IN ('completed','rolled_back')) OR (kind='runtimeRequests' AND json_extract(body,'$.status')='pending') OR (kind IN ('subagents','backgroundTasks') AND json_extract(body,'$.status') NOT IN ('completed','failed','cancelled','interrupted')) OR (kind='controlOutbox' AND json_extract(body,'$.status') IN ('pending','delivery-unknown'))))",[&tid],|r|r.get(0)).map_err(|e|e.to_string())?;
         if blocked
             || s.active
                 .lock()

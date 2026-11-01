@@ -122,25 +122,15 @@ pub(crate) fn start(
                         .and_then(|p| p["workspaceRoot"].as_str().map(std::path::PathBuf::from))
                 })
                 .unwrap_or_else(|| s.dir.clone());
-            let native_key = if t["providerInstanceId"] == "codex" {
-                "codexNativeThreadId"
-            } else {
-                "activeProviderThreadId"
-            };
-            let fresh = !t[native_key].is_string();
+            let native_id = crate::projection::native_id(&db, &t);
+            let fresh = native_id.is_none();
             let mut selection = t["modelSelection"].clone();
             if fresh {
                 selection["nativeForkSource"] = t["nativeForkSource"].clone();
             }
             RunInput {
                 provider_instance_id: t["providerInstanceId"].as_str().unwrap_or("").into(),
-                native_session_id: t[if t["providerInstanceId"] == "codex" {
-                    "codexNativeThreadId"
-                } else {
-                    "activeProviderThreadId"
-                }]
-                .as_str()
-                .map(str::to_owned),
+                native_session_id: native_id,
                 thread_id: format!("{}:{}", tid, t["providerGeneration"].as_str().unwrap_or("")),
                 run_id: rid.clone(),
                 cwd,
@@ -292,6 +282,14 @@ fn persist(
             *id = format!("tool-{rid}-{native}");
             if matches!(command, C::Finished { .. }) {
                 let db = s.db.lock().unwrap();
+                let item_id = match &command {
+                    C::Finished { item_id, .. } => item_id.as_str(),
+                    _ => unreachable!(),
+                };
+                let owned:bool=db.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='backgroundTasks' AND thread_id=? AND json_extract(body,'$.itemId')=? AND json_extract(body,'$.status')='running')",rusqlite::params![tid,item_id],|r|r.get(0)).map_err(|e|e.to_string())?;
+                if owned {
+                    return Ok(());
+                }
                 if crate::events::get(
                     &db,
                     "turnItems",
