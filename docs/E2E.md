@@ -199,3 +199,7 @@ The request to close every client-read gap is **not complete**; CONFORMANCE.md l
 the remaining consumed gaps. No push, deployment, emulator, QEMU, service/systemd
 changes or real ~/.t3 access. Only private isolated copies and aggregate RSS evidence
 were used for history validation.
+
+## Android partial run (2026-11-01)
+
+Isolated release `0e51b3c`, existing debug APK, Android 34 x86_64: direct pairing via ADB reverse and the empty shell passed. New-thread screen showed no projects in the fresh profile; thread, real turn, approval, restart/reconnect and embedded OmaBridge remain untested. Server VmHWM at this point was 30,344 KiB; no inference. Emulator and server stopped. An initial emulator launch reported a crash database under `/tmp` despite `TMPDIR`; it was stopped, and subsequent launches used a private mount namespace mapping `/tmp` to the approved test directory with crash reporting disabled. No compatibility conclusion beyond the tested flows.
