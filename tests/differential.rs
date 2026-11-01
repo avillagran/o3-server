@@ -47,7 +47,7 @@ fn command(bin: &Path, home: &Path) -> Command {
         .env("PATH", path)
         .env("HOME", home.join("home"))
         .env("T3CODE_HOME", home)
-        .env("TMPDIR", "/var/tmp/o3-build/tmp-diff")
+        .env("TMPDIR", "/var/tmp/o3-build/tmp")
         .env("XDG_CONFIG_HOME", home.join("config"))
         .env("XDG_CACHE_HOME", home.join("cache"))
         .env("XDG_DATA_HOME", home.join("data"))
@@ -150,8 +150,25 @@ fn shape(v: &Value, key: &str) -> Value {
         }
         Value::Array(a) => Value::Array(a.iter().map(|v| shape(v, key)).collect()),
         Value::Null => json!({"$type":"null"}),
-        Value::Bool(_) => json!({"$type":"boolean"}),
-        Value::Number(n) if key == "statusCode" => json!({"$type":"number","value":n}),
+        Value::Bool(v) => json!({"$type":"boolean","value":v}),
+        Value::Number(n)
+            if [
+                "statusCode",
+                "messageCount",
+                "queueCount",
+                "activityCount",
+                "latestLocalTurnOrdinal",
+                "ordinal",
+                "totalMatches",
+                "activeIndex",
+                "occurrence",
+                "startIndex",
+                "count",
+            ]
+            .contains(&key) =>
+        {
+            json!({"$type":"number","value":n})
+        }
         Value::Number(_) => json!({"$type":"number"}),
         Value::String(s)
             if [
@@ -175,6 +192,8 @@ fn shape(v: &Value, key: &str) -> Value {
 fn stream(c: &Connection, tag: &str, p: Value, n: usize) -> Value {
     let done = std::cell::Cell::new(false);
     let mut items = Vec::new();
+    let mut reader_views = Vec::new();
+    let mut mirror = json!({});
     let start = Instant::now();
     let result = c.subscribe(
         tag,
@@ -182,6 +201,24 @@ fn stream(c: &Connection, tag: &str, p: Value, n: usize) -> Value {
         || done.get() || start.elapsed() > Duration::from_secs(5),
         |v| {
             if let Some(v) = v {
+                if tag == "orchestration.subscribeThread" {
+                    if v["kind"] == "snapshot" || v["type"] == "snapshot" {
+                        mirror = v["projection"].clone();
+                    } else if v["event"].is_object() {
+                        t3_protocol::projection::apply(&mut mirror, &v["event"]);
+                    }
+                    if mirror["thread"].is_object() {
+                        let view = t3_protocol::timeline::view(
+                            &mirror,
+                            &json!({}),
+                            &t3_protocol::timeline::Render::neutral(false),
+                        )
+                        .expect("real server projection must render");
+                        let queue = t3_protocol::queue::derive(&mirror);
+                        let checks = json!({"working":view["threadState"]["working"],"messageCount":view["messages"].as_array().map(Vec::len),"queueCount":queue["items"].as_array().map(Vec::len),"activityCount":view["activity"].as_array().map(Vec::len),"fixtureTextFound":view["messages"].as_array().is_some_and(|m| m.iter().any(|m|m["text"] == "Conformance fixture Conformance"))});
+                        reader_views.push(json!({"timeline":view,"queue":queue,"checks":checks}));
+                    }
+                }
                 items.push(v);
                 if items.len() >= n {
                     done.set(true);
@@ -190,7 +227,7 @@ fn stream(c: &Connection, tag: &str, p: Value, n: usize) -> Value {
             Ok(())
         },
     );
-    json!({"items":items,"error":result.err().map(|e|e.to_string())})
+    json!({"items":items,"readerViews":reader_views,"error":result.err().map(|e|e.to_string())})
 }
 // Supplement client-visible failures with their original Effect error tags.
 fn raw_rpc(s: &Server, tag: &str, payload: Value) -> Value {
@@ -548,8 +585,8 @@ fn script(s: &Server, workspace: &Path) -> BTreeMap<String, Value> {
 #[test]
 #[ignore = "starts isolated real T3 and o3; tools/conformance-diff"]
 fn upstream_differential() {
-    let root =
-        PathBuf::from("/var/tmp/o3-build/tmp-diff").join(format!("run-{}", std::process::id()));
+    let root = PathBuf::from("/var/tmp/o3-build/tmp/differential")
+        .join(format!("run-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -644,6 +681,21 @@ fn upstream_differential() {
                 .collect::<BTreeMap<_, _>>(),
         );
     }
+    for result in &results {
+        let views = result["orchestration.subscribeThread"]["readerViews"]
+            .as_array()
+            .expect("reader evidence required");
+        assert_eq!(
+            views.len(),
+            2,
+            "snapshot and completion-marker reader coverage required"
+        );
+    }
+    assert_eq!(
+        results[0]["orchestration.subscribeThread"]["readerViews"],
+        results[1]["orchestration.subscribeThread"]["readerViews"],
+        "upstream/o3 client-reader gap"
+    );
     let keys: std::collections::BTreeSet<_> =
         results.iter().flat_map(|r| r.keys().cloned()).collect();
     let comparisons:Vec<_>=keys.iter().map(|k| json!({"surface":k,"equal":results[0].get(k)==results[1].get(k),"upstream":results[0].get(k),"o3":results[1].get(k)})).collect();

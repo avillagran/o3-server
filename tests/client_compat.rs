@@ -295,7 +295,7 @@ fn bounded_history_pages_do_not_lose_messages() {
             .as_array()
             .unwrap()
             .len(),
-        10
+        20
     );
     assert_eq!(snapshot["hasMoreHistory"], true);
     let mut cursor = snapshot["historyCursor"].as_str().unwrap().to_owned();
@@ -312,15 +312,35 @@ fn bounded_history_pages_do_not_lose_messages() {
                 true,
             )
             .unwrap();
-        assert!(page["items"].as_array().unwrap().len() <= 10);
+        let items = page["items"].as_array().unwrap();
+        assert!(items.len() <= 20);
+        assert!(
+            items
+                .iter()
+                .filter(|r| r["item"]["type"] == "user_message")
+                .count()
+                <= 10
+        );
         all.splice(0..0, page["items"].as_array().unwrap().clone());
         if page["hasMoreHistory"] == false {
             break;
         }
         cursor = page["nextCursor"].as_str().unwrap().to_owned();
     }
-    assert_eq!(all.len(), 125);
-    for (i, row) in all.iter().enumerate() {
+    assert_eq!(all.len(), 250);
+    let messages: Vec<_> = all
+        .iter()
+        .filter(|r| r["item"]["type"] == "user_message")
+        .collect();
+    assert_eq!(messages.len(), 125);
+    assert_eq!(
+        all.iter()
+            .filter(|r| r["item"]["type"] == "command_execution"
+                && r["item"]["input"] == "Preparing workspace")
+            .count(),
+        125
+    );
+    for (i, row) in messages.iter().enumerate() {
         assert_eq!(row["item"]["text"], format!("message {i}"));
     }
 }

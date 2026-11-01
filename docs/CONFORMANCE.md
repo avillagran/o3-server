@@ -5,12 +5,12 @@ The owner reprioritized startup memory and P0 operation; unresolved work is list
 
 Reproduce with `tools/conformance-diff` (nice, cargo -j 4, no bridge feature). It starts
 one fresh T3 0.1.7-nightly.20261031.3991 and one fresh o3 on independent free loopback
-ports under `/var/tmp/o3-build/tmp-diff`. `T3_REFERENCE_BIN` can select another binary.
+ports under `/var/tmp/o3-build/tmp/differential`. `T3_REFERENCE_BIN` can select another binary.
 `HOME`, XDG roots, provider environment and `T3CODE_HOME` are isolated. Node's actual
 runtime path is used instead of a HOME-sensitive mise shim. The user's running T3,
 profile and service are never used. Servers have private process groups; normal exit
 terminates them and removes profile/workspace state. Reports retain shapes only.
-No inference credentials are imported. Builds use `/var/tmp/o3-build/diff`.
+No inference credentials are imported. Builds use `/var/tmp/o3-build/main`; TMPDIR is `/var/tmp/o3-build/tmp`.
 
 `O3_DIFF_STRICT=1` fails on any shape difference. The default is a discovery run:
 its zero exit status means the probes ran, not that equivalence passed. The committed
@@ -1027,7 +1027,8 @@ and probed, without inference; this is not a live-inference memory bound.
 ## Implementation follow-up (2026-11-01, after edca82f)
 
 No compatibility row is promoted by this follow-up. The following is the complete
-remaining P0/P1 inventory, plus the two explicitly requested P2 rows. A successful
+remaining P0/P1 inventory at that checkpoint, plus the two explicitly requested P2 rows.
+The later Reader-gap implementation section supersedes this baseline inventory. A successful
 transport call or scripted adapter does not close an unserved client reader.
 
 | Surface | Precise remaining reason |
@@ -1143,3 +1144,37 @@ provider child memory is excluded. Aggregate evidence: [rss-implementation.json]
    grant lifetimes, examining at most 2048 entries per media creation. Tests retain
    fresh entries and remove expired entries. Full platform discovery, all media
    formats and MCP HTML injection remain partial; no row is promoted.
+
+
+7. Fresh real T3 0.1.7-nightly.20261031.3991 was downloaded into a private disk
+   profile, without accessing the installed T3 profile. The differential now
+   executes actual lib projection/timeline/queue readers on captured output,
+   asserts nonempty reader coverage and equality, and preserves boolean values
+   and semantic counts instead of erasing them. Deferred workspace preparation
+   now has its real turn item, stable provider linkage, unloaded session state,
+   first-dispatch read watermark, local ordinal and thread metadata defaults.
+   The paged-history regression verifies all 125 messages plus 125 preparation
+   items survive snapshot/history paging. Progress folding also processes long
+   rewritten lines with a mutable line buffer, avoiding per-character copies.
+
+   [conformance-reader-report.json](conformance-reader-report.json): 92/119 whole
+   surfaces match. subscribeThread snapshot/completion-marker timeline and queue
+   views, including working state, activity/message/queue counts and fixture text,
+   have zero sampled reader differences. Its only remaining captured wire
+   difference is o3's internal executionRequested run field. Broader stream
+   ordering, concurrent interleavings and native acknowledgement/recovery remain
+   unproved; this sample does not promote subscribeThread or certify replacement.
+   Earlier descriptions of the retained differential are historical.
+
+
+Final verification for this follow-up: **189 default / 187 no-default all-target
+tests passed**, with eleven explicit opt-ins ignored per configuration. Both
+strict all-target Clippy configurations, formatting, diff checks and
+`tools/gen-compat` passed. Real native Claude/Codex short turns passed projection
+replay, timeline, queue, sidebar and awareness readers. Real glab 1.126.0 repeated
+its server/lib-reader test successfully. No compatibility row was promoted.
+
+Release `tools/bench-rss` completed: **16,220 KiB (16.61 MB) HWM**,
+below 50 MB, with 20 threads, 1000 messages, three subscribers and 1000 unary
+calls. Provider registration/probes are included; inference and provider child
+RSS are excluded. Aggregate evidence: [rss-reader-follow-up.json](rss-reader-follow-up.json).

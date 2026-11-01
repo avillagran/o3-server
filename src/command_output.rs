@@ -61,39 +61,35 @@ impl Tail {
             self.total += chunk.len() as u64;
         } else {
             self.rewritten += 1;
+            let start = self.text.rfind('\n').map_or(0, |n| n + 1);
+            let mut line: Vec<char> = self.text[start..].chars().collect();
+            self.text.truncate(start);
             for c in chunk.chars() {
-                let line_start = self.text.rfind('\n').map_or(0, |n| n + 1);
                 if !self.escape.is_empty() {
                     self.escape.push(c);
                     if self.escape.len() > 64 {
                         self.escape.clear();
                         continue;
                     }
-                    if self.escape.starts_with("\x1b[") && c.is_ascii_alphabetic() {
-                        let n = self.escape[2..self.escape.len() - 1]
-                            .parse::<usize>()
-                            .unwrap_or(1)
-                            .min(TAIL_BYTES);
-                        let len = self.text[line_start..].chars().count();
+                    if self.escape.starts_with("\x1b[")
+                        && ('@'..='~').contains(&c)
+                        && self.escape.len() > 2
+                    {
+                        let args = &self.escape[2..self.escape.len() - 1];
+                        let n = args.parse::<usize>().unwrap_or(1).clamp(1, TAIL_BYTES);
                         match c {
-                            'G' => self.cursor = n.saturating_sub(1),
+                            'G' => self.cursor = n - 1,
                             'C' => self.cursor = self.cursor.saturating_add(n).min(TAIL_BYTES),
                             'D' => self.cursor = self.cursor.saturating_sub(n),
-                            'K' => {
-                                let mode = &self.escape[2..self.escape.len() - 1];
-                                if mode == "2" {
-                                    self.text.truncate(line_start);
-                                } else if mode.is_empty() || mode == "0" {
-                                    let end = self.text[line_start..]
-                                        .char_indices()
-                                        .nth(self.cursor)
-                                        .map_or(self.text.len(), |(i, _)| line_start + i);
-                                    self.text.truncate(end);
+                            'K' if args == "2" => line.clear(),
+                            'K' if args.is_empty() || args == "0" => line.truncate(self.cursor),
+                            'K' if args == "1" => {
+                                for ch in line.iter_mut().take(self.cursor + 1) {
+                                    *ch = ' ';
                                 }
                             }
                             _ => {}
                         }
-                        self.cursor = self.cursor.min(len.max(TAIL_BYTES));
                         self.escape.clear();
                     } else if self.escape.starts_with("\x1b]") {
                         if c == '\x07' || self.escape.ends_with("\x1b\\") {
@@ -109,54 +105,66 @@ impl Tail {
                     '\r' => self.cursor = 0,
                     '\x08' => self.cursor = self.cursor.saturating_sub(1),
                     '\n' => {
+                        self.text.extend(line.drain(..));
                         self.text.push('\n');
                         self.cursor = 0;
+                        if self.text.len() > 2 * TAIL_BYTES {
+                            self.trim();
+                        }
                     }
                     c if !c.is_control() || c == '\t' => {
-                        let mut line: Vec<char> = self.text[line_start..].chars().collect();
-                        let value = if c == '\t' { ' ' } else { c };
-                        while line.len() < self.cursor {
-                            line.push(' ');
-                        }
-                        if self.cursor < line.len() {
-                            line[self.cursor] = value;
+                        let end = if c == '\t' {
+                            (self.cursor / 8 + 1) * 8
                         } else {
-                            line.push(value);
+                            self.cursor + 1
+                        };
+                        while self.cursor < end {
+                            let value = if c == '\t' { ' ' } else { c };
+                            while line.len() < self.cursor {
+                                line.push(' ');
+                            }
+                            if self.cursor < line.len() {
+                                line[self.cursor] = value;
+                            } else {
+                                line.push(value);
+                            }
+                            self.cursor += 1;
                         }
-                        self.cursor += 1;
-                        self.text.truncate(line_start);
-                        self.text.extend(line);
+                        if line.len() > TAIL_BYTES {
+                            let cut = line.len() - TAIL_BYTES / 2;
+                            line.drain(..cut);
+                            self.cursor = self.cursor.saturating_sub(cut);
+                            self.truncated = true;
+                        }
                     }
                     _ => {}
                 }
-                // Enforce the bound during a single large chunk too.
-                if self.text.len() > 2 * TAIL_BYTES {
-                    let mut cut = self.text.len() - TAIL_BYTES;
-                    while !self.text.is_char_boundary(cut) {
-                        cut += 1;
-                    }
-                    self.text.drain(..cut);
-                    self.truncated = true;
-                }
             }
+            self.text.extend(line);
             self.total += chunk.len() as u64 + self.text.len() as u64;
             self.start = self.total - self.text.len() as u64;
         }
+        self.trim();
+    }
+    fn trim(&mut self) {
         if self.text.len() > TAIL_BYTES {
-            let excess = self.text.len() - TAIL_BYTES;
-            let mut cut = excess;
+            let mut cut = self.text.len() - TAIL_BYTES;
             while !self.text.is_char_boundary(cut) {
                 cut += 1;
             }
-            // Prefer to cut after a newline so escape sequences are not split mid-line.
             if let Some(nl) = self.text[cut..].find('\n') {
                 if cut + nl + 1 < self.text.len() {
                     cut += nl + 1;
                 }
             }
+            let old_line = self.text.rsplit('\n').next().unwrap_or("").chars().count();
             self.text.drain(..cut);
             self.start += cut as u64;
             self.truncated = true;
+            let new_line = self.text.rsplit('\n').next().unwrap_or("").chars().count();
+            self.cursor = self
+                .cursor
+                .saturating_sub(old_line.saturating_sub(new_line));
         }
     }
 }
@@ -494,5 +502,7 @@ mod progress_tests {
         t.push(&"é".repeat(TAIL_BYTES));
         assert!(t.text.len() <= TAIL_BYTES);
         assert!(t.truncated);
+        t.push(&format!("\r{}", "x".repeat(1024 * 1024)));
+        assert!(t.text.len() <= TAIL_BYTES);
     }
 }

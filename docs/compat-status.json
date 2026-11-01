@@ -14,7 +14,7 @@
     "assets.createUrl": {
       "status": "partial",
       "priority": "P1",
-      "note": "Real-client tests cover all resource tags including native-app-icon (app-id/display-name), tool-output-image and credentialed github-media, plus Range/HEAD and signed grants. Still partial: MCP app HTML injection, full native icon theme/platform discovery, media types/host adapter parity and cache cleanup. File resources require filesystem:read dynamically; signed downloads recheck session/scope and canonical registered boundaries. Tool-output images require orchestration:read."
+      "note": "Real-client signed grants cover all resource tags, Range/HEAD, session/scope/canonical-boundary rechecks. GTK theme inheritance/XDG icon downloads, content-selected cached media and expired-cache collection tested. Partial: MCP HTML injection, complete platform discovery, media formats/host adapters. Tool-output images require orchestration:read; file grants require filesystem:read."
     },
     "assets.persistChatAttachments": {
       "status": "skip",
@@ -194,7 +194,7 @@
     "orchestration.searchThread": {
       "status": "partial",
       "priority": "P1",
-      "note": "Real Connection + isolated nightly 3991 differential: literal transcript message/plan search, case folding, index/start/offset, wrap and bounded navigation implemented. tests/thread_commands.rs verifies ordering and isolation. Rich markdown/context/skills segmentation and folded-answer exclusion remain; not full conformance."
+      "note": "Real Connection verifies rendered Markdown blocks, hidden link/context destinations, skill labels, folded-answer exclusion, canonical ordering and index/start/offset navigation. Partial: rich file/citation/artifact labels, legacy context envelopes and full upstream Markdown pipeline."
     },
     "orchestration.searchThreadStream": {
       "status": "skip",
@@ -204,7 +204,7 @@
     "orchestration.searchThreads": {
       "status": "partial",
       "priority": "P1",
-      "note": "Real-client tests cover match metadata (threadId/projectId/source/snippet/messageCreatedAt/messageId/hits/quality), supplemental thread shells and snapshotSequence, project filters and olderSettledBefore/environmentLabel. Still partial: FTS prefix matching/ranking differs from upstream substring/folded text and title ranking; returned matches are consumed."
+      "note": "Real Connection verifies metadata, shells, project/state filters, FTS plus folded substring fallback (4096 rows, 64K characters/row, 8 MiB scanned text), and title exact/prefix/substring priority. Partial: full palette word-boundary/recency/branch/pick scoring and matches beyond the fallback budget."
     },
     "orchestration.stopWorkflow": {
       "status": "skip",
@@ -219,7 +219,7 @@
     "orchestration.subscribeCommandOutput": {
       "status": "partial",
       "priority": "P1",
-      "note": "Real Connection tests verify bounded command tails/replacement/final output. Real Claude Bash results and Codex command/outputDelta frames emit Command events. Claude output arrives at tool completion; no full VT folding."
+      "note": "Real Connection verifies bounded command tails, replacement/final output. Bounded CR/backspace/CSI progress folding handles split sequences and long rewritten lines. Real Claude 2.1.316 Bash probe supplies output only at completion; Codex exposes outputDelta. Partial: live Claude command output unavailable on observed protocol; arbitrary multiline VT unsupported."
     },
     "orchestration.subscribeShell": {
       "status": "partial",
@@ -229,7 +229,7 @@
     "orchestration.subscribeThread": {
       "status": "partial",
       "priority": "P0",
-      "note": "Real lib projection reducer, timeline, queue, sidebar and awareness readers now consume owned Claude Bash/Task and Codex command scenarios through Connection snapshots and replay: running until ownership ends; completion/interrupt and restart loss are explicit. Retained partial: upstream differential metadata/ordering and broader interleavings remain open."
+      "note": "Actual lib projection/timeline/queue/sidebar/awareness readers cover owned Claude/Codex work, completion/interrupt/restart and real native short turns. Real isolated T3 3991 differential asserts snapshot/completion-marker timeline/queue reader equality, boolean values and counts: zero sampled reader differences. Partial: extra executionRequested wire field, concurrent interleavings and broader ordering/acknowledgement/recovery remain uncertified."
     },
     "preview.adjust": {
       "status": "done",
@@ -679,7 +679,7 @@
     "server.discoverSourceControl": {
       "status": "partial",
       "priority": "P1",
-      "note": "Real Connection + nightly differential: git/jj probes plus GitHub (gh), GitLab (glab) and Azure DevOps (az) descriptors with read-only auth status (never logs in), Effect Option encoding. Still partial: API-token providers (Bitbucket, Forgejo, GitCafe) are not reported, and desktop add-project lists them."
+      "note": "Actual lib API reader covers git/jj, CLI host descriptors and API-backed Bitbucket/Forgejo/GitCafe descriptors without CLI dependency. Bitbucket/Forgejo environment-token identity probes are bounded, nonredirecting and redact responses. Partial: live authenticated API acceptance, GitCafe token validation and desktop credential storage; unknown is reported truthfully."
     },
     "server.getBackgroundPolicy": {
       "status": "skip",
@@ -999,7 +999,7 @@
     "vcs.refreshStatus": {
       "status": "partial",
       "priority": "P1",
-      "note": "Real-client tests cover local status, branch/upstream diffs, GitHub/GitLab provider descriptors, GitHub PR metadata and localOnly host suppression. Still partial: GitLab/self-hosted change-request adapters and host error/status parity."
+      "note": "Real-client local/branch/upstream/GitHub tests plus real glab 1.126.0 through server/lib VCS reader against a local GitLab API fixture: MR metadata, explicit self-host ports, localOnly and 403/null behavior. Partial: live authenticated GitLab, other hosts and upstream stale-PR fallback/backoff parity."
     },
     "vcs.removeWorktree": {
       "status": "skip",

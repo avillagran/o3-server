@@ -632,7 +632,16 @@ fn thread_find_navigates_occurrences_wraps_and_confines_to_thread() {
             true,
         )
         .unwrap();
-    assert_eq!(page["items"].as_array().unwrap().len(), 2);
+    assert_eq!(page["items"].as_array().unwrap().len(), 4);
+    assert_eq!(
+        page["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|r| r["item"]["type"] == "user_message")
+            .count(),
+        2
+    );
 }
 #[test]
 fn source_control_discovery_has_honest_git_probe_and_option_encoding() {

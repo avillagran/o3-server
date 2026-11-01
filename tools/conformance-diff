@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-export TMPDIR=/var/tmp/o3-build/tmp-diff
-export CARGO_TARGET_DIR=/var/tmp/o3-build/diff
+export TMPDIR=/var/tmp/o3-build/tmp
+export CARGO_TARGET_DIR=/var/tmp/o3-build/main
 mkdir -p "$TMPDIR"
 exec nice cargo test -j 4 --no-default-features --test differential upstream_differential -- --ignored --nocapture --test-threads=1

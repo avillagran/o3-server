@@ -1,0 +1,52 @@
+{
+  "measured_at_utc": "2026-11-01T17:13:58Z",
+  "binary_sha256": "5a94df5776210cf2cd0de15d9282a2f1cee85f05543708829b3378ef8842adc7",
+  "binary_bytes": 13659384,
+  "seed_messages": 1000,
+  "threads": 20,
+  "subscribers": 3,
+  "unary_calls": 1000,
+  "text_bytes_per_message": 1000,
+  "cold_kib": {
+    "VmHWM": 9312,
+    "VmRSS": 9312,
+    "RssAnon": 1032,
+    "RssFile": 8280,
+    "THP_enabled": 0,
+    "Threads": 4
+  },
+  "seeded_kib": {
+    "VmHWM": 15796,
+    "VmRSS": 15232,
+    "RssAnon": 2600,
+    "RssFile": 12632,
+    "THP_enabled": 0,
+    "Threads": 5
+  },
+  "subscribed_kib": {
+    "VmHWM": 16220,
+    "VmRSS": 15880,
+    "RssAnon": 3248,
+    "RssFile": 12632,
+    "THP_enabled": 0,
+    "Threads": 6
+  },
+  "after_churn_kib": {
+    "VmHWM": 16220,
+    "VmRSS": 15824,
+    "RssAnon": 3192,
+    "RssFile": 12632,
+    "THP_enabled": 0,
+    "Threads": 6
+  },
+  "snapshot_messages": [
+    10,
+    10,
+    10
+  ],
+  "under_50_mib": true,
+  "under_50_mb": true,
+  "bridge_enabled": true,
+  "provider_workload": "registered and probed; inference excluded (defer_start)",
+  "measurement": "Linux /proc/PID/status; disk profile under /var/tmp"
+}

@@ -186,12 +186,15 @@ pub(crate) fn projection_db(db: &Connection, tid: &str) -> Result<Value> {
     }
     Ok(p)
 }
+pub(crate) fn latest_local_ordinal(db: &Connection, tid: &str) -> Result<Option<i64>> {
+    db.query_row("SELECT max(json_extract(body,'$.ordinal')) FROM records WHERE kind='turnItems' AND thread_id=?", [tid], |r| r.get(0)).map_err(|e| e.to_string())
+}
 pub fn bounded(s: &State, tid: &str) -> Result<Value> {
     let db = s.reader.lock().unwrap();
     let p = projection_db(&db, tid)?;
     let (cursor, more) = history_boundary(&db, tid)?;
     Ok(
-        json!({"snapshotSequence":sequence(&db)?,"projection":p,"historyCursor":cursor,"hasMoreHistory":more,"latestLocalTurnOrdinal":null}),
+        json!({"snapshotSequence":sequence(&db)?,"projection":p,"historyCursor":cursor,"hasMoreHistory":more,"latestLocalTurnOrdinal":latest_local_ordinal(&db, tid)?}),
     )
 }
 fn history_boundary(db: &Connection, tid: &str) -> Result<(Option<String>, bool)> {
@@ -714,6 +717,7 @@ pub(crate) fn message_item(db: &Connection, tid: &str, m: &Value) -> Result<Valu
         .map_err(|e| e.to_string())?;
     let mut item = json!({"id":id,"threadId":tid,"runId":m["runId"],"nodeId":m["nodeId"],"providerThreadId":m["providerThreadId"],"providerTurnId":m["providerTurnId"],"nativeItemRef":null,"parentItemId":null,"ordinal":ordinal,"status":"completed","title":null,"startedAt":m["createdAt"],"completedAt":m["updatedAt"],"updatedAt":m["updatedAt"],"type":if m["role"]=="user"{"user_message"}else{"assistant_message"},"messageId":m["id"],"text":m["text"],"streaming":m["streaming"],"attachments":m["attachments"]});
     if m["role"] == "user" {
+        item.as_object_mut().unwrap().remove("streaming");
         item["createdBy"] = json!("user");
         item["creationSource"] = json!("web");
         item["inputIntent"] = json!("turn_start");
@@ -815,10 +819,12 @@ fn stage_message(
     }
     put(tx, "messages", mid, tid, &m)?;
     t["updatedAt"] = json!(at);
+    if t["lastVisitedAt"].is_null() {
+        t["lastVisitedAt"] = json!(iso(now_ms().saturating_sub(1)));
+        append(tx, tid, "thread.metadata-updated", t.clone(), t)?;
+    }
     put(tx, "thread", tid, tid, t)?;
     append(tx, tid, "message.updated", m.clone(), t)?;
-    let item = message_item(tx, tid, &m)?;
-    append(tx, tid, "turn-item.updated", item, t)?;
     let ordinal: i64 = tx
         .query_row(
             "SELECT count(*)+1 FROM records WHERE kind='runs' AND thread_id=?",
@@ -826,7 +832,7 @@ fn stage_message(
             |r| r.get(0),
         )
         .map_err(|e| e.to_string())?;
-    let mut run = json!({"id":run_id,"threadId":tid,"ordinal":ordinal,"providerInstanceId":t["providerInstanceId"],"modelSelection":t["modelSelection"],"providerThreadId":null,"userMessageId":mid,"rootNodeId":null,"activeAttemptId":null,"status":"preparing","requestedAt":at,"startedAt":null,"completedAt":null,"checkpointId":null,"contextHandoffId":null,"executionRequested":c["dispatchMode"]["type"]!="defer_start"});
+    let mut run = json!({"id":run_id,"threadId":tid,"ordinal":ordinal,"providerInstanceId":t["providerInstanceId"],"modelSelection":t["modelSelection"],"providerThreadId":null,"userMessageId":mid,"rootNodeId":null,"activeAttemptId":null,"status":"preparing","queuePosition":null,"requestedAt":at,"startedAt":null,"completedAt":null,"checkpointId":null,"contextHandoffId":null,"executionRequested":c["dispatchMode"]["type"]!="defer_start"});
     if queued {
         run["status"] = json!("queued");
         run["queuePosition"] = json!(crate::thread_commands::next_queue_position(tx, tid)?);
@@ -849,7 +855,7 @@ fn stage_message(
             } else {
                 "claudeAgent"
             };
-            let p = json!({"id":id,"appThreadId":tid,"driver":driver,"providerInstanceId":t["providerInstanceId"],"providerSessionId":null,"ownerNodeId":run_id,"nativeThreadRef":native.map(|native|json!({"driver":driver,"nativeId":native,"strength":"strong"})),"nativeConversationHeadRef":null,"status":"active","firstRunOrdinal":ordinal,"lastRunOrdinal":ordinal,"handoffIds":[],"forkedFrom":null,"contextUsage":null,"goal":null,"nativeMetadata":null,"pendingBackgroundTasks":[],"createdAt":at,"updatedAt":at});
+            let p = json!({"id":id,"appThreadId":tid,"driver":driver,"providerInstanceId":t["providerInstanceId"],"providerSessionId":id,"ownerNodeId":null,"nativeThreadRef":native.map(|native|json!({"driver":driver,"nativeId":native,"strength":"strong"})),"nativeConversationHeadRef":null,"status":"not_loaded","firstRunOrdinal":ordinal,"lastRunOrdinal":ordinal,"handoffIds":[],"forkedFrom":null,"contextUsage":null,"goal":null,"nativeMetadata":null,"pendingBackgroundTasks":[],"createdAt":at,"updatedAt":at});
             put(tx, "providerThreads", &id, tid, &p)?;
             put(tx, "thread", tid, tid, t)?;
             append(tx, tid, "provider-thread.updated", p, t)?;
@@ -865,6 +871,42 @@ fn stage_message(
         let node = json!({"id":run_id,"threadId":tid,"runId":run_id,"parentNodeId":null,"rootNodeId":run_id,"kind":"root_turn","status":"pending","countsForRun":true,"providerThreadId":run["providerThreadId"],"providerTurnId":null,"nativeItemRef":null,"runtimeRequestId":null,"checkpointScopeId":null,"startedAt":null,"completedAt":null});
         put(tx, "nodes", &run_id, tid, &node)?;
         append(tx, tid, "node.updated", node, t)?;
+    }
+    let mut item_message = m.clone();
+    item_message["providerThreadId"] = run["providerThreadId"].clone();
+    let item = message_item(tx, tid, &item_message)?;
+    append(tx, tid, "turn-item.updated", item.clone(), t)?;
+    if mode == Some("defer_start") {
+        let mut preparation = item;
+        let id = format!("workspace-preparation:{run_id}");
+        let object = preparation.as_object_mut().unwrap();
+        for field in [
+            "messageId",
+            "text",
+            "attachments",
+            "inputIntent",
+            "createdBy",
+            "creationSource",
+            "streaming",
+        ] {
+            object.remove(field);
+        }
+        preparation["id"] = json!(id);
+        preparation["ordinal"] = json!(preparation["ordinal"].as_i64().unwrap_or(0) + 1);
+        preparation["type"] = json!("command_execution");
+        preparation["status"] = json!("running");
+        preparation["input"] = json!("Preparing workspace");
+        preparation["title"] = json!("Preparing workspace");
+        preparation["completedAt"] = Value::Null;
+        put(tx, "turnItems", &id, tid, &preparation)?;
+        put(
+            tx,
+            "visibleTurnItems",
+            &id,
+            tid,
+            &json!({"position":preparation["ordinal"],"visibility":"local","sourceThreadId":tid,"sourceItemId":id,"item":preparation}),
+        )?;
+        append(tx, tid, "turn-item.updated", preparation, t)?;
     }
     put(tx, "runs", &run_id, tid, &run)?;
     let seq = append(tx, tid, "run.created", run, t)?;
@@ -926,7 +968,7 @@ fn new_thread(db: &Connection, c: &Value, tid: &str, at: &str) -> Result<Value> 
         if get(db, "thread", tid).is_ok() {
             return Err("thread already exists".into());
         }
-        json!({"id":tid,"projectId":c["projectId"],"title":c["title"],"providerInstanceId":c["modelSelection"]["instanceId"],"modelSelection":c["modelSelection"],"runtimeMode":c["runtimeMode"],"interactionMode":c["interactionMode"],"branch":c["branch"],"worktreePath":c["worktreePath"],"createdBy":"user","creationSource":c.get("creationSource").cloned().unwrap_or(json!("web")),"lineage":{"parentThreadId":null,"relationshipToParent":null,"rootThreadId":tid},"forkedFrom":null,"activeProviderThreadId":null,"createdAt":at,"updatedAt":at,"archivedAt":null,"settledOverride":null,"settledAt":null,"lastVisitedAt":null,"deletedAt":null})
+        json!({"id":tid,"projectId":c["projectId"],"title":c["title"],"providerInstanceId":c["modelSelection"]["instanceId"],"modelSelection":c["modelSelection"],"runtimeMode":c["runtimeMode"],"interactionMode":c["interactionMode"],"branch":c["branch"],"worktreePath":c["worktreePath"],"createdBy":"user","creationSource":c.get("creationSource").cloned().unwrap_or(json!("web")),"lineage":{"parentThreadId":null,"relationshipToParent":null,"rootThreadId":tid},"forkedFrom":null,"activeProviderThreadId":null,"createdAt":at,"updatedAt":at,"archivedAt":null,"settledOverride":null,"settledAt":null,"lastVisitedAt":null,"snoozedAt":null,"snoozedUntil":null,"pullRequests":[],"deletedAt":null})
     })
 }
 

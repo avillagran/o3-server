@@ -117,7 +117,8 @@ fn write_snapshot(
         if opts.compact_items {
             raw(out, "\"turnItemsOmitLocalVisible\":true,")?;
         }
-        raw(out,&format!("\"snapshotSequence\":{seq},\"historyCursor\":{},\"hasMoreHistory\":{more},\"latestLocalTurnOrdinal\":null,\"projection\":{{\"thread\":",if more{json!(anchor.to_string()).to_string()}else{"null".into()}))?;
+        let latest = json!(events::latest_local_ordinal(db, tid)?);
+        raw(out,&format!("\"snapshotSequence\":{seq},\"historyCursor\":{},\"hasMoreHistory\":{more},\"latestLocalTurnOrdinal\":{latest},\"projection\":{{\"thread\":",if more{json!(anchor.to_string()).to_string()}else{"null".into()}))?;
         emit(out, &thread)?;
         raw(out, ",\"updatedAt\":")?;
         emit(out, &thread["updatedAt"])?;
