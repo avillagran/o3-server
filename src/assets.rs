@@ -721,12 +721,27 @@ fn favicon_ext_ok(p: &str) -> bool {
 }
 
 /// Follow only index.theme-declared paths, with finite inheritance and directory budgets.
+fn bounded_text(path: impl AsRef<Path>) -> std::io::Result<String> {
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(0o4000)
+        .open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(std::io::ErrorKind::InvalidInput.into());
+    }
+    let mut text = String::new();
+    file.take(65537).read_to_string(&mut text)?;
+    if text.len() > 65536 {
+        return Err(std::io::ErrorKind::InvalidData.into());
+    }
+    Ok(text)
+}
 fn themed_icon(roots: &[PathBuf], icon: &str) -> Option<PathBuf> {
     let config = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")));
     let theme = config
-        .and_then(|p| std::fs::read_to_string(p.join("gtk-3.0/settings.ini")).ok())
+        .and_then(|p| bounded_text(p.join("gtk-3.0/settings.ini")).ok())
         .and_then(|text| {
             text.lines().find_map(|l| {
                 l.trim()
@@ -746,7 +761,7 @@ fn themed_icon(roots: &[PathBuf], icon: &str) -> Option<PathBuf> {
         }
         for root in roots {
             let base = root.join("icons").join(&theme);
-            let index = std::fs::read_to_string(base.join("index.theme")).unwrap_or_default();
+            let index = bounded_text(base.join("index.theme")).unwrap_or_default();
             let mut dirs: Vec<String> = Vec::new();
             for line in index.lines() {
                 if let Some(inherits) = line.strip_prefix("Inherits=") {
@@ -856,10 +871,13 @@ fn sweep_media(dir: &Path) {
 }
 
 /// Credentialed media is fetched once into the private profile, then served through an expiring grant.
-pub async fn create_url_async(s: &State, p: &Value) -> Reply {
+pub async fn create_url_async(s: &std::sync::Arc<State>, p: &Value) -> Reply {
     let resource = &p["resource"];
     if resource["_tag"] != "github-media" {
-        return create_url(s, p);
+        let (s, p) = (s.clone(), p.clone());
+        return tokio::task::spawn_blocking(move || create_url(&s, &p))
+            .await
+            .unwrap_or_else(|_| Err(invalid("asset lookup failed")));
     }
     let raw = resource["url"]
         .as_str()
@@ -1145,7 +1163,7 @@ pub fn create_url(s: &State, p: &Value) -> Reply {
                 if app["_tag"] == "display-name" {
                     if let Ok(entries) = std::fs::read_dir(root.join("applications")) {
                         for entry in entries.take(2048).flatten() {
-                            let Ok(text) = std::fs::read_to_string(entry.path()) else {
+                            let Ok(text) = bounded_text(entry.path()) else {
                                 continue;
                             };
                             if text.lines().any(|line| {
@@ -1170,7 +1188,7 @@ pub fn create_url(s: &State, p: &Value) -> Reply {
                 let desktop = root
                     .join("applications")
                     .join(format!("{}.desktop", id.trim_end_matches(".desktop")));
-                if let Ok(text) = std::fs::read_to_string(desktop) {
+                if let Ok(text) = bounded_text(desktop) {
                     icon = text
                         .lines()
                         .find_map(|line| line.strip_prefix("Icon=").map(str::to_owned));
