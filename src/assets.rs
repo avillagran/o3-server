@@ -120,16 +120,20 @@ fn parse_id(id: &str) -> Option<(String, Option<String>)> {
 
 /// The stored file of attachment `id`, if the id is well formed and the file exists.
 pub fn attachment_path(s: &State, id: &str) -> Option<PathBuf> {
+    attachment_path_in(&attachments_dir(s), id)
+}
+
+pub(crate) fn attachment_path_in(dir: &Path, id: &str) -> Option<PathBuf> {
     let (_, ext) = parse_id(id)?;
     let id = id.to_lowercase();
-    let dir = attachments_dir(s);
     match ext {
-        Some(ext) => Some(dir.join(format!("{id}.{ext}"))).filter(|p| p.is_file()),
+        Some(ext) => Some(dir.join(format!("{id}.{ext}")))
+            .filter(|p| std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_file())),
         None => SAFE_IMAGE_EXT
             .iter()
             .chain(&["bin"])
             .map(|e| dir.join(format!("{id}.{e}")))
-            .find(|p| p.is_file()),
+            .find(|p| std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_file())),
     }
 }
 

@@ -214,12 +214,7 @@ impl CodexProvider {
         ) {
             return Err("Codex runtime mode is not implemented".into());
         }
-        if input.attachments.as_array().is_some_and(|a| !a.is_empty()) {
-            return Err("Codex attachments are not yet supported".into());
-        }
-        if input.context.as_ref().is_some_and(|c| !c.is_null()) {
-            return Err("Codex additional context is not yet supported".into());
-        }
+        let content = crate::provider_input::content(&input, false)?;
         let c = self.connection().await?;
         let mut params = json!({"cwd":input.cwd,"model":input.model_selection["model"],"approvalPolicy":if input.runtime_mode=="full-access"{"never"}else{"on-request"},"sandbox":if input.runtime_mode=="full-access"{"danger-full-access"}else{"workspace-write"}});
         let response = if let Some(id) = input.native_session_id.as_ref() {
@@ -244,7 +239,7 @@ impl CodexProvider {
         let result=async {
             output.send(ProviderEvent::Codex(json!({"method":"o3/binding","params":{"threadId":tid,"cwd":input.cwd}}))).await.map_err(|_|"receiver closed")?;
             let effort=input.model_selection["options"].as_array().and_then(|a|a.iter().find(|v|v["id"]=="reasoningEffort")).map(|v|v["value"].clone());
-            let mut turn_params=json!({"threadId":tid,"input":[{"type":"text","text":input.text,"text_elements":[]}],"model":input.model_selection["model"],"effort":effort});
+            let mut turn_params=json!({"threadId":tid,"input":content,"model":input.model_selection["model"],"effort":effort});
             if input.interaction_mode=="plan" {turn_params["collaborationMode"]=json!({"mode":"plan","settings":{"model":input.model_selection["model"],"reasoning_effort":effort,"developer_instructions":null}});}
             let response=c.call("turn/start",turn_params).await?;
             let turn=response["turn"]["id"].as_str().ok_or("Codex turn id missing")?.to_owned();
@@ -510,6 +505,7 @@ mod tests {
             model_selection: json!({"model":"gpt-6.1-sol"}),
             runtime_mode: "approval-required".into(),
             interaction_mode: "default".into(),
+            attachment_root: std::env::temp_dir().join("unused-attachments"),
             attachments: json!([]),
             context: None,
         }

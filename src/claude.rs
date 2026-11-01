@@ -122,9 +122,7 @@ impl ClaudeProvider {
         if *cancel.borrow() {
             return Ok(());
         }
-        if !input.attachments.as_array().is_none_or(|a| a.is_empty()) {
-            return Err("Claude attachments are not implemented".into());
-        }
+        let content = crate::provider_input::content(&input, true)?;
         if input.model_selection["instanceId"]
             .as_str()
             .is_some_and(|s| !matches!(s, "claudeAgent" | "claude" | "claude-code"))
@@ -156,7 +154,7 @@ impl ClaudeProvider {
             self.spawn(&input).await?
         };
         let result = async {
-            session.prompt(&input.text).await?;
+            session.send(json!({"type":"user","message":{"role":"user","content":content},"parent_tool_use_id":null,"session_id":session.native})).await?;
             output.send(ProviderEvent::Started).await.map_err(|_|"receiver closed")?;
             let mut pending: HashMap<String, Value> = HashMap::new();
             let mut boundary=TurnBoundary::default();
@@ -297,7 +295,7 @@ impl Session {
     }
     async fn send(&mut self, v: Value) -> Result<(), String> {
         let mut bytes = serde_json::to_vec(&v).map_err(|e| e.to_string())?;
-        if bytes.len() > MAX_FRAME {
+        if bytes.len() > 8 * 1024 * 1024 {
             return Err("Claude input frame too large".into());
         }
         bytes.push(b'\n');
@@ -660,6 +658,7 @@ mod tests {
                 model_selection: json!({"instanceId":"claude","model":"haiku"}),
                 runtime_mode: "approval-required".into(),
                 interaction_mode: "default".into(),
+                attachment_root: dir.join("attachments"),
                 attachments: json!([]),
                 context: None,
             };

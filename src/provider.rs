@@ -11,6 +11,7 @@ pub struct RunInput {
     pub model_selection: serde_json::Value,
     pub runtime_mode: String,
     pub interaction_mode: String,
+    pub attachment_root: std::path::PathBuf,
     pub attachments: serde_json::Value,
     pub context: Option<serde_json::Value>,
 }
@@ -137,6 +138,7 @@ pub(crate) fn start(
                 model_selection: t["modelSelection"].clone(),
                 runtime_mode: t["runtimeMode"].as_str().unwrap_or("full-access").into(),
                 interaction_mode: t["interactionMode"].as_str().unwrap_or("default").into(),
+                attachment_root: crate::assets::attachments_dir(&s),
                 attachments: m["attachments"].clone(),
                 context: m.get("context").cloned(),
             }
