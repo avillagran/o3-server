@@ -35,3 +35,10 @@ receipt now share one transaction. Native execution starts after commit. A faile
 run insert leaves none of those records; retrying the same launch creates one run.
 This improves database atomicity, not crash replay of committed native starts or
 filesystem rollback of a newly prepared worktree.
+
+Restart now also finalizes orphan provider nodes/attempts/subagents and tool items,
+stops assistant message streaming, and emits ordinary projection update events.
+Deferred and held/queued work is preserved. A second recovery is idempotent.
+The run's normal error/status fields carry the restart failure, which clients
+already read; consumers need not understand lastControlDeliveryError to see that
+execution stopped. Native active inference still cannot be reattached.

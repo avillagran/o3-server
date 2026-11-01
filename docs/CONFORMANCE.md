@@ -82,9 +82,8 @@ The pinned source is `/home/node/Work/t3-reference-3726`, contracts at 3f9448747
 - **Optional representation:** extra diagnostic detail/cause in Git errors and omitted
   pinned optional snooze/pull-request fields do not invalidate the pinned decoder.
   The strict report deliberately keeps these differences visible.
-- **Open P0:** full shell metadata and live stream parity, launch atomicity/failure
-  cleanup, native approval/question/interrupt behavior against upstream, attachment
-  delivery and durable control/recovery. Local scripted/native-peer coverage is not
+- **Open P0:** full shell metadata and live stream parity, worktree failure
+  cleanup, native control acknowledgement, attachment steering and active recovery. Local scripted/native-peer coverage is not
   presented as upstream inference proof. The five P0 partial RPCs remain partial.
 - **Open P1:** rich thread-find segmentation/folded answers; host source-control adapters;
   settings/provider catalog normalization; title search behavior; CLI auth metadata.
@@ -267,3 +266,50 @@ No row is promoted on negative grep evidence. Full upstream attempt identity,
 stream metadata/order, worktree failure cleanup, startup native discovery/settings
 and daily chat features listed in IMPLEMENTATION remain open. P0 stays 0 done / 5
 partial; do not describe this as complete daily-use parity.
+
+## Client-read audit update (2026-11-01)
+
+`tools/audit-client-fields` now scans every retained P0/P1 method difference,
+including camel/Pascal/snake/kebab spellings across lib-t3-rust, desktop Rust/QML
+and Android Kotlin. The 3991 report is historical input, not a fresh parity run.
+`P0-FIELD-AUDIT.md` records reader candidates for every differing field name.
+
+Accepted differences: `latestLocalTurnOrdinal`, `latestVisibleMessage`,
+`lastErrorCode`, and `pendingGuestMessageCount` have no reader in any of those
+three clients (including alternate spellings). Their absence does not block done.
+These are projection convenience metadata, not substitutes for the consumed
+`latestRun*`, message arrays, runtime requests or error/status fields. Capability
+keys without a literal hit are **not** accepted wholesale: clients also derive
+capabilities through enums and generic maps.
+
+All five P0 RPCs still have consumed gaps, so remain partial. Examples:
+`activeAttemptId` is read by lib `queue.rs`; provider-thread/run identity by
+`timeline.rs`/`queue.rs`; repositoryIdentity by client project/VCS views; quota
+`checkedAt`/windows by `quota_sources.rs` and `quota_present.rs`; settings and
+model metadata by desktop/Android provider settings. An unused-field exception
+cannot excuse those. P1 partial rows retain consumed gaps: asset kinds, rich find,
+search result metadata, secret delivery, host adapters/PR status, settings, terminal
+instance environment/history, fork native history and model handoff. No P1 row is
+promoted based on negative grep or matching rejection probes.
+
+New behavior: durable exact-operation approval grants are stored in SQLite in the
+same receipt transaction. Matching native requests in the same thread, provider,
+project and worktree use the ordinary runtime-response command/outbox path. Grants
+never cover questions or mode transitions; unsupported generic Codex operations
+fail closed. This is narrower than native wildcard permission rules and has no
+revocation UI. DB reopen and changed-command behavior have real-client coverage.
+
+Claude ExitPlanMode captures native `input.plan` (also record-wrapped), denies
+immediate implementation and waits for a later user turn, matching pinned adapter
+behavior. Both providers project proposed plans; the real client plan helper then
+switches interaction mode and dispatches implementation with sourcePlanRef. The
+source plan becomes completed atomically with the implementation message. Plan
+feedback remains in plan mode. Peer E2E covers capture, completion, approval,
+mode change and source-plan state; live plan inference is not claimed.
+
+Claude observed rate-limit frames supply checkedAt and native session/weekly
+windows; absent observations remain absent. Explicit title regeneration produces
+a deterministic first-message title (80 characters), not a provider-generated
+semantic title. Idle settlement retains failures, queued work, pending requests,
+subagents, uncertain controls, pins, opt-outs and PR-linked threads. Automatic
+merge settlement remains a gap.

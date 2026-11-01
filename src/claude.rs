@@ -521,6 +521,29 @@ pub fn config(installed: bool) -> Value {
     json!({"instanceId":"claudeAgent","driver":"claudeAgent","displayName":"Claude Code","enabled":installed,"installed":installed,"version":null,"status":if installed {"warning"}else{"disabled"},"auth":{"status":"unknown"},"checkedAt":crate::store::iso(crate::store::now_ms()),"message":"Direct CLI adapter; authentication checked at execution. No MCP bridge or crash recovery.","models":crate::claude_models::models(),"supportedRuntimeModes":["approval-required","auto-accept-edits","full-access"],"supportsConversationRollback":false,"nativeSessions":{"canList":false,"canLoad":false,"canResume":true}})
 }
 
+fn usage_limits(info: &Value) -> Value {
+    let mut windows = Vec::new();
+    for (native, id, label) in [
+        ("five_hour", "session", "Session"),
+        ("seven_day", "weekly", "Weekly"),
+    ] {
+        let w = &info["unifiedWindows"][native];
+        let Some(used) = w["utilization"].as_f64().filter(|v| v.is_finite()) else {
+            continue;
+        };
+        let mut window = json!({"id":native,"kind":id,"label":label,"usedPercent":(used*100.0).clamp(0.0,100.0)});
+        if let Some(reset) = w["resetsAt"]
+            .as_i64()
+            .and_then(|s| s.checked_mul(1000))
+            .filter(|v| time::OffsetDateTime::from_unix_timestamp(*v / 1000).is_ok())
+        {
+            window["resetsAt"] = json!(crate::store::iso(reset));
+        }
+        windows.push(window);
+    }
+    json!({"windows":windows,"checkedAt":crate::store::iso(crate::store::now_ms())})
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -812,27 +835,4 @@ mod tests {
         s.child.kill().await.unwrap();
         std::fs::remove_dir_all(dir).unwrap();
     }
-}
-
-fn usage_limits(info: &Value) -> Value {
-    let mut windows = Vec::new();
-    for (native, id, label) in [
-        ("five_hour", "session", "Session"),
-        ("seven_day", "weekly", "Weekly"),
-    ] {
-        let w = &info["unifiedWindows"][native];
-        let Some(used) = w["utilization"].as_f64().filter(|v| v.is_finite()) else {
-            continue;
-        };
-        let mut window = json!({"id":native,"kind":id,"label":label,"usedPercent":(used*100.0).clamp(0.0,100.0)});
-        if let Some(reset) = w["resetsAt"]
-            .as_i64()
-            .and_then(|s| s.checked_mul(1000))
-            .filter(|v| time::OffsetDateTime::from_unix_timestamp(*v / 1000).is_ok())
-        {
-            window["resetsAt"] = json!(crate::store::iso(reset));
-        }
-        windows.push(window);
-    }
-    json!({"windows":windows,"checkedAt":crate::store::iso(crate::store::now_ms())})
 }

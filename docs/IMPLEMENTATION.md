@@ -32,9 +32,8 @@ rewind is not implemented.
 - Active inference recovery and native control replay after restart. Idle native IDs survive and are supplied to both adapters on the next message.
   Recovery marks orphan executions failed and requests cancelled; it does not
   continue inference. Receipt-committed controls now have a durable handoff journal; native delivery ambiguity and safe replay remain (RECOVERY.md). Embedded hosts must recover before first transport.
-- Provider-native attachments/additional context, full permission policy/setup
-  flows, structured Claude questions, full attempt identity and background/subagent
-  settlement. Codex authenticated inference/approvals and persisted-rollout resume
+- Full permission policy/setup flows, full attempt identity and background/subagent
+  settlement. Native uploads/context and structured Claude questions are implemented. Codex authenticated inference/approvals and persisted-rollout resume
   have deterministic-peer coverage, not a live authenticated validation.
   Per-instance custom binaries/environment/model catalogs remain incomplete.
 - Checkpoint filesystem restoration and SQLite receipt are separate durable
@@ -125,3 +124,13 @@ slash-command/skill lists become available after a real session init, not at sta
 This checkpoint does not close all five P0 rows or the remaining P1 partials. In
 particular persistent permission rules, active recovery, full plan workflow, usage
 summary/quota, generated titles and safe automatic settlement remain open.
+
+## Daily behavior follow-up
+
+Exact-operation persistent consent, native Claude/Codex plan acceptance and
+source-plan completion, observed Claude quotas, explicit deterministic title
+regeneration and conservative age settlement are implemented. They do not imply
+wildcard permission policy, semantic title inference, proactive quota discovery or
+merge settlement. Recovery finalizes orphan turn items/nodes/messages; inference
+is failed honestly rather than resumed. Linked-worktree checkpoint tests verify
+file restoration without touching the root checkout or either index.

@@ -139,7 +139,7 @@
     "orchestration.dispatchCommand": {
       "status": "partial",
       "priority": "P0",
-      "note": "Remaining: persistent approval policy; complete plan acceptance flow; full attempt/provider-thread identity and subagent settlement; native attachment steering; active execution recovery/control delivery acknowledgement. Uploaded attachments, composer context and structured questions are implemented (tests/provider_input.rs); see RECOVERY.md for delivery ambiguity."
+      "note": "Remaining: native attachment steering, full attempt/provider-thread identity, background/subagent settlement, active execution recovery and native delivery acknowledgement. Persistent exact-operation consent and both native plan acceptance flows have real-client peer coverage; broad native permission rules/revocation UI remain unsupported."
     },
     "orchestration.getArchivedShellSnapshot": {
       "status": "partial",
@@ -229,7 +229,7 @@
     "orchestration.subscribeThread": {
       "status": "partial",
       "priority": "P0",
-      "note": "Remaining: complete attempt/provider-thread identity, background/subagent settlement and upstream ordering parity. Full/compact snapshots, replay, completion markers and structured questions have real-client coverage."
+      "note": "Remaining: full attempt/provider-thread identity and upstream ordering parity. Background/subagent recovery and native lifecycle parity remain incomplete. Structured questions, both proposed-plan flows and source-plan completion have real-client peer coverage; restart finalizes streaming messages, tool items and orphan nodes."
     },
     "preview.adjust": {
       "status": "todo",
@@ -689,7 +689,7 @@
     "server.getConfig": {
       "status": "partial",
       "priority": "P0",
-      "note": "Remaining: startup native command/skill discovery, custom instance configuration, quota refresh/notification and settings normalization. Pinned Claude model/options manifest and post-init command/skill discovery are implemented; Codex is lazy and provider idle sessions reap after 60 seconds."
+      "note": "Remaining: startup command/skill discovery, custom instances, settings normalization and proactive quota refresh. Claude pinned models/options, post-init commands/skills and observed native quota windows are implemented; Codex usage windows update from native notifications. No fabricated startup quota values."
     },
     "server.getDatabaseStorage": {
       "status": "skip",
@@ -1121,7 +1121,7 @@
     "runtime-request.respond": {
       "status": "partial",
       "priority": "P0",
-      "note": "Remaining: persistent native approvals and complete plan acceptance workflow; native response acknowledgement/replay after restart. Structured Claude questions and explicit cancellation reasons are implemented; acceptAlways is currently rejected."
+      "note": "Remaining: broad native approval rules and policy revocation UI; native response acknowledgement/replay after restart. acceptAlways persists exact operation consent scoped to thread/provider/worktree/project; changed operations, questions and mode changes require new consent. Structured questions and Claude plan capture/deny plus later implementation are implemented."
     },
     "subagent.stop": {
       "status": "partial",
@@ -1146,7 +1146,7 @@
     "thread.auto-settle.set": {
       "status": "done",
       "priority": "P1",
-      "note": "tests/thread_commands.rs"
+      "note": "Real-client opt-out command coverage; conservative periodic idle settlement respects project/global age, pins, explicit active override and pending runs/requests/subagents/uncertain controls. PR-linked threads are retained; merge-triggered settlement remains unsupported."
     },
     "thread.create": {
       "status": "done",
@@ -1196,7 +1196,7 @@
     "thread.metadata.update": {
       "status": "done",
       "priority": "P1",
-      "note": "Real Connection lifecycle/idempotency test."
+      "note": "Real-client lifecycle and plan E2E: title regeneration derives a bounded deterministic title from first user message; explicit title still wins. Provider-generated semantic titles are not implemented."
     },
     "thread.model-selection.set": {
       "status": "partial",
