@@ -111,6 +111,7 @@ pub(crate) async fn refresh_health(s: std::sync::Arc<crate::store::State>) {
             _=tokio::time::sleep_until(next)=>{
                 let provider=s.provider.lock().unwrap().clone();
                 if let Some(p)=provider {let _=tokio::time::timeout(std::time::Duration::from_secs(20),p.refresh()).await;s.notify();}
+                crate::setup::check_versions(&s).await;
                 next=tokio::time::Instant::now()+delay(ms);
             }
             result=changes.changed()=>{

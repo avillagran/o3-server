@@ -140,6 +140,7 @@ async fn refresh_providers(s: &State, _p: &Value) -> Reply {
             .await
             .map_err(|m| json!({"_tag":"ProviderSetupError","message":m}))?;
     }
+    crate::setup::check_versions(s).await;
     s.notify();
     let config =
         crate::settings::config(s).map_err(|m| json!({"_tag":"ProviderSetupError","message":m}))?;

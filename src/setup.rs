@@ -62,6 +62,7 @@ pub struct Registry {
     flows: Mutex<HashMap<String, Flow>>,
     version: AtomicU64,
     updates: Mutex<HashMap<String, Value>>,
+    versions: Mutex<HashMap<String, Value>>,
 }
 
 impl Registry {
@@ -85,9 +86,98 @@ pub fn decorate(s: &State, config: &mut Value) {
             "updateCommand":if p["driver"]=="claudeAgent" {json!("claude update")}else{Value::Null},
             "canUpdate":p["driver"]=="claudeAgent"&&installed,"canInstallVersion":false,
             "checkedAt":p["checkedAt"],"message":"Latest-version lookup is unavailable; installed version is reported by the native CLI."});
+        if let Some(advisory) = s
+            .streams
+            .p2
+            .setup
+            .versions
+            .lock()
+            .unwrap()
+            .get(p["instanceId"].as_str().unwrap_or(""))
+        {
+            if crate::settings::read(s).is_ok_and(|v| v["enableProviderUpdateChecks"] == true) {
+                crate::settings::merge(&mut p["versionAdvisory"], advisory);
+            }
+        }
         p["updateState"]=s.streams.p2.setup.updates.lock().unwrap().get(p["instanceId"].as_str().unwrap_or("")).cloned()
             .unwrap_or(json!({"status":"idle","startedAt":null,"finishedAt":null,"message":null,"output":null}));
     }
+}
+
+/// Read vendor package metadata; never install or execute downloaded content.
+pub(crate) async fn check_versions(s: &State) {
+    if !crate::settings::read(s).is_ok_and(|v| v["enableProviderUpdateChecks"] == true) {
+        return;
+    }
+    let providers = s
+        .provider
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|p| p.config())
+        .unwrap_or_default();
+    for p in providers {
+        if p["installed"] != true {
+            continue;
+        }
+        let package = match p["driver"].as_str() {
+            Some("claudeAgent") => "@anthropic-ai/claude-code",
+            Some("codex") => "@openai/codex",
+            _ => continue,
+        };
+        let Some(id) = p["instanceId"].as_str() else {
+            continue;
+        };
+        let base = std::env::var("O3_PROVIDER_VERSION_REGISTRY")
+            .unwrap_or_else(|_| "https://registry.npmjs.org".into());
+        let url = format!("{}/{}/latest", base.trim_end_matches('/'), package);
+        let output = tokio::process::Command::new("curl")
+            .args([
+                "-fsSL",
+                "--max-time",
+                "3",
+                "--max-filesize",
+                "65536",
+                "--proto",
+                "=http,https",
+                "--",
+                &url,
+            ])
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .output()
+            .await;
+        let latest = output
+            .ok()
+            .filter(|o| o.status.success())
+            .and_then(|o| serde_json::from_slice::<Value>(&o.stdout).ok())
+            .and_then(|v| {
+                v["version"]
+                    .as_str()
+                    .filter(|v| version_parts(v).is_some())
+                    .map(str::to_owned)
+            });
+        let current = p["version"].as_str().and_then(version_parts);
+        let status = match (current, latest.as_deref().and_then(version_parts)) {
+            (Some(a), Some(b)) if a < b => "behind_latest",
+            (Some(_), Some(_)) => "current",
+            _ => "unknown",
+        };
+        s.streams.p2.setup.versions.lock().unwrap().insert(id.into(),json!({"status":status,"latestVersion":latest,"checkedAt":iso(now_ms()),"message":if latest.is_some(){Value::Null}else{json!("Package version lookup failed")}}));
+    }
+    s.notify();
+}
+fn version_parts(value: &str) -> Option<Vec<u64>> {
+    let version = value
+        .split_whitespace()
+        .find(|s| s.starts_with(|c: char| c.is_ascii_digit()))?;
+    let numbers = version
+        .split('.')
+        .map(str::parse::<u64>)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    (numbers.len() == 3).then_some(numbers)
 }
 
 fn setup_error(instance: &str, operation: &str, detail: &str) -> Value {

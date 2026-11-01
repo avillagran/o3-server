@@ -823,3 +823,14 @@ the real `ThreadCreate` builder, reads the provider record through
 creates one binding; a mismatched native driver leaves no thread. This closes the
 create-import gap, without claiming native execution recovery or promoting
 `dispatchCommand` past its documented uncertain-delivery boundary.
+
+### Provider version checks (2026-11-01)
+
+Manual provider refresh and the health timer now read bounded npm latest metadata
+for installed Claude/Codex drivers. The advisory uses client values `behind_latest`,
+`current`, and `unknown`; failed/malformed lookups never manufacture a latest
+version. `enableProviderUpdateChecks=false` stops lookups and hides cached advice.
+`tests/provider_versions.rs` drives real server output through
+`provider_instances::projection` for newer, equal, failed and disabled checks,
+using a local metadata server. No package is installed by this check.
+Config/settings rows remain partial pending the other execution gaps.
