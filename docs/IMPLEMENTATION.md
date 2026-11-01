@@ -145,3 +145,14 @@ mutations, project Git identity and replacement snapshots, force-delete shell
 cascade, supplemental search shells, GitHub PR status, remaining signed asset tags
 and terminal instance environment have real Connection tests. CONFORMANCE.md lists
 precisely what remains partial; this is not full daily-client interchangeability.
+
+## P2 checkpoint (2026-11-01)
+
+All 67 P2 rows left `todo`. `p2.rs` is the single dispatch hook (one line in `ext.rs`, one in `streams.rs`);
+modules: `pullreq` (gh argv, GitHub only), `setup` (sign-in flows, install state, update, ACP registry via curl),
+`keybind`, `sessions` (Claude/Codex transcript scan and import), `preview` (client-rendered tab registry and
+local server discovery), `misc` (host resources, OTLP check, ignored files, new/cloned projects, older settled
+threads, workflow scripts, typed unavailable answers). Nothing runs while idle: flows, scans and clones exist only
+while a client uses them. Skipped with a typed error and capability left off: device hub, MCP apps, guest links,
+workflow stop, provider CLI install. Tests: tests/{pull_requests,provider_setup,keybindings,agent_sessions,preview,admin_reads}.rs.
+Release sample with bridge: VmHWM 36,252 KiB.
