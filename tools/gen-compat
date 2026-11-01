@@ -30,5 +30,5 @@ out += ["## Commands", "", "| Estado | Command | Prioridad | Nota |", "|---|---|
 for tag in contract["commandTypes"]:
     item=document.get("commands",{}).get(tag,{})
     out.append(f"| {MARK[item.get('status','todo')]} | `{tag}` | {item.get('priority','?')} | {item.get('note','')} |")
-out.append("")
+out += ["", "## Embedded bridge lifecycle", "", "| Area | Evidence | Limit |", "|---|---|---|", "| Persistent forwards | Real protocol client: restore after Node restart, remove listener | Desktop integration requires its own suite; local listener status is not remote health |", "| Relay reconnect | OmaBridge loopback dev relay regression; relay-only destination | 200-cycle stress is opt-in; no WAN guarantee |", ""]
 (root / "COMPATIBILITY.md").write_text("\n".join(out))

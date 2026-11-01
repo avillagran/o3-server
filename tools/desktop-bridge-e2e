@@ -58,6 +58,24 @@ with tempfile.TemporaryDirectory(prefix='db-', dir=root) as temp:
             assert len(host['peers'])==1
             host_id=host['device']['id']
             base=[str(server),'--state-dir',str(guest/'t3/omabridge')]
+            sharing=json.loads(subprocess.check_output([str(client),'omabridge-share'],input=json.dumps({'action':'run'}),env=guest_env,text=True,timeout=90))
+            row=next(r for r in sharing['peers'] if r['peer']==host_id)
+            assert row['shared'], sharing
+            state=guest/'t3/omabridge'
+            assert (state/'shares.json').exists() and (state/'forwards.json').exists()
+            assert not (guest/'config/systemd/user').exists()
+            port=row['port']
+            guest_process.terminate();guest_process.wait(timeout=10)
+            guest_process=subprocess.Popen([str(server),'serve','--port','0'],env=guest_env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            deadline=time.monotonic()+30
+            while True:
+                try:
+                    restored=json.load(urllib.request.urlopen(f'http://127.0.0.1:{port}/.well-known/t3/environment',timeout=2))
+                    assert restored
+                    break
+                except (OSError,ValueError):
+                    assert time.monotonic()<deadline,'persistent forward restore timeout'
+                    time.sleep(.1)
             receipt=json.loads(subprocess.check_output(base+['t3-pair','--peer',host_id],env=guest_env,text=True,timeout=30))
             assert receipt['credential']
             forward=subprocess.Popen(base+['forward','--peer',host_id,'--service','t3','--listen','127.0.0.1:0'],env=guest_env,stdout=subprocess.PIPE,text=True)
@@ -78,7 +96,7 @@ with tempfile.TemporaryDirectory(prefix='db-', dir=root) as temp:
         explicit=p/'standalone'
         routes.write_text(json.dumps({'version':1,'stateDir':str(explicit),'routes':{}}))
         selected=call('omabridge-status')
-        assert selected['stateDir']==str(explicit) and not selected['available'],selected
+        assert selected['stateDir']==str(explicit) and not selected['identity'],selected
         routes.unlink()
         assert call('omabridge-status')['available']
         print(json.dumps({'status':'pass' ,'available':True,'identity':True,'peers':0,'read':True,'publish':True,'unpublish':True,'pairing':True,'pairedPeers':1,'t3Pair':True,'forward':True}))

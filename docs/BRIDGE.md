@@ -4,7 +4,7 @@ The default `bridge` Cargo feature runs OmaBridge on o3-server's two-worker Toki
 `--no-default-features` removes it. No bridge executable or service is started by the server.
 
 OmaBridge is pinned to pushed `feat/embed` revision
-`f4d549656ab5099b2e7480bf0bd06813a6d17bc8`. There is no local path patch.
+`0fc1610ec6c96a76a293108f6b8c6737266c7ebc`. There is no local path patch.
 The real protocol client and bridge both use the pinned `t3-protocol` revision
 `8c80c4dc62414c454eaefb4706d973adf8d8ee74`: linking different revisions together fails
 because each library exports the same C ABI symbols. The newer local protocol checkout
@@ -74,8 +74,7 @@ capability restrictions (relay/gateway changes remain unsupported).
 `tools/desktop-bridge-e2e` proves status, read, identity, empty peers,
 publish/unpublish, invitation creation, desktop pairing/approval and peer listing using the real desktop executable.
 `tests/bridge.rs` separately proves network pairing and forwarding with real protocol
-clients. The facade also passes T3 pairing and QUIC descriptor-forward checks. Persistent desktop sharing is not claimed: generated sharing units still
-name `omabridge-serve.service`, and their lifecycle has not been migrated/tested.
+clients. The facade also passes T3 pairing and QUIC descriptor-forward checks. The persistent embedded forwarding lifecycle is described below; standalone sharing retains its unit backend.
 No systemd units were edited or installed by this change.
 
 ## Verification and remaining limits
@@ -193,3 +192,46 @@ relay-configured embedded host, a separate authenticated Rust QUIC client,
 largest-thread/shell subscriptions and a short native Claude turn. It does not
 start a gateway, force relay-only transport, or verify Android/WAN behavior.
 See RSS.md for the allocator ablation and process memory limits.
+
+## Persistent embedded forwards
+
+The host facade accepts `forwards` with a JSON request on stdin:
+`{"action":"save","peer":"<paired identity>","service":"t3","listen":"127.0.0.1:47300"}`,
+`{"action":"remove","peer":"<paired identity>"}`, or `{"action":"read"}`.
+Desired listeners are private atomic `forwards.json` in the explicit bridge state
+directory. Writes are serialized with an advisory lock. Only fixed loopback ports
+and `t3` are accepted; the registry is capped at 64 entries. A host-owned reconciler
+restores listeners after restart, closes removed listeners, retries failures once
+per pass, and writes `forwards-status.json` (`listening` or `retrying`). Listening
+reports the local socket, not remote reachability or authentication. Each control
+setup is bounded to two seconds. Node shutdown drops all control leases and tasks.
+
+The desktop embedded sharing path uses this facade instead of generating units.
+Embedded detection survives host downtime; it must never fall back to systemd just
+because the socket is temporarily absent. Standalone unit behavior is retained.
+The real protocol client regression in `tests/bridge.rs` verifies restoration and
+listener removal in isolated profiles. No installed units are migrated automatically.
+
+OmaBridge's loopback relay regression uses an in-process iroh-relay dev server,
+relay-only destination addresses and a retained Client across relay/Node restarts.
+HTTP is allowed programmatically only for a numeric loopback relay; persisted and
+CLI relay parsing still requires HTTPS. The normal regression runs three cycles;
+`relay_and_node_restart_stress` opts into 200. It checks live Tokio tasks and RSS
+against a warmed baseline (eight tasks / 16 MiB tolerance); these tolerances bound
+retention rather than establish zero allocation growth. No WAN claim follows.
+
+Relay validation: the full OmaBridge suite passed, followed by the forced-relay
+three-cycle and 200-cycle regressions (49.99 s together). The stress ended at
+28 live tasks / 42,312 KiB RSS, versus roughly 27 tasks / 41,504 KiB warmed RSS.
+This is transport coverage using the real bridge Client, not a protocol-client
+WebSocket reconnection test. The separate o3 regression uses the real protocol
+client for persistent-forward restoration. Strict OmaBridge Clippy still reports
+existing gateway `collapsible_if`, Node constructor `too_many_arguments`, and
+pairing `items_after_test_module` warnings; no clean Clippy claim is made.
+
+Release validation for the persistent-forward host: 147 o3 tests passed with
+bridge, 145 without bridge; strict host Clippy passed. `tools/bench-rss` HWM was
+16,176 KiB (16.56 MB) with gateway off and 15,792 KiB (16.17 MB) with gateway on,
+both below 50 MB. See `rss-forwarding.json` for the common binary hash and workload.
+The desktop full suite is blocked by its `approvals` test expecting a different
+initial HTTP request; desktop changes remain uncommitted pending that suite.
