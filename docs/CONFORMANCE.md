@@ -924,3 +924,12 @@ Reusing an empty owned thread with an existing workspace clears ownership unless
 the path is unchanged. The storage integration test verifies that this cannot
 make an external worktree eligible for collection. The activity test also reads
 `behindCount`/`aheadCount` through the actual VCS refresh API after automatic fetch.
+
+Final validation: 168 default / 166 no-default all-target tests pass, with six
+explicit opt-ins ignored per configuration; strict Clippy passes in both feature
+configurations, as do formatting and diff checks. The inventories were rerun:
+333 client fields and 216 config fields. `tools/gen-compat` yields 86 done,
+32 partial and 85 unused RPC rows (P0: 3 done / 2 partial; P1: 25 / 6).
+Both isolated short native Claude/Codex turns passed via `tools/live-chat-e2e`.
+
+Release `tools/bench-rss` completed with bridge enabled: HWM 15748 KiB (16.13 MB), below 50 MB; 1,000 messages, 20 threads, three subscribers and 1,000 unary calls. Provider registration/probes are included; inference is excluded. Aggregate evidence: [rss-orchestration.json](rss-orchestration.json).

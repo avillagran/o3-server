@@ -289,3 +289,12 @@ inference excluded. Aggregate samples and the release binary digest are retained
 in `rss-orchestration.json`. No compatibility row was promoted: the reader sweep
 still has the consumed gaps listed in CONFORMANCE.md. No emulator, service, public
 route, pilot state or active T3 profile was used by these validation runs.
+
+## Final client-reader closure validation, 2026-11-01
+
+`tools/live-chat-e2e` passed again after the storage, provider-version, activity,
+SCM/review generation and import-reader changes. One short real Claude turn and
+one short real Codex turn completed through the real client in isolated provider
+homes; the combined opt-in test passed in 6.26 seconds. No emulator or installed
+service was used. This is conversation execution evidence, not an exhausted-quota
+capture or proof of native control acknowledgement after a crash.
