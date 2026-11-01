@@ -678,3 +678,16 @@ fn idle_model_and_permission_mode_updates_are_durable() {
     assert_eq!(t["runtimeMode"], "approval-required");
     assert_eq!(t["interactionMode"], "plan");
 }
+
+#[test]
+fn rapid_sequential_writes_never_report_a_locked_database() {
+    let (_, c) = connected(false);
+    create(&c, "burst");
+    for i in 0..1200 {
+        c.rpc(
+            "orchestration.dispatchCommand",
+            json!({"type":"message.dispatch","commandId":format!("burst-{i}"),"messageId":format!("burst-m{i}"),"threadId":"burst","text":"x".repeat(1000),"attachments":[],"dispatchMode":{"type":"defer_start"}}),
+        )
+        .unwrap_or_else(|e| panic!("write {i}: {e}"));
+    }
+}

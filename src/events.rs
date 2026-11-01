@@ -11,7 +11,7 @@ pub fn initialize(db: &Connection) -> Result<()> {
 }
 pub(crate) fn put(db: &Connection, kind: &str, id: &str, tid: &str, v: &Value) -> Result<()> {
     if kind == "messages" {
-        crate::threadq::index_message(db, tid, v);
+        crate::threadq::index_message(db, tid, v)?;
     }
     db.execute(
         "INSERT INTO records VALUES(?,?,?,?) ON CONFLICT(kind,id) DO UPDATE SET body=excluded.body",

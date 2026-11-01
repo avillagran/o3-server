@@ -16,7 +16,10 @@ const TRUNCATED: &str = "\n\n[truncated]";
 
 // ------------------------------------------------------------------ FTS5 index
 
-/// Creates the message index; fills it from existing messages the first time it exists.
+const CREATE_INDEX: &str = "CREATE VIRTUAL TABLE IF NOT EXISTS thread_search USING fts5(text, thread_id UNINDEXED, message_id UNINDEXED, role UNINDEXED, created_at UNINDEXED, tokenize='unicode61 remove_diacritics 2');";
+
+/// Creates the message index and fills it in one transaction: a failed rebuild leaves no
+/// index, so the next start retries it instead of serving a permanently incomplete one.
 pub fn initialize(db: &Connection) -> Result<(), String> {
     let existed: bool = db
         .query_row(
@@ -26,37 +29,53 @@ pub fn initialize(db: &Connection) -> Result<(), String> {
         )
         .map_err(|e| e.to_string())?
         > 0;
-    db.execute_batch("CREATE VIRTUAL TABLE IF NOT EXISTS thread_search USING fts5(text, thread_id UNINDEXED, message_id UNINDEXED, role UNINDEXED, created_at UNINDEXED, tokenize='unicode61 remove_diacritics 2');")
+    if existed {
+        return Ok(());
+    }
+    db.execute_batch("BEGIN IMMEDIATE")
         .map_err(|e| e.to_string())?;
-    if !existed {
-        let mut q = db
-            .prepare("SELECT thread_id, body FROM records WHERE kind='messages'")
-            .map_err(|e| e.to_string())?;
-        let rows = q
-            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
-            .map_err(|e| e.to_string())?;
-        for row in rows {
-            let (tid, body) = row.map_err(|e| e.to_string())?;
-            if let Ok(v) = serde_json::from_str::<Value>(&body) {
-                index_message(db, &tid, &v);
-            }
+    let rebuilt = rebuild(db);
+    let end = if rebuilt.is_ok() {
+        "COMMIT"
+    } else {
+        "ROLLBACK"
+    };
+    db.execute_batch(end).map_err(|e| e.to_string())?;
+    rebuilt
+}
+
+fn rebuild(db: &Connection) -> Result<(), String> {
+    db.execute_batch(CREATE_INDEX).map_err(|e| e.to_string())?;
+    let mut q = db
+        .prepare("SELECT thread_id, body FROM records WHERE kind='messages'")
+        .map_err(|e| e.to_string())?;
+    let rows = q
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+        .map_err(|e| e.to_string())?;
+    for row in rows {
+        let (tid, body) = row.map_err(|e| e.to_string())?;
+        if let Ok(v) = serde_json::from_str::<Value>(&body) {
+            index_message(db, &tid, &v)?;
         }
     }
     Ok(())
 }
 
 /// Keeps one row per message; called whenever a message record is written.
-pub fn index_message(db: &Connection, thread_id: &str, m: &Value) {
+pub fn index_message(db: &Connection, thread_id: &str, m: &Value) -> Result<(), String> {
     let (Some(id), Some(text)) = (m["id"].as_str(), m["text"].as_str()) else {
-        return;
+        return Ok(());
     };
-    let _ = db.execute("DELETE FROM thread_search WHERE message_id=?", [id]);
+    db.execute("DELETE FROM thread_search WHERE message_id=?", [id])
+        .map_err(|e| e.to_string())?;
     if !text.trim().is_empty() && matches!(m["role"].as_str(), Some("user" | "assistant")) {
-        let _ = db.execute(
+        db.execute(
             "INSERT INTO thread_search(text,thread_id,message_id,role,created_at) VALUES(?,?,?,?,?)",
             params![text, thread_id, id, m["role"].as_str(), m["createdAt"].as_str()],
-        );
+        )
+        .map_err(|e| e.to_string())?;
     }
+    Ok(())
 }
 
 /// `"tok"*` terms, ANDed: user text can never become FTS5 syntax.

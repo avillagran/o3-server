@@ -91,8 +91,11 @@ CREATE TABLE IF NOT EXISTS auth_pairing_links(
 impl State {
     pub fn open(dir: &Path) -> Result<Self, String> {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-        let db = Connection::open(dir.join("o3.sqlite")).map_err(|e| e.to_string())?;
+        let mut db = Connection::open(dir.join("o3.sqlite")).map_err(|e| e.to_string())?;
         db.execute_batch(SCHEMA).map_err(|e| e.to_string())?;
+        // A deferred read-to-write upgrade fails instantly, ignoring busy_timeout, when the
+        // checkpointer connection has moved the WAL. Taking the write lock up front waits.
+        db.set_transaction_behavior(rusqlite::TransactionBehavior::Immediate);
         let reader = Connection::open_with_flags(
             dir.join("o3.sqlite"),
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
