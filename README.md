@@ -16,9 +16,9 @@ Not a finished replacement and not installed anywhere. T3 stays the daily server
 - Memory: about 31 MB idle and 42 MB peak with a real 374-thread history ([docs/RSS.md](docs/RSS.md)),
   against 579 MB for T3 headless.
 - Verified against the real lib-t3-rust client, real Claude and Codex turns, the O3 desktop backend
-  and QML UI, and O3 Android on an emulator: pairing, new threads, chat, approval, reconnect and an
-  image attachment ([docs/E2E.md](docs/E2E.md)). Not verified: daily use, Android terminal commands
-  and Android through OmaBridge.
+  and QML UI, and O3 Android on an emulator: pairing, new threads, chat, approval, reconnect, an image
+  attachment and terminal commands ([docs/E2E.md](docs/E2E.md)). Not verified: daily use and Android through an
+  OmaBridge gateway, which needs the real gateway deployment.
 
 ## Build and test
 

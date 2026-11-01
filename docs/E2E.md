@@ -10,7 +10,7 @@
 | `send` con respuesta real de Claude | `omarchy-t3-client watch` real | PASS |
 | Visor: `bounded`, `subscribeThread`, proyección en vivo | `omarchy-t3-client watch` real | PASS |
 | Interfaz QML (carga, barra lateral, hilo, composer, respuesta real) | O3 desktop, QML real | PASS, ver «QML real» abajo |
-| Android | O3 Android | PASS pairing, chat, aprobación, reconexión, nuevos hilos Claude/Codex y adjunto; terminal abre (ver abajo) |
+| Android | O3 Android | PASS pairing, chat, aprobación, reconexión, nuevos hilos Claude/Codex, adjunto y comando de terminal; ruta OmaBridge sin probar (ver abajo) |
 | OmaBridge status/read/identity/peers/publish/pair | `omarchy-t3-client` real | PASS aislado; detalles abajo |
 
 Memoria de `o3-server`: reposo 29,7-32 MB sin hijos; pico 38,6 MB con turnos de Claude y Codex; 37,9 MB con el
@@ -226,3 +226,10 @@ Android OmaBridge pairing, catalog and a real Haiku turn were not exercised;
 no conclusion about bridge connectivity or emulator network blocking is supported.
 No server or Android bug was established. Emulator crash data was confined to the
 isolated disk-backed directory using a private mount namespace.
+
+## Android por OmaBridge: por qué no se probó en emulador
+
+La ruta móvil no es un túnel local: el catálogo publica una pasarela HTTPS con dominio y certificado
+verificables, que reenvía por QUIC al nodo. El nodo embebido arranca sin hospedar pasarela ni relay.
+Probarla exige la infraestructura real de pasarela, así que queda como validación de despliegue,
+no como resultado del emulador. No hay conclusión sobre si esa ruta funciona contra el nodo embebido.
