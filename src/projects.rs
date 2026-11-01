@@ -117,3 +117,119 @@ pub fn mutate(s: &State, c: &Value) -> Result<Value> {
     }
     events::mutate_project(s, &c)
 }
+
+/// Resolve repository metadata without credentials or network I/O.
+pub async fn repository_identity(root: &str) -> Value {
+    let cwd = std::path::Path::new(root);
+    let read = |args: Vec<&'static str>| async move {
+        crate::proc::git(cwd, &args, crate::proc::Opts::READ)
+            .await
+            .ok()
+            .filter(|o| o.ok())
+            .map(|o| o.text().trim().to_owned())
+            .filter(|s| !s.is_empty())
+    };
+    let Some(path) = read(vec!["rev-parse", "--show-toplevel"]).await else {
+        return Value::Null;
+    };
+    let mut selected = None;
+    for remote in ["upstream", "origin"] {
+        if let Some(url) = read(vec!["remote", "get-url", remote]).await {
+            selected = Some((remote, url));
+            break;
+        }
+    }
+    let Some((remote, url)) = selected else {
+        return Value::Null;
+    };
+    let normalized = if let Ok(u) = url::Url::parse(&url) {
+        u.host_str()
+            .map(|host| format!("{}/{}", host, u.path().trim_matches('/')))
+    } else {
+        url.split_once(':').map(|(host, path)| {
+            format!(
+                "{}/{}",
+                host.rsplit('@').next().unwrap_or(host),
+                path.trim_matches('/')
+            )
+        })
+    };
+    let key = normalized
+        .unwrap_or_else(|| url.clone())
+        .trim_end_matches(".git")
+        .to_lowercase();
+    let mut identity = json!({"canonicalKey":key,"locator":{"source":"git-remote","remoteName":remote,"remoteUrl":url},"rootPath":path});
+    if let Some((host, repo)) = key.split_once('/') {
+        identity["displayName"] = json!(repo);
+        identity["owner"] = json!(repo.split('/').next());
+        identity["name"] = json!(repo.rsplit('/').next());
+        if let Some(provider) = match host {
+            "github.com" => Some("github"),
+            "gitlab.com" => Some("gitlab"),
+            _ => None,
+        } {
+            identity["provider"] = json!(provider);
+        }
+    }
+    identity
+}
+
+pub async fn mutate_resolved(s: &State, c: &Value) -> Result<Value> {
+    let mut c = c.clone();
+    let root = c["workspaceRoot"].as_str().map(str::to_owned).or_else(|| {
+        let id = c["projectId"].as_str()?;
+        let p = events::get(&s.db.lock().unwrap(), "project", id).ok()?;
+        p["workspaceRoot"].as_str().map(str::to_owned)
+    });
+    if let Some(root) = root {
+        c["repositoryIdentity"] = repository_identity(&root).await;
+    }
+    mutate(s, &c)
+}
+
+/// One replacement snapshot publishes the resolved roots and current shell together.
+pub async fn refresh_identities(s: &State) -> Result<()> {
+    let projects = live_projects(s)?;
+    let mut resolved = Vec::new();
+    for p in projects {
+        if let Some(root) = p["workspaceRoot"].as_str() {
+            resolved.push((
+                p["id"].as_str().unwrap_or("").to_owned(),
+                root.to_owned(),
+                repository_identity(root).await,
+            ));
+        }
+    }
+    if resolved.is_empty() {
+        return Ok(());
+    }
+    let mut db = s.db.lock().unwrap();
+    let tx = db.transaction().map_err(|e| e.to_string())?;
+    let mut changed = false;
+    for (id, root, identity) in &resolved {
+        let mut p = events::get(&tx, "project", id)?;
+        if p["workspaceRoot"] == root.as_str() && p["repositoryIdentity"] != *identity {
+            p["repositoryIdentity"] = identity.clone();
+            events::put(&tx, "project", id, "", &p)?;
+            changed = true;
+        }
+    }
+    if changed {
+        tx.execute("INSERT INTO events(thread_id,body) VALUES('', '{}')", [])
+            .map_err(|e| e.to_string())?;
+        let seq = tx.last_insert_rowid();
+        let snapshot = events::shell_db(&tx)?;
+        let item = json!({"kind":"snapshot","snapshot":snapshot,"resolvedRepositoryIdentityRoots":resolved.iter().map(|(_,root,_)|root).collect::<Vec<_>>()});
+        tx.execute(
+            "UPDATE events SET shell=? WHERE sequence=?",
+            rusqlite::params![item.to_string(), seq],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    drop(db);
+    if changed {
+        s.notify();
+    }
+    Ok(())
+}

@@ -236,7 +236,7 @@ async fn route(state: Arc<State>, request: Request<Incoming>) -> Result<Reply, I
                     if let Err(e) = crate::rpc::authorize(&session, "projects.mutate", &mutation) {
                         return Ok(json_reply(StatusCode::FORBIDDEN, json!({"_tag":"EnvironmentScopeRequiredError","code":"insufficient_scope","requiredScope":e["requiredScope"],"traceId":crate::store::random_id().unwrap_or_default()}).to_string()));
                     }
-                    match crate::projects::mutate(&state, &mutation) {
+                    match crate::projects::mutate_resolved(&state, &mutation).await {
                         Ok(project) => json_reply(StatusCode::OK, project.to_string()),
                         Err(_) => json_reply(StatusCode::BAD_REQUEST, json!({"_tag":"EnvironmentRequestInvalidError","code":"invalid_request","reason":"invalid_command","traceId":crate::store::random_id().unwrap_or_default()}).to_string()),
                     }
@@ -298,6 +298,15 @@ where
     I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
     crate::scheduled::ensure_started(&state);
+    let weak = Arc::downgrade(&state);
+    tokio::spawn(async move {
+        loop {
+            let Some(state) = weak.upgrade() else { break };
+            let _ = crate::projects::refresh_identities(&state).await;
+            drop(state);
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        }
+    });
     let service = service_fn(move |request| route(state.clone(), request));
     hyper::server::conn::http1::Builder::new()
         .serve_connection(TokioIo::new(io), service)
@@ -315,6 +324,15 @@ pub async fn serve(listener: TcpListener, state: Arc<State>) -> std::io::Result<
         .map_err(std::io::Error::other)?;
     crate::heap::collect();
     crate::scheduled::ensure_started(&state);
+    let weak = Arc::downgrade(&state);
+    tokio::spawn(async move {
+        loop {
+            let Some(state) = weak.upgrade() else { break };
+            let _ = crate::projects::refresh_identities(&state).await;
+            drop(state);
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        }
+    });
     loop {
         let (socket, _) = listener.accept().await?;
         let _ = socket.set_nodelay(true);

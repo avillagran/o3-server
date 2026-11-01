@@ -8,7 +8,8 @@ pub const STREAM_ACTION: &str = "git.runStackedAction";
 pub fn handles(tag: &str) -> bool {
     matches!(
         tag,
-        "attachments.createUploadUrl"
+        "projects.mutate"
+            | "attachments.createUploadUrl"
             | "attachments.delete"
             | "assets.createUrl"
             | "projects.readFile"
@@ -37,6 +38,9 @@ pub fn handles(tag: &str) -> bool {
 
 pub async fn call(s: &State, tag: &str, p: Value) -> Result<Value, Value> {
     match tag {
+        "projects.mutate" => crate::projects::mutate_resolved(s, &p).await.map_err(
+            |message| serde_json::json!({"_tag":"ProjectMutationError","message":message}),
+        ),
         "attachments.createUploadUrl" => assets::create_upload_url(s, &p),
         "attachments.delete" => assets::delete_attachment(s, &p),
         "assets.createUrl" => assets::create_url(s, &p),

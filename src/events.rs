@@ -117,13 +117,16 @@ pub(crate) fn shell_thread(db: &Connection, t: &Value) -> Result<Value> {
 }
 pub fn shell(s: &State) -> Result<Value> {
     let db = s.db.lock().unwrap();
+    shell_db(&db)
+}
+pub(crate) fn shell_db(db: &Connection) -> Result<Value> {
     let mut active = Vec::new();
     let mut archive = Vec::new();
-    for t in list(&db, "thread", None, 10000)? {
+    for t in list(db, "thread", None, 10000)? {
         if !t["deletedAt"].is_null() {
             continue;
         }
-        let t = shell_thread(&db, &t)?;
+        let t = shell_thread(db, &t)?;
         if t["archivedAt"].is_null() {
             active.push(t)
         } else {
@@ -131,7 +134,7 @@ pub fn shell(s: &State) -> Result<Value> {
         }
     }
     Ok(
-        json!({"schemaVersion":2,"snapshotSequence":sequence(&db)?,"projects":list(&db,"project",None,10000)?.into_iter().filter(|p|p["deletedAt"].is_null()).collect::<Vec<_>>(),"threads":active,"archivedThreads":archive}),
+        json!({"schemaVersion":2,"snapshotSequence":sequence(db)?,"projects":list(db,"project",None,10000)?.into_iter().filter(|p|p["deletedAt"].is_null()).collect::<Vec<_>>(),"threads":active,"archivedThreads":archive}),
     )
 }
 pub fn projection(s: &State, tid: &str) -> Result<Value> {
@@ -234,7 +237,15 @@ pub(crate) fn append(
     payload: Value,
     thread: &Value,
 ) -> Result<i64> {
-    let event = json!({"id":random_id()?,"threadId":tid,"occurredAt":iso(now_ms()),"type":kind,"payload":payload});
+    let mut event = json!({"id":random_id()?,"threadId":tid,"occurredAt":iso(now_ms()),"type":kind,"payload":payload});
+    for key in ["runId", "nodeId"] {
+        if let Some(v) = payload.get(key).filter(|v| !v.is_null()) {
+            event[key] = v.clone();
+        }
+    }
+    if let Some(v) = thread.get("providerInstanceId") {
+        event["providerInstanceId"] = v.clone();
+    }
     db.execute(
         "INSERT INTO events(thread_id,body) VALUES(?,?)",
         params![tid, event.to_string()],
@@ -924,6 +935,7 @@ pub fn mutate_project(s: &State, c: &Value) -> Result<Value> {
         "faviconPath",
         "projectIcon",
         "scripts",
+        "repositoryIdentity",
     ] {
         if let Some(v) = c.get(key) {
             p[key] = v.clone();
@@ -932,6 +944,17 @@ pub fn mutate_project(s: &State, c: &Value) -> Result<Value> {
     p["updatedAt"] = json!(at);
     if c["type"] == "project.delete" {
         p["deletedAt"] = json!(at);
+    }
+    if c["type"] == "project.delete" && c["force"] == true {
+        for mut t in list(&tx, "thread", None, i64::MAX as usize)? {
+            if t["projectId"] == id && t["deletedAt"].is_null() {
+                t["deletedAt"] = json!(at);
+                t["updatedAt"] = json!(at);
+                let tid = t["id"].as_str().ok_or("thread id missing")?.to_owned();
+                put(&tx, "thread", &tid, &tid, &t)?;
+                append(&tx, &tid, "thread.deleted", t.clone(), &t)?;
+            }
+        }
     }
     put(&tx, "project", id, "", &p)?;
     let body = json!({"id":random_id()?,"type":c["type"],"payload":p,"occurredAt":at});

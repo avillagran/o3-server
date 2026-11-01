@@ -466,3 +466,74 @@ fn checkpoint_diffs_come_from_recorded_refs() {
         )
         .is_err());
 }
+
+#[test]
+fn project_identity_refresh_replaces_shell_without_losing_threads() {
+    let e = setup("repository-identity");
+    let root = e.dir("repo");
+    repo(&root);
+    git(
+        &root,
+        &["remote", "add", "origin", "git@github.com:Owner/Repo.git"],
+    );
+    let p = e.project("p", &root);
+    assert_eq!(
+        p["repositoryIdentity"]["canonicalKey"],
+        "github.com/owner/repo"
+    );
+    e.thread("t", "p");
+    let seq = e
+        .conn
+        .request_json("GET", "/api/orchestration/shell", None, true)
+        .unwrap()["snapshotSequence"]
+        .clone();
+    git(
+        &root,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "https://gitlab.com/group/new.git",
+        ],
+    );
+    let state = o3_server::store::State::open(&e.state).unwrap();
+    tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(o3_server::projects::refresh_identities(&state))
+        .unwrap();
+    let items = collect(
+        &e.conn,
+        "orchestration.subscribeShell",
+        json!({"afterSequence":seq}),
+        |v| v["resolvedRepositoryIdentityRoots"].is_array(),
+    );
+    let replacement = items.last().unwrap();
+    assert_eq!(
+        replacement["snapshot"]["projects"][0]["repositoryIdentity"]["canonicalKey"],
+        "gitlab.com/group/new"
+    );
+    assert_eq!(replacement["snapshot"]["threads"][0]["id"], "t");
+    assert_eq!(
+        replacement["resolvedRepositoryIdentityRoots"][0],
+        root.to_str().unwrap()
+    );
+}
+
+#[test]
+fn forced_project_delete_removes_thread_shells_atomically() {
+    let e = setup("force-project-delete");
+    e.project("p", &e.dir("repo"));
+    e.thread("t", "p");
+    e.conn
+        .rpc(
+            "projects.mutate",
+            json!({"type":"project.delete","commandId":"delete","projectId":"p","force":true}),
+        )
+        .unwrap();
+    let shell = e
+        .conn
+        .request_json("GET", "/api/orchestration/shell", None, true)
+        .unwrap();
+    assert!(shell["projects"].as_array().unwrap().is_empty());
+    assert!(shell["threads"].as_array().unwrap().is_empty());
+}
