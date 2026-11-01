@@ -105,8 +105,8 @@ if not args.resume:
 profile.mkdir(mode=0o700, exist_ok=True)
 
 
-def run(*cmd):
-    done = subprocess.run([binary, *cmd], env=env, capture_output=True, text=True, timeout=600)
+def run(*cmd, timeout=60):
+    done = subprocess.run([binary, *cmd], env=env, capture_output=True, text=True, timeout=timeout)
     if done.returncode:
         fail(f"`o3-server {' '.join(cmd[:2])}` failed: {done.stderr.strip() or done.stdout.strip()}")
     return done.stdout
@@ -115,7 +115,9 @@ def run(*cmd):
 if not args.resume and not args.no_import:
     source = t3_home / "userdata" / "statev2.sqlite"
     if source.is_file():
-        counts = run("import", "--from", str(source))
+        print("pilot: importing T3 history; large profiles take minutes", flush=True)
+        # Bounded by history size and disk load, so only a generous ceiling applies.
+        counts = run("import", "--from", str(source), timeout=3600)
         print(f"pilot: imported T3 history (read-only): {counts.strip()}")
     else:
         print(f"pilot: no T3 history at {source}; starting empty")
