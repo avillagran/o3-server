@@ -313,3 +313,49 @@ a deterministic first-message title (80 characters), not a provider-generated
 semantic title. Idle settlement retains failures, queued work, pending requests,
 subagents, uncertain controls, pins, opt-outs and PR-linked threads. Automatic
 merge settlement remains a gap.
+
+## Client field implementation checkpoint (2026-11-01)
+
+Local real-Connection tests now cover pending/active/final attempts and native
+provider-thread links, run/node metadata on ordered replay, unique Codex item
+ordinals, preserved native start times and context usage. Project mutation resolves
+local Git repositoryIdentity; background resolution emits replacement snapshots
+with resolvedRepositoryIdentityRoots, even for null/no-remote identities. Updates
+use a compare check so an older resolution cannot overwrite newer stored metadata.
+Force-delete marks child thread shells deleted in the same transaction.
+
+Startup config lists filesystem skills and project commands before a turn, preserves
+native discovery after init, exposes Codex reasoning choices, and advertises supported
+thread actions. Settings apply favorite/hidden/order mutations rather than persisting
+mutation instructions. Terminal open/attach/restart apply the selected instance's
+unredacted environment with explicit terminal env taking precedence. Search supplies
+snapshotSequence and supplemental thread shells, including older settled title rows
+matched by environmentLabel. Git status includes recognized host descriptors and
+GitHub PR fields; localOnly skips that host lookup. Signed asset tests exercise every
+resource tag, including Linux native icons and credentialed GitHub media with a CLI peer.
+
+Only projects.mutate is promoted in this checkpoint. Search results are consumed:
+FTS-prefix matching is not equivalent to upstream substring/text ranking, so that row
+stays partial even though its missing output fields are filled. Other rows retain
+consumed gaps: pre-native provider-thread identity; complete background-task and quota
+reset status; custom provider configuration; service-tier descriptors; native startup
+probe completeness; scoped/background settings normalization; GitLab/self-hosted PR
+adapters; MCP app HTML bridge; persistent terminal history; native fork/model handoff,
+attachment steering and recovery/control acknowledgement. Empty optional metadata is
+not proof that native observations are projected.
+
+Reader checks used `rg -n` on `activeAttemptId` in lib-t3-rust/src/queue.rs;
+`contextUsage` in lib-t3-rust/src/timeline.rs and desktop src/lib.rs;
+`pendingBackgroundTasks` in lib-t3-rust/src/sidebar.rs and desktop src/lib.rs;
+`threads`/`snapshotSequence` in desktop src/shell_state.rs:62 and src/thread_search.rs;
+asset tags in lib-t3-rust/src/api/assets.rs; model preferences in
+lib-t3-rust/src/models.rs; and MessageSearch.kt in Android core/home. These are positive
+reader evidence, not accepted omissions. No new unused-field exception is claimed;
+the four previously accepted omissions above retain their existing audit evidence.
+The historical upstream differential was not rerun by this checkpoint.
+
+Memory follow-up: replacement snapshots reuse the bounded disk writer. The first
+materialized-shell implementation failed the real-profile benchmark (72.36 MB HWM)
+and was corrected; the final profile probe passes at 46.24 MB HWM. See RSS.md for
+limits and raw aggregate artifacts. Snapshot replacement can coalesce intermediate
+shell updates; its sequence boundary prevents replaying those updates afterward.

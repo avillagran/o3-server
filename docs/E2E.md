@@ -136,3 +136,28 @@ against the existing real desktop executable and the newly built release server.
 20 threads/1,000 deferred messages/3 subscribers/1,000 calls, inference excluded.
 The exact binary hash and samples replace `rss-measurement.json`. P0 RPCs remain
 0 done/5 partial; P1 18 done/13 partial, because consumed behavior still differs.
+
+## Client fields / bounded replacements (2026-11-01)
+
+Final deterministic suites: **119 passed / 4 ignored** with default bridge features;
+**118 passed / 4 ignored** without default features. Strict all-target/all-feature
+Clippy, format and diff checks pass. `tools/gen-compat` regenerated the registry.
+Real Connection coverage was added for pending/native attempts, replay ordering,
+repository-identity replacement, forced project deletion, supplemental search shells,
+settings preference mutations, startup skill/command fields, native model choices,
+GitHub PR/localOnly, all asset resource tags and terminal provider environment.
+
+After the streamed replacement fix, `tools/live-chat-e2e` again completed fresh short
+Claude and Codex turns; `tools/desktop-bridge-e2e` again passed available, identity,
+read, publish/unpublish, pairing/approval, peer list, T3 pair and QUIC forward against
+the real desktop backend. QML/Android UI and live approval/attachment/recovery parity
+are not claimed. Native peers verify input/approval/plan projections separately.
+
+Both RSS workloads used the same final release executable (hash in both JSON
+artifacts): synthetic **43.46 MB HWM**, copied real history **46.24 MB HWM**. The
+initial materialized replacement regression failed at 72.36 MB and was fixed before
+accepting the final results. P0 methods remain **0/5 done**, P1 **19/31 done**.
+The request to close every client-read gap is **not complete**; CONFORMANCE.md lists
+the remaining consumed gaps. No push, deployment, emulator, QEMU, service/systemd
+changes or real ~/.t3 access. Only private isolated copies and aggregate RSS evidence
+were used for history validation.

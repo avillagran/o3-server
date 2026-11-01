@@ -14,7 +14,7 @@
     "assets.createUrl": {
       "status": "partial",
       "priority": "P1",
-      "note": "Tested: attachment, workspace-file (incl. HTML dependency grants), media-file (identity-pinned), draft-workspace-file, project-favicon (+missing sentinel). GET /api/assets/* streams, supports Range/HEAD, rejects traversal/forged/expired tokens. tool-output-image is implemented but untested; native-app-icon and github-media are refused; mcp-app HTML injection not done."
+      "note": "Real-client tests cover all resource tags including native-app-icon (app-id/display-name), tool-output-image and credentialed github-media, plus Range/HEAD and signed grants. Still partial: MCP app HTML injection, full native icon theme/platform discovery, media types/host adapter parity and cache cleanup."
     },
     "assets.persistChatAttachments": {
       "status": "skip",
@@ -204,7 +204,7 @@
     "orchestration.searchThreads": {
       "status": "partial",
       "priority": "P1",
-      "note": "Real-client test: SQLite FTS5 index kept by message writes and rebuilt when missing; best message per thread with hits/quality/snippet, prefix match, project filter, titlesOnly, archived/deleted excluded, FTS syntax inert. Not done: threads/olderSettled fields, environmentLabel."
+      "note": "Real-client tests cover match metadata (threadId/projectId/source/snippet/messageCreatedAt/messageId/hits/quality), supplemental thread shells and snapshotSequence, project filters and olderSettledBefore/environmentLabel. Still partial: FTS prefix matching/ranking differs from upstream substring/folded text and title ranking; returned matches are consumed."
     },
     "orchestration.stopWorkflow": {
       "status": "todo",
@@ -224,12 +224,12 @@
     "orchestration.subscribeShell": {
       "status": "partial",
       "priority": "P0",
-      "note": "Remaining: repository identity replacement metadata and full shell metadata/ordering parity. Latest user/run timestamps are implemented. Retained field consumers: P0-FIELD-AUDIT.md; bounded stream evidence does not certify all interleavings."
+      "note": "Real-client tests cover repositoryIdentity replacement snapshots/resolved roots, user/run timestamps, active proposed plans and pending subagent summaries. Still partial: native background-task lifecycle, usage-limit reset status and all upstream ordering interleavings."
     },
     "orchestration.subscribeThread": {
       "status": "partial",
       "priority": "P0",
-      "note": "Remaining: full attempt/provider-thread identity and upstream ordering parity. Background/subagent recovery and native lifecycle parity remain incomplete. Structured questions, both proposed-plan flows and source-plan completion have real-client peer coverage; restart finalizes streaming messages, tool items and orphan nodes."
+      "note": "Real-client native peers cover pending/active/completed attempts, provider-thread links, context usage, unique Codex item ordinals and ordered event metadata/replay. Still partial: complete native background lifecycle/recovery, pre-binding provider-thread identity and arbitrary stream interleavings."
     },
     "preview.adjust": {
       "status": "todo",
@@ -317,9 +317,9 @@
       "note": "Deferred; client-usage.md inventory."
     },
     "projects.mutate": {
-      "status": "partial",
+      "status": "done",
       "priority": "P1",
-      "note": "Tested over RPC and POST /api/projects/mutate: create/update/delete, idempotent replay, workspace-root validation (exists, createWorkspaceRootIfMissing, no duplicate roots), delete needs force when threads exist, shell events project.updated/removed on the shared sequence, scope checks. Not done: repositoryIdentity, force-delete does not cascade to threads. Differential fix: creation initializes optional null/default metadata (including repositoryIdentity); simple project.create shape matches nightly 3991."
+      "note": "Real-client RPC/HTTP tests cover validated create/update/delete, receipts, root creation/duplicates, repositoryIdentity from local Git remotes, shell replacement after remote changes, and transactional force-delete of thread shells. No network required for repository identity. See tests/threads_compat.rs and tests/files_assets.rs."
     },
     "projects.readFile": {
       "status": "done",
@@ -689,7 +689,7 @@
     "server.getConfig": {
       "status": "partial",
       "priority": "P0",
-      "note": "Remaining: startup command/skill discovery, custom instances, settings normalization and proactive quota refresh. Claude pinned models/options, post-init commands/skills and observed native quota windows are implemented; Codex usage windows update from native notifications. No fabricated startup quota values."
+      "note": "Real-client tests cover startup project commands/skills, Claude pinned catalog, native Codex reasoning descriptors, quota/context usage and enabled feature flags. Still partial: custom provider instances, complete startup native discovery, service-tier metadata, full settings normalization and proactive quota refresh."
     },
     "server.getDatabaseStorage": {
       "status": "skip",
@@ -839,7 +839,7 @@
     "server.updateSettings": {
       "status": "partial",
       "priority": "P1",
-      "note": "Connection tests: provider instance create/upsert/remove, redacted environment preservation, entry replacement/null removal, directory history, primitive type checks. Full upstream normalization/model preferences/background policy remain."
+      "note": "Connection tests: provider instance create/upsert/remove, redacted environment preservation, entry replacement/null removal, directory history, primitive type checks. Full upstream normalization/model preferences/background policy remain. Real-client tests additionally cover favorite/hidden-model/order mutations, migration fields and folding config.enabled into instance.enabled. Full background/scoped schema normalization remains incomplete."
     },
     "server.upsertKeybinding": {
       "status": "todo",
@@ -934,7 +934,7 @@
     "terminal.attach": {
       "status": "partial",
       "priority": "P1",
-      "note": "tests/terminal.rs: snapshot then live tail without loss/duplication, resume, restartIfNotRunning, 8-chunk/64 KiB window. Same gaps as terminal.open. Differential fix: snapshots include current cols/rows; nightly 3991 simple open/attach shapes match."
+      "note": "tests/terminal.rs: snapshot then live tail without loss/duplication, resume, restartIfNotRunning, 8-chunk/64 KiB window. Same gaps as terminal.open. Differential fix: snapshots include current cols/rows; nightly 3991 simple open/attach shapes match. Selected provider environment (including sensitive values) is applied; explicit terminal env wins, covered by real PTY/client test. Restart-persistent scrollback remains unsupported."
     },
     "terminal.clear": {
       "status": "done",
@@ -954,7 +954,7 @@
     "terminal.open": {
       "status": "partial",
       "priority": "P1",
-      "note": "tests/terminal.rs. Real PTY, process group, bounded scrollback. providerInstanceId environment is not applied; history is not persisted across a server restart. Differential fix: snapshots include current cols/rows; nightly 3991 simple open/attach shapes match."
+      "note": "tests/terminal.rs. Real PTY, process group, bounded scrollback. history is not persisted across a server restart. Differential fix: snapshots include current cols/rows; nightly 3991 simple open/attach shapes match. Selected provider environment (including sensitive values) is applied; explicit terminal env wins, covered by real PTY/client test. Restart-persistent scrollback remains unsupported."
     },
     "terminal.resize": {
       "status": "done",
@@ -964,7 +964,7 @@
     "terminal.restart": {
       "status": "partial",
       "priority": "unused",
-      "note": "tests/terminal.rs: new pid, restarted event, fresh history. providerInstanceId environment is not applied."
+      "note": "tests/terminal.rs: new pid, restarted event, fresh history.  Selected provider environment (including sensitive values) is applied; explicit terminal env wins, covered by real PTY/client test. Restart-persistent scrollback remains unsupported."
     },
     "terminal.write": {
       "status": "done",
@@ -999,7 +999,7 @@
     "vcs.refreshStatus": {
       "status": "partial",
       "priority": "P1",
-      "note": "Real-client test: non-repo, clean, dirty (modified/staged/untracked line counts), upstream ahead/behind, branchChanges vs default branch, aheadOfDefaultCount. pr is always null and sourceControlProvider is absent (no host adapter); localOnly ignored. Differential fix: aheadOfDefaultCount and zero branchChanges defaults are present even without a default/remote ref."
+      "note": "Real-client tests cover local status, branch/upstream diffs, GitHub/GitLab provider descriptors, GitHub PR metadata and localOnly host suppression. Still partial: GitLab/self-hosted change-request adapters and host error/status parity."
     },
     "vcs.removeWorktree": {
       "status": "skip",

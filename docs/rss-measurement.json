@@ -1,6 +1,6 @@
 {
-  "measured_at_utc": "2026-11-01T00:57:58Z",
-  "binary_sha256": "6fc449d79e9f0dceca8fb2f83acafeb8811e96df97227e85bc8060f07d2d6fc2",
+  "measured_at_utc": "2026-11-01T01:18:46Z",
+  "binary_sha256": "4760f139a770cf14d65b725909026a435b8878c3d8ae6b010397f4ad52913d1a",
   "profile_counts": {
     "messages": 10605,
     "project": 23,
@@ -10,26 +10,26 @@
   },
   "biggest_thread_items": 8264,
   "idle_kib": {
-    "VmHWM": 32948,
-    "VmRSS": 30716,
-    "RssAnon": 19696
+    "VmHWM": 31984,
+    "VmRSS": 31268,
+    "RssAnon": 20128
   },
   "after_snapshot_kib": {
-    "VmHWM": 35176,
-    "VmRSS": 29804,
-    "RssAnon": 18464
+    "VmHWM": 34856,
+    "VmRSS": 29940,
+    "RssAnon": 18544
   },
   "thread_open_kib": {
-    "VmHWM": 43740,
-    "VmRSS": 34916,
-    "RssAnon": 23576
+    "VmHWM": 45160,
+    "VmRSS": 36696,
+    "RssAnon": 25300
   },
   "after_disconnect_kib": {
-    "VmHWM": 43740,
-    "VmRSS": 30260,
-    "RssAnon": 18920
+    "VmHWM": 45160,
+    "VmRSS": 33540,
+    "RssAnon": 22144
   },
-  "snapshot_ms": 191.46,
+  "snapshot_ms": 215.27,
   "bridge_enabled": true,
   "client": "real omarchy-t3-client snapshot/watch",
   "measurement": "Linux /proc/PID/status, isolated SQLite backup; no inference",
@@ -38,73 +38,5 @@
   "under_35_mb_idle": true,
   "disconnect_within_3_mb_idle": true,
   "under_500_ms_snapshot": true,
-  "allocator_env": {},
-  "baseline_evidence": {
-    "source_revision": "fb87550",
-    "instrumented": true,
-    "idle_kib": {
-      "VmHWM": 37576,
-      "VmRSS": 36212,
-      "RssAnon": 25336
-    },
-    "after_snapshot_kib": {
-      "VmHWM": 46876,
-      "VmRSS": 46144,
-      "RssAnon": 34756
-    },
-    "thread_open_kib": {
-      "VmHWM": 53352,
-      "VmRSS": 53352,
-      "RssAnon": 41964
-    },
-    "after_disconnect_kib": {
-      "VmHWM": 53352,
-      "VmRSS": 53352,
-      "RssAnon": 41964
-    },
-    "snapshot_ms": 3885.3,
-    "heap_samples": [
-      {
-        "rust_live_bytes": 3530489,
-        "rust_peak_bytes": 5279701,
-        "sqlite_live_bytes": 2229624,
-        "sqlite_peak_bytes": 8438656
-      },
-      {
-        "rust_live_bytes": 3530401,
-        "rust_peak_bytes": 5279701,
-        "sqlite_live_bytes": 71856,
-        "sqlite_peak_bytes": 8438656
-      },
-      {
-        "rust_live_bytes": 3917956,
-        "rust_peak_bytes": 5279701,
-        "sqlite_live_bytes": 3975632,
-        "sqlite_peak_bytes": 8438656
-      },
-      {
-        "rust_live_bytes": 3530724,
-        "rust_peak_bytes": 5279701,
-        "sqlite_live_bytes": 71872,
-        "sqlite_peak_bytes": 8438656
-      }
-    ]
-  },
-  "purge_only_ablation": {
-    "instrumented": true,
-    "allocator_env": {
-      "MIMALLOC_PURGE_DELAY": "0"
-    },
-    "thread_open_kib": {
-      "VmHWM": 44384,
-      "VmRSS": 44044,
-      "RssAnon": 32544
-    },
-    "after_disconnect_kib": {
-      "VmHWM": 44384,
-      "VmRSS": 44044,
-      "RssAnon": 32544
-    },
-    "snapshot_ms": 3995.18
-  }
+  "allocator_env": {}
 }

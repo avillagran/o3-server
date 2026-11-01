@@ -134,3 +134,14 @@ wildcard permission policy, semantic title inference, proactive quota discovery 
 merge settlement. Recovery finalizes orphan turn items/nodes/messages; inference
 is failed honestly rather than resumed. Linked-worktree checkpoint tests verify
 file restoration without touching the root checkout or either index.
+
+## Client fields checkpoint (2026-11-01)
+
+The latest checkpoint supersedes older field-gap descriptions above: attempts/nodes
+exist while preparing, Claude binds attempts to provider turns, Codex advertises
+native reasoning choices, observed context usage is projected, and stream events
+carry run/node/instance metadata. Filesystem startup skills/commands, preference
+mutations, project Git identity and replacement snapshots, force-delete shell
+cascade, supplemental search shells, GitHub PR status, remaining signed asset tags
+and terminal instance environment have real Connection tests. CONFORMANCE.md lists
+precisely what remains partial; this is not full daily-client interchangeability.

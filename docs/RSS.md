@@ -84,3 +84,21 @@ that disconnected RSS is within 3 MB of idle, in addition to the other budgets.
 This run does not exercise provider inference, Android/QML, arbitrary histories,
 or long-lived many-client concurrency. The schema index is maintained by SQLite
 on inserts/updates/deletes; no shell field or protocol shape changes.
+
+## Client-field follow-up (2026-11-01)
+
+The first repository-identity replacement implementation materialized the full
+shell tree. The real-profile regression probe caught a **72.36 MB HWM** despite a
+passing synthetic probe. This result was rejected. Replacement events now store
+only resolved roots; subscribers open a consistent disk snapshot through the same
+bounded writer as initial snapshots. They advance their cursor to that snapshot's
+boundary, so a replacement cannot replay older updates afterward. Plan/subagent
+shell summaries also query only the required SQL fields.
+
+Final isolated copied-profile probe: **46.24 MB HWM**, idle **32.02 MB**, desktop
+snapshot **215.27 ms**, RSS three seconds after disconnect **34.34 MB** (within
+3 MB of idle). The largest thread has 8,264 visible items. No owner record contents
+are committed. Raw aggregate evidence and executable hash: `rss-measurement.json`.
+Synthetic aggregate evidence for the same executable: `rss-synthetic-measurement.json`.
+Both probes assert the decimal 50 MB HWM budget; inference/subprocess memory is
+excluded from these two probes. Short native turns are validated separately.
