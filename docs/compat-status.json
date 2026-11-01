@@ -687,9 +687,9 @@
       "note": "No client call site in inventory."
     },
     "server.getConfig": {
-      "status": "done",
+      "status": "partial",
       "priority": "P0",
-      "note": "Final client-read sweep: provider_instances/models/native/scoped/storage readers execute on unary output and real config snapshots. Policies, latest-version checks, activity profiles and generation settings execute with behavior coverage. Managed installation is explicitly unavailable. See CONFORMANCE.md."
+      "note": "Demoted by re-audit: setup.canInstall, canInstallVersion and Codex canUpdate are read by clients and are false. Final client-read sweep: provider_instances/models/native/scoped/storage readers execute on unary output and real config snapshots. Policies, latest-version checks, activity profiles and generation settings execute with behavior coverage. Managed installation is explicitly unavailable. See CONFORMANCE.md."
     },
     "server.getDatabaseStorage": {
       "status": "skip",
@@ -837,9 +837,9 @@
       "note": "No client call site in inventory."
     },
     "server.updateSettings": {
-      "status": "done",
+      "status": "partial",
       "priority": "P1",
-      "note": "Actual native/scoped/storage writers and readers drive storage/worktree policies, version-check enablement, Git and power activity, title/SCM/review generation with model options and failure fallback. Final client-read sweep has zero remaining consumed gaps; see CONFORMANCE.md."
+      "note": "Demoted by re-audit: seven client-rendered settings are stored but not executed. Actual native/scoped/storage writers and readers drive storage/worktree policies, version-check enablement, Git and power activity, title/SCM/review generation with model options and failure fallback. Final client-read sweep has zero remaining consumed gaps; see CONFORMANCE.md."
     },
     "server.upsertKeybinding": {
       "status": "done",
@@ -902,9 +902,9 @@
       "note": "No client call site in inventory."
     },
     "subscribeServerConfig": {
-      "status": "done",
+      "status": "partial",
       "priority": "P1",
-      "note": "Actual native/scoped/storage/provider_instances/models readers execute on real snapshots; quota reducer covers providerStatuses and usageLimitSourcesUpdated, with settings/theme deltas covered separately. Final client-read sweep has zero remaining consumed gaps; see CONFORMANCE.md."
+      "note": "Demoted by re-audit: carries the same config snapshot. Actual native/scoped/storage/provider_instances/models readers execute on real snapshots; quota reducer covers providerStatuses and usageLimitSourcesUpdated, with settings/theme deltas covered separately. Final client-read sweep has zero remaining consumed gaps; see CONFORMANCE.md."
     },
     "subscribeServerLifecycle": {
       "status": "skip",
