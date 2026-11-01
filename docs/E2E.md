@@ -233,3 +233,7 @@ La ruta móvil no es un túnel local: el catálogo publica una pasarela HTTPS co
 verificables, que reenvía por QUIC al nodo. El nodo embebido arranca sin hospedar pasarela ni relay.
 Probarla exige la infraestructura real de pasarela, así que queda como validación de despliegue,
 no como resultado del emulador. No hay conclusión sobre si esa ruta funciona contra el nodo embebido.
+
+## Android public-route pilot (2026-11-01)
+
+O3 Android on an Android 34 emulator paired with `https://stream.villagranquiroz.cl:39671/`, loaded the shell, and created a new Claude Haiku 5.5 thread in a scratch project. A real reply rendered. After disabling and re-enabling Wi-Fi and mobile data, the app displayed Connected after 2.0 seconds; the offline state was not observed, so this is not proof of a disconnected-to-reconnected transition. Pilot VmHWM was 61,464 KiB, including its earlier lifetime and excluding provider processes. The pilot shell contains the owner's real history; no screenshots were taken. The test project and thread were deleted and the test session revoked. No defect was established.
