@@ -839,7 +839,7 @@
     "server.updateSettings": {
       "status": "partial",
       "priority": "P1",
-      "note": "Partial: native/scoped writers now execute and resolve project overrides; background profiles drive real provider health probes; title generation uses configured model/options/instructions. Storage/worktree policies execute with real writer/reader coverage. Git fetch and host/client power pauses execute under activity profiles with real native settings readers. Remaining: source-control/review generation settings. No clean reader sweep for promotion."
+      "note": "Partial: native/scoped writers now execute and resolve project overrides; background profiles drive real provider health probes; title generation uses configured model/options/instructions. Storage/worktree policies execute with real writer/reader coverage. Git fetch and host/client power pauses execute under activity profiles with real native settings readers. Source-control/review generation settings now drive bounded native turns; real native settings and StackedAction readers cover generated commits, fallback, branch names and PR templates. Final row decisions are in CONFORMANCE.md. No clean reader sweep for promotion."
     },
     "server.upsertKeybinding": {
       "status": "done",

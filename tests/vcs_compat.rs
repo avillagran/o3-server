@@ -454,7 +454,7 @@ fn stacked_action_streams_commit_push_and_pull_request_progress() {
     assert_eq!(kinds(&ev).last().unwrap(), "action_finished", "{ev:?}");
     let res = &ev.last().unwrap()["result"];
     let branch = res["branch"]["name"].as_str().unwrap();
-    assert!(branch.starts_with("feature/add-p2-thing-"), "{branch}");
+    assert!(branch.starts_with("t3/add-p2-thing-"), "{branch}");
     assert_eq!(
         (
             res["push"]["setUpstream"].as_bool(),

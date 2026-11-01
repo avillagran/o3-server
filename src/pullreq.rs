@@ -23,7 +23,9 @@ use tokio::io::AsyncWriteExt;
 pub fn handles(tag: &str) -> bool {
     matches!(
         tag,
-        "pullRequests.list"
+        "pullRequests.reviewGuide"
+            | "pullRequests.generateReviewGuide"
+            | "pullRequests.list"
             | "pullRequests.detail"
             | "pullRequests.checks"
             | "pullRequests.activity"
@@ -44,6 +46,9 @@ pub fn handles(tag: &str) -> bool {
 
 pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
     match tag {
+        "pullRequests.reviewGuide" | "pullRequests.generateReviewGuide" => {
+            review_guide(s, tag, p).await
+        }
         "pullRequests.list" => list(s, p).await,
         "pullRequests.routingIdentity" => routing_identity(p).await,
         "pullRequests.filterOptions" => filter_options(s, p).await,
@@ -1519,6 +1524,33 @@ async fn prepare_thread(s: &State, p: &Value) -> Reply {
     Ok(
         json!({"pullRequest":resolved,"branch":local,"worktreePath":worktree,"isOnPullRequestHead":on_head}),
     )
+}
+
+async fn review_guide(s: &State, tag: &str, p: &Value) -> Reply {
+    let pr = Pr::resolve(s, p).await?;
+    let key = json!([p["projectId"], pr.gh.host, pr.repo, pr.number]).to_string();
+    if tag == "pullRequests.reviewGuide" {
+        return Ok(events::get(&s.db.lock().unwrap(), "reviewGuides", &key).unwrap_or(Value::Null));
+    }
+    let settings = crate::source_control::effective(s, &pr.project.root);
+    if settings["reviewGuidesEnabled"] != true {
+        return Err(operation(tag, "Review guides are disabled", false));
+    }
+    let diff = pr
+        .gh
+        .run(
+            "review-guide",
+            &["pr", "diff", &pr.n(), "--repo", &pr.repo],
+            None,
+        )
+        .await?;
+    let text = crate::source_control::generate(s, &pr.project.root, "review", &diff)
+        .await
+        .ok_or_else(|| operation(tag, "Review generation failed or requested tools", false))?;
+    let value = json!({"id":key,"projectId":p["projectId"],"repository":pr.repo,"number":pr.number,"text":text,"updatedAt":crate::store::iso(crate::store::now_ms())});
+    events::put(&s.db.lock().unwrap(), "reviewGuides", &key, "", &value)
+        .map_err(|e| operation(tag, &e, false))?;
+    Ok(value)
 }
 
 #[cfg(test)]

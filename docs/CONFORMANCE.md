@@ -871,3 +871,25 @@ resume health probes as well as checking version output with the provider reader
 The cleanup timer also recognizes a global custom worktree policy.
 Settings/config remain partial for source-control/review generation and the final
 independent reader sweep.
+
+### Source-control generation execution (2026-11-01)
+
+Generated commit messages now use sourceControlWriterModelSelection (falling back
+to textGenerationModelSelection), including model options and scoped settings.
+The bounded turn applies custom writing instructions or recent repository subject
+conventions. Explicit messages win; failed/tool-requesting generation retains the
+deterministic filename fallback. Semantic/custom feature branches use branch
+instructions and the configured prefix. PR body generation includes bounded
+branch diff context and, when enabled, a repository-local PR template. Each turn
+has no native conversation binding, a 20-second limit and a 4 KiB output cap.
+
+Review-guide generation/read paths now use real PR diffs and persist the resulting
+text; enablement, review model selection and review instructions are enforced.
+These guide RPCs have no production client call sites and retain their unused
+status; adding them is not evidence of a nonexistent guide-output reader.
+`tests/source_generation.rs` executes actual native settings writers/readers and
+the lib's StackedAction subscription decoder on generated commit output. It checks
+model/options/instructions, actual Git commit body, fallback, branch prefix and
+semantic generation, PR template context, and generated/read-back review text.
+The existing title-generation readers remain exercised after sharing the bounded
+turn implementation. No config/settings promotion is made by this item alone.

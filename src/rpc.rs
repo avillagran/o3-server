@@ -391,7 +391,7 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                                         if subscriptions.len()>=64||subscriptions.contains_key(&id.to_string()) {if send(&mut ws,exit(&id,Err(error("subscription limit or duplicate id".into())))).await.is_err(){return}continue;}
                                         if let Err(e)=crate::stacked::validate(p){if send(&mut ws,exit(&id,Err(e))).await.is_err(){return}continue;}
                                         let (queue,rx)=tokio::sync::mpsc::channel(16);
-                                        tokio::spawn(crate::stacked::run(p.clone(),crate::stacked::Tx{queue,wake:wake.clone()}));
+                                        tokio::spawn(crate::stacked::run(s.clone(),p.clone(),crate::stacked::Tx{queue,wake:wake.clone()}));
                                         subscriptions.insert(id.to_string(),Subscription{id,tag:tag.into(),tid:None,cursor:0,waiting:false,initial:None,marker:false,version:0,snapshot:None,live:None,events:Some(rx),last_config:None,sources:None});
                                     }else if crate::ext::handles(tag) {
                                         if inflight.load(std::sync::atomic::Ordering::Relaxed)>=16 {if send(&mut ws,exit(&id,Err(error("too many concurrent requests on this socket".into())))).await.is_err(){return}continue;}

@@ -93,6 +93,7 @@ pub fn validate(p: &Value) -> Result<(), Value> {
 }
 
 struct Run {
+    state: Arc<crate::store::State>,
     p: Value,
     tx: Tx,
     root: PathBuf,
@@ -130,15 +131,15 @@ fn slug(text: &str) -> String {
     }
 }
 
-pub async fn run(p: Value, tx: Tx) {
+pub async fn run(state: Arc<crate::store::State>, p: Value, tx: Tx) {
     let result = tokio::select! {
-        result = drive(p, tx.clone()) => result,
+        result = drive(state,p, tx.clone()) => result,
         _ = tx.queue.closed() => return,
     };
     let _ = tx.send(Item::End(result)).await;
 }
 
-async fn drive(p: Value, tx: Tx) -> Result<(), Value> {
+async fn drive(state: Arc<crate::store::State>, p: Value, tx: Tx) -> Result<(), Value> {
     let op = "git.runStackedAction";
     let cwd = vcs::existing_dir(&p).ok_or_else(|| {
         simple_fail(
@@ -158,6 +159,7 @@ async fn drive(p: Value, tx: Tx) -> Result<(), Value> {
             Some("not_a_repository"),
         );
         let run = Run {
+            state,
             p,
             tx,
             root: PathBuf::new(),
@@ -166,6 +168,7 @@ async fn drive(p: Value, tx: Tx) -> Result<(), Value> {
         return Err(e);
     };
     let run = Run {
+        state,
         p,
         tx,
         root: root.clone(),
@@ -228,9 +231,21 @@ async fn steps(
             json!({"kind":"phase_started","phase":"branch","label":"Creating feature branch"}),
         )
         .await;
+        let settings = crate::source_control::effective(&run.state, root);
+        let mut branch_text = message.clone().unwrap_or_else(|| "changes".into());
+        if settings["branchNamingMode"] != "static" {
+            branch_text = crate::source_control::generate(&run.state, root, "branch", &branch_text)
+                .await
+                .unwrap_or(branch_text);
+        }
+        let prefix = settings["branchNamePrefix"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .unwrap_or("t3");
         let name = format!(
-            "feature/{}-{}",
-            slug(message.as_deref().unwrap_or("changes")),
+            "{}/{}-{}",
+            slug(prefix),
+            slug(&branch_text),
             &crate::store::random_id().unwrap_or_default()[..6]
         );
         ok(op, root, &["switch", "-c", &name], Opts::WRITE)
@@ -310,10 +325,31 @@ async fn steps(
                         .map_err(step_err)?
                         .text();
                     let files: Vec<&str> = names.lines().collect();
-                    match files.as_slice() {
+                    let fallback = match files.as_slice() {
                         [one] => format!("Update {one}"),
                         many => format!("Update {} files", many.len()),
+                    };
+                    let mut args = vec!["diff", "--cached"];
+                    if let Some(specs) = &specs {
+                        args.push("--");
+                        args.extend(specs.iter().map(String::as_str));
                     }
+                    let diff = proc::git(
+                        root,
+                        &args,
+                        Opts {
+                            cap: 16000,
+                            allow_truncate: true,
+                            ..Opts::READ
+                        },
+                    )
+                    .await
+                    .ok()
+                    .map(|o| o.text())
+                    .unwrap_or_default();
+                    crate::source_control::generate(&run.state, root, "commit", &diff)
+                        .await
+                        .unwrap_or(fallback)
                 }
             };
             let mut a = vec!["commit", "-m", subject.as_str()];
@@ -423,7 +459,7 @@ async fn steps(
         run.event(json!({"kind":"phase_started","phase":"pr","label":"Opening pull request"}))
             .await;
         let head = branch.clone().unwrap_or_default();
-        result["pr"] = pull_request(root, &head).await?;
+        result["pr"] = pull_request(&run.state, root, &head).await?;
     }
     result["toast"] = toast(&result, action);
     Ok(result)
@@ -436,7 +472,11 @@ fn gh_unavailable(root: &Path, e: &str) -> StepErr {
     )
 }
 
-async fn pull_request(root: &Path, head: &str) -> Result<Value, StepErr> {
+async fn pull_request(
+    state: &crate::store::State,
+    root: &Path,
+    head: &str,
+) -> Result<Value, StepErr> {
     let existing = proc::run(
         "gh",
         root,
@@ -498,6 +538,27 @@ async fn pull_request(root: &Path, head: &str) -> Result<Value, StepErr> {
     .text()
     .trim()
     .to_owned();
+    let diff = proc::git(
+        root,
+        &["diff", &format!("{base}...HEAD")],
+        Opts {
+            cap: 16000,
+            allow_truncate: true,
+            ..Opts::READ
+        },
+    )
+    .await
+    .ok()
+    .map(|o| o.text())
+    .unwrap_or_default();
+    let body = crate::source_control::generate(
+        state,
+        root,
+        "pull-request",
+        &format!("{title}\n{body}\n{diff}"),
+    )
+    .await
+    .unwrap_or(body);
     let created = proc::run(
         "gh",
         root,

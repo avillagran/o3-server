@@ -77,3 +77,5 @@ mod config_sources;
 mod title;
 
 mod storage;
+
+mod source_control;
