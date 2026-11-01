@@ -23,11 +23,13 @@ pub fn not_implemented(message: impl Into<String>) -> Value {
 #[derive(Default)]
 pub struct Runtime {
     pub setup: crate::setup::Registry,
+    pub preview: crate::preview::Manager,
 }
 
 pub fn handles(tag: &str) -> bool {
     crate::pullreq::handles(tag) || crate::setup::handles(tag) || crate::keybind::handles(tag)
         || crate::sessions::handles(tag)
+        || crate::preview::handles(tag)
 }
 
 pub async fn call(s: &Arc<State>, tag: &str, p: Value) -> Reply {
@@ -37,6 +39,8 @@ pub async fn call(s: &Arc<State>, tag: &str, p: Value) -> Reply {
         crate::keybind::call(s, tag, &p)
     } else if crate::sessions::handles(tag) {
         crate::sessions::call(s, tag, &p).await
+    } else if crate::preview::handles(tag) {
+        crate::preview::call(s, tag, &p)
     } else {
         crate::setup::call(s, tag, &p).await
     }
@@ -48,30 +52,50 @@ pub async fn call(s: &Arc<State>, tag: &str, p: Value) -> Reply {
 /// Live subscriptions of this module. All are bounded: one chunk outstanding per subscriber.
 pub enum Stream {
     Setup(crate::setup::Cursor),
+    Preview(crate::preview::Cursor),
+    Servers(crate::preview::Servers),
 }
 
 pub fn is_stream(tag: &str) -> bool {
-    matches!(tag, "provider.auth.subscribe" | "provider.install.subscribe")
+    matches!(
+        tag,
+        "provider.auth.subscribe"
+            | "provider.install.subscribe"
+            | "subscribePreviewEvents"
+            | "subscribeDiscoveredLocalServers"
+    )
 }
 
 pub fn open(s: &Arc<State>, tag: &str, p: &Value) -> Result<Stream, Value> {
-    Ok(Stream::Setup(crate::setup::open_stream(s, tag, p)?))
+    Ok(match tag {
+        "subscribePreviewEvents" => Stream::Preview(crate::preview::open_events(s)),
+        "subscribeDiscoveredLocalServers" => {
+            Stream::Servers(crate::preview::Servers::new(&p["configuredUrls"]))
+        }
+        _ => Stream::Setup(crate::setup::open_stream(s, tag, p)?),
+    })
 }
 
 impl Stream {
     pub fn next(&mut self, s: &State) -> crate::terminal::Step {
         match self {
             Stream::Setup(c) => c.next(s),
+            Stream::Preview(c) => c.next(s),
+            Stream::Servers(c) => c.next(s),
         }
     }
     pub fn ack(&mut self) {
         match self {
             Stream::Setup(c) => c.ack(),
+            Stream::Preview(c) => c.ack(),
+            Stream::Servers(c) => c.ack(),
         }
     }
     pub fn is_full(&self) -> bool {
         match self {
             Stream::Setup(c) => c.is_full(),
+            Stream::Preview(c) => c.is_full(),
+            Stream::Servers(c) => c.is_full(),
         }
     }
 }

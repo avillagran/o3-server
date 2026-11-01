@@ -232,39 +232,39 @@
       "note": "Real-client native peers cover pending/active/completed attempts, provider-thread links, context usage, unique Codex item ordinals and ordered event metadata/replay. Still partial: complete native background lifecycle/recovery, pre-binding provider-thread identity and arbitrary stream interleavings."
     },
     "preview.adjust": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "tests/preview.rs: in-memory registry of tabs a client renders (revision/serverEpoch events, ring of 256). The server renders nothing: runtime 'server' is refused and capabilities.serverBrowser stays off. No state until a client opens a tab."
     },
     "preview.clearProfile": {
-      "status": "todo",
+      "status": "partial",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "tests/preview.rs: accepted as a no-op; the server holds no browser profile data to clear (profiles live in the client that renders the preview)."
     },
     "preview.close": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "tests/preview.rs: in-memory registry of tabs a client renders (revision/serverEpoch events, ring of 256). The server renders nothing: runtime 'server' is refused and capabilities.serverBrowser stays off. No state until a client opens a tab."
     },
     "preview.list": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "tests/preview.rs: in-memory registry of tabs a client renders (revision/serverEpoch events, ring of 256). The server renders nothing: runtime 'server' is refused and capabilities.serverBrowser stays off. No state until a client opens a tab."
     },
     "preview.navigate": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "tests/preview.rs: in-memory registry of tabs a client renders (revision/serverEpoch events, ring of 256). The server renders nothing: runtime 'server' is refused and capabilities.serverBrowser stays off. No state until a client opens a tab."
     },
     "preview.open": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "tests/preview.rs: in-memory registry of tabs a client renders (revision/serverEpoch events, ring of 256). The server renders nothing: runtime 'server' is refused and capabilities.serverBrowser stays off. No state until a client opens a tab."
     },
     "preview.refresh": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "tests/preview.rs: in-memory registry of tabs a client renders (revision/serverEpoch events, ring of 256). The server renders nothing: runtime 'server' is refused and capabilities.serverBrowser stays off. No state until a client opens a tab."
     },
     "preview.reportProfiles": {
       "status": "skip",
@@ -272,14 +272,14 @@
       "note": "No client call site in inventory."
     },
     "preview.reportStatus": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "tests/preview.rs: in-memory registry of tabs a client renders (revision/serverEpoch events, ring of 256). The server renders nothing: runtime 'server' is refused and capabilities.serverBrowser stays off. No state until a client opens a tab."
     },
     "preview.resize": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Client usage inventory; deferred."
+      "note": "tests/preview.rs: in-memory registry of tabs a client renders (revision/serverEpoch events, ring of 256). The server renders nothing: runtime 'server' is refused and capabilities.serverBrowser stays off. No state until a client opens a tab."
     },
     "projectClone.cancel": {
       "status": "skip",
@@ -882,14 +882,14 @@
       "note": "Deferred; client-usage.md inventory."
     },
     "subscribeDiscoveredLocalServers": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "tests/preview.rs: scans /proc/net/tcp* every 3 s and HTTP-probes loopback listeners only while a client holds the subscription (task aborted on drop); owner pid/name from /proc; terminal linkage not reported."
     },
     "subscribePreviewEvents": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "tests/preview.rs: in-memory registry of tabs a client renders (revision/serverEpoch events, ring of 256). The server renders nothing: runtime 'server' is refused and capabilities.serverBrowser stays off. No state until a client opens a tab."
     },
     "subscribeProjectClones": {
       "status": "skip",
