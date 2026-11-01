@@ -477,6 +477,103 @@ async fn diff_between(
 
 /// Literal find in transcript messages/plans, ordered like the projected transcript.
 /// Rich markdown/context search segmentation is tracked separately in the registry.
+// Render block boundaries independently: phrases must not cross paragraphs, table
+// cells, context chips or code blocks. Link destinations are never visible text.
+fn rendered_segments(text: &str, user: bool, skills: &Value) -> Vec<String> {
+    use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
+    let mut segments = Vec::new();
+    let mut current = String::new();
+    let mut hidden = 0usize;
+    let mut literal = 0usize;
+    let flush = |current: &mut String, segments: &mut Vec<String>| {
+        if !current.trim().is_empty() {
+            segments.push(std::mem::take(current));
+        } else {
+            current.clear();
+        }
+    };
+    for event in Parser::new_ext(
+        text,
+        Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS,
+    ) {
+        match event {
+            Event::Start(Tag::Link { dest_url, .. })
+                if user && dest_url.starts_with("t3-context:") =>
+            {
+                flush(&mut current, &mut segments);
+                hidden += 1;
+            }
+            Event::End(TagEnd::Link) if hidden > 0 => {
+                hidden -= 1;
+            }
+            _ if hidden > 0 => {}
+            Event::Start(Tag::Link { .. } | Tag::CodeBlock(_)) => {
+                literal += 1;
+            }
+            Event::End(TagEnd::Link | TagEnd::CodeBlock) => {
+                literal = literal.saturating_sub(1);
+            }
+            Event::Start(Tag::Emphasis | Tag::Strong | Tag::Strikethrough)
+            | Event::End(TagEnd::Emphasis | TagEnd::Strong | TagEnd::Strikethrough) => {}
+            Event::Text(t) => {
+                if literal > 0 {
+                    current.push_str(&t);
+                } else {
+                    let mut cursor = 0;
+                    for (at, word) in
+                        t.split_inclusive(char::is_whitespace)
+                            .scan(0, |offset, word| {
+                                let at = *offset;
+                                *offset += word.len();
+                                Some((at, word))
+                            })
+                    {
+                        let token = word.trim_end();
+                        if let Some(skill) = token
+                            .strip_prefix('$')
+                            .and_then(|name| skills.as_array()?.iter().find(|s| s["name"] == name))
+                        {
+                            current.push_str(&t[cursor..at]);
+                            let label = skill["displayName"]
+                                .as_str()
+                                .filter(|s| !s.trim().is_empty())
+                                .map(str::to_owned)
+                                .unwrap_or_else(|| {
+                                    skill["name"]
+                                        .as_str()
+                                        .unwrap_or("")
+                                        .split(['-', '_', ':'])
+                                        .map(|w| {
+                                            let mut c = w.chars();
+                                            c.next()
+                                                .map(|a| {
+                                                    a.to_uppercase().collect::<String>()
+                                                        + c.as_str()
+                                                })
+                                                .unwrap_or_default()
+                                        })
+                                        .collect::<Vec<_>>()
+                                        .join(" ")
+                                });
+                            current.push_str(&label);
+                            current.push_str(&word[token.len()..]);
+                            cursor = at + word.len();
+                        }
+                    }
+                    current.push_str(&t[cursor..]);
+                }
+            }
+            Event::Code(t) => current.push_str(&t),
+            Event::SoftBreak if !user && literal == 0 => current.push(' '),
+            Event::SoftBreak | Event::HardBreak | Event::Rule => flush(&mut current, &mut segments),
+            Event::Html(t) | Event::InlineHtml(t) if user => current.push_str(&t),
+            _ => flush(&mut current, &mut segments),
+        }
+    }
+    flush(&mut current, &mut segments);
+    segments
+}
+
 pub fn search_thread(s: &State, p: &Value) -> Reply {
     let fail = |message: &str| json!({"_tag":"OrchestrationV2SearchThreadError","cause":message});
     let tid = p["threadId"]
@@ -493,19 +590,41 @@ pub fn search_thread(s: &State, p: &Value) -> Reply {
     events::get(&db, "thread", tid).map_err(|e| fail(&e))?;
     let mut navigation = Vec::new();
     let mut total = 0usize;
-    for row in records(&db, "visibleTurnItems", tid) {
+    let mut rows = records(&db, "visibleTurnItems", tid);
+    rows.sort_by_key(|r| r["position"].as_i64().unwrap_or(0));
+    let folded: std::collections::HashSet<String> = rows
+        .iter()
+        .filter(|r| r["item"]["type"] == "user_input_request")
+        .filter_map(|r| {
+            r["item"]["questionAnswer"]["requestId"]
+                .as_str()
+                .map(|id| format!("async-answer:{id}"))
+        })
+        .collect();
+    for row in rows {
+        if row["item"]["type"] == "user_message"
+            && row["item"]["messageId"]
+                .as_str()
+                .is_some_and(|id| folded.contains(id))
+        {
+            continue;
+        }
         let item = &row["item"];
         let text = match item["type"].as_str() {
             Some("user_message" | "assistant_message") => item["text"].as_str(),
             Some("proposed_plan") => item["markdown"].as_str(),
             _ => None,
         };
-        let count = text
-            .unwrap_or("")
-            .to_lowercase()
-            .replace('ς', "σ")
-            .matches(&query)
-            .count();
+        let skills = if item["type"] == "proposed_plan" {
+            &Value::Null
+        } else {
+            &p["skills"]
+        };
+        let count: usize =
+            rendered_segments(text.unwrap_or(""), item["type"] == "user_message", skills)
+                .iter()
+                .map(|s| s.to_lowercase().replace('ς', "σ").matches(&query).count())
+                .sum();
         if count == 0 {
             continue;
         }

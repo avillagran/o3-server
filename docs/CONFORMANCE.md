@@ -1096,3 +1096,9 @@ provider child memory is excluded. Aggregate evidence: [rss-implementation.json]
    substring priority; single-project filters and subagent exclusion apply.
    Full palette word-boundary, recency, branch and pick scoring remains partial.
    The complete default all-target suite passed before this item's commit.
+
+2. Thread find excludes `async-answer:<requestId>` rows folded into question
+   answers, sorts visible positions and searches Markdown text in block segments,
+   with hidden link destinations/context chips and displayed skill labels.
+   Rich file labels, legacy context envelopes, citations, artifacts and the full
+   upstream Markdown plugin pipeline remain partial; no row is promoted.

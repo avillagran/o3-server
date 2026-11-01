@@ -2369,6 +2369,7 @@ dependencies = [
  "hyper-util",
  "libc",
  "omabridge",
+ "pulldown-cmark",
  "rcgen",
  "rusqlite",
  "rustls",

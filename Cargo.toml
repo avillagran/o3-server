@@ -30,6 +30,7 @@ rusqlite = { version = "0.37", features = ["bundled", "backup"] }
 time = { version = "0.3", features = ["formatting", "macros", "parsing"] }
 url = "2"
 unicode-normalization = "0.1"
+pulldown-cmark = { version = "0.13", default-features = false }
 base64 = "0.22"
 
 [dev-dependencies]
