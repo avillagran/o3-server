@@ -65,17 +65,18 @@ mod tests {
         let real = root.join("installs/codex/global/bin/codex");
         std::fs::create_dir_all(wrapper.parent().unwrap()).unwrap();
         std::fs::create_dir_all(real.parent().unwrap()).unwrap();
-        for (path, body) in [
-            (root.join("mise"), "#!/bin/sh\nexit 77\n"),
-            (real.clone(), "#!/bin/sh\necho resolved\n"),
-        ] {
-            std::fs::write(&path, body).unwrap();
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
+        let mise = root.join("mise");
+        std::fs::write(&mise, "#!/bin/sh\nexit 77\n").unwrap();
+        std::fs::set_permissions(&mise, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // Use an already installed executable: concurrently spawning tests can
+        // inherit a freshly written file descriptor until exec, causing ETXTBSY.
+        // This test checks resolution, not the kernel's write/exec boundary.
+        symlink("/bin/echo", &real).unwrap();
         symlink(root.join("mise"), &wrapper).unwrap();
         let resolved = resolve(&wrapper).unwrap();
         assert_eq!(resolved, real.canonicalize().unwrap());
         let output = std::process::Command::new(resolved)
+            .arg("resolved")
             .env("HOME", root.join("isolated"))
             .output()
             .unwrap();
