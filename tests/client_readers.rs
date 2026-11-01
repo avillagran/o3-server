@@ -227,3 +227,46 @@ fn real_builders_and_readers_consume_server_output() {
     .unwrap();
     orchestration::dispatch(&c, &approve).unwrap();
 }
+
+#[test]
+fn imported_create_is_atomic_idempotent_and_readable() {
+    use orchestration::ThreadCreate;
+    let s = support::start(|_| {});
+    let c = s.connect();
+    let mut create = ThreadCreate {
+        command_id: "import".into(),
+        thread_id: "imported".into(),
+        project_id: "p".into(),
+        title: "Imported".into(),
+        model_selection: json!({"instanceId":"codex","model":"test"}),
+        runtime_mode: "approval-required".into(),
+        interaction_mode: "default".into(),
+        branch: None,
+        worktree_path: None,
+        created_by: "user".into(),
+        creation_source: "web".into(),
+        imported_native_thread: Some(
+            json!({"ref":{"driver":"codex","nativeId":"native-test","strength":"strong"},"metadata":{"title":"Imported"}}),
+        ),
+    };
+    let command = Command::ThreadCreate(create.clone());
+    orchestration::dispatch(&c, &command).unwrap();
+    orchestration::dispatch(&c, &command).unwrap();
+    let p = orchestration::thread_projection(&c, "imported").unwrap();
+    assert_eq!(p["providerThreads"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        p["providerThreads"][0]["nativeThreadRef"]["nativeId"],
+        "native-test"
+    );
+    assert!(
+        timeline::view(&p, &json!({}), &timeline::Render::neutral(false))
+            .unwrap()
+            .is_object()
+    );
+    assert_eq!(t3_protocol::queue::derive(&p)["items"], json!([]));
+    create.command_id = "bad-import".into();
+    create.thread_id = "bad-import".into();
+    create.imported_native_thread.as_mut().unwrap()["ref"]["driver"] = json!("claudeAgent");
+    assert!(orchestration::dispatch(&c, &Command::ThreadCreate(create)).is_err());
+    assert!(orchestration::thread_projection(&c, "bad-import").is_err());
+}

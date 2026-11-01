@@ -322,7 +322,10 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
         get(&tx, "thread", tid)?
     };
     let event = match kind {
-        "thread.create" => "thread.created",
+        "thread.create" => {
+            import_native(s, &tx, c, tid, &at, &mut t)?;
+            "thread.created"
+        }
         "thread.archive" => {
             t["archivedAt"] = json!(at);
             "thread.archived"
@@ -871,6 +874,38 @@ fn stage_message(
     Ok((result, run_id, queued))
 }
 
+fn import_native(
+    s: &State,
+    db: &Connection,
+    c: &Value,
+    tid: &str,
+    at: &str,
+    thread: &mut Value,
+) -> Result<()> {
+    if let Some(imported) = c.get("importedNativeThread") {
+        let native = imported["ref"]["nativeId"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .ok_or("nativeId required")?;
+        let driver = imported["ref"]["driver"]
+            .as_str()
+            .ok_or("native driver required")?;
+        let expected = crate::provider_input::driver(s, &thread["providerInstanceId"])?;
+        if driver != expected || imported["ref"]["strength"] != "strong" {
+            return Err("import requires matching strong native ref".into());
+        }
+        let id = format!("imported-{tid}");
+        let record = json!({"id":id,"appThreadId":tid,"driver":driver,"providerInstanceId":thread["providerInstanceId"],"nativeThreadRef":imported["ref"],"status":"not_loaded","nativeMetadata":imported["metadata"],"pendingBackgroundTasks":[],"createdAt":at,"updatedAt":at});
+        thread["activeProviderThreadId"] = json!(id);
+        if driver == "codex" {
+            thread["codexNativeThreadId"] = json!(native);
+        }
+        put(db, "providerThreads", &id, tid, &record)?;
+        append(db, tid, "provider-thread.updated", record, thread)?;
+    }
+    Ok(())
+}
+
 fn new_thread(db: &Connection, c: &Value, tid: &str, at: &str) -> Result<Value> {
     Ok({
         for key in [
@@ -970,27 +1005,7 @@ pub fn launch(s: &std::sync::Arc<State>, p: &Value) -> Result<Value> {
                 }
             }
         }
-        if let Some(imported) = p.get("importedNativeThread") {
-            let native = imported["ref"]["nativeId"]
-                .as_str()
-                .filter(|s| !s.is_empty())
-                .ok_or("nativeId required")?;
-            let driver = imported["ref"]["driver"]
-                .as_str()
-                .ok_or("native driver required")?;
-            let expected = crate::provider_input::driver(s, &thread["providerInstanceId"])?;
-            if driver != expected || imported["ref"]["strength"] != "strong" {
-                return Err("import requires matching strong native ref".into());
-            }
-            let id = format!("imported-{tid}");
-            let record = json!({"id":id,"appThreadId":tid,"driver":driver,"providerInstanceId":thread["providerInstanceId"],"nativeThreadRef":imported["ref"],"status":"not_loaded","nativeMetadata":imported["metadata"],"pendingBackgroundTasks":[],"createdAt":at,"updatedAt":at});
-            thread["activeProviderThreadId"] = json!(id);
-            if driver == "codex" {
-                thread["codexNativeThreadId"] = json!(native);
-            }
-            put(&tx, "providerThreads", &id, &tid, &record)?;
-            append(&tx, &tid, "provider-thread.updated", record, &thread)?;
-        }
+        import_native(s, &tx, p, &tid, &at, &mut thread)?;
         put(&tx, "thread", &tid, &tid, &thread)?;
         append(
             &tx,

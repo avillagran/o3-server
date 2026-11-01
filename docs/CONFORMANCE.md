@@ -813,3 +813,13 @@ git/power activity, source-control/review generation settings, and imported nati
 references on `thread.create` still need closure. Durable control receipts also
 retain the documented delivery-uncertain boundary. `subscribeThread` keeps its
 prior status; no new concurrent multi-record equivalence is claimed here.
+
+### Native create import reader closure (2026-11-01)
+
+`thread.create` now shares launch's native-reference validation and persistence in
+its receipt transaction. `imported_create_is_atomic_idempotent_and_readable` uses
+the real `ThreadCreate` builder, reads the provider record through
+`thread_projection`, and executes timeline and queue readers. A repeated command
+creates one binding; a mismatched native driver leaves no thread. This closes the
+create-import gap, without claiming native execution recovery or promoting
+`dispatchCommand` past its documented uncertain-delivery boundary.

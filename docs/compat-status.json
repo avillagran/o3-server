@@ -139,7 +139,7 @@
     "orchestration.dispatchCommand": {
       "status": "partial",
       "priority": "P0",
-      "note": "Partial after independent audit: actual client Command/approval/queue/timeline/sidebar/awareness readers now execute on server output; acceptForSession survives actual idle reap; semantic title generation honors settings and guarded completion. Remaining: importedNativeThread on thread.create and durable-versus-native control delivery boundary; no clean reader sweep for promotion. See CONFORMANCE.md."
+      "note": "Partial after independent audit: actual client Command/approval/queue/timeline/sidebar/awareness readers now execute on server output; acceptForSession survives actual idle reap; semantic title generation honors settings and guarded completion. Imported native references on thread.create now share launch validation and atomic persistence, exercised with ThreadCreate and real projection/timeline/queue readers. Remaining: durable-versus-native control delivery boundary; no clean reader sweep for promotion. See CONFORMANCE.md."
     },
     "orchestration.getArchivedShellSnapshot": {
       "status": "partial",
