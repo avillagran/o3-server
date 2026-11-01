@@ -25,7 +25,8 @@ fn private_npm_install_and_pinned_update_drive_real_provider_reader() {
     std::fs::write(bin.join("npm"),r#"#!/usr/bin/python3
 import sys,pathlib,json,os
 args=sys.argv[1:]
-assert args[:4]==['--userconfig','/dev/null','--globalconfig','/dev/null'],args
+assert args[0]=='--userconfig' and args[2]=='--globalconfig' and args[1]!=args[3],args
+assert pathlib.Path(args[1]).read_text()==pathlib.Path(args[3]).read_text()==''
 assert args[4]=='--cache' and args[6:8]==['install','--prefix'],args
 assert args[9:12]==['--ignore-scripts','--no-audit','--no-fund'],args
 assert args[12] in ['@openai/codex@latest','@openai/codex@2.0.0'],args

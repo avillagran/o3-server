@@ -397,24 +397,24 @@
       "note": "No client call site in inventory."
     },
     "provider.install.cancel": {
-      "status": "skip",
+      "status": "partial",
       "priority": "P2",
-      "note": "o3-server does not download or unpack provider CLIs (needs an HTTPS client and archive handling); answers ProviderSetupError and the capability stays off. Install the CLI on the server yourself."
+      "note": "Managed built-in npm installs use private versioned prefixes and isolated config; a successful --version matching package metadata is required before settings change. Real-client install/update and provider reader coverage; opt-in real npm installs both CLIs. Removal and external/custom installs remain unavailable."
     },
     "provider.install.remove": {
       "status": "skip",
       "priority": "P2",
-      "note": "o3-server does not download or unpack provider CLIs (needs an HTTPS client and archive handling); answers ProviderSetupError and the capability stays off. Install the CLI on the server yourself."
+      "note": "Managed version removal is unavailable; old prefixes are retained. Existing external installations are never removed."
     },
     "provider.install.start": {
-      "status": "skip",
+      "status": "partial",
       "priority": "P2",
-      "note": "o3-server does not download or unpack provider CLIs (needs an HTTPS client and archive handling); answers ProviderSetupError and the capability stays off. Install the CLI on the server yourself."
+      "note": "Managed built-in npm installs use private versioned prefixes and isolated config; a successful --version matching package metadata is required before settings change. Real-client install/update and provider reader coverage; opt-in real npm installs both CLIs. Removal and external/custom installs remain unavailable."
     },
     "provider.install.subscribe": {
-      "status": "done",
+      "status": "partial",
       "priority": "P2",
-      "note": "tests/provider_setup.rs: reports the CLI found on PATH (installedVersion, source local, canRemove false); phase stays idle because o3-server never downloads provider CLIs."
+      "note": "Managed built-in npm installs use private versioned prefixes and isolated config; a successful --version matching package metadata is required before settings change. Real-client install/update and provider reader coverage; opt-in real npm installs both CLIs. Removal and external/custom installs remain unavailable."
     },
     "provider.uploadFeedback": {
       "status": "skip",

@@ -88,7 +88,9 @@ pub fn decorate(s: &State, config: &mut Value) {
                         == path.to_string_lossy().as_ref()
                 })
         });
-        let installable = matches!(id, "codex" | "claudeAgent") && which("npm").is_some();
+        let installable = matches!(id, "codex" | "claudeAgent")
+            && which("npm").is_some()
+            && which("node").is_some();
         p["setup"] =
             json!({"canAuthenticate":supported&&installed,"canInstall":installable&&!installed});
         if !p["auth"].is_object() {
@@ -1084,6 +1086,9 @@ async fn start_managed(s: &Arc<State>, id: &str, version: Option<&str>) -> Reply
         )
     })?;
     let npm = which("npm").ok_or_else(|| setup_error(id, "install", "npm is unavailable"))?;
+    if which("node").is_none() {
+        return Err(setup_error(id, "install", "node is unavailable"));
+    }
     let version = version.unwrap_or("latest");
     if version.is_empty()
         || version.len() > 80
@@ -1157,25 +1162,46 @@ async fn start_managed(s: &Arc<State>, id: &str, version: Option<&str>) -> Reply
     let mut final_state = state.clone();
     tokio::spawn(async move {
         let cache = s.dir.join("npm-cache");
+        let user_config = prefix.join("npm-user.conf");
+        let global_config = prefix.join("npm-global.conf");
+        let configs_ready = std::fs::write(&user_config, "")
+            .and_then(|_| std::fs::write(&global_config, ""))
+            .is_ok();
+        let claude_config = prefix.join("claude-config");
+        let xdg_cache = prefix.join("cache");
+        let environment = [
+            ("HOME", prefix.as_path()),
+            ("CLAUDE_CONFIG_DIR", claude_config.as_path()),
+            ("XDG_CACHE_HOME", xdg_cache.as_path()),
+        ];
         let args = vec![
             "--userconfig".into(),
-            "/dev/null".into(),
+            user_config.to_string_lossy().into_owned(),
             "--globalconfig".into(),
-            "/dev/null".into(),
+            global_config.to_string_lossy().into_owned(),
             "--cache".into(),
             cache.to_string_lossy().into_owned(),
             "install".into(),
             "--prefix".into(),
             prefix.to_string_lossy().into_owned(),
-            "--ignore-scripts".into(),
+            if id == "claudeAgent" {
+                "--ignore-scripts=false"
+            } else {
+                "--ignore-scripts"
+            }
+            .into(),
             "--no-audit".into(),
             "--no-fund".into(),
             package,
         ];
         let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        let result = tokio::select! {
-            _=cancel.notified()=>None,
-            r=crate::proc::run(npm.to_str().unwrap_or("npm"),&prefix,&refs,crate::proc::Opts{timeout:Duration::from_secs(300),cap:OUTPUT_CAP,allow_truncate:true},&[])=>Some(r),
+        let result = if !configs_ready {
+            None
+        } else {
+            tokio::select! {
+                _=cancel.notified()=>None,
+                r=crate::proc::run(npm.to_str().unwrap_or("npm"),&prefix,&refs,crate::proc::Opts{timeout:Duration::from_secs(300),cap:OUTPUT_CAP,allow_truncate:true},&environment)=>Some(r),
+            }
         };
         final_state["phase"] = json!(match &result {
             None => "cancelled",
@@ -1196,13 +1222,40 @@ async fn start_managed(s: &Arc<State>, id: &str, version: Option<&str>) -> Reply
                 .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
                 .and_then(|v| v["version"].as_str().map(str::to_owned));
             if let Some(version) = version {
-                final_state["version"] = json!(version);
+                let runnable = crate::proc::run(
+                    binary.to_str().unwrap_or(""),
+                    &prefix,
+                    &["--version"],
+                    crate::proc::Opts {
+                        timeout: Duration::from_secs(20),
+                        cap: 4096,
+                        allow_truncate: false,
+                    },
+                    &environment,
+                )
+                .await
+                .is_ok_and(|o| {
+                    o.ok() && !o.truncated && String::from_utf8_lossy(&o.stdout).contains(&version)
+                });
+                if runnable {
+                    final_state["version"] = json!(version);
+                } else {
+                    final_state["phase"] = json!("failed");
+                }
             } else {
                 final_state["phase"] = json!("failed");
             }
         }
         if final_state["phase"] == "succeeded" {
-            let patch = json!({"patch":{"providerInstances":{id.clone():{"driver":id,"enabled":true,"config":{"binaryPath":binary}}}}});
+            let mut instances = crate::settings::read(&s)
+                .ok()
+                .and_then(|v| v["providerInstances"].as_object().cloned())
+                .unwrap_or_default();
+            let instance = instances.entry(id.clone()).or_insert_with(|| json!({}));
+            instance["driver"] = json!(id);
+            instance["enabled"] = json!(true);
+            instance["config"]["binaryPath"] = json!(binary);
+            let patch = json!({"patch":{"providerInstances":instances}});
             if crate::settings::update(&s, &patch).is_err() {
                 final_state["phase"] = json!("failed");
             } else {

@@ -972,7 +972,7 @@ remain partial until all client-read gaps have effect coverage.
   explicitly report the browser setting and project override as unavailable. The
   added support fields are not proof that existing clients hide the control.
 - Missing built-in CLIs can be installed with npm under versioned data-directory
-  prefixes, scripts disabled. Updates switch the configured binary after success;
+  prefixes, with distinct empty npm config files and isolated HOME/cache. Codex scripts stay disabled; Claude native setup runs within its private prefix. A matching successful --version is mandatory. Updates switch the configured binary after success;
   old executables remain intact. Missing built-ins also accept pinned installation.
   Managed install/pinned-update argv and the real
   provider reader are tested. External/custom installations are not replaced;
