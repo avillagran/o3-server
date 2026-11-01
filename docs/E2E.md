@@ -269,3 +269,23 @@ Final validation: 151 default-feature tests and 149 no-default-feature tests pas
 configurations, as do fmt and compatibility generation. `tools/bench-rss` completed:
 VmHWM 16,236 KiB (16.63 MB), bridge enabled, 20 threads, three subscribers and
 1,000 seeded messages; native inference excluded from that RSS workload.
+
+## Independent audit implementation follow-up (2026-11-01)
+
+The current pinned lib-t3-rust readers/builders run against actual server commands:
+162 tests pass with defaults and 160 without defaults (six opt-ins ignored in each).
+Both strict all-target Clippy configurations, fmt, diff and compatibility generation
+pass. The final single-element test-loop lint was corrected and that test rerun in
+both configurations before accepting the Clippy results.
+
+`tools/live-chat-e2e` completes fresh short authenticated Claude and Codex turns
+through the real Connection in isolated profiles. This does not claim live native
+title-generation or approval coverage; those contracts use deterministic native
+peers and actual shared readers in title_generation/session_approvals tests.
+
+`tools/bench-rss` completes at 15,192 KiB HWM = 15.56 MB, below 50 MB decimal:
+bridge enabled, 20 threads, 1,000 messages, three subscribers and 1,000 unary calls;
+inference excluded. Aggregate samples and the release binary digest are retained
+in `rss-orchestration.json`. No compatibility row was promoted: the reader sweep
+still has the consumed gaps listed in CONFORMANCE.md. No emulator, service, public
+route, pilot state or active T3 profile was used by these validation runs.

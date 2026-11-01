@@ -755,11 +755,12 @@ attachment/file uploads and inline context (`asset_kinds`, `provider_input`), PR
 reads/checks/stack actions (`pull_requests`, `vcs_compat`), settlement and ordering
 (`thread_commands`), storage/scoped settings (`client_readers`), quota/themes
 (`server_config`), OTLP probes (`admin_reads`) and command output (`command_output`).
-The real scoped writer now writes and resolves a project override, changes the
-worktree directory and storage policy, and invokes cleanup. These are gate and
-round-trip evidence, not complete policy-effect evidence: manual cleanup still
-only removes old logs, so storage policy/worktree collection remains a consumed
-gap and the config/settings rows remain partial.
+The real scoped writer now writes and resolves a project override and changes the
+worktree directory; cleanup invocation is also exercised. The final reader sweep
+keeps `storageCleanup` and `projectWorktreeCleanup` explicitly false: their policies
+only round trip and manual cleanup only removes old logs. `storageCleanupRun` and
+`worktreesDirectory` are true. Policy/worktree collection remains a consumed gap;
+config/settings rows remain partial.
 
 ### Provider setup reader closure
 
@@ -798,3 +799,17 @@ and verifies refresh-driven version changes via `provider_instances::projection`
 An accelerated custom interval fires; zero stops it; restoring it restarts it.
 Battery/performance resolve to 900,000/60,000 ms respectively. This does not claim
 automatic git fetch or host-power monitoring; those settings remain an open gap.
+
+### Final independent-audit follow-up
+
+Both inventory tools scan all text file types, hidden/ignored files, bindings and
+data, in deterministic path order. Config inventory also discovers the descriptor
+keys, avoiding a stale capability allowlist. Fixture/descriptor matches are only
+candidates and do not establish production consumption.
+
+No demoted row is promoted by this follow-up. The reader sweep is **not clean for
+promotion**: storage/worktree policy execution, latest-version checks, automatic
+git/power activity, source-control/review generation settings, and imported native
+references on `thread.create` still need closure. Durable control receipts also
+retain the documented delivery-uncertain boundary. `subscribeThread` keeps its
+prior status; no new concurrent multi-record equivalence is claimed here.

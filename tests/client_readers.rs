@@ -93,12 +93,7 @@ fn real_builders_and_readers_consume_server_output() {
     )["fields"]
         .is_array());
     assert!(t3_protocol::storage_settings::capabilities(&config).is_object());
-    for key in [
-        "storageCleanup",
-        "storageCleanupRun",
-        "worktreesDirectory",
-        "projectWorktreeCleanup",
-    ] {
+    for key in ["storageCleanupRun", "worktreesDirectory"] {
         assert_eq!(
             t3_protocol::storage_settings::capabilities(&config)[key],
             true,
@@ -117,10 +112,8 @@ fn real_builders_and_readers_consume_server_output() {
     let saved = c.rpc("server.updateSettings", patch).unwrap();
     let (effective, _, _) = t3_protocol::scoped_settings::effective(&saved, Some(&project), None);
     assert_eq!(effective["sidebarAutoSettleAfterDays"], 7);
-    for (key, value) in [
-        ("worktreesDirectory", json!(s.dir.join("trees"))),
-        ("storageCleanup.logsAfterDays", json!(14)),
-    ] {
+    {
+        let (key, value) = ("worktreesDirectory", json!(s.dir.join("trees")));
         let patch = t3_protocol::scoped_settings::write_patch(
             &json!({"action":"update","key":key,"value":value}),
             &config,
@@ -131,7 +124,28 @@ fn real_builders_and_readers_consume_server_output() {
         .unwrap();
         c.rpc("server.updateSettings", patch).unwrap();
     }
+    assert_eq!(
+        t3_protocol::storage_settings::capabilities(&config)["storageCleanup"],
+        false
+    );
+    assert_eq!(
+        t3_protocol::storage_settings::capabilities(&config)["projectWorktreeCleanup"],
+        false
+    );
+    assert!(t3_protocol::scoped_settings::write_patch(
+        &json!({"action":"update","key":"storageCleanup.logsAfterDays","value":14}),
+        &config,
+        &raw,
+        None,
+        true
+    )
+    .is_err());
     c.rpc("server.runStorageCleanup", json!({})).unwrap();
+    orchestration::dispatch(
+        &c,
+        &Command::sidebar("unsettle", "unsettle", "t", None).unwrap(),
+    )
+    .unwrap();
     use orchestration::{DispatchMode, MessageDispatch};
     orchestration::dispatch(
         &c,
@@ -157,6 +171,44 @@ fn real_builders_and_readers_consume_server_output() {
         assert!(std::time::Instant::now() < deadline);
         std::thread::sleep(std::time::Duration::from_millis(10));
     };
+    let timeline =
+        t3_protocol::timeline::view(&p, &json!({}), &timeline::Render::neutral(false)).unwrap();
+    assert!(timeline["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|m| m["id"] == "m" && m["recallableText"] == "Reader message"));
+    let stop = std::cell::Cell::new(false);
+    let mut snap = Value::Null;
+    c.subscribe(
+        "orchestration.subscribeShell",
+        json!({}),
+        || stop.get(),
+        |v| {
+            if let Some(v) = v {
+                snap = v["snapshot"].clone();
+                stop.set(true);
+            }
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        t3_protocol::sidebar::view::rows(&snap, "env", 0).unwrap()[0]["reason"],
+        "request"
+    );
+    let envs = vec![json!({"id":"env","state":"ready","shell":snap})];
+    let awareness = t3_protocol::awareness::view(&t3_protocol::awareness::Input {
+        environments: &envs,
+        now: 0,
+        baseline: None,
+        on_screen: None,
+        preferences: Default::default(),
+        lifecycle: "cold",
+        locale: "en",
+    })
+    .unwrap();
+    assert_eq!(awareness["card"]["phase"], "waiting_for_approval");
     let pending = t3_protocol::approvals::pending(&p);
     assert_eq!(pending[0]["responseCapability"], "live");
     let mut queued = MessageDispatch::new("queue", "t", "q", "Queued message", "web");

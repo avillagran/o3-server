@@ -24,14 +24,14 @@ def differences(a,b):
 for row in report['results']:
     if row['surface'] in methods: differences(row['o3'],row['upstream'])
 roots=[root.parent/name for name in ['lib-t3-rust','omarchy-t3-code','ot3-android']]
-lines=['# P0/P1 field consumer audit','', 'Source: retained nightly 3991 shape report; not a new differential run. Grep includes camelCase, PascalCase, snake_case and kebab-case spellings in client sources. Hits are candidates, not proof of a read; accepted exceptions are reviewed in CONFORMANCE.md.','', '| Field | lib-t3-rust | desktop | Android |','|---|---|---|---|']
+lines=['# P0/P1 field consumer audit','', 'Source: retained nightly 3991 shape report; not a new differential run. Grep scans all text file types, including hidden/ignored source files and bindings/data, using camelCase, PascalCase, snake_case and kebab-case spellings. Hits are candidates, not proof of a read; accepted exceptions are reviewed in CONFORMANCE.md.','', '| Field | lib-t3-rust | desktop | Android |','|---|---|---|---|']
 for field in sorted(fields-{'items','error','projection','snapshot'}):
     cells=[]
     for path in roots:
-        sources=[path/p for p in ['src','ui','bindings','app/src/main','core/src/main','t3-lib/src/main'] if (path/p).is_dir()]
+        sources=[path/p for p in ['src','ui','bindings','data','app/src/main','core/src/main','t3-lib/src/main'] if (path/p).is_dir()]
         if not sources: raise RuntimeError(f'no source roots: {path}')
         variants={field,field[:1].upper()+field[1:],re.sub(r'(?<!^)(?=[A-Z])','_',field).lower(),re.sub(r'(?<!^)(?=[A-Z])','-',field).lower()}
-        r=subprocess.run(['rg','-l','-e','|'.join(map(re.escape,sorted(variants))),*map(str,sources),'--glob','*.rs','--glob','*.qml','--glob','*.kt'],capture_output=True,text=True)
+        r=subprocess.run(['rg','-l','-e','|'.join(map(re.escape,sorted(variants))),*map(str,sources),'--no-ignore','--hidden','--sort','path'],capture_output=True,text=True)
         if r.returncode not in (0,1): raise RuntimeError(r.stderr)
         files=r.stdout.splitlines()
         cells.append(', '.join('`'+str(pathlib.Path(f).relative_to(path))+'`' for f in files[:3])+(' …' if len(files)>3 else '') if files else 'no match')

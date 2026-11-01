@@ -71,6 +71,11 @@ fn custom_instances_route_native_binary_environment_and_home_and_reconfigure() {
             .iter()
             .find(|p| p["instanceId"] == id)
             .unwrap();
+        assert!(t3_protocol::models::catalog(&config)["models"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m["instanceId"] == id && m["available"] == true));
         let native =
             t3_protocol::provider_instances::projection(&config["settings"], &config, true);
         let row = native["instances"]

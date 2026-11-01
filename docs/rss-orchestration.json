@@ -1,41 +1,41 @@
 {
-  "measured_at_utc": "2026-11-01T09:38:34Z",
-  "binary_sha256": "4e24de5a5e45b5665df438961773ae0e9ae1353b3b5dc99b17d4ce30d102f477",
-  "binary_bytes": 12947128,
+  "measured_at_utc": "2026-11-01T10:20:28Z",
+  "binary_sha256": "b172f050a84a088251717f54df658191ffa91b6f8710f49591ee48d97af8886e",
+  "binary_bytes": 12979832,
   "seed_messages": 1000,
   "threads": 20,
   "subscribers": 3,
   "unary_calls": 1000,
   "text_bytes_per_message": 1000,
   "cold_kib": {
-    "VmHWM": 9540,
-    "VmRSS": 9540,
-    "RssAnon": 948,
-    "RssFile": 8592,
+    "VmHWM": 11408,
+    "VmRSS": 11408,
+    "RssAnon": 1132,
+    "RssFile": 10276,
     "THP_enabled": 0,
     "Threads": 4
   },
   "seeded_kib": {
-    "VmHWM": 14148,
-    "VmRSS": 14120,
-    "RssAnon": 2072,
-    "RssFile": 12048,
+    "VmHWM": 15056,
+    "VmRSS": 14244,
+    "RssAnon": 2240,
+    "RssFile": 12004,
     "THP_enabled": 0,
     "Threads": 5
   },
   "subscribed_kib": {
-    "VmHWM": 15804,
-    "VmRSS": 15004,
-    "RssAnon": 2828,
-    "RssFile": 12176,
+    "VmHWM": 15192,
+    "VmRSS": 15016,
+    "RssAnon": 2948,
+    "RssFile": 12068,
     "THP_enabled": 0,
     "Threads": 6
   },
   "after_churn_kib": {
-    "VmHWM": 15804,
-    "VmRSS": 14968,
-    "RssAnon": 2792,
-    "RssFile": 12176,
+    "VmHWM": 15192,
+    "VmRSS": 14980,
+    "RssAnon": 2912,
+    "RssFile": 12068,
     "THP_enabled": 0,
     "Threads": 6
   },
@@ -55,12 +55,11 @@
     {
       "instanceId": "codex",
       "installed": true,
-      "status": "warning"
+      "status": "error"
     }
   ],
   "bridge_enabled": true,
   "gateway_hosting": false,
   "provider_workload": "registered and probed; inference excluded (defer_start)",
-  "measurement": "Linux /proc/PID/status; disk profile under /var/tmp",
-  "allocator_env": {}
+  "measurement": "Linux /proc/PID/status; disk profile under /var/tmp"
 }
