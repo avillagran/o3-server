@@ -71,6 +71,19 @@ fn custom_instances_route_native_binary_environment_and_home_and_reconfigure() {
             .iter()
             .find(|p| p["instanceId"] == id)
             .unwrap();
+        let native =
+            t3_protocol::provider_instances::projection(&config["settings"], &config, true);
+        let row = native["instances"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["id"] == id)
+            .unwrap();
+        assert_eq!(row["canAuthenticate"], true);
+        assert_eq!(row["canLogout"], true);
+        assert_eq!(row["canInstall"], false);
+        assert_eq!(row["canUpdate"], driver == "claudeAgent");
+        assert_eq!(row["versionStatus"], "unknown");
         assert!(
             provider["skills"]
                 .as_array()

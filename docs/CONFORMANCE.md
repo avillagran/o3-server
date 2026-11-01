@@ -759,3 +759,13 @@ worktree directory and storage policy, and invokes cleanup. These are gate and
 round-trip evidence, not complete policy-effect evidence: manual cleanup still
 only removes old logs, so storage policy/worktree collection remains a consumed
 gap and the config/settings rows remain partial.
+
+### Provider setup reader closure
+
+The real `provider_instances::projection` is asserted for configured Claude/Codex
+instances: sign-in/logout are enabled only for installed supported drivers,
+Claude exposes its native updater, and install remains false (the RPC explicitly
+rejects managed installation). Version status is truthfully `unknown`, retaining
+the installed version without inventing a latest version. Update state transitions
+through running and succeeded/failed. Latest-version background checks remain an
+open settings gap; capability gating is not an accepted substitute for that work.

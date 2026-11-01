@@ -61,12 +61,32 @@ struct Flow {
 pub struct Registry {
     flows: Mutex<HashMap<String, Flow>>,
     version: AtomicU64,
+    updates: Mutex<HashMap<String, Value>>,
 }
 
 impl Registry {
     fn touch(&self, s: &State) {
         self.version.fetch_add(1, Ordering::Relaxed);
         bump(&s.streams.changed);
+    }
+}
+
+/// Only advertise setup operations that this server can actually execute.
+pub fn decorate(s: &State, config: &mut Value) {
+    for p in config["providers"].as_array_mut().into_iter().flatten() {
+        let supported = matches!(p["driver"].as_str(), Some("claudeAgent" | "codex"));
+        let installed = p["installed"] == true;
+        p["setup"] = json!({"canAuthenticate":supported&&installed,"canInstall":false});
+        if !p["auth"].is_object() {
+            p["auth"] = json!({"status":"unknown"});
+        }
+        p["auth"]["canLogout"] = json!(supported && installed);
+        p["versionAdvisory"] = json!({"status":"unknown","currentVersion":p["version"],"latestVersion":null,
+            "updateCommand":if p["driver"]=="claudeAgent" {json!("claude update")}else{Value::Null},
+            "canUpdate":p["driver"]=="claudeAgent"&&installed,"canInstallVersion":false,
+            "checkedAt":p["checkedAt"],"message":"Latest-version lookup is unavailable; installed version is reported by the native CLI."});
+        p["updateState"]=s.streams.p2.setup.updates.lock().unwrap().get(p["instanceId"].as_str().unwrap_or("")).cloned()
+            .unwrap_or(json!({"status":"idle","startedAt":null,"finishedAt":null,"message":null,"output":null}));
     }
 }
 
@@ -619,9 +639,13 @@ async fn update_provider(s: &Arc<State>, p: &Value) -> Reply {
     if d.kind != "claudeAgent" {
         return Err(fail("the instance does not use the Claude driver"));
     }
-    let (code, text) = run_quiet(&d, &["update"], Duration::from_secs(300))
-        .await
-        .ok_or_else(|| fail("`claude update` did not finish"))?;
+    let started = iso(now_ms());
+    s.streams.p2.setup.updates.lock().unwrap().insert(instance.into(),json!({"status":"running","startedAt":started,"finishedAt":null,"message":null,"output":null}));
+    s.notify();
+    let result = run_quiet(&d, &["update"], Duration::from_secs(300)).await;
+    s.streams.p2.setup.updates.lock().unwrap().insert(instance.into(),json!({"status":if result.as_ref().is_some_and(|(code,_)|*code==0){"succeeded"}else{"failed"},"startedAt":started,"finishedAt":iso(now_ms()),"message":null,"output":result.as_ref().map(|(_,text)|text.chars().take(10000).collect::<String>())}));
+    s.notify();
+    let (code, text) = result.ok_or_else(|| fail("`claude update` did not finish"))?;
     if code != 0 {
         return Err(fail(
             text.trim()
