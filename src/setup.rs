@@ -1,8 +1,7 @@
 //! Provider setup: `provider.auth.*`, `provider.install.*`, `server.updateProvider` and the ACP
 //! registry reads. Sign-in drives the vendor CLI (`claude auth login`, `codex login --device-auth`)
-//! as a child process owned by a task that exists only while a flow runs. o3-server never downloads
-//! or installs provider CLIs: `provider.install.start/remove` answer `ProviderSetupError` and the
-//! install state reports what is on `PATH` (or the instance's `binaryPath`).
+//! as a child process owned by a task that exists only while a flow runs. Built-in missing CLIs
+//! may be installed in versioned data-directory prefixes; existing external CLIs are never replaced.
 use crate::{
     p2::{invalid, str_field, Reply},
     store::{iso, now_ms, random_id, State},
@@ -63,6 +62,8 @@ pub struct Registry {
     version: AtomicU64,
     updates: Mutex<HashMap<String, Value>>,
     versions: Mutex<HashMap<String, Value>>,
+    installs: Mutex<HashMap<String, Value>>,
+    install_cancels: Mutex<HashMap<String, Arc<Notify>>>,
 }
 
 impl Registry {
@@ -77,14 +78,26 @@ pub fn decorate(s: &State, config: &mut Value) {
     for p in config["providers"].as_array_mut().into_iter().flatten() {
         let supported = matches!(p["driver"].as_str(), Some("claudeAgent" | "codex"));
         let installed = p["installed"] == true;
-        p["setup"] = json!({"canAuthenticate":supported&&installed,"canInstall":false});
+        let id = p["instanceId"].as_str().unwrap_or("");
+        let managed = managed_binary(s, id).is_some_and(|path| {
+            p["executablePath"]
+                .as_str()
+                .is_some_and(|v| std::path::Path::new(v) == path)
+                || crate::settings::read(s).ok().is_some_and(|v| {
+                    v["providerInstances"][id]["config"]["binaryPath"]
+                        == path.to_string_lossy().as_ref()
+                })
+        });
+        let installable = matches!(id, "codex" | "claudeAgent") && which("npm").is_some();
+        p["setup"] =
+            json!({"canAuthenticate":supported&&installed,"canInstall":installable&&!installed});
         if !p["auth"].is_object() {
             p["auth"] = json!({"status":"unknown"});
         }
         p["auth"]["canLogout"] = json!(supported && installed);
         p["versionAdvisory"] = json!({"status":"unknown","currentVersion":p["version"],"latestVersion":null,
-            "updateCommand":if p["driver"]=="claudeAgent" {json!("claude update")}else{Value::Null},
-            "canUpdate":p["driver"]=="claudeAgent"&&installed,"canInstallVersion":false,
+            "updateCommand":if managed&&installable {json!("Managed provider update")}else if p["driver"]=="claudeAgent" {json!("claude update")}else{Value::Null},
+            "canUpdate":installed&&(p["driver"]=="claudeAgent"||managed&&installable),"canInstallVersion":managed&&installable,
             "checkedAt":p["checkedAt"],"message":"Latest-version lookup is unavailable; installed version is reported by the native CLI."});
         if let Some(advisory) = s
             .streams
@@ -311,19 +324,44 @@ pub async fn call(s: &Arc<State>, tag: &str, p: &Value) -> Reply {
         "provider.auth.respond" => auth_respond(s, p).await,
         "provider.auth.cancel" => auth_cancel(s, p),
         "provider.auth.logout" => auth_logout(s, p).await,
-        "provider.install.start" | "provider.install.remove" => {
+        "provider.install.start" => {
             let instance = instance_id(p)?;
-            let verb = if tag.ends_with("start") {
-                "installed"
-            } else {
-                "removed"
-            };
-            Err(setup_error(instance, tag, &format!("o3-server does not manage provider CLI installs; provider CLIs cannot be {verb} remotely. Install the CLI on the server yourself.")))
+            if driver(s, instance, "install")
+                .is_ok_and(|d| crate::executable::resolve(&d.binary).is_some())
+            {
+                return Err(setup_error(
+                    instance,
+                    tag,
+                    "An installed CLI is already configured; use update instead.",
+                ));
+            }
+            start_managed(s, instance, None).await
         }
+        "provider.install.remove" => Err(setup_error(
+            instance_id(p)?,
+            tag,
+            "Managed removal is unavailable; no existing CLI is deleted.",
+        )),
         "provider.install.cancel" => {
-            let instance = instance_id(p)?;
-            str_field(p, "operationId")?;
-            install_state(s, instance).await
+            let id = instance_id(p)?;
+            let operation = str_field(p, "operationId")?;
+            let state = s
+                .streams
+                .p2
+                .setup
+                .installs
+                .lock()
+                .unwrap()
+                .get(id)
+                .cloned()
+                .ok_or_else(|| setup_error(id, tag, "No installation is running"))?;
+            if state["operationId"] != operation {
+                return Err(setup_error(id, tag, "Unknown installation operation"));
+            }
+            if let Some(cancel) = s.streams.p2.setup.install_cancels.lock().unwrap().get(id) {
+                cancel.notify_one();
+            }
+            Ok(state)
         }
         "server.updateProvider" => update_provider(s, p).await,
         "server.searchAcpRegistry" => search_registry(p).await,
@@ -663,42 +701,6 @@ async fn auth_logout(s: &Arc<State>, p: &Value) -> Reply {
 
 // ---- install state ------------------------------------------------------------------------
 
-async fn install_state(s: &Arc<State>, instance: &str) -> Reply {
-    let d = match driver(s, instance, "install.state") {
-        Ok(d) => d,
-        Err(e) => {
-            // A missing CLI is a state, not a failure.
-            let detail = e["detail"].as_str().unwrap_or("");
-            if detail.contains("not installed") {
-                let kind = if instance == "codex" {
-                    "codex"
-                } else {
-                    "claudeAgent"
-                };
-                return Ok(install_json(kind, None, None, detail));
-            }
-            return Err(e);
-        }
-    };
-    let version = run_quiet(&d, &["--version"], Duration::from_secs(10))
-        .await
-        .and_then(|(code, text)| {
-            (code == 0)
-                .then(|| {
-                    text.split_whitespace()
-                        .find(|w| w.chars().next().is_some_and(|c| c.is_ascii_digit()))
-                        .map(str::to_owned)
-                })
-                .flatten()
-        });
-    Ok(install_json(
-        d.kind,
-        Some(&d.binary),
-        version,
-        "Installed outside o3-server.",
-    ))
-}
-
 fn install_json(
     driver: &str,
     path: Option<&PathBuf>,
@@ -715,6 +717,44 @@ fn install_json(
 async fn update_provider(s: &Arc<State>, p: &Value) -> Reply {
     let provider = str_field(p, "provider")?;
     let fail = |reason: &str| json!({"_tag":"ServerProviderUpdateError","provider":provider,"reason":reason,"message":format!("Provider update failed for {provider}: {reason}")});
+    let instance = p["instanceId"].as_str().unwrap_or(provider);
+    let settings = crate::settings::read(s).map_err(|e| fail(&e))?;
+    if managed_binary(s, instance).is_some_and(|path| {
+        settings["providerInstances"][instance]["config"]["binaryPath"]
+            == path.to_string_lossy().as_ref()
+    }) {
+        let mut changes = s.streams.changed.subscribe();
+        start_managed(s, instance, p["targetVersion"].as_str())
+            .await
+            .map_err(|e| fail(e["detail"].as_str().unwrap_or("managed update failed")))?;
+        loop {
+            let state = s
+                .streams
+                .p2
+                .setup
+                .installs
+                .lock()
+                .unwrap()
+                .get(instance)
+                .cloned()
+                .unwrap_or(Value::Null);
+            match state["phase"].as_str() {
+                Some("succeeded") => {
+                    return Ok(
+                        json!({"providers":s.provider.lock().unwrap().as_ref().map(|p|p.config()).unwrap_or_default()}),
+                    )
+                }
+                Some("failed" | "cancelled") => {
+                    return Err(fail("Managed provider update did not complete"))
+                }
+                _ => {}
+            }
+            changes
+                .changed()
+                .await
+                .map_err(|_| fail("Server stopped during update"))?;
+        }
+    }
     if provider != "claudeAgent" {
         return Err(fail("o3-server can only update the Claude CLI (`claude update`); update this provider with its package manager"));
     }
@@ -936,10 +976,22 @@ impl Cursor {
         self.seen = Some(version);
         self.waiting = true;
         if self.install {
+            if let Some(value) = s
+                .streams
+                .p2
+                .setup
+                .installs
+                .lock()
+                .unwrap()
+                .get(&self.instance)
+                .cloned()
+            {
+                return Step::Values(vec![value]);
+            }
             // The CLI version probe is a subprocess; do it off the socket loop.
             let _ = &self.pending;
             let d = driver(s, &self.instance, "subscribe");
-            let state = match d {
+            let mut state = match d {
                 Ok(d) => {
                     let version = std::process::Command::new(&d.binary)
                         .envs(d.environment.iter().cloned())
@@ -972,6 +1024,13 @@ impl Cursor {
                     e["detail"].as_str().unwrap_or("Not installed."),
                 ),
             };
+            if state["executablePath"]
+                .as_str()
+                .is_some_and(|p| std::path::Path::new(p).starts_with(s.dir.join("provider-clis")))
+            {
+                state["source"] = json!("managed");
+                state["message"] = json!("Managed provider CLI");
+            }
             return Step::Values(vec![state]);
         }
         match driver(s, &self.instance, "subscribe") {
@@ -988,4 +1047,190 @@ impl Cursor {
     pub fn is_full(&self) -> bool {
         self.waiting
     }
+}
+
+fn managed_binary(s: &State, id: &str) -> Option<PathBuf> {
+    let name = match id {
+        "codex" => "codex",
+        "claudeAgent" => "claude",
+        _ => return None,
+    };
+    let root = s.dir.join("provider-clis").join(id);
+    if let Some(path) = crate::settings::read(s).ok().and_then(|v| {
+        v["providerInstances"][id]["config"]["binaryPath"]
+            .as_str()
+            .map(PathBuf::from)
+    }) {
+        if path.starts_with(&root) && path.ends_with(format!("node_modules/.bin/{name}")) {
+            return Some(path);
+        }
+    }
+    Some(root.join("node_modules/.bin").join(name))
+}
+async fn start_managed(s: &Arc<State>, id: &str, version: Option<&str>) -> Reply {
+    let _identity = managed_binary(s, id).ok_or_else(|| {
+        setup_error(
+            id,
+            "install",
+            "Only built-in provider identities support managed installation",
+        )
+    })?;
+    let npm = which("npm").ok_or_else(|| setup_error(id, "install", "npm is unavailable"))?;
+    let version = version.unwrap_or("latest");
+    if version.is_empty()
+        || version.len() > 80
+        || !version
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b".-".contains(&b))
+    {
+        return Err(setup_error(id, "install", "Invalid provider version"));
+    }
+    let package = format!(
+        "{}@{version}",
+        if id == "codex" {
+            "@openai/codex"
+        } else {
+            "@anthropic-ai/claude-code"
+        }
+    );
+    let operation = random_id().map_err(|e| setup_error(id, "install", &e))?;
+    let prefix = s
+        .dir
+        .join("provider-clis")
+        .join(id)
+        .join("versions")
+        .join(&operation);
+    let binary =
+        prefix
+            .join("node_modules/.bin")
+            .join(if id == "codex" { "codex" } else { "claude" });
+    std::fs::create_dir_all(&prefix).map_err(|e| setup_error(id, "install", &e.to_string()))?;
+    if !prefix
+        .canonicalize()
+        .map_err(|e| setup_error(id, "install", &e.to_string()))?
+        .starts_with(
+            s.dir
+                .canonicalize()
+                .map_err(|e| setup_error(id, "install", &e.to_string()))?,
+        )
+    {
+        return Err(setup_error(
+            id,
+            "install",
+            "Managed directory escapes server data directory",
+        ));
+    }
+
+    let cancel = Arc::new(Notify::new());
+    {
+        let mut running = s.streams.p2.setup.install_cancels.lock().unwrap();
+        if !running.is_empty() {
+            return Err(setup_error(
+                id,
+                "install",
+                "Another managed installation is running",
+            ));
+        }
+        running.insert(id.into(), cancel.clone());
+    }
+    let state = json!({"driver":id,"operationId":operation,"phase":"downloading","downloadedBytes":0,"totalBytes":null,"version":version,"installedVersion":null,"executablePath":null,"source":"managed","canRemove":false,"message":null});
+    s.streams
+        .p2
+        .setup
+        .installs
+        .lock()
+        .unwrap()
+        .insert(id.into(), state.clone());
+    s.streams.p2.setup.updates.lock().unwrap().insert(id.into(),json!({"status":"running","startedAt":iso(now_ms()),"finishedAt":null,"message":null,"output":null}));
+    s.streams.p2.setup.touch(s);
+    s.notify();
+    let s = s.clone();
+    let id = id.to_owned();
+    let mut final_state = state.clone();
+    tokio::spawn(async move {
+        let cache = s.dir.join("npm-cache");
+        let args = vec![
+            "--userconfig".into(),
+            "/dev/null".into(),
+            "--globalconfig".into(),
+            "/dev/null".into(),
+            "--cache".into(),
+            cache.to_string_lossy().into_owned(),
+            "install".into(),
+            "--prefix".into(),
+            prefix.to_string_lossy().into_owned(),
+            "--ignore-scripts".into(),
+            "--no-audit".into(),
+            "--no-fund".into(),
+            package,
+        ];
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let result = tokio::select! {
+            _=cancel.notified()=>None,
+            r=crate::proc::run(npm.to_str().unwrap_or("npm"),&prefix,&refs,crate::proc::Opts{timeout:Duration::from_secs(300),cap:OUTPUT_CAP,allow_truncate:true},&[])=>Some(r),
+        };
+        final_state["phase"] = json!(match &result {
+            None => "cancelled",
+            Some(Ok(o)) if o.ok() && binary.is_file() => "succeeded",
+            _ => "failed",
+        });
+        if final_state["phase"] == "succeeded" {
+            let manifest = prefix
+                .join("node_modules")
+                .join(if id == "codex" {
+                    "@openai/codex"
+                } else {
+                    "@anthropic-ai/claude-code"
+                })
+                .join("package.json");
+            let version = std::fs::read(manifest)
+                .ok()
+                .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+                .and_then(|v| v["version"].as_str().map(str::to_owned));
+            if let Some(version) = version {
+                final_state["version"] = json!(version);
+            } else {
+                final_state["phase"] = json!("failed");
+            }
+        }
+        if final_state["phase"] == "succeeded" {
+            let patch = json!({"patch":{"providerInstances":{id.clone():{"driver":id,"enabled":true,"config":{"binaryPath":binary}}}}});
+            if crate::settings::update(&s, &patch).is_err() {
+                final_state["phase"] = json!("failed");
+            } else {
+                final_state["executablePath"] = json!(binary);
+                final_state["installedVersion"] = final_state["version"].clone();
+            }
+        }
+        final_state["message"] = json!(if final_state["phase"] == "succeeded" {
+            "Managed CLI installed"
+        } else {
+            "Managed installation did not complete; no existing CLI was replaced"
+        });
+        if let Some(update) = s.streams.p2.setup.updates.lock().unwrap().get_mut(&id) {
+            update["status"] = json!(if final_state["phase"] == "succeeded" {
+                "succeeded"
+            } else {
+                "failed"
+            });
+            update["finishedAt"] = json!(iso(now_ms()));
+        }
+        s.streams
+            .p2
+            .setup
+            .installs
+            .lock()
+            .unwrap()
+            .insert(id.clone(), final_state);
+        s.streams
+            .p2
+            .setup
+            .install_cancels
+            .lock()
+            .unwrap()
+            .remove(&id);
+        s.streams.p2.setup.touch(&s);
+        s.notify();
+    });
+    Ok(state)
 }
