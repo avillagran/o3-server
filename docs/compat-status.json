@@ -777,9 +777,9 @@
       "note": "Deferred; client-usage.md inventory."
     },
     "server.removeKeybinding": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "tests/keybindings.rs: upsert/remove persist only the user's rules in keybindings.json (atomic write), T3's 82 default bindings are served and replaced per command, shortcuts/when expressions validated, malformed files reported as issues and never overwritten. getConfig now returns keybindings/issues."
     },
     "server.reportClientActivity": {
       "status": "done",
@@ -842,9 +842,9 @@
       "note": "Connection tests: provider instance create/upsert/remove, redacted environment preservation, entry replacement/null removal, directory history, primitive type checks. Full upstream normalization/model preferences/background policy remain. Real-client tests additionally cover favorite/hidden-model/order mutations, migration fields and folding config.enabled into instance.enabled. Full background/scoped schema normalization remains incomplete."
     },
     "server.upsertKeybinding": {
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
-      "note": "Deferred; client-usage.md inventory."
+      "note": "tests/keybindings.rs: upsert/remove persist only the user's rules in keybindings.json (atomic write), T3's 82 default bindings are served and replaced per command, shortcuts/when expressions validated, malformed files reported as issues and never overwritten. getConfig now returns keybindings/issues."
     },
     "shell.openInEditor": {
       "status": "partial",
