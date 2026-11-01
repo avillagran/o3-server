@@ -60,6 +60,11 @@ fn main() -> std::io::Result<()> {
             _ => return Err(std::io::Error::other("unknown ssh helper")),
         }
     }
+    #[cfg(feature = "bridge")]
+    if args.iter().any(|a| a == "manage" || a == "peers") && option(&args, "--state-dir").is_some()
+    {
+        return o3_server::bridge::cli(&args);
+    }
     let base = o3_server::profile::base_dir(&args)?;
     let dir = base.join("userdata");
     if args.starts_with(&["service".into(), "install".into()]) {

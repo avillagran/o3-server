@@ -54,6 +54,11 @@ impl PairingIssuer for Issuer {
 /// State must be explicit and isolated from any independently running bridge.
 pub async fn start(path: &Path, state: Arc<State>, options: NetOptions) -> anyhow::Result<Node> {
     let store = Store::open(path, "o3-server")?;
+    omabridge::write_document(
+        &path.join("host.json"),
+        &serde_json::json!({"executable": std::env::current_exe()?}),
+        true,
+    )?;
     let reservation = store.reserve_runtime()?;
     let backend = Arc::new(
         omabridge::manage::EmbeddedBackend::new(store.clone(), vec!["t3".into()])
@@ -109,4 +114,54 @@ pub async fn start(path: &Path, state: Arc<State>, options: NetOptions) -> anyho
         }
     }));
     Ok(node)
+}
+
+/// Desktop management facade; never discovers or starts a standalone service.
+pub fn cli(args: &[String]) -> std::io::Result<()> {
+    use std::io::Read;
+    let dir = args
+        .windows(2)
+        .find(|w| w[0] == "--state-dir")
+        .map(|w| Path::new(&w[1]))
+        .ok_or_else(|| std::io::Error::other("state directory required"))?;
+    let store = Store::open(dir, "o3-server").map_err(std::io::Error::other)?;
+    let doc: serde_json::Value =
+        omabridge::read_document(&dir.join("services.json")).map_err(std::io::Error::other)?;
+    if doc["backend"] != "embedded" {
+        return Err(std::io::Error::other("embedded state required"));
+    }
+    if args.iter().any(|a| a == "peers") {
+        println!(
+            "{}",
+            serde_json::json!({"peers":store.peers().map_err(std::io::Error::other)?})
+        );
+        return Ok(());
+    }
+    let mut raw = Vec::new();
+    std::io::stdin().take(65537).read_to_end(&mut raw)?;
+    let request = if raw.len() <= 65536 {
+        serde_json::from_slice(&raw).ok()
+    } else {
+        None
+    };
+    let backend = omabridge::manage::EmbeddedBackend::new(store.clone(), vec!["t3".into()])
+        .map_err(std::io::Error::other)?;
+    let manager = omabridge::manage::Manager::embedded(&store, Arc::new(backend));
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .max_blocking_threads(2)
+        .enable_all()
+        .build()?;
+    let result = match request {
+        Some(v) => runtime.block_on(manager.execute(&v)),
+        None => Err("invalid_command"),
+    };
+    match result {
+        Ok(v) => println!("{v}"),
+        Err(code) => {
+            println!("{}", serde_json::json!({"error":code}));
+            std::process::exit(1);
+        }
+    }
+    Ok(())
 }
