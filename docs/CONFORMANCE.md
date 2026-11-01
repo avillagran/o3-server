@@ -732,3 +732,17 @@ ignores each); strict Clippy in both configurations, fmt, gen-compat and diff ch
 `tools/bench-rss` completed with bridge enabled: HWM 15,804 KiB (16.18 MB), below
 50 MB; 1,000 messages, 20 threads, three subscribers and 1,000 unary calls, inference
 excluded. Sanitized aggregate evidence: [rss-orchestration.json](rss-orchestration.json).
+
+### Reader execution baseline (2026-11-01)
+
+`tests/client_readers.rs` drives a real server with `ThreadLaunch` and `Command`
+from lib-t3-rust origin/main `7cbad5d8198d37e9ded767d33ac03f2cf15875f4`.
+It executes approvals (including the validated response builder), queue, timeline,
+sidebar, awareness, provider_instances, scoped_settings, storage_settings and
+models::catalog on server output. Empty-state checks alone do not establish full
+parity; the five independently demoted rows remain partial.
+
+OmaBridge's old protocol dependency is patched to a small compatibility facade:
+it reexports the same current library (one FFI implementation), retaining only
+its removed MIT bridge_catalog module from `8c80c4d`. No client reader is copied
+or replaced by the facade. The current library is pinned by revision.

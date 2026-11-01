@@ -1,0 +1,9 @@
+[package]
+name = "t3-protocol"
+version = "0.3.4"
+edition = "2021"
+license = "MIT"
+[dependencies]
+current = { package = "t3-protocol", git = "https://github.com/avillagran/lib-t3-rust?o3-reader-pin", rev = "7cbad5d8198d37e9ded767d33ac03f2cf15875f4" }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false }

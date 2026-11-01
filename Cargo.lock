@@ -2375,7 +2375,7 @@ dependencies = [
  "serde_json",
  "sha1 0.10.7",
  "sha2 0.10.9",
- "t3-protocol",
+ "t3-protocol 0.3.7",
  "time",
  "tokio",
  "tokio-rustls",
@@ -2506,7 +2506,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "t3-protocol",
+ "t3-protocol 0.3.4",
  "time",
  "tokio",
  "tokio-rustls",
@@ -3783,7 +3783,16 @@ dependencies = [
 [[package]]
 name = "t3-protocol"
 version = "0.3.4"
-source = "git+https://github.com/avillagran/lib-t3-rust?rev=8c80c4dc62414c454eaefb4706d973adf8d8ee74#8c80c4dc62414c454eaefb4706d973adf8d8ee74"
+dependencies = [
+ "reqwest 0.12.28",
+ "serde_json",
+ "t3-protocol 0.3.7",
+]
+
+[[package]]
+name = "t3-protocol"
+version = "0.3.7"
+source = "git+https://github.com/avillagran/lib-t3-rust?o3-reader-pin?rev=7cbad5d8198d37e9ded767d33ac03f2cf15875f4#7cbad5d8198d37e9ded767d33ac03f2cf15875f4"
 dependencies = [
  "base64 0.22.1",
  "chrono",

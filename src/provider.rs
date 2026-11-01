@@ -379,7 +379,7 @@ fn persist(
             request_id,
             command: _,
         } => {
-            let request = json!({"id":request_id,"nodeId":rid,"providerTurnId":null,"nativeRequestRef":null,"kind":"command","status":"pending","responseCapability":{"type":"message"},"createdAt":at,"resolvedAt":null});
+            let request = json!({"id":request_id,"nodeId":rid,"providerTurnId":null,"nativeRequestRef":null,"kind":"command","status":"pending","responseCapability":{"type":"live"},"createdAt":at,"resolvedAt":null});
             put(&tx, "runtimeRequests", &request_id, tid, &request)?;
             append(&tx, tid, "runtime-request.updated", request, &thread)?;
             run["status"] = json!("waiting");
