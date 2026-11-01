@@ -375,7 +375,7 @@ impl Provider for Providers {
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         match input.provider_instance_id.as_str() {
             "codex" => self.codex.execute(input, output, control, cancel),
-            "claude" | "claude-code" => match self.claude.as_ref() {
+            "claudeAgent" | "claude" | "claude-code" => match self.claude.as_ref() {
                 Some(p) => p.execute(input, output, control, cancel),
                 None => Box::pin(async { Err("Claude CLI is unavailable".into()) }),
             },

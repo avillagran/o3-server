@@ -156,6 +156,8 @@ fn shape(v: &Value, key: &str) -> Value {
         Value::String(s)
             if [
                 "_tag",
+                "instanceId",
+                "driver",
                 "kind",
                 "type",
                 "status",
@@ -253,6 +255,20 @@ fn http_status(s: &Server, path: &str, protocol: bool, auth: bool) -> Value {
 fn script(s: &Server, workspace: &Path) -> BTreeMap<String, Value> {
     let c = Connection::new(&s.base, None, Credential::bearer(&s.token).unwrap()).unwrap();
     let mut rows = BTreeMap::new();
+    if let Ok(config) = c.rpc("server.getConfig", json!({})) {
+        rows.insert("provider identities and model slugs".into(),json!(config["providers"].as_array().unwrap().iter().map(|p|json!({"instanceId":p["instanceId"],"driver":p["driver"],"models":p["models"].as_array().unwrap_or(&vec![]).iter().map(|m|m["slug"].clone()).collect::<Vec<_>>()})).collect::<Vec<_>>()));
+        eprintln!(
+            "provider identities: {}",
+            config["providers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|p| format!("{}:{}", p["instanceId"], p["driver"]))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+
     for (path, protocol, auth) in [
         ("/.well-known/t3/environment", false, false),
         ("/api/auth/session", false, false),
@@ -553,6 +569,13 @@ fn upstream_differential() {
         });
     let upstream = start(&t3, &root.join("t3"));
     let o3 = start(Path::new(env!("CARGO_BIN_EXE_o3-server")), &root.join("o3"));
+    let children =
+        std::fs::read_to_string(format!("/proc/{0}/task/{0}/children", o3.child.id())).unwrap();
+    assert!(
+        children.trim().is_empty(),
+        "o3 startup spawned child: {children}"
+    );
+    eprintln!("o3 startup: zero child processes");
     let mut results = Vec::new();
     for (name, s) in [("upstream", &upstream), ("o3", &o3)] {
         let workspace = root.join(name).join("workspace");

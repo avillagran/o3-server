@@ -3,4 +3,4 @@ set -eu
 export TMPDIR=/var/tmp/o3-build/tmp-diff
 export CARGO_TARGET_DIR=/var/tmp/o3-build/diff
 mkdir -p "$TMPDIR"
-exec nice cargo test -j 6 --no-default-features --test differential upstream_differential -- --ignored --nocapture --test-threads=1
+exec nice cargo test -j 4 --no-default-features --test differential upstream_differential -- --ignored --nocapture --test-threads=1

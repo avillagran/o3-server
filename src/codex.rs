@@ -40,19 +40,25 @@ impl Client {
 pub struct CodexProvider {
     executable: PathBuf,
     home: Option<PathBuf>,
+    idle_timeout: std::time::Duration,
     client: tokio::sync::Mutex<Option<Client>>,
     descriptor: std::sync::Arc<Mutex<Value>>,
 }
 impl Default for CodexProvider {
     fn default() -> Self {
-        Self::new("codex".into(), None)
+        Self::new(
+            crate::executable::resolve(std::path::Path::new("codex"))
+                .unwrap_or_else(|| "codex".into()),
+            None,
+        )
     }
 }
 impl CodexProvider {
     pub fn new(executable: PathBuf, home: Option<PathBuf>) -> Self {
         Self {
-            executable,
+            executable: crate::executable::resolve(&executable).unwrap_or(executable),
             home,
+            idle_timeout: std::time::Duration::from_secs(60),
             client: tokio::sync::Mutex::new(None),
             descriptor: std::sync::Arc::new(Mutex::new(json!({
                 "instanceId":"codex", "driver":"codex", "displayName":"Codex", "enabled":true,
@@ -64,7 +70,31 @@ impl CodexProvider {
         }
     }
     pub async fn probe(&self) -> Result<(), String> {
-        self.connection().await.map(|_| ())
+        let installed = crate::executable::resolve(&self.executable).is_some();
+        if self
+            .client
+            .lock()
+            .await
+            .as_ref()
+            .is_some_and(|c| !c.0.is_closed())
+        {
+            return Ok(());
+        }
+        let mut d = self.descriptor.lock().unwrap();
+        d["installed"] = json!(installed);
+        d["status"] = json!(if installed { "warning" } else { "disabled" });
+        d["auth"] = json!({"status":"unknown"});
+        d["message"] = json!(if installed {
+            "Codex available; starts on first turn, authentication checked then"
+        } else {
+            "Codex binary not found"
+        });
+        d["checkedAt"] = json!(crate::store::iso(crate::store::now_ms()));
+        if installed {
+            Ok(())
+        } else {
+            Err("Codex binary not found".into())
+        }
     }
     pub async fn shutdown(&self) {
         if let Some(c) = self.client.lock().await.take() {
@@ -106,7 +136,7 @@ impl CodexProvider {
             .spawn()
             .map_err(|e| format!("Cannot spawn Codex: {e}"))?;
         let (tx, rx) = mpsc::channel(32);
-        tokio::spawn(actor(child, rx, self.descriptor.clone()));
+        tokio::spawn(actor(child, rx, self.descriptor.clone(), self.idle_timeout));
         let c = Client(tx);
         let init=c.call("initialize",json!({"clientInfo":{"name":"o3-server","version":env!("CARGO_PKG_VERSION")},"capabilities":{"experimentalApi":true}})).await?;
         c.0.send(Op::Reply(json!({"method":"initialized","params":{}})))
@@ -256,15 +286,7 @@ impl CodexProvider {
 }
 impl Provider for CodexProvider {
     fn config(&self) -> Vec<Value> {
-        let mut d = self.descriptor.lock().unwrap().clone();
-        if self
-            .client
-            .try_lock()
-            .is_ok_and(|c| c.as_ref().is_some_and(|c| c.0.is_closed()))
-        {
-            d["status"] = json!("error");
-            d["message"] = json!("Codex process closed");
-        }
+        let d = self.descriptor.lock().unwrap().clone();
         vec![d]
     }
     fn execute<'a>(
@@ -334,6 +356,7 @@ async fn actor(
     mut child: tokio::process::Child,
     mut ops: mpsc::Receiver<Op>,
     descriptor: std::sync::Arc<Mutex<Value>>,
+    idle_timeout: std::time::Duration,
 ) {
     let mut stdin = child.stdin.take().unwrap();
     let mut reader = BufReader::with_capacity(8192, child.stdout.take().unwrap());
@@ -342,9 +365,15 @@ async fn actor(
     let mut next = 0u64;
     let mut buffer = Vec::new();
     let mut shutdown = None;
+    let mut idle = tokio::time::interval(std::time::Duration::from_secs(1));
+    let mut last_operation = tokio::time::Instant::now();
     let result:Result<(),String>=async {
         loop { tokio::select! {
+            _=idle.tick(), if routes.is_empty() && calls.is_empty()=>{
+                if last_operation.elapsed()>=idle_timeout {return Ok(());}
+            },
             op=ops.recv()=>{
+                last_operation=tokio::time::Instant::now();
                 let frame=match op {
                     None=>return Ok(()),
                     Some(Op::Subscribe(id,tx,ack))=>{let result=if routes.len()>=32||routes.contains_key(&id){Err("Codex thread already active or capacity reached".into())}else{routes.insert(id,tx);Ok(())};let _=ack.send(result);continue;},
@@ -374,10 +403,13 @@ async fn actor(
             }
         }}
     }.await;
-    let reason = result.err().unwrap_or_else(|| "Codex stopped".into());
+    let failed = result.is_err();
+    let reason = result
+        .err()
+        .unwrap_or_else(|| "Codex idle or stopped; starts on next turn".into());
     {
         let mut d = descriptor.lock().unwrap();
-        d["status"] = json!("error");
+        d["status"] = json!(if failed { "error" } else { "warning" });
         d["message"] = json!(reason);
     }
     for (_, reply) in calls {
@@ -462,12 +494,37 @@ mod tests {
         }
     }
     #[tokio::test]
+    async fn discovery_is_lazy_and_idle_actor_exits_then_restarts() {
+        let mut provider = CodexProvider::new(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/codex/mock-server.py"),
+            None,
+        );
+        provider.idle_timeout = std::time::Duration::from_millis(20);
+        provider.probe().await.unwrap();
+        assert!(
+            provider.client.lock().await.is_none(),
+            "discovery spawned app-server"
+        );
+        assert_eq!(provider.config()[0]["version"], Value::Null);
+        let c = provider.connection().await.unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            while !c.0.is_closed() {
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let next = provider.connection().await.unwrap();
+        assert!(!next.0.is_closed());
+        provider.shutdown().await;
+    }
+    #[tokio::test]
     async fn shared_process_routes_native_approvals_steering_and_resume() {
         let provider = std::sync::Arc::new(CodexProvider::new(
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/codex/mock-server.py"),
             None,
         ));
-        provider.probe().await.unwrap();
+        provider.connection().await.unwrap();
         assert_eq!(provider.config()[0]["auth"]["status"], "unauthenticated");
         assert!(!provider.config()[0]["models"]
             .as_array()
@@ -619,7 +676,7 @@ mod tests {
         ));
         std::fs::create_dir(&home).unwrap();
         let provider = CodexProvider::new("codex".into(), Some(home.clone()));
-        provider.probe().await.unwrap();
+        provider.connection().await.unwrap();
         assert_eq!(provider.config()[0]["version"], "0.166.0");
         let c = provider.connection().await.unwrap();
         let thread = c

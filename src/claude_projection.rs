@@ -67,10 +67,10 @@ pub(crate) fn persist(
                 serde_json::from_str(include_str!("claude-capabilities.json"))
                     .map_err(|e| e.to_string())?;
             let cwd = t["worktreePath"].as_str().unwrap_or(".");
-            let session = json!({"id":id,"driver":"claudeAgent","providerInstanceId":"claude","status":"running","cwd":cwd,"model":t["modelSelection"]["model"],"capabilities":capabilities,"createdAt":at,"updatedAt":at,"lastError":null});
+            let session = json!({"id":id,"driver":"claudeAgent","providerInstanceId":t["providerInstanceId"],"status":"running","cwd":cwd,"model":t["modelSelection"]["model"],"capabilities":capabilities,"createdAt":at,"updatedAt":at,"lastError":null});
             put(db, "providerSessions", id, tid, &session)?;
             append(db, tid, "provider-session.updated", session, t)?;
-            let p = json!({"id":id,"driver":"claudeAgent","providerInstanceId":"claude","providerSessionId":id,"appThreadId":tid,"ownerNodeId":rid,"nativeThreadRef":reference(&json!(id)),"nativeConversationHeadRef":null,"status":"active","firstRunOrdinal":run["ordinal"],"lastRunOrdinal":run["ordinal"],"handoffIds":[],"forkedFrom":null,"createdAt":at,"updatedAt":at});
+            let p = json!({"id":id,"driver":"claudeAgent","providerInstanceId":t["providerInstanceId"],"providerSessionId":id,"appThreadId":tid,"ownerNodeId":rid,"nativeThreadRef":reference(&json!(id)),"nativeConversationHeadRef":null,"status":"active","firstRunOrdinal":run["ordinal"],"lastRunOrdinal":run["ordinal"],"handoffIds":[],"forkedFrom":null,"createdAt":at,"updatedAt":at});
             put(db, "providerThreads", id, tid, &p)?;
             append(db, tid, "provider-thread.updated", p, t)?;
             let turn = json!({"id":rid,"providerThreadId":id,"nodeId":rid,"runAttemptId":null,"nativeTurnRef":null,"ordinal":run["ordinal"],"status":"running","startedAt":at,"completedAt":null});
@@ -168,7 +168,7 @@ pub(crate) fn persist(
                 }
             }
             if i["type"] == "subagent" {
-                let sub = json!({"id":id,"threadId":tid,"runId":rid,"parentNodeId":rid,"origin":"provider_native","createdBy":"agent","driver":"claudeAgent","providerInstanceId":"claude","providerThreadId":t["activeProviderThreadId"],"childThreadId":null,"nativeTaskRef":reference(native),"prompt":i["prompt"],"title":i["title"],"model":null,"status":i["status"],"result":i["result"],"startedAt":i["startedAt"],"completedAt":i["completedAt"],"updatedAt":at});
+                let sub = json!({"id":id,"threadId":tid,"runId":rid,"parentNodeId":rid,"origin":"provider_native","createdBy":"agent","driver":"claudeAgent","providerInstanceId":t["providerInstanceId"],"providerThreadId":t["activeProviderThreadId"],"childThreadId":null,"nativeTaskRef":reference(native),"prompt":i["prompt"],"title":i["title"],"model":null,"status":i["status"],"result":i["result"],"startedAt":i["startedAt"],"completedAt":i["completedAt"],"updatedAt":at});
                 put(db, "subagents", &id, tid, &sub)?;
                 append(db, tid, "subagent.updated", sub, t)?;
             }

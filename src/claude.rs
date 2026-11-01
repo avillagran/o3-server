@@ -13,7 +13,7 @@ const MAX_FRAME: usize = 1024 * 1024;
 const MAX_SESSIONS: usize = 16;
 pub struct ClaudeProvider {
     binary: PathBuf,
-    sessions: Mutex<HashMap<String, Session>>,
+    sessions: std::sync::Arc<Mutex<HashMap<String, Session>>>,
 }
 struct Session {
     child: Child,
@@ -22,23 +22,39 @@ struct Session {
     buffer: Vec<u8>,
     native: String,
     cwd: PathBuf,
+    idle_since: tokio::time::Instant,
 }
 impl ClaudeProvider {
     pub fn discover() -> Option<Self> {
-        std::env::split_paths(&std::env::var_os("PATH")?)
-            .map(|p| p.join("claude"))
-            .find(|p| {
-                use std::os::unix::fs::PermissionsExt;
-                p.metadata()
-                    .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
-            })
-            .map(Self::new)
+        crate::executable::resolve(std::path::Path::new("claude")).map(Self::new)
     }
     pub fn new(binary: PathBuf) -> Self {
         Self {
             binary,
-            sessions: Mutex::new(HashMap::new()),
+            sessions: std::sync::Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+    fn expire_idle(
+        &self,
+        thread_id: String,
+        stamp: tokio::time::Instant,
+        timeout: std::time::Duration,
+    ) -> tokio::task::JoinHandle<()> {
+        let sessions = self.sessions.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(timeout).await;
+            let expired = {
+                let mut map = sessions.lock().unwrap();
+                if map.get(&thread_id).is_some_and(|s| s.idle_since == stamp) {
+                    map.remove(&thread_id)
+                } else {
+                    None
+                }
+            };
+            if let Some(mut session) = expired {
+                session.stop().await;
+            }
+        })
     }
     async fn spawn(&self, input: &RunInput) -> Result<Session, String> {
         let mut cmd = Command::new(&self.binary);
@@ -77,6 +93,7 @@ impl ClaudeProvider {
             buffer: Vec::new(),
             native: input.native_session_id.clone().unwrap_or_default(),
             cwd: input.cwd.clone(),
+            idle_since: tokio::time::Instant::now(),
         };
         s.send(json!({"type":"control_request","request_id":"initialize","request":{"subtype":"initialize"}})).await?;
         // Pin the handshake: do not submit a prompt before initialize succeeds.
@@ -110,7 +127,7 @@ impl ClaudeProvider {
         }
         if input.model_selection["instanceId"]
             .as_str()
-            .is_some_and(|s| s != "claude")
+            .is_some_and(|s| !matches!(s, "claudeAgent" | "claude" | "claude-code"))
         {
             return Err("unsupported provider instance".into());
         }
@@ -190,6 +207,9 @@ impl ClaudeProvider {
             }
         }.await;
         if matches!(result, Ok(true)) {
+            let stamp = tokio::time::Instant::now();
+            session.idle_since = stamp;
+            let thread_id = input.thread_id.clone();
             let evicted = {
                 let mut sessions = self.sessions.lock().unwrap();
                 let evicted = if sessions.len() >= MAX_SESSIONS {
@@ -201,6 +221,7 @@ impl ClaudeProvider {
                 sessions.insert(input.thread_id, session);
                 evicted
             };
+            self.expire_idle(thread_id, stamp, std::time::Duration::from_secs(60));
             if let Some(mut s) = evicted {
                 s.stop().await;
             }
@@ -426,7 +447,7 @@ pub(crate) fn decode(v: &Value) -> Vec<ProviderEvent> {
     out
 }
 pub fn config(installed: bool) -> Value {
-    json!({"instanceId":"claude","driver":"claudeAgent","displayName":"Claude Code","enabled":installed,"installed":installed,"version":null,"status":if installed {"warning"}else{"disabled"},"auth":{"status":"unknown"},"checkedAt":crate::store::iso(crate::store::now_ms()),"message":"Direct CLI adapter; authentication checked at execution. No MCP bridge or crash recovery.","models":[{"slug":"haiku","name":"Haiku (CLI alias)","isCustom":false,"isDefault":true,"capabilities":null},{"slug":"sonnet","name":"Sonnet (CLI alias)","isCustom":false,"capabilities":null},{"slug":"opus","name":"Opus (CLI alias)","isCustom":false,"capabilities":null}],"supportedRuntimeModes":["approval-required","auto-accept-edits","full-access"],"supportsConversationRollback":false,"nativeSessions":{"canList":false,"canLoad":false,"canResume":true}})
+    json!({"instanceId":"claudeAgent","driver":"claudeAgent","displayName":"Claude Code","enabled":installed,"installed":installed,"version":null,"status":if installed {"warning"}else{"disabled"},"auth":{"status":"unknown"},"checkedAt":crate::store::iso(crate::store::now_ms()),"message":"Direct CLI adapter; authentication checked at execution. No MCP bridge or crash recovery.","models":[{"slug":"haiku","name":"Haiku (CLI alias)","isCustom":false,"isDefault":true,"capabilities":null},{"slug":"sonnet","name":"Sonnet (CLI alias)","isCustom":false,"capabilities":null},{"slug":"opus","name":"Opus (CLI alias)","isCustom":false,"capabilities":null}],"supportedRuntimeModes":["approval-required","auto-accept-edits","full-access"],"supportsConversationRollback":false,"nativeSessions":{"canList":false,"canLoad":false,"canResume":true}})
 }
 
 #[cfg(test)]
@@ -440,6 +461,41 @@ mod tests {
         text.lines()
             .map(|l| serde_json::from_str(l).unwrap())
             .collect()
+    }
+    #[tokio::test]
+    async fn idle_session_is_reaped_and_canonical_instance_is_advertised() {
+        assert_eq!(config(true)["instanceId"], "claudeAgent");
+        let provider = ClaudeProvider::new("unused".into());
+        let mut child = Command::new("sleep")
+            .arg("60")
+            .process_group(0)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let pid = child.id().unwrap();
+        let stamp = tokio::time::Instant::now();
+        let session = Session {
+            stdin: child.stdin.take().unwrap(),
+            stdout: BufReader::new(child.stdout.take().unwrap()),
+            child,
+            buffer: vec![],
+            native: "fixture".into(),
+            cwd: PathBuf::new(),
+            idle_since: stamp,
+        };
+        provider
+            .sessions
+            .lock()
+            .unwrap()
+            .insert("idle".into(), session);
+        provider
+            .expire_idle("idle".into(), stamp, std::time::Duration::from_millis(10))
+            .await
+            .unwrap();
+        assert!(provider.sessions.lock().unwrap().is_empty());
+        assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists());
     }
     #[test]
     fn replay_real_partial_text_tools_results_and_usage() {
@@ -512,6 +568,7 @@ mod tests {
             buffer: vec![],
             native: String::new(),
             cwd: PathBuf::new(),
+            idle_since: tokio::time::Instant::now(),
         };
         assert!(s.frame().await.unwrap_err().contains("invalid JSON"));
         let _ = s.child.wait().await;
@@ -529,6 +586,7 @@ mod tests {
             buffer: vec![],
             native: String::new(),
             cwd: PathBuf::new(),
+            idle_since: tokio::time::Instant::now(),
         };
         assert!(s.frame().await.unwrap_err().contains("exceeds"));
         assert!(s.buffer.len() <= MAX_FRAME);
