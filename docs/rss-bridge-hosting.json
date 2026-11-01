@@ -1,0 +1,112 @@
+{
+  "off": {
+    "measured_at_utc": "2026-11-01T06:09:00Z",
+    "binary_sha256": "ef743e43a27379285c6c07960bc63b2b51ad90837381dc29233004ff2afb8b15",
+    "binary": "/var/tmp/o3-build/main/release/o3-server",
+    "binary_bytes": 12826376,
+    "seed_messages": 1000,
+    "threads": 20,
+    "subscribers": 3,
+    "unary_calls": 1000,
+    "text_bytes_per_message": 1000,
+    "cold_kib": {
+      "VmHWM": 15496,
+      "VmRSS": 15496,
+      "RssAnon": 7076
+    },
+    "seeded_kib": {
+      "VmHWM": 33624,
+      "VmRSS": 32104,
+      "RssAnon": 20036
+    },
+    "subscribed_kib": {
+      "VmHWM": 36220,
+      "VmRSS": 31320,
+      "RssAnon": 19188
+    },
+    "after_churn_kib": {
+      "VmHWM": 36220,
+      "VmRSS": 31524,
+      "RssAnon": 19392
+    },
+    "snapshot_messages": [
+      10,
+      10,
+      10
+    ],
+    "under_50_mib": true,
+    "under_50_mb": true,
+    "providers": [
+      {
+        "instanceId": "claudeAgent",
+        "installed": true,
+        "status": "warning"
+      },
+      {
+        "instanceId": "codex",
+        "installed": true,
+        "status": "warning"
+      }
+    ],
+    "bridge_enabled": true,
+    "gateway_hosting": false,
+    "provider_workload": "registered and probed; inference excluded (defer_start)",
+    "measurement": "Linux /proc/PID/status; disk profile under /var/tmp",
+    "allocator_env": {}
+  },
+  "on": {
+    "measured_at_utc": "2026-11-01T06:09:08Z",
+    "binary_sha256": "ef743e43a27379285c6c07960bc63b2b51ad90837381dc29233004ff2afb8b15",
+    "binary": "/var/tmp/o3-build/main/release/o3-server",
+    "binary_bytes": 12826376,
+    "seed_messages": 1000,
+    "threads": 20,
+    "subscribers": 3,
+    "unary_calls": 1000,
+    "text_bytes_per_message": 1000,
+    "cold_kib": {
+      "VmHWM": 15432,
+      "VmRSS": 15432,
+      "RssAnon": 7080
+    },
+    "seeded_kib": {
+      "VmHWM": 32244,
+      "VmRSS": 30644,
+      "RssAnon": 18556
+    },
+    "subscribed_kib": {
+      "VmHWM": 34404,
+      "VmRSS": 29712,
+      "RssAnon": 17560
+    },
+    "after_churn_kib": {
+      "VmHWM": 34404,
+      "VmRSS": 29420,
+      "RssAnon": 17268
+    },
+    "snapshot_messages": [
+      10,
+      10,
+      10
+    ],
+    "under_50_mib": true,
+    "under_50_mb": true,
+    "providers": [
+      {
+        "instanceId": "claudeAgent",
+        "installed": true,
+        "status": "warning"
+      },
+      {
+        "instanceId": "codex",
+        "installed": true,
+        "status": "warning"
+      }
+    ],
+    "bridge_enabled": true,
+    "gateway_hosting": true,
+    "provider_workload": "registered and probed; inference excluded (defer_start)",
+    "measurement": "Linux /proc/PID/status; disk profile under /var/tmp",
+    "allocator_env": {}
+  }
+}

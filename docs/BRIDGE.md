@@ -3,8 +3,8 @@
 The default `bridge` Cargo feature runs OmaBridge on o3-server's two-worker Tokio runtime.
 `--no-default-features` removes it. No bridge executable or service is started by the server.
 
-The local development dependency is patched to `../omabridge-embed` (`~/Work/omabridge-embed`), branch
-`feat/embed`, commit `44cc7fa7575c1256f4007be4823e3f455429175a`. Before release, replace this patch with a published, pinned git revision.
+OmaBridge is pinned to pushed `feat/embed` revision
+`f4d549656ab5099b2e7480bf0bd06813a6d17bc8`. There is no local path patch.
 The real protocol client and bridge both use the pinned `t3-protocol` revision
 `8c80c4dc62414c454eaefb4706d973adf8d8ee74`: linking different revisions together fails
 because each library exports the same C ABI symbols. The newer local protocol checkout
@@ -50,8 +50,9 @@ This change performs no service migration, systemd operation or default bridge-s
 `--bridge-bind IP:PORT` and `--bridge-relay none|public|HTTPS_URL` select networking.
 The safe development defaults are `127.0.0.1:0` and no relay. For LAN/NAT deployments,
 choose an appropriate bind and relay explicitly. Only direct loopback QUIC was measured.
-Embedded `NodeConfig` enables the control socket; peer sync, gateway hosting and relay
-hosting loops are disabled. Explicit pairing/hello/control operations remain available.
+Embedded `NodeConfig` enables the control socket and peer sync. Its explicit
+`standalone_supervision: false` prevents the legacy systemd relay rollback path.
+Gateway and relay hosting remain disabled unless requested. Explicit pairing/hello/control operations remain available.
 The control socket bind must succeed and its mode is 0600.
 
 ## Desktop compatibility and required changes
@@ -92,9 +93,9 @@ in a separate process and is excluded from server RSS. No provider or seeded mes
 are included in this bridge sample; the prior seeded baseline is preserved in the JSON.
 
 Remaining limitations: fine-grained subsystem Cargo pruning is deferred (`embed` disables
-runtime tasks, but gateway/relay/MCP dependencies still compile). Peer sync and relay
-rollback/reconfiguration need a host-aware supervisor before enabling those loops;
-legacy `rollback_due` remains standalone-only. Embedded restart retains the QUIC endpoint;
+runtime tasks, but gateway/relay/MCP dependencies still compile). Peer sync is enabled with standalone rollback explicitly disabled. Relay
+rollback/reconfiguration remains unsupported in the embedded manager; legacy
+`rollback_due` remains standalone-only. Embedded restart retains the QUIC endpoint;
 it is not a full Node/network rebind. Public relay/WAN RSS, long-lived reconnects,
 gateway route verification and desktop UI integration require deployment-level testing.
 Catalogs are populated by `publish_auto` only when verified HTTPS routes are available.
@@ -143,3 +144,46 @@ The integrated main workload and binary hash supersede these branch-local RSS
 figures; see rss-measurement.json and IMPLEMENTATION.md for current results.
 
 The registered local `feat/embed` worktree is now `~/Work/omabridge-embed`, preserving commit 44cc7fa. Cargo no longer depends on the historical `/var/tmp` checkout. The cross-filesystem relocation used a copy plus `git worktree repair`; the old copy was byte-compared (excluding `.git`) and removed after repairing the registration. No push.
+
+## Host networking parity work (2026-11-01)
+
+`--bridge-gateway-config /absolute/settings.json` opts into TLS gateway hosting.
+The JSON has an explicit `bind` IP, a `certificates` map (DNS name to
+`[certificate_chain_pem_path, private_key_pem_path]`), and a `gateways` array.
+Each entry has `host`, `port`, `peer` (full bridge identity), and `service: "t3"`.
+Use `peer: "self"` for this node. Use `127.0.0.1` and a test CA for development. Embedded gateways never discover
+machine certificates. A peer equal to this node's identity enters `serve_io`
+through a duplex; another identity uses QUIC with the existing public grant.
+Local publication withdrawal closes streams on the one-second policy check.
+Disabling the gateway option creates no TLS listener or gateway polling loop.
+Gateway supervisor shutdown aborts its listener tasks and their connections.
+
+`--bridge-relay-host` explicitly enables the existing relay-host supervisor;
+without it there is no hosting poller. Relay *client* selection remains
+`--bridge-relay none|public|HTTPS_URL` and uses iroh's connection lifecycle.
+No external public relay or DNS is needed by the loopback tests.
+
+`tests/bridge_gateway.rs` exercises a Rust protocol client over a CA-validating
+TLS transport adapter, with descriptor verification, one-use pairing and RPC,
+for a local gateway and a separate QUIC gateway targeting the embedded node.
+This is a Rust client route, not Android UI verification. Publication persistence
+and identity restoration are also checked. Desktop persistent *forward sharing*
+still needs migration in the desktop repository: its generated units cannot be
+fixed solely by changing the host's publication store.
+
+`O3_BENCH_GATEWAY=1 tools/bench-rss <release-binary>` adds a live loopback TLS
+listener with an ephemeral test certificate to the standard workload. The output
+records `gateway_hosting` so samples remain distinguishable.
+
+Validation of this revision: OmaBridge default features **166 passed** (including
+retention stress); o3-server **146 passed, 5 opt-in ignored** with bridge and
+**144 passed, 5 opt-in ignored** without bridge. The gateway client verifies
+single-use credential rejection as well as successful pairing. Public/WAN relay
+reconnection and the desktop's persistent forward lifecycle remain unverified.
+
+Release `tools/bench-rss` samples for this revision (same binary, sequential,
+1,000 messages / 20 threads / 3 subscribers / 1,000 RPC; no inference): gateway
+off HWM **36,220 KiB (37.09 MB)**; live gateway on **34,404 KiB (35.23 MB)**.
+Both are below 50 MB. Sample variation exceeds the small listener overhead;
+these numbers do not establish that enabling a gateway reduces memory.
+Full aggregates and binary hash: `rss-bridge-hosting.json`.

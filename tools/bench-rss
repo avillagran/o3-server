@@ -48,7 +48,16 @@ def memory(pid):
 with tempfile.TemporaryDirectory(prefix='o3-rss-',dir='/var/tmp/o3-build') as temp:
  env={**os.environ,'T3CODE_HOME':temp,'HOME':temp,'CODEX_HOME':str(pathlib.Path(temp)/'codex'),'CLAUDE_CONFIG_DIR':str(pathlib.Path(temp)/'claude')}
  token=subprocess.check_output([str(binary),'auth','session','issue','--scope','orchestration:read','--scope','orchestration:operate','--scope','providers:manage','--token-only'],env=env,text=True).strip()
- process=subprocess.Popen([str(binary),'serve','--port','0','--host','127.0.0.1'],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+ gateway_args=[]
+ if os.environ.get('O3_BENCH_GATEWAY')=='1':
+  cert=pathlib.Path(temp)/'cert.pem';key=pathlib.Path(temp)/'key.pem'
+  subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-keyout',str(key),'-out',str(cert),'-days','1','-subj','/CN=localhost','-addext','subjectAltName=DNS:localhost'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+  with socket.socket() as reserve:
+   reserve.bind(('127.0.0.1',0)); gateway_port=reserve.getsockname()[1]
+  gateway=pathlib.Path(temp)/'gateway.json'
+  gateway.write_text(json.dumps({'bind':'127.0.0.1','certificates':{'localhost':[str(cert),str(key)]},'gateways':[{'host':'localhost','port':gateway_port,'peer':'self','service':'t3'}]}))
+  gateway_args=['--bridge-gateway-config',str(gateway)]
+ process=subprocess.Popen([str(binary),'serve','--port','0','--host','127.0.0.1']+gateway_args,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
  try:
   runtime=pathlib.Path(temp)/'userdata/server-runtime.json';deadline=time.monotonic()+90
   while not runtime.exists():
@@ -61,6 +70,11 @@ with tempfile.TemporaryDirectory(prefix='o3-rss-',dir='/var/tmp/o3-build') as te
   while not (pathlib.Path(temp)/'omabridge/endpoint.json').exists():
    assert time.monotonic()<deadline, 'bridge startup timeout'
    time.sleep(.05)
+  if gateway_args:
+   status=pathlib.Path(temp)/'omabridge/gateways.status.json'
+   while not status.exists() or not any(v['running'] for v in json.loads(status.read_text()).values()):
+    assert process.poll() is None and time.monotonic()<deadline, 'TLS gateway startup timeout'
+    time.sleep(.05)
   providers=config['providers']
   assert {p['instanceId'] for p in providers}=={'claudeAgent','codex'},providers
   ws.rpc('orchestration.dispatchCommand',{'type':'thread.create','commandId':'create','threadId':'rss-thread','projectId':'rss-project','title':'RSS workload','modelSelection':{'instanceId':'scripted','model':'test','options':[]},'runtimeMode':'full-access','interactionMode':'default','branch':None,'worktreePath':None})
@@ -78,7 +92,7 @@ with tempfile.TemporaryDirectory(prefix='o3-rss-',dir='/var/tmp/o3-build') as te
   for i in range(1000):churn.rpc('server.getSettings',{})
   churn.s.close();time.sleep(.2)
   final=memory(process.pid)
-  result={'measured_at_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'binary':str(binary),'binary_bytes':binary.stat().st_size,'seed_messages':1000,'threads':20,'subscribers':3,'unary_calls':1000,'text_bytes_per_message':1000,'cold_kib':cold,'seeded_kib':idle,'subscribed_kib':subscribed,'after_churn_kib':final,'snapshot_messages':counts,'under_50_mib':final['VmHWM']<50*1024,'under_50_mb':final['VmHWM']*1024<50_000_000,'providers':[{'instanceId':p['instanceId'],'installed':p.get('installed'),'status':p.get('status')} for p in providers],'bridge_enabled':True,'provider_workload':'registered and probed; inference excluded (defer_start)','measurement':'Linux /proc/PID/status; disk profile under /var/tmp','allocator_env':{k:v for k,v in env.items() if k.startswith('MIMALLOC_')}}
+  result={'measured_at_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'binary':str(binary),'binary_bytes':binary.stat().st_size,'seed_messages':1000,'threads':20,'subscribers':3,'unary_calls':1000,'text_bytes_per_message':1000,'cold_kib':cold,'seeded_kib':idle,'subscribed_kib':subscribed,'after_churn_kib':final,'snapshot_messages':counts,'under_50_mib':final['VmHWM']<50*1024,'under_50_mb':final['VmHWM']*1024<50_000_000,'providers':[{'instanceId':p['instanceId'],'installed':p.get('installed'),'status':p.get('status')} for p in providers],'bridge_enabled':True,'gateway_hosting':bool(gateway_args),'provider_workload':'registered and probed; inference excluded (defer_start)','measurement':'Linux /proc/PID/status; disk profile under /var/tmp','allocator_env':{k:v for k,v in env.items() if k.startswith('MIMALLOC_')}}
   print(json.dumps(result,indent=2))
   assert result['under_50_mb'], 'server HWM exceeded 50 MB'
   for ws in subscribers:ws.s.close()

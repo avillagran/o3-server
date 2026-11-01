@@ -201,12 +201,12 @@ fn main() -> std::io::Result<()> {
         let probe_task=tokio::spawn(async move { if let Err(e)=probe.probe().await {eprintln!("Codex unavailable: {e}");} probe_state.notify(); });
         let mut serving=tokio::spawn(o3_server::serve(listener,state.clone()));
         #[cfg(feature = "bridge")]
-        let bridge = o3_server::bridge::start(&option(&args, "--bridge-state-dir").map(std::path::PathBuf::from).unwrap_or_else(|| base.join("omabridge")), state.clone(), {
+        let bridge = o3_server::bridge::start_hosted(&option(&args, "--bridge-state-dir").map(std::path::PathBuf::from).unwrap_or_else(|| base.join("omabridge")), state.clone(), {
             let mut options = omabridge::NetOptions::loopback();
             if let Some(bind) = option(&args, "--bridge-bind") { options.bind = bind.parse().map_err(std::io::Error::other)?; }
             if let Some(relay) = option(&args, "--bridge-relay") { options.relay = match relay { "none" => omabridge::Relay::Disabled, "public" => omabridge::Relay::Public, url => omabridge::Relay::Custom(url.parse().map_err(std::io::Error::other)?) }; }
             options
-        }).await.map_err(std::io::Error::other)?;
+        }, option(&args, "--bridge-gateway-config").map(Path::new), args.iter().any(|a| a == "--bridge-relay-host")).await.map_err(std::io::Error::other)?;
         let result = tokio::select! {result=&mut serving=>result.map_err(std::io::Error::other)?,_=interrupt.recv()=>Ok(()),_=term.recv()=>Ok(())};
         if !serving.is_finished() { serving.abort(); let _=serving.await; }
         #[cfg(feature = "bridge")]

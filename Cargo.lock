@@ -2396,13 +2396,16 @@ dependencies = [
  "libmimalloc-sys",
  "mimalloc",
  "omabridge",
+ "rcgen",
  "rusqlite",
+ "rustls",
  "serde_json",
  "sha1 0.10.7",
  "sha2 0.10.9",
  "t3-protocol",
  "time",
  "tokio",
+ "tokio-rustls",
  "tokio-tungstenite",
  "url",
 ]
@@ -2509,7 +2512,7 @@ dependencies = [
 [[package]]
 name = "omabridge"
 version = "0.2.4"
-source = "git+https://github.com/avillagran/omabridge?rev=44cc7fa7575c1256f4007be4823e3f455429175a#44cc7fa7575c1256f4007be4823e3f455429175a"
+source = "git+https://github.com/avillagran/omabridge?rev=f4d549656ab5099b2e7480bf0bd06813a6d17bc8#f4d549656ab5099b2e7480bf0bd06813a6d17bc8"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

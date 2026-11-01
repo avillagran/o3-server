@@ -53,6 +53,17 @@ impl PairingIssuer for Issuer {
 }
 /// State must be explicit and isolated from any independently running bridge.
 pub async fn start(path: &Path, state: Arc<State>, options: NetOptions) -> anyhow::Result<Node> {
+    start_hosted(path, state, options, None, false).await
+}
+/// Gateway settings are explicit JSON; absent settings allocate no listener or poller.
+/// `bind`, `certificates` (host -> [cert, key]), and `gateways` are required.
+pub async fn start_hosted(
+    path: &Path,
+    state: Arc<State>,
+    options: NetOptions,
+    gateway: Option<&Path>,
+    relay_host: bool,
+) -> anyhow::Result<Node> {
     let store = Store::open(path, "o3-server")?;
     omabridge::write_document(
         &path.join("host.json"),
@@ -65,10 +76,35 @@ pub async fn start(path: &Path, state: Arc<State>, options: NetOptions) -> anyho
             .map_err(anyhow::Error::msg)?,
     );
     let mut config = NodeConfig::embedded();
-    config.backend = Some(backend);
+    config.backend = Some(backend.clone());
+    config.relay_host = relay_host;
+    let service: Arc<dyn LocalService> = Arc::new(Service(state.clone()));
+    if let Some(path) = gateway {
+        let doc: serde_json::Value = serde_json::from_slice(&std::fs::read(path)?)?;
+        let bind = doc["bind"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("gateway bind required"))?
+            .parse()?;
+        let certificates = serde_json::from_value(doc["certificates"].clone())?;
+        let mut gateways: Vec<omabridge::gateway::Gateway> =
+            serde_json::from_value(doc["gateways"].clone())?;
+        for gateway in &mut gateways {
+            if gateway.peer == "self" {
+                gateway.peer = store.id()?;
+            }
+        }
+        omabridge::gateway::save(store.root(), &gateways)?;
+        config.gateways = true;
+        config.gateway_runtime = Some(omabridge::gateway::GatewayRuntime {
+            bind,
+            certificates,
+            local: BTreeMap::from([("t3".into(), service.clone())]),
+            backend,
+        });
+    }
     let mut node = Node::start_configured(
         store.clone(),
-        BTreeMap::from([("t3".into(), Target::Local(Arc::new(Service(state.clone()))))]),
+        BTreeMap::from([("t3".into(), Target::Local(service))]),
         options,
         reservation,
         None,

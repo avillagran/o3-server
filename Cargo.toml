@@ -12,7 +12,7 @@ bridge = ["dep:omabridge", "dep:anyhow", "dep:t3-protocol"]
 
 [dependencies]
 t3-protocol = { git = "https://github.com/avillagran/lib-t3-rust", rev = "8c80c4dc62414c454eaefb4706d973adf8d8ee74", optional = true }
-omabridge = { git = "https://github.com/avillagran/omabridge", rev = "44cc7fa7575c1256f4007be4823e3f455429175a", default-features = false, features = ["embed"], optional = true }
+omabridge = { git = "https://github.com/avillagran/omabridge", rev = "f4d549656ab5099b2e7480bf0bd06813a6d17bc8", default-features = false, features = ["embed"], optional = true }
 anyhow = { version = "1", optional = true }
 libc = "0.2"
 tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "net", "io-util", "time", "sync", "macros", "signal", "process", "fs"] }
@@ -34,6 +34,9 @@ libmimalloc-sys = { version = "0.1", default-features = false, features = ["exte
 mimalloc = { version = "0.1", default-features = false }
 
 [dev-dependencies]
+rcgen = "0.14"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
 t3-protocol = { git = "https://github.com/avillagran/lib-t3-rust", rev = "8c80c4dc62414c454eaefb4706d973adf8d8ee74" }
 
 [profile.release]
@@ -42,8 +45,6 @@ lto = "fat"
 codegen-units = 1
 panic = "abort"
 strip = true
-
-# Local co-development only: replace with a pinned upstream git rev before release.
 
 [profile.dev]
 debug = 0
