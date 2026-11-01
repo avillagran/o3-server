@@ -114,6 +114,7 @@ pub async fn start_hosted(
     )
     .await?;
     store.publish_endpoint(&node.addr(), &["t3".into()])?;
+    node.attach_task(tokio::spawn(crate::bridge_forwards::run(store.clone())));
     node.attach_task(tokio::spawn(async move {
         loop {
             let mut endpoints = Vec::new();
@@ -212,6 +213,12 @@ pub fn cli(args: &[String]) -> std::io::Result<()> {
     } else {
         None
     };
+    if args.iter().any(|a| a == "forwards") {
+        let value = crate::bridge_forwards::execute(&store, &request.unwrap_or_default())
+            .map_err(std::io::Error::other)?;
+        println!("{value}");
+        return Ok(());
+    }
     let backend = omabridge::manage::EmbeddedBackend::new(store.clone(), vec!["t3".into()])
         .map_err(std::io::Error::other)?;
     let manager = omabridge::manage::Manager::embedded(&store, Arc::new(backend));

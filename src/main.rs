@@ -68,10 +68,12 @@ fn main() -> std::io::Result<()> {
         }
     }
     #[cfg(feature = "bridge")]
-    if args
-        .iter()
-        .any(|a| matches!(a.as_str(), "manage" | "peers" | "forward" | "t3-pair"))
-        && option(&args, "--state-dir").is_some()
+    if args.iter().any(|a| {
+        matches!(
+            a.as_str(),
+            "manage" | "peers" | "forward" | "forwards" | "t3-pair"
+        )
+    }) && option(&args, "--state-dir").is_some()
     {
         return o3_server::bridge::cli(&args);
     }

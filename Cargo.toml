@@ -12,7 +12,7 @@ bridge = ["dep:omabridge", "dep:anyhow", "dep:t3-protocol"]
 
 [dependencies]
 t3-protocol = { git = "https://github.com/avillagran/lib-t3-rust", rev = "8c80c4dc62414c454eaefb4706d973adf8d8ee74", optional = true }
-omabridge = { git = "https://github.com/avillagran/omabridge", rev = "f4d549656ab5099b2e7480bf0bd06813a6d17bc8", default-features = false, features = ["embed"], optional = true }
+omabridge = { git = "https://github.com/avillagran/omabridge", rev = "0fc1610ec6c96a76a293108f6b8c6737266c7ebc", default-features = false, features = ["embed"], optional = true }
 anyhow = { version = "1", optional = true }
 libc = "0.2"
 tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "net", "io-util", "time", "sync", "macros", "signal", "process", "fs"] }

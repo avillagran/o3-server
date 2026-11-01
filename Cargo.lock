@@ -2485,7 +2485,7 @@ dependencies = [
 [[package]]
 name = "omabridge"
 version = "0.2.4"
-source = "git+https://github.com/avillagran/omabridge?rev=f4d549656ab5099b2e7480bf0bd06813a6d17bc8#f4d549656ab5099b2e7480bf0bd06813a6d17bc8"
+source = "git+https://github.com/avillagran/omabridge?rev=0fc1610ec6c96a76a293108f6b8c6737266c7ebc#0fc1610ec6c96a76a293108f6b8c6737266c7ebc"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2510,6 +2510,7 @@ dependencies = [
  "time",
  "tokio",
  "tokio-rustls",
+ "url",
  "x509-parser",
 ]
 

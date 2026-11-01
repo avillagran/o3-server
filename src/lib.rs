@@ -21,6 +21,8 @@ pub mod assets;
 pub mod body;
 #[cfg(feature = "bridge")]
 pub mod bridge;
+#[cfg(feature = "bridge")]
+mod bridge_forwards;
 pub mod claude;
 mod claude_projection;
 pub mod codex;

@@ -51,7 +51,7 @@ fn real_client_pairs_and_runs_rpc_through_embedded_bridge() {
                 o3_server::store::State::open(&root.join("guest-profile/userdata")).unwrap(),
             );
             let guest =
-                o3_server::bridge::start(guest_store.root(), guest_state, NetOptions::loopback())
+                o3_server::bridge::start(guest_store.root(), guest_state.clone(), NetOptions::loopback())
                     .await
                     .unwrap();
             let pairing =
@@ -101,6 +101,34 @@ fn real_client_pairs_and_runs_rpc_through_embedded_bridge() {
             })
             .await
             .unwrap();
+            // Host-owned forward survives the desktop command and a full Node restart.
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let listen = listener.local_addr().unwrap();
+            drop(listener);
+            let request = json!({"action":"save","peer":host_store.id().unwrap(),"service":"t3","listen":listen.to_string()});
+            let output = std::process::Command::new(env!("CARGO_BIN_EXE_o3-server"))
+                .args(["--state-dir", guest_store.root().to_str().unwrap(), "forwards"])
+                .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::null()).spawn().unwrap();
+            let mut output = output;
+            use std::io::Write;
+            output.stdin.take().unwrap().write_all(request.to_string().as_bytes()).unwrap();
+            assert!(output.wait().unwrap().success());
+            guest.shutdown().await;
+            let guest = o3_server::bridge::start(guest_store.root(), guest_state, NetOptions::loopback()).await.unwrap();
+            let base = format!("http://{listen}");
+            let environment = state.environment_id.clone();
+            tokio::task::spawn_blocking(move || {
+                let options = t3_protocol::ConnectionOptions::default().with_request_timeout(Duration::from_secs(2));
+                let until = std::time::Instant::now() + Duration::from_secs(10);
+                loop {
+                    if t3_protocol::verify_environment(&base, &environment, &options).is_ok() { break; }
+                    assert!(std::time::Instant::now() < until);
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+            }).await.unwrap();
+            omabridge::write_document(&guest_store.root().join("forwards.json"), &json!({}), true).unwrap();
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            assert!(std::net::TcpStream::connect(listen).is_err());
             host_store
                 .set_admin(&guest_store.id().unwrap(), true)
                 .unwrap();
