@@ -142,7 +142,21 @@ pub fn resume(state: &std::sync::Arc<crate::store::State>) -> Result<(), String>
             .map_err(|e| e.to_string())?;
         rows
     };
+    let enabled = crate::settings::read(state)?["continueThreadsAfterServerUpdate"] != false;
     for (tid, rid) in rows {
+        if !enabled {
+            let db = state.db.lock().unwrap();
+            let mut run = events::get(&db, "runs", &rid)?;
+            run["status"] = json!("interrupted");
+            run["recoveryPending"] = json!(false);
+            run["completedAt"] = json!(iso(now_ms()));
+            run["error"] = json!("Restart continuation disabled in settings");
+            events::put(&db, "runs", &rid, &tid, &run)?;
+            if let Ok(t) = events::get(&db, "thread", &tid) {
+                events::append(&db, &tid, "run.updated", run, &t)?;
+            }
+            continue;
+        }
         crate::provider::start(state.clone(), tid, rid,
             "The server restarted during your previous turn. Continue the interrupted task using this native session's history. Inspect current state before acting: previous tools may already have executed. Do not repeat completed work. Any old approval or question was cancelled; request fresh authorization or ask again where necessary.".into());
     }

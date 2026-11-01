@@ -131,6 +131,33 @@ pub fn prepare(s: &State, p: &Value, tid: &str) -> Result<Prepared, String> {
                     Err(cleanup) => Err(format!("{error}; worktree cleanup failed: {cleanup}")),
                 };
             }
+            if path.join(".gitmodules").is_file() {
+                let effective = crate::source_control::effective(s, &root);
+                let project_file = std::fs::read(path.join("t3.json"))
+                    .ok()
+                    .and_then(|b| serde_json::from_slice::<Value>(&b).ok());
+                let mode = effective["worktreeSubmodules"]
+                    .as_str()
+                    .or_else(|| {
+                        project_file
+                            .as_ref()
+                            .and_then(|v| v["worktreeSubmodules"].as_str())
+                    })
+                    .unwrap_or("recursive");
+                let args = match mode {
+                    "none" => None,
+                    "top-level" => Some(vec!["submodule", "update", "--init"]),
+                    _ => Some(vec!["submodule", "update", "--init", "--recursive"]),
+                };
+                if let Some(args) = args {
+                    if let Err(error) = git(&path, &args) {
+                        return match prepared.rollback() {
+                            Ok(()) => Err(error),
+                            Err(cleanup) => Err(format!("{error}; {cleanup}")),
+                        };
+                    }
+                }
+            }
             Ok(prepared)
         }
         _ => Err("invalid workspace strategy".into()),

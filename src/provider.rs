@@ -196,10 +196,53 @@ pub(crate) fn start(
                 .execute(input, output, controls, cancellation)
                 .await
         });
+        let streaming = crate::source_control::effective(&s, &checkpoint_cwd)
+            ["responseStreamingMode"]
+            .as_str()
+            .unwrap_or("paragraph")
+            .to_owned();
+        let mut buffered = String::new();
         let mut checkpoint_finished = false;
         let mut finished = false;
         let mut failure = None;
         while let Some(event) = events.recv().await {
+            if let ProviderEvent::TextDelta(delta) = event {
+                if buffered.len().saturating_add(delta.len()) > 1024 * 1024 {
+                    failure = Some("assistant message exceeds 1 MiB".into());
+                    break;
+                }
+                buffered.push_str(&delta);
+                if streaming == "paragraph" {
+                    if let Some(end) = buffered.rfind("\n\n") {
+                        let tail = buffered.split_off(end + 2);
+                        let text = std::mem::replace(&mut buffered, tail);
+                        if persist(&s, &tid, &rid, ProviderEvent::TextDelta(text)).is_err() {
+                            break;
+                        }
+                    }
+                }
+                continue;
+            }
+            if !buffered.is_empty()
+                && (streaming == "paragraph"
+                    || matches!(
+                        event,
+                        ProviderEvent::Completed
+                            | ProviderEvent::Failed(_)
+                            | ProviderEvent::Interrupted
+                    ))
+            {
+                if persist(
+                    &s,
+                    &tid,
+                    &rid,
+                    ProviderEvent::TextDelta(std::mem::take(&mut buffered)),
+                )
+                .is_err()
+                {
+                    break;
+                }
+            }
             if matches!(
                 event,
                 ProviderEvent::Completed | ProviderEvent::Interrupted | ProviderEvent::Failed(_)
@@ -246,6 +289,9 @@ pub(crate) fn start(
             if interrupted {
                 break;
             }
+        }
+        if !buffered.is_empty() {
+            let _ = persist(&s, &tid, &rid, ProviderEvent::TextDelta(buffered));
         }
         let _ = cancel.send(true);
         tokio::select! {r=&mut task=>{match r {Ok(Ok(()))=>finished=true,Ok(Err(e))=>failure=Some(e),Err(e)=>failure=Some(e.to_string())}},_=tokio::time::sleep(std::time::Duration::from_secs(2))=>{task.abort();let _=task.await;}}
@@ -330,6 +376,7 @@ fn persist(
         }
         return crate::command_output::persist(s, tid, rid, command);
     }
+    let settings = crate::settings::read(s)?;
     let mut db = s.db.lock().unwrap();
     let tx = db.transaction().map_err(|e| e.to_string())?;
     let mut thread = get(&tx, "thread", tid)?;
@@ -414,6 +461,25 @@ fn persist(
                 let item = message_item(&tx, tid, &message)?;
                 append(&tx, tid, "turn-item.updated", item, &thread)?;
             }
+        }
+    }
+    if run["errorClass"] == "usage_limit"
+        && run["status"] == "failed"
+        && thread["usageLimitResetAt"].is_string()
+    {
+        let overrides =
+            &settings["projectSettingsOverrides"][thread["projectId"].as_str().unwrap_or("")];
+        let flag = |key: &str| overrides.get(key).unwrap_or(&settings[key]) == true;
+        if flag("snoozeLimitedThreads") || flag("autoResumeLimitedThreads") {
+            thread["limitRecovery"] =
+                json!({"runId":rid,"resumeAt":thread["usageLimitResetAt"],"status":"limited"});
+            if flag("snoozeLimitedThreads") && thread["snoozedUntil"].is_null() {
+                thread["snoozedAt"] = json!(at);
+                thread["snoozedUntil"] = thread["usageLimitResetAt"].clone();
+                thread["limitRecovery"]["snoozed"] = json!(true);
+            }
+            put(&tx, "thread", tid, tid, &thread)?;
+            append(&tx, tid, "thread.metadata-updated", thread.clone(), &thread)?;
         }
     }
     put(&tx, "runs", rid, tid, &run)?;
@@ -1045,4 +1111,45 @@ pub(crate) fn instance_binary(entry: &serde_json::Value, name: &str) -> std::pat
         }
     }
     crate::executable::resolve(&path).unwrap_or(path)
+}
+
+#[cfg(test)]
+mod limit_policy_tests {
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn exhausted_native_turn_snoozes_only_when_enabled() {
+        for enabled in [false, true] {
+            let dir = std::env::temp_dir().join(crate::store::random_id().unwrap());
+            let s = crate::store::State::open(&dir).unwrap();
+            crate::settings::update(&s, &json!({"patch":{"snoozeLimitedThreads":enabled}}))
+                .unwrap();
+            {
+                let db = s.db.lock().unwrap();
+                crate::events::put(
+                    &db,
+                    "thread",
+                    "t",
+                    "t",
+                    &json!({"id":"t","projectId":"p","providerInstanceId":"claudeAgent"}),
+                )
+                .unwrap();
+                crate::events::put(
+                    &db,
+                    "runs",
+                    "r",
+                    "t",
+                    &json!({"id":"r","status":"running","ordinal":1}),
+                )
+                .unwrap();
+            }
+            persist(&s,"t","r",ProviderEvent::Native(json!({"type":"rate_limit","info":{"status":"rejected","resetsAt":(crate::store::now_ms()+60000)/1000}}))).unwrap();
+            persist(&s, "t", "r", ProviderEvent::Failed("usage limit".into())).unwrap();
+            let t = crate::events::get(&s.db.lock().unwrap(), "thread", "t").unwrap();
+            assert_eq!(t["snoozedUntil"].is_string(), enabled);
+            assert_eq!(t["limitRecovery"].is_object(), enabled);
+            drop(s);
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
 }

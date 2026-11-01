@@ -65,7 +65,7 @@ pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
                 "pullRequests.changeBreakdown" => change_breakdown(&pr).await,
                 "pullRequests.comment" => comment(&pr, p).await,
                 "pullRequests.submitReview" => submit_review(&pr, p).await,
-                "pullRequests.runAction" => run_action(&pr, p).await,
+                "pullRequests.runAction" => run_action(s, &pr, p).await,
                 "pullRequests.requestReviewers" => request_reviewers(&pr, p).await,
                 _ => set_labels(&pr, p).await,
             }
@@ -933,7 +933,7 @@ async fn submit_review(pr: &Pr, p: &Value) -> Reply {
     Ok(Value::Null)
 }
 
-async fn run_action(pr: &Pr, p: &Value) -> Reply {
+async fn run_action(s: &State, pr: &Pr, p: &Value) -> Reply {
     if p.get("stackNumber").is_some_and(|v| !v.is_null()) {
         return Err(operation(
             "run-action",
@@ -952,6 +952,23 @@ async fn run_action(pr: &Pr, p: &Value) -> Reply {
         None => None,
     };
     let mut args: Vec<&str> = vec!["pr"];
+    let mut merge_text = None;
+    if matches!(action, "merge" | "enable-auto-merge")
+        && crate::source_control::effective(s, &pr.gh.cwd)["removeAgentCreditsOnMerge"] == true
+    {
+        if method == Some("--rebase") {
+            return Err(operation(
+                "run-action",
+                "Removing credits requires a merge or squash commit.",
+                false,
+            ));
+        }
+        let v = view(pr, "title,body").await?;
+        merge_text = Some((
+            strip_agent_credits(v["title"].as_str().unwrap_or("")),
+            strip_agent_credits(v["body"].as_str().unwrap_or("")),
+        ));
+    }
     match action {
         "merge" => {
             args.extend(["merge", &n, "--repo", repo, method.unwrap_or("--merge")]);
@@ -1017,6 +1034,9 @@ async fn run_action(pr: &Pr, p: &Value) -> Reply {
             ))
         }
         _ => return Err(invalid("action is invalid")),
+    }
+    if let Some((subject, body)) = &merge_text {
+        args.extend(["--subject", subject, "--body", body]);
     }
     pr.gh.run("run-action", &args, None).await?;
     Ok(Value::Null)
@@ -1580,4 +1600,22 @@ mod tests {
         assert_eq!(category("docs/x.md"), "docs");
         assert_eq!(category("a/__mocks__/b.ts"), "mocks");
     }
+}
+
+fn strip_agent_credits(text: &str) -> String {
+    text.lines()
+        .filter(|line| {
+            let l = line.trim().to_ascii_lowercase();
+            !(l.starts_with("co-authored-by:")
+                && ["claude", "codex", "copilot", "noreply@anthropic"]
+                    .iter()
+                    .any(|name| l.contains(name))
+                || l.starts_with("generated with ")
+                || l.starts_with("generated-with:")
+                || l.starts_with("🤖 generated"))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_owned()
 }

@@ -25,7 +25,7 @@ fn argv() -> String {
     std::fs::read_to_string(bin_dir().join("gh.argv")).unwrap_or_default()
 }
 
-const PR: &str = r#"{"number":7,"title":"Add thing","body":"Body","url":"https://github.com/o/r/pull/7","author":{"login":"octo","is_bot":false},"state":"OPEN","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"BEHIND","additions":10,"deletions":2,"changedFiles":3,"headRefName":"feat","headRefOid":"abc123","headRepository":{"name":"r"},"headRepositoryOwner":{"login":"o"},"baseRefName":"main","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-02T00:00:00Z","mergedAt":"0001-01-01T00:00:00Z","closedAt":"0001-01-01T00:00:00Z","reviewRequests":[{"login":"me"}],"labels":[{"name":"bug","color":"ff0000"}],"statusCheckRollup":[{"__typename":"CheckRun","name":"ci","status":"COMPLETED","conclusion":"SUCCESS","detailsUrl":"https://ci/1"},{"__typename":"StatusContext","context":"lint","state":"PENDING"}],"autoMergeRequest":null,"reviewDecision":"REVIEW_REQUIRED","comments":[{"id":"IC_1","author":{"login":"octo"},"body":"nice","createdAt":"2026-01-01T01:00:00Z","updatedAt":"2026-01-01T01:00:00Z","url":"https://github.com/o/r/pull/7#c1"}],"reviews":[{"id":"R_1","author":{"login":"rev"},"body":"","state":"APPROVED","submittedAt":"2026-01-01T02:00:00Z"},{"id":"R_2","author":{"login":"rev"},"body":"","state":"COMMENTED","submittedAt":"2026-01-01T03:00:00Z"}],"commits":[{"oid":"abc123","messageHeadline":"feat","committedDate":"2026-01-01T00:30:00Z","authors":[{"login":"octo"}]}],"files":[{"path":"src/a.rs","additions":5,"deletions":1},{"path":"tests/a.rs","additions":3,"deletions":0},{"path":"Cargo.lock","additions":2,"deletions":1}]}"#;
+const PR: &str = r#"{"number":7,"title":"Add thing","body":"Body\n\nCo-Authored-By: Claude <noreply@anthropic.invalid>","url":"https://github.com/o/r/pull/7","author":{"login":"octo","is_bot":false},"state":"OPEN","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"BEHIND","additions":10,"deletions":2,"changedFiles":3,"headRefName":"feat","headRefOid":"abc123","headRepository":{"name":"r"},"headRepositoryOwner":{"login":"o"},"baseRefName":"main","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-02T00:00:00Z","mergedAt":"0001-01-01T00:00:00Z","closedAt":"0001-01-01T00:00:00Z","reviewRequests":[{"login":"me"}],"labels":[{"name":"bug","color":"ff0000"}],"statusCheckRollup":[{"__typename":"CheckRun","name":"ci","status":"COMPLETED","conclusion":"SUCCESS","detailsUrl":"https://ci/1"},{"__typename":"StatusContext","context":"lint","state":"PENDING"}],"autoMergeRequest":null,"reviewDecision":"REVIEW_REQUIRED","comments":[{"id":"IC_1","author":{"login":"octo"},"body":"nice","createdAt":"2026-01-01T01:00:00Z","updatedAt":"2026-01-01T01:00:00Z","url":"https://github.com/o/r/pull/7#c1"}],"reviews":[{"id":"R_1","author":{"login":"rev"},"body":"","state":"APPROVED","submittedAt":"2026-01-01T02:00:00Z"},{"id":"R_2","author":{"login":"rev"},"body":"","state":"COMMENTED","submittedAt":"2026-01-01T03:00:00Z"}],"commits":[{"oid":"abc123","messageHeadline":"feat","committedDate":"2026-01-01T00:30:00Z","authors":[{"login":"octo"}]}],"files":[{"path":"src/a.rs","additions":5,"deletions":1},{"path":"tests/a.rs","additions":3,"deletions":0},{"path":"Cargo.lock","additions":2,"deletions":1}]}"#;
 
 fn script() -> String {
     format!(
@@ -234,11 +234,20 @@ fn github_pull_requests_through_gh_argv() {
     .unwrap();
     assert!(argv().contains("api -X POST repos/o/r/pulls/7/requested_reviewers --input -"));
     c.rpc(
+        "server.updateSettings",
+        t3_protocol::native_settings::patch(
+            &json!({"key":"removeAgentCreditsOnMerge","value":true}),
+            None,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    c.rpc(
         "pullRequests.runAction",
         with(json!({"action":"merge","mergeMethod":"squash"})),
     )
     .unwrap();
-    assert!(argv().contains("pr merge 7 --repo o/r --squash"));
+    assert!(argv().contains("pr merge 7 --repo o/r --squash --subject Add thing --body Body"));
     c.rpc("pullRequests.runAction", with(json!({"action":"draft"})))
         .unwrap();
     assert!(argv().contains("pr ready 7 --repo o/r --undo"));

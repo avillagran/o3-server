@@ -396,6 +396,11 @@ pub fn ensure_started(s: &Arc<State>) {
                 let _ = crate::settlement::tick(&s, now_ms());
             }
             let (ready, soonest) = due(&s, now_ms());
+            let limited = crate::limits::tick(&s);
+            let soonest = match (soonest, limited) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            };
             for id in ready {
                 let _ = fire(&s, &id);
             }
@@ -404,7 +409,13 @@ pub fn ensure_started(s: &Arc<State>) {
                 _ = activity.changed() => {}, _ = s.streams.ops.scheduler_wake.notified() => {} }
                 continue;
             }
-            let wait = soonest.map_or(30_000, |t| (t - now_ms()).clamp(200, 30_000));
+            let wait = soonest.map_or(30_000, |t| {
+                if s.background_needed() {
+                    (t - now_ms()).clamp(200, 30_000)
+                } else {
+                    (t - now_ms()).max(200)
+                }
+            });
             tokio::select! {
                 _ = tokio::time::sleep(Duration::from_millis(wait as u64)) => {}
                 _ = s.streams.ops.scheduler_wake.notified() => {}
