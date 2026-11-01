@@ -491,3 +491,28 @@ The row stays partial: the initial-message model override on reuse, imported-nat
 launch and generateTitle preparation still need parity. Readers can send these
 through lib-t3-rust/src/api/orchestration.rs::ThreadLaunch and desktop src/write.rs.
 No crash-atomic filesystem/SQLite transaction is claimed.
+
+## Stream reader contract (2026-11-01)
+
+`lib-t3-rust/src/stream.rs::{cursor_of,advance,start_of}` uses a snapshot's
+boundary as the applied cursor and advances event cursors monotonically. Its
+`src/projection.rs::apply` applies ordered row updates to a bounded mirror.
+Desktop `src/shell_state.rs` replaces shell rows; the reader does not demand a
+particular relative order between independent operations on different records.
+
+The real-client test `snapshot_tail_and_resume_preserve_client_cursors_and_projection`
+checks both shell and thread subscriptions: snapshot first, strictly increasing
+tail sequences beyond its boundary, identical ordered replay from that boundary,
+and final state equal to a fresh read after pin/unpin/pin. It applies thread events
+using the pinned client's actual projection reducer and cursor functions. Existing
+`streamed_full_and_compact_snapshots_decode_with_real_client` and
+`project_identity_refresh_replaces_shell_without_losing_threads` cover snapshot decoding
+and replacement boundaries. This is bounded deterministic coverage, not exhaustive
+scheduling proof.
+
+Accepted difference: the relative interleaving of independent operations need not
+match upstream, provided snapshot-before-tail, monotonic sequences, replay order
+and per-record causal order hold. This exception does not permit stale updates,
+dropped required records, or advancing past data absent from a replacement snapshot.
+The shell/thread rows remain partial for their explicit background/identity/quota
+gaps; a generic demand for all interleavings is no longer a reason for partial.

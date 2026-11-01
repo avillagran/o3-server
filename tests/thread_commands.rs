@@ -735,3 +735,76 @@ fn config_stream_sends_typed_provider_and_settings_updates() {
     assert_eq!(next["payload"]["settings"]["defaultTheme"], "dark");
     stream.cancel();
 }
+
+#[test]
+fn snapshot_tail_and_resume_preserve_client_cursors_and_projection() {
+    use t3_protocol::{projection, stream};
+    for tag in [
+        "orchestration.subscribeShell",
+        "orchestration.subscribeThread",
+    ] {
+        let (s, c) = server(false);
+        create(&c, "ordered");
+        let payload = if tag.ends_with("Thread") {
+            json!({"threadId":"ordered"})
+        } else {
+            json!({})
+        };
+        let mut live = subscribe(s.connect(), tag, payload.clone());
+        let initial = live.next(T);
+        assert_eq!(
+            stream::start_of(tag, &initial),
+            Some(stream::Start::Snapshot)
+        );
+        let mut cursor = stream::advance(tag, None, &initial);
+        let boundary = cursor.unwrap();
+        let mut mirror = initial["projection"].clone();
+        let mut shell_row = initial["snapshot"]["threads"][0].clone();
+        for (index, action) in ["thread.pin", "thread.unpin", "thread.pin"]
+            .iter()
+            .enumerate()
+        {
+            cmd(
+                &c,
+                json!({"type":action,"commandId":format!("ordered-{index}"),"threadId":"ordered"}),
+            )
+            .unwrap();
+        }
+        let mut resume_payload = payload;
+        resume_payload["afterSequence"] = json!(boundary);
+        let mut replay = subscribe(s.connect(), tag, resume_payload);
+        for index in 0..3 {
+            let next = live.next(T);
+            let resumed = replay.next(T);
+            assert_eq!(stream::start_of(tag, &next), Some(stream::Start::Resume));
+            let at = stream::cursor_of(tag, &next).unwrap();
+            assert!(
+                at > cursor.unwrap(),
+                "tail must follow the applied snapshot/event"
+            );
+            assert_eq!(stream::cursor_of(tag, &resumed), Some(at));
+            assert_eq!(
+                next, resumed,
+                "replay must preserve event order and contents"
+            );
+            cursor = stream::advance(tag, cursor, &next);
+            if tag.ends_with("Thread") {
+                assert!(projection::apply(&mut mirror, &next["event"]));
+                assert_eq!(mirror["thread"]["pinnedAt"].is_null(), index == 1);
+            } else {
+                shell_row = next["thread"].clone();
+                assert_eq!(shell_row["pinnedAt"].is_null(), index == 1);
+            }
+        }
+        if tag.ends_with("Thread") {
+            assert_eq!(mirror["thread"], thread(&c, "ordered"));
+        } else {
+            let shell = c
+                .request_json("GET", "/api/orchestration/shell", None, true)
+                .unwrap();
+            assert_eq!(shell_row, shell["threads"][0]);
+        }
+        live.cancel();
+        replay.cancel();
+    }
+}

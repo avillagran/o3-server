@@ -224,12 +224,12 @@
     "orchestration.subscribeShell": {
       "status": "partial",
       "priority": "P0",
-      "note": "Real-client tests cover repositoryIdentity replacement snapshots/resolved roots, user/run timestamps, active proposed plans and pending subagent summaries. Still partial: native background-task lifecycle, usage-limit reset status and all upstream ordering interleavings."
+      "note": "Real-client tests cover repositoryIdentity replacement snapshots/resolved roots, timestamps, active plans, subagent summaries and client cursor/replay invariants (tests/thread_commands.rs). Remaining client-read gaps: native background-task lifecycle and usage-limit reset/failure status. Independent-operation interleavings are accepted per CONFORMANCE.md."
     },
     "orchestration.subscribeThread": {
       "status": "partial",
       "priority": "P0",
-      "note": "Real-client native peers cover pending/active/completed attempts, provider-thread links, context usage, unique Codex item ordinals and ordered event metadata/replay. Still partial: complete native background lifecycle/recovery, pre-binding provider-thread identity and arbitrary stream interleavings."
+      "note": "Real-client native peers cover attempts, provider-thread links, context usage, item ordinals; thread_commands.rs verifies snapshot-before-tail, increasing sequence, ordered replay and the real client projection reducer. Remaining: complete native background lifecycle/recovery and pre-binding provider-thread identity. Independent-operation interleavings are accepted per CONFORMANCE.md."
     },
     "preview.adjust": {
       "status": "done",
