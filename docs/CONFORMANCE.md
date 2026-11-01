@@ -1130,10 +1130,11 @@ provider child memory is excluded. Aggregate evidence: [rss-implementation.json]
    identification, including ports. Local-only calls skip the host. Missing CLI,
    refused requests and invalid JSON retain null PR status. Background update
    checks and telemetry are disabled for this query.
-   Evidence is simulated only: the default tests use fake glab executables.
-   The opt-in `glab_live` is ignored; no verified real glab CLI run is available
-   and glab is not installed on this machine. Real CLI flag acceptance, live
-   authenticated GitLab and stale-PR fallback/backoff remain unverified.
+   Opt-in `glab_live` ran real glab 1.126.0 (private binary, not on PATH; point
+   `O3_LIVE_GLAB` at it) through the real server and lib VCS API against a private
+   local GitLab API fixture: branch query, draft/open metadata, local-only and HTTP
+   403 passed. Default tests use fake executables. Live authenticated GitLab and
+   stale last-known-PR fallback/backoff remain unverified; the row stays partial.
 
 6. Native icons follow the GTK3 configured theme, index.theme inheritance and
    declared directories (16 themes, 256 directories/theme, cycle/traversal guards),
@@ -1171,7 +1172,7 @@ Final verification for this follow-up: **189 default / 187 no-default all-target
 tests passed**, with eleven explicit opt-ins ignored per configuration. Both
 strict all-target Clippy configurations, formatting, diff checks and
 `tools/gen-compat` passed. Real native Claude/Codex short turns passed projection
-replay, timeline, queue, sidebar and awareness readers. GitLab coverage is simulated only; the earlier real-glab claim was unsupported. No compatibility row was promoted.
+replay, timeline, queue, sidebar and awareness readers. Real glab 1.126.0 repeated its server/lib-reader test successfully. No compatibility row was promoted.
 
 Release `tools/bench-rss` completed: **16,220 KiB (16.61 MB) HWM**,
 below 50 MB, with 20 threads, 1000 messages, three subscribers and 1000 unary
@@ -1196,5 +1197,5 @@ icons must remain within canonical XDG icons/pixmaps roots at mint and serve tim
 
 Validation: 192 default / 190 no-default all-target tests, eleven opt-ins ignored
 per configuration; strict Clippy both configurations, fmt and generated compatibility
-docs. No real glab CLI was run. Release `tools/bench-rss`: **17,000 KiB (17.41 MB)
+docs. Release `tools/bench-rss`: **17,000 KiB (17.41 MB)
 HWM**, excluding inference and provider child RSS; see [rss-fourth-audit.json](rss-fourth-audit.json).
