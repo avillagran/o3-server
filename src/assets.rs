@@ -817,6 +817,9 @@ fn cached_media_extension(bytes: &[u8]) -> Option<&'static str> {
         None
     }
 }
+fn media_cache_has_room(dir: &Path) -> bool {
+    std::fs::read_dir(dir).is_ok_and(|entries| entries.take(128).count() < 128)
+}
 fn sweep_media(dir: &Path) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
@@ -868,9 +871,33 @@ pub async fn create_url_async(s: &State, p: &Value) -> Reply {
     let cwd = resource["cwd"]
         .as_str()
         .ok_or_else(|| invalid("cwd required"))?;
+    let cwd = std::fs::canonicalize(cwd).map_err(|_| invalid("invalid cwd"))?;
+    let known = {
+        let db = s.reader.lock().unwrap();
+        let mut q = db
+            .prepare("SELECT body FROM records WHERE kind IN ('project','thread')")
+            .map_err(|_| invalid("workspace lookup failed"))?;
+        let rows = q
+            .query_map([], |r| r.get::<_, String>(0))
+            .map_err(|_| invalid("workspace lookup failed"))?;
+        let known = rows.flatten().any(|body| {
+            serde_json::from_str::<Value>(&body).ok().is_some_and(|v| {
+                ["workspaceRoot", "worktreePath"].iter().any(|key| {
+                    v[key]
+                        .as_str()
+                        .and_then(|r| std::fs::canonicalize(r).ok())
+                        .is_some_and(|r| cwd == r)
+                })
+            })
+        });
+        known
+    };
+    if !known {
+        return Err(invalid("unregistered workspace"));
+    }
     let o = crate::proc::run(
         "gh",
-        Path::new(cwd),
+        &cwd,
         &["api", raw],
         crate::proc::Opts {
             timeout: std::time::Duration::from_secs(30),
@@ -886,7 +913,12 @@ pub async fn create_url_async(s: &State, p: &Value) -> Reply {
     }
     let dir = s.dir.join("asset-media");
     std::fs::create_dir_all(&dir).map_err(|_| invalid("asset cache unavailable"))?;
+    static CACHE_WRITE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = CACHE_WRITE.lock().unwrap();
     sweep_media(&dir);
+    if !media_cache_has_room(&dir) {
+        return Err(invalid("asset cache full"));
+    }
     let ext =
         cached_media_extension(&o.stdout).ok_or_else(|| invalid("unsupported media content"))?;
     let file = dir.join(format!(
@@ -1747,6 +1779,12 @@ mod media_cache_tests {
         sweep_media(&root);
         assert!(!old.exists());
         assert!(live.exists());
+        assert!(media_cache_has_room(&root));
+        for i in 0..128 {
+            std::fs::write(root.join(format!("{i}.png")), b"x").unwrap();
+        }
+        assert!(!media_cache_has_room(&root));
+
         assert_eq!(cached_media_extension(b"\xff\xd8\xffJPEG"), Some("jpg"));
         assert_eq!(cached_media_extension(b"\0\0\0\x18ftypisom"), Some("mp4"));
         assert_eq!(cached_media_extension(b"<html>login</html>"), None);
