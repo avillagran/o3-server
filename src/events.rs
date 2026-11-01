@@ -571,10 +571,14 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             if request["status"] != "pending" {
                 return Err("runtime request is not pending".into());
             }
-            if c["decision"] == "acceptAlways" {
-                if request["approvalPolicyKey"].is_null() {
-                    return Err("this request has no persistable operation scope".into());
-                }
+            if c["decision"] == "acceptAlways" && request["approvalPolicyKey"].is_null() {
+                return Err("this request has no persistable operation scope".into());
+            }
+            if matches!(
+                c["decision"].as_str(),
+                Some("acceptAlways" | "acceptForSession")
+            ) && !request["approvalPolicyKey"].is_null()
+            {
                 let key = request["approvalPolicyKey"].clone();
                 let id = format!("approval-policy-{}", random_id()?);
                 put(

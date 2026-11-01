@@ -13,6 +13,7 @@ const MAX_FRAME: usize = 1024 * 1024;
 const MAX_SESSIONS: usize = 16;
 pub struct ClaudeProvider {
     binary: PathBuf,
+    idle_timeout: std::time::Duration,
     environment: Vec<(String, String)>,
     launch_args: Vec<String>,
     metadata: Mutex<Value>,
@@ -35,11 +36,16 @@ impl ClaudeProvider {
     pub fn new(binary: PathBuf) -> Self {
         Self {
             binary,
+            idle_timeout: std::time::Duration::from_secs(60),
             environment: Vec::new(),
             launch_args: Vec::new(),
             metadata: Mutex::new(json!({})),
             sessions: std::sync::Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+    pub fn with_idle_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.idle_timeout = timeout;
+        self
     }
     pub fn with_launch_args(mut self, args: Vec<String>) -> Self {
         self.launch_args = args;
@@ -314,7 +320,7 @@ impl ClaudeProvider {
                 sessions.insert(input.thread_id, session);
                 evicted
             };
-            self.expire_idle(thread_id, stamp, std::time::Duration::from_secs(60));
+            self.expire_idle(thread_id, stamp, self.idle_timeout);
             if let Some(mut s) = evicted {
                 s.stop().await;
             }

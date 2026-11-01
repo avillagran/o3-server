@@ -698,12 +698,13 @@ reads live runtimeRequests, approval_request items, offered decisions and respon
 capability; `src/api/orchestration.rs:462,550,850` validates decisions. Desktop
 `src/write.rs:163,173,198,211` uses that reducer and sends thread.runtime-mode.set
 before dispatch when the permission selector changes. Android uses shared reducers.
-Search terms: `approvalPolicies|permissionRule|revoke|acceptAlways`, across shared
+Search terms: `approvalPolicies|permissionRule|revoke|acceptAlways|acceptForSession`, across shared
 Rust src, desktop src/ui and Android app/core src. Auth/device/bridge revocation
 hits are distinct APIs and unchanged. No inference-policy CRUD/revocation command
-is exposed by these readers. Accepted difference: exact-operation acceptAlways
-consent, scoped by thread/provider/project/worktree, instead of broad native glob
-rules; generic questions and mode changes cannot acquire wildcard consent. Changing
+is exposed by these readers. The client-offered `acceptForSession` now stores exact-operation consent in
+SQLite, scoped by thread/provider/project/worktree, independently of native
+process lifetime. `acceptAlways` remains a server extension, not an offered
+default client decision. This is not evidence of broad native glob rules; generic questions and mode changes cannot acquire wildcard consent. Changing
 runtime mode or model selection now deletes previous thread consent, so restoring
 an earlier mode cannot silently restore grants. `provider_input` proves persistence,
 automatic repeat acceptance and a fresh pending approval after mode revocation.
@@ -780,3 +781,10 @@ in `titleRegeneration`. Completion uses `thread.title.regeneration.complete` wit
 a matching requestId; stale completion cannot overwrite a manual rename. Each
 short provider turn is independent of the conversation native session, capped at
 20 seconds / 4 KiB output, and never answers tool/permission requests.
+
+`tests/session_approvals.rs` builds the first response with the real
+`Command::approve`/`approvals::command`, selecting `acceptForSession`. Three
+separate native processes are observed and reaped by the actual idle timer.
+The second identical operation completes without UI intervention; a changed
+operation remains pending and requires a fresh client approval. All resulting
+pending/cleared states are consumed by `approvals::pending`.
