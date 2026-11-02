@@ -3,6 +3,36 @@ use crate::store::{iso, now_ms, random_id, State};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 type Result<T> = std::result::Result<T, String>;
+fn change_selection(db: &Connection, t: &mut Value, c: &Value, value: &Value) -> Result<()> {
+    if !value["instanceId"].is_string() || !value["model"].as_str().is_some_and(|m| !m.is_empty()) {
+        return Err("invalid model selection".into());
+    }
+    if t["modelSelection"] == *value {
+        return Ok(());
+    }
+    let tid = t["id"].as_str().ok_or("thread id missing")?.to_owned();
+    let active: bool = db.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='runs' AND thread_id=? AND json_extract(body,'$.status') IN ('preparing','starting','running','waiting'))", [&tid], |r|r.get(0)).map_err(|e|e.to_string())?;
+    if active {
+        return Err("change model after the active run finishes".into());
+    }
+    if t["providerInstanceId"] != value["instanceId"] {
+        let ordinal = db.query_row("SELECT coalesce(max(json_extract(body,'$.ordinal')),0) FROM records WHERE kind='runs' AND thread_id=?", [&tid], |r|r.get::<_,i64>(0)).map_err(|e|e.to_string())?;
+        crate::thread_commands::capture_handoff(db, t, &tid, ordinal)?;
+        t["providerGeneration"] = c["commandId"].clone();
+        t["activeProviderThreadId"] = Value::Null;
+        t["codexNativeThreadId"] = Value::Null;
+        t["nativeForkSource"] = Value::Null;
+    }
+    db.execute(
+        "DELETE FROM records WHERE kind='approvalPolicies' AND thread_id=?",
+        [&tid],
+    )
+    .map_err(|e| e.to_string())?;
+    t["providerInstanceId"] = value["instanceId"].clone();
+    t["modelSelection"] = value.clone();
+    Ok(())
+}
+
 pub fn initialize(db: &Connection) -> Result<()> {
     db.execute_batch("CREATE TABLE IF NOT EXISTS records(kind TEXT NOT NULL,id TEXT NOT NULL,thread_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(kind,id)); CREATE INDEX IF NOT EXISTS records_thread ON records(thread_id,kind); CREATE TABLE IF NOT EXISTS events(sequence INTEGER PRIMARY KEY AUTOINCREMENT,thread_id TEXT NOT NULL,body TEXT NOT NULL,shell TEXT); CREATE TABLE IF NOT EXISTS receipts(command_id TEXT PRIMARY KEY,result TEXT NOT NULL);").map_err(|e|e.to_string())?;
     // The partial index finds the latest user without reading assistant bodies.
@@ -575,24 +605,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             };
             let value = c.get(key).ok_or("mode or model selection required")?;
             if key == "modelSelection" {
-                if !value["instanceId"].is_string()
-                    || !value["model"].as_str().is_some_and(|m| !m.is_empty())
-                {
-                    return Err("invalid model selection".into());
-                }
-                if t["providerInstanceId"] != value["instanceId"] {
-                    let ordinal = tx.query_row(
-                        "SELECT coalesce(max(json_extract(body,'$.ordinal')),0) FROM records WHERE kind='runs' AND thread_id=?",
-                        [tid], |r| r.get::<_, i64>(0),
-                    ).map_err(|e| e.to_string())?;
-                    t["providerHandoff"] =
-                        json!(crate::thread_commands::handoff(&tx, tid, ordinal)?);
-                    t["providerGeneration"] = c["commandId"].clone();
-                    t["activeProviderThreadId"] = Value::Null;
-                    t["codexNativeThreadId"] = Value::Null;
-                    t["nativeForkSource"] = Value::Null;
-                }
-                t["providerInstanceId"] = value["instanceId"].clone();
+                change_selection(&tx, &mut t, c, value)?;
             } else if key == "runtimeMode"
                 && !matches!(
                     value.as_str(),
@@ -620,6 +633,9 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             }
         }
         "message.dispatch" => {
+            if let Some(selection) = c.get("modelSelection") {
+                change_selection(&tx, &mut t, c, selection)?;
+            }
             if c["dispatchMode"]["type"] == "steer_active" {
                 let rid = c["dispatchMode"]["targetRunId"]
                     .as_str()
