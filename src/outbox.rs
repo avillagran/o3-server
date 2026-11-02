@@ -35,6 +35,10 @@ pub fn stage(db: &Connection, command: &Value) -> Result<(), String> {
 pub fn handed_off(s: &State, id: &str) -> Result<(), String> {
     let db = s.db.lock().unwrap();
     if let Ok(mut v) = events::get(&db, "controlOutbox", id) {
+        // Native failure/recovery may win the race with this post-send journal update.
+        if v["status"] != "pending" {
+            return Ok(());
+        }
         v["status"] = json!("handed-off");
         let tid = v["threadId"]
             .as_str()

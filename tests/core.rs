@@ -380,6 +380,8 @@ fn control_outbox_is_receipt_atomic_and_restart_reports_uncertain_delivery() {
     drop(s);
     let s = State::open(&dir).unwrap();
     o3_server::recovery::recover(&mut s.db.lock().unwrap()).unwrap();
+    // A late channel-handoff write cannot erase an already detected delivery failure.
+    o3_server::outbox::handed_off(&s, "answer").unwrap();
     let db = s.db.lock().unwrap();
     let entry = record(&db, "controlOutbox", "answer").unwrap();
     assert_eq!(entry["status"], "delivery-unknown");
