@@ -476,17 +476,35 @@ fn io_bytes() -> (u64, u64) {
     (field("read_bytes:"), field("write_bytes:"))
 }
 
-fn take_sample(previous: &mut Option<(i64, u64)>) -> Sample {
+// Identity includes start time so a recycled PID never inherits CPU counters.
+type CpuBaseline = Option<(i64, HashMap<(i32, i64), u64>)>;
+
+fn take_sample(previous: &mut CpuBaseline) -> Sample {
     let list = tree();
     let now = now_ms();
-    let server_ticks = list.first().map_or(0, |(p, _)| p.cpu_ticks);
-    let cpu = previous
-        .map(|(at, t)| {
-            (server_ticks.saturating_sub(t)) as f64 / ticks() * 1000.0 / (now - at).max(1) as f64
-                * 100.0
-        })
-        .unwrap_or(0.0);
-    *previous = Some((now, server_ticks));
+    let counters: HashMap<_, _> = list
+        .iter()
+        .map(|(p, _)| ((p.pid, p.start_ms), p.cpu_ticks))
+        .collect();
+    let cpu = previous.as_ref().map_or(0.0, |(at, old)| {
+        let elapsed_ticks: u64 = counters
+            .iter()
+            .map(|(identity, ticks)| {
+                let baseline = old.get(identity).copied().unwrap_or({
+                    // A child born since the last sample contributes its whole life;
+                    // an older process first discovered now starts a new baseline.
+                    if identity.1 >= *at {
+                        0
+                    } else {
+                        *ticks
+                    }
+                });
+                ticks.saturating_sub(baseline)
+            })
+            .sum();
+        elapsed_ticks as f64 / ticks() * 1000.0 / (now - at).max(1) as f64 * 100.0
+    });
+    *previous = Some((now, counters));
     let (r, w) = io_bytes();
     Sample {
         at: now,

@@ -1839,3 +1839,87 @@ fn upstream_shell_preview_and_launch() {
     .unwrap();
     eprintln!("pinned preview bytes: {}", report["previewBytes"]);
 }
+
+/// Compare the consumed history property, not nondeterministic CPU percentages.
+#[test]
+#[ignore = "isolated pinned 3991 P2 telemetry, deterministic terminal child"]
+fn upstream_p2_telemetry_reader() {
+    let root = PathBuf::from("/var/tmp/o3-build/tmp").join(format!(
+        "p2-telemetry-{}-{}",
+        std::process::id(),
+        o3_server::store::random_id().unwrap()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let reference = reference_binary();
+    let version = cli_output(command(&reference, &root).arg("--version"));
+    assert!(String::from_utf8_lossy(&version.stdout).contains("0.1.7-nightly.20261031.3991"));
+    let mut views = Vec::new();
+    for (label, bin) in [
+        ("reference", reference.as_path()),
+        ("o3", Path::new(env!("CARGO_BIN_EXE_o3-server"))),
+    ] {
+        let home = root.join(label);
+        let s = start(bin, &home);
+        let c = connect(&s);
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stopped = stop.clone();
+        let stream_conn = c.clone();
+        let stream = std::thread::spawn(move || {
+            stream_conn.subscribe(
+                "server.getStorageCleanupReport",
+                json!({}),
+                || stopped.load(std::sync::atomic::Ordering::Relaxed),
+                |_| Ok(()),
+            )
+        });
+        c.rpc(
+            "terminal.open",
+            json!({"threadId":"telemetry","terminalId":"busy","cwd":home,"cols":80,"rows":24}),
+        )
+        .unwrap();
+        let initial = t3_protocol::api::diagnostics::telemetry_history(&c, 60_000, 60_000).unwrap();
+        c.rpc(
+            "terminal.write",
+            json!({"threadId":"telemetry","terminalId":"busy","data":include_str!("fixtures/telemetry-busy.sh")}),
+        )
+        .unwrap();
+        // The busy process belongs only to this isolated server's process group.
+        std::thread::sleep(Duration::from_secs(12));
+        let history = t3_protocol::api::diagnostics::telemetry_history(&c, 60_000, 60_000).unwrap();
+        c.rpc(
+            "terminal.close",
+            json!({"threadId":"telemetry","terminalId":"busy"}),
+        )
+        .unwrap();
+        let average = |h: &Value| {
+            h["buckets"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|b| b["avgCpuPercent"].as_f64())
+                .fold(0.0, f64::max)
+        };
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        stream.join().unwrap().unwrap();
+        views.push(json!({"server":label,"initialAvgCpu":average(&initial),"busyAvgCpu":average(&history),"retainedSampleCount":history["retainedSampleCount"],"childCpuVisible":average(&history)>5.0,"health":history["health"]}));
+    }
+    let report = json!({"referenceVersion":"0.1.7-nightly.20261031.3991","scope":"real lib telemetry reader; isolated busy terminal child; percentages are observations, not exact equivalence","views":views});
+    std::fs::write(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/p2-telemetry-report.json"),
+        serde_json::to_vec_pretty(&report).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        views[1]["childCpuVisible"], true,
+        "o3 reader regression: {report}"
+    );
+    if views[0]["retainedSampleCount"].as_u64().unwrap_or(0) > 0 {
+        assert_eq!(
+            views[0]["childCpuVisible"], true,
+            "reference collected samples but child CPU absent: {report}"
+        );
+    } else {
+        eprintln!("Pinned reference returned no samples: CPU equivalence remains unproven");
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
