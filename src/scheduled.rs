@@ -127,7 +127,7 @@ fn validate(p: &Value) -> Result<(), Value> {
             }
         }
         Some("webhook") => {
-            crate::webhook::validate(sched).map_err(|e|failure(e,None))?;
+            crate::webhook::validate(sched).map_err(|e| failure(e, None))?;
         }
         _ => {
             return Err(failure(
@@ -205,7 +205,7 @@ fn upsert(s: &Arc<State>, p: &Value) -> Reply {
         task["createdBy"] = e["createdBy"].clone();
         task["creationSource"] = e["creationSource"].clone();
     }
-    crate::webhook::prepare(&tx, &id, &mut task).map_err(|e|failure(&e,Some(&id)))?;
+    crate::webhook::prepare(&tx, &id, &mut task).map_err(|e| failure(&e, Some(&id)))?;
     put(&tx, KIND, &id, "", &task).map_err(|e| failure(&e, Some(&id)))?;
     let result = json!({"task":task});
     if let Some(cid) = p["commandId"].as_str() {
@@ -253,17 +253,30 @@ fn delete(s: &Arc<State>, p: &Value) -> Result<String, Value> {
         .as_str()
         .filter(|v| !v.is_empty())
         .ok_or_else(|| failure("id is required", None))?;
-    let n =
-        s.db.lock()
-            .unwrap()
-            .execute(
-                "DELETE FROM records WHERE kind=? AND id=?",
-                params![KIND, id],
-            )
+    let mut db = s.db.lock().unwrap();
+    let tx = db
+        .transaction()
+        .map_err(|e| failure(&e.to_string(), Some(id)))?;
+    let task =
+        get(&tx, KIND, id).map_err(|_| failure("The scheduled task does not exist.", Some(id)))?;
+    tx.execute(
+        "DELETE FROM records WHERE kind=? AND id=?",
+        params![KIND, id],
+    )
+    .map_err(|e| failure(&e.to_string(), Some(id)))?;
+    if task["schedule"]["type"] == "webhook" || get(&tx, "hookCredentials", id).is_ok() {
+        tx.execute(
+            "DELETE FROM records WHERE kind='hookCredentials' AND id=?",
+            [id],
+        )
+        .map_err(|e| failure(&e.to_string(), Some(id)))?;
+        tx.execute("DELETE FROM hook_queue WHERE task=?", [id])
             .map_err(|e| failure(&e.to_string(), Some(id)))?;
-    if n == 0 {
-        return Err(failure("The scheduled task does not exist.", Some(id)));
+        tx.execute("DELETE FROM hook_replay WHERE task=?", [id])
+            .map_err(|e| failure(&e.to_string(), Some(id)))?;
     }
+    tx.commit().map_err(|e| failure(&e.to_string(), Some(id)))?;
+    drop(db);
     s.streams.ops.wake_scheduler();
     Ok(id.to_owned())
 }
@@ -278,12 +291,14 @@ fn run_now(s: &Arc<State>, p: &Value) -> Reply {
 
 /// Starts the task's thread (or message) and records the outcome on the task.
 fn fire(s: &Arc<State>, id: &str) -> Reply {
-    fire_prompt(s,id,None)
+    fire_prompt(s, id, None)
 }
 pub(crate) fn fire_prompt(s: &Arc<State>, id: &str, prompt: Option<&str>) -> Reply {
     let mut task = get(&s.db.lock().unwrap(), KIND, id)
         .map_err(|_| failure("The scheduled task does not exist.", Some(id)))?;
-    if let Some(prompt) = prompt { task["prompt"] = json!(prompt); }
+    if let Some(prompt) = prompt {
+        task["prompt"] = json!(prompt);
+    }
     let number = task["runCount"].as_i64().unwrap_or(0) + 1;
     let cid = format!("scheduled:{id}:{number}");
     let message = format!("scheduled-{id}-{number}");
@@ -342,8 +357,10 @@ fn due(s: &State, now: i64) -> (Vec<String>, Option<i64>) {
             soonest = Some(soonest.map_or(at, |s| s.min(at)));
         }
     }
-    if tasks.iter().any(|t|t["schedule"]["type"]=="webhook") {
-        if let Some(at)=crate::webhook::next_due(s) {soonest=Some(soonest.map_or(at,|v|v.min(at)));}
+    if tasks.iter().any(|t| t["schedule"]["type"] == "webhook") {
+        if let Some(at) = crate::webhook::next_due(s) {
+            soonest = Some(soonest.map_or(at, |v| v.min(at)));
+        }
     }
     (ready, soonest)
 }
@@ -401,7 +418,9 @@ pub fn ensure_started(s: &Arc<State>) {
                 let _ = crate::settlement::tick(&s, now_ms());
             }
             let (ready, soonest) = due(&s, now_ms());
-            if soonest.is_some_and(|at|at<=now_ms()) { crate::webhook::tick(&s); }
+            if soonest.is_some_and(|at| at <= now_ms()) {
+                crate::webhook::tick(&s);
+            }
             let limited = crate::limits::tick(&s);
             let soonest = match (soonest, limited) {
                 (Some(a), Some(b)) => Some(a.min(b)),
