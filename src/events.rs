@@ -818,22 +818,24 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                     &json!({"id":id,"key":key,"providerInstanceId":t["providerInstanceId"],"worktreePath":t["worktreePath"],"projectId":t["projectId"],"createdAt":at}),
                 )?;
             }
-            let sender = s.active.lock().unwrap().get(&rid).cloned();
+            // The native turn already ended: the answer is recorded, with nothing to deliver.
+            // Checked first, as the channel can outlive the run while the supervisor cleans up.
+            let finished = matches!(
+                get(&tx, "runs", &rid)?["status"].as_str(),
+                Some("completed" | "failed" | "interrupted" | "cancelled")
+            );
+            let sender = if finished {
+                None
+            } else {
+                s.active.lock().unwrap().get(&rid).cloned()
+            };
             let permit = match sender {
                 Some(sender) => Some(
                     sender
                         .try_reserve_owned()
                         .map_err(|_| "provider control busy")?,
                 ),
-                None if kind == "thread.user-input.dismiss" => None,
-                // The native turn already ended: the answer is recorded, with nothing to deliver.
-                None if matches!(
-                    get(&tx, "runs", &rid)?["status"].as_str(),
-                    Some("completed" | "failed" | "interrupted" | "cancelled")
-                ) =>
-                {
-                    None
-                }
+                None if finished || kind == "thread.user-input.dismiss" => None,
                 None => return Err("provider request is no longer live".into()),
             };
             request["status"] = json!(if kind == "thread.user-input.dismiss" {
@@ -1065,16 +1067,30 @@ pub(crate) fn prepare_run_ownership(
     Ok(())
 }
 
-/// Whether a finished run left live requests behind for [`release_requests`] to close.
-pub(crate) fn has_live_requests(s: &State, tid: &str) -> Result<bool> {
-    s.db.lock()
-        .unwrap()
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM records WHERE kind='runtimeRequests' AND thread_id=? AND json_extract(body,'$.status')='pending' AND json_extract(body,'$.responseCapability.type')='live')",
-            [tid],
-            |r| r.get(0),
-        )
-        .map_err(|e| e.to_string())
+/// The unanswered requests that only a run's provider channel could deliver.
+fn live_requests(db: &Connection, tid: &str, rid: &str) -> Result<Vec<Value>> {
+    let mut q = db
+        .prepare("SELECT body FROM records WHERE kind='runtimeRequests' AND thread_id=? AND json_extract(body,'$.status')='pending' AND json_extract(body,'$.responseCapability.type')='live'")
+        .map_err(|e| e.to_string())?;
+    let bodies = q
+        .query_map([tid], |r| r.get::<_, String>(0))
+        .map_err(|e| e.to_string())?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    let mut requests = Vec::new();
+    for body in bodies {
+        let request: Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+        let node = request["nodeId"].as_str().unwrap_or_default();
+        if node == rid || get(db, "nodes", node).is_ok_and(|n| n["runId"].as_str() == Some(rid)) {
+            requests.push(request);
+        }
+    }
+    Ok(requests)
+}
+
+/// Whether a finished run left requests behind for [`release_requests`] to close.
+pub(crate) fn has_live_requests(s: &State, tid: &str, rid: &str) -> Result<bool> {
+    Ok(!live_requests(&s.db.lock().unwrap(), tid, rid)?.is_empty())
 }
 
 /// Closes a finished run's unanswered live requests the way T3 closes those of a released
@@ -1083,28 +1099,8 @@ pub(crate) fn release_requests(s: &State, tid: &str, rid: &str) -> Result<()> {
     let mut db = s.db.lock().unwrap();
     let tx = db.transaction().map_err(|e| e.to_string())?;
     let t = get(&tx, "thread", tid)?;
-    let bodies = |sql: &str, params: &[&str]| -> Result<Vec<String>> {
-        let mut q = tx.prepare(sql).map_err(|e| e.to_string())?;
-        let rows = q
-            .query_map(rusqlite::params_from_iter(params), |r| r.get(0))
-            .map_err(|e| e.to_string())?
-            .collect::<std::result::Result<Vec<_>, _>>()
-            .map_err(|e| e.to_string())?;
-        Ok(rows)
-    };
-    let pending = bodies(
-        "SELECT body FROM records WHERE kind='runtimeRequests' AND thread_id=? AND json_extract(body,'$.status')='pending'",
-        &[tid],
-    )?;
     let at = iso(now_ms());
-    for body in pending {
-        let mut request: Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
-        let node = request["nodeId"].as_str().unwrap_or_default().to_owned();
-        let owned =
-            node == rid || get(&tx, "nodes", &node).is_ok_and(|n| n["runId"].as_str() == Some(rid));
-        if !owned || request["responseCapability"]["type"] != "live" {
-            continue;
-        }
+    for mut request in live_requests(&tx, tid, rid)? {
         request["status"] = json!("expired");
         request["responseCapability"] = json!({"type":"not_resumable","reason":"Provider session was closed before this runtime request was resolved."});
         request["resolvedAt"] = json!(at);
@@ -1114,10 +1110,18 @@ pub(crate) fn release_requests(s: &State, tid: &str, rid: &str) -> Result<()> {
             .to_owned();
         put(&tx, "runtimeRequests", &id, tid, &request)?;
         append(&tx, tid, "runtime-request.updated", request, &t)?;
-        for body in bodies(
-            "SELECT body FROM records WHERE kind='turnItems' AND thread_id=? AND json_extract(body,'$.requestId')=?",
-            &[tid, &id],
-        )? {
+        let items = {
+            let mut q = tx
+                .prepare("SELECT body FROM records WHERE kind='turnItems' AND thread_id=? AND json_extract(body,'$.requestId')=?")
+                .map_err(|e| e.to_string())?;
+            let rows = q
+                .query_map([tid, id.as_str()], |r| r.get::<_, String>(0))
+                .map_err(|e| e.to_string())?
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?;
+            rows
+        };
+        for body in items {
             let mut item: Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
             item["status"] = json!("cancelled");
             item["completedAt"] = json!(at);

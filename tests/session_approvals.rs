@@ -160,6 +160,14 @@ fn stop_interrupts_approval_blocked_run_without_inventing_native_request_resolut
     // Past the provider's idle reap: what the reader still offers must still be accepted.
     std::thread::sleep(Duration::from_millis(300));
     let p = wait(&c, |_| true);
+    // The supervisor can hold a closed channel while it cleans up; the answer must not need it.
+    let (closed, receiver) = tokio::sync::mpsc::channel(1);
+    drop(receiver);
+    s.state
+        .active
+        .lock()
+        .unwrap()
+        .insert(p["runs"][0]["id"].as_str().unwrap().to_owned(), closed);
     let mut command = t3_protocol::approvals::command(
         &json!({"thread":"t","runtimeRequestId":rows[0]["requestId"],"decision":"accept"}),
         &p,

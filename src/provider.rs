@@ -339,7 +339,7 @@ pub(crate) fn start(
                 );
             }
         }
-        if crate::events::has_live_requests(&s, &tid).unwrap_or(false) {
+        if crate::events::has_live_requests(&s, &tid, &rid).unwrap_or(false) {
             let state = s.clone();
             let (thread, run) = (tid.clone(), rid.clone());
             tokio::spawn(async move {

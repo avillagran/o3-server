@@ -1623,9 +1623,9 @@ nice with four Cargo jobs; full suites used four test threads.
 
 
 Release comparison with tools/bench-rss on two verified binaries: an archive of main
-(1eb59d7, sha256 `9cff9a34`) and this branch (sha256 `b79707ef`), alternating three
-runs each. An earlier table here compared main with itself: both reports carried the
-main hash, and its reported speedup is withdrawn. The workload creates 20 threads,
+(1eb59d7, sha256 `9cff9a34`) and this branch (sha256 `cccc0b13`), with three runs
+each, alternating main and branch. An earlier table here compared main with itself:
+both reports carried the main hash, and its reported speedup is withdrawn. The workload creates 20 threads,
 seeds one with 1,000 deferred messages of about 1 KiB, measures the last 100 message
 dispatches, then appends 100 thread-metadata updates on that long thread; three bounded
 subscribers and 1,000 settings reads exercise RSS retention. Latency is loopback
@@ -1633,14 +1633,15 @@ end-to-end RPC wall time including event append, receipt and shell projection.
 
 | Measurement, range of three runs | main | branch |
 |---|---:|---:|
-| Message dispatch median (ms) | 2.432 to 2.540 | 2.561 to 2.611 |
-| Message dispatch p95 (ms) | 2.827 to 3.898 | 2.857 to 3.528 |
-| Metadata append median (ms) | 0.424 to 0.429 | 0.452 to 0.466 |
-| Metadata append p95 (ms) | 0.467 to 0.537 | 0.547 to 0.758 |
-| Peak RSS (KiB) | 16144 to 16336 | 16880 to 17624 |
+| Message dispatch median (ms) | 2.430 to 2.513 | 2.551 to 2.616 |
+| Message dispatch p95 (ms) | 3.014 to 4.000 | 2.768 to 3.291 |
+| Metadata append median (ms) | 0.427 to 0.461 | 0.448 to 0.465 |
+| Metadata append p95 (ms) | 0.483 to 0.613 | 0.611 to 0.957 |
+| Peak RSS across phases (KiB) | 16508 to 16864 | 15964 to 17428 |
 
-The branch costs about 0.15 ms more per message and 0.03 ms per event, with up to
-about 1.3 MB more peak memory, all still far below the 50 MB target. Provider inference and child-process
+The branch costs about 0.1 ms more per message and up to 0.03 ms per event; peak RSS
+ranges overlap, with the highest branch run about 0.6 MB above the highest main run.
+All stay far below the 50 MB target. Provider inference and child-process
 memory are excluded. Raw sanitized runs and hashes:
 [rss-control-audit-main.json](rss-control-audit-main.json) and
 [rss-control-audit-branch.json](rss-control-audit-branch.json).
@@ -1663,5 +1664,8 @@ O3 now matches that window. A live request of a finished run stays offered for T
 delivered, because the native turn already ended, and adds no control outbox entry. After
 the window it becomes `expired` with a `not_resumable` capability and its turn items
 `cancelled`, as T3 does for a released session. `tests/session_approvals.rs` drives both
-outcomes through the real approvals reader and command builder. Only the first was
-compared on 3991: waiting out the 30-minute release is not part of the differential.
+outcomes through the real approvals reader and command builder, including an answer while
+the supervisor still holds the closed channel. Observed on 3991: the request stays pending
+and live at the differential's checkpoints. From source only: the 30-minute default, the
+expiry at release and the late answer, because the differential builds that answer without
+dispatching it and does not wait out the window.
