@@ -239,7 +239,7 @@
     "preview.clearProfile": {
       "status": "skip",
       "priority": "unused",
-      "note": "Unused against o3: desktop browser_profiles.rs:35 gates this RPC on serverBrowser and cleans up locally. Reclassified by independent audit on 2026-11-02."
+      "note": "System-browser profile cleanup now closes/reaps the child, deletes confined hashed storage, rejects symlink roots and removes preview snapshots. Real lib reader and fixture CDP lifecycle pass. Desktop gates on serverBrowser. Original skip/unused classification retained for independent audit; full agent browser contract remains incomplete."
     },
     "preview.close": {
       "status": "done",
@@ -399,7 +399,7 @@
     "provider.install.cancel": {
       "status": "done",
       "priority": "P2",
-      "note": "Desktop provider_setup.rs:47, T3ProviderInstances.qml:108. Managed cancellation implemented; a real reader passes on a completed operation, active cancellation not rerun independently. No custom-install flow exists in the clients."
+      "note": "Desktop provider_setup.rs:47, T3ProviderInstances.qml:108. Managed cancellation implemented; a real reader passes on a completed operation, active cancellation not rerun independently. No custom-install flow exists in the clients. Active external npm update cancellation is exercised through the real lib reader with an isolated fake installer."
     },
     "provider.install.remove": {
       "status": "skip",
@@ -414,7 +414,7 @@
     "provider.install.subscribe": {
       "status": "done",
       "priority": "P2",
-      "note": "Desktop provider_setup.rs:48. The real install stream reader passes over fixture installation output."
+      "note": "Desktop provider_setup.rs:48. The real install stream reader passes over fixture installation output. External npm update operation IDs and phases also use this stream; raw installer output is never exposed."
     },
     "provider.uploadFeedback": {
       "status": "skip",
@@ -689,7 +689,7 @@
     "server.getConfig": {
       "status": "partial",
       "priority": "P0",
-      "note": "Partial: managed built-in installation and versioned pinned updates have real provider-reader and npm-argv coverage; external/custom CLI updates remain unavailable where ownership is unknown. Agent browser service is unavailable. See CONFORMANCE.md."
+      "note": "Partial: external updates now refuse unowned Claude self-updates and support explicit original-prefix, user-owned npm updates with bounded execution, cancellation and version verification. Homebrew/system/manual/other drivers provide manual advice. Lazy system Chromium CDP child and authenticated preview stream are implemented; agent automation broker and full browser contract remain unfinished (agentBrowserAccess false). See provider-browser-contract.md and CONFORMANCE.md; no owner decision blocks this work."
     },
     "server.getDatabaseStorage": {
       "status": "skip",
@@ -824,7 +824,7 @@
     "server.updateProvider": {
       "status": "done",
       "priority": "P2",
-      "note": "Desktop provider_updates.rs:46. The managed update reader passes with fixture npm and native Claude fixture coverage; no real update ran. External updates are not advertised as working and stay with the server.getConfig owner decision."
+      "note": "Explicit original-prefix external npm updates added for native drivers; unknown/privileged installs fail with manual advice, never guessed Claude self-update. Config updateState and install operation/cancel readers use fixture tests, version verification and output suppression. Managed path retained. Homebrew/native/other-driver automatic maintenance not implemented; no real update ran. Status unchanged."
     },
     "server.updateServer": {
       "status": "skip",
@@ -904,7 +904,7 @@
     "subscribeServerConfig": {
       "status": "done",
       "priority": "P1",
-      "note": "Real consumers are quota and provider status plus keybinding readers: desktop src/quota_sources.rs:29, src/keybinding_settings.rs:39, Android QuotaReader.kt:26; desktop discards settings events at quota_sources.rs:30-32. Real-reader tests pass and independent audit found no missing event or value for those consumers. Config limits belong to server.getConfig, which stays partial."
+      "note": "Real consumers are quota and provider status plus keybinding readers: desktop src/quota_sources.rs:29, src/keybinding_settings.rs:39, Android QuotaReader.kt:26; desktop discards settings events at quota_sources.rs:30-32. Real-reader tests pass and independent audit found no missing event or value for those consumers. Config limits belong to server.getConfig, which stays partial. External updateState is notified through config; no claim of pinned browser/updater parity."
     },
     "subscribeServerLifecycle": {
       "status": "skip",

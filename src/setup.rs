@@ -1149,7 +1149,7 @@ fn managed_binary(s: &State, id: &str) -> Option<PathBuf> {
     Some(root.join("node_modules/.bin").join(name))
 }
 async fn start_managed(s: &Arc<State>, id: &str, version: Option<&str>) -> Reply {
-    let _identity = managed_binary(s, &id).ok_or_else(|| {
+    let _identity = managed_binary(s, id).ok_or_else(|| {
         setup_error(
             id,
             "install",

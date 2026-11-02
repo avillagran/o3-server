@@ -1,0 +1,86 @@
+{
+  "startup_to_websocket_ms": 11.993968015303835,
+  "measured_at_utc": "2026-11-02T17:58:30Z",
+  "binary_sha256": "e61ebf282943a023e3fd2619b04025d9cb9767ce6c996901b52777318647cf9d",
+  "binary": "/var/tmp/o3-build/main/release/o3-server",
+  "binary_bytes": 15941592,
+  "seed_messages": 1000,
+  "message_model_selection": false,
+  "append_last_100_ms": {
+    "median": 4.546712996670976,
+    "p95": 5.592002999037504,
+    "max": 18.40897699003108
+  },
+  "metadata_append_100_ms": {
+    "median": 1.9698770192917436,
+    "p95": 2.234723011497408,
+    "max": 3.026610007509589
+  },
+  "threads": 20,
+  "subscribers": 3,
+  "unary_calls": 1000,
+  "text_bytes_per_message": 1000,
+  "cold_kib": {
+    "VmHWM": 11340,
+    "VmRSS": 11340,
+    "RssAnon": 2032,
+    "RssFile": 9308,
+    "THP_enabled": 0,
+    "Threads": 4
+  },
+  "seeded_kib": {
+    "VmHWM": 17172,
+    "VmRSS": 17172,
+    "RssAnon": 3540,
+    "RssFile": 13632,
+    "THP_enabled": 0,
+    "Threads": 5
+  },
+  "subscribed_kib": {
+    "VmHWM": 17900,
+    "VmRSS": 17900,
+    "RssAnon": 4204,
+    "RssFile": 13696,
+    "THP_enabled": 0,
+    "Threads": 6
+  },
+  "after_churn_kib": {
+    "VmHWM": 17864,
+    "VmRSS": 17864,
+    "RssAnon": 4168,
+    "RssFile": 13696,
+    "THP_enabled": 0,
+    "Threads": 6
+  },
+  "snapshot_messages": [
+    10,
+    10,
+    10
+  ],
+  "under_50_mib": true,
+  "under_50_mb": true,
+  "providers": [
+    {
+      "instanceId": "claudeAgent",
+      "installed": true,
+      "status": "warning"
+    },
+    {
+      "instanceId": "codex",
+      "installed": true,
+      "status": "error"
+    }
+  ],
+  "bridge_enabled": true,
+  "gateway_hosting": false,
+  "provider_workload": "registered and probed; inference excluded (defer_start)",
+  "measurement": "Linux /proc/PID/status; disk profile under /var/tmp",
+  "allocator_env": {},
+  "browser_child": {
+    "unused_browser_process_count": 0,
+    "fixture_cdp_peer_rss_kib": 11160,
+    "fixture_kind": "Python CDP pipe peer, not Chromium",
+    "chromium_rss_kib": null,
+    "real_browser_test_run": false
+  }
+}

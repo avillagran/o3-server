@@ -2468,3 +2468,55 @@ can delete another clone's successful, registered checkout. Corrupt setup state 
 startup. The branch `t3/implement-client-visible-flows` is kept unmerged. Main keeps the safe
 behaviour on these rows: synchronous setup, cloning disabled, and a stop rejection that leaves
 the owner turn running.
+
+## 2026-11-02 — External updates and system-browser implementation (incomplete)
+
+No status or priority changes. See [reader inventory and outstanding contract](provider-browser-contract.md).
+This work does not complete the owner's requested agent-browser scope.
+
+External updates: removed unsafe blanket `claude update` advertisement/execution.
+A standard user-owned npm global prefix with matching native package metadata
+can be updated explicitly through the existing server.updateProvider RPC, using
+its original npm and prefix. Unknown, Homebrew, system-owned and other-driver
+installations remain manual advice. No sudo, shell execution or automatic update.
+The child has bounded time/output, process-group cancellation and a bounded
+post-update version probe. Raw installer output is suppressed, including errors.
+The existing config and install-stream readers receive state and operation IDs.
+Automatic Homebrew/native/other-driver ownership resolution is unfinished.
+
+Browser: lazy system Chromium child, inherited CDP pipe, private hashed profile
+storage, isolated incognito storage, attached page, basic navigation/resize and
+JPEG viewer with bearer/media-ticket authentication, ACK pacing, send deadline,
+session revocation checks and bounded lifetime/output. Profile clear stops and
+reaps the process before removing storage, rejects symlink roots, and closes
+snapshots. Close and server shutdown stop children. No browser is downloaded;
+missing executable returns an actionable message. One page per persistent profile
+is currently enforced. `agentBrowserAccess` stays false: automation tool/broker
+integration and the remaining browser protocol are unfinished.
+
+Failing-first evidence: the real lib provider projection initially returned
+canUpdate=true for an unowned Claude fixture; it now returns false and refuses
+the RPC. The real clearProfile reader initially acknowledged a symlinked profile
+root; it now rejects it and preserves the outside sentinel. Additional real
+Connection tests cover fixture npm argv/prefix, installer failure, active cancel,
+output suppression, CDP session routing, authenticated JPEG bytes, anonymous
+viewer rejection and reaped child before clear. Fixture child RSS observed
+11,160 KiB; this is Python, **not Chromium RSS**. System Chromium rendering,
+Chromium child RSS, real package updates and native agent tool access are unproven.
+No network, inference, credentials, user profiles, services, emulators, push or
+merge were needed. Newer T3 source observations are labelled in the inventory;
+existing pinned probes cannot certify the new browser/updater engine behavior.
+
+Validation: 255 default / 253 no-default tests pass, 19 opt-ins ignored in each
+full run. Strict Clippy with all targets and warnings denied passes in both
+configurations; fmt and gen-compat pass. All eight isolated pinned differentials
+pass (177.85 seconds). The telemetry reference still provides no CPU samples;
+these probes make no new browser or external-update parity claim.
+
+Release `tools/bench-rss`: maximum sampled server HWM 17,900 KiB (18.33 MB),
+under 50 MB, with browser unused and no browser child. Process-start to
+WebSocket 11.99 ms. Last-100 append median/p95 4.547/5.592 ms; metadata
+median/p95 1.970/2.235 ms. These are synthetic workload observations, not a
+controlled performance comparison. [Measurement](rss-provider-browser.json)
+separately records the Python fixture child and explicitly leaves actual
+Chromium RSS unmeasured. No combined-server/browser memory claim is made.
