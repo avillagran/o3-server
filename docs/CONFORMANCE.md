@@ -2458,3 +2458,65 @@ bodies, revealing which hooks exist; a recorder printing bytes before each failu
 restart forever. The token is now checked before any body is read, every rejection is the
 same `404 {}`, only token holders count against a 60 per second budget, and the recorder
 restarts at most three times per minute.
+
+## 2026-11-02 — Three-flow implementation follow-up (incomplete)
+
+Statuses and priorities are unchanged. This does **not** complete all three flows.
+
+- Child stop: the real Connection/dispatch/projection regression first failed with
+  the independent-stop rejection. A Claude task-start event now binds native task
+  identity; `stop_task` targets that task on the live owning transport. Native task
+  notifications update the subagent, item, node and background evidence. A two-second
+  deadline records failed/unconfirmed evidence and delivery-unknown, never cancelled,
+  if no native outcome arrives. The owner stays running; acknowledged cancellation
+  permits its subsequent completion. A silent child may still execute after timeout.
+  Newer T3 source uses SDK `stopTask` and awaits a task outcome with a two-second budget;
+  the actual wire control here is deterministic-peer evidence, not a pinned observation.
+  Codex remains unfinished: `turn/interrupt` can target a native child turn, but this
+  server does not retain/routinely project the child thread/turn identities from collab
+  items. Item-only/missing-identity stops reject safely. This is an implementation gap,
+  **not** proof that the provider cannot stop children or that it is infeasible.
+- Workspace setup: the actual lib subscription first timed out waiting for progress
+  on the old synchronous implementation. Checkout, submodules and project setup
+  scripts now publish staged snapshots with bounded tails. Cancel kills/reaps the
+  running process group, rolls back the owned worktree and reports cancelled. The
+  test retries the same worktree successfully and verifies the setup script's file.
+  Existing root/existing-worktree preparation is unchanged. Async script semantics,
+  setup terminal linkage, fetch behavior, failure matrix and pinned parity remain
+  unproven; synchronous `async:false` fixtures establish the tested behavior only.
+- Clone: the real start reader first failed the advertised-capability assertion.
+  Starts now reserve a destination exclusively, register the project, and launch a
+  tracked clone, with bounded progress snapshots and cancellation. A local Git
+  checkout filter holds the process group; cancellation removes its destination and
+  the fixture verifies the filter process disappears. Missing origins remove partial
+  directories. The job uses a 180-second deadline, 1 MiB stdout/256 KiB stderr budgets,
+  and publishes fixed stage labels, never raw transport output. URL userinfo/query/
+  fragment inputs reject before launch. Jobs/snapshots are capped at 64 and retained
+  only in memory; restart recovery is unfinished. The current lib offers CloneStart
+  but no named clone subscription/cancel reader; the latter use a real Connection,
+  so full client-read closure and desktop UI behavior are **not** claimed.
+
+The work was not kept fully sequential: the incomplete Codex stop gap was left open
+while workspace and clone implementation proceeded. No infeasibility exception is
+claimed. No credentials, network clone, inference, devices, services, user profiles,
+pushes or merges were used.
+
+Validation: **254 default / 252 no-default tests passed**, 19 opt-ins ignored
+in each full run. Strict Clippy (`--all-targets -- -D warnings`) passes with
+both feature configurations; fmt and generated compatibility notes pass.
+All eight existing pinned probes have passing results: seven passed together;
+the control-window probe initially failed because its isolated Unix socket path
+was 108 bytes, then passed after shortening the fixture's random directory name.
+These probes do not establish pinned parity for the new child-stop, staged
+setup/cancel or clone-job behavior. Non-GitHub repository-name resolution now
+rejects instead of silently constructing a GitHub URL; explicit remote URLs work.
+
+Release `tools/bench-rss`: **18,940 KiB peak (19.39 MB)**, below 50 MB.
+Authenticated WebSocket availability: **12.18 ms**. Last-100 append median/p95:
+**4.417/4.944 ms**; metadata median/p95 **1.872/2.150 ms**.
+[Measurement](rss-three-flows.json) includes the binary hash. This is the standard
+synthetic workload, excluding inference and active setup/clone children. There is
+no controlled baseline or performance-improvement claim. Active-job memory,
+native adapter hot-path overhead and child-stop latency with real providers remain
+unproven. All builds/tests ran serially under nice with four Cargo jobs and the
+required build/temp directories. No pushes or merges, including the local journal.
