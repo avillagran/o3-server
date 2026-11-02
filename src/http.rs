@@ -323,6 +323,7 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
                         use tokio::io::AsyncReadExt;
                         let mut recorder: Option<tokio::process::Child> = None;
                         let mut video = vec![0u8; 64 * 1024];
+                        let mut empty_restarts = 0;
                         let mut timer = tokio::time::interval(std::time::Duration::from_secs(2));
                         loop {
                             let settings = crate::settings::read(&device_state).unwrap_or_default();
@@ -336,7 +337,18 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
                                     }
                                 }=>{
                                     let Ok(n)=read else{break;};
-                                    if n==0 {break;}
+                                    if n==0 {
+                                        if let Some(mut child)=recorder.take(){let _=child.start_kill();let _=child.wait().await;}
+                                        empty_restarts += 1;
+                                        if empty_restarts > 3 { break; }
+                                        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                                        match crate::device::recorder(&serial) {
+                                            Ok(child)=>recorder=Some(child),
+                                            Err(_)=>break,
+                                        }
+                                        continue;
+                                    }
+                                    empty_restarts = 0;
                                     let mut packet=vec![0u8;16];packet[..4].copy_from_slice(b"SEMU");packet[4]=1;packet[5]=1;
                                     packet.extend_from_slice(&video[..n]);
                                     let send=ws.send(tokio_tungstenite::tungstenite::Message::Binary(packet.into()));

@@ -25,7 +25,8 @@ elif args[-2:] == ['wm','size']: print('Physical size: 1080x1920')
 elif 'screenrecord' in args:
  with open({pid:?},'w') as f:f.write(str(os.getpid()))
  sys.stdout.buffer.write(open({fixture:?},'rb').read());sys.stdout.buffer.flush()
- time.sleep(30)
+ if os.path.exists({pid:?}+'.started'): time.sleep(30)
+ else: open({pid:?}+'.started','w').close()
 "#,
             log = log.to_str().unwrap(),
             pid = pid.to_str().unwrap(),
@@ -55,6 +56,24 @@ elif 'screenrecord' in args:
     let data = packet.into_data();
     let (_, payload) = device_hub::parse_semu(&data).expect("real SEMU reader");
     assert_eq!(payload, std::fs::read(fixture).unwrap());
+    // The fixture recorder exits once after its first frame. The viewer must
+    // receive a frame from the replacement recorder on the same socket.
+    let mut next = None;
+    assert!(
+        support::wait_for(Duration::from_secs(3), || {
+            if let Ok(packet) = ws.read() {
+                next = Some(packet.into_data());
+                true
+            } else {
+                false
+            }
+        }),
+        "EOF must restart video without closing the stream"
+    );
+    let next = next.unwrap();
+    let (_, restarted) =
+        device_hub::parse_semu(&next).expect("EOF must restart video without closing the stream");
+    assert_eq!(restarted, payload);
     // The same Annex B bytes fed to the desktop decoder produce a real frame.
     use std::io::Write;
     let mut decoder = std::process::Command::new("ffmpeg")
