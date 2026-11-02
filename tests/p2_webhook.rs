@@ -84,3 +84,18 @@ fn post(base: &str, path: &str, body: &str, signature: &str) -> String {
     let _ = stream.read_to_string(&mut result);
     result
 }
+
+#[test]
+fn unsigned_template_and_filter_inputs_are_rejected() {
+    let s = support::start(|_| {});
+    let c = s.connect();
+    for (prompt, filters, dedupe) in [
+        ("{{query.text}}", json!([]), json!({})),
+        ("safe", json!([{"path":"headers.x-event","op":"equals","value":"go"}]), json!({})),
+        ("safe", json!([]), json!({"replayKey":"{{headers.x-delivery}}"})),
+        ("safe", json!([]), json!({"coalesceKey":"{{query.group}}"})),
+    ] {
+        let p = json!({"id":"unsafe","title":"Hook","prompt":prompt,"enabled":true,"schedule":{"type":"webhook","signature":{"header":"X-Hub-Signature-256","encoding":"hex","prefix":"sha256=","secret":"fixture-only-key"},"filters":filters,"dedupe":dedupe},"projectId":"p","workspaceStrategy":{"type":"root"},"modelSelection":{"instanceId":"scripted","model":"m"},"runtimeMode":"full-access","interactionMode":"default"});
+        assert!(scheduled_tasks::upsert(&c, &TaskUpsert::from_json(&p).unwrap()).is_err(), "unsigned input accepted: {p}");
+    }
+}

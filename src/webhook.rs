@@ -10,6 +10,15 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
+fn signed_template(template: &str) -> bool {
+    let mut rest = template;
+    while let Some((_, tail)) = rest.split_once("{{") {
+        let Some((path, after)) = tail.split_once("}}") else { return false; };
+        if path.trim() != "body" && !path.trim().starts_with("body.") { return false; }
+        rest = after;
+    }
+    true
+}
 pub fn validate(s: &Value) -> Result<(), &'static str> {
     let sig = &s["signature"];
     if sig["header"].as_str().is_none_or(|h| {
@@ -37,7 +46,7 @@ pub fn validate(s: &Value) -> Result<(), &'static str> {
                     Some("exists" | "equals" | "notEquals" | "in" | "startsWith")
                 ) || f["path"].as_str().is_none_or(|p| {
                     p.len() > 1024
-                        || !matches!(p.split('.').next(), Some("body" | "headers" | "query"))
+                        || !matches!(p.split('.').next(), Some("body"))
                 })
             })
     }) {
@@ -49,6 +58,11 @@ pub fn validate(s: &Value) -> Result<(), &'static str> {
     {
         return Err("invalid coalesce window");
     }
+    for key in ["replayKey", "coalesceKey"] {
+        if s["dedupe"][key].as_str().is_some_and(|t| !signed_template(t)) {
+            return Err("webhook templates require signed body fields");
+        }
+    }
     Ok(())
 }
 fn initialize(db: &Connection) -> Result<(), String> {
@@ -57,6 +71,10 @@ fn initialize(db: &Connection) -> Result<(), String> {
 pub fn prepare(db: &Connection, id: &str, task: &mut Value) -> Result<(), String> {
     if task["schedule"]["type"] != "webhook" {
         return Ok(());
+    }
+    validate(&task["schedule"])?;
+    if !signed_template(task["prompt"].as_str().unwrap_or("")) {
+        return Err("webhook prompt requires signed body fields".into());
     }
     initialize(db)?;
     let old = get(db, "hookCredentials", id).unwrap_or(Value::Null);
@@ -156,7 +174,7 @@ pub fn accept(
     id: &str,
     token: &str,
     headers: &hyper::HeaderMap,
-    query: &str,
+    _query: &str,
     body: &[u8],
 ) -> (u16, &'static str) {
     let mut db = s.db.lock().unwrap();
@@ -224,23 +242,14 @@ pub fn accept(
     if mac.verify_slice(&bytes).is_err() {
         return (401, "rejected_signature");
     }
-    let mut hs = json!({});
-    for (k, v) in headers {
-        if let Ok(v) = v.to_str() {
-            hs[k.as_str()] = if k.as_str() == sig["header"].as_str().unwrap_or("")
-                || ["authorization", "cookie", "x-api-key"].contains(&k.as_str())
-            {
-                json!("[redacted]")
-            } else {
-                json!(v)
-            };
-        }
+    // The wire contract authenticates only raw body bytes. Never expose unsigned
+    // headers (including the signature) or query values to execution decisions.
+    if validate(&task["schedule"]).is_err() || !signed_template(task["prompt"].as_str().unwrap_or("")) {
+        return (400, "unsigned_template");
     }
-    let qs: std::collections::BTreeMap<_, _> = url::form_urlencoded::parse(query.as_bytes())
-        .into_owned()
-        .collect();
+    let replay = hex(&Sha256::digest(body));
     let body: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
-    let root = json!({"body":body,"headers":hs,"query":qs});
+    let root = json!({"body":body});
     if task["schedule"]["filters"]
         .as_array()
         .is_some_and(|a| a.iter().any(|f| !matches(f, &root)))
@@ -248,20 +257,9 @@ pub fn accept(
         return (202, "filtered");
     }
     let dedupe = &task["schedule"]["dedupe"];
-    let replay = dedupe["replayKey"]
-        .as_str()
-        .map(|t| render(t, &root, false))
-        .unwrap_or_else(|| hex(&Sha256::digest(root["body"].to_string().as_bytes())));
-    if replay.len() > 4096 {
-        return (400, "invalid_key");
-    }
     let now = now_ms();
-    if tx
-        .execute("DELETE FROM hook_replay WHERE expires<=?", [now])
-        .is_err()
-    {
-        return (503, "error");
-    }
+    // No signed timestamp exists in this contract. Body digests never expire;
+    // maxDeliveryAgeMinutes only bounds time spent waiting in our queue.
     let exists = tx
         .query_row(
             "SELECT 1 FROM hook_replay WHERE task=? AND key=?",
@@ -311,7 +309,7 @@ pub fn accept(
     if prompt.is_empty() || prompt.len() > 64 * 1024 {
         return (400, "invalid_prompt");
     }
-    if tx.execute("INSERT INTO hook_queue VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET prompt=excluded.prompt",params![job,id,coalesce,now+delay,now+age,prompt]).is_err() || tx.execute("INSERT INTO hook_replay VALUES(?,?,?)",params![id,replay,now+86400000]).is_err() || tx.commit().is_err(){return (503,"error");}
+    if tx.execute("INSERT INTO hook_queue VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET prompt=excluded.prompt",params![job,id,coalesce,now+delay,now+age,prompt]).is_err() || tx.execute("INSERT INTO hook_replay VALUES(?,?,?)",params![id,replay,i64::MAX]).is_err() || tx.commit().is_err(){return (503,"error");}
     s.streams.ops.wake_scheduler();
     (202, "accepted")
 }
