@@ -513,6 +513,7 @@ fn project_identity_refresh_replaces_shell_without_losing_threads() {
         |v| {
             v["snapshot"]["projects"][0]["repositoryIdentity"]["canonicalKey"]
                 == "gitlab.com/group/new"
+                && v["resolvedRepositoryIdentityRoots"].as_array().is_some_and(|roots| roots.iter().any(|r| r == root.to_str().unwrap()))
         },
     );
     let replacement = items.last().unwrap();

@@ -576,6 +576,13 @@ fn bounded_history_survives_state_reopen_for_attach_and_open() {
         .as_str()
         .unwrap()
         .contains("history-5999-"));
+    // open restarts an exited restored session. Drain that new shell to its
+    // exit boundary before clearing; otherwise its prompt can arrive after clear.
+    let mut restarted = attach(recovered.connect(), "persist", "term-1", json!({}));
+    write(&recovered.connect(), "persist", "term-1", "exit\n");
+    restarted.until(T, |e| {
+        e["type"] == "exited" || e["snapshot"]["status"] == "exited"
+    });
     recovered
         .connect()
         .rpc(
