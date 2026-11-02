@@ -137,9 +137,9 @@
       "note": "o3-server runs no MCP app host; answers McpAppRequestError(provider-unsupported). tests/admin_reads.rs."
     },
     "orchestration.dispatchCommand": {
-      "status": "partial",
+      "status": "done",
       "priority": "P0",
-      "note": "Partial after independent audit: actual client Command/approval/queue/timeline/sidebar/awareness readers now execute on server output; acceptForSession survives actual idle reap; semantic title generation honors settings and guarded completion. Imported native references on thread.create now share launch validation and atomic persistence, exercised with ThreadCreate and real projection/timeline/queue readers. Remaining: durable-versus-native control delivery boundary; retained partial by the final reader sweep. See CONFORMANCE.md."
+      "note": "Actual client Command, approval, queue, timeline, sidebar and awareness readers execute on server output; acceptForSession survives idle reap; imported native references share launch validation. Native control delivery has no exactly-once acknowledgement: uncertain handoffs are recorded as delivery-unknown, never replayed. Accepted limits: other-owner and delegated-cohort cases with no client flow; RECOVERY.md's exact original-process reattachment. See CONFORMANCE.md."
     },
     "orchestration.getArchivedShellSnapshot": {
       "status": "partial",
@@ -227,9 +227,9 @@
       "note": "Real Connection background/identity/replay coverage plus Codex quota failure/reset and usage_limit error class via schema-based synthetic native peer; Claude rejection reset/error class projected. Still partial: required realistic captured exhausted-provider failure frame is unavailable; synthetic evidence is explicitly not a real capture. See CONFORMANCE.md."
     },
     "orchestration.subscribeThread": {
-      "status": "partial",
+      "status": "done",
       "priority": "P0",
-      "note": "Version-gated bounded legacy migration preserves internal continuation state without public leakage. Gated Codex vs isolated T3 3991 checks two subscribers, request-before-result reader state, reducer success, unique run creation, terminal-record causality, exact replay order/identity and stable ID relationships. Strict comparison passes with one narrowly recorded reference-only null-to-absent lastSnoozeWakeAt replay exception; other replay differences still fail. Still partial: full reduced-record equality and broader multi-owner native delivery/recovery. See concurrent-reader-report.json and CONFORMANCE.md."
+      "note": "Real lib reducers and timeline, queue, approval, compaction-candidate and sidebar readers run on server output. Gated Codex vs isolated T3 3991 passes strictly: two subscribers, request-before-result window, unique run creation, terminal causality, exact replay order and identity, stable ID relationships. One recorded reference-only exception: lastSnoozeWakeAt null-to-absent in T3's replay, which no client reads. Reader-state equality, not JSON equality of every record. Accepted limits: other-owner and delegated-cohort cases with no client flow; RECOVERY.md's exact original-process reattachment. See concurrent-reader-report.json and CONFORMANCE.md."
     },
     "preview.adjust": {
       "status": "done",
@@ -1044,9 +1044,9 @@
       "note": "No client call site in inventory."
     },
     "message.dispatch": {
-      "status": "partial",
+      "status": "done",
       "priority": "P0",
-      "note": "Native uploaded images/files, serialized context, attachment steering, attempt identity and active execution recovery have real client and deterministic native-peer coverage. No consumed reader gap remains in this row. Receipt-atomic control outbox records uncertain handoffs without blind replay; this does not prove exactly-once native effects."
+      "note": "Native uploaded images and files, serialized context, attachment steering, attempt identity and active execution recovery have real client and deterministic native-peer coverage. The control outbox records uncertain handoffs without blind replay; exactly-once native effects are not claimed."
     },
     "notification.delivery.accept": {
       "status": "skip",
@@ -1114,14 +1114,14 @@
       "note": "tests/thread_commands.rs"
     },
     "run.interrupt": {
-      "status": "partial",
+      "status": "done",
       "priority": "P0",
-      "note": "Pinned 3991 raw Effect exits compared for terminal/unknown/wrong-thread/missing-owner/deleted-thread failures. Gated Codex init/steer/death/restart windows retain delivery-unknown without invented native success. Disabled continuation cancels after restart. Partial: terminal-run background work and other provider owners; independent audit pending."
+      "note": "Two-phase like T3: the request shows first and the native terminal produces the result; a bounded budget covers a provider that never answers. Claude and Codex init, steer, death and restart windows keep delivery-unknown without invented success. Pinned 3991 raw Effect failures compared. Accepted limits: other-owner and delegated-cohort cases with no client flow; RECOVERY.md's exact original-process reattachment."
     },
     "runtime-request.respond": {
-      "status": "partial",
+      "status": "done",
       "priority": "P0",
-      "note": "Real approval and structured-question readers cover native responses, scoped persistent operation consent, plan capture/deny and later implementation. No consumed reader gap remains in this row. Native acknowledgement lost across restart remains explicitly uncertain rather than blindly replayed."
+      "note": "Real approval and structured-question readers cover native responses, scoped persistent consent and plan flows. After a stop the request stays answerable like T3 and expires after the 30-minute release window; the late answer and expiry are source-derived for 3991, not binary-observed. Native acknowledgement lost across restart stays explicitly uncertain."
     },
     "subagent.stop": {
       "status": "partial",
@@ -1254,9 +1254,9 @@
       "note": "tests/thread_commands.rs"
     },
     "thread.stop": {
-      "status": "partial",
+      "status": "done",
       "priority": "P1",
-      "note": "Live target routes through interrupt with holdQueue; pinned 3991 idle queue hold, missing-ownership fallback, deleted-thread no-op and missing-thread raw error frames tested. Partial: other-owner background work, idle orphan cancellation and delegated completion cohorts; independent audit pending."
+      "note": "Live and approval-blocked targets route through interrupt with holdQueue; pinned 3991 idle queue hold, missing-ownership fallback, deleted-thread no-op and missing-thread raw errors tested. Desktop and Android Stop use run.interrupt; this command has no production caller today. Accepted limits: other-owner and delegated-cohort cases with no client flow; RECOVERY.md's exact original-process reattachment."
     },
     "thread.title.regeneration.complete": {
       "status": "skip",

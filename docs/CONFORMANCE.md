@@ -1669,3 +1669,17 @@ the supervisor still holds the closed channel. Observed on 3991: the request sta
 and live at the differential's checkpoints. From source only: the 30-minute default, the
 expiry at release and the late answer, because the differential builds that answer without
 dispatching it and does not wait out the window.
+
+## P0 promotion after five audits (2026-11-02)
+
+`orchestration.subscribeThread`, `orchestration.dispatchCommand`, `run.interrupt`,
+`thread.stop`, `runtime-request.respond` and `message.dispatch` are promoted after the
+fifth independent audit, of head 9a207e6, found nothing at any severity and gave all six
+a pass under the reader rule. It ran the full suite (207 passed, 0 failed), the pinned
+concurrent differential (zero reader and replay differences, one reference exemption) and
+two private tests of late question answers and dismissal through real readers.
+
+Not established, and stated in the row notes: exhaustive race schedules, authenticated
+live provider inference for these paths, and the 30-minute expiry or late answer as
+observed on 3991, where they come from source. `orchestration.subscribeShell` and
+`server.getConfig` stay partial for their own reasons.
