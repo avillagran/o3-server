@@ -1,0 +1,696 @@
+{
+  "differences": [
+    {
+      "o3": [
+        {
+          "attachments": [],
+          "attribution": {
+            "$type": "null"
+          },
+          "canRewindMessage": {
+            "$type": "boolean",
+            "value": false
+          },
+          "codeBlocks": [],
+          "commentary": {
+            "$type": "boolean",
+            "value": false
+          },
+          "createdAt": {
+            "$type": "number"
+          },
+          "fileReferences": [],
+          "forkRunId": {
+            "$type": "null"
+          },
+          "id": {
+            "$type": "string"
+          },
+          "inputIntent": {
+            "$type": "string",
+            "value": "turn_start"
+          },
+          "markdownImages": [],
+          "recallableText": {
+            "$type": "string"
+          },
+          "rev": {
+            "$type": "string"
+          },
+          "revertReference": {
+            "$type": "null"
+          },
+          "role": {
+            "$type": "string",
+            "value": "user"
+          },
+          "searchText": {
+            "$type": "string"
+          },
+          "senderThreadId": {
+            "$type": "null"
+          },
+          "showMessageActions": {
+            "$type": "boolean",
+            "value": true
+          },
+          "streaming": {
+            "$type": "boolean",
+            "value": false
+          },
+          "tables": [],
+          "text": {
+            "$type": "string"
+          }
+        },
+        {
+          "attachments": [],
+          "attribution": {
+            "$type": "null"
+          },
+          "canRewindMessage": {
+            "$type": "boolean",
+            "value": false
+          },
+          "codeBlocks": [],
+          "commentary": {
+            "$type": "boolean",
+            "value": false
+          },
+          "createdAt": {
+            "$type": "number"
+          },
+          "fileReferences": [],
+          "forkRunId": {
+            "$type": "null"
+          },
+          "id": {
+            "$type": "string"
+          },
+          "inputIntent": {
+            "$type": "string",
+            "value": "queued_turn"
+          },
+          "markdownImages": [],
+          "recallableText": {
+            "$type": "string"
+          },
+          "rev": {
+            "$type": "string"
+          },
+          "revertReference": {
+            "$type": "null"
+          },
+          "role": {
+            "$type": "string",
+            "value": "user"
+          },
+          "searchText": {
+            "$type": "string"
+          },
+          "senderThreadId": {
+            "$type": "null"
+          },
+          "showMessageActions": {
+            "$type": "boolean",
+            "value": true
+          },
+          "streaming": {
+            "$type": "boolean",
+            "value": false
+          },
+          "tables": [],
+          "text": {
+            "$type": "string"
+          }
+        },
+        {
+          "attachments": [],
+          "attribution": {
+            "$type": "null"
+          },
+          "canRewindMessage": {
+            "$type": "boolean",
+            "value": false
+          },
+          "codeBlocks": [],
+          "commentary": {
+            "$type": "boolean",
+            "value": false
+          },
+          "createdAt": {
+            "$type": "number"
+          },
+          "fileReferences": [],
+          "forkRunId": {
+            "$type": "null"
+          },
+          "id": {
+            "$type": "string"
+          },
+          "inputIntent": {
+            "$type": "string",
+            "value": "queued_turn"
+          },
+          "markdownImages": [],
+          "recallableText": {
+            "$type": "string"
+          },
+          "rev": {
+            "$type": "string"
+          },
+          "revertReference": {
+            "$type": "null"
+          },
+          "role": {
+            "$type": "string",
+            "value": "user"
+          },
+          "searchText": {
+            "$type": "string"
+          },
+          "senderThreadId": {
+            "$type": "null"
+          },
+          "showMessageActions": {
+            "$type": "boolean",
+            "value": true
+          },
+          "streaming": {
+            "$type": "boolean",
+            "value": false
+          },
+          "tables": [],
+          "text": {
+            "$type": "string"
+          }
+        },
+        {
+          "attachments": [],
+          "attribution": {
+            "$type": "null"
+          },
+          "canRewindMessage": {
+            "$type": "boolean",
+            "value": false
+          },
+          "codeBlocks": [],
+          "commentary": {
+            "$type": "boolean",
+            "value": false
+          },
+          "createdAt": {
+            "$type": "number"
+          },
+          "fileReferences": [],
+          "forkRunId": {
+            "$type": "null"
+          },
+          "id": {
+            "$type": "string"
+          },
+          "inputIntent": {
+            "$type": "string",
+            "value": "queued_turn"
+          },
+          "markdownImages": [],
+          "recallableText": {
+            "$type": "string"
+          },
+          "rev": {
+            "$type": "string"
+          },
+          "revertReference": {
+            "$type": "null"
+          },
+          "role": {
+            "$type": "string",
+            "value": "user"
+          },
+          "searchText": {
+            "$type": "string"
+          },
+          "senderThreadId": {
+            "$type": "null"
+          },
+          "showMessageActions": {
+            "$type": "boolean",
+            "value": true
+          },
+          "streaming": {
+            "$type": "boolean",
+            "value": false
+          },
+          "tables": [],
+          "text": {
+            "$type": "string"
+          }
+        }
+      ],
+      "path": "/thread/timeline/timeline",
+      "reference": [
+        {
+          "attachments": [],
+          "attribution": {
+            "$type": "null"
+          },
+          "canRewindMessage": {
+            "$type": "boolean",
+            "value": false
+          },
+          "codeBlocks": [],
+          "commentary": {
+            "$type": "boolean",
+            "value": false
+          },
+          "createdAt": {
+            "$type": "number"
+          },
+          "fileReferences": [],
+          "forkRunId": {
+            "$type": "null"
+          },
+          "id": {
+            "$type": "string"
+          },
+          "inputIntent": {
+            "$type": "string",
+            "value": "turn_start"
+          },
+          "markdownImages": [],
+          "recallableText": {
+            "$type": "string"
+          },
+          "rev": {
+            "$type": "string"
+          },
+          "revertReference": {
+            "$type": "null"
+          },
+          "role": {
+            "$type": "string",
+            "value": "user"
+          },
+          "searchText": {
+            "$type": "string"
+          },
+          "senderThreadId": {
+            "$type": "null"
+          },
+          "showMessageActions": {
+            "$type": "boolean",
+            "value": true
+          },
+          "streaming": {
+            "$type": "boolean",
+            "value": false
+          },
+          "tables": [],
+          "text": {
+            "$type": "string"
+          }
+        },
+        {
+          "attachments": [],
+          "attribution": {
+            "$type": "null"
+          },
+          "canRewindMessage": {
+            "$type": "boolean",
+            "value": false
+          },
+          "codeBlocks": [],
+          "commentary": {
+            "$type": "boolean",
+            "value": false
+          },
+          "createdAt": {
+            "$type": "number"
+          },
+          "fileReferences": [],
+          "forkRunId": {
+            "$type": "null"
+          },
+          "id": {
+            "$type": "string"
+          },
+          "inputIntent": {
+            "$type": "string",
+            "value": "queued_turn"
+          },
+          "markdownImages": [],
+          "recallableText": {
+            "$type": "string"
+          },
+          "rev": {
+            "$type": "string"
+          },
+          "revertReference": {
+            "$type": "null"
+          },
+          "role": {
+            "$type": "string",
+            "value": "user"
+          },
+          "searchText": {
+            "$type": "string"
+          },
+          "senderThreadId": {
+            "$type": "null"
+          },
+          "showMessageActions": {
+            "$type": "boolean",
+            "value": true
+          },
+          "streaming": {
+            "$type": "boolean",
+            "value": false
+          },
+          "tables": [],
+          "text": {
+            "$type": "string"
+          }
+        },
+        {
+          "attachments": [],
+          "attribution": {
+            "$type": "null"
+          },
+          "canRewindMessage": {
+            "$type": "boolean",
+            "value": false
+          },
+          "codeBlocks": [],
+          "commentary": {
+            "$type": "boolean",
+            "value": false
+          },
+          "createdAt": {
+            "$type": "number"
+          },
+          "fileReferences": [],
+          "forkRunId": {
+            "$type": "null"
+          },
+          "id": {
+            "$type": "string"
+          },
+          "inputIntent": {
+            "$type": "string",
+            "value": "queued_turn"
+          },
+          "markdownImages": [],
+          "recallableText": {
+            "$type": "string"
+          },
+          "rev": {
+            "$type": "string"
+          },
+          "revertReference": {
+            "$type": "null"
+          },
+          "role": {
+            "$type": "string",
+            "value": "user"
+          },
+          "searchText": {
+            "$type": "string"
+          },
+          "senderThreadId": {
+            "$type": "null"
+          },
+          "showMessageActions": {
+            "$type": "boolean",
+            "value": true
+          },
+          "streaming": {
+            "$type": "boolean",
+            "value": false
+          },
+          "tables": [],
+          "text": {
+            "$type": "string"
+          }
+        },
+        {
+          "attachments": [],
+          "attribution": {
+            "$type": "null"
+          },
+          "canRewindMessage": {
+            "$type": "boolean",
+            "value": false
+          },
+          "codeBlocks": [],
+          "commentary": {
+            "$type": "boolean",
+            "value": false
+          },
+          "createdAt": {
+            "$type": "number"
+          },
+          "fileReferences": [],
+          "forkRunId": {
+            "$type": "null"
+          },
+          "id": {
+            "$type": "string"
+          },
+          "inputIntent": {
+            "$type": "string",
+            "value": "queued_turn"
+          },
+          "markdownImages": [],
+          "recallableText": {
+            "$type": "string"
+          },
+          "rev": {
+            "$type": "string"
+          },
+          "revertReference": {
+            "$type": "null"
+          },
+          "role": {
+            "$type": "string",
+            "value": "user"
+          },
+          "searchText": {
+            "$type": "string"
+          },
+          "senderThreadId": {
+            "$type": "null"
+          },
+          "showMessageActions": {
+            "$type": "boolean",
+            "value": true
+          },
+          "streaming": {
+            "$type": "boolean",
+            "value": false
+          },
+          "tables": [],
+          "text": {
+            "$type": "string"
+          }
+        },
+        {
+          "activity": {
+            "active": {
+              "$type": "boolean",
+              "value": false
+            },
+            "category": {
+              "$type": "string"
+            },
+            "command": {
+              "$type": "string"
+            },
+            "count": {
+              "$type": "number",
+              "value": 2
+            },
+            "entries": [
+              {
+                "active": {
+                  "$type": "boolean",
+                  "value": false
+                },
+                "category": {
+                  "$type": "string"
+                },
+                "command": {
+                  "$type": "string"
+                },
+                "failed": {
+                  "$type": "boolean",
+                  "value": false
+                },
+                "id": {
+                  "$type": "string"
+                },
+                "inspector": {
+                  "providerTurnId": {
+                    "$type": "string"
+                  },
+                  "revision": {
+                    "$type": "string"
+                  },
+                  "runId": {
+                    "$type": "string"
+                  },
+                  "sourceItemId": {
+                    "$type": "string"
+                  },
+                  "sourceThreadId": {
+                    "$type": "string"
+                  },
+                  "type": {
+                    "$type": "string",
+                    "value": "run_interrupt_request"
+                  }
+                },
+                "runId": {
+                  "$type": "string"
+                },
+                "status": {
+                  "$type": "string",
+                  "value": "completed"
+                },
+                "title": {
+                  "$type": "string"
+                },
+                "type": {
+                  "$type": "string",
+                  "value": "run_interrupt_request"
+                }
+              },
+              {
+                "active": {
+                  "$type": "boolean",
+                  "value": false
+                },
+                "category": {
+                  "$type": "string"
+                },
+                "command": {
+                  "$type": "string"
+                },
+                "failed": {
+                  "$type": "boolean",
+                  "value": false
+                },
+                "id": {
+                  "$type": "string"
+                },
+                "inspector": {
+                  "providerTurnId": {
+                    "$type": "null"
+                  },
+                  "revision": {
+                    "$type": "string"
+                  },
+                  "runId": {
+                    "$type": "string"
+                  },
+                  "sourceItemId": {
+                    "$type": "string"
+                  },
+                  "sourceThreadId": {
+                    "$type": "string"
+                  },
+                  "type": {
+                    "$type": "string",
+                    "value": "run_interrupt_result"
+                  }
+                },
+                "runId": {
+                  "$type": "string"
+                },
+                "status": {
+                  "$type": "string",
+                  "value": "interrupted"
+                },
+                "title": {
+                  "$type": "string"
+                },
+                "type": {
+                  "$type": "string",
+                  "value": "run_interrupt_result"
+                }
+              }
+            ],
+            "failed": {
+              "$type": "boolean",
+              "value": false
+            },
+            "id": {
+              "$type": "string"
+            },
+            "inspector": {
+              "providerTurnId": {
+                "$type": "null"
+              },
+              "revision": {
+                "$type": "string"
+              },
+              "runId": {
+                "$type": "string"
+              },
+              "sourceItemId": {
+                "$type": "string"
+              },
+              "sourceThreadId": {
+                "$type": "string"
+              },
+              "type": {
+                "$type": "string",
+                "value": "run_interrupt_result"
+              }
+            },
+            "runId": {
+              "$type": "string"
+            },
+            "status": {
+              "$type": "string",
+              "value": "interrupted"
+            },
+            "title": {
+              "$type": "string"
+            },
+            "type": {
+              "$type": "string",
+              "value": "run_interrupt_result"
+            }
+          },
+          "commentary": {
+            "$type": "boolean",
+            "value": false
+          },
+          "createdAt": {
+            "$type": "number"
+          },
+          "id": {
+            "$type": "string"
+          },
+          "rev": {
+            "$type": "string"
+          },
+          "role": {
+            "$type": "string",
+            "value": "activity"
+          },
+          "showMessageActions": {
+            "$type": "boolean",
+            "value": false
+          },
+          "text": {
+            "$type": "string"
+          }
+        }
+      ]
+    }
+  ],
+  "perServer": "two subscribers: snapshot before tail, strictly increasing sequences, unique run creation, four user messages exactly once, final timeline/queue readers equal fresh snapshot; nonempty sidebar reader",
+  "provider": "deterministic gated stdio peer; no credentials or inference",
+  "referenceVersion": "0.1.7-nightly.20261031.3991"
+}

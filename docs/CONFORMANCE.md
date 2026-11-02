@@ -1199,3 +1199,94 @@ Validation: 192 default / 190 no-default all-target tests, eleven opt-ins ignore
 per configuration; strict Clippy both configurations, fmt and generated compatibility
 docs. Release `tools/bench-rss`: **17,000 KiB (17.41 MB)
 HWM**, excluding inference and provider child RSS; see [rss-fourth-audit.json](rss-fourth-audit.json).
+
+## subscribeThread concurrency follow-up (2026-11-01)
+
+The three o3-only run fields `executionRequested`, `recoveryPending` and
+`recoveryReason` have no definition in the inspected T3 source and no reader in
+lib-t3-rust. They now live in `run_internal`, separate from public `records`.
+Startup migrates legacy run bodies, run-event payloads and cached launch
+projections without changing event sequences. The migration regression verifies
+boolean preservation, idempotence, public projection/replay/receipt exclusion and
+recovery of an existing preparing execution. The existing two-process SIGKILL
+regression still verifies native continuation and durable internal recovery reason.
+Snapshots (including streamed/compact snapshots), getThreadProjection and history
+read public records; event persistence excludes the private fields centrally.
+There is no per-RPC sanitizer.
+
+`tools/conformance-diff concurrent` adds a strict ignored test using the existing
+fresh-profile/process-group harness and a credential-free Python `codex` peer on
+each server's private PATH. Set `T3_REFERENCE_BIN` to a **server executable**, not
+the npm downloader/launcher; the test requires nightly 3991's version. It implements
+`--version`, initialize/initialized, account/read, model/list, skills/list,
+thread/start/resume and gated turn/start/interrupt/completed. T3's generated Codex
+schema requires full thread-start defaults (including approvalPolicy,
+approvalsReviewer, sandbox, projectId and sessionId). No Claude fallback or real
+inference was used. The source inspection covered CodexProvider.ts,
+CodexAdapterV2.ts and effect-codex-app-server's generated response schemas.
+
+Subscriber A attaches before the first message. Three separate connections queue
+messages concurrently with a pin command while the fake native turn remains open.
+Subscriber B attaches during execution. Interrupt with holdQueue, queue.resume,
+release gates, quiescence and explicit user un-settle complete the scenario.
+Both subscribers use the pinned real projection reducer and stream cursor reader;
+actual timeline/queue readers run throughout. Each server verifies snapshot before
+tail, increasing sequences, unique run creation and each of four user messages
+exactly once. Both subscribers' final timeline/queue outputs equal fresh snapshot
+reader outputs. Sidebar uses a nonempty authoritative shell snapshot, excluding
+marked repository-enrichment metadata snapshots from replacement semantics.
+This is reader-state equality, **not full JSON equality of every projection record**;
+full reduced-record equality and exhaustive per-record causality remain unproved.
+
+Three real reader bugs were fixed: queued user items now retain `queued_turn` intent
+on subsequent updates, and Codex's session capabilities advertise the implemented
+queued-message support, enabling the real queue reader's `canReorder`.
+The legacy internal `attempt.updated` event alias is now persisted/replayed as
+`run-attempt.updated`, which the actual projection reducer recognizes; a reducer
+regression covers it and startup repairs historical aliases.
+The remaining strict differential failure is retained in
+[concurrent-reader-report.json](concurrent-reader-report.json): T3 renders one
+additional timeline activity group containing `run_interrupt_request` and
+`run_interrupt_result`; o3 emits neither. This is client-read behavior, not an
+accepted interleaving difference. O3's current local interruption/hand-off is not a
+native execution acknowledgement (see RECOVERY.md); synthetic acknowledgement
+records were not added to hide the missing lifecycle.
+
+Final scenario runs 16, 17 and 18 (12.11 s, 11.67 s and 11.46 s) kept both
+servers alive on distinct loopback ports and each reached quiescence on both servers and failed
+on that same missing timeline group. No dropped/duplicated fixture messages or
+nonmonotonic sequences were observed. Earlier harness iterations failed on the npm
+launcher, incomplete command/peer schemas, treating reused checkpoint-scope
+`.created` events as unique records, and treating marked shell metadata refreshes
+as authoritative replacements; those are not server-equivalence evidence.
+Normalization preserves semantic fields, booleans and counts. It erases opaque
+revision/run identifiers and nonzero wall-clock instants, and sorts only the
+independently dispatched queued-message rows and acknowledgement slots, preserving
+the positions of the first message and causally dependent activities. The strict
+comparison does not discard interrupt activities. No accepted-difference contract
+was widened. **subscribeThread remains 🟡** for that concrete timeline gap and the
+explicitly unproved full-record/native delivery/recovery behavior.
+
+Harness iteration ledger (all failures are explicit, never silently accepted):
+
+| Runs | Observation |
+|---|---|
+| 1 | npm launcher failed the pinned-version check; switched to the private server executable. |
+| 2 | Incomplete command schema rejected with Missing key. |
+| 3 | Fake thread/start response missing approvalPolicy; native turn never started. |
+| 4 | Fake thread/start response missing projectId/sessionId; native turn never started. |
+| 5–6 | Harness incorrectly rejected T3's reused checkpoint-scope.created ID. |
+| 7 | Both scenarios completed; raw reader comparison exposed queue capability, queued intent and interrupt activity differences, plus expected timestamps/IDs/order. |
+| 8, 10 | Harness incorrectly replaced the authoritative shell with a marked metadata refresh. |
+| 9 | Explicit un-settle command lacked its required user reason. |
+| 11–12 | Both scenarios completed; interrupt group mismatch and opaque sidebar revision difference remained. |
+| 13–15 | Both scenarios completed; exactly one differing reader path: /thread/timeline/timeline (missing interrupt group). |
+| 16–18 | Final paired-server harness repeated the same single reader path; per-server reader assertions passed each time. |
+
+Final verification: **194 default / 192 no-default tests passed**, twelve explicit
+opt-ins ignored in each configuration. Strict all-target Clippy passed in both
+configurations; formatting, diff checks and `tools/gen-compat` passed. Initial full
+suite attempts caught the hand-written test schema missing `run_internal`; the
+fixture now uses the real schema initializer and both full suites were rerun.
+The opt-in concurrent differential intentionally remains failing on its reported
+client-read gap; these ordinary suite totals do not count it as passed.

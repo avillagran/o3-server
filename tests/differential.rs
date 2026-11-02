@@ -42,7 +42,11 @@ fn command(bin: &Path, home: &Path) -> Command {
         .expect("node runtime required");
     assert!(node_output.status.success());
     let node = PathBuf::from(String::from_utf8(node_output.stdout).unwrap().trim());
-    let path = format!("{}:/usr/bin:/bin", node.parent().unwrap().display());
+    let path = format!(
+        "{}:{}:/usr/bin:/bin",
+        home.join("bin").display(),
+        node.parent().unwrap().display()
+    );
     c.env_clear()
         .env("PATH", path)
         .env("HOME", home.join("home"))
@@ -173,6 +177,8 @@ fn shape(v: &Value, key: &str) -> Value {
         Value::String(s)
             if [
                 "_tag",
+                "inputIntent",
+                "role",
                 "instanceId",
                 "driver",
                 "kind",
@@ -582,15 +588,8 @@ fn script(s: &Server, workspace: &Path) -> BTreeMap<String, Value> {
     rows.insert("orchestration.launchThread".into(),outcome(c.rpc("orchestration.launchThread",json!({"commandId":"launch","projectId":"p1","title":"Empty launch","modelSelection":{"instanceId":"codex","model":"gpt-5"},"runtimeMode":"full-access","interactionMode":"default","workspaceStrategy":{"type":"root"}}))));
     rows
 }
-#[test]
-#[ignore = "starts isolated real T3 and o3; tools/conformance-diff"]
-fn upstream_differential() {
-    let root = PathBuf::from("/var/tmp/o3-build/tmp/differential")
-        .join(format!("run-{}", std::process::id()));
-    std::fs::create_dir_all(&root).unwrap();
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
-    let t3 = std::env::var_os("T3_REFERENCE_BIN")
+fn reference_binary() -> PathBuf {
+    std::env::var_os("T3_REFERENCE_BIN")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
             let versions =
@@ -603,7 +602,18 @@ fn upstream_differential() {
                 .collect();
             bins.sort();
             bins.pop().expect("set T3_REFERENCE_BIN")
-        });
+        })
+}
+#[test]
+#[ignore = "starts isolated real T3 and o3; tools/conformance-diff"]
+fn upstream_differential() {
+    let root = PathBuf::from("/var/tmp/o3-build/tmp/differential")
+        .join(format!("run-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let t3 = reference_binary();
+
     let upstream = start(&t3, &root.join("t3"));
     let o3 = start(Path::new(env!("CARGO_BIN_EXE_o3-server")), &root.join("o3"));
     let children =
@@ -728,4 +738,385 @@ fn shape_preserves_null_optional_tags_and_order() {
         shape(&json!({"id":"a","createdAt":"today"}), ""),
         shape(&json!({"id":"b","createdAt":"yesterday"}), "")
     );
+}
+
+fn connect(s: &Server) -> Connection {
+    Connection::new(&s.base, None, Credential::bearer(&s.token).unwrap()).unwrap()
+}
+fn first_thread(c: &Connection) -> Value {
+    let done = std::cell::Cell::new(false);
+    let mut snapshot = Value::Null;
+    c.subscribe(
+        "orchestration.subscribeThread",
+        json!({"threadId":"concurrent"}),
+        || done.get(),
+        |v| {
+            if let Some(v) = v {
+                snapshot = v;
+                done.set(true);
+            }
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert_eq!(snapshot["kind"], "snapshot");
+    snapshot
+}
+fn reader_outputs(p: &Value) -> Value {
+    json!({"timeline":t3_protocol::timeline::view(p, &json!({}), &t3_protocol::timeline::Render::neutral(false)).unwrap(),"queue":t3_protocol::queue::derive(p)})
+}
+struct Observer {
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    rx: std::sync::mpsc::Receiver<Value>,
+    join: std::thread::JoinHandle<Value>,
+}
+fn observe(s: &Server) -> Observer {
+    let c = connect(s);
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stopped = stop.clone();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let join = std::thread::spawn(move || {
+        let mut p = Value::Null;
+        let mut seq = 0;
+        let mut records = std::collections::BTreeSet::new();
+        let deadline = Instant::now() + Duration::from_secs(90);
+        c.subscribe(
+            "orchestration.subscribeThread",
+            json!({"threadId":"concurrent"}),
+            || stopped.load(std::sync::atomic::Ordering::Relaxed) || Instant::now() > deadline,
+            |v| {
+                if let Some(v) = v {
+                    if p.is_null() {
+                        assert_eq!(v["kind"], "snapshot", "snapshot must precede tail");
+                        p = v["projection"].clone();
+                        seq = t3_protocol::stream::cursor_of("orchestration.subscribeThread", &v)
+                            .unwrap();
+                        for kind in [
+                            "runs",
+                            "messages",
+                            "providerThreads",
+                            "providerTurns",
+                            "nodes",
+                            "attempts",
+                            "turnItems",
+                        ] {
+                            for r in p[kind].as_array().into_iter().flatten() {
+                                records.insert((kind.to_owned(), r["id"].to_string()));
+                            }
+                        }
+                    } else if v["event"].is_object() {
+                        let n = t3_protocol::stream::cursor_of("orchestration.subscribeThread", &v)
+                            .unwrap();
+                        assert!(n > seq, "nonmonotonic or duplicated sequence");
+                        seq = n;
+                        let e = &v["event"];
+                        let typ = e["type"].as_str().unwrap();
+                        if typ == "run.created" {
+                            let key = (
+                                typ.trim_end_matches(".created").to_owned(),
+                                e["payload"]["id"].to_string(),
+                            );
+                            assert!(
+                                records.insert(key.clone()),
+                                "duplicated record creation: {key:?}, {}",
+                                shape(e, "")
+                            );
+                        }
+                        t3_protocol::projection::apply(&mut p, e);
+                    }
+                    // Execute actual readers throughout the stream, including mid-flight queue state.
+                    reader_outputs(&p);
+                    tx.send(p.clone()).unwrap();
+                }
+                Ok(())
+            },
+        )
+        .unwrap();
+        p
+    });
+    let observer = Observer { stop, rx, join };
+    observer.rx.recv_timeout(Duration::from_secs(20)).unwrap();
+    observer
+}
+fn wait_projection(c: &Connection, pred: impl Fn(&Value) -> bool) -> Value {
+    let end = Instant::now() + Duration::from_secs(40);
+    loop {
+        let p = c
+            .rpc(
+                "orchestration.getThreadProjection",
+                json!({"threadId":"concurrent"}),
+            )
+            .unwrap();
+        if pred(&p) {
+            return p;
+        }
+        assert!(
+            Instant::now() < end,
+            "provider did not reach requested state: {}",
+            shape(&p, "")
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+fn dispatch_command(c: &Connection, mut v: Value) {
+    if matches!(
+        v["type"].as_str(),
+        Some("thread.create" | "message.dispatch")
+    ) {
+        v["createdBy"] = json!("user");
+        v["creationSource"] = json!("web");
+    }
+    let kind = v["type"].clone();
+    c.rpc("orchestration.dispatchCommand", v)
+        .unwrap_or_else(|e| panic!("{kind}: {e}"));
+}
+fn concurrent_scenario(s: &Server, home: &Path) -> Value {
+    let c = connect(s);
+    c.rpc("server.updateSettings",json!({"patch":{"textGenerationModelSelection":{"instanceId":"unavailable","model":"fixture"}}})).unwrap();
+    c.rpc("projects.mutate",json!({"type":"project.create","commandId":"fixture-project","projectId":"fixture-project","title":"Fixture","workspaceRoot":home,"scripts":[]})).unwrap();
+    dispatch_command(
+        &c,
+        json!({"type":"thread.create","commandId":"create-concurrent","threadId":"concurrent","projectId":"fixture-project","title":"Concurrent fixture","modelSelection":{"instanceId":"codex","model":"fixture"},"runtimeMode":"full-access","interactionMode":"default","branch":null,"worktreePath":null}),
+    );
+    let a = observe(s);
+    dispatch_command(
+        &c,
+        json!({"type":"message.dispatch","commandId":"first","threadId":"concurrent","messageId":"first","text":"first","attachments":[],"dispatchMode":{"type":"start_immediately"}}),
+    );
+    eprintln!("first dispatched");
+    let end = Instant::now() + Duration::from_secs(30);
+    while !home.join("started-1").exists() {
+        assert!(
+            Instant::now() < end,
+            "fake provider did not start; inspect isolated server.log and peer-methods.log"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let p = wait_projection(&c, |p| {
+        p["runs"]
+            .as_array()
+            .is_some_and(|rs| rs.iter().any(|r| r["status"] == "running"))
+    });
+    let run = p["runs"][0]["id"].clone();
+    std::thread::scope(|scope| {
+        let mut joins = vec![];
+        for i in 0..3 {
+            let c = connect(s);
+            joins.push(scope.spawn(move || dispatch_command(&c,json!({"type":"message.dispatch","commandId":format!("queued-{i}"),"threadId":"concurrent","messageId":format!("queued-{i}"),"text":format!("queued-{i}"),"attachments":[],"dispatchMode":{"type":"queue_after_active"}}))));
+        }
+        let c = connect(s);
+        joins.push(scope.spawn(move || {
+            dispatch_command(
+                &c,
+                json!({"type":"thread.pin","commandId":"pin-concurrent","threadId":"concurrent"}),
+            )
+        }));
+        for j in joins {
+            j.join().unwrap();
+        }
+    });
+    eprintln!("concurrent commands received");
+    let b = observe(s);
+    dispatch_command(
+        &c,
+        json!({"type":"run.interrupt","commandId":"interrupt-concurrent","threadId":"concurrent","runId":run,"holdQueue":true}),
+    );
+    wait_projection(&c, |p| {
+        reader_outputs(p)["timeline"]["threadState"]["working"] == false
+    });
+    dispatch_command(
+        &c,
+        json!({"type":"queue.resume","commandId":"resume-concurrent","threadId":"concurrent"}),
+    );
+    for n in 1..=4 {
+        std::fs::write(home.join(format!("release-{n}")), "").unwrap();
+    }
+    wait_projection(&c, |p| {
+        p["runs"].as_array().is_some_and(|rs| {
+            rs.len() == 4
+                && rs
+                    .iter()
+                    .all(|r| matches!(r["status"].as_str(), Some("completed" | "interrupted")))
+        })
+    });
+    dispatch_command(
+        &c,
+        json!({"type":"thread.unsettle","commandId":"unsettle-final","threadId":"concurrent","reason":"user"}),
+    );
+    eprintln!("quiescent");
+    let fresh = first_thread(&c)["projection"].clone();
+    let view = reader_outputs(&fresh);
+    let messages = view["timeline"]["messages"].as_array().unwrap();
+    for text in ["first", "queued-0", "queued-1", "queued-2"] {
+        assert_eq!(
+            messages.iter().filter(|m| m["text"] == text).count(),
+            1,
+            "missing or duplicated user message"
+        );
+    }
+    for obs in [a, b] {
+        let end = Instant::now() + Duration::from_secs(20);
+        loop {
+            let p = obs
+                .rx
+                .recv_timeout(end.saturating_duration_since(Instant::now()))
+                .unwrap();
+            if reader_outputs(&p) == view {
+                break;
+            }
+        }
+        obs.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        let reduced = obs.join.join().unwrap();
+        assert_eq!(
+            reader_outputs(&reduced),
+            view,
+            "subscriber differs from fresh snapshot"
+        );
+    }
+    let done = std::cell::Cell::new(false);
+    let mut sidebar = Value::Null;
+    let shell_connection = connect(s);
+    shell_connection
+        .subscribe(
+            "orchestration.subscribeShell",
+            json!({}),
+            || done.get(),
+            |v| {
+                if let Some(v) = v {
+                    if v.get("resolvedRepositoryIdentityRoots").is_some() {
+                        return Ok(());
+                    }
+                    sidebar = json!(
+                        t3_protocol::sidebar::view::rows(&v["snapshot"], "fixture", 0).unwrap()
+                    );
+                    assert!(
+                        !sidebar.as_array().unwrap().is_empty(),
+                        "empty sidebar: {}",
+                        shape(&v, "")
+                    );
+                    done.set(true);
+                }
+                Ok(())
+            },
+        )
+        .unwrap();
+    json!({"thread":view,"sidebar":sidebar})
+}
+#[test]
+#[ignore = "real isolated reference and credential-free gated Codex; tools/conformance-diff concurrent"]
+fn upstream_concurrent_differential() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = PathBuf::from("/var/tmp/o3-build/tmp").join(format!(
+        "concurrent-{}-{}",
+        std::process::id(),
+        o3_server::store::random_id().unwrap()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let reference = reference_binary();
+    let version = cli_output(command(&reference, &root).arg("--version"));
+    assert!(
+        String::from_utf8_lossy(&version.stdout).contains("0.1.7-nightly.20261031.3991"),
+        "reference must be pinned nightly 3991"
+    );
+    for name in ["t3", "o3"] {
+        let home = root.join(name);
+        std::fs::create_dir_all(home.join("bin")).unwrap();
+        std::os::unix::fs::symlink(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/concurrent-codex.py"),
+            home.join("bin/codex"),
+        )
+        .unwrap();
+    }
+    let upstream = start(&reference, &root.join("t3"));
+    let o3 = start(Path::new(env!("CARGO_BIN_EXE_o3-server")), &root.join("o3"));
+    assert_ne!(
+        upstream.base, o3.base,
+        "servers require separate loopback ports"
+    );
+    let mut views = vec![];
+    for (name, server) in [("t3", &upstream), ("o3", &o3)] {
+        eprintln!("concurrent differential: {name}");
+        views.push(concurrent_scenario(server, &root.join(name)));
+    }
+    // Keep all reader fields in the comparison. Any normalization must be justified
+    // against the accepted independent-operation ordering contract before adoption.
+    let normalized: Vec<_> = views.iter().map(|v| normalize_concurrent(v, "")).collect();
+    let mut differences = vec![];
+    reader_differences(&normalized[0], &normalized[1], "", &mut differences);
+    let report = json!({"referenceVersion":"0.1.7-nightly.20261031.3991","provider":"deterministic gated stdio peer; no credentials or inference","perServer":"two subscribers: snapshot before tail, strictly increasing sequences, unique run creation, four user messages exactly once, final timeline/queue readers equal fresh snapshot; nonempty sidebar reader","differences":differences});
+    let report_path = std::env::var_os("O3_CONCURRENT_REPORT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| root.join("reader-shapes.json"));
+    std::fs::write(&report_path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
+    assert!(
+        differences.is_empty(),
+        "reader differences: {}; sanitized report: {}",
+        differences.len(),
+        report_path.display()
+    );
+    drop(o3);
+    drop(upstream);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+// Opaque generated identities/revision hashes and wall-clock instants are not
+// portable across fresh profiles. Preserve zero/null distinctions and all semantic
+// strings, booleans and counts. Only independently dispatched user rows and their
+// acknowledgement list may permute under the accepted interleaving contract.
+fn normalize_concurrent(v: &Value, key: &str) -> Value {
+    match v {
+        Value::Object(m) => Value::Object(
+            m.iter()
+                .map(|(k, v)| (k.clone(), normalize_concurrent(v, k)))
+                .collect(),
+        ),
+        Value::Array(a) => {
+            let mut a: Vec<_> = a.iter().map(|v| normalize_concurrent(v, key)).collect();
+            if matches!(key, "messages" | "timeline" | "acknowledgedMessageIds") {
+                let independent = |v: &Value| {
+                    v.as_str()
+                        .or_else(|| v["id"].as_str())
+                        .is_some_and(|s| s.starts_with("queued-"))
+                };
+                let mut queued: Vec<_> = a.iter().filter(|v| independent(v)).cloned().collect();
+                queued.sort_by_key(Value::to_string);
+                let mut queued = queued.into_iter();
+                for v in &mut a {
+                    if independent(v) {
+                        *v = queued.next().unwrap();
+                    }
+                }
+            }
+            Value::Array(a)
+        }
+        Value::Number(n)
+            if (key.ends_with("At") || key == "startedAt") && n.as_i64().is_some_and(|n| n > 0) =>
+        {
+            json!(1)
+        }
+        Value::String(_) if matches!(key, "mergeBackRunId" | "rev" | "revision") => json!("opaque"),
+        _ => v.clone(),
+    }
+}
+
+fn reader_differences(a: &Value, b: &Value, path: &str, out: &mut Vec<Value>) {
+    if a == b {
+        return;
+    }
+    match (a,b) {
+        (Value::Object(a),Value::Object(b))=>{
+            let keys:std::collections::BTreeSet<_>=a.keys().chain(b.keys()).collect();
+            for k in keys {
+                match (a.get(k),b.get(k)) {
+                    (Some(a),Some(b))=>reader_differences(a,b,&format!("{path}/{k}"),out),
+                    (a,b)=>out.push(json!({"path":format!("{path}/{k}"),"referencePresent":a.is_some(),"o3Present":b.is_some()}))
+                }
+            }
+        },
+        (Value::Array(a),Value::Array(b)) if a.len()==b.len()=>{
+            for (i,(a,b)) in a.iter().zip(b).enumerate() { reader_differences(a,b,&format!("{path}/{i}"),out); }
+        },
+        _=>out.push(json!({"path":path,"reference":shape(a,path.rsplit('/').next().unwrap_or("")),"o3":shape(b,path.rsplit('/').next().unwrap_or(""))}))
+    }
 }

@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
 export TMPDIR=/var/tmp/o3-build/tmp
-export CARGO_TARGET_DIR=/var/tmp/o3-build/main
+export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-/var/tmp/o3-build/main}
 mkdir -p "$TMPDIR"
-exec nice cargo test -j 4 --no-default-features --test differential upstream_differential -- --ignored --nocapture --test-threads=1
+filter=upstream_differential
+if [ "${1:-}" = concurrent ]; then filter=upstream_concurrent_differential; fi
+exec nice cargo test -j 4 --no-default-features --test differential "$filter" -- --ignored --nocapture --test-threads=1
