@@ -980,7 +980,12 @@ pub async fn discover() -> Reply {
                 Some(url.to_string())
             }),
         ),
-        ("gitcafe", "GitCafe", "CAFE_TOKEN", None),
+        (
+            "gitcafe",
+            "GitCafe",
+            "CAFE_TOKEN",
+            Some("https://git.cafe/api/auth/principal".to_owned()),
+        ),
     ] {
         let token = std::env::var(token_env)
             .ok()
@@ -998,9 +1003,7 @@ pub async fn discover() -> Reply {
                 auth["status"] = json!("unauthenticated");
             }
         }
-        let detail = if kind == "gitcafe" {
-            "API credential validation is unavailable; token presence does not prove authentication."
-        } else if kind == "forgejo" && auth["host"]["_tag"] == "None" {
+        let detail = if kind == "forgejo" && auth["host"]["_tag"] == "None" {
             "Configure an explicit HTTPS FORGEJO_URL; credentials are never sent to repository-selected hosts."
         } else {
             "Environment credentials supported; desktop credential storage is not implemented."
@@ -1051,8 +1054,17 @@ async fn api_token_auth(endpoint: &str, token: &str) -> Value {
         body.extend_from_slice(&chunk);
     }
     if let Ok(user) = serde_json::from_slice::<Value>(&body) {
-        let account = ["login", "username", "account_id"]
-            .into_iter()
+        let fields: &[&str] = if endpoint.ends_with("/auth/principal") {
+            if !user["actorId"].as_str().is_some_and(|s| !s.is_empty()) {
+                return auth;
+            }
+            &["handle"]
+        } else {
+            &["login", "username", "account_id"]
+        };
+        let account = fields
+            .iter()
+            .copied()
             .find_map(|k| user[k].as_str())
             .filter(|s| !s.is_empty() && s.len() <= 200 && *s != token);
         if let Some(account) = account {
@@ -1070,6 +1082,11 @@ mod token_tests {
     async fn token_status_is_bounded_and_never_echoes_body_or_credential() {
         for (status, body, expected) in [
             ("200 OK", r#"{"login":"reader"}"#, "authenticated"),
+            (
+                "200 OK",
+                r#"{"actorId":"fixture-actor","handle":"reader","displayName":null,"avatarUrl":null}"#,
+                "authenticated",
+            ),
             ("401 Unauthorized", "fixture-secret", "unauthenticated"),
             ("403 Forbidden", "fixture-secret", "unknown"),
             ("200 OK", "fixture-secret", "unknown"),
@@ -1088,7 +1105,12 @@ mod token_tests {
                 )
                 .unwrap();
             });
-            let auth = api_token_auth(&format!("http://{address}/user"), "fixture-secret").await;
+            let path = if body.contains("actorId") {
+                "/auth/principal"
+            } else {
+                "/user"
+            };
+            let auth = api_token_auth(&format!("http://{address}{path}"), "fixture-secret").await;
             assert_eq!(auth["status"], expected);
             assert!(!auth.to_string().contains("fixture-secret"));
             worker.join().unwrap();
