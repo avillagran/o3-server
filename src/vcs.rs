@@ -999,11 +999,51 @@ pub async fn discover() -> Reply {
             );
             if let Some(token) = token.as_deref() {
                 auth = api_token_auth(endpoint, token).await;
+            } else if kind == "gitcafe" {
+                // Documented authenticated API command: the CLI owns its stored
+                // login. Never retrieve a token or expose CLI output/errors.
+                if let Ok(out) = proc::run(
+                    "cafe",
+                    Path::new("/"),
+                    &[
+                        "--host",
+                        "https://git.cafe/api",
+                        "--no-update-check",
+                        "--no-input",
+                        "--json",
+                        "api",
+                        "/auth/principal",
+                    ],
+                    Opts {
+                        timeout: std::time::Duration::from_secs(5),
+                        cap: 65536,
+                        allow_truncate: false,
+                    },
+                    &[],
+                )
+                .await
+                {
+                    if out.ok() {
+                        if let Ok(principal) = serde_json::from_slice::<Value>(&out.stdout) {
+                            if principal["actorId"].as_str().is_some_and(|v| !v.is_empty()) {
+                                if let Some(handle) = principal["handle"]
+                                    .as_str()
+                                    .filter(|v| !v.is_empty() && v.len() <= 200)
+                                {
+                                    auth["status"] = json!("authenticated");
+                                    auth["account"] = option(Some(handle.into()));
+                                }
+                            }
+                        }
+                    }
+                }
             } else {
                 auth["status"] = json!("unauthenticated");
             }
         }
-        let detail = if kind == "forgejo" && auth["host"]["_tag"] == "None" {
+        let detail = if kind == "gitcafe" {
+            "CAFE_TOKEN or cafe CLI login supported; CLI failures remain unknown."
+        } else if kind == "forgejo" && auth["host"]["_tag"] == "None" {
             "Configure an explicit HTTPS FORGEJO_URL; credentials are never sent to repository-selected hosts."
         } else {
             "Environment credentials supported; desktop credential storage is not implemented."
