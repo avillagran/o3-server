@@ -656,6 +656,10 @@ pub(crate) fn capture_handoff(
             }
         }
     }
+    while media.len() > 32 || serde_json::to_vec(&media).map_err(|e| e.to_string())?.len() > 65536 {
+        media.remove(0);
+        truncated = true;
+    }
     if truncated {
         let text = t["providerHandoff"].as_str().unwrap_or("");
         t["providerHandoff"] = json!(format!("[Historical attachments truncated: oldest descriptors omitted; newest retained.]\n{text}"));

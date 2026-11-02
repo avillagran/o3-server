@@ -75,6 +75,13 @@ fn long_latest_messages_fit_real_http_and_shell_readers() {
     let mut stream = support::subscribe(s.connect(), "orchestration.subscribeShell", json!({}));
     let frame = stream.next(std::time::Duration::from_secs(10));
     assert_eq!(frame["snapshot"]["threads"].as_array().unwrap().len(), 375);
+    s.state.db.lock().unwrap().execute("UPDATE records SET body=json_set(body,'$.text',?1) WHERE kind='messages' AND id='long0'", ["x".repeat(9 * 1024 * 1024)]).unwrap();
+    s.state.notify(); // Direct fixture writes must wake the WAL checkpointer.
+    c.rpc("orchestration.dispatchCommand",json!({"type":"thread.metadata.update","commandId":"incremental","threadId":"long0","title":"Incremental proof"})).unwrap();
+    let update = stream.next(std::time::Duration::from_secs(10));
+    assert_eq!(update["kind"], "thread.updated");
+    assert!(update["thread"]["latestVisibleMessage"].is_null());
+    assert!(serde_json::to_vec(&update).unwrap().len() < 8192);
     eprintln!(
         "bounded shell bytes={}",
         serde_json::to_vec(&shell).unwrap().len()

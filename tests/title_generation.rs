@@ -152,8 +152,16 @@ fn automatic_title_with_codex_preference_uses_fallback() {
     let root = s.dir.join("repo");
     std::fs::create_dir_all(&root).unwrap();
     c.rpc("projects.mutate",json!({"type":"project.create","commandId":"p","projectId":"p","title":"Proof","workspaceRoot":root})).unwrap();
-    t3_protocol::api::server::update_settings(&c, &json!({"textGenerationModelSelection":{"instanceId":"codex","model":"test"}}), None).unwrap();
+    t3_protocol::api::server::update_settings(
+        &c,
+        &json!({"textGenerationModelSelection":{"instanceId":"codex","model":"test"}}),
+        None,
+    )
+    .unwrap();
     c.rpc("orchestration.launchThread",json!({"commandId":"launch","threadId":"t","projectId":"p","title":"Untitled","modelSelection":{"instanceId":"claudeAgent","model":"test"},"runtimeMode":"full-access","interactionMode":"default","generateTitle":true,"workspaceStrategy":{"type":"root"},"initialMessage":{"text":"Honest fallback title","attachments":[]}})).unwrap();
-    wait(&c, |p| p["thread"]["title"] == "Honest fallback title" && p["thread"]["titleRegeneration"].is_null());
+    wait(&c, |p| {
+        p["thread"]["title"] == "Honest fallback title"
+            && p["thread"]["titleRegeneration"].is_null()
+    });
     assert!(seen.lock().unwrap().is_empty());
 }

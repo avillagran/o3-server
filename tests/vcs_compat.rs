@@ -916,3 +916,45 @@ fn stacked_blank_message_is_scoped_and_cancel_stops_hook() {
     assert!(!r.join("hook-survived").exists());
     assert_eq!(git(&r, &["rev-parse", "HEAD"]), head);
 }
+
+#[test]
+fn offered_other_hosts_still_have_no_pr_metadata() {
+    let e = setup("other-host-status");
+    let root = e.dir("repo");
+    repo(&root);
+    write(&root.join("a"), "a\n");
+    commit_all(&root, "initial");
+    git(
+        &root,
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://git.cafe/example/repo.git",
+        ],
+    );
+    for remote in [
+        "https://git.cafe/example/repo.git",
+        "https://bitbucket.org/example/repo.git",
+        "https://codeberg.org/example/repo.git",
+        "https://dev.azure.com/example/project/_git/repo",
+    ] {
+        git(&root, &["remote", "set-url", "origin", remote]);
+        let status = e
+            .conn
+            .rpc("vcs.refreshStatus", json!({"cwd":root,"localOnly":true}))
+            .unwrap();
+        t3_protocol::git_controls::validate_status(&status).unwrap();
+        assert!(status["pr"].is_null());
+        assert!(status["sourceControlProvider"].is_null());
+        write(&root.join("a"), "changed\n");
+        let status = e
+            .conn
+            .rpc("vcs.refreshStatus", json!({"cwd":root,"localOnly":true}))
+            .unwrap();
+        assert_eq!(
+            t3_protocol::git_controls::actions(&status)["commit_push_pr"],
+            true
+        );
+    }
+}
