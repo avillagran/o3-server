@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+"""Isolated synthetic shell snapshots; report server-only RSS without a size gate."""
+import ast
+import base64
+import hashlib
+import json
+import os
+import pathlib
+import socket
+import sqlite3
+import struct
+import subprocess
+import tempfile
+import time
+import urllib.request
+
+repo = pathlib.Path(__file__).resolve().parent.parent
+binary = pathlib.Path(os.environ.get("CARGO_TARGET_DIR", "/var/tmp/o3-build/main")) / "release/o3-server"
+# Share the benchmark's fragmented WebSocket reader without running its workload.
+tree = ast.parse((repo / "tools/bench-rss").read_text())
+exec(compile(ast.Module(body=[n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "WS"], type_ignores=[]), "bench-rss:WS", "exec"))
+os.environ["TMPDIR"] = "/var/tmp/o3-build/tmp"
+with tempfile.TemporaryDirectory(prefix="shell-scale-", dir="/var/tmp/o3-build/tmp") as temp:
+    env = {**os.environ, "HOME": temp, "T3CODE_HOME": temp, "CODEX_HOME": temp + "/codex",
+           "CLAUDE_CONFIG_DIR": temp + "/claude"}
+    token = subprocess.check_output([str(binary), "auth", "session", "issue", "--scope",
+        "orchestration:read", "--token-only"], env=env, text=True).strip()
+    at = "2026-11-02T00:00:00Z"
+    with sqlite3.connect(pathlib.Path(temp) / "userdata/o3.sqlite") as db:
+        for n in range(20003):
+            tid = f"t{n}"
+            body = {"id": tid, "projectId": "p", "title": "Scale", "createdAt": at, "updatedAt": at,
+                    "archivedAt": at if n == 0 else None, "deletedAt": at if n >= 10002 else None}
+            db.execute("INSERT INTO records(kind,id,thread_id,body) VALUES ('thread',?,?,?)",
+                       (tid, tid, json.dumps(body)))
+    process = subprocess.Popen([str(binary), "serve", "--port", "0", "--host", "127.0.0.1"],
+        env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    def memory():
+        return {k: int(v.split()[0]) for k, v in
+                (line.split(":", 1) for line in pathlib.Path(f"/proc/{process.pid}/status").read_text().splitlines() if ":" in line)
+                if k in ("VmRSS", "VmHWM")}
+    try:
+        runtime = pathlib.Path(temp) / "userdata/server-runtime.json"
+        deadline = time.monotonic() + 90
+        while not runtime.exists():
+            assert process.poll() is None and time.monotonic() < deadline
+            time.sleep(.02)
+        port = json.loads(runtime.read_text())["port"]
+        idle = memory()
+        ws = WS(port, token)
+        start = time.monotonic()
+        ws.send({"_tag":"Request","id":"shell","tag":"orchestration.subscribeShell","payload":{},"headers":[]})
+        frame = ws.recv()
+        snapshot = frame["values"][0]["snapshot"]
+        streamed_ms = (time.monotonic() - start) * 1000
+        assert len(snapshot["threads"]) == 10001 and len(snapshot["archivedThreads"]) == 1
+        streamed = memory()
+        ws.s.close()
+        ws = WS(port, token)
+        start = time.monotonic()
+        archived = ws.rpc("orchestration.getArchivedShellSnapshot", {})
+        archived_ms = (time.monotonic() - start) * 1000
+        assert [t["id"] for t in archived["threads"]] == ["t0"]
+        materialized = memory()
+        ws.s.close()
+        result = {"records":20003,"active":10001,"archived":1,"newer_deleted":10001,
+                  "streamed_snapshot_ms":round(streamed_ms,2),"archived_snapshot_ms":round(archived_ms,2),
+                  "idle_kib":idle,"after_streamed_kib":streamed,"after_materialized_kib":materialized,
+                  "measurement":"release server /proc/PID/status; client RSS excluded; synthetic empty threads; no inference",
+                  "binary_sha256":hashlib.sha256(binary.read_bytes()).hexdigest()}
+        print(json.dumps(result, indent=2))
+    finally:
+        process.terminate()
+        process.wait(timeout=10)

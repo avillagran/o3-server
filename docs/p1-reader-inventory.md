@@ -92,3 +92,22 @@ The consumer trees were searched with rg across Rust, Kotlin and QML, including
 RPC literals and function spellings. A registry allowlist or test-only use was not
 counted as a production caller. Native future behavior, opaque credentials and
 platform adapters were not inferred from successful JSON decoding.
+
+
+## Audit follow-up correction (2026-11-02)
+
+The preceding inventory records earlier evidence, not current missing behavior.
+Historical attachment continuity now works within documented bounds; native
+latest-completed forks bypass fallback-only limits. Historical fresh sessions
+also receive bounded tool-result context. Per-message provider selection has
+Connection/native-peer coverage. PR fallback includes endpoint ports and search
+retains matches beyond the former candidate window.
+
+Remaining-gap claims must name a consumed field or behavior and its failing
+reader. Unproven codecs, full VT emulation, live authentication, or opaque native
+resume implementation equality alone are not consumed gaps. Existing row
+statuses remain untouched pending independent audit. Other-host PR metadata,
+broader search ranking, desktop credential storage and settings effect coverage
+still need specific consumer/reference evidence. Codex generation remains
+unavailable: settings saves work, while explicit generation gives an actionable
+error instead of silently substituting another provider.

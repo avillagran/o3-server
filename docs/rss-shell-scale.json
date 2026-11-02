@@ -1,0 +1,22 @@
+{
+  "records": 20003,
+  "active": 10001,
+  "archived": 1,
+  "newer_deleted": 10001,
+  "streamed_snapshot_ms": 852.27,
+  "archived_snapshot_ms": 882.77,
+  "idle_kib": {
+    "VmHWM": 13372,
+    "VmRSS": 13372
+  },
+  "after_streamed_kib": {
+    "VmHWM": 15172,
+    "VmRSS": 14612
+  },
+  "after_materialized_kib": {
+    "VmHWM": 95740,
+    "VmRSS": 95436
+  },
+  "measurement": "release server /proc/PID/status; client RSS excluded; synthetic empty threads; no inference",
+  "binary_sha256": "f4faac84f5a2a64f8dfd712d6d6cdf8a91f77ea8963da0cbddb576564c63dd9b"
+}

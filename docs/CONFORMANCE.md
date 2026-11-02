@@ -1918,3 +1918,96 @@ Sanitized measurements and release binary hashes:
 Inference and provider-child RSS are excluded. All builds and tests ran serially
 under nice with four Cargo jobs and four test threads; no emulator, deployment,
 service change, push or merge was performed. Compatibility statuses are unchanged.
+
+## Independent audit follow-up (2026-11-02)
+
+This section supersedes remaining-gap rationales in earlier inventories.
+Compatibility statuses are unchanged; independent audit decides them. Each
+reported defect was reproduced before its fix using an actual Connection.
+No credentials, inference, services, emulators, pushes or merges were used.
+
+1. Repository endpoint identity: the PR fixture cached PR 7 at port 8443,
+   changed the remote to 9443 and simulated host failure. Before the fix it
+   returned the foreign PR; after the fix it returns no PR. Same-endpoint,
+   branch-change and authoritative-empty tests still pass. Nondefault ports
+   are retained in canonicalKey, also used by desktop connection routing and
+   lib sidebar grouping. Default URL ports normalize as before; ordinary
+   URL/SCP repository grouping is retained. Project IDs, roots and receipts
+   are unchanged. Android stores repositoryIdentity as shell metadata.
+   Provider classification uses hostname; requests/cache retain the endpoint.
+2. Native continuity: a latest-completed native fork with 33 attachments
+   previously returned historical attachments exceed handoff budget; it now
+   reaches native continuity without fallback capture. An older boundary with
+   the same attachments still fails explicitly and creates no fork. Client
+   fork actions propagate RPC failures; neither renders attachment-omission
+   warnings from providerHandoff. Attachment overflow therefore remains a
+   rejection rather than dropping images the inherited timeline displays.
+   Within bounds, historical attachment continuity works. Pinned overflow
+   behavior was not driven here. The newer local ContextHandoffService source
+   truncates imported text and records coverage: source-only evidence.
+3. Tool results: the historical-fork peer previously failed because its fresh
+   prompt omitted tool-output-proof. Both adapters now supply stored tool
+   input/output/results alongside messages up to the chosen run, excluding
+   context-discarded/later runs. The real timeline reader still receives the
+   completed response. The fixture inserts a normalized stored Read result;
+   it does not claim new real-provider tool-execution evidence. A separate
+   bounded-context test retains the newest result, drops oldest chunks and
+   includes an explicit truncation marker within 1 MiB.
+4. Search: the real search_threads reader previously returned no match for
+   suffixneedle after 70,000 characters. Exact-token FTS and substring fallback
+   now find it in a centered snippet. Each phase retains its 8 MiB byte scan
+   budget and candidate-count bounds. Candidates beyond that byte bound remain
+   outside coverage. The existing adversarial command-output time/size test
+   is unchanged. Exhaustive ranking is not certified.
+5. Generation: settings saves remain accepted. Desktop native_settings::execute
+   propagates rejected updates before refreshing fields; T3Backend.qml exposes
+   settingsResult.error. Rejecting the save would make a valid selection
+   unusable. Explicit title regeneration (including generateTitle launch),
+   generated blank commits and reviews now return an actionable instruction
+   to choose a Claude selection or supply text manually when Codex is selected.
+   Explicit preferences no longer silently choose the conversation provider.
+   The settings/title Connection regression failed before and passes after;
+   existing title tests now expect this error. Automatic title derivation
+   without an explicit generation request can still use deterministic text
+   fallback. Tool-capable generation is never started.
+6. Shell: the materialized helper previously returned zero active threads from
+   10,001 live, one old archived and 10,001 newer deleted synthetic records.
+   It now filters deleted rows in SQL and includes all live/archived threads,
+   as streamed snapshots already did. Projects also have no arbitrary 10,000
+   materialization limit. Actual Connection HTTP shell/archived readers retain
+   these records; complete snapshots need no settled-older recovery flag.
+   The scale benchmark additionally checks subscribeShell and reports release
+   server-only RSS separately from combined debug integration-process memory.
+
+Attachment continuity within bounds is established by deterministic peers and
+actual readers. Unproven codecs, complete VT emulation or live authentication
+alone are not consumed gaps. Other-host PR metadata, broader search ranking and
+settings effects, and desktop credential storage still need specific consumer
+and reference evidence. No row status was promoted.
+
+Final validation: default suite **219 passed / 0 failed / 16 ignored**;
+no-default-features **217 passed / 0 failed / 16 ignored**. Strict all-target
+Clippy passes in both configurations; fmt, gen-compat and diff checks pass.
+Pinned 3991 P1 and concurrent differentials pass. The separate pinned settings
+probe confirms acceptance and retention of the Codex selection through the real
+config reader: [settings probe](generation-settings-reference.json). Its first
+attempt used server.getSettings, which 3991 does not expose; the corrected probe
+uses server.getConfig. An initial full suite failed one old unit expectation
+for silent provider substitution; the updated expectation and full rerun pass.
+Clippy initially rejected helper placement after the test module; moving those
+helpers before the module resolves it without changing behavior.
+
+The normal release benchmark passes: **17,060 KiB / 17.47 MB HWM**, below 50 MB;
+last-100 message median/p95 **2.648 / 3.078 ms**, metadata **0.449 / 0.708 ms**.
+[Normal release measurement](rss-audit-followup.json). The separate 20,003-record
+synthetic release profile returns all **10,001 active + one archived** thread:
+subscribeShell **852.27 ms**, archived-shell RPC **882.77 ms**. Server-only HWM
+is **15,172 KiB / 15.54 MB** after streaming and **95,740 KiB / 98.04 MB** after
+the materialized archived-shell call. The large-profile materialization therefore
+exceeds 50 MB; the normal benchmark remains below its target. This is a measured
+cost of materializing all shell rows, not a constant-memory claim. Client and
+provider-child RSS are excluded. [Scale measurement](rss-shell-scale.json),
+reproducible with tools/bench-shell-scale. Both samples use the same recorded
+release binary hash. They are individual workload samples, not speedup claims.
+All Cargo work used nice and four jobs, one build/test at a time, with four test
+threads in the full suites. Compatibility statuses are unchanged.
