@@ -1790,3 +1790,20 @@ sample and binary hash: [rss-p1-reader.json](rss-p1-reader.json). Inference and
 provider-child memory are excluded. All Cargo work ran serially under nice with
 four jobs; full suites used four test threads. No emulators, services, deployment,
 pushes or compatibility promotions were performed.
+
+## P1 audit corrections (2026-11-02)
+
+The independent audit of the P1 block approved its two behavior changes and corrected
+the inventory in [p1-reader-inventory.md](p1-reader-inventory.md), which is kept as the
+author's starting point. Where they differ, this section wins.
+
+- `orchestration.searchThread` and `thread.model-selection.set` have no production caller
+  and move to unused. `thread.user-input.dismiss` and `subscribeServerConfig` are promoted.
+- The native dismissal test is transport evidence: the client UIs do not offer dismissal
+  for its live Claude request. Comparing ordered empty search results is not ranking
+  evidence. Unary settings readers do not show a gap in the subscription.
+- Remaining client-visible gaps, by impact: historical forks losing attachment context
+  (`src/thread_commands.rs`); per-message provider switching through `message.dispatch`;
+  message-search snippets that omit the match (`src/threadq.rs`); workspace `.aac`, `.opus`,
+  `.avi` and `.ogv` rejected (`src/assets.rs`); PR metadata lost on a transient failure;
+  multi-line command-output redraws; Codex text generation; GitCafe credential status.
