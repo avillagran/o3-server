@@ -237,6 +237,7 @@ impl ClaudeProvider {
             self.spawn(&input).await?
         };
         let result = async {
+            if *cancel.borrow() || output.is_closed() || matches!(control.try_recv(), Ok(ProviderControl::Interrupt)) { return Ok(false); }
             session.send(json!({"type":"user","message":{"role":"user","content":content},"parent_tool_use_id":null,"session_id":session.native})).await?;
             output.send(ProviderEvent::Started).await.map_err(|_|"receiver closed")?;
             let mut pending: HashMap<String, Value> = HashMap::new();
@@ -251,7 +252,7 @@ impl ClaudeProvider {
                         Some(ProviderControl::Interrupt)=>{
                             session.control("interrupt",json!({"subtype":"interrupt"})).await?;
                             interrupt_requested=true;
-                            boundary.terminal=None;
+                            if boundary.terminal.is_some() { boundary.terminal=Some(ProviderEvent::Interrupted); }
                         },
                         Some(ProviderControl::SteerContent(content))=>session.send(json!({"type":"user","message":{"role":"user","content":content},"parent_tool_use_id":null,"session_id":session.native})).await?,
                         Some(ProviderControl::Steer(text))=>session.prompt(&text).await?,

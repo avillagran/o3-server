@@ -26,7 +26,7 @@ for line in sys.stdin:
    if f['request'].get('subtype')=='interrupt':
     interrupted.set()
     for task in ('bg','child'): send({'type':'system','subtype':'task_notification','task_id':task,'status':'stopped','summary':'stopped'})
-    send({'type':'result','subtype':'error_during_execution','is_error':True,'result':'interrupted','session_id':'native-bg'})
+    if not (root/'single-terminal').exists(): send({'type':'result','subtype':'error_during_execution','is_error':True,'result':'interrupted','session_id':'native-bg'})
   elif f['type']=='user':
    gate('bind')
    send({'type':'system','subtype':'init','session_id':'native-bg'})
@@ -51,5 +51,5 @@ for line in sys.stdin:
   interrupted.set()
   send({'id':i,'result':{}})
   send({'method':'item/completed','params':{'threadId':'native-bg','turnId':'turn','item':{'id':'bg','type':'commandExecution','command':'sleep 1','status':'completed','exitCode':0}}})
-  send({'method':'turn/completed','params':{'threadId':'native-bg','turn':{'id':'turn','status':'interrupted'}}})
+  if not (root/'single-terminal').exists(): send({'method':'turn/completed','params':{'threadId':'native-bg','turn':{'id':'turn','status':'interrupted'}}})
  elif i is not None: send({'id':i,'result':{}})

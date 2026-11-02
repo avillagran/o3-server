@@ -47,13 +47,15 @@ fn wait(mut f: impl FnMut() -> bool) {
 }
 #[test]
 fn owned_background_work_and_prebinding_identity_through_real_client() {
-    for (instance, interrupt, legacy) in [
-        ("claudeAgent", false, false),
-        ("codex", false, false),
-        ("claudeAgent", true, false),
-        ("codex", true, false),
-        ("claudeAgent", false, true),
-        ("codex", false, true),
+    for (instance, interrupt, legacy, single_terminal) in [
+        ("claudeAgent", false, false, false),
+        ("codex", false, false, false),
+        ("claudeAgent", true, false, false),
+        ("codex", true, false, false),
+        ("claudeAgent", false, true, false),
+        ("codex", false, true, false),
+        ("claudeAgent", true, false, true),
+        ("codex", true, false, true),
     ] {
         let dir = std::env::temp_dir().join(format!(
             "o3-background-{}",
@@ -68,6 +70,9 @@ fn owned_background_work_and_prebinding_identity_through_real_client() {
             .unwrap()
             .success());
         std::fs::write(root.join("proof"), "before\n").unwrap();
+        if single_terminal {
+            std::fs::write(root.join("single-terminal"), "").unwrap();
+        }
         let state = o3_server::store::State::open(&dir.join("state")).unwrap();
         let secret = state.issue_pairing(Some("test"), 60_000).unwrap()["credential"]
             .as_str()
