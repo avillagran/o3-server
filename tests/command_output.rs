@@ -72,6 +72,15 @@ fn command_output_replaces_then_appends_then_settles() {
         }
     }
     assert_eq!(text, "hello\nworld\n");
+    let mut reader_frames = vec![first.clone()];
+    reader_frames.extend(frames.clone());
+    let reader = t3_protocol::parity::output(&json!({
+        "reference":{"threadId":"t1","itemId":"cmd-1"},
+        "frames":reader_frames,"closed":true
+    }))
+    .unwrap();
+    assert_eq!(reader["text"], "hello\nworld\n");
+    assert_eq!(reader["running"], false);
     let last = frames.last().unwrap();
     assert_eq!(
         (

@@ -10,6 +10,10 @@ for line in sys.stdin:
             assert f['response']['response']['behavior'] == 'deny'
             print(json.dumps({'type':'result','subtype':'success','session_id':'native','usage':{'input_tokens':10},'total_cost_usd':0.01,'modelUsage':{'test':{'contextWindow':200000}}}),flush=True)
             continue
+        if f['type'] == 'control_response' and f['response']['response'].get('behavior') == 'deny':
+            assert f['response']['request_id'] == 'question'
+            print(json.dumps({'type':'result','subtype':'success','session_id':'native'}),flush=True)
+            continue
         if f['type'] == 'control_response':
             assert f['response']['response']['updatedInput']['answers'] == {'Which approach?':'Simple, Safe'}
             print(json.dumps({'type':'result','subtype':'success','session_id':'native','usage':{'input_tokens':10},'total_cost_usd':0.01,'modelUsage':{'test':{'contextWindow':200000}}}),flush=True)

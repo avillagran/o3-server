@@ -199,6 +199,53 @@ fn claude_structured_question_displays_and_accepts_client_answers() {
 }
 
 #[test]
+fn claude_structured_question_dismisses_through_native_transport() {
+    let server = support::start(|s| {
+        *s.provider.lock().unwrap() = Some(Arc::new(o3_server::claude::ClaudeProvider::new(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/input/peer.py"),
+        )));
+    });
+    let c = server.connect();
+    c.rpc("orchestration.launchThread",json!({"commandId":"launch","threadId":"t","projectId":"p","title":"Question","modelSelection":{"instanceId":"claudeAgent","model":"test"},"runtimeMode":"approval-required","interactionMode":"plan","workspaceStrategy":{"type":"root"},"initialMessage":{"text":"question-proof","attachments":[]}})).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let request = loop {
+        let p = c
+            .rpc("orchestration.getThreadProjection", json!({"threadId":"t"}))
+            .unwrap();
+        assert_ne!(p["runs"][0]["status"], "failed", "{p}");
+        let questions = t3_protocol::questions::pending(&p);
+        if !questions.as_array().unwrap().is_empty() {
+            assert_eq!(questions[0]["questions"][0]["id"], "Which approach?");
+            assert_eq!(questions[0]["questions"][0]["multiSelect"], true);
+            break questions[0]["requestId"].clone();
+        }
+        assert!(Instant::now() < deadline, "{p}");
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    // Use the actual shared command builder, then verify its pending reader clears.
+    let mut command = t3_protocol::questions::command(
+        &json!({"thread":"t","runtimeRequestId":request,"action":"dismiss"}),
+    )
+    .unwrap();
+    command["commandId"] = json!("answer");
+    c.rpc("orchestration.dispatchCommand", command).unwrap();
+    loop {
+        let p = c
+            .rpc("orchestration.getThreadProjection", json!({"threadId":"t"}))
+            .unwrap();
+        assert_ne!(p["runs"][0]["status"], "failed", "{p}");
+        if p["runs"][0]["status"] == "completed" {
+            assert_eq!(t3_protocol::questions::pending(&p), json!([]));
+            assert_eq!(p["runtimeRequests"][0]["status"], "cancelled");
+            break;
+        }
+        assert!(Instant::now() < deadline, "{p}");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
 #[ignore = "uses installed Claude and Codex credentials for two short real turns"]
 fn live_claude_and_codex_through_real_client() {
     for (instance, model) in [("claudeAgent", "haiku"), ("codex", "gpt-6.1-sol")] {
