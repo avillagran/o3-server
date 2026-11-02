@@ -294,7 +294,7 @@
     "projectClone.start": {
       "status": "partial",
       "priority": "P2",
-      "note": "Remaining: desktop disables cloning because tracking is false (T3AddProject.qml:49-51)."
+      "note": "Remaining: desktop disables cloning because tracking is false (T3AddProject.qml:49-51). An attempt at tracked clone jobs is kept unmerged at fa5ab7f: a competing clone's cleanup deleted another clone's successful, registered checkout, and cancellation left escaped descendants. Main keeps cloning disabled, which is the safe behaviour."
     },
     "projects.createNew": {
       "status": "done",
@@ -929,7 +929,7 @@
     "subscribeWorktreeSetup": {
       "status": "partial",
       "priority": "P2",
-      "note": "Remaining: null output suppresses setup stages, progress and Cancel (worktree_setup.rs:22, T3Composer.qml:302-306)."
+      "note": "Remaining: null output suppresses setup stages, progress and Cancel (worktree_setup.rs:22, T3Composer.qml:302-306). Attempted on branch t3/implement-client-visible-flows (kept unmerged at fa5ab7f): staged setup with progress. Not merged because a setup daemon that clears its environment survives cancellation and restart recovery, and corrupt persisted setup state blocked startup."
     },
     "terminal.attach": {
       "status": "done",
@@ -1014,7 +1014,7 @@
     "worktreeSetup.cancel": {
       "status": "partial",
       "priority": "P2",
-      "note": "Remaining: Cancel is hidden without running setup, so synchronous preparation cannot be cancelled (write.rs:406)."
+      "note": "Remaining: Cancel is hidden without running setup, so synchronous preparation cannot be cancelled (write.rs:406). The unmerged attempt at fa5ab7f could not kill every escaped descendant of setup; main keeps synchronous setup."
     }
   },
   "commands": {
@@ -1126,7 +1126,7 @@
     "subagent.stop": {
       "status": "partial",
       "priority": "P2",
-      "note": "Unsafe stops are rejected and the owner keeps running, on both native peers. Remaining: desktop Stop subagent (T3Composer.qml:323) shows the rejection and the child continues; independent cancellation is not implemented."
+      "note": "Unsafe stops are rejected and the owner keeps running, on both native peers. Remaining: desktop Stop subagent (T3Composer.qml:323) shows the rejection and the child continues; independent cancellation is not implemented. Real Claude child cancellation was attempted and reverted: without a provider acknowledgement it required inventing a terminal state. Codex has no implemented control."
     },
     "thread.active.reorder": {
       "status": "done",

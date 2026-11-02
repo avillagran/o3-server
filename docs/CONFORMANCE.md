@@ -2458,3 +2458,13 @@ bodies, revealing which hooks exist; a recorder printing bytes before each failu
 restart forever. The token is now checked before any body is read, every rejection is the
 same `404 {}`, only token holders count against a 60 per second budget, and the recorder
 restarts at most three times per minute.
+
+## Setup, clone and child-stop attempt left unmerged (2026-11-02)
+
+Three audit rounds tried staged worktree setup, tracked clone jobs and child-scoped
+`subagent.stop`. The final recheck of fa5ab7f reproduced two serious failures: a setup daemon
+that clears its environment survives cancellation and restart recovery, and one clone's cleanup
+can delete another clone's successful, registered checkout. Corrupt setup state also blocked
+startup. The branch `t3/implement-client-visible-flows` is kept unmerged. Main keeps the safe
+behaviour on these rows: synchronous setup, cloning disabled, and a stop rejection that leaves
+the owner turn running.
