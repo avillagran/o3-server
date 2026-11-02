@@ -16,5 +16,6 @@ while True:
         result={}
         if v['method']=='Target.createTarget':result={'targetId':'fixture-target'}
         if v['method']=='Target.attachToTarget':result={'sessionId':'fixture-session'}
+        if v['method']=='Page.navigate' and v['params'].get('url','').endswith('/rejected'):result={'errorText':'net::ERR_CONNECTION_REFUSED'}
         if v['method']=='Page.captureScreenshot':result={'data':'/9j/2Q=='}
         os.write(4,json.dumps({'id':v['id'],'result':result}).encode()+b'\0')

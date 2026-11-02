@@ -328,6 +328,7 @@ impl Browsers {
         url: Option<&str>,
     ) -> Result<(), Value> {
         let mut tabs = self.tabs.lock().await;
+        tabs.retain(|_, t| !*t.done.borrow());
         if tabs.len() >= 8 {
             return Err(error(
                 "Close a server browser session before opening another".into(),
@@ -392,6 +393,17 @@ impl Browsers {
         .map_err(error)?;
         tabs.insert((thread.into(), tab.into()), browser);
         Ok(())
+    }
+    pub async fn completion(
+        &self,
+        thread: &str,
+        tab: &str,
+    ) -> Option<tokio::sync::watch::Receiver<bool>> {
+        self.tabs
+            .lock()
+            .await
+            .get(&(thread.into(), tab.into()))
+            .map(|t| t.done.clone())
     }
     pub async fn command(
         &self,

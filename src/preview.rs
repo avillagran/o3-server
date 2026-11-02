@@ -41,7 +41,7 @@ struct Inner {
 
 #[derive(Default)]
 pub struct Manager {
-    inner: Mutex<Inner>,
+    inner: Arc<Mutex<Inner>>,
     pub(crate) browser: crate::server_browser::Browsers,
 }
 
@@ -240,7 +240,8 @@ pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
         let tab = str_field(p, "tabId")?;
         match tag {
             "preview.navigate" => {
-                m.browser
+                let navigation = m
+                    .browser
                     .command(
                         thread,
                         tab,
@@ -248,6 +249,9 @@ pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
                         json!({"url":normalize_url(str_field(p,"url")?)?}),
                     )
                     .await?;
+                if let Some(message) = navigation["errorText"].as_str().filter(|s| !s.is_empty()) {
+                    return Err(json!({"_tag":"ServerBrowserLaunchError","message":message}));
+                }
             }
             "preview.refresh" => {
                 m.browser
@@ -322,7 +326,20 @@ pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
                 url.as_deref(),
             )
             .await?;
+        if p["viewport"].is_object() && p["viewport"]["_tag"] != "fill" {
+            if let Err(e) = m.browser.command(str_field(p,"threadId")?, &tab,
+                "Emulation.setDeviceMetricsOverride",
+                json!({"width":p["viewport"]["width"],"height":p["viewport"]["height"],"deviceScaleFactor":1,"mobile":false})).await {
+                m.browser.close(str_field(p,"threadId")?,Some(&tab)).await;
+                return Err(e);
+            }
+        }
         Some(tab)
+    } else {
+        None
+    };
+    let completion = if let Some(tab) = &server_id {
+        m.browser.completion(str_field(p, "threadId")?, tab).await
     } else {
         None
     };
@@ -366,6 +383,19 @@ pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
             g.sessions
                 .insert((thread.clone(), tab.clone()), snap.clone());
             g.publish(json!({"type":"opened","threadId":thread,"tabId":tab,"createdAt":at,"snapshot":snap}));
+            if let Some(mut done) = completion {
+                let inner = m.inner.clone();
+                let key = (thread.clone(), tab.clone());
+                tokio::spawn(async move {
+                    if !*done.borrow() {
+                        let _ = done.changed().await;
+                    }
+                    let mut g = inner.lock().unwrap();
+                    if g.sessions.remove(&key).is_some() {
+                        g.publish(json!({"type":"closed","threadId":key.0,"tabId":key.1,"createdAt":iso(now_ms())}));
+                    }
+                });
+            }
             Ok(snap)
         }
         "preview.close" => {

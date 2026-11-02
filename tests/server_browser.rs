@@ -139,3 +139,80 @@ fn fixture_browser_lifecycle_and_profile_clear() {
     let limited = server.limited(&c, &["orchestration:read"]);
     assert!(preview::clear_profile(&limited, "default").is_err());
 }
+
+fn audit_browser_case(case: &str) {
+    use serde_json::json;
+    std::env::set_var(
+        "O3_BROWSER_BINARY",
+        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/browser-cdp.py"),
+    );
+    let server = support::start(|_| {});
+    let c = server.connect();
+    for n in 0..8 {
+        c.rpc("preview.open", json!({"threadId":"audit","runtime":"server","profileId":format!("audit-{n}"),"url":"http://localhost","viewport":{"_tag":"freeform","width":640,"height":480}})).unwrap();
+    }
+    let paths: Vec<_> = std::fs::read_dir(server.dir.join("browser-profiles"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    let commands = std::fs::read_to_string(paths[0].join("commands.jsonl")).unwrap();
+    if case == "viewport" {
+        assert!(
+            commands.contains("Emulation.setDeviceMetricsOverride"),
+            "initial viewport never applied"
+        );
+        return;
+    }
+    let list = t3_protocol::api::preview::list(&c, "audit").unwrap();
+    let tab = list["sessions"][0]["tabId"].as_str().unwrap();
+    if case == "navigation" {
+        assert!(
+            t3_protocol::api::preview::navigate(
+                &c,
+                "audit",
+                tab,
+                "http://localhost/rejected",
+                None
+            )
+            .is_err(),
+            "CDP navigation error ignored"
+        );
+        return;
+    }
+    for path in paths {
+        let pid: i32 = std::fs::read_to_string(path.join("fixture.pid"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        unsafe {
+            libc::kill(pid, libc::SIGKILL);
+        }
+    }
+    assert!(
+        support::wait_for(std::time::Duration::from_secs(4), || {
+            t3_protocol::api::preview::list(&c, "audit").unwrap()["sessions"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        }),
+        "dead tabs retained"
+    );
+    c.rpc(
+        "preview.open",
+        json!({"threadId":"audit","runtime":"server","url":"http://localhost"}),
+    )
+    .unwrap();
+}
+
+#[test]
+fn initial_viewport_is_applied() {
+    audit_browser_case("viewport");
+}
+#[test]
+fn rejected_navigation_reaches_reader() {
+    audit_browser_case("navigation");
+}
+#[test]
+fn dead_browsers_release_capacity_and_tabs() {
+    audit_browser_case("lifecycle");
+}
