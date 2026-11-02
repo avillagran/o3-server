@@ -7,7 +7,7 @@ const URL: &str =
 const MAX_BYTES: usize = 8 * 1024 * 1024;
 const MAX_AGE_MS: i64 = 24 * 3600 * 1000;
 
-fn load(s: &State) -> Option<Value> {
+pub(crate) fn load(s: &State) -> Option<Value> {
     let file = std::fs::File::open(s.dir.join("usage-rates.json")).ok()?;
     let mut bytes = Vec::new();
     file.take((MAX_BYTES + 1) as u64)

@@ -11,6 +11,8 @@ default = ["bridge"]
 bridge = ["dep:omabridge", "dep:anyhow", "dep:t3-protocol"]
 
 [dependencies]
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+chrono-tz = "0.10"
 t3-protocol = { git = "https://github.com/avillagran/lib-t3-rust?o3-reader-pin", rev = "7cbad5d8198d37e9ded767d33ac03f2cf15875f4", optional = true }
 omabridge = { git = "https://github.com/avillagran/omabridge", rev = "0fc1610ec6c96a76a293108f6b8c6737266c7ebc", default-features = false, features = ["embed"], optional = true }
 anyhow = { version = "1", optional = true }

@@ -734,7 +734,7 @@
     "server.getUsageSummary": {
       "status": "partial",
       "priority": "P2",
-      "note": "Remaining: empty buckets and sources make actual usage appear as zero (usage_summary.rs:34, UsageViewModel.kt:46). Needs ledger aggregation."
+      "note": "Stored provider-turn ledger aggregation with real Connection/lib usage_summary::aggregate regression (failed empty before, passes). IANA daily bucketing, token subsets, recorded cost/cached rates, explicit unpriced records, imported providerTurns included. On-demand bounded aggregation; 50000 turns debug query 803 ms/681-byte output. Older Claude records cannot separate cache-creation tokens; turns missing accounting/timestamps remain unavailable. No provider transcript scan; pinned usage equivalence unproven. Status unchanged pending audit."
     },
     "server.importAcpRegistrySession": {
       "status": "skip",

@@ -364,7 +364,7 @@ pub(crate) fn persist(
                 let cached = u["cache_read_input_tokens"].as_u64().unwrap_or(0);
                 let output = u["output_tokens"].as_u64().unwrap_or(0);
                 let created = u["cache_creation_input_tokens"].as_u64().unwrap_or(0);
-                turn["tokenUsage"] = json!({"usedTokens":input+cached+output+created,"inputTokens":input+created,"cachedInputTokens":cached,"outputTokens":output,"updatedAt":at});
+                turn["tokenUsage"] = json!({"usedTokens":input+cached+output+created,"inputTokens":input+created,"cacheCreationTokens":created,"cachedInputTokens":cached,"outputTokens":output,"updatedAt":at});
                 if f["cost"].is_number() {
                     turn["tokenUsage"]["cost"] = f["cost"].clone();
                 }

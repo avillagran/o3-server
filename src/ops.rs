@@ -631,10 +631,7 @@ fn usage(s: &State, p: &Value) -> Reply {
     ) else {
         return Err(invalid("sinceDay, untilDay and timeZone required"));
     };
-    // o3-server reads no provider transcripts or ledgers, so it has no usage to report.
-    Ok(
-        json!({"contractVersion":6,"readAt":iso(now_ms()),"timeZone":zone,"sinceDay":since,"untilDay":until,"buckets":[],"sources":[],"pricing":crate::usage_rates::pricing(s),"scanDurationMs":0}),
-    )
+    crate::usage_ledger::summary(s, p, since, until, zone).map_err(|e| invalid(&e))
 }
 
 // ---------------------------------------------------------------- storage cleanup
