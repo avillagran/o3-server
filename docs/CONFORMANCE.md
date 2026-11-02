@@ -2083,7 +2083,8 @@ port already normalized, and that historical attachment overflow should reject.
    fixture handle through documented `cafe api /auth/principal`, fixed to
    https://git.cafe/api with noninteractive flags, 5 s and 64 KiB limits. The CLI
    handles its login; the server never retrieves a token. Failure/malformed
-   output remains unknown, so desktop readiness stays disabled in those cases.
+   output remains unknown. Desktop readiness excludes only `unauthenticated`; the
+   separate clone-tracking capability gates that flow.
    No real credentials or real authenticated requests were used. Documentation:
    [CLI](https://git.cafe/docs/reference/cli),
    [API](https://git.cafe/docs/reference/api). Newer T3 GitCafeCredentials source
@@ -2122,3 +2123,19 @@ No push, merge, service changes, real credentials, inference or emulators.
 
 Final standard `tools/bench-rss` HWM: 16,544 KiB (16.94 MB), no inference;
 see `rss-automatic-flow-audit.json`. Final binary hashes match all three measurements.
+
+### Audit of the shell-size round (2026-11-02)
+
+Fixed with a test that fails first: the base64 budget hit Codex images, which travel as a
+path, so an accepted 7 MiB image failed its turn; FTS queries are now tried folded and raw,
+because the index stores raw text and folding alone lost older fullwidth matches, while
+decomposed accents need no index rebuild; a composite action that creates a pull request
+on a recognized host other than GitHub now fails before commit or push instead of after
+them, since creation goes through `gh`.
+
+Known limits. A complete shell has no pagination: 10,001 threads with 80-character CJK
+titles produced 9,109,889 bytes against the client's 8 MiB limit, so an owner-scale profile
+far beyond today's 375 threads would need client changes. `getThreadProjection` and history
+stay size-limited for a single multi-megabyte message, while the bounded mode both apps use
+accepted a 9 MiB event. Status has PR metadata for GitHub and GitLab only. FTS ranking has
+no wall-clock deadline. Credential-store-only GitCafe authentication stays unsupported.

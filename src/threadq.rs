@@ -80,14 +80,24 @@ pub fn index_message(db: &Connection, thread_id: &str, m: &Value) -> Result<(), 
 
 /// `"tok"*` terms, ANDed: user text can never become FTS5 syntax.
 fn match_expression(query: &str) -> Option<String> {
-    let folded = fold_search(query);
-    let terms: Vec<String> = folded
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|t| !t.is_empty())
-        .take(12)
-        .map(|t| format!("\"{t}\"*"))
-        .collect();
-    (!terms.is_empty()).then(|| terms.join(" "))
+    let terms = |text: &str| -> Vec<String> {
+        text.split(|c: char| !c.is_alphanumeric())
+            .filter(|t| !t.is_empty())
+            .take(12)
+            .map(|t| format!("\"{t}\"*"))
+            .collect()
+    };
+    // The index stores raw text, so a folded query alone misses compatibility forms.
+    let folded = terms(&fold_search(query));
+    let raw = terms(query);
+    if folded.is_empty() {
+        return None;
+    }
+    Some(if raw.is_empty() || raw == folded {
+        folded.join(" ")
+    } else {
+        format!("({}) OR ({})", folded.join(" "), raw.join(" "))
+    })
 }
 
 /// Accent/case folding used by the palette, preserving compatibility characters
@@ -767,6 +777,25 @@ pub fn search_thread(s: &State, p: &Value) -> Reply {
 
 #[cfg(test)]
 mod reader_search_tests {
+    #[test]
+    fn fts_queries_also_keep_the_raw_form_the_index_stores() {
+        let db = rusqlite::Connection::open_in_memory().unwrap();
+        db.execute_batch("CREATE VIRTUAL TABLE t USING fts5(text)")
+            .unwrap();
+        db.execute("INSERT INTO t(text) VALUES('ＣＡＦＥ con leche')", [])
+            .unwrap();
+        for query in ["ＣＡＦＥ", "ＣＡＦＥ leche"] {
+            let hits: i64 = db
+                .query_row(
+                    "SELECT count(*) FROM t WHERE t MATCH ?",
+                    [super::match_expression(query).unwrap()],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(hits, 1, "{query}");
+        }
+    }
+
     use super::*;
     #[test]
     fn search_does_not_take_the_writer_mutex() {

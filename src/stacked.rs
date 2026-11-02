@@ -217,6 +217,16 @@ async fn steps(
     let do_commit = action.contains("commit");
     let do_push = action.contains("push");
     let do_pr = action.contains("pr");
+    // Pull requests are created with `gh`. Refuse first: commit and push cannot be undone.
+    if do_pr {
+        let identity = crate::projects::repository_identity(&root.to_string_lossy()).await;
+        if let Some(provider) = identity["provider"].as_str().filter(|p| *p != "github") {
+            let message = format!(
+                "Creating pull requests is not supported for {provider} here. Nothing was changed; use Commit & push instead."
+            );
+            return Err(fail(op, root, &message, None));
+        }
+    }
     let mut result = json!({"action":action,"branch":{"status":"skipped_not_requested"},"commit":{"status":"skipped_not_requested"},
         "push":{"status":"skipped_not_requested"},"pr":{"status":"skipped_not_requested"}});
 

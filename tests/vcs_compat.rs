@@ -958,3 +958,37 @@ fn offered_other_hosts_still_have_no_pr_metadata() {
         );
     }
 }
+
+#[test]
+fn unsupported_pull_request_host_fails_before_changing_anything() {
+    let e = setup("stacked-host");
+    let r = seeded(&e, "repo");
+    let git = |args: &[&str]| {
+        let out = std::process::Command::new("git")
+            .args(args)
+            .current_dir(&r)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{out:?}");
+        String::from_utf8(out.stdout).unwrap()
+    };
+    git(&["remote", "add", "origin", "https://gitlab.com/o/r.git"]);
+    let head = git(&["rev-parse", "HEAD"]);
+    write(&r.join("a.txt"), "changed\n");
+    let ev = run_action(
+        &e,
+        json!({"actionId":"act-host","cwd":s(&r),"action":"commit_push_pr","commitMessage":"Change a"}),
+    );
+    let last = ev.last().unwrap();
+    assert_eq!(last["kind"], "action_failed", "{ev:?}");
+    assert!(
+        last["message"].as_str().unwrap().contains("Commit & push"),
+        "{last}"
+    );
+    assert_eq!(
+        git(&["rev-parse", "HEAD"]),
+        head,
+        "nothing may be committed"
+    );
+    assert!(!git(&["status", "--porcelain"]).is_empty());
+}

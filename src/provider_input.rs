@@ -37,18 +37,19 @@ pub(crate) fn materialize(
             mime,
             "image/png" | "image/jpeg" | "image/gif" | "image/webp"
         ) {
-            let size = std::fs::metadata(&path).map_err(|e| e.to_string())?.len();
-            budget = budget.saturating_add(
-                usize::try_from(size)
-                    .unwrap_or(usize::MAX)
-                    .saturating_mul(4)
-                    / 3
-                    + 1024,
-            );
-            if budget > 8 * 1024 * 1024 {
-                return Err("provider images exceed input budget".into());
-            }
             if claude {
+                // Only Claude carries image bytes in the frame; Codex gets a path.
+                let size = std::fs::metadata(&path).map_err(|e| e.to_string())?.len();
+                budget = budget.saturating_add(
+                    usize::try_from(size)
+                        .unwrap_or(usize::MAX)
+                        .saturating_mul(4)
+                        / 3
+                        + 1024,
+                );
+                if budget > 8 * 1024 * 1024 {
+                    return Err("provider images exceed input budget".into());
+                }
                 // Keep the transport bounded, including base64 expansion.
                 let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
                 if file.metadata().map_err(|e| e.to_string())?.len() > 5 * 1024 * 1024 {
@@ -89,4 +90,22 @@ pub(crate) fn driver(s: &crate::store::State, instance: &Value) -> Result<String
             "claudeAgent"
         })
         .to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn codex_paths_do_not_pay_for_base64_that_is_never_sent() {
+        let root = std::env::temp_dir().join(format!("o3-input-{}", std::process::id()));
+        let id = "upload-11111111-1111-4111-8111-111111111111";
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join(format!("{id}.png")), vec![0u8; 7 * 1024 * 1024]).unwrap();
+        let attachments = json!([{"id":id,"name":"big.png","mimeType":"image/png"}]);
+        let codex = materialize(&root, "look", &attachments, None, false);
+        let claude = materialize(&root, "look", &attachments, None, true);
+        std::fs::remove_dir_all(&root).unwrap();
+        assert!(codex.unwrap().iter().any(|v| v["type"] == "localImage"));
+        assert!(claude.is_err());
+    }
 }
