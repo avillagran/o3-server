@@ -124,3 +124,22 @@ resumable windows of at most 128 rows per immediate write transaction. Already
 migrated profiles do not rescan historical events or reparse cached launch receipts.
 A single unusually large record can still exceed a desired time budget; this is a
 row-count bound, not a hard duration guarantee.
+
+### Pinned restart and control-window follow-up (2026-11-02)
+
+The isolated nightly 3991 control-window probe reaches disabled continuation after
+an acknowledged, running Codex turn. The reference cancels the run, node, attempt
+and provider turn without adding interrupt request/result items. o3 now uses
+`cancelled`, removes the artificial disabled-setting error and cancels execution
+projections in the same transaction. This supersedes the interrupted-state choice
+above; the choice is binary-observed, not inferred from newer source.
+
+The gated peer also covers init before native acknowledgement, steering awaiting
+its acknowledgement, provider death after an interrupt request and restart before
+the terminal event. Init cancellation must prevent a late turn/start after release
+of the native init gate. A queued pre-start interrupt is checked before Codex starts
+the native turn. Death/restart without terminal acknowledgement remain failed in
+o3 with delivery-unknown outbox state and no synthetic interrupt result. 3991 instead
+reports interrupted after provider death and cancelled after restart; these observed
+reference states do not establish successful native delivery for o3. This retains
+the documented uncertainty boundary and is not original-process reattachment.

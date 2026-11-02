@@ -151,16 +151,26 @@ pub fn resume(state: &std::sync::Arc<crate::store::State>) -> Result<(), String>
     let enabled = crate::settings::read(state)?["continueThreadsAfterServerUpdate"] != false;
     for (tid, rid) in rows {
         if !enabled {
-            let db = state.db.lock().unwrap();
-            let mut run = events::get(&db, "runs", &rid)?;
-            run["status"] = json!("interrupted");
+            let mut db = state.db.lock().unwrap();
+            let tx = db.transaction().map_err(|e| e.to_string())?;
+            let mut run = events::get(&tx, "runs", &rid)?;
+            run["status"] = json!("cancelled");
             run["recoveryPending"] = json!(false);
             run["completedAt"] = json!(iso(now_ms()));
-            run["error"] = json!("Restart continuation disabled in settings");
-            events::put(&db, "runs", &rid, &tid, &run)?;
-            if let Ok(t) = events::get(&db, "thread", &tid) {
-                events::append(&db, &tid, "run.updated", run, &t)?;
+            run.as_object_mut().unwrap().remove("error");
+            events::put(&tx, "runs", &rid, &tid, &run)?;
+            if let Ok(t) = events::get(&tx, "thread", &tid) {
+                crate::projection::finish(
+                    &tx,
+                    &tid,
+                    &rid,
+                    &t,
+                    run["completedAt"].as_str().unwrap(),
+                    "cancelled",
+                )?;
+                events::append(&tx, &tid, "run.updated", run, &t)?;
             }
+            tx.commit().map_err(|e| e.to_string())?;
             continue;
         }
         crate::provider::start(state.clone(), tid, rid,
