@@ -1829,3 +1829,92 @@ the [configuration reference](https://learn.chatgpt.com/docs/config-file/config-
 provides individual feature controls, not a verified universal tool-free mode.
 This is a limitation of the inspected installed contract, not proof that every
 future version lacks such a mode. No live inference was attempted.
+
+Implementation evidence for the remaining audit points:
+
+1. Historical forks: `tests/model_handoff.rs` uploads an image, completes two
+   native turns, forks the first and requests the image again. Before the fix,
+   the deterministic peer rejected the fresh prompt and the run failed while
+   the projection still contained the inherited attachment. Afterward both
+   Claude and Codex peers verify actual PNG bytes, historical context and the
+   absence of the later turn; the real timeline reader reads the response.
+   Descriptors are deduplicated and limited to 32 / 64 KiB; transcript context
+   is limited to 1 MiB, and aggregate image materialization has an 8 MiB budget.
+   Oversize or missing content fails explicitly instead of silently dropping it.
+   New fresh sessions use the same capture for rollback and provider switches.
+2. Per-message selection: the previous implementation fails the new dispatch
+   variant of the bidirectional native-peer handoff test. The corrected path
+   shares selection validation, foreign identity reset and transcript capture
+   with explicit selection. A same-instance model change retains the generation
+   and resumes existing native history. Android also sends this selection:
+   `ThreadViewModel.kt` passes it to `MessageSender.messageCommand`, whose
+   `modelSelection` accompanies `message.dispatch`. No client changes required.
+3. Search: the expanded P1 differential failed on both snippet contents and
+   order. The pinned binary places 24 characters before these long matches,
+   with a 238-character body and boundary ellipses. Both positive and negative
+   queries now compare ordered actual lib reader results successfully, including
+   substring hits. The local nightly source uses a different window (72 / 236)
+   and is source-only evidence, not the authority for this change. The separate
+   UTF-8/folded-accent regression finds CAFÉ after 350 non-ASCII characters.
+   Message choice prefers user over assistant, then message recency and ID;
+   result order prefers user, then thread recency and ID. Existing scan budgets
+   remain; this is not exhaustive ranking certification.
+4. Media: the real `asset_bytes` reader initially received
+   `AssetPreviewTypeValidationError`. It now downloads exact workspace fixture
+   bytes for AAC, Opus, AVI and OGV with desktop classifier MIME mappings.
+   Existing path, scope, signed identity and content-selected cache checks are
+   retained. The new fixtures test byte transport, not codec playback.
+5. PR status: the real-reader fixture initially lost PR 7 on a simulated CLI
+   failure. It now retains it for the same identity and proves separation on
+   branch and remote changes, authoritative empty-result invalidation and
+   `localOnly`. Cache entries are bounded to 128 successful identities and five
+   minutes, keyed by canonical repository identity, canonical workspace root
+   and branch. No additional host request or background refresh is introduced.
+6. Command output: the failing two-row redraw now folds split CSI A/B controls
+   across chunks. Actual live and settled server frames pass through lib
+   `parity::output`; the reader receives the rewritten two rows. A/B/E/F motion
+   clamps to retained rows. Existing 256 KiB per-input/final and 64 KiB tail
+   bounds remain, plus an 8192-row temporary bound. The adversarial large-move
+   test asserts a two-second ceiling and bounded output; its debug test group
+   completed in 0.03 seconds on the focused run. This is bounded folding, not
+   full VT terminal emulation.
+8. GitCafe: [official REST documentation](https://git.cafe/docs/reference/api)
+   explicitly documents bearer authentication at `/api/auth/principal`.
+   Its [OpenAPI contract](https://git.cafe/api/openapi/json) specifies `actorId`
+   and `handle`. The isolated fixture initially returned unknown; it now
+   authenticates that schema. Only `CAFE_TOKEN` against the fixed HTTPS endpoint
+   is supported. Five-second timeout, 64 KiB response cap, no redirects and
+   generic errors remain; responses and credentials are not exposed. No real
+   credentials or authenticated live endpoint were used. Successful GitCafe
+   discovery has not been driven through the complete Connection reader, so
+   this remains partial evidence and is not a green-row claim.
+
+Final validation: default `cargo test --no-fail-fast` **214 passed / 0 failed /
+15 ignored**; `--no-default-features` **212 passed / 0 failed / 15 ignored**.
+Both strict all-target Clippy configurations (`-D warnings`), `cargo fmt --check`,
+`tools/gen-compat` and diff check passed. The final pinned P1 and concurrent
+isolated differentials each passed; P1 now compares nonempty ordered message
+matches. The native fixture was additionally tightened to require a prior seed
+or the correct native resume on same-instance model changes; focused tests pass
+in both feature configurations. An initial tightening incorrectly treated the
+seed plus appended user context as a different seed; correcting the fixture's
+prefix recognition resolved that test-only failure.
+
+`tools/bench-rss` passed with **17,556 KiB / 17.98 MB HWM**, below 50 MB.
+Last-100 message RPC median/p95: **2.758 / 3.121 ms**; metadata median/p95:
+**0.475 / 0.687 ms**. A second invocation with
+`O3_BENCH_MODEL_SELECTION=1` measures the normal client path carrying an unchanged
+selection on every message: **16,972 KiB / 17.38 MB HWM**, message median/p95
+**2.635 / 3.172 ms**, metadata **0.444 / 0.540 ms**. These are single samples,
+not evidence of a speedup or a statistically established zero cost. The previous
+recorded message sample was 2.709 / 2.967 ms; workload variation is not isolated.
+The unchanged-selection path returns before transcript capture or extra database
+queries. Historical capture occurs at a fork, rollback or instance change, not
+on ordinary appends. Multiline parsing is bounded by the retained tail plus the
+per-chunk limit and runs outside the hub's global lock.
+Sanitized measurements and release binary hashes:
+[rss-client-gaps.json](rss-client-gaps.json),
+[rss-selection-client-gaps.json](rss-selection-client-gaps.json).
+Inference and provider-child RSS are excluded. All builds and tests ran serially
+under nice with four Cargo jobs and four test threads; no emulator, deployment,
+service change, push or merge was performed. Compatibility statuses are unchanged.
