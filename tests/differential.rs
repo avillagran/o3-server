@@ -1765,7 +1765,7 @@ fn upstream_p1_readers() {
             ("boundary", "A needle"),
         ] {
             c.rpc("orchestration.dispatchCommand", json!({"type":"thread.create","commandId":id,"threadId":id,"projectId":"p","title":title,"createdBy":"user","creationSource":"web","modelSelection":{"instanceId":"codex","model":"test"},"runtimeMode":"full-access","interactionMode":"default","branch":null,"worktreePath":null})).unwrap();
-            c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":format!("send-{id}"),"threadId":id,"messageId":format!("m-{id}"),"text":"unrelated message","createdBy":"user","creationSource":"web","attachments":[],"dispatchMode":{"type":"defer_start"}})).unwrap();
+            c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":format!("send-{id}"),"threadId":id,"messageId":format!("m-{id}"),"text":match id { "substring"=>format!("{}needle{}", "x".repeat(350), "z".repeat(350)), "prefix"=>"needle first message".into(), "exact"=>"needle".into(), _=>"a needle".into() },"createdBy":"user","creationSource":"web","attachments":[],"dispatchMode":{"type":"defer_start"}})).unwrap();
         }
         let mut searches = json!({});
         for query in ["needle", "eedl", "a needle"] {

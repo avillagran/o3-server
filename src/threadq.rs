@@ -112,6 +112,27 @@ fn fold_search(text: &str) -> String {
         .collect()
 }
 
+fn search_snippet(text: &str, needle: &str) -> String {
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= 240 {
+        return text;
+    }
+    let folded = fold_search(&text);
+    let byte = folded.find(needle).unwrap_or(0);
+    let index = folded[..byte].chars().count();
+    let start = index
+        .saturating_sub(24)
+        .min(chars.len().saturating_sub(238));
+    let end = (start + 238).min(chars.len());
+    format!(
+        "{}{}{}",
+        if start > 0 { "…" } else { "" },
+        chars[start..end].iter().collect::<String>(),
+        if end < chars.len() { "…" } else { "" }
+    )
+}
+
 pub fn search_threads(s: &State, p: &Value) -> Reply {
     let fail = |m: &str| json!({"_tag":"OrchestrationSearchThreadsError","message":m});
     let query = p["query"]
@@ -168,13 +189,31 @@ pub fn search_threads(s: &State, p: &Value) -> Reply {
             if !message_ids.insert(mid.clone()) || !fold_search(&snippet).contains(&needle) {
                 continue;
             }
-            if let Some(&i) = seen.get(&tid) {
-                matches[i]["hits"] = json!(matches[i]["hits"].as_i64().unwrap_or(1) + 1);
-                continue;
+            let old = seen.get(&tid).copied();
+            let hits = old.map_or(1, |i| matches[i]["hits"].as_i64().unwrap_or(1) + 1);
+            if let Some(i) = old {
+                let previous = &matches[i];
+                let old_role = previous["source"].as_str().unwrap_or("");
+                let better = (role != "user", std::cmp::Reverse(at.as_deref()), &mid)
+                    < (
+                        old_role != "user",
+                        std::cmp::Reverse(previous["messageCreatedAt"].as_str()),
+                        &previous["messageId"].as_str().unwrap_or("").to_owned(),
+                    );
+                if !better {
+                    matches[i]["hits"] = json!(hits);
+                    continue;
+                }
             }
             let Some(thread) = live(&tid) else { continue };
-            seen.insert(tid.clone(), matches.len());
-            matches.push(json!({"threadId":tid,"projectId":thread["projectId"],"source":role,"snippet":snippet.chars().take(240).collect::<String>(),"messageCreatedAt":at,"quality":-rank,"hits":1,"messageId":mid}));
+            let i = old.unwrap_or(matches.len());
+            seen.insert(tid.clone(), i);
+            let found = json!({"threadId":tid,"projectId":thread["projectId"],"source":role,"snippet":search_snippet(&snippet, &needle),"messageCreatedAt":at,"quality":-rank,"hits":hits,"messageId":mid,"threadUpdatedAt":thread["updatedAt"]});
+            if i == matches.len() {
+                matches.push(found);
+            } else {
+                matches[i] = found;
+            }
         }
     }
     if p["titlesOnly"] == true {
@@ -231,10 +270,14 @@ pub fn search_threads(s: &State, p: &Value) -> Reply {
         }
     }
     matches.sort_by(|a, b| {
-        b["quality"]
-            .as_f64()
-            .unwrap_or(0.0)
-            .total_cmp(&a["quality"].as_f64().unwrap_or(0.0))
+        (a["source"] != "user")
+            .cmp(&(b["source"] != "user"))
+            .then_with(|| {
+                b["threadUpdatedAt"]
+                    .as_str()
+                    .cmp(&a["threadUpdatedAt"].as_str())
+            })
+            .then_with(|| a["threadId"].as_str().cmp(&b["threadId"].as_str()))
     });
     matches.truncate(limit);
     for m in &matches {

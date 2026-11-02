@@ -22,9 +22,57 @@
       62
     ],
     "searches": {
-      "a needle": [],
-      "eedl": [],
-      "needle": []
+      "a needle": [
+        {
+          "snippet": "a needle",
+          "source": "user",
+          "threadId": "boundary"
+        }
+      ],
+      "eedl": [
+        {
+          "snippet": "a needle",
+          "source": "user",
+          "threadId": "boundary"
+        },
+        {
+          "snippet": "needle",
+          "source": "user",
+          "threadId": "exact"
+        },
+        {
+          "snippet": "needle first message",
+          "source": "user",
+          "threadId": "prefix"
+        },
+        {
+          "snippet": "…xxxxxxxxxxxxxxxxxxxxxxxneedlezzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz…",
+          "source": "user",
+          "threadId": "substring"
+        }
+      ],
+      "needle": [
+        {
+          "snippet": "a needle",
+          "source": "user",
+          "threadId": "boundary"
+        },
+        {
+          "snippet": "needle",
+          "source": "user",
+          "threadId": "exact"
+        },
+        {
+          "snippet": "needle first message",
+          "source": "user",
+          "threadId": "prefix"
+        },
+        {
+          "snippet": "…xxxxxxxxxxxxxxxxxxxxxxxxneedlezzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz…",
+          "source": "user",
+          "threadId": "substring"
+        }
+      ]
     }
   },
   "reference": {
@@ -49,9 +97,57 @@
       62
     ],
     "searches": {
-      "a needle": [],
-      "eedl": [],
-      "needle": []
+      "a needle": [
+        {
+          "snippet": "a needle",
+          "source": "user",
+          "threadId": "boundary"
+        }
+      ],
+      "eedl": [
+        {
+          "snippet": "a needle",
+          "source": "user",
+          "threadId": "boundary"
+        },
+        {
+          "snippet": "needle",
+          "source": "user",
+          "threadId": "exact"
+        },
+        {
+          "snippet": "needle first message",
+          "source": "user",
+          "threadId": "prefix"
+        },
+        {
+          "snippet": "…xxxxxxxxxxxxxxxxxxxxxxxneedlezzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz…",
+          "source": "user",
+          "threadId": "substring"
+        }
+      ],
+      "needle": [
+        {
+          "snippet": "a needle",
+          "source": "user",
+          "threadId": "boundary"
+        },
+        {
+          "snippet": "needle",
+          "source": "user",
+          "threadId": "exact"
+        },
+        {
+          "snippet": "needle first message",
+          "source": "user",
+          "threadId": "prefix"
+        },
+        {
+          "snippet": "…xxxxxxxxxxxxxxxxxxxxxxxxneedlezzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz…",
+          "source": "user",
+          "threadId": "substring"
+        }
+      ]
     }
   },
   "referenceVersion": "0.1.7-nightly.20261031.3991",

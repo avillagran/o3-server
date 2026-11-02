@@ -39,3 +39,18 @@ fn search_uses_rendered_blocks_skills_context_and_folded_answers() {
         assert_eq!(find(query)["totalMatches"], 0, "{query}");
     }
 }
+
+#[test]
+fn message_snippets_include_late_folded_accent_match() {
+    let e = setup("late-search");
+    e.project("p", &e.dir("workspace"));
+    e.thread("t", "p");
+    let text = format!("{}CAFÉ{}", "界".repeat(350), "é".repeat(350));
+    e.conn.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"send","threadId":"t","messageId":"m","text":text,"attachments":[],"dispatchMode":{"type":"defer_start"}})).unwrap();
+    let result =
+        t3_protocol::api::orchestration::search_threads(&e.conn, "cafe", Some(20)).unwrap();
+    let snippet = result["matches"][0]["snippet"].as_str().unwrap();
+    assert!(snippet.contains("CAFÉ"), "{snippet}");
+    assert!(snippet.chars().count() <= 240);
+    assert!(snippet.starts_with('…') && snippet.ends_with('…'));
+}
