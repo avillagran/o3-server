@@ -80,7 +80,8 @@ pub fn index_message(db: &Connection, thread_id: &str, m: &Value) -> Result<(), 
 
 /// `"tok"*` terms, ANDed: user text can never become FTS5 syntax.
 fn match_expression(query: &str) -> Option<String> {
-    let terms: Vec<String> = query
+    let folded = fold_search(query);
+    let terms: Vec<String> = folded
         .split(|c: char| !c.is_alphanumeric())
         .filter(|t| !t.is_empty())
         .take(12)
@@ -103,7 +104,7 @@ fn fold_search(text: &str) -> String {
                 .to_lowercase()
                 .replace('ς', "σ")
                 .replace(['‘', '’'], "'");
-            if folded.chars().count() == 1 {
+            if folded.chars().count() <= 1 {
                 folded
             } else {
                 c.to_lowercase().collect()
@@ -120,7 +121,17 @@ fn search_snippet(text: &str, needle: &str) -> String {
     }
     let folded = fold_search(&text);
     let byte = folded.find(needle).unwrap_or(0);
-    let index = folded[..byte].chars().count();
+    let folded_index = folded[..byte].chars().count();
+    let mut emitted = 0;
+    let index = chars
+        .iter()
+        .position(|c| {
+            let n = fold_search(&c.to_string()).chars().count();
+            let found = n > 0 && emitted >= folded_index;
+            emitted += n;
+            found
+        })
+        .unwrap_or(0);
     let start = index
         .saturating_sub(24)
         .min(chars.len().saturating_sub(238));

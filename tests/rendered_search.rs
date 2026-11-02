@@ -54,3 +54,25 @@ fn message_snippets_include_late_folded_accent_match() {
     assert!(snippet.chars().count() <= 240);
     assert!(snippet.starts_with('…') && snippet.ends_with('…'));
 }
+
+#[test]
+fn decomposed_accents_match_fts_substrings_and_late_snippets() {
+    let e = setup("decomposed-search");
+    e.project("p", &e.dir("workspace"));
+    e.thread("t", "p");
+    let text = format!("{} CA\u{301}FE tail", "a\u{301} ".repeat(350));
+    e.conn.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"send","threadId":"t","messageId":"m","text":text,"attachments":[],"dispatchMode":{"type":"defer_start"}})).unwrap();
+    for query in ["cafe", "afe", "ca\u{301}fe"] {
+        let result =
+            t3_protocol::api::orchestration::search_threads(&e.conn, query, Some(20)).unwrap();
+        assert_eq!(
+            result["matches"].as_array().unwrap().len(),
+            1,
+            "{query}: {result}"
+        );
+        assert!(result["matches"][0]["snippet"]
+            .as_str()
+            .unwrap()
+            .contains("CA\u{301}FE"));
+    }
+}
