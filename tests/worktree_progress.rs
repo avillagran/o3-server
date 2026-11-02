@@ -71,6 +71,12 @@ fn real_setup_reader_progress_cancel_and_rollback() {
             break;
         }
     }
+    c.rpc("projects.mutate",json!({"type":"project.update","commandId":"pu2","projectId":"p","scripts":[{"id":"setup","name":"Setup","command":"echo finished > setup-result","icon":"terminal","runOnWorktreeCreate":true,"async":false}]})).unwrap();
+    c.rpc("orchestration.launchThread",json!({"commandId":"retry","threadId":"t","projectId":"p","title":"Local","modelSelection":{"instanceId":"scripted","model":"test"},"workspaceStrategy":{"type":"worktree","baseRef":"HEAD"}})).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(std::path::Path::new(&path).join("setup-result")).unwrap(),
+        "finished\n"
+    );
     done.store(true, Ordering::Release);
     reader.join().unwrap().unwrap();
 }

@@ -62,6 +62,12 @@ pub fn finish(s: &State, tid: &str, result: &Result<(), String>) {
             Err(_) => "failed",
         });
         v["endedAt"] = json!(iso(now_ms()));
+        for stage in v["stages"].as_array_mut().unwrap() {
+            if stage["status"] == "running" {
+                stage["status"] = json!(if result.is_ok() { "done" } else { "failed" });
+                stage["endedAt"] = json!(iso(now_ms()));
+            }
+        }
         if let Err(e) = result {
             v["error"] = json!(e.chars().take(1000).collect::<String>());
         }

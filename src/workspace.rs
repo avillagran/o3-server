@@ -181,6 +181,7 @@ fn prepare_inner(s: &State, p: &Value, tid: &str) -> Result<Prepared, String> {
                             Err(cleanup) => Err(format!("{error}; {cleanup}")),
                         };
                     }
+                    crate::worktree_progress::stage(s, tid, "submodules", "done");
                 }
             }
             let setup = (|| {
