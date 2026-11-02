@@ -1,0 +1,23 @@
+{
+  "records": 375,
+  "active": 374,
+  "archived": 1,
+  "message_bytes": 131072,
+  "shell_bytes": 279744,
+  "streamed_snapshot_ms": 133.65,
+  "archived_snapshot_ms": 1.1,
+  "idle_kib": {
+    "VmHWM": 13208,
+    "VmRSS": 13208
+  },
+  "after_streamed_kib": {
+    "VmHWM": 14824,
+    "VmRSS": 14580
+  },
+  "after_materialized_kib": {
+    "VmHWM": 14824,
+    "VmRSS": 14772
+  },
+  "measurement": "release server /proc/PID/status; client RSS excluded; synthetic threads/messages; no inference",
+  "binary_sha256": "830be92cca8ab1cddde5d00e0d3d57ee842b3b3dc73eca34830b0e8d7b86f7e3"
+}

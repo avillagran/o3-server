@@ -144,7 +144,7 @@
     "orchestration.getArchivedShellSnapshot": {
       "status": "partial",
       "priority": "P2",
-      "note": "Real-client test: archived threads and projects with the shared sequence. Built from the in-memory shell assembly (10,000 thread cap), same limit as the live shell."
+      "note": "Queries only archived nondeleted rows; does not construct active shell rows or copy message text. Existing readers have no archive pagination mechanism. See dated measurements and remaining size limits in CONFORMANCE.md."
     },
     "orchestration.getFullThreadDiff": {
       "status": "done",
@@ -189,7 +189,7 @@
     "orchestration.launchThread": {
       "status": "done",
       "priority": "P0",
-      "note": "Real ThreadLaunch builder covers creation, empty reuse and receipt replay; actual projection/timeline/queue/sidebar readers and title-generation tests cover settings, fallback and rename races. Worktree rollback and native steering peers remain covered. Final client-read sweep: zero remaining consumed gaps; see CONFORMANCE.md."
+      "note": "Automatic generateTitle launches preserve fallback titles even with unsupported saved Codex text generation; no provider substitution. Real Connection/title readers cover this and explicit regeneration errors. Pinned 3991 accepts saved selection and empty automatic launch; full initial-message generation on reference is unproven. Broader parity remains subject to independent audit."
     },
     "orchestration.searchThread": {
       "status": "skip",
@@ -204,7 +204,7 @@
     "orchestration.searchThreads": {
       "status": "partial",
       "priority": "P1",
-      "note": "Audit follow-up 2026-11-02: full candidates within the 8 MiB byte bound are searched in independent FTS and substring phases, each with an 8 MiB scan budget. Real reader finds suffix matches beyond 70,000 characters in both paths with a centered snippet. Ordered pinned-reader subset remains covered; exhaustive ranking is not certified."
+      "note": "Decomposed combining marks fold away on FTS and substring paths, and snippet offsets map back to source. Byte/candidate budgets remain; there is NO wall-clock deadline around FTS ranking before LIMIT."
     },
     "orchestration.stopWorkflow": {
       "status": "skip",
@@ -224,7 +224,7 @@
     "orchestration.subscribeShell": {
       "status": "partial",
       "priority": "P0",
-      "note": "Audit follow-up 2026-11-02: materialized shell filters deleted records in SQL and includes all live/archived threads; streamed snapshots already included all. Synthetic 20,003-record profile covers 10,001 active, one archived and 10,001 newer deleted threads through actual Connection shell/archived readers. No older-settled recovery capability is required for complete snapshots. Release scale memory/time is documented in CONFORMANCE.md; status remains for independent audit. Existing separate quota evidence limit remains: synthetic exhausted-provider frames are covered, but the required realistic captured failure frame is unavailable."
+      "note": "Shell message summaries match sampled pinned V2 null rather than copying message bodies; all live threads retained. HTTP and real stream reader regression covers 375 long messages. Unbounded thread counts/metadata can still exceed client 8 MiB; see CONFORMANCE.md."
     },
     "orchestration.subscribeThread": {
       "status": "done",
@@ -679,7 +679,7 @@
     "server.discoverSourceControl": {
       "status": "partial",
       "priority": "P1",
-      "note": "Actual lib API reader covers git/jj, CLI host descriptors and API-backed Bitbucket/Forgejo/GitCafe descriptors without CLI dependency. Bitbucket/Forgejo environment-token identity probes are bounded, nonredirecting and redact responses. Partial: live authenticated API acceptance, GitCafe token validation and desktop credential storage; unknown is reported truthfully. 2026-11-02: desktop src/write.rs:75 consumes kind/status/auth.status, so unsupported GitCafe auth is not an unread field. No live auth or credential-store verification performed. CLI/API fixture coverage remains bounded, not host acceptance proof. 2026-11-02 audit implementation: documented GitCafe /api/auth/principal with CAFE_TOKEN now validates actorId/handle through bounded nonredirecting API transport. Isolated HTTP fixture fails before parser change and passes afterward. No real credentials read or live authenticated acceptance tested; successful GitCafe probe is not yet proven through the complete Connection discovery reader; desktop credential storage remains unsupported."
+      "note": "GitCafe supports CAFE_TOKEN or documented cafe api /auth/principal using its CLI login, fixed host, bounded output/time, no token retrieval. Isolated CLI fixture only; newer T3 CLI support is source-only evidence. Desktop stored credentials remain unsupported."
     },
     "server.getBackgroundPolicy": {
       "status": "skip",
@@ -839,7 +839,7 @@
     "server.updateSettings": {
       "status": "partial",
       "priority": "P1",
-      "note": "Audit follow-up 2026-11-02: text-generation selection saves remain accepted. Explicit title/launch generation, blank generated commits and reviews reject unsupported selection with an actionable instruction to choose a tool-free provider or supply text manually. Explicit unsupported preferences no longer silently select the conversation model. No tool-capable generation session is started. Broader settings effects, external updater ownership and agent-browser service remain separate."
+      "note": "Saved Codex generation selections remain accepted (pinned 3991 probe). Automatic launches and blank-message commits use deterministic fallbacks without changing provider; explicit title regeneration/reviews without fallback return actionable errors. Settings effects remain partial."
     },
     "server.upsertKeybinding": {
       "status": "done",
@@ -999,7 +999,7 @@
     "vcs.refreshStatus": {
       "status": "partial",
       "priority": "P1",
-      "note": "Audit follow-up 2026-11-02: same-repository PR fallback now distinguishes nondefault URL ports; real Connection regression fails before and passes after. Default-port keys retain existing grouping semantics. Non-GitHub/GitLab PR behavior remains a consumed gap."
+      "note": "Scheme-default SSH22/HTTPS443/HTTP80 normalize; nondefault ports retained. Client uses supplied canonicalKey, without URL recomputation. GitHub/GitLab PR lookup only; other offered hosts still lack metadata and may offer actions that fail as unsupported."
     },
     "vcs.removeWorktree": {
       "status": "skip",
@@ -1166,7 +1166,7 @@
     "thread.fork": {
       "status": "partial",
       "priority": "P1",
-      "note": "Audit follow-up 2026-11-02: latest-completed native continuity is chosen before fallback capture, so 33 attachments do not reject native forks. Historical fallback transmits attachments within descriptor/materialization bounds and rejects attachment overflow explicitly. Text and tool-result context is capped at 1 MiB, oldest dropped first with a truncation marker; fresh native peers and actual timeline reader cover both supported adapters. Attachment continuity works within bounds. Independent audit decides status."
+      "note": "Historical fallback keeps newest attachments under 32 descriptors/64 KiB and includes an explicit omission marker in agent handoff. Native forks bypass fallback limits. Real Connection projection regression; pinned overflow behavior remains unproven."
     },
     "thread.guest-message.dismiss": {
       "status": "todo",

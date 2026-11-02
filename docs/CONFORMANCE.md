@@ -1933,7 +1933,7 @@ No credentials, inference, services, emulators, pushes or merges were used.
    before the fix and passes afterward in both feature configurations. Same-endpoint,
    branch-change and authoritative-empty tests still pass. Nondefault ports
    are retained in canonicalKey, also used by desktop connection routing and
-   lib sidebar grouping. Default URL ports normalize as before; ordinary
+   lib sidebar grouping. Correction below: SSH port 22 did not normalize in this revision; ordinary
    URL/SCP repository grouping is retained. Project IDs, roots and receipts
    are unchanged. Android stores repositoryIdentity as shell metadata.
    Provider classification uses hostname; requests/cache retain the endpoint.
@@ -2013,3 +2013,112 @@ reproducible with tools/bench-shell-scale. Both samples use the same recorded
 release binary hash. They are individual workload samples, not speedup claims.
 All Cargo work used nice and four jobs, one build/test at a time, with four test
 threads in the full suites. Compatibility statuses are unchanged.
+
+## Client-visible automatic-flow and scale audit — 2026-11-02
+
+Statuses are unchanged. This section supersedes the earlier claims that automatic
+launch/commit generation should reject unsupported preferences, that every default
+port already normalized, and that historical attachment overflow should reject.
+
+1. **Automatic generation:** the real title/stacked-action readers failed first
+   with a saved Codex preference and now pass. Android's automatic unnamed chat
+   launches successfully: its title becomes the normalized first 80 characters of
+   the initial message. Blank-message commits show `Update <file>` or
+   `Update N files`, and finish normally. The saved preference remains intact;
+   no other provider is selected. Explicit regeneration/review without fallback
+   still returns the actionable unsupported-generation error. Pinned 3991 accepts
+   the settings save and an empty automatic launch (`shell-preview-reference.json`);
+   its generation with an initial message remains unproven without inference.
+2. **Shell size:** a real HTTP Connection with 375 long latest messages failed
+   `too_large` before the fix. Afterward HTTP and real shell stream readers pass.
+   Pinned 3991 returns `latestVisibleMessage:null` for the deferred long-message
+   fixture; newer ProjectionStore source also emits null. No consumers of this
+   field were found in the checked Rust/Android sources: sidebar/awareness use
+   title, status and activity stamps; search uses separate results and snippets.
+   Shell summaries now emit null, including incremental `thread.updated` events,
+   without reading/duplicating complete latest message bodies. Thread projections
+   retain the full content. This is the sampled V2 behavior, not a claim about
+   every possible reference run state.
+
+   The 375-row fixture is 280,852 bytes (about 749 bytes/row). At this row size,
+   10,001 rows need roughly 7.5 MB plus envelope/projects and fit 8 MiB; 12,000
+   need about 9 MB and cannot. These are estimates, not bounds for arbitrary
+   metadata: long titles, projects, task arrays and inherited fields can also
+   exceed the limit. A single incremental row has the same null summary, so a
+   long message alone cannot make it oversized; arbitrary metadata still can.
+   There is no compatible pagination for shell snapshots in these clients.
+   All live threads are retained. Above the client limit, HTTP reports too_large
+   and streams disconnect, including reconnect; no scalable-load guarantee is
+   claimed. No threads are silently dropped to conceal that limitation.
+3. **Archives:** a regression with an invalid active row failed first because
+   archive reads tried to build it; it now passes with an empty archive. SQL
+   selects archived nondeleted rows before constructing summaries. Message text
+   is not materialized. Existing desktop/Android archive readers request the
+   entire archive; no compatible cursor/limit contract was found. The archive
+   itself can still exceed the frame limit for sufficiently many archived rows.
+   Release measurements below exclude client/build/test-process RSS.
+4. **Repository identity:** SSH `:22` failed first and now passes with the SCP
+   key; HTTPS443/HTTP80 also normalize. Nondefault ports remain. HTTPS and SSH
+   at the same nondefault port intentionally share the host:port/path key.
+   The checked lib sidebar reads `canonicalKey` (or `origin.canonicalKey`), not
+   the remote URL; it does not independently compute default ports or schemes.
+   Desktop routing uses that supplied key. Existing cross-repository PR cache
+   regression remains in the suite.
+5. **Search:** `cafe`, `afe` and a decomposed query failed before and now find
+   `CÁFE`; late snippets preserve the original accents and include the match
+   despite hundreds of preceding combining marks. Folding removes zero-output
+   marks; FTS terms use the same fold and snippets map offsets back to source.
+   **No wall-clock bound exists** for adversarial FTS queries. Byte/candidate
+   budgets do not bound SQLite ranking before LIMIT; no deadline is claimed.
+6. **Historical forks:** the older-boundary 33-attachment fork failed first;
+   it now succeeds, keeps the newest 32 within 64 KiB, and places
+   `[Historical attachments truncated: oldest descriptors omitted; newest retained.]`
+   in inherited context delivered to the agent. Oversized descriptors are omitted
+   within the same budget. Native forks retain their native path. The inherited
+   timeline still shows history; the marker is agent context, not a client toast.
+   Pinned overflow behavior and a fresh native peer observing this marker were
+   not exercised; reference parity is not certified.
+7. **GitCafe CLI login:** the fixture's real discovery Connection first reported
+   unauthenticated without CAFE_TOKEN. It now reports authenticated and the
+   fixture handle through documented `cafe api /auth/principal`, fixed to
+   https://git.cafe/api with noninteractive flags, 5 s and 64 KiB limits. The CLI
+   handles its login; the server never retrieves a token. Failure/malformed
+   output remains unknown, so desktop readiness stays disabled in those cases.
+   No real credentials or real authenticated requests were used. Documentation:
+   [CLI](https://git.cafe/docs/reference/cli),
+   [API](https://git.cafe/docs/reference/api). Newer T3 GitCafeCredentials source
+   uses a CLI credential helper; that comparison is source-only.
+8. **Other-host PR lookup remains unresolved:** desktop offers GitHub, GitLab,
+   GitCafe, Forgejo, Bitbucket and Azure DevOps. Only GitHub/GitLab currently
+   supply status PR metadata. The other-host real Connection/validator/actions
+   regression records null provider/PR metadata. A changed pushable branch can
+   still enable commit_push_pr because the reader tests Git state, not provider
+   support; execution can then fail unsupported. Host API implementations and
+   authenticated fixtures for these four hosts are still required. This is a
+   confirmed consumed gap, not an unsupported claim that their APIs do not exist.
+
+Release synthetic measurements (`rss-shell-audit-*.json`):
+
+| Workload | Shell bytes | Archive latency | Server HWM |
+|---|---:|---:|---:|
+| 10,001 active + 1 archived + 10,001 newer deleted | 7,110,418 | 14.52 ms | 15,880 KiB (16.26 MB) |
+| 375 total, 128 KiB message each, 1 archived | 279,744 | 1.10 ms | 14,824 KiB (15.18 MB) |
+
+Both measured server workloads are below 50 MB. The large fixture has one archived
+row, not 10,001 archived rows. The archive latency/HWM comparison is against the
+previous 882.77 ms / 95,740 KiB measurement with the same large empty-thread shape.
+The incremental reader test also replaces one latest message with 9 MiB before
+updating metadata: the shell update remains under 8 KiB and readable.
+
+Final validation: `cargo test --no-fail-fast` passes 226 tests with defaults and
+224 without defaults, 17 ignored opt-ins each (including the new isolated pinned
+probe). Strict Clippy `--all-targets -- -D warnings` passes both configurations;
+`cargo fmt --check` and `tools/gen-compat` pass. Pinned 3991 general, concurrent
+and P1-reader differentials pass; the P1-reader comparison reports equality.
+The incremental fixture initially stalled because its direct SQLite writes did
+not notify the WAL checkpointer; waking it fixes that test setup. No production
+WAL policy was changed. All builds/tests run sequentially under nice with -j4.
+No push, merge, service changes, real credentials, inference or emulators.
+
+Final standard `tools/bench-rss` HWM: 16,544 KiB (16.94 MB), no inference;
+see `rss-automatic-flow-audit.json`. Final binary hashes match all three measurements.
