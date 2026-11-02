@@ -445,10 +445,10 @@ pub(crate) fn persist(
                 base["questions"] = p["questions"].clone();
             } else {
                 base["requestKind"] = json!(kind);
-                base["prompt"] = json!(p["command"]
+                base["prompt"] = json!(p["reason"]
                     .as_str()
                     .or_else(|| p["message"].as_str())
-                    .or_else(|| p["reason"].as_str())
+                    .or_else(|| p["command"].as_str())
                     .unwrap_or("Codex requests approval"));
             }
             item(db, tid, thread, base)?;
@@ -486,6 +486,14 @@ pub(crate) fn finish(
         for (row, body) in rows {
             cursor = row;
             let mut v: Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+            if matches!(
+                v["type"].as_str(),
+                Some("approval_request" | "user_input_request")
+            ) && get(db, "runtimeRequests", v["requestId"].as_str().unwrap_or(""))
+                .is_ok_and(|r| r["status"] == "pending")
+            {
+                continue;
+            }
             if v["runId"] != rid
                 || matches!(
                     v["status"].as_str(),
