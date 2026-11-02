@@ -32,7 +32,7 @@
         "scannedProcessCount": 0,
         "sidecarPid": {
           "_tag": "Some",
-          "value": 1972891
+          "value": 2027277
         },
         "sidecarVersion": {
           "_tag": "Some",
@@ -44,7 +44,7 @@
       "server": "reference"
     },
     {
-      "busyAvgCpu": 33.266799733865604,
+      "busyAvgCpu": 33.30006653359947,
       "childCpuVisible": true,
       "health": {
         "collectionDurationMicros": 0,
@@ -64,7 +64,7 @@
           },
           "lastSampleAt": {
             "_tag": "Some",
-            "value": "2026-11-02T05:35:56.137Z"
+            "value": "2026-11-02T05:55:58.031Z"
           },
           "status": "healthy"
         },

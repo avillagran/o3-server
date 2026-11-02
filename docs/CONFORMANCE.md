@@ -2218,3 +2218,61 @@ runs only in the existing on-demand sampler. No performance improvement is claim
 Cargo builds/tests ran sequentially under nice with four jobs, in the required
 /var/tmp build directories. No emulators, credentials, live inference, services,
 pushes or merges were used.
+
+## 2026-11-02 — P2 implementation continuation (incomplete)
+
+This continuation does not close the requested 31-row inventory. No status or priority
+was changed. The dated table in `p2-reader-inventory.md` records an outcome for each row,
+including unfinished implementation work; those technical reasons are not external blockers.
+
+Changes and real-reader negative controls:
+
+- `tests/p2_stop.rs`: the pre-fix server accepted unsupported child cancellation
+  (`Ok(sequence)` where the regression requires an error), reserving an owner interrupt.
+  After removal of that fallback, actual lib dispatch/projection readers over a real
+  Connection pass with deterministic Claude and Codex peers: child evidence remains running,
+  the owner remains running and accepts a continuation to completion. The child record is
+  seeded, so native discovery, task-specific cancellation and item cancellation are unproven.
+  This is a safety fix, not independent cancellation support.
+- `tests/p2_rates.rs`: real lib refresh/summary readers failed before implementation with
+  pricing `unavailable` instead of `fresh`. A deterministic HTTP document now exercises
+  bounded on-demand fetching, numeric-rate validation, atomic persistent cache, preserved
+  fetch timestamp/count on failed refresh, and reload. Public rates are not applied to
+  usage because ledger scanning/aggregation remains absent. Startup does not fetch rates.
+  The former admin unavailable test initially fetched public rates and failed its stale
+  assumption; it and the differential harness now use an unavailable loopback endpoint.
+- `tests/pull_requests.rs`: actual lib list query/reader executes through the real Connection,
+  checking combined reviewing/draft/review/checks/grouped-label/excluded-label/author/query
+  arguments and client-consumed entries with scripted gh. This passed without a server fix;
+  there is no failing-before claim or live GitHub equivalence claim.
+- `tests/device.rs`: real lib action/detail reader failed before implementation with
+  `this Android action is unsupported`. Fixture adb now covers appearance, font size,
+  reduced-motion and network toggles, plus settings/foreground-package readback. Font-scale
+  mappings were checked against newer source, not pinned behavior. No hardware, emulator,
+  native settings behavior, encoder or video decoder was exercised. Detail uses optional
+  adb queries; slow-device latency and unsupported settings remain unproven.
+
+Validation: full default suite **234 passed, 18 ignored**; no-default-features suite
+**232 passed, 18 ignored**, both with `--no-fail-fast`, `-j 4` and serial test execution.
+Strict Clippy (`--all-targets -- -D warnings`) passes in both configurations; formatting,
+`tools/gen-compat` and whitespace checks pass. Clippy found an incomplete-read pattern in
+an HTTP test fixture; the fixture now reads bounded complete headers, with its real-reader
+test rerun passing. Pinned 3991 general, concurrent, P1-reader and P2-telemetry differentials
+pass in isolated profiles with deterministic peers. P1 reader equality is true; the pinned
+telemetry probe again returned no samples, so CPU equivalence remains unproven. These
+existing differentials do not certify new rate or device-settings parity.
+
+Still unfinished: independent native subagent stop; local usage ledger discovery,
+bounded parsing/deduplication/timezone/cost aggregation; rollback crash replay; webhook
+schedules; staged clone/worktree setup and cancellation; ACP execution; remote/EAS/device
+tool transports; shutdown and H264. External CLI updates of unknown ownership remain
+subject to the owner's existing open decision. Unused/gated rows and existing cleanup
+implementations are documented separately from demonstrated defects. No push, merge,
+credentials, live inference, real installs, devices or emulators were used for the fixes.
+
+Release `tools/bench-rss`: maximum VmHWM **17,492 KiB (17.91 MB)**, under 50 MB;
+cold RSS 9,740 KiB, after-churn RSS 16,288 KiB. Synthetic 1,000-message/three-subscriber
+workload, no inference and no provider-child RSS. Append p95 3.24 ms; metadata append
+p95 0.53 ms. See `rss-p2-implementation.json`. This measures the ordinary startup/hot
+path, not large ledger/rate-cache stress or native device latency; no performance
+improvement or universal memory bound is claimed.
