@@ -552,22 +552,26 @@ fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outco
                 return Err("cannot restore during an active run".into());
             }
             let scope_record = get(tx, "checkpointScopes", scope)?;
-            let cwd = std::path::Path::new(scope_record["cwd"].as_str().ok_or("checkpoint cwd missing")?);
+            let cwd = std::path::Path::new(
+                scope_record["cwd"]
+                    .as_str()
+                    .ok_or("checkpoint cwd missing")?,
+            );
             let identity = crate::checkpoint::workspace_identity(cwd)?;
-            if scope_record["identity"].is_null() || scope_record["identity"] != identity
-                || scope_record["threadId"] != tid || scope_record["projectId"] != t["projectId"] {
+            if scope_record["identity"].is_null()
+                || scope_record["identity"] != identity
+                || scope_record["threadId"] != tid
+                || scope_record["projectId"] != t["projectId"]
+            {
                 return Err("rollback workspace identity changed; refusing restore".into());
             }
             let mut intent = c.clone();
-            intent["rollbackIdentity"] = identity;
+            intent["rollbackIdentity"] = identity.clone();
             crate::checkpoint::journal(s, &intent)?;
-            crate::checkpoint::restore(
+            crate::checkpoint::restore_bound(
                 s,
-                std::path::Path::new(
-                    scope_record["cwd"]
-                        .as_str()
-                        .ok_or("checkpoint cwd missing")?,
-                ),
+                cwd,
+                &identity,
                 checkpoint["ref"].as_str().ok_or("checkpoint ref missing")?,
             )?;
             let ordinal = checkpoint["appRunOrdinal"].as_i64().unwrap_or(0);

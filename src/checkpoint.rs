@@ -26,30 +26,78 @@ pub fn workspace_identity(cwd: &Path) -> Result<serde_json::Value, String> {
     use std::os::unix::fs::MetadataExt;
     let canonical = cwd.canonicalize().map_err(|e| e.to_string())?;
     for ancestor in cwd.ancestors() {
-        if std::fs::symlink_metadata(ancestor).map_err(|e| e.to_string())?.file_type().is_symlink() {
+        if std::fs::symlink_metadata(ancestor)
+            .map_err(|e| e.to_string())?
+            .file_type()
+            .is_symlink()
+        {
             return Err("rollback workspace contains a symlink".into());
         }
     }
     let metadata = std::fs::metadata(&canonical).map_err(|e| e.to_string())?;
-    let out = Command::new("git").current_dir(&canonical).args(["rev-parse", "--path-format=absolute", "--git-common-dir", "--absolute-git-dir"]).output().map_err(|e| e.to_string())?;
-    if !out.status.success() { return Err("rollback repository unavailable".into()); }
+    let out = Command::new("git")
+        .current_dir(&canonical)
+        .args([
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-common-dir",
+            "--absolute-git-dir",
+        ])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err("rollback repository unavailable".into());
+    }
     let mut repositories = Vec::new();
     for path in String::from_utf8_lossy(&out.stdout).lines() {
         let path = Path::new(path).canonicalize().map_err(|e| e.to_string())?;
         let m = std::fs::metadata(&path).map_err(|e| e.to_string())?;
         repositories.push(json!({"path":path,"dev":m.dev(),"ino":m.ino()}));
     }
-    Ok(json!({"cwd":canonical,"dev":metadata.dev(),"ino":metadata.ino(),"repositories":repositories}))
+    Ok(
+        json!({"cwd":canonical,"dev":metadata.dev(),"ino":metadata.ino(),"repositories":repositories}),
+    )
+}
+pub(crate) fn restore_bound(
+    s: &State,
+    cwd: &Path,
+    identity: &serde_json::Value,
+    reference: &str,
+) -> Result<(), String> {
+    use std::os::{fd::AsRawFd, unix::fs::MetadataExt};
+    let directory = std::fs::File::open(cwd).map_err(|e| e.to_string())?;
+    let metadata = directory.metadata().map_err(|e| e.to_string())?;
+    if identity["dev"].as_u64() != Some(metadata.dev())
+        || identity["ino"].as_u64() != Some(metadata.ino())
+    {
+        return Err("rollback workspace changed before restore".into());
+    }
+    // chdir resolves the pinned descriptor before exec; replacing a path component
+    // after verification cannot redirect restore into another workspace.
+    restore(
+        s,
+        Path::new(&format!("/proc/self/fd/{}", directory.as_raw_fd())),
+        reference,
+    )
 }
 fn sync_tree(path: &Path) -> Result<(), String> {
     for entry in std::fs::read_dir(path).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
-        if entry.file_name() == ".git" { continue; }
+        if entry.file_name() == ".git" {
+            continue;
+        }
         let kind = entry.file_type().map_err(|e| e.to_string())?;
-        if kind.is_dir() { sync_tree(&entry.path())?; }
-        else if kind.is_file() { std::fs::File::open(entry.path()).and_then(|f| f.sync_all()).map_err(|e| e.to_string())?; }
+        if kind.is_dir() {
+            sync_tree(&entry.path())?;
+        } else if kind.is_file() {
+            std::fs::File::open(entry.path())
+                .and_then(|f| f.sync_all())
+                .map_err(|e| e.to_string())?;
+        }
     }
-    std::fs::File::open(path).and_then(|f| f.sync_all()).map_err(|e| e.to_string())
+    std::fs::File::open(path)
+        .and_then(|f| f.sync_all())
+        .map_err(|e| e.to_string())
 }
 pub fn capture(s: &State, tid: &str, rid: &str, cwd: &Path, baseline: bool) -> Result<(), String> {
     let identity = workspace_identity(cwd)?;
@@ -187,9 +235,15 @@ pub(crate) fn recover_rollbacks(s: &std::sync::Arc<State>) -> Result<(), String>
             return Err("invalid rollback intent command".into());
         }
         let db = s.db.lock().unwrap();
-        let scope = get(&db, "checkpointScopes", c["scopeId"].as_str().ok_or("rollback scope missing")?)?;
+        let scope = get(
+            &db,
+            "checkpointScopes",
+            c["scopeId"].as_str().ok_or("rollback scope missing")?,
+        )?;
         if c["rollbackIdentity"].is_null() || c["rollbackIdentity"] != scope["identity"] {
-            return Err("rollback intent identity missing or changed; manual recovery required".into());
+            return Err(
+                "rollback intent identity missing or changed; manual recovery required".into(),
+            );
         }
         let cwd = Path::new(scope["cwd"].as_str().ok_or("rollback cwd missing")?);
         if workspace_identity(cwd)? != c["rollbackIdentity"] {
