@@ -21,7 +21,38 @@ fn git(cwd: &Path, index: &Path, args: &[&str]) -> Result<String, String> {
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().into())
 }
+/// Bind a checkpoint to a physical workspace, refusing symlink traversal.
+pub fn workspace_identity(cwd: &Path) -> Result<serde_json::Value, String> {
+    use std::os::unix::fs::MetadataExt;
+    let canonical = cwd.canonicalize().map_err(|e| e.to_string())?;
+    for ancestor in cwd.ancestors() {
+        if std::fs::symlink_metadata(ancestor).map_err(|e| e.to_string())?.file_type().is_symlink() {
+            return Err("rollback workspace contains a symlink".into());
+        }
+    }
+    let metadata = std::fs::metadata(&canonical).map_err(|e| e.to_string())?;
+    let out = Command::new("git").current_dir(&canonical).args(["rev-parse", "--path-format=absolute", "--git-common-dir", "--absolute-git-dir"]).output().map_err(|e| e.to_string())?;
+    if !out.status.success() { return Err("rollback repository unavailable".into()); }
+    let mut repositories = Vec::new();
+    for path in String::from_utf8_lossy(&out.stdout).lines() {
+        let path = Path::new(path).canonicalize().map_err(|e| e.to_string())?;
+        let m = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+        repositories.push(json!({"path":path,"dev":m.dev(),"ino":m.ino()}));
+    }
+    Ok(json!({"cwd":canonical,"dev":metadata.dev(),"ino":metadata.ino(),"repositories":repositories}))
+}
+fn sync_tree(path: &Path) -> Result<(), String> {
+    for entry in std::fs::read_dir(path).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        if entry.file_name() == ".git" { continue; }
+        let kind = entry.file_type().map_err(|e| e.to_string())?;
+        if kind.is_dir() { sync_tree(&entry.path())?; }
+        else if kind.is_file() { std::fs::File::open(entry.path()).and_then(|f| f.sync_all()).map_err(|e| e.to_string())?; }
+    }
+    std::fs::File::open(path).and_then(|f| f.sync_all()).map_err(|e| e.to_string())
+}
 pub fn capture(s: &State, tid: &str, rid: &str, cwd: &Path, baseline: bool) -> Result<(), String> {
+    let identity = workspace_identity(cwd)?;
     let index = s
         .dir
         .join(format!("checkpoint-{}.index", crate::store::random_id()?));
@@ -49,7 +80,7 @@ pub fn capture(s: &State, tid: &str, rid: &str, cwd: &Path, baseline: bool) -> R
             "checkpointScopes",
             &scope,
             tid,
-            &json!({"id":scope,"threadId":tid,"kind":"root_run","cwd":cwd,"status":"ready"}),
+            &json!({"id":scope,"threadId":tid,"kind":"root_run","cwd":cwd,"identity":identity,"projectId":t["projectId"],"status":"ready"}),
         )?;
         let cp = json!({"id":id,"threadId":tid,"scopeId":scope,"runId":rid,"status":"ready","ref":reference,"appRunOrdinal":if baseline {0}else{ordinal},"ordinalWithinScope":if baseline {0}else{ordinal}});
         put(&tx, "checkpoints", &id, tid, &cp)?;
@@ -74,7 +105,7 @@ pub fn restore(s: &State, cwd: &Path, reference: &str) -> Result<(), String> {
         git(cwd, &index, &["read-tree", "--empty"])?;
         git(cwd, &index, &["add", "-A", "--", "."])?;
         git(cwd, &index, &["read-tree", "--reset", "-u", reference])?;
-        Ok(())
+        sync_tree(cwd)
     })();
     let _ = std::fs::remove_file(index);
     result
@@ -155,6 +186,16 @@ pub(crate) fn recover_rollbacks(s: &std::sync::Arc<State>) -> Result<(), String>
         if c["type"] != "checkpoint.rollback" {
             return Err("invalid rollback intent command".into());
         }
+        let db = s.db.lock().unwrap();
+        let scope = get(&db, "checkpointScopes", c["scopeId"].as_str().ok_or("rollback scope missing")?)?;
+        if c["rollbackIdentity"].is_null() || c["rollbackIdentity"] != scope["identity"] {
+            return Err("rollback intent identity missing or changed; manual recovery required".into());
+        }
+        let cwd = Path::new(scope["cwd"].as_str().ok_or("rollback cwd missing")?);
+        if workspace_identity(cwd)? != c["rollbackIdentity"] {
+            return Err("rollback workspace identity changed; refusing replay".into());
+        }
+        drop(db);
         crate::thread_commands::dispatch(s, &c)?;
         match std::fs::remove_file(path) {
             Ok(()) => {}

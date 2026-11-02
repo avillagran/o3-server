@@ -552,7 +552,15 @@ fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outco
                 return Err("cannot restore during an active run".into());
             }
             let scope_record = get(tx, "checkpointScopes", scope)?;
-            crate::checkpoint::journal(s, c)?;
+            let cwd = std::path::Path::new(scope_record["cwd"].as_str().ok_or("checkpoint cwd missing")?);
+            let identity = crate::checkpoint::workspace_identity(cwd)?;
+            if scope_record["identity"].is_null() || scope_record["identity"] != identity
+                || scope_record["threadId"] != tid || scope_record["projectId"] != t["projectId"] {
+                return Err("rollback workspace identity changed; refusing restore".into());
+            }
+            let mut intent = c.clone();
+            intent["rollbackIdentity"] = identity;
+            crate::checkpoint::journal(s, &intent)?;
             crate::checkpoint::restore(
                 s,
                 std::path::Path::new(
