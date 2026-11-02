@@ -284,6 +284,35 @@ fn count_lines(path: &Path) -> u64 {
     data.iter().filter(|b| **b == b'\n').count() as u64 + u64::from(data.last() != Some(&b'\n'))
 }
 
+// Successful host reads are retained briefly; an authoritative empty result clears the entry.
+fn last_known_pr(key: String, read: Option<Value>) -> Value {
+    use std::{
+        collections::VecDeque,
+        sync::{Mutex, OnceLock},
+        time::{Duration, Instant},
+    };
+    type Entries = VecDeque<(String, Instant, Value)>;
+    static CACHE: OnceLock<Mutex<Entries>> = OnceLock::new();
+    let mut cache = CACHE.get_or_init(Mutex::default).lock().unwrap();
+    cache.retain(|(_, at, _)| at.elapsed() < Duration::from_secs(300));
+    if let Some(value) = read {
+        cache.retain(|(k, _, _)| *k != key);
+        if !value.is_null() {
+            cache.push_back((key, Instant::now(), value.clone()));
+            while cache.len() > 128 {
+                cache.pop_front();
+            }
+        }
+        value
+    } else {
+        cache
+            .iter()
+            .find(|(k, _, _)| *k == key)
+            .map(|(_, _, v)| v.clone())
+            .unwrap_or(Value::Null)
+    }
+}
+
 pub async fn refresh_status(p: Value) -> Reply {
     let op = "vcs.refreshStatus";
     let Some(cwd) = existing_dir(&p) else {
@@ -423,6 +452,7 @@ pub async fn refresh_status(p: Value) -> Reply {
         identity["provider"] = json!("gitlab");
     }
 
+    let mut host_read = false;
     if let Some(kind) = identity["provider"].as_str() {
         let (name, base) = if kind == "github" {
             ("GitHub", "https://github.com")
@@ -454,6 +484,7 @@ pub async fn refresh_status(p: Value) -> Reply {
                 if let Ok(o) = result {
                     if o.ok() {
                         if let Ok(rows) = serde_json::from_slice::<Vec<Value>>(&o.stdout) {
+                            host_read = true;
                             if let Some(pr) = rows.first() {
                                 v["pr"] = json!({"number":pr["number"],"title":pr["title"],"url":pr["url"],"baseRef":pr["baseRefName"],"headRef":pr["headRefName"],"state":pr["state"].as_str().unwrap_or("OPEN").to_lowercase(),"isDraft":pr["isDraft"],"updatedAt":pr["updatedAt"]});
                             }
@@ -492,6 +523,7 @@ pub async fn refresh_status(p: Value) -> Reply {
                 {
                     if o.ok() {
                         if let Ok(rows) = serde_json::from_slice::<Vec<Value>>(&o.stdout) {
+                            host_read = true;
                             if let Some(pr) = rows.first().and_then(gitlab_status_pr) {
                                 if !default
                                     .as_deref()
@@ -505,6 +537,14 @@ pub async fn refresh_status(p: Value) -> Reply {
                     }
                 }
             }
+        }
+    }
+    if p["localOnly"] != true && matches!(identity["provider"].as_str(), Some("github" | "gitlab"))
+    {
+        if let (Some(repo), Some(head)) = (identity["canonicalKey"].as_str(), st.head.as_deref()) {
+            let key =
+                serde_json::to_string(&(root.to_string_lossy(), repo, head)).unwrap_or_default();
+            v["pr"] = last_known_pr(key, host_read.then(|| v["pr"].clone()));
         }
     }
     Ok(v)

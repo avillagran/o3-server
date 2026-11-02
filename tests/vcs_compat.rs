@@ -773,6 +773,54 @@ fn z_status_reports_host_and_pull_request_and_local_only_skips_host() {
     assert_eq!(r["sourceControlProvider"]["kind"], "github");
     assert_eq!(r["pr"]["number"], 7);
     assert_eq!(r["pr"]["state"], "open");
+    write(&root.join(".test-gh-fail"), "fail");
+    let stale = e
+        .conn
+        .rpc("vcs.refreshStatus", json!({"cwd":root}))
+        .unwrap();
+    assert_eq!(stale["pr"]["number"], 7);
+    git(&root, &["switch", "-c", "other"]);
+    assert!(e
+        .conn
+        .rpc("vcs.refreshStatus", json!({"cwd":root}))
+        .unwrap()["pr"]
+        .is_null());
+    git(&root, &["switch", "main"]);
+    git(
+        &root,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "https://github.com/owner/different.git",
+        ],
+    );
+    assert!(e
+        .conn
+        .rpc("vcs.refreshStatus", json!({"cwd":root}))
+        .unwrap()["pr"]
+        .is_null());
+    git(
+        &root,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "https://github.com/owner/repo.git",
+        ],
+    );
+    std::fs::remove_file(root.join(".test-gh-fail")).unwrap();
+    assert!(e
+        .conn
+        .rpc("vcs.refreshStatus", json!({"cwd":root}))
+        .unwrap()["pr"]
+        .is_null());
+    write(&root.join(".test-gh-fail"), "fail");
+    assert!(e
+        .conn
+        .rpc("vcs.refreshStatus", json!({"cwd":root}))
+        .unwrap()["pr"]
+        .is_null());
     let r = e
         .conn
         .rpc("vcs.refreshStatus", json!({"cwd":root,"localOnly":true}))
