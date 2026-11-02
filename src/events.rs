@@ -1471,6 +1471,11 @@ pub fn launch(s: &std::sync::Arc<State>, p: &Value) -> Result<Value> {
         }
     }
     let mut prepared = crate::workspace::prepare(s, p, &tid)?;
+    if let Err(error) = crate::worktree_progress::check(s, &tid) {
+        prepared.rollback()?;
+        crate::worktree_progress::finish(s, &tid, &Err(error.clone()));
+        return Err(error);
+    }
     create["worktreePath"] = prepared.path.clone();
     create["branch"] = prepared.branch.clone();
     let result = (|| -> Result<_> {
@@ -1554,12 +1559,15 @@ pub fn launch(s: &std::sync::Arc<State>, p: &Value) -> Result<Value> {
             value
         }
         Err(error) => {
+            crate::worktree_progress::finish(s, &tid, &Err(error.clone()));
             return match prepared.rollback() {
                 Ok(()) => Err(error),
                 Err(cleanup) => Err(format!("{error}; worktree cleanup failed: {cleanup}")),
-            }
+            };
         }
     };
+    crate::worktree_progress::stage(s, &tid, "agent", "done");
+    crate::worktree_progress::finish(s, &tid, &Ok(()));
     s.notify();
     if p["generateTitle"] == true {
         if let Some(text) = p["initialMessage"]["text"].as_str() {

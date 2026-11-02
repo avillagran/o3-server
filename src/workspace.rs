@@ -44,6 +44,19 @@ impl Prepared {
     }
 }
 pub fn prepare(s: &State, p: &Value, tid: &str) -> Result<Prepared, String> {
+    if p["workspaceStrategy"]["type"] != "worktree" {
+        return prepare_inner(s, p, tid);
+    }
+    crate::worktree_progress::begin(s, tid, &p["workspaceStrategy"])?;
+    crate::worktree_progress::stage(s, tid, "fetch", "skipped");
+    crate::worktree_progress::stage(s, tid, "checkout", "running");
+    let result = prepare_inner(s, p, tid);
+    if let Err(e) = &result {
+        crate::worktree_progress::finish(s, tid, &Err(e.clone()));
+    }
+    result
+}
+fn prepare_inner(s: &State, p: &Value, tid: &str) -> Result<Prepared, String> {
     let strategy = &p["workspaceStrategy"];
     let branch = strategy.get("branch").cloned().unwrap_or(Value::Null);
     match strategy["type"].as_str() {
@@ -115,12 +128,18 @@ pub fn prepare(s: &State, p: &Value, tid: &str) -> Result<Prepared, String> {
                 owned: Some((root.clone(), path.clone(), owned_branch)),
             };
             let result = if let Some(branch) = branch.as_str() {
-                git(
+                setup_git(
+                    s,
+                    tid,
+                    "checkout",
                     &root,
                     &["worktree", "add", "-b", branch, "--", checkout, &base],
                 )
             } else {
-                git(
+                setup_git(
+                    s,
+                    tid,
+                    "checkout",
                     &root,
                     &["worktree", "add", "--detach", "--", checkout, &base],
                 )
@@ -131,6 +150,11 @@ pub fn prepare(s: &State, p: &Value, tid: &str) -> Result<Prepared, String> {
                     Err(cleanup) => Err(format!("{error}; worktree cleanup failed: {cleanup}")),
                 };
             }
+            crate::worktree_progress::stage(s, tid, "checkout", "done");
+            crate::worktree_progress::update(s, tid, |v| {
+                v["worktreePath"] = serde_json::json!(path)
+            });
+            crate::worktree_progress::stage(s, tid, "submodules", "skipped");
             if path.join(".gitmodules").is_file() {
                 let effective = crate::source_control::effective(s, &root);
                 let project_file = std::fs::read(path.join("t3.json"))
@@ -150,13 +174,40 @@ pub fn prepare(s: &State, p: &Value, tid: &str) -> Result<Prepared, String> {
                     _ => Some(vec!["submodule", "update", "--init", "--recursive"]),
                 };
                 if let Some(args) = args {
-                    if let Err(error) = git(&path, &args) {
+                    crate::worktree_progress::stage(s, tid, "submodules", "running");
+                    if let Err(error) = setup_git(s, tid, "submodules", &path, &args) {
                         return match prepared.rollback() {
                             Ok(()) => Err(error),
                             Err(cleanup) => Err(format!("{error}; {cleanup}")),
                         };
                     }
                 }
+            }
+            let setup = (|| {
+                crate::worktree_progress::stage(s, tid, "setup-script", "skipped");
+                if let Some(script) = project["scripts"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .find(|v| v["runOnWorktreeCreate"] == true)
+                {
+                    let command = script["command"].as_str().ok_or("Setup command missing")?;
+                    crate::worktree_progress::stage(s, tid, "setup-script", "running");
+                    crate::worktree_progress::run(
+                        s,
+                        tid,
+                        "setup-script",
+                        Command::new("sh").args(["-c", command]).current_dir(&path),
+                    )?;
+                    crate::worktree_progress::stage(s, tid, "setup-script", "done");
+                }
+                crate::worktree_progress::check(s, tid)
+            })();
+            if let Err(error) = setup {
+                return match prepared.rollback() {
+                    Ok(()) => Err(error),
+                    Err(cleanup) => Err(format!("{error}; {cleanup}")),
+                };
             }
             Ok(prepared)
         }
@@ -175,4 +226,19 @@ fn git(root: &std::path::Path, args: &[&str]) -> Result<(), String> {
     } else {
         Err(String::from_utf8_lossy(&out.stderr).into_owned())
     }
+}
+
+fn setup_git(
+    s: &State,
+    tid: &str,
+    stage: &str,
+    root: &std::path::Path,
+    args: &[&str],
+) -> Result<(), String> {
+    crate::worktree_progress::run(
+        s,
+        tid,
+        stage,
+        Command::new("git").arg("-C").arg(root).args(args),
+    )
 }

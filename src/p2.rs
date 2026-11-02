@@ -22,6 +22,7 @@ pub fn not_implemented(message: impl Into<String>) -> Value {
 /// Mutable state of the surfaces below. Every field is empty until a client uses the feature.
 #[derive(Default)]
 pub struct Runtime {
+    pub worktrees: std::sync::Mutex<crate::worktree_progress::Registry>,
     pub device: crate::device::Runtime,
     pub setup: crate::setup::Registry,
     pub preview: crate::preview::Manager,
@@ -62,6 +63,7 @@ pub enum Stream {
     Preview(crate::preview::Cursor),
     Servers(crate::preview::Servers),
     Once(Once),
+    Worktree(crate::worktree_progress::Cursor),
 }
 
 /// A stream that sends one value and then stays open without doing any work.
@@ -85,14 +87,9 @@ pub fn is_stream(tag: &str) -> bool {
 pub fn open(s: &Arc<State>, tag: &str, p: &Value) -> Result<Stream, Value> {
     Ok(match tag {
         "subscribePreviewEvents" => Stream::Preview(crate::preview::open_events(s)),
-        // Worktree preparation is not staged: no setup is ever running, which the stream says with null.
-        "subscribeWorktreeSetup" => {
-            str_field(p, "threadId")?;
-            Stream::Once(Once {
-                value: Some(Value::Null),
-                waiting: false,
-            })
-        }
+        "subscribeWorktreeSetup" => Stream::Worktree(crate::worktree_progress::Cursor::new(
+            str_field(p, "threadId")?.into(),
+        )),
         "subscribeDeviceState" => Stream::Device(crate::device::subscribe(s)),
         "subscribeDiscoveredLocalServers" => {
             Stream::Servers(crate::preview::Servers::new(&p["configuredUrls"]))
@@ -104,6 +101,7 @@ pub fn open(s: &Arc<State>, tag: &str, p: &Value) -> Result<Stream, Value> {
 impl Stream {
     pub fn next(&mut self, s: &State) -> crate::terminal::Step {
         match self {
+            Stream::Worktree(c) => c.next(s),
             Stream::Device(c) => c.poll(),
             Stream::Setup(c) => c.next(s),
             Stream::Preview(c) => c.next(s),
@@ -119,6 +117,7 @@ impl Stream {
     }
     pub fn ack(&mut self) {
         match self {
+            Stream::Worktree(c) => c.ack(),
             Stream::Device(c) => c.ack(),
             Stream::Setup(c) => c.ack(),
             Stream::Preview(c) => c.ack(),
@@ -128,6 +127,7 @@ impl Stream {
     }
     pub fn is_full(&self) -> bool {
         match self {
+            Stream::Worktree(c) => c.is_full(),
             Stream::Device(c) => c.is_full(),
             Stream::Setup(c) => c.is_full(),
             Stream::Preview(c) => c.is_full(),
