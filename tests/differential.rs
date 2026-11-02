@@ -895,7 +895,7 @@ fn dispatch_command(c: &Connection, mut v: Value) {
     c.rpc("orchestration.dispatchCommand", v)
         .unwrap_or_else(|e| panic!("{kind}: {e}"));
 }
-fn concurrent_scenario(s: &Server, home: &Path) -> Value {
+fn concurrent_scenario(s: &Server, home: &Path, reference: bool) -> Value {
     let c = connect(s);
     c.rpc("server.updateSettings",json!({"patch":{"textGenerationModelSelection":{"instanceId":"unavailable","model":"fixture"}}})).unwrap();
     c.rpc("projects.mutate",json!({"type":"project.create","commandId":"fixture-project","projectId":"fixture-project","title":"Fixture","workspaceRoot":home,"scripts":[]})).unwrap();
@@ -1001,6 +1001,7 @@ fn concurrent_scenario(s: &Server, home: &Path) -> Value {
         );
     }
     let mut replay_differences = Vec::new();
+    let mut ignored_reference_replay = 0;
     for obs in [a, b] {
         let end = Instant::now() + Duration::from_secs(20);
         loop {
@@ -1042,7 +1043,12 @@ fn concurrent_scenario(s: &Server, home: &Path) -> Value {
                     replayed["event"]["id"], observed["event"]["id"],
                     "replay changed identity"
                 );
-                reader_differences(replayed, observed, "/replay", &mut replay_differences);
+                ignored_reference_replay += replay_differences_checked(
+                    replayed,
+                    observed,
+                    reference,
+                    &mut replay_differences,
+                );
             }
         }
         assert_eq!(
@@ -1078,7 +1084,7 @@ fn concurrent_scenario(s: &Server, home: &Path) -> Value {
             },
         )
         .unwrap();
-    json!({"thread":view,"sidebar":sidebar,"replayDifferences":replay_differences,"interruptPending":{"working":mid["timeline"]["threadState"]["working"],"canSteer":mid["queue"]["canSteer"],"activeRunId":mid["queue"]["activeRunId"]}})
+    json!({"thread":view,"sidebar":sidebar,"replayDifferences":replay_differences,"ignoredReferenceReplay":ignored_reference_replay,"interruptPending":{"working":mid["timeline"]["threadState"]["working"],"canSteer":mid["queue"]["canSteer"],"activeRunId":mid["queue"]["activeRunId"]}})
 }
 #[test]
 #[ignore = "real isolated reference and credential-free gated Codex; tools/conformance-diff concurrent"]
@@ -1115,17 +1121,25 @@ fn upstream_concurrent_differential() {
     let mut views = vec![];
     for (name, server) in [("t3", &upstream), ("o3", &o3)] {
         eprintln!("concurrent differential: {name}");
-        views.push(concurrent_scenario(server, &root.join(name)));
+        views.push(concurrent_scenario(server, &root.join(name), name == "t3"));
     }
     // Keep all reader fields in the comparison. Any normalization must be justified
     // against the accepted independent-operation ordering contract before adoption.
-    let normalized: Vec<_> = views.iter().map(|v| normalize_concurrent(v, "")).collect();
+    let normalized: Vec<_> = views
+        .iter()
+        .map(|v| {
+            let mut v = v.clone();
+            v.as_object_mut().unwrap().remove("replayDifferences");
+            v.as_object_mut().unwrap().remove("ignoredReferenceReplay");
+            normalize_concurrent(&v, "")
+        })
+        .collect();
     let mut differences = vec![];
     reader_differences(&normalized[0], &normalized[1], "", &mut differences);
     let replay_differences: Vec<_> = views.iter().enumerate()
         .filter(|(_,v)| !v["replayDifferences"].as_array().unwrap().is_empty())
         .map(|(i,v)| json!({"server":if i==0 {"reference"}else{"o3"},"differences":v["replayDifferences"]})).collect();
-    let report = json!({"replayDifferences":replay_differences,"referenceVersion":"0.1.7-nightly.20261031.3991","provider":"deterministic gated stdio peer; no credentials or inference","perServer":"two subscribers: snapshot before tail, strictly increasing sequences, unique run creation, four user messages exactly once, final timeline/queue readers equal fresh snapshot; nonempty sidebar reader","differences":differences});
+    let report = json!({"ignoredReferenceReplay": views[0]["ignoredReferenceReplay"], "replayDifferences":replay_differences,"referenceVersion":"0.1.7-nightly.20261031.3991","provider":"deterministic gated stdio peer; no credentials or inference","perServer":"two subscribers: snapshot before tail, strictly increasing sequences, unique run creation, four user messages exactly once, final timeline/queue readers equal fresh snapshot; nonempty sidebar reader","differences":differences});
     let report_path = std::env::var_os("O3_CONCURRENT_REPORT")
         .map(PathBuf::from)
         .unwrap_or_else(|| root.join("reader-shapes.json"));
@@ -1259,4 +1273,68 @@ fn reader_differences(a: &Value, b: &Value, path: &str, out: &mut Vec<Value>) {
         },
         _=>out.push(json!({"path":path,"reference":shape(a,path.rsplit('/').next().unwrap_or("")),"o3":shape(b,path.rsplit('/').next().unwrap_or(""))}))
     }
+}
+
+// Replay is a per-server invariant. Only the pinned reference's null-to-absent
+// serialization defect is excluded; no o3 replay or cross-server field is exempt.
+fn replay_differences_checked(
+    replay: &Value,
+    live: &Value,
+    reference: bool,
+    out: &mut Vec<Value>,
+) -> usize {
+    fn visit(replay: &mut Value, live: &Value) -> usize {
+        match (replay, live) {
+            (Value::Object(r), Value::Object(l)) => {
+                let mut ignored = 0;
+                if !r.contains_key("lastSnoozeWakeAt")
+                    && l.get("lastSnoozeWakeAt") == Some(&Value::Null)
+                {
+                    r.insert("lastSnoozeWakeAt".into(), Value::Null);
+                    ignored += 1;
+                }
+                for (k, v) in r.iter_mut() {
+                    if let Some(l) = l.get(k) {
+                        ignored += visit(v, l);
+                    }
+                }
+                ignored
+            }
+            (Value::Array(r), Value::Array(l)) if r.len() == l.len() => {
+                r.iter_mut().zip(l).map(|(r, l)| visit(r, l)).sum()
+            }
+            _ => 0,
+        }
+    }
+    let mut replay = replay.clone();
+    let ignored = if reference {
+        visit(&mut replay, live)
+    } else {
+        0
+    };
+    reader_differences(&replay, live, "/replay", out);
+    ignored
+}
+#[test]
+fn replay_exception_is_reference_only_null_to_absent() {
+    let live = json!({"payload":{"lastSnoozeWakeAt":null}});
+    for (reference, replay, expected, ignored) in [
+        (true, json!({"payload":{}}), 0, 1),
+        (false, json!({"payload":{}}), 1, 0),
+        (true, json!({"payload":{"lastSnoozeWakeAt":1}}), 1, 0),
+        (true, json!({"payload":{},"other":null}), 1, 1),
+    ] {
+        let mut differences = vec![];
+        assert_eq!(
+            replay_differences_checked(&replay, &live, reference, &mut differences),
+            ignored
+        );
+        assert_eq!(differences.len(), expected);
+    }
+    let mut differences = vec![];
+    assert_eq!(
+        replay_differences_checked(&live, &json!({"payload":{}}), true, &mut differences),
+        0
+    );
+    assert_eq!(differences.len(), 1);
 }

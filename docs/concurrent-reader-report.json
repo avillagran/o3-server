@@ -1,38 +1,8 @@
 {
-  "differences": [
-    {
-      "o3": [],
-      "path": "/replayDifferences",
-      "reference": [
-        {
-          "o3Present": {
-            "$type": "boolean",
-            "value": true
-          },
-          "path": {
-            "$type": "string"
-          },
-          "referencePresent": {
-            "$type": "boolean",
-            "value": false
-          }
-        }
-      ]
-    }
-  ],
+  "differences": [],
+  "ignoredReferenceReplay": 1,
   "perServer": "two subscribers: snapshot before tail, strictly increasing sequences, unique run creation, four user messages exactly once, final timeline/queue readers equal fresh snapshot; nonempty sidebar reader",
   "provider": "deterministic gated stdio peer; no credentials or inference",
   "referenceVersion": "0.1.7-nightly.20261031.3991",
-  "replayDifferences": [
-    {
-      "differences": [
-        {
-          "o3Present": true,
-          "path": "/replay/event/payload/lastSnoozeWakeAt",
-          "referencePresent": false
-        }
-      ],
-      "server": "reference"
-    }
-  ]
+  "replayDifferences": []
 }
