@@ -924,7 +924,6 @@ async fn prepare_registry_agent(p: &Value) -> Reply {
             "The agent has no supported distribution.",
         )
     })?;
-    let version = agent["version"].as_str().unwrap_or("");
     match dist {
         "npx" | "uvx" => {
             if which(dist).is_none() {
@@ -933,7 +932,7 @@ async fn prepare_registry_agent(p: &Value) -> Reply {
                     &format!("{dist} is not installed or not on PATH."),
                 ));
             }
-            Ok(json!({"agentId":id,"version":version,"distribution":dist,"prepared":true}))
+            Err(registry_error("execution_unavailable", "No ACP execution driver is available; this registry agent was not prepared."))
         }
         _ => Err(registry_error(
             "unsupported_distribution",
