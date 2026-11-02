@@ -56,6 +56,11 @@ fn real_setup_reader_progress_cancel_and_rollback() {
             break v["worktreePath"].as_str().unwrap().to_owned();
         }
     };
+    // Auth and other CLI readers open State while the server is alive. Only
+    // serving startup may recover/terminate interrupted setup ownership.
+    drop(o3_server::store::State::open(&s.dir).unwrap());
+    std::thread::sleep(Duration::from_millis(60));
+    assert!(!task.is_finished(), "opening State interrupted live setup");
     assert_eq!(
         t3_protocol::api::worktree_setup::cancel(&c, "t").unwrap()["cancelled"],
         true

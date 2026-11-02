@@ -460,7 +460,10 @@ fn rollback_and_subagent_stop_validate_and_record() {
         .unwrap()
         .insert("run-1".into(), control);
     let err = cmd(&c, json!({"type":"subagent.stop","commandId":"ss1","threadId":"t1","runId":"run-1","subagentId":"sub-1"})).unwrap_err().to_string();
-    assert!(err.contains("no live native task identity"), "{err}");
+    assert!(
+        err.contains("Independent native subagent cancellation is unavailable"),
+        "{err}"
+    );
     assert!(controls.try_recv().is_err());
     let body: String = s
         .state

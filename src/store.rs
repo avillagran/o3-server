@@ -132,7 +132,7 @@ impl State {
         crate::events::initialize(&db)?;
         let streams = crate::streams::Hub::new();
         streams.terminals.restore(&dir.join("terminal-history"))?;
-        let state = Self {
+        Ok(Self {
             rollback_pending: std::sync::atomic::AtomicBool::new(false),
             http: crate::http::Limits::default(),
             #[cfg(feature = "bridge")]
@@ -158,9 +158,7 @@ impl State {
             asset_profile_root: dir.into(),
             request_release_ms: std::sync::atomic::AtomicU64::new(30 * 60 * 1000),
             settings_cache: Mutex::new(None),
-        };
-        crate::worktree_progress::restore(&state)?;
-        Ok(state)
+        })
     }
 
     /// Backpressure on blocking workers, outside the receipt transaction.

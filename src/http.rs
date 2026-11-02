@@ -572,6 +572,7 @@ where
         .map_err(std::io::Error::other)
 }
 pub async fn serve(listener: TcpListener, state: Arc<State>) -> std::io::Result<()> {
+    crate::worktree_progress::restore(&state).map_err(std::io::Error::other)?;
     crate::checkpoint::recover_rollbacks(&state).map_err(std::io::Error::other)?;
     crate::recovery::recover(&mut state.db.lock().unwrap()).map_err(std::io::Error::other)?;
     state
