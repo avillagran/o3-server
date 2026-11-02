@@ -10,8 +10,13 @@ fn refresh_rates_persists_real_http_document_and_reports_stale_on_failure() {
     std::env::set_var("O3_USAGE_RATES_URL", &url);
     let peer = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
-        let mut request = [0; 4096];
-        stream.read(&mut request).unwrap();
+        let mut request = Vec::new();
+        while !request.ends_with(b"\r\n\r\n") {
+            let mut byte = [0];
+            stream.read_exact(&mut byte).unwrap();
+            request.push(byte[0]);
+            assert!(request.len() <= 4096);
+        }
         let body = r#"{"sample-model":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000005},"sample_spec":{"input_cost_per_token":"bad"}}"#;
         write!(
             stream,

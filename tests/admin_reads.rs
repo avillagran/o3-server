@@ -109,10 +109,12 @@ fn admin_reads_project_helpers_and_unavailable_surfaces() {
             json!({"signal":"traces","url":"file:///etc/passwd"})
         )
         .is_err());
+    std::env::set_var("O3_USAGE_RATES_URL", "http://127.0.0.1:0/rates");
     assert_eq!(
         c.rpc("server.refreshUsageRates", json!({})).unwrap()["status"],
         "unavailable"
     );
+    std::env::remove_var("O3_USAGE_RATES_URL");
 
     // Ignored files: only files, folders of ignored files collapse away.
     let project = scratch.join("proj");

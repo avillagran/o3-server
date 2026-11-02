@@ -52,6 +52,7 @@ fn command(bin: &Path, home: &Path) -> Command {
         .env("HOME", home.join("home"))
         .env("T3CODE_HOME", home)
         .env("TMPDIR", "/var/tmp/o3-build/tmp")
+        .env("O3_USAGE_RATES_URL", "http://127.0.0.1:0/rates")
         .env("XDG_CONFIG_HOME", home.join("config"))
         .env("XDG_CACHE_HOME", home.join("cache"))
         .env("XDG_DATA_HOME", home.join("data"))
