@@ -149,9 +149,16 @@ pub async fn repository_identity(root: &str) -> Value {
     let normalized = if let Ok(u) = url::Url::parse(&url) {
         u.host_str().map(|host| {
             // Explicit default ports normalize to the existing authority; distinct
-            // effective endpoints must never share repository identity.
+            // ports are retained. Transport schemes share the client canonical key.
+            let default = match u.scheme() {
+                "ssh" => Some(22),
+                "https" => Some(443),
+                "http" => Some(80),
+                _ => None,
+            };
             let authority = u
                 .port()
+                .filter(|p| Some(*p) != default)
                 .map_or_else(|| host.to_owned(), |p| format!("{host}:{p}"));
             format!("{authority}/{}", u.path().trim_matches('/'))
         })

@@ -678,3 +678,33 @@ fn search_finds_suffix_beyond_old_candidate_window() {
         );
     }
 }
+
+#[test]
+fn repository_identity_normalizes_scheme_default_ports() {
+    let e = setup("default-ports");
+    let root = e.dir("repo");
+    repo(&root);
+    git(
+        &root,
+        &["remote", "add", "origin", "git@github.com:o/r.git"],
+    );
+    for (n, url, expected) in [
+        (0, "ssh://git@github.com:22/o/r.git", "github.com/o/r"),
+        (1, "https://github.com:443/o/r.git", "github.com/o/r"),
+        (2, "http://github.com:80/o/r.git", "github.com/o/r"),
+        (3, "https://github.com:8443/o/r.git", "github.com:8443/o/r"),
+        (
+            4,
+            "ssh://git@github.com:8443/o/r.git",
+            "github.com:8443/o/r",
+        ),
+    ] {
+        git(&root, &["remote", "set-url", "origin", url]);
+        let p = if n == 0 {
+            e.project("ports", &root)
+        } else {
+            e.conn.rpc("projects.mutate",json!({"type":"project.update","commandId":format!("update{n}"),"projectId":"ports","title":"Ports"})).unwrap()
+        };
+        assert_eq!(p["repositoryIdentity"]["canonicalKey"], expected, "{url}");
+    }
+}
