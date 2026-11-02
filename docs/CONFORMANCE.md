@@ -1292,19 +1292,102 @@ gap; these totals do not count it as passed.
 
 ### Interrupt timeline pair, same day
 
-`run.interrupt` now writes `run_interrupt_request` and `run_interrupt_result` turn
-items in the transaction that makes the run terminal, with T3's titles, statuses,
-parent link and messages. O3 finishes the run locally, so the result states that
-terminal run state; native delivery stays with the control outbox and its
-`delivery-unknown` boundary, and this does not close the `run.interrupt` row. A stop on
-an already settled run adds nothing. The result carries a null `providerTurnId`, as T3
-did on this path. Reference timing differs: T3 can show the request alone until the
-provider confirms, o3 shows both at once.
+The earlier claim that o3 showed both interrupt items at once described the
+implementation before the independent audit below. It is superseded. The earlier
+zero-difference result used an identity-erasing normalizer and did not check the
+request-only window or exact replay; it is not evidence of current conformance.
 
-The first paired run after this produced the group, with 16 differences. Fifteen were
-server-derived activity, run, source-item and turn ids; the normalizer now erases those
-strings, keeping null against string and leaving client message ids compared. The
-other was the `providerTurnId` above, fixed in o3. Four later strict runs passed with
-zero reader differences. This replaces the failure in
-[concurrent-reader-report.json](concurrent-reader-report.json). Still reader-state
-equality, not full JSON equality of every record.
+## Independent interrupt audit implementation (2026-11-01)
+
+No rows are promoted. The accepted-difference contract above is unchanged.
+
+* F1/F2: confirmed. The deferred migration reproduces SQLITE_BUSY_SNAPSHOT after
+  a second WAL writer commits. Migration now takes BEGIN IMMEDIATE before reading,
+  persists progress in windows of at most 128 rows, and gates completed migrations
+  with a schema marker. Legacy active execution bookkeeping, historical events and
+  launch receipts remain covered by the migration regression. The bound is rows,
+  not a wall-clock guarantee for an unusually large individual JSON receipt.
+* F3: confirmed for native Interrupted. The supervisor now emits its result during
+  terminal persistence, including unsolicited native interruption. Disabled restart
+  continuation remains a separate server-local interruption (see RECOVERY.md).
+* F4: confirmed. A live native turn now commits only the request before control
+  handoff. Codex awaits turn/completed; Claude awaits its result boundary. A 15-second
+  deadline fails the run with unknown native delivery, rather than claiming success.
+  Process failure marks the control outbox delivery-unknown. Restart never resumes
+  a run bearing an interrupt request. The differential gates the interrupt response
+  and asserts working, canSteer and activeRunId during the request-only window.
+  Exhaustive init/steer/death/deadline/restart race coverage remains open.
+* F5: terminal mutation, missing root/provider ownership and missing pre-start
+  attempts are rejected. Queued promotion now reserves the same ownership as an
+  immediate start, fixing the queue regression without weakening validation. Full
+  terminal-run background-work targeting and interruption of other provider owners
+  remain open; these runs currently reject conservatively. The dispatch error tag
+  was not differentially asserted against 3991. This is not full parity.
+* F6: thread.stop now routes a live target through interrupt with holdQueue, or
+  records stop intent and holds idle queued work. Its idle path is exercised against
+  3991. Other-owner background work, idle-orphan cancellation and delegated completion
+  cohorts and deleted-thread no-op edge parity remain open; the row stays partial.
+* F7: the newer source's root provider-turn rule holds for the Claude result reducer.
+  **Partially refuted against 3991:** gated Codex returns null for the result's
+  providerTurnId; using the root turn produced two inspector-reader differences.
+  Codex therefore preserves null on this pinned path. Claude live binary parity
+  remains unproven; its root-turn relationship has a reducer regression.
+* F8: confirmed in interrupt, message, command-output and both native item allocators. They now use
+  max ordinal + 1; an imported sparse ordinal regression checks messages and signals.
+* F9: reducer success, duplicate run creation, terminal-record causal order and
+  exact replay sequence/identity are checked. Reader state in the request-only window
+  is compared across servers. Run, source-item, provider-turn and merge-back IDs use
+  one consistent mapping per server, preserving nulls and references. Revision hashes
+  remain opaque revision values, separate from identities. Raw replay differences
+  are reported and fail the strict test rather than being normalized away.
+
+The strengthened replay check exposes a **reference-only** discrepancy: a live
+thread event includes lastSnoozeWakeAt:null, but its replay omits that field.
+The report retains the missing-versus-null distinction. This is outside the accepted
+independent-operation interleaving exception, so the differential is not clean.
+Idle-stop coverage also exposed missing latestRunStopRequested shell derivation;
+o3 now derives it from the latest run's interrupt request, preserving sidebar readers.
+See concurrent-reader-report.json for the latest strict comparison, including raw
+replay discrepancies. These findings require further independent audit.
+
+### Verification ledger
+
+The first default/minimal full-suite attempts found two failing targets: background
+(the peer blocked controls and retained an old terminal) and thread_commands
+(queued promotion lacked ownership). Both were corrected and the targeted rerun
+passed 13 tests with one live opt-in ignored. The first strict Clippy attempts
+caught filter_map(bool::then) in the new test code; it was replaced with filter/map.
+
+All differential attempts use the pinned 3991 executable and isolated homes:
+
+| Attempt | Outcome |
+|---|---|
+| 1 | Failed: five reader paths; three revision hashes were mistakenly treated as identities, two result inspector turn IDs differed (reference null). |
+| 2 | Compile failure in replay observer cursor type; corrected to u64. |
+| 3–4 | Failed on newly asserted exact replay: reference live lastSnoozeWakeAt:null is absent in replay. |
+| 5 | Compile failure in replay-difference collection; corrected. |
+| 6–8 | Failed: reference replay discrepancy plus idle-stop sidebar pending/reason; missing stop-intent derivation was corrected. |
+| 9–10 | Failed strictly: only the reported reference replay discrepancy remains. |
+| 11–15 | Each completed both scenarios, then failed strictly on the same reference-only lastSnoozeWakeAt replay discrepancy. No other reader paths differed. |
+
+Revision hashes retain their original opaque-value normalization; they are not run
+or provider identities. Missing fields and nulls are never erased. The replay
+comparison retains raw sequence/identity checks and reports other raw differences,
+including reference defects, before failing. A reference-only defect is reported,
+not accepted as a new contract exception or hidden by normalization.
+
+Final validation: default cargo test --no-fail-fast passed 199 tests, with zero
+failures and 12 opt-ins ignored; --no-default-features passed 197, with zero
+failures and 12 ignored. The default suite was repeated after the late-handoff
+outbox guard and passed again. Strict Clippy (-D warnings, --all-targets) passed
+in both feature configurations. cargo fmt --check and tools/gen-compat passed.
+Builds/tests ran serially with four Cargo jobs. No authenticated live-provider
+or emulator verification was performed in this audit. Five final strict concurrent
+repetitions (11–15) all failed only on the same explicitly reported reference replay
+field discrepancy; none is counted as a passing differential.
+
+The implementation is not ready for promotion: multi-owner background interruption,
+complete thread.stop lifecycle behavior, the disabled-continuation terminal-state
+choice against 3991, dispatch error-tag comparison and exhaustive init/steer/death/
+restart race coverage remain open. Migration bounds rows per lock window rather
+than guaranteeing a maximum duration for arbitrary historical JSON bodies.

@@ -91,3 +91,36 @@ above; background side effects may already have happened and must be inspected.
 A reserved provider-thread ID has nativeThreadRef=null until binding and is never
 passed as a Claude resume ID. Native IDs resolve through the durable provider-thread
 record, with legacy imported-thread fallback; forking uses that same resolution.
+
+## Interrupt recovery audit (2026-11-01)
+
+A live native turn commits an interrupt request while remaining active. Channel
+handoff does not mean native success. A native Interrupted terminal event produces
+the result and terminal projection together. A 15-second acknowledgement deadline
+fails execution with an explicit delivery-unknown error; process death also fails
+execution and preserves the control journal as delivery-unknown. The supervisor
+checks terminal state while waiting for adapter output so a silent provider is
+cancelled after this failure. This bounds server execution state, not proof that
+native side effects stopped. The Codex adapter waits for native turn/completed;
+Claude waits for the native result boundary after sending its interrupt control.
+
+Restart recovery never resumes a run with an interrupt request. It closes that run
+as failed and marks uncertain outbox handoffs delivery-unknown. It does not invent
+a successful interrupt result. An interrupted-before-start run has no live native
+turn and closes immediately with that explicit result message.
+
+When restart continuation is disabled, resume currently records a server-local
+interrupted state with error "Restart continuation disabled in settings" and no
+user interrupt request/result pair. This does not assert native acknowledgement.
+The newer RestartContinuation.ts:201-205 returns immediately when the resolved
+project setting disables continuation, without emitting interrupt signals. It also
+skips continuation after a recorded user interrupt request, but its continuation selection is not evidence for o3's exact
+server-local status choice. This disabled-setting case remains unproven against
+3991 and is excluded from any native-success parity claim. Full deadline, process
+loss, initialization, steering and restart race matrices remain pending.
+
+The legacy internal-field migration now has a durable completion marker and
+resumable windows of at most 128 rows per immediate write transaction. Already
+migrated profiles do not rescan historical events or reparse cached launch receipts.
+A single unusually large record can still exceed a desired time budget; this is a
+row-count bound, not a hard duration guarantee.
