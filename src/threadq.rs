@@ -324,9 +324,11 @@ pub fn archived_shell(s: &State) -> Reply {
         {
             let t: Value = serde_json::from_str(&row.map_err(|e| e.to_string())?)
                 .map_err(|e| e.to_string())?;
-            let t=events::shell_thread(&db,&t)?;
-            bytes += serde_json::to_vec(&t).map_err(|e|e.to_string())?.len()+1;
-            if bytes > 7*1024*1024 {return Err("archive exceeds the client reader budget; this protocol has no archive pagination; export or reduce archived history".into());}
+            let t = events::shell_thread(&db, &t)?;
+            bytes += serde_json::to_vec(&t).map_err(|e| e.to_string())?.len() + 1;
+            if bytes > 7 * 1024 * 1024 {
+                return Err("archive exceeds the client reader budget; this protocol has no archive pagination; export or reduce archived history".into());
+            }
             threads.push(t);
         }
         let mut projects = Vec::new();
@@ -335,9 +337,15 @@ pub fn archived_shell(s: &State) -> Reply {
             .query_map([], |r| r.get::<_, String>(0))
             .map_err(|e| e.to_string())?
         {
-            let project:Value=serde_json::from_str(&row.map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;
-            bytes += serde_json::to_vec(&project).map_err(|e|e.to_string())?.len()+1;
-            if bytes > 7*1024*1024 {return Err("archive exceeds the client reader budget; this protocol has no archive pagination; export or reduce archived history".into());}
+            let project: Value = serde_json::from_str(&row.map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+            bytes += serde_json::to_vec(&project)
+                .map_err(|e| e.to_string())?
+                .len()
+                + 1;
+            if bytes > 7 * 1024 * 1024 {
+                return Err("archive exceeds the client reader budget; this protocol has no archive pagination; export or reduce archived history".into());
+            }
             projects.push(project);
         }
         Ok(

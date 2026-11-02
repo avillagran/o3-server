@@ -226,8 +226,11 @@ esac"#,
         .rpc("server.searchAcpRegistry", json!({"query":"writes"}))
         .unwrap();
     assert_eq!(found["agents"].as_array().unwrap().len(), 1);
-    let prepared=t3_protocol::api::server::prepare_acp_registry_agent(&c,"alpha");
-    assert!(prepared.unwrap_err().to_string().contains("ACP execution driver"));
+    let prepared = t3_protocol::api::server::prepare_acp_registry_agent(&c, "alpha");
+    assert!(prepared
+        .unwrap_err()
+        .to_string()
+        .contains("ACP execution driver"));
     let ok = raw_exit(
         &server,
         "server.prepareAcpRegistryAgent",

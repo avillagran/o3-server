@@ -932,7 +932,10 @@ async fn prepare_registry_agent(p: &Value) -> Reply {
                     &format!("{dist} is not installed or not on PATH."),
                 ));
             }
-            Err(registry_error("execution_unavailable", "No ACP execution driver is available; this registry agent was not prepared."))
+            Err(registry_error(
+                "execution_unavailable",
+                "No ACP execution driver is available; this registry agent was not prepared.",
+            ))
         }
         _ => Err(registry_error(
             "unsupported_distribution",

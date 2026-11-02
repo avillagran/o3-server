@@ -4,25 +4,66 @@ use std::process::Command;
 use t3_protocol::api::orchestration;
 #[test]
 fn startup_replays_restore_interrupted_before_receipt_commit() {
-    let s=support::start(|s|{
-        let root=s.dir.join("repo");std::fs::create_dir_all(&root).unwrap();
-        assert!(Command::new("git").args(["init","-q"]).arg(&root).status().unwrap().success());
-        std::fs::write(root.join("file"),"baseline").unwrap();
-        {let db=s.db.lock().unwrap();
-        for (kind,id,v) in [("thread","t",json!({"id":"t","projectId":"p","title":"Rollback","deletedAt":null,"archivedAt":null,"modelSelection":{"instanceId":"scripted","model":"m"}})),("runs","r",json!({"id":"r","threadId":"t","ordinal":1,"status":"completed"}))]{db.execute("INSERT INTO records VALUES(?,?,?,?)",rusqlite::params![kind,id,"t",v.to_string()]).unwrap();}}
-        o3_server::checkpoint::capture(s,"t","r",&root,true).unwrap();
+    let s = support::start(|s| {
+        let root = s.dir.join("repo");
+        std::fs::create_dir_all(&root).unwrap();
+        assert!(Command::new("git")
+            .args(["init", "-q"])
+            .arg(&root)
+            .status()
+            .unwrap()
+            .success());
+        std::fs::write(root.join("file"), "baseline").unwrap();
+        {
+            let db = s.db.lock().unwrap();
+            for (kind, id, v) in [
+                (
+                    "thread",
+                    "t",
+                    json!({"id":"t","projectId":"p","title":"Rollback","deletedAt":null,"archivedAt":null,"modelSelection":{"instanceId":"scripted","model":"m"}}),
+                ),
+                (
+                    "runs",
+                    "r",
+                    json!({"id":"r","threadId":"t","ordinal":1,"status":"completed"}),
+                ),
+            ] {
+                db.execute(
+                    "INSERT INTO records VALUES(?,?,?,?)",
+                    rusqlite::params![kind, id, "t", v.to_string()],
+                )
+                .unwrap();
+            }
+        }
+        o3_server::checkpoint::capture(s, "t", "r", &root, true).unwrap();
         // Inject the crash window: durable intent, partially restored filesystem,
         // and the old SQLite state (the receipt transaction was rolled back).
-        std::fs::write(root.join("file"),"partial restore").unwrap();
-        std::fs::write(root.join("untracked"),"post checkpoint").unwrap();
-        let command=json!({"type":"checkpoint.rollback","commandId":"restore","threadId":"t","scopeId":"scope-t","checkpointId":"r-baseline"});
-        let dir=s.dir.join("rollback-journal");std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("injected.json"),command.to_string()).unwrap();
+        std::fs::write(root.join("file"), "partial restore").unwrap();
+        std::fs::write(root.join("untracked"), "post checkpoint").unwrap();
+        let command = json!({"type":"checkpoint.rollback","commandId":"restore","threadId":"t","scopeId":"scope-t","checkpointId":"r-baseline"});
+        let dir = s.dir.join("rollback-journal");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("injected.json"), command.to_string()).unwrap();
     });
-    let c=s.connect();
-    let p=orchestration::thread_projection(&c,"t").unwrap();
-    assert_eq!(p["thread"]["rollbackRequestId"],"restore","{p}");
-    assert_eq!(std::fs::read_to_string(s.dir.join("repo/file")).unwrap(),"baseline");
+    let c = s.connect();
+    let p = orchestration::thread_projection(&c, "t").unwrap();
+    assert_eq!(p["thread"]["rollbackRequestId"], "restore", "{p}");
+    assert_eq!(
+        std::fs::read_to_string(s.dir.join("repo/file")).unwrap(),
+        "baseline"
+    );
     assert!(!s.dir.join("repo/untracked").exists());
-    assert_eq!(s.state.db.lock().unwrap().query_row("SELECT count(*) FROM receipts WHERE command_id='restore'",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+    assert_eq!(
+        s.state
+            .db
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT count(*) FROM receipts WHERE command_id='restore'",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+        1
+    );
 }

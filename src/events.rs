@@ -470,7 +470,11 @@ pub(crate) fn append(
     Ok(seq)
 }
 pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
-    if s.rollback_pending.load(std::sync::atomic::Ordering::Acquire) {return Err("rollback recovery required; restart before mutating threads".into());}
+    if s.rollback_pending
+        .load(std::sync::atomic::Ordering::Acquire)
+    {
+        return Err("rollback recovery required; restart before mutating threads".into());
+    }
     if c["regenerateTitle"] == true {
         let project = {
             let db = s.db.lock().unwrap();
@@ -519,7 +523,11 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
         }
     }
     let mut db = s.db.lock().unwrap();
-    if s.rollback_pending.load(std::sync::atomic::Ordering::Acquire) {return Err("rollback recovery required".into());}
+    if s.rollback_pending
+        .load(std::sync::atomic::Ordering::Acquire)
+    {
+        return Err("rollback recovery required".into());
+    }
     let tx = db.transaction().map_err(|e| e.to_string())?;
     if let Some(r) = tx
         .query_row(
@@ -1467,7 +1475,11 @@ pub fn launch(s: &std::sync::Arc<State>, p: &Value) -> Result<Value> {
     create["branch"] = prepared.branch.clone();
     let result = (|| -> Result<_> {
         let mut db = s.db.lock().unwrap();
-        if s.rollback_pending.load(std::sync::atomic::Ordering::Acquire) {return Err("rollback recovery required".into());}
+        if s.rollback_pending
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            return Err("rollback recovery required".into());
+        }
         let tx = db.transaction().map_err(|e| e.to_string())?;
         let at = iso(now_ms());
         let mut thread = if reuse {

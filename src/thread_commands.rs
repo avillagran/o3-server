@@ -173,7 +173,11 @@ pub fn dispatch(s: &Arc<State>, c: &Value) -> Result<Value> {
         .ok_or("commandId required")?;
     let kind = c["type"].as_str().ok_or("type required")?;
     let mut db = s.db.lock().unwrap();
-    if s.rollback_pending.load(std::sync::atomic::Ordering::Acquire) {return Err("rollback recovery required".into());}
+    if s.rollback_pending
+        .load(std::sync::atomic::Ordering::Acquire)
+    {
+        return Err("rollback recovery required".into());
+    }
     let tx = db.transaction().map_err(|e| e.to_string())?;
     if let Some(r) = tx
         .query_row(
@@ -196,7 +200,9 @@ pub fn dispatch(s: &Arc<State>, c: &Value) -> Result<Value> {
     .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
     drop(db);
-    if kind=="checkpoint.rollback" {crate::checkpoint::complete_journal(s)?;}
+    if kind == "checkpoint.rollback" {
+        crate::checkpoint::complete_journal(s)?;
+    }
     s.notify();
     if let Some((permit, text)) = outcome.steer {
         permit.send(text);
@@ -546,7 +552,7 @@ fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outco
                 return Err("cannot restore during an active run".into());
             }
             let scope_record = get(tx, "checkpointScopes", scope)?;
-            crate::checkpoint::journal(s,c)?;
+            crate::checkpoint::journal(s, c)?;
             crate::checkpoint::restore(
                 s,
                 std::path::Path::new(
