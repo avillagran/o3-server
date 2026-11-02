@@ -209,6 +209,15 @@ async fn detail(p: &Value) -> Reply {
     )
 }
 pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
+    if matches!(tag, "device.action" | "device.open" | "device.close") {
+        tokio::time::timeout(Duration::from_secs(9), call_inner(s, tag, p))
+            .await
+            .unwrap_or_else(|_| Err(unavailable("device operation exceeded its time budget")))
+    } else {
+        call_inner(s, tag, p).await
+    }
+}
+async fn call_inner(s: &State, tag: &str, p: &Value) -> Reply {
     if matches!(tag, "device.open" | "device.action" | "device.detail") {
         let settings = crate::settings::read(s).map_err(invalid)?;
         if settings["enableDeviceSupport"] == false {
@@ -267,9 +276,12 @@ pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
         "device.close" => {
             local(p)?;
             if p["shutdown"] == true {
-                return Err(unavailable(
-                    "shutdown is unsupported; connected devices are left running",
-                ));
+                let serial = connected(p).await?;
+                if serial.starts_with("emulator-") {
+                    adb(&["-s", serial, "emu", "kill"]).await?;
+                } else {
+                    adb(&["-s", serial, "shell", "reboot", "-p"]).await?;
+                }
             }
             let thread = str_field(p, "threadId")?;
             s.streams.p2.device.sessions.lock().unwrap().retain(|v| {
@@ -294,6 +306,73 @@ pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
                 Ok(v)
             };
             match p["type"].as_str().unwrap_or("") {
+                "setOrientation" => {
+                    let mut rotation = match p["value"].as_str() {
+                        Some("portrait") => 0,
+                        Some("landscape_left") => 1,
+                        Some("portrait_upside_down") => 2,
+                        Some("landscape_right") => 3,
+                        _ => return Err(invalid("orientation")),
+                    };
+                    let size = adb(&["-s", serial, "shell", "wm", "size"]).await?;
+                    let landscape = String::from_utf8_lossy(&size)
+                        .lines()
+                        .filter_map(|l| l.split_once("size: ").map(|(_, v)| v))
+                        .filter_map(|v| v.split_once('x'))
+                        .filter_map(|(w, h)| {
+                            Some((w.trim().parse::<u32>().ok()?, h.trim().parse::<u32>().ok()?))
+                        })
+                        .next_back()
+                        .is_some_and(|(w, h)| w > h);
+                    if landscape {
+                        rotation = (rotation + 3) % 4;
+                    }
+                    if serial.starts_with("emulator-") {
+                        adb(&[
+                            "-s",
+                            serial,
+                            "shell",
+                            "settings",
+                            "put",
+                            "system",
+                            "accelerometer_rotation",
+                            "1",
+                        ])
+                        .await?;
+                        adb(&[
+                            "-s",
+                            serial,
+                            "shell",
+                            "cmd",
+                            "window",
+                            "user-rotation",
+                            "free",
+                        ])
+                        .await?;
+                        adb(&[
+                            "-s",
+                            serial,
+                            "emu",
+                            "sensor",
+                            "set",
+                            "acceleration",
+                            ["0:9.81:0", "9.81:0:0", "0:-9.81:0", "-9.81:0:0"][rotation],
+                        ])
+                        .await?;
+                    } else {
+                        adb(&[
+                            "-s",
+                            serial,
+                            "shell",
+                            "cmd",
+                            "window",
+                            "user-rotation",
+                            "lock",
+                            &rotation.to_string(),
+                        ])
+                        .await?;
+                    }
+                }
                 "setAppearance" => {
                     let value = match p["value"].as_str() {
                         Some("dark") => "yes",
@@ -478,4 +557,26 @@ pub async fn input(serial: &str, v: &Value) -> Reply {
     };
     adb(&["-s", serial, "shell", "input", "keyevent", &key]).await?;
     Ok(Value::Null)
+}
+
+/// One recorder owned by one viewer socket; caller kills and reaps it on disconnect.
+pub(crate) fn recorder(serial: &str) -> Result<tokio::process::Child, std::io::Error> {
+    let executable = crate::executable::resolve(Path::new("adb"))
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "adb unavailable"))?;
+    tokio::process::Command::new(executable)
+        .args([
+            "-s",
+            serial,
+            "exec-out",
+            "screenrecord",
+            "--output-format=h264",
+            "--bit-rate",
+            "2000000",
+            "-",
+        ])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
 }

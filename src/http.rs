@@ -199,15 +199,29 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
         ),
         (Method::POST, p) if p.starts_with("/api/hooks/") => {
             let parts: Vec<_> = p.trim_start_matches("/api/hooks/").split('/').collect();
-            if parts.len()!=2 { return Ok(json_reply(StatusCode::NOT_FOUND,"{}".into())); }
-            let (id, token) = (parts[0].to_owned(),parts[1].to_owned());
+            if parts.len() != 2 {
+                return Ok(json_reply(StatusCode::NOT_FOUND, "{}".into()));
+            }
+            let (id, token) = (parts[0].to_owned(), parts[1].to_owned());
             let headers = request.headers().clone();
             let query = request.uri().query().unwrap_or("").to_owned();
-            let bytes = tokio::time::timeout(std::time::Duration::from_secs(5),Limited::new(request.into_body(),1024*1024).collect()).await;
-            let Ok(Ok(bytes))=bytes else { return Ok(json_reply(StatusCode::PAYLOAD_TOO_LARGE,"{}".into())); };
-            let result=crate::webhook::accept(&state,&id,&token,&headers,&query,&bytes.to_bytes());
-            let mut response=json_reply(StatusCode::from_u16(result.0).unwrap(),json!({"outcome":result.1}).to_string());
-            response.headers_mut().insert("x-t3-hook-outcome",result.1.parse().unwrap());
+            let bytes = tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                Limited::new(request.into_body(), 1024 * 1024).collect(),
+            )
+            .await;
+            let Ok(Ok(bytes)) = bytes else {
+                return Ok(json_reply(StatusCode::PAYLOAD_TOO_LARGE, "{}".into()));
+            };
+            let result =
+                crate::webhook::accept(&state, &id, &token, &headers, &query, &bytes.to_bytes());
+            let mut response = json_reply(
+                StatusCode::from_u16(result.0).unwrap(),
+                json!({"outcome":result.1}).to_string(),
+            );
+            response
+                .headers_mut()
+                .insert("x-t3-hook-outcome", result.1.parse().unwrap());
             response
         }
         (Method::POST, "/oauth/token") => token(&state, request).await,
@@ -272,27 +286,51 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
                             ),
                         )
                         .await;
-                        // Input-only socket; snapshots remain available over HTTP. No video worker.
-                        while let Some(Ok(message)) = ws.next().await {
-                            if message.is_close() {
-                                break;
-                            }
+                        use tokio::io::AsyncReadExt;
+                        let mut recorder: Option<tokio::process::Child> = None;
+                        let mut video = vec![0u8; 64 * 1024];
+                        let mut timer = tokio::time::interval(std::time::Duration::from_secs(2));
+                        loop {
                             let settings = crate::settings::read(&device_state).unwrap_or_default();
-                            if settings["enableDeviceSupport"] == false || settings["enableAgentDeviceAccess"] == false || device_session["sid"].as_str().is_none_or(|sid| !device_state.db.lock().unwrap().query_row("SELECT EXISTS(SELECT 1 FROM auth_sessions WHERE session_id=? AND revoked_at IS NULL AND expires_at>?)", rusqlite::params![sid, now_ms()], |r| r.get::<_,bool>(0)).unwrap_or(false)) { break; }
-                            if let Ok(text) = message.to_text() {
-                                if text.len() > 4096 {
-                                    break;
-                                }
-                                if let Ok(v) = serde_json::from_str::<Value>(text) {
-                                    if let Err(e) = crate::device::input(&serial, &v).await {
-                                        let _ = ws
-                                            .send(tokio_tungstenite::tungstenite::Message::Text(
-                                                e.to_string().into(),
-                                            ))
-                                            .await;
+                            if settings["enableDeviceSupport"]==false || settings["enableAgentDeviceAccess"]==false || device_session["sid"].as_str().is_none_or(|sid|!device_state.db.lock().unwrap().query_row("SELECT EXISTS(SELECT 1 FROM auth_sessions WHERE session_id=? AND revoked_at IS NULL AND expires_at>?)",rusqlite::params![sid,now_ms()],|r|r.get::<_,bool>(0)).unwrap_or(false)){break;}
+                            tokio::select! {
+                                _=timer.tick()=>{},
+                                read=async {
+                                    match recorder.as_mut().and_then(|p|p.stdout.as_mut()) {
+                                        Some(out)=>out.read(&mut video).await,
+                                        None=>std::future::pending().await,
                                     }
-                                }
+                                }=>{
+                                    let Ok(n)=read else{break;};
+                                    if n==0 {break;}
+                                    let mut packet=vec![0u8;16];packet[..4].copy_from_slice(b"SEMU");packet[4]=1;packet[5]=1;
+                                    packet.extend_from_slice(&video[..n]);
+                                    let send=ws.send(tokio_tungstenite::tungstenite::Message::Binary(packet.into()));
+                                    if !matches!(tokio::time::timeout(std::time::Duration::from_secs(2),send).await,Ok(Ok(()))){break;}
+                                },
+                                message=ws.next()=>{
+                                    let Some(Ok(message))=message else{break;};
+                                    if message.is_close(){break;}
+                                    if let Ok(text)=message.to_text(){
+                                        if text.len()>4096{break;}
+                                        if let Ok(v)=serde_json::from_str::<Value>(text){
+                                            if v["type"]=="reset-video" {
+                                                if let Some(mut child)=recorder.take(){let _=child.start_kill();let _=child.wait().await;}
+                                                match crate::device::recorder(&serial) {
+                                                    Ok(child)=>recorder=Some(child),
+                                                    Err(_)=>break,
+                                                }
+                                            }else if let Err(e)=crate::device::input(&serial,&v).await{
+                                                let _=ws.send(tokio_tungstenite::tungstenite::Message::Text(e.to_string().into())).await;
+                                            }
+                                        }
+                                    }
+                                },
                             }
+                        }
+                        if let Some(mut child) = recorder {
+                            let _ = child.start_kill();
+                            let _ = child.wait().await;
                         }
                     }
                 });
