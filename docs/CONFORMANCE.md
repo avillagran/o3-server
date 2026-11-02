@@ -2383,3 +2383,62 @@ controlled startup baseline or performance-improvement claim. Large-cache/ledger
 peak RSS and live video throughput remain unproven. Builds/tests ran sequentially
 under nice with four cargo jobs, using the required build/temp directories.
 No pushes or merges, including the local development journal.
+
+## 2026-11-02 — Independent security audit follow-up
+
+Statuses and priorities are unchanged. Local changes only; no push, merge,
+credentials, live inference, device/emulator, or running-profile access.
+
+- **Webhook authorization:** the contract signs the raw body only. Filters and
+  prompt/coalescing templates accept only `body` fields; unsigned references fail
+  definition validation and legacy delivery validation. Header values, including
+  any capitalization of the signature header, never enter template data. A raw
+  body digest permanently identifies a delivery for that hook. Replay records are
+  retained until hook deletion; reaching storage budgets rejects new deliveries.
+  There is no signed timestamp: sender age cannot be authenticated.
+  `maxDeliveryAgeMinutes` bounds queue residence, not sender age. This limitation
+  is intentional and must not be represented as authenticated freshness.
+- **Who can trigger what:** anyone holding the hook URL/token and signing secret
+  can submit signed body data to the configured task/thread prompt. Execution uses
+  that task/thread's permission mode. Full access can mean Codex
+  `approvalPolicy: never` with `danger-full-access`, or Claude
+  `bypassPermissions`. Signing-key holders must therefore be trusted to trigger
+  work with those permissions. Template framing is not a prompt-injection sandbox.
+- **Rollback:** captured scopes and synced intents bind canonical workspace and
+  git directory identities, thread, and project. Changed/symlink workspaces and
+  legacy intents without bindings fail closed with a recovery error. A pinned
+  directory fd prevents workspace path replacement from redirecting restoration.
+  Files/directories are synced, the SQLite receipt uses `synchronous=FULL`, then
+  journal removal is synced. Four seeded interruption states and one-shot
+  failures after journal sync, file sync, receipt commit and unlink recover
+  through real Connection/projection readers. Process-local flags are reset to
+  simulate restart; real power loss and filesystem fsync errors are unproven.
+- **Admission and dispatch:** read-only existence/authentication precede the writer
+  and run on blocking workers. Limits are 30 requests/IP/s, 60 global/s plus
+  existing connection caps. Unknown hooks reject before body reads. Dispatch
+  freezes a durable queue claim and uses its stable receipt ID; failures retain
+  the job, and receipt replay avoids launching it again. Simulated interrupted
+  handoff is covered, including injected stops at claim and receipt with one
+  projected run after replay; external provider side effects across real crashes are not
+  proven exactly once. Logical queue/replay byte budgets complement count limits.
+- **Usage:** cached-read savings use known input/cache prices; date/accounting
+  predicates precede the bounded scan on a private read-only SQLite connection.
+  Cached savings and 100001 undated-record narrow-query regressions both failed
+  before and pass after through real client readers. The 50000-turn query took
+  1.07 seconds in debug; loopback admission handled 40 invalid requests with the
+  writer held in 11 ms, rate limiting 10.
+- **Device:** an EOF fixture reproduced stream closure; restart preserves the
+  viewer socket and delivers another SEMU packet. This uses fixture adb, the real
+  protocol reader and ffmpeg, not real hardware. Desktop Shake remains unsupported.
+
+Negative controls and final validation are summarized in
+`docs/security-audit-validation.md`. Child-scoped stop, staged workspace setup
+with cancellation, and tracked clone jobs remain outstanding; no feasibility
+claim or status promotion is made.
+
+Validation: default 251 passed / 19 ignored; no-default-features 249 passed /
+19 ignored; strict Clippy both configurations, fmt and generated compatibility
+notes pass. Eight pinned binary differentials pass, including observed acceptance
+of unsigned query templates in 3991 and rejection here. Release HWM 18332 KiB
+(18.77 MB), WebSocket availability 12.48 ms; synthetic profile, no inference.
+See `docs/rss-security-audit.json` for the complete measurement and scope.
