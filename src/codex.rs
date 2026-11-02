@@ -325,6 +325,9 @@ impl CodexProvider {
                 turn_params["serviceTier"] = if tier == "default" { Value::Null } else { json!(tier) };
             }
             if input.interaction_mode=="plan" {turn_params["collaborationMode"]=json!({"mode":"plan","settings":{"model":input.model_selection["model"],"reasoning_effort":effort,"developer_instructions":null}});}
+            // A pre-start interrupt can arrive while thread initialization is
+            // awaiting its native acknowledgement. Never start a late turn.
+            if *cancel.borrow() || output.is_closed() || matches!(control.try_recv(), Ok(ProviderControl::Interrupt)) { return Ok(()); }
             let response=c.call("turn/start",turn_params).await?;
             let turn=response["turn"]["id"].as_str().ok_or("Codex turn id missing")?.to_owned();
             active_turn=Some(turn.clone());

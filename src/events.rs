@@ -724,20 +724,18 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             {
                 return Err(format!("Run {rid} has no active attempt to interrupt."));
             }
-            let permit = if native_started {
-                match s.active.lock().unwrap().get(rid).cloned() {
-                    Some(sender) => Some(
-                        sender
-                            .try_reserve_owned()
-                            .map_err(|_| "provider control busy")?,
-                    ),
-                    None => None,
-                }
-            } else {
-                None
+            // Reserve even during initialization so a pre-start cancellation
+            // reaches the adapter, but never send before the receipt commits.
+            let permit = match s.active.lock().unwrap().get(rid).cloned() {
+                Some(sender) => Some(
+                    sender
+                        .try_reserve_owned()
+                        .map_err(|_| "provider control busy")?,
+                ),
+                None => None,
             };
             interrupt_request(&tx, tid, &run, &t, &at, c)?;
-            if permit.is_none() {
+            if !native_started || permit.is_none() {
                 crate::projection::finish(&tx, tid, rid, &t, &at, "interrupted")?;
                 interrupt_result(
                     &tx,
@@ -769,7 +767,9 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             if let Some(permit) = permit {
                 permit.send(crate::provider::ProviderControl::Interrupt);
                 crate::outbox::handed_off(s, cid)?;
-                crate::provider::interrupt_deadline(s.clone(), tid.to_owned(), rid.to_owned());
+                if native_started {
+                    crate::provider::interrupt_deadline(s.clone(), tid.to_owned(), rid.to_owned());
+                }
             }
             s.notify();
             return Ok(result);

@@ -989,6 +989,104 @@ fn concurrent_scenario(s: &Server, home: &Path, reference: bool) -> Value {
         &c,
         json!({"type":"thread.stop","commandId":"stop-idle","threadId":"concurrent"}),
     );
+    // Observe original Effect exits rather than the client's flattened errors.
+    dispatch_command(
+        &c,
+        json!({"type":"thread.create","commandId":"create-other","threadId":"other","projectId":"fixture-project","title":"Other","modelSelection":{"instanceId":"codex","model":"fixture"},"runtimeMode":"full-access","interactionMode":"default","branch":null,"worktreePath":null}),
+    );
+    let mut dispatch_frames = serde_json::Map::new();
+    for (name, thread, rid) in [
+        ("terminal", "concurrent", run.clone()),
+        ("unknown", "concurrent", json!("unknown")),
+        ("wrong-thread", "other", run.clone()),
+    ] {
+        let frame = raw_rpc(
+            s,
+            "orchestration.dispatchCommand",
+            json!({"type":"run.interrupt","commandId":format!("reject-{name}"),"threadId":thread,"runId":rid}),
+        );
+        dispatch_frames.insert(name.into(), frame);
+    }
+    for kind in ["run.interrupt", "thread.stop"] {
+        dispatch_frames.insert(format!("missing-thread-{kind}"), raw_rpc(s,"orchestration.dispatchCommand",json!({"type":kind,"commandId":format!("missing-{kind}"),"threadId":"missing","runId":"unknown"})));
+    }
+
+    dispatch_command(
+        &c,
+        json!({"type":"message.dispatch","commandId":"unowned-message","messageId":"unowned-message","threadId":"other","text":"deferred","attachments":[],"dispatchMode":{"type":"defer_start"}}),
+    );
+    let unowned = c
+        .rpc(
+            "orchestration.getThreadProjection",
+            json!({"threadId":"other"}),
+        )
+        .unwrap();
+    let unowned_run = unowned["runs"][0]["id"].as_str().unwrap();
+    let owner = unowned["runs"][0]["providerThreadId"].as_str().unwrap();
+    // Fault injection is restricted to this test's isolated database. Remove
+    // durable ownership from a deferred run; no live native turn is involved.
+    let db = rusqlite::Connection::open(home.join(if reference {
+        "userdata/statev2.sqlite"
+    } else {
+        "userdata/o3.sqlite"
+    }))
+    .unwrap();
+    if reference {
+        db.execute(
+            "DELETE FROM orchestration_v2_projection_provider_threads WHERE provider_thread_id=?",
+            [owner],
+        )
+        .unwrap();
+    } else {
+        db.execute(
+            "DELETE FROM records WHERE kind='providerThreads' AND id=?",
+            [owner],
+        )
+        .unwrap();
+    }
+    drop(db);
+    let missing_owner = raw_rpc(
+        s,
+        "orchestration.dispatchCommand",
+        json!({"type":"run.interrupt","commandId":"missing-owner","threadId":"other","runId":unowned_run}),
+    );
+    dispatch_frames.insert(
+        "missing-owner".into(),
+        serde_json::from_str(
+            &missing_owner
+                .to_string()
+                .replace(unowned_run, "unowned-run"),
+        )
+        .unwrap(),
+    );
+    let stop = raw_rpc(
+        s,
+        "orchestration.dispatchCommand",
+        json!({"type":"thread.stop","commandId":"stop-unowned","threadId":"other"}),
+    );
+    assert_eq!(
+        stop["exit"]["_tag"], "Success",
+        "stop must fall back when ownership is missing: {stop}"
+    );
+    dispatch_command(
+        &c,
+        json!({"type":"thread.delete","commandId":"delete-other","threadId":"other"}),
+    );
+    dispatch_frames.insert("deleted-interrupt".into(), raw_rpc(s,"orchestration.dispatchCommand",json!({"type":"run.interrupt","commandId":"deleted-interrupt","threadId":"other","runId":"unknown"})));
+    let deleted_stop = raw_rpc(
+        s,
+        "orchestration.dispatchCommand",
+        json!({"type":"thread.stop","commandId":"deleted-stop","threadId":"other"}),
+    );
+    assert_eq!(
+        deleted_stop["exit"]["_tag"], "Success",
+        "deleted stop must be a no-op: {deleted_stop}"
+    );
+    std::fs::write(
+        home.join("dispatch-frames.json"),
+        serde_json::to_vec_pretty(&dispatch_frames).unwrap(),
+    )
+    .unwrap();
     eprintln!("quiescent");
     let fresh = first_thread(&c)["projection"].clone();
     let view = reader_outputs(&fresh);
@@ -1084,7 +1182,7 @@ fn concurrent_scenario(s: &Server, home: &Path, reference: bool) -> Value {
             },
         )
         .unwrap();
-    json!({"thread":view,"sidebar":sidebar,"replayDifferences":replay_differences,"ignoredReferenceReplay":ignored_reference_replay,"interruptPending":{"working":mid["timeline"]["threadState"]["working"],"canSteer":mid["queue"]["canSteer"],"activeRunId":mid["queue"]["activeRunId"]}})
+    json!({"thread":view,"sidebar":sidebar,"replayDifferences":replay_differences,"ignoredReferenceReplay":ignored_reference_replay,"dispatchFrames":serde_json::from_str::<Value>(&serde_json::to_string(&dispatch_frames).unwrap().replace(run.as_str().unwrap(), "fixture-run")).unwrap(),"interruptPending":{"working":mid["timeline"]["threadState"]["working"],"canSteer":mid["queue"]["canSteer"],"activeRunId":mid["queue"]["activeRunId"]}})
 }
 #[test]
 #[ignore = "real isolated reference and credential-free gated Codex; tools/conformance-diff concurrent"]
@@ -1139,11 +1237,15 @@ fn upstream_concurrent_differential() {
     let replay_differences: Vec<_> = views.iter().enumerate()
         .filter(|(_,v)| !v["replayDifferences"].as_array().unwrap().is_empty())
         .map(|(i,v)| json!({"server":if i==0 {"reference"}else{"o3"},"differences":v["replayDifferences"]})).collect();
-    let report = json!({"ignoredReferenceReplay": views[0]["ignoredReferenceReplay"], "replayDifferences":replay_differences,"referenceVersion":"0.1.7-nightly.20261031.3991","provider":"deterministic gated stdio peer; no credentials or inference","perServer":"two subscribers: snapshot before tail, strictly increasing sequences, unique run creation, four user messages exactly once, final timeline/queue readers equal fresh snapshot; nonempty sidebar reader","differences":differences});
+    let report = json!({"dispatchFrames": views.iter().map(|v| &v["dispatchFrames"]).collect::<Vec<_>>(), "ignoredReferenceReplay": views[0]["ignoredReferenceReplay"], "replayDifferences":replay_differences,"referenceVersion":"0.1.7-nightly.20261031.3991","provider":"deterministic gated stdio peer; no credentials or inference","perServer":"two subscribers: snapshot before tail, strictly increasing sequences, unique run creation, four user messages exactly once, final timeline/queue readers equal fresh snapshot; nonempty sidebar reader","differences":differences});
     let report_path = std::env::var_os("O3_CONCURRENT_REPORT")
         .map(PathBuf::from)
         .unwrap_or_else(|| root.join("reader-shapes.json"));
     std::fs::write(&report_path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
+    assert_eq!(
+        views[0]["dispatchFrames"], views[1]["dispatchFrames"],
+        "raw Effect dispatch exits differ"
+    );
     assert!(
         differences.is_empty() && replay_differences.is_empty(),
         "reader differences: {}; sanitized report: {}",
@@ -1337,4 +1439,175 @@ fn replay_exception_is_reference_only_null_to_absent() {
         0
     );
     assert_eq!(differences.len(), 1);
+}
+
+fn wait_file(path: &Path) {
+    let end = Instant::now() + Duration::from_secs(30);
+    while !path.exists() {
+        assert!(Instant::now() < end, "gate timed out: {}", path.display());
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+#[test]
+#[ignore = "isolated pinned binary restart and control race windows"]
+fn upstream_control_windows() {
+    let root = PathBuf::from("/var/tmp/o3-build/tmp").join(format!(
+        "control-{}",
+        o3_server::store::random_id().unwrap()
+    ));
+    let mut results = vec![];
+    let version = cli_output(
+        command(&reference_binary(), Path::new("/var/tmp/o3-build/tmp")).arg("--version"),
+    );
+    assert!(String::from_utf8_lossy(&version.stdout).contains("0.1.7-nightly.20261031.3991"));
+    for mode in ["init", "steer", "death", "restart", "disabled"] {
+        for reference in [true, false] {
+            let home = root.join(format!("{mode}-{reference}"));
+            std::fs::create_dir_all(home.join("bin")).unwrap();
+            std::os::unix::fs::symlink(
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/concurrent-codex.py"),
+                home.join("bin/codex"),
+            )
+            .unwrap();
+            if mode == "init" {
+                std::fs::write(home.join("gate-init"), "").unwrap();
+            }
+            if mode == "death" {
+                std::fs::write(home.join("die-interrupt"), "").unwrap();
+            }
+            let bin = if reference {
+                reference_binary()
+            } else {
+                PathBuf::from(env!("CARGO_BIN_EXE_o3-server"))
+            };
+            let mut server = start(&bin, &home);
+            let c = connect(&server);
+            c.rpc("server.updateSettings",json!({"patch":{"continueThreadsAfterServerUpdate": mode != "disabled","textGenerationModelSelection":{"instanceId":"unavailable","model":"fixture"}}})).unwrap();
+            c.rpc("projects.mutate",json!({"type":"project.create","commandId":"p","projectId":"fixture-project","title":"Fixture","workspaceRoot":home,"scripts":[]})).unwrap();
+            dispatch_command(
+                &c,
+                json!({"type":"thread.create","commandId":"t","threadId":"concurrent","projectId":"fixture-project","title":"Fixture","modelSelection":{"instanceId":"codex","model":"fixture"},"runtimeMode":"full-access","interactionMode":"default","branch":null,"worktreePath":null}),
+            );
+            dispatch_command(
+                &c,
+                json!({"type":"message.dispatch","commandId":"m","messageId":"m","threadId":"concurrent","text":"first","attachments":[],"dispatchMode":{"type":"start_immediately"}}),
+            );
+            wait_file(&home.join(if mode == "init" {
+                "init-received"
+            } else {
+                "started-1"
+            }));
+            let p = if mode == "init" {
+                first_thread(&c)["projection"].clone()
+            } else {
+                wait_projection(&c, |p| {
+                    p["runs"][0]["status"] == "running" && !p["runs"][0]["startedAt"].is_null()
+                })
+            };
+            let rid = p["runs"][0]["id"].clone();
+            if mode == "steer" {
+                dispatch_command(
+                    &c,
+                    json!({"type":"message.dispatch","commandId":"steer","messageId":"steer","threadId":"concurrent","text":"steer","attachments":[],"dispatchMode":{"type":"steer_active","targetRunId":rid}}),
+                );
+                wait_file(&home.join("steer-received"));
+            }
+            if mode != "disabled" {
+                dispatch_command(
+                    &c,
+                    json!({"type":"run.interrupt","commandId":"i","threadId":"concurrent","runId":rid,"holdQueue":true}),
+                );
+            }
+            if mode == "steer" {
+                std::fs::write(home.join("release-steer"), "").unwrap();
+                wait_file(&home.join("interrupt-received"));
+                let mid = first_thread(&c)["projection"].clone();
+                assert_eq!(
+                    reader_outputs(&mid)["timeline"]["threadState"]["working"],
+                    true
+                );
+                assert!(!mid["turnItems"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|i| i["type"] == "run_interrupt_result"));
+            }
+            if matches!(mode, "restart" | "disabled") {
+                if mode == "restart" {
+                    wait_file(&home.join("interrupt-received"));
+                }
+                server.child.kill().unwrap();
+                server.child.wait().unwrap();
+                drop(server);
+                server = start(&bin, &home);
+            } else {
+                std::fs::write(home.join("release-interrupt"), "").unwrap();
+            }
+            let c = connect(&server);
+            let p = wait_projection(&c, |p| {
+                reader_outputs(p)["timeline"]["threadState"]["working"] == false
+            });
+            std::fs::write(home.join("release-init"), "").unwrap();
+            if mode == "init" {
+                std::thread::sleep(Duration::from_millis(250));
+                assert!(
+                    !home.join("started-1").exists(),
+                    "cancelled init launched a late native turn"
+                );
+            }
+            if matches!(mode, "init" | "steer") {
+                assert_eq!(p["runs"][0]["status"], "interrupted");
+            }
+            if mode == "disabled" {
+                assert_eq!(p["runs"][0]["status"], "cancelled");
+                assert!(p["turnItems"].as_array().unwrap().iter().all(|i| !matches!(
+                    i["type"].as_str(),
+                    Some("run_interrupt_request" | "run_interrupt_result")
+                )));
+                std::fs::write(
+                    home.join("disabled-readers.json"),
+                    serde_json::to_vec_pretty(&reader_outputs(&p)).unwrap(),
+                )
+                .unwrap();
+            }
+            if !reference && matches!(mode, "death" | "restart") {
+                assert_eq!(p["runs"][0]["status"], "failed");
+                assert!(!p["turnItems"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|i| i["type"] == "run_interrupt_result"));
+                let db = rusqlite::Connection::open(home.join("userdata/o3.sqlite")).unwrap();
+                assert_eq!(db.query_row("SELECT json_extract(body,'$.status') FROM records WHERE kind='controlOutbox' AND id='i'",[],|r|r.get::<_,String>(0)).unwrap(), "delivery-unknown");
+            }
+            let result = json!({"mode":mode,"reference":reference,"status":p["runs"][0]["status"],"items":p["turnItems"].as_array().unwrap().iter().map(|i|json!({"type":i["type"],"status":i["status"],"message":i["message"]})).collect::<Vec<_>>(),"working":reader_outputs(&p)["timeline"]["threadState"]["working"]});
+            eprintln!("control window: {result}");
+            results.push(result);
+            drop(server);
+        }
+    }
+    let disabled: Vec<Value> = [true, false]
+        .into_iter()
+        .map(|r| {
+            serde_json::from_slice(
+                &std::fs::read(root.join(format!("disabled-{r}/disabled-readers.json"))).unwrap(),
+            )
+            .unwrap()
+        })
+        .collect();
+    let mut differences = vec![];
+    reader_differences(
+        &normalize_concurrent(&disabled[0], ""),
+        &normalize_concurrent(&disabled[1], ""),
+        "",
+        &mut differences,
+    );
+    eprintln!("disabled reader differences: {}", json!(differences));
+    assert!(differences.is_empty(), "disabled restart readers differ");
+    std::fs::write(
+        root.join("results.json"),
+        serde_json::to_vec_pretty(&results).unwrap(),
+    )
+    .unwrap();
+    eprintln!("control report: {}", root.join("results.json").display());
 }

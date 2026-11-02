@@ -32,6 +32,9 @@ for line in sys.stdin:
     elif m == 'model/list': result = dict(data=[dict(id='fixture', model='fixture', displayName='Fixture', description='Fixture', hidden=False, supportedReasoningEfforts=[], defaultReasoningEffort='low', inputModalities=['text'], supportsPersonality=False, isDefault=True)], nextCursor=None)
     elif m == 'skills/list': result = dict(data=[])
     elif m in ('thread/start', 'thread/resume'):
+        if (root / 'gate-init').exists():
+            (root / 'init-received').touch()
+            while not (root / 'release-init').exists(): time.sleep(.01)
         tid = p.get('threadId', 'native-fixture')
         result = dict(thread=dict(id=tid, projectId=None, sessionId='fixture-session', preview='', ephemeral=False, modelProvider='openai', createdAt=int(time.time()), updatedAt=int(time.time()), status=dict(type='idle'), path=None, cwd=str(root), cliVersion='0.166.0', source='appServer', turns=[]))
         result.update(approvalPolicy='never', approvalsReviewer='user', cwd=str(root), model='fixture', modelProvider='openai', sandbox=dict(type='dangerFullAccess'))
@@ -45,7 +48,12 @@ for line in sys.stdin:
         (root / ('started-' + str(turns))).touch()
         threading.Thread(target=finish, args=(tid, turn, turns), daemon=True).start()
         continue
+    elif m == 'turn/steer':
+        (root / 'steer-received').touch()
+        while not (root / 'release-steer').exists(): time.sleep(.01)
+        result = dict(turnId=p.get('expectedTurnId'))
     elif m == 'turn/interrupt':
+        if (root / 'die-interrupt').exists(): os._exit(7)
         turn = p['turnId']; active.pop(turn, None)
         send(dict(id=i, result={}))
         (root / 'interrupt-received').touch()
