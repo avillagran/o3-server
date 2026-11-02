@@ -239,7 +239,7 @@
     "preview.clearProfile": {
       "status": "partial",
       "priority": "P2",
-      "note": "tests/preview.rs: accepted as a no-op; the server holds no browser profile data to clear (profiles live in the client that renders the preview)."
+      "note": "Accepted as a no-op; o3 has no server browser profile. 2026-11-02 inventory: desktop browser_profiles.rs:170 gates the RPC on serverBrowser, absent from o3 capabilities, and :202 clears local profiles independently. No enabled o3 production caller or consumed cleanup gap found; recommend independent priority/status review, unchanged here."
     },
     "preview.close": {
       "status": "done",
@@ -714,7 +714,7 @@
     "server.getResourceTelemetryHistory": {
       "status": "partial",
       "priority": "P2",
-      "note": "tests/ops.rs: buckets from a 10 s sampler that starts at the first call; per-process IO and the desktop source are not available."
+      "note": "2026-11-02: real Connection/lib telemetry reader regression fails before and passes after process-tree CPU accounting (tests/p2_telemetry.rs). PID/start-time baselines avoid recycled identity and exited-child counter subtraction. History still starts on demand; pre-open history is unavailable. Desktop/Android read bucket CPU/RSS, not per-process IO or desktop-source health. Isolated pinned probe is documented in CONFORMANCE.md; no parity promotion."
     },
     "server.getSettings": {
       "status": "done",
@@ -724,7 +724,7 @@
     "server.getStorageCleanupReport": {
       "status": "partial",
       "priority": "P2",
-      "note": "tests/ops.rs: stream of the latest manual report (null before any); no automatic runs."
+      "note": "Latest manual or automatic report stream (null before first run). Automatic cleanup is implemented in scheduled.rs; automatic disabled-policy test in ops.rs and real worktree/browser/log cleanup coverage in tests/storage_policies.rs. Prior note claiming no automatic runs was stale; no new reader failure demonstrated in this inventory."
     },
     "server.getTraceDiagnostics": {
       "status": "skip",
@@ -799,7 +799,7 @@
     "server.runStorageCleanup": {
       "status": "partial",
       "priority": "P2",
-      "note": "tests/ops.rs: removes profile log files older than 14 days; worktree and browser-artifact cleanup do not exist."
+      "note": "Profile logs/browser artifacts and safe worktree cleanup are implemented, with real Connection coverage in tests/storage_policies.rs (locks, dirty/pinned/shared/busy/untracked/locked/reused worktrees preserved). Prior note claiming only log cleanup was stale; not a new implementation or parity promotion."
     },
     "server.searchAcpRegistry": {
       "status": "done",
@@ -849,7 +849,7 @@
     "shell.openInEditor": {
       "status": "partial",
       "priority": "P2",
-      "note": "Real-client test with a fake editor on PATH: argv launch without a shell, unknown editor and option-like cwd refused, missing editor fails. Opens the folder only: goto/line-column styles and file-manager reveal are not implemented."
+      "note": "Real-client test with a fake editor on PATH: argv launch without a shell, unknown editor and option-like cwd refused, missing editor fails. Opens the folder only: goto/line-column styles and file-manager reveal are not implemented. 2026-11-02 inventory: desktop thread_details.rs:36 opens a workspace and keybinding_settings.rs:278 a file; neither supplies line/column. No consumed goto gap established by those callers; reveal remains to audit."
     },
     "sourceControl.cloneRepository": {
       "status": "skip",

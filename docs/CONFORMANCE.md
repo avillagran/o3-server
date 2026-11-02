@@ -2155,3 +2155,66 @@ of head ee795cf. That audit's only blocker, the remote read by the pull request 
 was fixed afterwards with a test; that fix itself was not independently audited. Partial
 for a named reason: `vcs.refreshStatus`, `server.updateSettings`,
 `orchestration.subscribeShell` and `server.getConfig`.
+
+## P2 production reader inventory and CPU history — 2026-11-02
+
+[Inventory](p2-reader-inventory.md) covers all partial non-P0/P1 rows, including
+production desktop/Android call sites, user-visible effects and proposed actions.
+Statuses and priorities are unchanged. This is an intentionally small implementation
+block: usage/rates require ledger scanning/pricing work, devices require protocol
+and lifecycle fixtures, and subagent stop still wrongly interrupts the owner.
+Those remain pending, together with the other actions in the inventory.
+
+`server.getResourceTelemetryHistory` had a confirmed consumed defect: bucket CPU
+counted only the server, while bucket RSS included the whole child tree. Desktop
+`process_diagnostics.rs:28` and Android maintenance render bucket CPU/RSS. The
+real Connection and lib telemetry reader test `history_cpu_includes_busy_provider_children`
+failed before the fix (bucket average 0.067%, peak 0.20%, child lifetime CPU 93.49%) and passes afterward.
+The fixture is a busy shell, without providers, credentials or inference. Sampling
+now sums per-process tick deltas keyed by PID/start-time, so exited children do
+not subtract counters from surviving processes and reused PIDs get new baselines.
+New children contribute only when born since the preceding sample. CPU from a
+child that starts and exits entirely between samples cannot be recovered.
+
+Collection remains on demand at 10 s intervals; no new startup work, timer, or
+request frequency was added. Pre-open history is still unavailable. Per-process
+IO and the desktop telemetry source were listed as gaps but are not read by the
+named production bucket views. This block does not certify complete telemetry.
+
+The new opt-in `upstream_p2_telemetry_reader` runs actual lib readers against both
+isolated servers with a fixture terminal workload. Its first run exposed an idle
+sampling setup error in the o3 probe; retaining a real report subscription fixes
+that setup. Pinned 3991 returned zero retained samples, despite healthy native
+status: its CPU comparison remains **unproven**, not equivalent. The probe records
+that explicitly in [the report](p2-telemetry-report.json); if reference samples
+are available it requires child CPU visibility too. It is separate from the two
+existing pinned differentials, which retain their strict comparisons.
+
+The storage notes were stale: worktree/browser artifact cleanup and automatic
+invocation already exist (`tests/storage_policies.rs`, `scheduled.rs`, and the
+ops disabled-policy test). Notes now describe that implementation without claiming
+a new fix or automatic-stream parity. Editor callers currently open a workspace
+or a keybinding file without line/column; missing goto equivalence alone does not
+establish a client-visible failure. File-manager reveal ownership remains to audit.
+
+Preview profile review: desktop gates the RPC on `serverBrowser`, which o3 does
+not advertise, and clears local rendering profiles separately. No enabled o3
+production RPC caller was found. The inventory recommends independent
+reclassification of that row; its status and priority remain untouched.
+
+Final validation: 231 default / 229 no-default tests pass, 18 opt-in tests ignored
+in each configuration. Strict Clippy (`--all-targets -- -D warnings`) passes in
+both configurations; fmt and gen-compat pass. Both pinned general/concurrent
+differentials and the additional P1-reader differential pass. The P2 probe
+records 3 o3 samples with a 33.27% bucket average and zero pinned reference samples;
+it passes its o3 regression but cannot certify reference CPU equivalence.
+
+`tools/bench-rss` release HWM is **16,408 KiB (16.80 MB)**, below 50 MB;
+last-100 append median/p95 **2.503 / 3.316 ms**, metadata **0.433 / 0.522 ms**.
+[Measurement](rss-p2-reader-block.json). This standard workload excludes inference,
+client/build RSS and does not measure sampler overhead under many live children.
+No startup or message-path work was added; the changed allocation/counter work
+runs only in the existing on-demand sampler. No performance improvement is claimed.
+Cargo builds/tests ran sequentially under nice with four jobs, in the required
+/var/tmp build directories. No emulators, credentials, live inference, services,
+pushes or merges were used.

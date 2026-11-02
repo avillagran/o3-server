@@ -1,0 +1,86 @@
+{
+  "referenceVersion": "0.1.7-nightly.20261031.3991",
+  "scope": "real lib telemetry reader; isolated busy terminal child; percentages are observations, not exact equivalence",
+  "views": [
+    {
+      "busyAvgCpu": 0.0,
+      "childCpuVisible": false,
+      "health": {
+        "collectionDurationMicros": 0,
+        "desktop": {
+          "lastError": {
+            "_tag": "Some",
+            "value": "Desktop telemetry descriptor is unavailable in 'web' mode."
+          },
+          "lastSampleAt": {
+            "_tag": "None"
+          },
+          "status": "unavailable"
+        },
+        "inaccessibleProcessCount": 0,
+        "native": {
+          "lastError": {
+            "_tag": "None"
+          },
+          "lastSampleAt": {
+            "_tag": "None"
+          },
+          "status": "healthy"
+        },
+        "restartCount": 0,
+        "retainedProcessCount": 0,
+        "scannedProcessCount": 0,
+        "sidecarPid": {
+          "_tag": "Some",
+          "value": 1972891
+        },
+        "sidecarVersion": {
+          "_tag": "Some",
+          "value": "0.1.0"
+        }
+      },
+      "initialAvgCpu": 0.0,
+      "retainedSampleCount": 0,
+      "server": "reference"
+    },
+    {
+      "busyAvgCpu": 33.266799733865604,
+      "childCpuVisible": true,
+      "health": {
+        "collectionDurationMicros": 0,
+        "desktop": {
+          "lastError": {
+            "_tag": "None"
+          },
+          "lastSampleAt": {
+            "_tag": "None"
+          },
+          "status": "unavailable"
+        },
+        "inaccessibleProcessCount": 0,
+        "native": {
+          "lastError": {
+            "_tag": "None"
+          },
+          "lastSampleAt": {
+            "_tag": "Some",
+            "value": "2026-11-02T05:35:56.137Z"
+          },
+          "status": "healthy"
+        },
+        "restartCount": 0,
+        "retainedProcessCount": 2,
+        "scannedProcessCount": 2,
+        "sidecarPid": {
+          "_tag": "None"
+        },
+        "sidecarVersion": {
+          "_tag": "None"
+        }
+      },
+      "initialAvgCpu": 0.0,
+      "retainedSampleCount": 3,
+      "server": "o3"
+    }
+  ]
+}
