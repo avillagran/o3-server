@@ -2294,3 +2294,92 @@ carry the audited gaps and win where they differ. By user impact the audit ranks
 aggregation, desktop device viewing and offered controls, child-scoped subagent cancellation,
 staged setup with progress and cancellation, tracked cloning, webhook schedules, ACP execution,
 archive size and rollback crash recovery.
+
+## 2026-11-02 — Client-visible usage, hooks, rollback, archive and device block
+
+This block is **incomplete** against the nine-item implementation request. No row status
+or priority changes. Items 2–4 are still implementation work, not proven infeasible:
+child-native cancellation needs task identity plus acknowledged native outcome handling;
+worktree launch still prepares synchronously, without a staged script runner/cancellable
+process ownership; clone still waits for git and has no durable job/subscription lifecycle.
+Their safe refusals/capability gating are retained. This block did not finish those items
+before moving on, so it does not satisfy the requested execution order.
+
+Failing-before and passing-after evidence uses real Connection/lib readers:
+
+- Usage: `tests/p2_usage.rs` first returned zero tokens from empty buckets; now the real
+  production aggregate reads 280 tokens across Claude/Codex fixtures at the Santiago day
+  boundary, recorded cost and an explicit unpriced count. Canonical provider turns avoid
+  double-counting runs/attempts; imported turns count when they carry accounting/time.
+  Historical run selection precedes session model fallback. New Claude records preserve
+  cache-creation subsets; old records cannot recover that split. On-demand iteration has
+  capped bucket/session aggregation and an explicit over-budget error. No provider ledger
+  files are read. Missing turn accounting and native last-request-only counters cannot
+  reconstruct full provider history; this is not complete invoice accounting.
+- Webhooks: `tests/p2_webhook.rs` first rejected signed definitions. It now exercises actual
+  lib upsert/list plus HTTP signature rejection, filters, replay dedupe, coalescing and
+  expired queue suppression. Mandatory HMAC-SHA256 verification uses constant-time tag
+  comparison; signing secrets are kept out of definitions/receipts. Bodies are limited
+  to 1 MiB and reads to 5 seconds on the existing listener. Queues/replay keys are capped,
+  persisted, and have no automatic retry. Direct delivery age starts at server receipt;
+  unverified relay timestamps are not trusted. Credentials and pending jobs are removed
+  with task deletion. No payload/secret logging is added. `secretRef`, relay verification,
+  full template parity, delivery-log APIs and crash-safe queue handoff remain unfinished.
+  The outbound HTTPS/private-target restriction does not apply to inbound triggers.
+- Rollback: `tests/p2_rollback.rs` first retained stale metadata/partial files. A synced
+  filesystem intent now precedes restore; SQLite metadata/receipt commit precedes intent
+  removal. Startup replays intents before serving or resuming providers. Failed restores
+  gate thread mutations until restart/recovery. The regression injects the crash window
+  with durable intent, partial files and old database state, then reads recovered projection
+  and receipt. It does **not** inject SIGKILL/power loss or cover a filesystem failure matrix.
+- Archive: `tests/p2_archive.rs` first returned `rpc_outcome_unknown` for 1,000 archived
+  threads with 9,000-byte titles. Incremental size accounting now rejects before 7 MiB
+  with an actionable typed error. The actual lib archive request has no pagination fields;
+  returning a partial successful archive would mislead the readers. Large complete archives
+  still require a client/protocol change.
+- Device: `tests/p2_device_stream.rs` first failed the real SEMU parser because reset-video
+  returned an unavailable error. A socket-owned adb `exec-out screenrecord` now sends
+  bounded H264 chunks in SEMU packets; disconnect kills/reaps its recorder and slow sends
+  have a deadline. The fixture bitstream decodes to a 32×32 frame with ffmpeg. Actual lib
+  open/action/close readers exercise rotation and shutdown; fixture argv covers native-size
+  orientation mapping, emulator sensor rotation and adb shutdown. Mutation RPCs share a
+  9-second deadline. No native device encoder, desktop UI, real device or emulator was run.
+  Device behavior is fixture/newer-source evidence, not pinned device parity.
+- ACP: the deterministic registry/npx fixture in `tests/provider_setup.rs` first returned
+  `prepared:true`. The actual lib preparation reader now receives `execution_unavailable`:
+  an available runner does not supply an ACP execution driver. Registry search remains.
+
+Untouched requested exclusions: vcs.refreshStatus, server.updateSettings,
+orchestration.subscribeShell, server.getConfig, and remote-host device rows.
+
+Pinned validation: all eight isolated `upstream_` probes pass, including the added
+`upstream_p2_webhook_reader`. Actual lib scheduled-task upsert reports a configured secret
+without exposing it on both servers; direct HTTP invalid/valid/duplicate deliveries match
+3991 exactly (401/rejected_signature, 202/accepted, 202/duplicate). This establishes those
+observations only, not filter/coalescing/expiry/relay equivalence. The reference telemetry
+probe again returned zero samples, so CPU equivalence remains unproven. No credentials,
+inference, devices, emulators, services or user profiles were used.
+
+Usage scan measurements (debug, real Connection): 50,000 accounting turns **848 ms**,
+server scan **845 ms**, **681-byte** response. A 100,001-turn accounting-free history
+returns an explicit scan-budget error in **739 ms**, rather than a partial zero summary.
+The scan counts every turn, including those without accounting, and caps at 100,000 turns
+or 8 seconds; larger profiles need indexed ledger/backfill work. Bucket/session allocations
+are capped separately. This is a bounded refusal, not a claim that arbitrarily large history
+is fully queryable. No transcript I/O, startup ledger migration, network rate refresh,
+message-path ledger write or background ledger timer was added.
+
+Final verification: **244 default / 242 no-default tests pass**, 19 opt-ins ignored in
+each full run. Strict Clippy (`--all-targets -- -D warnings`) passes in both feature
+configurations; fmt, gen-compat and whitespace checks pass. The eight pinned probes
+pass, with the telemetry limitation above; [signed webhook observations](p2-webhook-report.json).
+
+Release `tools/bench-rss`: **18,152 KiB** peak (**18.59 MB**), below 50 MB. Process-start to authenticated WebSocket: **12.12 ms** (10 ms readiness polling; profile pre-initialized by isolated auth CLI).
+Last-100 append median/p95 **2.448/3.341 ms**, metadata median/p95 **0.447/0.570 ms**.
+[Measurement](rss-client-visible-gaps.json). This is the standard synthetic workload,
+without inference/device children or large usage/rate-cache stress. Startup adds an
+intent-directory probe; thread mutations add pending-rollback checks. There is no
+controlled startup baseline or performance-improvement claim. Large-cache/ledger
+peak RSS and live video throughput remain unproven. Builds/tests ran sequentially
+under nice with four cargo jobs, using the required build/temp directories.
+No pushes or merges, including the local development journal.

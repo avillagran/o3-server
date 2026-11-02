@@ -1,0 +1,35 @@
+{
+  "referenceVersion": "0.1.7-nightly.20261031.3991",
+  "scope": "Real lib scheduled task signed upsert and direct HTTP invalid, valid and duplicate delivery; isolated profiles, no inference. Filters, expiry, coalescing and relay semantics excluded.",
+  "reference": {
+    "definition": true,
+    "duplicate": {
+      "outcome": "duplicate",
+      "status": "202"
+    },
+    "invalid": {
+      "outcome": "rejected_signature",
+      "status": "401"
+    },
+    "valid": {
+      "outcome": "accepted",
+      "status": "202"
+    }
+  },
+  "o3": {
+    "definition": true,
+    "duplicate": {
+      "outcome": "duplicate",
+      "status": "202"
+    },
+    "invalid": {
+      "outcome": "rejected_signature",
+      "status": "401"
+    },
+    "valid": {
+      "outcome": "accepted",
+      "status": "202"
+    }
+  },
+  "equal": true
+}

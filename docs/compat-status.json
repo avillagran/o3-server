@@ -44,12 +44,12 @@
     "device.action": {
       "status": "partial",
       "priority": "P2",
-      "note": "Remaining: desktop T3DevicePanel.qml:210 offers Rotate, which returns unsupported. Four Android settings pass through fixture adb."
+      "note": "Rotate now maps natural orientation through wm size, emulator accelerometer or physical cmd window rotation; real lib DeviceAction and fixture argv pass. Existing Android settings fixtures retained. 9 s overall mutation budget. No native device behavior or pinned action parity tested; other offered controls still require audit. Status unchanged."
     },
     "device.close": {
       "status": "partial",
       "priority": "P2",
-      "note": "Remaining: device_screen.rs:113 shutdown requests fail and leave the device running. Ordinary session close passes."
+      "note": "Shutdown now invokes serial-scoped adb emu kill for emulators or shell reboot -p for physical Android targets; real lib close and fixture argv pass. Ordinary session close retained. No real shutdown/device lifecycle or pinned parity tested; status unchanged."
     },
     "device.configure": {
       "status": "partial",
@@ -74,7 +74,7 @@
     "device.open": {
       "status": "partial",
       "priority": "P2",
-      "note": "Remaining: with ffmpeg available the desktop viewer chooses H264 and gets no video (device_screen.rs:277,396); PNG fallback runs only without a decoder."
+      "note": "Fixture adb screenrecord H264 streams bounded SEMU packets to the real lib reader and ffmpeg decoder; PNG endpoint retained. Socket disconnect kills/reaps recorder; sends/auth rechecks bounded. tests/p2_device_stream.rs failed before (no SEMU), passes including real open and decode. No native encoder, real device/emulator/UI or pinned device parity tested. Other platforms remain unsupported; status unchanged."
     },
     "device.shutdown": {
       "status": "skip",
@@ -644,7 +644,7 @@
     "scheduledTasks.upsert": {
       "status": "partial",
       "priority": "P2",
-      "note": "Signed inbound webhook definitions and existing-listener /api/hooks/{id}/{token}: mandatory HMAC-SHA256 verification, 1 MiB body/5 s read budget, filters, persisted replay keys/coalescing queue, queued delivery-age expiration, capped queue/replay counts, no automatic retries or payload logging. Real Connection/lib upsert failed before, passes with HTTP fixtures. Newer source-only contract; pinned webhook differential not driven. secretRef unsupported; relay proof, crash-safe queue dispatch, complete prompt-template parity and delivery logs remain unproven. Outbound HTTPS/private-target restriction does not apply to inbound triggers. Status unchanged."
+      "note": "Signed inbound webhook definitions and existing-listener /api/hooks/{id}/{token}: mandatory HMAC-SHA256 verification, 1 MiB body/5 s read budget, filters, persisted replay keys/coalescing queue, queued delivery-age expiration, capped queue/replay counts, no automatic retries or payload logging. Real Connection/lib upsert failed before, passes with HTTP fixtures. Pinned 3991 signed-definition, signature rejection, acceptance and duplicate probe passes; filters/coalescing/expiry have local fixture and newer-source evidence only. secretRef unsupported; relay proof, crash-safe queue dispatch, complete prompt-template parity and delivery logs remain unproven. Outbound HTTPS/private-target restriction does not apply to inbound triggers. Status unchanged."
     },
     "secrets.answerRequest": {
       "status": "done",
@@ -734,7 +734,7 @@
     "server.getUsageSummary": {
       "status": "partial",
       "priority": "P2",
-      "note": "Stored provider-turn ledger aggregation with real Connection/lib usage_summary::aggregate regression (failed empty before, passes). IANA daily bucketing, token subsets, recorded cost/cached rates, explicit unpriced records, imported providerTurns included. On-demand bounded aggregation; 50000 turns debug query 803 ms/681-byte output. Older Claude records cannot separate cache-creation tokens; turns missing accounting/timestamps remain unavailable. No provider transcript scan; pinned usage equivalence unproven. Status unchanged pending audit."
+      "note": "Stored provider-turn ledger aggregation with real Connection/lib usage_summary::aggregate regression (failed empty before, passes). IANA daily bucketing, token subsets, recorded cost/cached rates, explicit unpriced records, imported providerTurns included. On-demand scan bounded to 100000 turns/8 s with explicit rejection rather than partial totals; 50000-turn debug query 848 ms/681 bytes; 100001 accounting-free turns refuse in 739 ms. Older Claude records cannot separate cache-creation tokens; turns missing accounting/timestamps remain unavailable. Last-request-only native counters cannot reconstruct missing historical totals. No provider transcript scan; pinned usage equivalence unproven. Status unchanged pending audit."
     },
     "server.importAcpRegistrySession": {
       "status": "skip",
@@ -1021,7 +1021,7 @@
     "checkpoint.rollback": {
       "status": "partial",
       "priority": "P2",
-      "note": "Remaining: filesystem restore precedes transaction completion (src/thread_commands.rs:547), so a crash can leave partially restored files. Normal restore passes."
+      "note": "Durable fsynced rollback intent precedes filesystem restore; receipt/metadata commit precedes intent removal; startup replays before serving/resuming. Failed restores gate thread mutation until recovery. Real Connection/lib projection regression injects durable intent, partially restored files and old DB: failed before, passes replay/receipt. Simulated crash window, not SIGKILL/power-loss evidence. Filesystem failure matrix unproven; status unchanged."
     },
     "delegated_task.completion-delivery.acknowledge": {
       "status": "skip",

@@ -1924,3 +1924,60 @@ fn upstream_p2_telemetry_reader() {
     }
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+#[ignore = "isolated pinned 3991 signed webhook reader and HTTP fixture; no inference"]
+fn upstream_p2_webhook_reader() {
+    use hmac::{Hmac, Mac};
+    use std::io::{Read, Write};
+    use t3_protocol::api::scheduled_tasks::{self, TaskUpsert};
+    let root = PathBuf::from("/var/tmp/o3-build/tmp").join(format!(
+        "p2-hooks-{}",
+        o3_server::store::random_id().unwrap()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let reference = reference_binary();
+    let mut views = Vec::new();
+    for (label, bin) in [
+        ("reference", reference.as_path()),
+        ("o3", Path::new(env!("CARGO_BIN_EXE_o3-server"))),
+    ] {
+        let home = root.join(label);
+        let s = start(bin, &home);
+        let c = connect(&s);
+        c.rpc("projects.mutate",json!({"type":"project.create","commandId":"p","projectId":"p","title":"Hook fixture","workspaceRoot":home})).unwrap();
+        let input = json!({"id":"fixture-hook","title":"Hook","prompt":"inspect {{body.action}}","enabled":true,"schedule":{"type":"webhook","signature":{"header":"x-hub-signature-256","encoding":"hex","prefix":"sha256=","secret":"fixture-only-key"},"maxDeliveryAgeMinutes":5,"filters":[{"path":"body.action","op":"equals","value":"opened"}],"dedupe":{"replayKey":"{{body.id}}","coalesceKey":"{{body.group}}","coalesceWindowSeconds":60}},"projectId":"p","workspaceStrategy":{"type":"root"},"modelSelection":{"instanceId":"codex","model":"fixture"},"runtimeMode":"full-access","interactionMode":"default"});
+        let result = scheduled_tasks::upsert(&c, &TaskUpsert::from_json(&input).unwrap());
+        let Ok(result) = result else {
+            panic!("{label} rejected signed definition: {result:?}");
+        };
+        assert!(!result.to_string().contains("fixture-only-key"));
+        let path = result["task"]["webhook"]["path"].as_str().unwrap();
+        let body = r#"{"id":"one","group":"batch","action":"opened"}"#;
+        let mut mac = Hmac::<sha2::Sha256>::new_from_slice(b"fixture-only-key").unwrap();
+        mac.update(body.as_bytes());
+        let signature = format!(
+            "sha256={}",
+            mac.finalize()
+                .into_bytes()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>()
+        );
+        let send = |signature: &str| {
+            let mut socket =
+                std::net::TcpStream::connect(s.base.trim_start_matches("http://")).unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(10)))
+                .unwrap();
+            write!(socket,"POST {path} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\nX-Hub-Signature-256: {signature}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+            let mut reply = String::new();
+            socket.read_to_string(&mut reply).unwrap();
+            json!({"status":reply.lines().next().unwrap_or("").split_whitespace().nth(1),"outcome":reply.lines().find(|l|l.to_lowercase().starts_with("x-t3-hook-outcome:")).and_then(|l|l.split_once(':')).map(|(_,v)|v.trim())})
+        };
+        views.push(json!({"definition":result["task"]["webhook"]["hasSecret"],"invalid":send("bad"),"valid":send(&signature),"duplicate":send(&signature)}));
+    }
+    eprintln!("signed webhook reference observations: {}", json!(views));
+    assert_eq!(views[0], views[1]);
+    std::fs::remove_dir_all(root).unwrap();
+}
