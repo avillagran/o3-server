@@ -292,6 +292,7 @@ fn main() -> std::io::Result<()> {
             bridge.shutdown().await;
             probe_task.abort();
             let _ = probe_task.await;
+            o3_server::preview::shutdown(&state).await;
             codex.shutdown().await;
             result
         })

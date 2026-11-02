@@ -44,7 +44,7 @@ pub async fn call(s: &Arc<State>, tag: &str, p: Value) -> Reply {
     } else if crate::sessions::handles(tag) {
         crate::sessions::call(s, tag, &p).await
     } else if crate::preview::handles(tag) {
-        crate::preview::call(s, tag, &p)
+        crate::preview::call(s, tag, &p).await
     } else if crate::misc::handles(tag) {
         crate::misc::call(s, tag, &p).await
     } else {

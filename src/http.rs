@@ -155,26 +155,36 @@ fn upgrade(state: Arc<State>, session: Value, mut request: Request<Incoming>) ->
     hash.update(key.as_bytes());
     hash.update(b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
     let accept = base64::engine::general_purpose::STANDARD.encode(hash.finalize());
+    let preview = if request.uri().path() == "/api/preview-stream/ws" {
+        Some((
+            query(&request, "threadId").unwrap_or_default(),
+            query(&request, "tabId").unwrap_or_default(),
+            query(&request, "interactive").as_deref() != Some("false"),
+        ))
+    } else {
+        None
+    };
     let lease = request.extensions().get::<Lease>().cloned();
     let upgrading = hyper::upgrade::on(&mut request);
     tokio::task::spawn(async move {
         let _lease = lease;
         if let Ok(upgraded) = upgrading.await {
-            rpc::run(
-                WebSocketStream::from_raw_socket(
-                    TokioIo::new(upgraded),
-                    Role::Server,
-                    Some(
-                        tokio_tungstenite::tungstenite::protocol::WebSocketConfig::default()
-                            .max_message_size(Some(8 * 1024 * 1024))
-                            .max_frame_size(Some(8 * 1024 * 1024)),
-                    ),
-                )
-                .await,
-                state,
-                session,
+            let socket = WebSocketStream::from_raw_socket(
+                TokioIo::new(upgraded),
+                Role::Server,
+                Some(
+                    tokio_tungstenite::tungstenite::protocol::WebSocketConfig::default()
+                        .max_message_size(Some(8 * 1024 * 1024))
+                        .max_frame_size(Some(8 * 1024 * 1024)),
+                ),
             )
             .await;
+            if let Some((thread, tab, interactive)) = preview {
+                crate::server_browser::stream(socket, state, session, thread, tab, interactive)
+                    .await;
+            } else {
+                rpc::run(socket, state, session).await;
+            }
         }
         crate::heap::collect();
     });
@@ -269,6 +279,18 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
         }
         (Method::GET | Method::HEAD, p) if p.starts_with(crate::assets::ASSET_PREFIX) => {
             Box::pin(crate::assets::serve(&state, &request)).await
+        }
+        (Method::GET, "/api/preview-stream/ws") => {
+            let session = query(&request, "wsTicket")
+                .and_then(|t| state.ticket_session(&t, "media"))
+                .or_else(|| bearer(&request).and_then(|t| state.session(t)));
+            let Some(session) = session else {
+                return Ok(unauthorized());
+            };
+            if let Some(reply) = scope_reply(&session, "orchestration:read") {
+                return Ok(reply);
+            }
+            upgrade(state, session, request)
         }
         (_, p) if p.starts_with("/api/device-hub/") => {
             let session = query(&request, "wsTicket")

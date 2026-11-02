@@ -9,6 +9,7 @@ const T: Duration = Duration::from_secs(10);
 
 #[test]
 fn preview_registry_events_and_refusal_of_the_server_runtime() {
+    std::env::set_var("O3_BROWSER_BINARY", "/nonexistent/o3-test-browser");
     let server = start(|_| {});
     let c = server.connect();
     let mut events = subscribe(server.connect(), "subscribePreviewEvents", json!({}));
@@ -123,13 +124,13 @@ fn preview_registry_events_and_refusal_of_the_server_runtime() {
         json!({"threadId":"t1","runtime":"server"}),
     );
     assert_eq!(
-        server_runtime["exit"]["cause"][0]["error"]["_tag"], "RpcNotImplemented",
+        server_runtime["exit"]["cause"][0]["error"]["_tag"], "ServerBrowserLaunchError",
         "no server browser"
     );
     assert_eq!(
         c.rpc("server.getConfig", json!({})).unwrap()["environment"]["capabilities"]
             .get("serverBrowser"),
-        None
+        Some(&json!(false))
     );
 
     c.rpc("preview.close", json!({"threadId":"t1","tabId":tab}))

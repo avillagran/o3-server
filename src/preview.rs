@@ -1,10 +1,4 @@
-//! `preview.*`, `subscribePreviewEvents` and `subscribeDiscoveredLocalServers`.
-//!
-//! The preview manager is T3's registry of browser tabs: it keeps session snapshots and publishes
-//! `opened/navigated/resized/failed/closed` events that a *client* (the desktop browser pane) turns
-//! into real navigation and reports back with `preview.reportStatus`. The server never renders a
-//! page, so `runtime: "server"` (headless Chromium streamed by the server) is refused and
-//! `capabilities.serverBrowser` stays off. State is in memory and empty until a client opens a tab.
+//! Preview session registry and lazy system-browser runtime.
 use crate::{
     p2::{invalid, str_field, Reply},
     store::{iso, now_ms, random_id, State},
@@ -48,6 +42,7 @@ struct Inner {
 #[derive(Default)]
 pub struct Manager {
     inner: Mutex<Inner>,
+    pub(crate) browser: crate::server_browser::Browsers,
 }
 
 impl Inner {
@@ -136,13 +131,96 @@ const ZOOMS: [f64; 17] = [
     0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0,
 ];
 
-pub fn call(s: &State, tag: &str, p: &Value) -> Reply {
+pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
     if tag == "preview.clearProfile" {
-        // Profiles belong to the server browser, which does not exist here: nothing to delete.
-        str_field(p, "profileId")?;
+        let profile = str_field(p, "profileId")?;
+        s.streams.p2.preview.browser.clear(&s.dir, profile).await?;
+        if profile != "incognito" {
+            let mut g = s.streams.p2.preview.inner.lock().unwrap();
+            let keys: Vec<_> = g
+                .sessions
+                .iter()
+                .filter(|(_, v)| {
+                    v["runtime"] == "server"
+                        && v["profileId"].as_str().unwrap_or("default") == profile
+                })
+                .map(|(k, _)| k.clone())
+                .collect();
+            for key in keys {
+                g.sessions.remove(&key);
+                g.publish(json!({"type":"closed","threadId":key.0,"tabId":key.1,"createdAt":iso(now_ms())}));
+            }
+        }
+
         return Ok(Value::Null);
     }
     let m = &s.streams.p2.preview;
+    if tag == "preview.close" {
+        m.browser
+            .close(str_field(p, "threadId")?, p["tabId"].as_str())
+            .await;
+    }
+    let server_tab = {
+        let g = m.inner.lock().unwrap();
+        g.sessions
+            .get(&(
+                p["threadId"].as_str().unwrap_or("").into(),
+                p["tabId"].as_str().unwrap_or("").into(),
+            ))
+            .is_some_and(|v| v["runtime"] == "server")
+    };
+    if server_tab {
+        let thread = str_field(p, "threadId")?;
+        let tab = str_field(p, "tabId")?;
+        match tag {
+            "preview.navigate" => {
+                m.browser
+                    .command(
+                        thread,
+                        tab,
+                        "Page.navigate",
+                        json!({"url":normalize_url(str_field(p,"url")?)?}),
+                    )
+                    .await?;
+            }
+            "preview.refresh" => {
+                m.browser
+                    .command(thread, tab, "Page.reload", json!({}))
+                    .await?;
+            }
+            "preview.resize" => {
+                if !viewport_ok(&p["viewport"]) {
+                    return Err(invalid("viewport is invalid"));
+                }
+                m.browser.command(thread,tab,"Emulation.setDeviceMetricsOverride",json!({"width":p["viewport"]["width"].as_u64().unwrap_or(1280),"height":p["viewport"]["height"].as_u64().unwrap_or(800),"deviceScaleFactor":1,"mobile":false})).await?;
+            }
+            _ => {}
+        }
+    }
+    // Reserve the ID before launching without holding the synchronous registry lock.
+    let server_id = if tag == "preview.open" && p["runtime"] == "server" {
+        if p["viewport"].is_object() && !viewport_ok(&p["viewport"]) {
+            return Err(invalid("viewport is invalid"));
+        }
+        let url = p["url"].as_str().map(normalize_url).transpose()?;
+        let tab = {
+            let mut g = m.inner.lock().unwrap();
+            g.next_tab += 1;
+            format!("tab_{}", radix36(g.next_tab))
+        };
+        m.browser
+            .open(
+                &s.dir,
+                str_field(p, "threadId")?,
+                &tab,
+                p["profileId"].as_str().unwrap_or("default"),
+                url.as_deref(),
+            )
+            .await?;
+        Some(tab)
+    } else {
+        None
+    };
     let mut g = m.inner.lock().unwrap();
     let thread = str_field(p, "threadId")?.to_owned();
     let at = iso(now_ms());
@@ -159,11 +237,6 @@ pub fn call(s: &State, tag: &str, p: &Value) -> Reply {
             return Ok(json!({"sessions":sessions,"serverEpoch":epoch,"revision":g.revision}));
         }
         "preview.open" => {
-            if p["runtime"] == "server" {
-                return Err(
-                    json!({"_tag":"RpcNotImplemented","message":"This server has no server browser (capabilities.serverBrowser is off); open the preview with runtime \"desktop\"."}),
-                );
-            }
             if p["viewport"].is_object() && !viewport_ok(&p["viewport"]) {
                 return Err(invalid("viewport is invalid"));
             }
@@ -174,8 +247,10 @@ pub fn call(s: &State, tag: &str, p: &Value) -> Reply {
             if g.sessions.len() >= MAX_SESSIONS {
                 return Err(invalid("too many open preview sessions"));
             }
-            g.next_tab += 1;
-            let tab = format!("tab_{}", radix36(g.next_tab));
+            let tab = server_id.unwrap_or_else(|| {
+                g.next_tab += 1;
+                format!("tab_{}", radix36(g.next_tab))
+            });
             let mut snap = json!({"threadId":thread,"tabId":tab,"navStatus":nav,"canGoBack":false,"canGoForward":false,
                 "viewport":if p["viewport"].is_object(){p["viewport"].clone()}else{json!({"_tag":"fill"})},"updatedAt":at});
             for k in ["profileId", "runtime", "reveal"] {
@@ -575,4 +650,8 @@ fn scan_servers(configured: &[String]) -> Vec<Value> {
     }
     out.sort_by_key(|s| s["port"].as_u64());
     out
+}
+
+pub async fn shutdown(s: &State) {
+    s.streams.p2.preview.browser.shutdown().await;
 }
