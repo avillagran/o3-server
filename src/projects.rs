@@ -147,8 +147,14 @@ pub async fn repository_identity(root: &str) -> Value {
         return Value::Null;
     };
     let normalized = if let Ok(u) = url::Url::parse(&url) {
-        u.host_str()
-            .map(|host| format!("{}/{}", host, u.path().trim_matches('/')))
+        u.host_str().map(|host| {
+            // Explicit default ports normalize to the existing authority; distinct
+            // effective endpoints must never share repository identity.
+            let authority = u
+                .port()
+                .map_or_else(|| host.to_owned(), |p| format!("{host}:{p}"));
+            format!("{authority}/{}", u.path().trim_matches('/'))
+        })
     } else {
         url.split_once(':').map(|(host, path)| {
             format!(
@@ -167,7 +173,7 @@ pub async fn repository_identity(root: &str) -> Value {
         identity["displayName"] = json!(repo);
         identity["owner"] = json!(repo.split('/').next());
         identity["name"] = json!(repo.rsplit('/').next());
-        if let Some(provider) = match host {
+        if let Some(provider) = match host.split(':').next().unwrap_or(host) {
             "github.com" => Some("github"),
             "gitlab.com" => Some("gitlab"),
             _ => None,

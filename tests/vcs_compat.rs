@@ -755,7 +755,7 @@ fn z_status_reports_host_and_pull_request_and_local_only_skips_host() {
             "remote",
             "add",
             "origin",
-            "https://github.com/owner/repo.git",
+            "https://github.com:8443/owner/repo.git",
         ],
     );
     // Scope the fake host response to this workspace; replacing the shared gh
@@ -779,6 +779,31 @@ fn z_status_reports_host_and_pull_request_and_local_only_skips_host() {
         .rpc("vcs.refreshStatus", json!({"cwd":root}))
         .unwrap();
     assert_eq!(stale["pr"]["number"], 7);
+    git(
+        &root,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "https://github.com:9443/owner/repo.git",
+        ],
+    );
+    assert!(
+        e.conn
+            .rpc("vcs.refreshStatus", json!({"cwd":root}))
+            .unwrap()["pr"]
+            .is_null(),
+        "port changes must invalidate fallback"
+    );
+    git(
+        &root,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "https://github.com:8443/owner/repo.git",
+        ],
+    );
     git(&root, &["switch", "-c", "other"]);
     assert!(e
         .conn
@@ -806,7 +831,7 @@ fn z_status_reports_host_and_pull_request_and_local_only_skips_host() {
             "remote",
             "set-url",
             "origin",
-            "https://github.com/owner/repo.git",
+            "https://github.com:8443/owner/repo.git",
         ],
     );
     std::fs::remove_file(root.join(".test-gh-fail")).unwrap();
