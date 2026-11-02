@@ -27,6 +27,7 @@ struct Session {
     native: String,
     cwd: PathBuf,
     options: Value,
+    browser: bool,
     idle_since: tokio::time::Instant,
 }
 impl ClaudeProvider {
@@ -114,6 +115,12 @@ impl ClaudeProvider {
         if let Some(effort) = effort {
             cmd.arg("--effort").arg(effort);
         }
+        if input.model_selection["o3BrowserMcp"].is_object() {
+            let mut config = input.model_selection["o3BrowserMcp"].clone();
+            config["type"] = json!("http");
+            cmd.arg("--mcp-config")
+                .arg(json!({"mcpServers":{"t3-code":config}}).to_string());
+        }
         if input.thread_id == "discovery" || input.runtime_mode == "text-only" {
             settings["disableAllHooks"] = json!(true);
             cmd.args([
@@ -155,6 +162,7 @@ impl ClaudeProvider {
             native: input.native_session_id.clone().unwrap_or_default(),
             cwd: input.cwd.clone(),
             options: input.model_selection["options"].clone(),
+            browser: input.model_selection["o3BrowserMcp"].is_object(),
             idle_since: tokio::time::Instant::now(),
         };
         s.send(json!({"type":"control_request","request_id":"initialize","request":{"subtype":"initialize"}})).await?;
@@ -214,7 +222,9 @@ impl ClaudeProvider {
             if input.native_session_id.is_none() && !s.native.is_empty() {
                 input.native_session_id = Some(s.native.clone());
             }
-            if s.cwd == input.cwd
+            if !s.browser
+                && !input.model_selection["o3BrowserMcp"].is_object()
+                && s.cwd == input.cwd
                 && s.options == input.model_selection["options"]
                 && s.child.try_wait().map_err(|e| e.to_string())?.is_none()
             {
@@ -761,6 +771,7 @@ mod tests {
             native: "fixture".into(),
             cwd: PathBuf::new(),
             options: Value::Null,
+            browser: false,
             idle_since: stamp,
         };
         provider
@@ -801,6 +812,7 @@ mod tests {
             native: "conversation".into(),
             cwd: PathBuf::new(),
             options: Value::Null,
+            browser: false,
             idle_since: tokio::time::Instant::now(),
         };
         provider
@@ -903,6 +915,7 @@ mod tests {
             native: String::new(),
             cwd: PathBuf::new(),
             options: Value::Null,
+            browser: false,
             idle_since: tokio::time::Instant::now(),
         };
         assert!(s.frame().await.unwrap_err().contains("invalid JSON"));
@@ -922,6 +935,7 @@ mod tests {
             native: String::new(),
             cwd: PathBuf::new(),
             options: Value::Null,
+            browser: false,
             idle_since: tokio::time::Instant::now(),
         };
         assert!(s.frame().await.unwrap_err().contains("exceeds"));

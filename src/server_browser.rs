@@ -14,12 +14,21 @@ use tokio::{
 };
 
 const LIFETIME: Duration = Duration::from_secs(1800);
-type Request = (String, Value, oneshot::Sender<Result<Value, String>>);
+type Request = (
+    String,
+    Value,
+    Option<String>,
+    oneshot::Sender<Result<Value, String>>,
+);
 #[derive(Default)]
 pub struct Browsers {
     tabs: Mutex<BTreeMap<(String, String), Tab>>,
+    viewers: std::sync::Mutex<std::collections::BTreeSet<(String, String)>>,
 }
+#[derive(Clone)]
 struct Tab {
+    session: Option<String>,
+    target: Option<String>,
     profile: String,
     tx: mpsc::Sender<Request>,
     done: tokio::sync::watch::Receiver<bool>,
@@ -60,9 +69,17 @@ fn error(message: String) -> Value {
     json!({"_tag":"ServerBrowserLaunchError","message":message})
 }
 async fn request(tx: &mpsc::Sender<Request>, method: &str, params: Value) -> Result<Value, String> {
+    request_in(tx, method, params, None).await
+}
+async fn request_in(
+    tx: &mpsc::Sender<Request>,
+    method: &str,
+    params: Value,
+    session: Option<String>,
+) -> Result<Value, String> {
     let (reply, rx) = oneshot::channel();
     tokio::time::timeout(Duration::from_secs(6), async {
-        tx.send((method.into(), params, reply))
+        tx.send((method.into(), params, session, reply))
             .await
             .map_err(|_| "Browser session ended")?;
         rx.await.map_err(|_| "Browser session ended")?
@@ -81,7 +98,7 @@ impl Drop for Group {
 async fn launch(root: &Path, profile: &str) -> Result<Tab, String> {
     use std::os::fd::AsRawFd;
     let binary=executable().ok_or("Install a system Chromium browser, or set O3_BROWSER_BINARY to its executable; o3 does not download browsers")?;
-    let ephemeral = profile == "incognito";
+    let ephemeral = profile == "incognito" || profile.starts_with("agent:");
     let dir = directory(
         root,
         &if ephemeral {
@@ -91,6 +108,9 @@ async fn launch(root: &Path, profile: &str) -> Result<Tab, String> {
         },
     )?;
     std::fs::create_dir_all(&dir).map_err(|_| "Cannot create browser profile")?;
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
+        .map_err(|_| "Cannot restrict browser profile permissions")?;
     let (parent, child_pipe) =
         std::os::unix::net::UnixStream::pair().map_err(|_| "Cannot create CDP pipe")?;
     parent
@@ -149,10 +169,9 @@ async fn launch(root: &Path, profile: &str) -> Result<Tab, String> {
         let deadline = tokio::time::sleep(LIFETIME);
         tokio::pin!(deadline);
         let mut id = 0u64;
-        let mut session: Option<String> = None;
         loop {
             let next = tokio::select! {r=rx.recv()=>r,_=stop_signal.notified()=>None,_=&mut deadline=>None,_=child.wait()=>None};
-            let Some((method, params, reply)) = next else {
+            let Some((method, params, session, reply)) = next else {
                 break;
             };
             id += 1;
@@ -182,9 +201,6 @@ async fn launch(root: &Path, profile: &str) -> Result<Tab, String> {
                     let v: Value =
                         serde_json::from_slice(&buf).map_err(|_| "Invalid CDP output")?;
                     if v["id"] == id {
-                        if method == "Target.attachToTarget" {
-                            session = v["result"]["sessionId"].as_str().map(str::to_owned);
-                        }
                         return if v.get("error").is_some() {
                             Err("Browser rejected CDP command".into())
                         } else {
@@ -216,6 +232,8 @@ async fn launch(root: &Path, profile: &str) -> Result<Tab, String> {
         let _ = done_tx.send(true);
     });
     Ok(Tab {
+        session: None,
+        target: None,
         profile: profile.into(),
         tx,
         done,
@@ -223,7 +241,31 @@ async fn launch(root: &Path, profile: &str) -> Result<Tab, String> {
     })
 }
 
+struct Viewer<'a> {
+    browser: &'a Browsers,
+    key: (String, String),
+}
+impl Drop for Viewer<'_> {
+    fn drop(&mut self) {
+        self.browser.viewers.lock().unwrap().remove(&self.key);
+    }
+}
 impl Browsers {
+    pub fn human_controls(&self, thread: &str, tab: &str) -> bool {
+        self.viewers
+            .lock()
+            .unwrap()
+            .contains(&(thread.into(), tab.into()))
+    }
+    fn claim_viewer(&self, thread: &str, tab: &str) -> Option<Viewer<'_>> {
+        let key = (thread.into(), tab.into());
+        if self.viewers.lock().unwrap().insert(key.clone()) {
+            Some(Viewer { browser: self, key })
+        } else {
+            None
+        }
+    }
+
     pub async fn clear(&self, root: &Path, profile: &str) -> Result<(), Value> {
         if profile == "incognito" {
             return Ok(());
@@ -267,7 +309,13 @@ impl Browsers {
             .collect();
         for key in keys {
             if let Some(tab) = tabs.remove(&key) {
-                stop(tab).await;
+                if let Some(target) = &tab.target {
+                    let _ =
+                        request(&tab.tx, "Target.closeTarget", json!({"targetId":target})).await;
+                }
+                if !tabs.values().any(|other| other.tx.same_channel(&tab.tx)) {
+                    stop(tab).await;
+                }
             }
         }
     }
@@ -285,12 +333,14 @@ impl Browsers {
                 "Close a server browser session before opening another".into(),
             ));
         }
-        if tabs.values().any(|t| t.profile == profile) {
-            return Err(error(
-                "Profile already in use; close its existing browser session first".into(),
-            ));
-        }
-        let browser = launch(root, profile).await.map_err(error)?;
+        let mut browser = if let Some(existing) = tabs
+            .values()
+            .find(|t| t.profile == profile && !*t.done.borrow())
+        {
+            existing.clone()
+        } else {
+            launch(root, profile).await.map_err(error)?
+        };
         // A browser-level request creates a page. The actor routes page commands to
         // the attached target using flattened sessionId.
         let target = request(
@@ -300,16 +350,46 @@ impl Browsers {
         )
         .await
         .map_err(error)?;
-        request(
+        let attached = request(
             &browser.tx,
             "Target.attachToTarget",
             json!({"targetId":target["targetId"],"flatten":true}),
         )
         .await
         .map_err(error)?;
-        request(&browser.tx, "Page.enable", json!({}))
-            .await
-            .map_err(error)?;
+        browser.session = attached["sessionId"].as_str().map(str::to_owned);
+        browser.target = target["targetId"].as_str().map(str::to_owned);
+        request_in(
+            &browser.tx,
+            "Page.enable",
+            json!({}),
+            browser.session.clone(),
+        )
+        .await
+        .map_err(error)?;
+        request_in(
+            &browser.tx,
+            "Network.enable",
+            json!({}),
+            browser.session.clone(),
+        )
+        .await
+        .map_err(error)?;
+        request_in(
+            &browser.tx,
+            "Network.setBlockedURLs",
+            json!({"urls":["file://*","ftp://*"]}),
+            browser.session.clone(),
+        )
+        .await
+        .map_err(error)?;
+        request(
+            &browser.tx,
+            "Browser.setDownloadBehavior",
+            json!({"behavior":"deny"}),
+        )
+        .await
+        .map_err(error)?;
         tabs.insert((thread.into(), tab.into()), browser);
         Ok(())
     }
@@ -320,15 +400,18 @@ impl Browsers {
         method: &str,
         params: Value,
     ) -> Result<Value, Value> {
-        let tx = self
+        let browser = self
             .tabs
             .lock()
             .await
             .get(&(thread.into(), tab.into()))
-            .map(|t| t.tx.clone())
+            .cloned()
             .ok_or_else(|| error("Browser tab is closed".into()))?;
-        request(&tx, method, params).await.map_err(error)
+        request_in(&browser.tx, method, params, browser.session)
+            .await
+            .map_err(error)
     }
+
     pub async fn screenshot(&self, thread: &str, tab: &str) -> Result<Vec<u8>, Value> {
         let value = self
             .command(
@@ -376,6 +459,13 @@ pub async fn stream<S>(
         && session["scopes"]
             .as_array()
             .is_some_and(|v| v.iter().any(|s| s == "preview:operate"));
+    let viewer = if operate {
+        state.streams.p2.preview.browser.claim_viewer(&thread, &tab)
+    } else {
+        None
+    };
+    let operate = viewer.is_some();
+    let _viewer = viewer;
     let hello = json!({"type":"control","canOperate":operate,"controller":if operate{"you"}else{"unclaimed"},"generation":1,"dialog":null});
     if socket
         .send(Message::Text(hello.to_string().into()))
@@ -398,6 +488,7 @@ pub async fn stream<S>(
                 let Ok(frame)=state.streams.p2.preview.browser.screenshot(&thread,&tab).await else{break;};
                 if !matches!(tokio::time::timeout(Duration::from_secs(3),socket.send(Message::Binary(frame.into()))).await,Ok(Ok(()))){break;}
                 waiting=Some(std::time::Instant::now());
+                crate::preview::sync_navigation(&state,&thread,&tab).await;
             }
             incoming=socket.next()=>{
                 let Some(Ok(Message::Text(raw)))=incoming else{break;};
@@ -408,6 +499,12 @@ pub async fn stream<S>(
                 let (method,params)=match v["type"].as_str(){
                     Some("text")=>("Input.insertText",json!({"text":v["text"].as_str().unwrap_or("").chars().take(10000).collect::<String>()})),
                     Some("navigate")=>{let Ok(url)=crate::preview::normalize_url(v["url"].as_str().unwrap_or(""))else{continue;};("Page.navigate",json!({"url":url}))},
+                    Some("back"|"forward")=>{
+                        let Ok(h)=state.streams.p2.preview.browser.command(&thread,&tab,"Page.getNavigationHistory",json!({})).await else {continue;};
+                        let at=h["currentIndex"].as_i64().unwrap_or(0)+if v["type"]=="back" {-1}else{1};
+                        let Some(entry)=usize::try_from(at).ok().and_then(|i|h["entries"].get(i)) else {continue;};
+                        ("Page.navigateToHistoryEntry",json!({"entryId":entry["id"]}))
+                    },
                     Some("reload")=>("Page.reload",json!({"ignoreCache":v["ignoreCache"]==true})),
                     Some("resize")=>("Emulation.setDeviceMetricsOverride",json!({"width":v["width"].as_u64().unwrap_or(1280).clamp(240,3840),"height":v["height"].as_u64().unwrap_or(800).clamp(240,2160),"deviceScaleFactor":1,"mobile":false})),
                     Some("key")=>("Input.dispatchKeyEvent",json!({"type":if v["action"]=="up"{"keyUp"}else{"keyDown"},"key":v["key"],"code":v["code"],"text":v["text"].as_str().unwrap_or("")})),

@@ -97,6 +97,38 @@ fn fixture_browser_lifecycle_and_profile_clear() {
         let request=format!("ws://{address}/api/preview-stream/ws?threadId=browser-thread&tabId={tab}").into_client_request().unwrap();
         assert!(tokio_tungstenite::client_async(request,tcp).await.is_err(),"anonymous viewers refused");
     });
+    let second = preview::open(
+        &c,
+        "browser-thread",
+        &PreviewOpen {
+            runtime: Some("server".into()),
+            profile_id: Some("default".into()),
+            url: Some("http://localhost:1234/second".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        std::fs::read_dir(server.dir.join("browser-profiles"))
+            .unwrap()
+            .count(),
+        1,
+        "tabs share a persistent context"
+    );
+    preview::close(&c, "browser-thread", Some(tab)).unwrap();
+    assert_eq!(
+        unsafe { libc::kill(pid, 0) },
+        0,
+        "closing one tab keeps its context alive"
+    );
+    preview::navigate(
+        &c,
+        "browser-thread",
+        second["tabId"].as_str().unwrap(),
+        "http://localhost:1234/third",
+        None,
+    )
+    .unwrap();
     preview::clear_profile(&c, "default").unwrap();
     assert!(!path.exists());
     assert_eq!(

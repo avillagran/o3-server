@@ -131,7 +131,7 @@ pub(crate) fn start(
     let (cancel, cancellation) = watch::channel(false);
     s.active.lock().unwrap().insert(rid.clone(), control);
     tokio::task::spawn(async move {
-        let input = {
+        let mut input = {
             let db = s.db.lock().unwrap();
             let t = crate::events::get(&db, "thread", &tid).unwrap_or_default();
             let r = crate::events::get(&db, "runs", &rid).unwrap_or_default();
@@ -191,6 +191,18 @@ pub(crate) fn start(
                 },
             }
         };
+        // Internal config is issued here, never accepted from persisted model options.
+        if let Some(selection) = input.model_selection.as_object_mut() {
+            selection.remove("o3BrowserMcp");
+        }
+        let broker = if input.runtime_mode != "text-only" {
+            crate::agent_browser::Broker::start(s.clone(), &tid).await
+        } else {
+            None
+        };
+        if let Some(broker) = &broker {
+            input.model_selection["o3BrowserMcp"] = broker.config.clone();
+        }
         let checkpoint_cwd = input.cwd.clone();
         let checkpoint_state = s.clone();
         let ct = tid.clone();
@@ -316,6 +328,9 @@ pub(crate) fn start(
         }
         let _ = cancel.send(true);
         tokio::select! {r=&mut task=>{match r {Ok(Ok(()))=>finished=true,Ok(Err(e))=>failure=Some(e),Err(e)=>failure=Some(e.to_string())}},_=tokio::time::sleep(std::time::Duration::from_secs(2))=>{task.abort();let _=task.await;}}
+        if let Some(broker) = &broker {
+            broker.close().await;
+        }
         if !checkpoint_finished {
             let cs = s.clone();
             let ct = tid.clone();
@@ -1027,7 +1042,11 @@ impl ConfiguredProviders {
                 continue;
             }
             let driver = entry["driver"].as_str().unwrap_or("");
-            let name = if driver == "codex" { "codex" } else { "claude" };
+            let name = if driver == "claudeAgent" {
+                "claude"
+            } else {
+                driver
+            };
             let binary = instance_binary(entry, name);
             let env = instance_environment(entry);
             let home = env
@@ -1135,10 +1154,8 @@ impl Provider for ConfiguredProviders {
         for (id, instance) in instances.iter() {
             result.retain(|p| p["instanceId"] != *id);
             let mut descriptor = instance.provider.as_ref().and_then(|p| p.config().into_iter().next()).unwrap_or_else(|| json!({"models":[],"slashCommands":[],"skills":[],"status":"disabled","installed":false}));
-            descriptor["installed"] = serde_json::json!(
-                instance.provider.is_some()
-                    && crate::executable::resolve(&instance.binary).is_some()
-            );
+            descriptor["installed"] =
+                serde_json::json!(crate::executable::resolve(&instance.binary).is_some());
             if descriptor["installed"] == false {
                 descriptor["status"] = serde_json::json!("disabled");
             }

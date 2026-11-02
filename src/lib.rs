@@ -93,3 +93,5 @@ mod webhook;
 mod external_update;
 
 mod server_browser;
+
+mod agent_browser;

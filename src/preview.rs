@@ -131,6 +131,57 @@ const ZOOMS: [f64; 17] = [
     0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0,
 ];
 
+/// Reconcile CDP's actual history with the client registry (also after viewer navigation).
+pub async fn sync_navigation(s: &State, thread: &str, tab: &str) {
+    let browser = &s.streams.p2.preview.browser;
+    let Ok(history) = browser
+        .command(thread, tab, "Page.getNavigationHistory", json!({}))
+        .await
+    else {
+        return;
+    };
+    let Some(index) = history["currentIndex"].as_u64() else {
+        return;
+    };
+    let Some(entries) = history["entries"].as_array() else {
+        return;
+    };
+    let Some(entry) = entries.get(index as usize) else {
+        return;
+    };
+    let Ok(page) = browser
+        .command(
+            thread,
+            tab,
+            "Runtime.evaluate",
+            json!({"expression":"document.readyState","returnByValue":true,"timeout":1000}),
+        )
+        .await
+    else {
+        return;
+    };
+    let mut inner = s.streams.p2.preview.inner.lock().unwrap();
+    let key = (thread.into(), tab.into());
+    let Some(mut snapshot) = inner.sessions.get(&key).cloned() else {
+        return;
+    };
+    let nav = json!({"_tag":if page["result"]["value"]=="loading" {"Loading"} else {"Success"},"url":entry["url"],"title":entry["title"]});
+    let back = index > 0;
+    let forward = (index as usize) + 1 < entries.len();
+    if snapshot["navStatus"] == nav
+        && snapshot["canGoBack"] == back
+        && snapshot["canGoForward"] == forward
+    {
+        return;
+    }
+    snapshot["navStatus"] = nav;
+    snapshot["canGoBack"] = json!(back);
+    snapshot["canGoForward"] = json!(forward);
+    snapshot["updatedAt"] = json!(iso(now_ms()));
+    inner.sessions.insert(key, snapshot.clone());
+    inner.publish(json!({"type":"navigated","threadId":thread,"tabId":tab,"createdAt":iso(now_ms()),"snapshot":snapshot}));
+}
+
 pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
     if tag == "preview.clearProfile" {
         let profile = str_field(p, "profileId")?;
@@ -155,6 +206,21 @@ pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
         return Ok(Value::Null);
     }
     let m = &s.streams.p2.preview;
+    if tag == "preview.list" {
+        let keys: Vec<_> = m
+            .inner
+            .lock()
+            .unwrap()
+            .sessions
+            .iter()
+            .filter(|((thread, _), v)| p["threadId"] == *thread && v["runtime"] == "server")
+            .map(|(key, _)| key.clone())
+            .collect();
+        for (thread, tab) in keys {
+            sync_navigation(s, &thread, &tab).await;
+        }
+    }
+
     if tag == "preview.close" {
         m.browser
             .close(str_field(p, "threadId")?, p["tabId"].as_str())
@@ -193,6 +259,45 @@ pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
                     return Err(invalid("viewport is invalid"));
                 }
                 m.browser.command(thread,tab,"Emulation.setDeviceMetricsOverride",json!({"width":p["viewport"]["width"].as_u64().unwrap_or(1280),"height":p["viewport"]["height"].as_u64().unwrap_or(800),"deviceScaleFactor":1,"mobile":false})).await?;
+            }
+            "preview.adjust" => {
+                if let Some(color) = p["colorScheme"].as_str() {
+                    if !matches!(color, "system" | "light" | "dark") {
+                        return Err(invalid("colorScheme is invalid"));
+                    }
+                    m.browser.command(thread,tab,"Emulation.setEmulatedMedia",json!({"features":if color=="system" {json!([])} else {json!([{"name":"prefers-color-scheme","value":color}])}})).await?;
+                }
+                if let Some(zoom) = p["zoomFactor"].as_f64() {
+                    if !ZOOMS.iter().any(|z| (*z - zoom).abs() < 1e-9) {
+                        return Err(invalid("zoomFactor is invalid"));
+                    }
+                    m.browser
+                        .command(
+                            thread,
+                            tab,
+                            "Emulation.setPageScaleFactor",
+                            json!({"pageScaleFactor":zoom}),
+                        )
+                        .await?;
+                }
+                match p["clear"].as_str() {
+                    Some("cookies") => {
+                        m.browser
+                            .command(thread, tab, "Network.clearBrowserCookies", json!({}))
+                            .await?;
+                    }
+                    Some("cache") => {
+                        m.browser
+                            .command(thread, tab, "Network.clearBrowserCache", json!({}))
+                            .await?;
+                    }
+                    _ => {}
+                }
+                if p["hardReload"] == true {
+                    m.browser
+                        .command(thread, tab, "Page.reload", json!({"ignoreCache":true}))
+                        .await?;
+                }
             }
             _ => {}
         }

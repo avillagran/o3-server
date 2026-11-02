@@ -295,6 +295,10 @@ impl CodexProvider {
         let content = crate::provider_input::content(&input, false)?;
         let c = self.connection().await?;
         let mut params = json!({"cwd":input.cwd,"model":input.model_selection["model"],"approvalPolicy":if input.runtime_mode=="full-access"{"never"}else{"on-request"},"sandbox":if input.runtime_mode=="full-access"{"danger-full-access"}else{"workspace-write"}});
+        // Explicitly clear the per-run server when browser access was withheld.
+        params["config"] = json!({"mcp_servers.t3-code":if input.model_selection["o3BrowserMcp"].is_object() {
+            json!({"url":input.model_selection["o3BrowserMcp"]["url"],"http_headers":input.model_selection["o3BrowserMcp"]["headers"]})
+        } else { json!({"enabled":false}) }});
         let response = if let Some(id) = input.model_selection["nativeForkSource"].as_str() {
             params["threadId"] = json!(id);
             c.call("thread/fork", params).await?
