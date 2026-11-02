@@ -21,7 +21,7 @@ fn touch(s: &State, id: &str, f: impl FnOnce(&mut Value)) {
     }
     s.notify();
 }
-pub fn start(
+pub async fn start(
     s: Arc<State>,
     p: Value,
     destination: PathBuf,
@@ -29,33 +29,30 @@ pub fn start(
 ) -> Result<Value, Value> {
     let id = p["projectId"].as_str().unwrap().to_owned();
     let (cancel, mut cancelled) = tokio::sync::watch::channel(false);
-    let mut jobs = s.streams.p2.clones.0.lock().unwrap();
-    if jobs.contains_key(&id) {
-        return Err(
-            json!({"_tag":"SourceControlRepositoryError","message":"Clone job already exists"}),
-        );
+    {
+        let mut jobs = s.streams.p2.clones.0.lock().unwrap();
+        if jobs.contains_key(&id) {
+            return Err(
+                json!({"_tag":"SourceControlRepositoryError","message":"Clone job already exists"}),
+            );
+        }
+        if jobs.len() >= 64 {
+            jobs.retain(|_, j| j.snapshot["phase"] == "running");
+        }
+        if jobs.len() >= 64 {
+            return Err(
+                json!({"_tag":"SourceControlRepositoryError","message":"Clone capacity reached"}),
+            );
+        }
+        let existed = destination.exists();
+        if !existed {
+            std::fs::create_dir(&destination).map_err(|_|json!({"_tag":"SourceControlRepositoryError","message":"Cannot create clone destination"}))?;
+        }
+
+        jobs.insert(id.clone(),Job{cancel,snapshot:json!({"projectId":id,"remoteUrl":remote,"destinationPath":destination,"repository":null,"phase":"running","stage":"connecting","percent":null,"detail":"Connecting to repository","error":null,"startedAt":iso(now_ms()),"endedAt":null,"sequence":0})});
     }
-    if jobs.len() >= 64 {
-        jobs.retain(|_, j| j.snapshot["phase"] == "running");
-    }
-    if jobs.len() >= 64 {
-        return Err(
-            json!({"_tag":"SourceControlRepositoryError","message":"Clone capacity reached"}),
-        );
-    }
-    // Reserve exclusively: cleanup owns exactly this newly created directory.
-    std::fs::create_dir(&destination).map_err(|_|json!({"_tag":"SourceControlRepositoryError","message":"Clone destination must not exist"}))?;
     let result = json!({"projectId":id,"cwd":destination,"remoteUrl":remote,"repository":null});
-    jobs.insert(id.clone(),Job{cancel,snapshot:json!({"projectId":id,"remoteUrl":remote,"destinationPath":destination,"repository":null,"phase":"running","stage":"connecting","percent":null,"detail":"Connecting to repository","error":null,"startedAt":iso(now_ms()),"endedAt":null,"sequence":0})});
-    drop(jobs);
     let command = json!({"type":"project.create","commandId":format!("project-clone:{id}"),"projectId":id,"title":p["title"],"workspaceRoot":destination,"createdAt":p["createdAt"],"scripts":[]});
-    if crate::events::mutate_project(&s, &command).is_err() {
-        s.streams.p2.clones.0.lock().unwrap().remove(&id);
-        let _ = std::fs::remove_dir(&destination);
-        return Err(
-            json!({"_tag":"SourceControlRepositoryError","message":"Cannot register clone project"}),
-        );
-    }
     s.notify();
     tokio::spawn(async move {
         let parent = destination.parent().unwrap().to_owned();
@@ -98,6 +95,9 @@ pub fn start(
             tokio::pin!(run);
             tokio::select! {_ = cancelled.changed()=>Err("cancelled"),out=&mut run=>match out{Ok(o) if o.ok()=>Ok(()),_=>Err("failed")}}
         };
+        let outcome = if outcome.is_ok() && crate::events::mutate_project(&s, &command).is_err() {
+            Err("failed")
+        } else { outcome };
         let cleanup_failed =
             outcome.is_err() && tokio::fs::remove_dir_all(&destination).await.is_err();
         touch(&s, &id, |v| {
@@ -117,8 +117,10 @@ pub fn start(
                 v["error"] = json!("Clone failed or exceeded its time/output budget");
             }
         });
-    });
-    Ok(result)
+        if outcome.is_ok() { Ok(result) } else {
+            Err(json!({"_tag":"SourceControlRepositoryError","message":if cleanup_failed {"Clone failed; destination requires cleanup"} else {"Clone failed or cancelled"}}))
+        }
+    }).await.map_err(|_|json!({"_tag":"SourceControlRepositoryError","message":"Clone worker failed"}))?
 }
 pub fn cancel(s: &State, id: &str) -> Value {
     let jobs = s.streams.p2.clones.0.lock().unwrap();

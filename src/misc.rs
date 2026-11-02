@@ -525,7 +525,7 @@ async fn clone_start(s: &std::sync::Arc<State>, p: &Value) -> Reply {
             ));
         }
     }
-    crate::clone_jobs::start(s.clone(), p.clone(), destination, remote)
+    crate::clone_jobs::start(s.clone(), p.clone(), destination, remote).await
 }
 
 // ---- older settled threads -----------------------------------------------------------------

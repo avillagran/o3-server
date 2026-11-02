@@ -207,7 +207,7 @@ fn admin_reads_project_helpers_and_unavailable_surfaces() {
     assert!(busy.contains("not empty"), "{busy}");
     let bad_dest = scratch.join("clones/bad");
     let missing = c.rpc("projectClone.start", json!({"projectId":"clone-3","title":"Bad","createdAt":"2026-01-01T00:00:00.000Z","remoteUrl":scratch.join("no-such-origin").to_str().unwrap(),"destinationPath":bad_dest}));
-    assert!(missing.is_ok());
+    assert!(missing.is_err());
     assert!(support::wait_for(Duration::from_secs(10), || !bad_dest.exists()));
     assert!(c.rpc("projectClone.start", json!({"projectId":"c4","title":"x","createdAt":"2026-01-01T00:00:00.000Z","remoteUrl":"--upload-pack=touch /tmp/x","destinationPath":scratch.join("clones/evil")})).is_err());
 
