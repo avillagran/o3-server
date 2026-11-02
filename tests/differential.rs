@@ -33,7 +33,38 @@ impl Drop for Server {
         let _ = self.child.wait();
     }
 }
+fn clean_old_profiles() {
+    let base = Path::new("/var/tmp/o3-build/tmp");
+    let Ok(entries) = std::fs::read_dir(base) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        let Some(rest) = ["concurrent-", "p1-", "differential-"]
+            .iter()
+            .find_map(|p| name.strip_prefix(p))
+        else {
+            continue;
+        };
+        let Some(pid) = rest
+            .split('-')
+            .next()
+            .and_then(|s| s.parse::<i32>().ok())
+            .filter(|p| *p > 0)
+        else {
+            continue;
+        };
+        if unsafe { libc::kill(pid, 0) } == -1
+            && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+            && entry.file_type().is_ok_and(|t| t.is_dir())
+        {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
 fn command(bin: &Path, home: &Path) -> Command {
+    clean_old_profiles();
     let mut c = Command::new("nice");
     // No inherited provider credentials, profile overrides, or service integration.
     let node_output = Command::new("node")
@@ -47,6 +78,18 @@ fn command(bin: &Path, home: &Path) -> Command {
         home.join("bin").display(),
         node.parent().unwrap().display()
     );
+    let parent = std::process::id();
+    unsafe {
+        c.pre_exec(move || {
+            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            if libc::getppid() != parent as i32 {
+                libc::_exit(1);
+            }
+            Ok(())
+        });
+    }
     c.env_clear()
         .env("PATH", path)
         .env("HOME", home.join("home"))
@@ -1991,4 +2034,60 @@ fn upstream_p2_webhook_reader() {
     eprintln!("signed webhook reference observations: {}", json!(views));
     assert_eq!(views[0], views[1]);
     std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+#[ignore = "internal parent-death fixture; called only by its regression test"]
+fn harness_parent_fixture() {
+    let Some(home) = std::env::var_os("O3_PARENT_FIXTURE") else {
+        return;
+    };
+    let home = PathBuf::from(home);
+    let mut child = command(Path::new("/bin/sleep"), &home)
+        .arg("60")
+        .spawn()
+        .unwrap();
+    std::fs::write(home.join("child.pid"), child.id().to_string()).unwrap();
+    let _ = child.wait();
+}
+
+#[test]
+fn killed_harness_does_not_orphan_server_child() {
+    let home =
+        PathBuf::from("/var/tmp/o3-build/tmp").join(format!("pdeath-{}", std::process::id()));
+    std::fs::create_dir_all(&home).unwrap();
+    let mut parent = Command::new(std::env::current_exe().unwrap())
+        .args(["--ignored", "--exact", "harness_parent_fixture"])
+        .env("O3_PARENT_FIXTURE", &home)
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !home.join("child.pid").exists() {
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let pid: i32 = std::fs::read_to_string(home.join("child.pid"))
+        .unwrap()
+        .parse()
+        .unwrap();
+    parent.kill().unwrap();
+    parent.wait().unwrap();
+    let stopped = || {
+        std::fs::read_to_string(format!("/proc/{pid}/stat")).map_or(true, |s| {
+            s.rsplit(") ").next().unwrap_or("").starts_with('Z')
+        })
+    };
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !stopped() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let result = stopped();
+    if !result {
+        unsafe {
+            libc::kill(pid, libc::SIGKILL);
+        }
+    }
+    std::fs::remove_dir_all(home).unwrap();
+    assert!(result, "server child survived harness SIGKILL");
 }

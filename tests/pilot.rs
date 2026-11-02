@@ -27,7 +27,11 @@ fn alive(pid: u64) -> bool {
 }
 
 #[test]
+#[ignore = "requires O3_TEST_PILOT=1; starts a real user unit"]
 fn pilot_imports_read_only_starts_pairs_refuses_overwrite_and_stops() {
+    if std::env::var_os("O3_TEST_PILOT").as_deref() != Some(std::ffi::OsStr::new("1")) {
+        return;
+    }
     let root = scratch("run");
     let t3 = root.join("t3");
     std::fs::create_dir_all(t3.join("userdata")).unwrap();
