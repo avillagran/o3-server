@@ -113,6 +113,30 @@ pub fn authorize(session: &Value, tag: &str, p: &Value) -> Result<(), Value> {
     }
     Ok(())
 }
+fn dispatch_command_error(s: &Arc<State>, p: &Value, message: String) -> Value {
+    let mut detail = message.clone();
+    let mut cause = json!({"name":"Error","message":message});
+    if matches!(p["type"].as_str(), Some("run.interrupt" | "thread.stop")) {
+        let tid = p["threadId"].as_str().unwrap_or("");
+        if events::get(&s.db.lock().unwrap(), "thread", tid).is_err() {
+            let projection = format!("Failed to load orchestration projection for thread {tid}.");
+            cause = json!({"name":"OrchestratorProjectionError","message":projection});
+            detail = projection;
+            if p["type"] == "thread.stop" {
+                detail = format!("No orchestration projection exists for thread {tid}.");
+                cause["cause"] =
+                    json!({"name":"ProjectionStoreThreadNotFoundError","message":detail});
+            }
+        } else if p["type"] == "run.interrupt"
+            && (message.ends_with(" is not interruptible.")
+                || message.ends_with(" has no active attempt to interrupt."))
+        {
+            cause = json!({"name":"OrchestratorDispatchError","message":format!("Failed to dispatch orchestration command run.interrupt ({}).",p["commandId"].as_str().unwrap_or("")),"cause":message});
+        }
+    }
+    json!({"_tag":"OrchestrationV2DispatchCommandError","commandId":p["commandId"],"commandType":p["type"],"message":detail,"detail":detail,"cause":cause})
+}
+
 fn dispatch(s: &Arc<State>, tag: &str, p: &Value) -> Result<Value, Value> {
     match tag {
         "server.getConfig"=>settings::config(s),
@@ -541,28 +565,4 @@ mod isolation_tests {
         task.await.unwrap();
         std::fs::remove_dir_all(dir).unwrap();
     }
-}
-
-fn dispatch_command_error(s: &Arc<State>, p: &Value, message: String) -> Value {
-    let mut detail = message.clone();
-    let mut cause = json!({"name":"Error","message":message});
-    if matches!(p["type"].as_str(), Some("run.interrupt" | "thread.stop")) {
-        let tid = p["threadId"].as_str().unwrap_or("");
-        if events::get(&s.db.lock().unwrap(), "thread", tid).is_err() {
-            let projection = format!("Failed to load orchestration projection for thread {tid}.");
-            cause = json!({"name":"OrchestratorProjectionError","message":projection});
-            detail = projection;
-            if p["type"] == "thread.stop" {
-                detail = format!("No orchestration projection exists for thread {tid}.");
-                cause["cause"] =
-                    json!({"name":"ProjectionStoreThreadNotFoundError","message":detail});
-            }
-        } else if p["type"] == "run.interrupt"
-            && (message.ends_with(" is not interruptible.")
-                || message.ends_with(" has no active attempt to interrupt."))
-        {
-            cause = json!({"name":"OrchestratorDispatchError","message":format!("Failed to dispatch orchestration command run.interrupt ({}).",p["commandId"].as_str().unwrap_or("")),"cause":message});
-        }
-    }
-    json!({"_tag":"OrchestrationV2DispatchCommandError","commandId":p["commandId"],"commandType":p["type"],"message":detail,"detail":detail,"cause":cause})
 }

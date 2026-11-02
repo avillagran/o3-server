@@ -1411,3 +1411,109 @@ worst case above is workload evidence, not a universal latency guarantee. Migrat
 cursors and the completion marker retain their existing crash/resume semantics.
 Reproduce with `cargo test --no-default-features --lib large_profile_writer_windows
 -- --ignored --nocapture`, using the documented TMPDIR/CARGO_TARGET_DIR and nice/-j4.
+
+## Control follow-up against nightly 3991 (2026-11-02)
+
+This checkpoint supersedes the reference replay and disabled-continuation open
+items in the preceding audit. No compatibility rows are promoted.
+
+A. Replay remains a strict **per-server** invariant. Only for the reference, the
+harness ignores a property path ending `/lastSnoozeWakeAt` when its live value is
+null and replay omits it. Non-null values, the reverse direction, every other
+field and all o3 replay differences still fail. A regression tests these negative
+cases. `ignoredReferenceReplay` records the count separately from reader differences.
+The accepted-difference contract at the stream-reader checkpoint is **not widened**:
+this addresses reference self-inconsistency and changes no o3 behavior. A fresh
+literal search across all three client repositories found zero matches for
+`lastSnoozeWakeAt`. Replay metadata is excluded from cross-server comparison;
+sequence, event identity and replay contents retain their own strict assertions.
+
+B. **Open:** the run.interrupt implementation still rejects terminal-run background
+work, and does not dispatch interrupts to other provider-thread owners. Existing
+single-owner background tests do not establish either behavior against 3991.
+The gated Codex control peer in this checkpoint does not synthesize a multi-owner
+roster, so this remains an implementation and differential-evidence gap.
+
+C. **Open:** idle stop/queue hold, missing-ownership fallback and deleted-thread
+no-op are exercised against 3991. Idle orphan cancellation, delegated completion
+cohort disposal and terminal/other-owner native background targeting are still
+absent. These are concrete lifecycle gaps, not a demand for exhaustive scheduling.
+
+D. Disabled continuation is **binary-observed**: kill an acknowledged running Codex
+turn in an isolated profile with continueThreadsAfterServerUpdate=false, then restart
+that profile. 3991 records cancelled with only the original user-message turn item;
+no interrupt signals are invented. o3 now records cancelled, removes its artificial
+error and cancels execution projections transactionally. The test compares normalized
+real timeline/queue reader outputs strictly; the user's message must remain visible.
+It waits for the persisted running/startedAt boundary before killing the server,
+so native-peer receipt alone cannot stand in for durable execution acknowledgement.
+
+E. Raw Effect frames now compare exactly (apart from substituting the generated
+run id) for terminal, unknown, wrong-thread, missing-owner and deleted-thread
+run.interrupt failures. The missing-owner fixture removes durable ownership from a
+deferred run in each isolated database; it never changes a live profile. Missing
+threads are tested for both commands. thread.stop succeeds for missing ownership
+and deleted threads, so there is no rejection tag to equate in those cases.
+o3 now preserves OrchestratorDispatchError and OrchestratorProjectionError cause
+names, nested ProjectionStoreThreadNotFoundError and their messages/details.
+The concurrent report retains both servers' sanitized raw exits.
+
+F. Deterministic gated Codex tests exercise the four requested windows: native init
+before acknowledgement (including release after cancellation and no late turn/start),
+steer awaiting acknowledgement (working and no interrupt result until release),
+process death after request, and restart after request before terminal acknowledgement.
+o3's death/restart results are failed with delivery-unknown retained in SQLite and
+no synthetic interrupt result. The reference instead reports interrupted after
+death and cancelled after restart. Neither observed state proves native side effects
+stopped. The existing recovery boundary is preserved. These are bounded tests for
+these windows, not exhaustive scheduling or Claude transport proof. Pre-start
+cancellation now queues adapter control and Codex checks it before turn/start.
+
+G. The concrete lock measurement and byte-batch fix are recorded above. A single
+arbitrarily large record remains indivisible; no hard duration guarantee is claimed.
+
+### Follow-up execution ledger
+
+Concurrent differential runs in this follow-up (separate numbering from the older
+audit ledger):
+
+| Runs | Outcome |
+|---|---|
+| 1 | Pass after the narrow reference replay exception. |
+| 2–3 | Pass; raw rejection-frame discovery also exposed generic o3 cause names/messages. Raw frames were observed, not yet asserted. |
+| 4 | Pass after matching cause names/messages and asserting raw Effect exits, including deleted-thread no-op. |
+| 5 | Pass with missing ownership injected into each isolated deferred run. |
+| 6, 7, 8, 9, 10 | Each passed: zero reader/replay differences, one ignored reference null-to-absent replay property each. This intermediate series overlapped preparation of the receipt-before-control cleanup; the final series verifies the stable code. |
+
+The control-window differential was also run separately: attempts 1 and 2 failed
+on a missing targetRunId in the new steer fixture (corrected); attempt 3 completed
+the observation matrix and exposed disabled-continuation status divergence; attempt
+4 failed the newly strict disabled reader check because the test killed o3 before
+its peer acknowledgement had reached the durable run. The fixture now waits for
+running plus non-null startedAt. Attempts 5 and 6 passed, including strict disabled
+reader equality. Attempt 6 additionally asserts no late native turn after init
+cancellation. Final verification repeats these checks after moving pre-start
+control delivery after the committed receipt.
+
+B and C remain open for the concrete implementation gaps above. No live provider,
+Claude race matrix, side-effect cancellation proof or exhaustive schedule claim
+follows from these credential-free Codex peers. Compatibility row statuses stay
+unchanged pending independent audit.
+
+Final concurrent runs **11, 12, 13, 14 and 15 each passed** against pinned 3991 on
+the stable code: zero reader differences, zero remaining per-server replay
+differences and exactly one ignored reference null-to-absent property per run.
+`O3_CONCURRENT_REPORT` regenerated [concurrent-reader-report.json](concurrent-reader-report.json)
+on each run; it contains run 15 and both raw Effect exit sets. The final
+control-window attempt **7 passed** after receipt-before-control cleanup, including
+strict disabled reader equality and the no-late-turn init assertion. Sanitized
+observations are in [control-window-report.json](control-window-report.json).
+
+Final required checks: default `cargo test --no-fail-fast` passed **200**, with
+**0 failed / 14 ignored**; `--no-default-features --no-fail-fast` passed **198**,
+with **0 failed / 14 ignored**. The opt-in binary differentials and migration
+benchmark were executed separately as recorded above. Strict all-target Clippy
+passed in both configurations, as did `cargo fmt --check`, `tools/gen-compat` and
+`git diff --check`. The first Clippy attempt found the new RPC helper after a test
+module; moving the unchanged helper before dispatch resolved that lint. All Cargo
+builds/tests ran sequentially under nice with four jobs. No rows were promoted.

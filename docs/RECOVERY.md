@@ -109,21 +109,20 @@ as failed and marks uncertain outbox handoffs delivery-unknown. It does not inve
 a successful interrupt result. An interrupted-before-start run has no live native
 turn and closes immediately with that explicit result message.
 
-When restart continuation is disabled, resume currently records a server-local
-interrupted state with error "Restart continuation disabled in settings" and no
-user interrupt request/result pair. This does not assert native acknowledgement.
-The newer RestartContinuation.ts:201-205 returns immediately when the resolved
-project setting disables continuation, without emitting interrupt signals. It also
-skips continuation after a recorded user interrupt request, but its continuation selection is not evidence for o3's exact
-server-local status choice. This disabled-setting case remains unproven against
-3991 and is excluded from any native-success parity claim. Full deadline, process
-loss, initialization, steering and restart race matrices remain pending.
+When restart continuation is disabled, resume records `cancelled` without a
+user interrupt request/result pair or an artificial error. An isolated 3991 restart
+with an acknowledged running Codex turn proves the final status, turn items and
+normalized timeline/queue reader outputs. The newer RestartContinuation.ts setting
+check agrees, but is not the source of this terminal-state choice. Bounded Codex
+init/steer/death/restart windows are now tested; exhaustive scheduling and Claude
+transport coverage are not claimed.
 
 The legacy internal-field migration now has a durable completion marker and
-resumable windows of at most 128 rows per immediate write transaction. Already
+resumable windows of at most 128 rows and 2 MiB of input per immediate write
+transaction (a larger single row is processed alone). Already
 migrated profiles do not rescan historical events or reparse cached launch receipts.
-A single unusually large record can still exceed a desired time budget; this is a
-row-count bound, not a hard duration guarantee.
+A single unusually large record can still exceed a desired time budget; these are
+row/byte bounds, not a hard duration guarantee.
 
 ### Pinned restart and control-window follow-up (2026-11-02)
 

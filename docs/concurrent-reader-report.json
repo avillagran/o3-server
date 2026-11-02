@@ -1,5 +1,351 @@
 {
   "differences": [],
+  "dispatchFrames": [
+    {
+      "deleted-interrupt": {
+        "_tag": "Exit",
+        "exit": {
+          "_tag": "Failure",
+          "cause": [
+            {
+              "_tag": "Fail",
+              "error": {
+                "_tag": "OrchestrationV2DispatchCommandError",
+                "cause": {
+                  "cause": "Run unknown is not interruptible.",
+                  "message": "Failed to dispatch orchestration command run.interrupt (deleted-interrupt).",
+                  "name": "OrchestratorDispatchError"
+                },
+                "commandId": "deleted-interrupt",
+                "commandType": "run.interrupt",
+                "detail": "Run unknown is not interruptible.",
+                "message": "Run unknown is not interruptible."
+              }
+            }
+          ]
+        },
+        "requestId": "1"
+      },
+      "missing-owner": {
+        "_tag": "Exit",
+        "exit": {
+          "_tag": "Failure",
+          "cause": [
+            {
+              "_tag": "Fail",
+              "error": {
+                "_tag": "OrchestrationV2DispatchCommandError",
+                "cause": {
+                  "cause": "Run unowned-run is not interruptible.",
+                  "message": "Failed to dispatch orchestration command run.interrupt (missing-owner).",
+                  "name": "OrchestratorDispatchError"
+                },
+                "commandId": "missing-owner",
+                "commandType": "run.interrupt",
+                "detail": "Run unowned-run is not interruptible.",
+                "message": "Run unowned-run is not interruptible."
+              }
+            }
+          ]
+        },
+        "requestId": "1"
+      },
+      "missing-thread-run.interrupt": {
+        "_tag": "Exit",
+        "exit": {
+          "_tag": "Failure",
+          "cause": [
+            {
+              "_tag": "Fail",
+              "error": {
+                "_tag": "OrchestrationV2DispatchCommandError",
+                "cause": {
+                  "message": "Failed to load orchestration projection for thread missing.",
+                  "name": "OrchestratorProjectionError"
+                },
+                "commandId": "missing-run.interrupt",
+                "commandType": "run.interrupt",
+                "detail": "Failed to load orchestration projection for thread missing.",
+                "message": "Failed to load orchestration projection for thread missing."
+              }
+            }
+          ]
+        },
+        "requestId": "1"
+      },
+      "missing-thread-thread.stop": {
+        "_tag": "Exit",
+        "exit": {
+          "_tag": "Failure",
+          "cause": [
+            {
+              "_tag": "Fail",
+              "error": {
+                "_tag": "OrchestrationV2DispatchCommandError",
+                "cause": {
+                  "cause": {
+                    "message": "No orchestration projection exists for thread missing.",
+                    "name": "ProjectionStoreThreadNotFoundError"
+                  },
+                  "message": "Failed to load orchestration projection for thread missing.",
+                  "name": "OrchestratorProjectionError"
+                },
+                "commandId": "missing-thread.stop",
+                "commandType": "thread.stop",
+                "detail": "No orchestration projection exists for thread missing.",
+                "message": "No orchestration projection exists for thread missing."
+              }
+            }
+          ]
+        },
+        "requestId": "1"
+      },
+      "terminal": {
+        "_tag": "Exit",
+        "exit": {
+          "_tag": "Failure",
+          "cause": [
+            {
+              "_tag": "Fail",
+              "error": {
+                "_tag": "OrchestrationV2DispatchCommandError",
+                "cause": {
+                  "cause": "Run fixture-run is not interruptible.",
+                  "message": "Failed to dispatch orchestration command run.interrupt (reject-terminal).",
+                  "name": "OrchestratorDispatchError"
+                },
+                "commandId": "reject-terminal",
+                "commandType": "run.interrupt",
+                "detail": "Run fixture-run is not interruptible.",
+                "message": "Run fixture-run is not interruptible."
+              }
+            }
+          ]
+        },
+        "requestId": "1"
+      },
+      "unknown": {
+        "_tag": "Exit",
+        "exit": {
+          "_tag": "Failure",
+          "cause": [
+            {
+              "_tag": "Fail",
+              "error": {
+                "_tag": "OrchestrationV2DispatchCommandError",
+                "cause": {
+                  "cause": "Run unknown is not interruptible.",
+                  "message": "Failed to dispatch orchestration command run.interrupt (reject-unknown).",
+                  "name": "OrchestratorDispatchError"
+                },
+                "commandId": "reject-unknown",
+                "commandType": "run.interrupt",
+                "detail": "Run unknown is not interruptible.",
+                "message": "Run unknown is not interruptible."
+              }
+            }
+          ]
+        },
+        "requestId": "1"
+      },
+      "wrong-thread": {
+        "_tag": "Exit",
+        "exit": {
+          "_tag": "Failure",
+          "cause": [
+            {
+              "_tag": "Fail",
+              "error": {
+                "_tag": "OrchestrationV2DispatchCommandError",
+                "cause": {
+                  "cause": "Run fixture-run is not interruptible.",
+                  "message": "Failed to dispatch orchestration command run.interrupt (reject-wrong-thread).",
+                  "name": "OrchestratorDispatchError"
+                },
+                "commandId": "reject-wrong-thread",
+                "commandType": "run.interrupt",
+                "detail": "Run fixture-run is not interruptible.",
+                "message": "Run fixture-run is not interruptible."
+              }
+            }
+          ]
+        },
+        "requestId": "1"
+      }
+    },
+    {
+      "deleted-interrupt": {
+        "_tag": "Exit",
+        "exit": {
+          "_tag": "Failure",
+          "cause": [
+            {
+              "_tag": "Fail",
+              "error": {
+                "_tag": "OrchestrationV2DispatchCommandError",
+                "cause": {
+                  "cause": "Run unknown is not interruptible.",
+                  "message": "Failed to dispatch orchestration command run.interrupt (deleted-interrupt).",
+                  "name": "OrchestratorDispatchError"
+                },
+                "commandId": "deleted-interrupt",
+                "commandType": "run.interrupt",
+                "detail": "Run unknown is not interruptible.",
+                "message": "Run unknown is not interruptible."
+              }
+            }
+          ]
+        },
+        "requestId": "1"
+      },
+      "missing-owner": {
+        "_tag": "Exit",
+        "exit": {
+          "_tag": "Failure",
+          "cause": [
+            {
+              "_tag": "Fail",
+              "error": {
+                "_tag": "OrchestrationV2DispatchCommandError",
+                "cause": {
+                  "cause": "Run unowned-run is not interruptible.",
+                  "message": "Failed to dispatch orchestration command run.interrupt (missing-owner).",
+                  "name": "OrchestratorDispatchError"
+                },
+                "commandId": "missing-owner",
+                "commandType": "run.interrupt",
+                "detail": "Run unowned-run is not interruptible.",
+                "message": "Run unowned-run is not interruptible."
+              }
+            }
+          ]
+        },
+        "requestId": "1"
+      },
+      "missing-thread-run.interrupt": {
+        "_tag": "Exit",
+        "exit": {
+          "_tag": "Failure",
+          "cause": [
+            {
+              "_tag": "Fail",
+              "error": {
+                "_tag": "OrchestrationV2DispatchCommandError",
+                "cause": {
+                  "message": "Failed to load orchestration projection for thread missing.",
+                  "name": "OrchestratorProjectionError"
+                },
+                "commandId": "missing-run.interrupt",
+                "commandType": "run.interrupt",
+                "detail": "Failed to load orchestration projection for thread missing.",
+                "message": "Failed to load orchestration projection for thread missing."
+              }
+            }
+          ]
+        },
+        "requestId": "1"
+      },
+      "missing-thread-thread.stop": {
+        "_tag": "Exit",
+        "exit": {
+          "_tag": "Failure",
+          "cause": [
+            {
+              "_tag": "Fail",
+              "error": {
+                "_tag": "OrchestrationV2DispatchCommandError",
+                "cause": {
+                  "cause": {
+                    "message": "No orchestration projection exists for thread missing.",
+                    "name": "ProjectionStoreThreadNotFoundError"
+                  },
+                  "message": "Failed to load orchestration projection for thread missing.",
+                  "name": "OrchestratorProjectionError"
+                },
+                "commandId": "missing-thread.stop",
+                "commandType": "thread.stop",
+                "detail": "No orchestration projection exists for thread missing.",
+                "message": "No orchestration projection exists for thread missing."
+              }
+            }
+          ]
+        },
+        "requestId": "1"
+      },
+      "terminal": {
+        "_tag": "Exit",
+        "exit": {
+          "_tag": "Failure",
+          "cause": [
+            {
+              "_tag": "Fail",
+              "error": {
+                "_tag": "OrchestrationV2DispatchCommandError",
+                "cause": {
+                  "cause": "Run fixture-run is not interruptible.",
+                  "message": "Failed to dispatch orchestration command run.interrupt (reject-terminal).",
+                  "name": "OrchestratorDispatchError"
+                },
+                "commandId": "reject-terminal",
+                "commandType": "run.interrupt",
+                "detail": "Run fixture-run is not interruptible.",
+                "message": "Run fixture-run is not interruptible."
+              }
+            }
+          ]
+        },
+        "requestId": "1"
+      },
+      "unknown": {
+        "_tag": "Exit",
+        "exit": {
+          "_tag": "Failure",
+          "cause": [
+            {
+              "_tag": "Fail",
+              "error": {
+                "_tag": "OrchestrationV2DispatchCommandError",
+                "cause": {
+                  "cause": "Run unknown is not interruptible.",
+                  "message": "Failed to dispatch orchestration command run.interrupt (reject-unknown).",
+                  "name": "OrchestratorDispatchError"
+                },
+                "commandId": "reject-unknown",
+                "commandType": "run.interrupt",
+                "detail": "Run unknown is not interruptible.",
+                "message": "Run unknown is not interruptible."
+              }
+            }
+          ]
+        },
+        "requestId": "1"
+      },
+      "wrong-thread": {
+        "_tag": "Exit",
+        "exit": {
+          "_tag": "Failure",
+          "cause": [
+            {
+              "_tag": "Fail",
+              "error": {
+                "_tag": "OrchestrationV2DispatchCommandError",
+                "cause": {
+                  "cause": "Run fixture-run is not interruptible.",
+                  "message": "Failed to dispatch orchestration command run.interrupt (reject-wrong-thread).",
+                  "name": "OrchestratorDispatchError"
+                },
+                "commandId": "reject-wrong-thread",
+                "commandType": "run.interrupt",
+                "detail": "Run fixture-run is not interruptible.",
+                "message": "Run fixture-run is not interruptible."
+              }
+            }
+          ]
+        },
+        "requestId": "1"
+      }
+    }
+  ],
   "ignoredReferenceReplay": 1,
   "perServer": "two subscribers: snapshot before tail, strictly increasing sequences, unique run creation, four user messages exactly once, final timeline/queue readers equal fresh snapshot; nonempty sidebar reader",
   "provider": "deterministic gated stdio peer; no credentials or inference",

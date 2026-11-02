@@ -1116,7 +1116,7 @@
     "run.interrupt": {
       "status": "partial",
       "priority": "P0",
-      "note": "Request stays active until native terminal; gated Codex differential checks request-before-result. 15-second deadline and process failure retain delivery-unknown; restart does not continue stopped runs. Remaining: multi-owner background targeting, disabled-continuation parity and exhaustive failure races; no promotion."
+      "note": "Pinned 3991 raw Effect exits compared for terminal/unknown/wrong-thread/missing-owner/deleted-thread failures. Gated Codex init/steer/death/restart windows retain delivery-unknown without invented native success. Disabled continuation cancels after restart. Partial: terminal-run background work and other provider owners; independent audit pending."
     },
     "runtime-request.respond": {
       "status": "partial",
@@ -1256,7 +1256,7 @@
     "thread.stop": {
       "status": "partial",
       "priority": "P1",
-      "note": "Client thread_stop call exists. Live target routes through interrupt with holdQueue; idle stop intent and queue hold exercised against 3991. Remaining: other-owner background work, idle orphan cancellation, delegated completion cohorts; independent audit pending."
+      "note": "Live target routes through interrupt with holdQueue; pinned 3991 idle queue hold, missing-ownership fallback, deleted-thread no-op and missing-thread raw error frames tested. Partial: other-owner background work, idle orphan cancellation and delegated completion cohorts; independent audit pending."
     },
     "thread.title.regeneration.complete": {
       "status": "skip",
