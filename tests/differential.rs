@@ -592,16 +592,8 @@ fn reference_binary() -> PathBuf {
     std::env::var_os("T3_REFERENCE_BIN")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
-            let versions =
-                PathBuf::from(std::env::var_os("HOME").unwrap()).join(".t3/runtime/versions");
-            let mut bins: Vec<_> = std::fs::read_dir(versions)
-                .unwrap()
-                .flatten()
-                .map(|e| e.path().join("t3"))
-                .filter(|p| p.is_file())
-                .collect();
-            bins.sort();
-            bins.pop().expect("set T3_REFERENCE_BIN")
+            PathBuf::from(std::env::var_os("HOME").unwrap())
+                .join(".t3/runtime/versions/0.1.7-nightly.20261031.3991/t3")
         })
 }
 #[test]
@@ -1738,4 +1730,68 @@ fn upstream_control_windows() {
     )
     .unwrap();
     eprintln!("control report: {}", root.join("results.json").display());
+}
+
+/// Isolated P1 reads preserve search ordering and actual downloaded bytes, not
+/// scalar shapes. A difference is evidence to keep a row open, not an exemption.
+#[test]
+#[ignore = "isolated pinned 3991 P1 readers, no credentials or inference"]
+fn upstream_p1_readers() {
+    let root = PathBuf::from("/var/tmp/o3-build/tmp").join(format!(
+        "p1-{}-{}",
+        std::process::id(),
+        o3_server::store::random_id().unwrap()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let reference = reference_binary();
+    let version = cli_output(command(&reference, &root).arg("--version"));
+    assert!(String::from_utf8_lossy(&version.stdout).contains("0.1.7-nightly.20261031.3991"));
+    let mut views = vec![];
+    for (label, binary) in [
+        ("reference", reference.as_path()),
+        ("o3", Path::new(env!("CARGO_BIN_EXE_o3-server"))),
+    ] {
+        let home = root.join(label);
+        let server = start(binary, &home);
+        let c = connect(&server);
+        let workspace = home.join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::write(workspace.join("fixture.html"), b"<p>asset-proof</p>").unwrap();
+        c.rpc("projects.mutate", json!({"type":"project.create","commandId":"project","projectId":"p","title":"P1","workspaceRoot":workspace})).unwrap();
+        for (id, title) in [
+            ("substring", "A needle elsewhere"),
+            ("prefix", "Needle first"),
+            ("exact", "Needle"),
+            ("boundary", "A needle"),
+        ] {
+            c.rpc("orchestration.dispatchCommand", json!({"type":"thread.create","commandId":id,"threadId":id,"projectId":"p","title":title,"createdBy":"user","creationSource":"web","modelSelection":{"instanceId":"codex","model":"test"},"runtimeMode":"full-access","interactionMode":"default","branch":null,"worktreePath":null})).unwrap();
+            c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":format!("send-{id}"),"threadId":id,"messageId":format!("m-{id}"),"text":"unrelated message","createdBy":"user","creationSource":"web","attachments":[],"dispatchMode":{"type":"defer_start"}})).unwrap();
+        }
+        let mut searches = json!({});
+        for query in ["needle", "eedl", "a needle"] {
+            let found =
+                t3_protocol::api::orchestration::search_threads(&c, query, Some(20)).unwrap();
+            searches[query] = json!(found["matches"].as_array().unwrap().iter().map(|m| json!({"threadId":m["threadId"],"source":m["source"],"snippet":m["snippet"]})).collect::<Vec<_>>());
+        }
+        let upload = c
+            .upload_attachment(
+                "fixture.html",
+                "text/html",
+                18,
+                std::io::Cursor::new(b"<p>asset-proof</p>"),
+            )
+            .unwrap();
+        let asset = c.asset_bytes(json!({"_tag":"attachment","attachmentId":upload["id"],"fileName":"fixture.html","mimeType":"text/html"}), 1024).unwrap();
+        assert_eq!(asset.bytes, b"<p>asset-proof</p>");
+        views.push(json!({"searches":searches,"assetBytes":asset.bytes}));
+    }
+    let report = json!({"referenceVersion":"0.1.7-nightly.20261031.3991","reference":views[0],"o3":views[1],"equal":views[0]==views[1],"scope":"actual lib search_threads and asset_bytes readers on isolated server output; ordered title matches and uploaded attachment download only"});
+    std::fs::write(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/p1-reader-report.json"),
+        serde_json::to_vec_pretty(&report).unwrap(),
+    )
+    .unwrap();
+    eprintln!("P1 reader equality: {}", report["equal"]);
+    assert_eq!(views[0], views[1], "consumed P1 reader mismatch");
+    std::fs::remove_dir_all(root).unwrap();
 }

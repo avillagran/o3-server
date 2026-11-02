@@ -640,22 +640,21 @@ fn search_returns_supplemental_shell_fields_for_old_settled_threads() {
 }
 
 #[test]
-fn search_titles_participate_in_default_search_with_folded_substrings() {
+fn default_search_does_not_report_title_only_hits_as_messages() {
     let e = setup("title-search");
     e.project("p1", &e.dir("p"));
     e.thread("title", "p1");
     e.thread("body", "p1");
     e.message("body", "m1", "scheduler");
     e.conn.rpc("orchestration.dispatchCommand", json!({"type":"thread.metadata.update","commandId":"title-update","threadId":"title","title":"Scheduler Σίσυφος"})).unwrap();
-    for (query, titles_only) in [("scheduler", false), ("HEDUL", false), ("ΣΊΣΥΦΟΣ", true)] {
-        let r = e
-            .conn
-            .rpc(
-                "orchestration.searchThreads",
-                json!({"query":query,"titlesOnly":titles_only}),
-            )
-            .unwrap();
-        assert_eq!(r["matches"][0]["threadId"], "title", "{r}");
-        assert_eq!(r["threads"][0]["id"], "title");
+    for query in ["scheduler", "HEDUL"] {
+        let r = t3_protocol::api::orchestration::search_threads(&e.conn, query, None).unwrap();
+        assert_eq!(r["matches"].as_array().unwrap().len(), 1, "{r}");
+        assert_eq!(r["matches"][0]["threadId"], "body", "{r}");
+        assert!(r["matches"][0]["messageCreatedAt"].is_string(), "{r}");
     }
+    let r = t3_protocol::api::orchestration::SEARCH_THREADS
+        .call(&e.conn, &json!({"query":"ΣΊΣΥΦΟΣ","titlesOnly":true}), None)
+        .unwrap();
+    assert_eq!(r["matches"][0]["threadId"], "title", "{r}");
 }

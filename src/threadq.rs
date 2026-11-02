@@ -177,7 +177,7 @@ pub fn search_threads(s: &State, p: &Value) -> Reply {
             matches.push(json!({"threadId":tid,"projectId":thread["projectId"],"source":role,"snippet":snippet.chars().take(240).collect::<String>(),"messageCreatedAt":at,"quality":-rank,"hits":1,"messageId":mid}));
         }
     }
-    {
+    if p["titlesOnly"] == true {
         let needle = fold_search(query);
         let mut q = db
             .prepare("SELECT thread_id, body FROM records WHERE kind='thread' AND length(body)<=65536 ORDER BY rowid DESC LIMIT 4096")
