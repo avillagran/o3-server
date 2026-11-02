@@ -143,3 +143,17 @@ fn generated_titles_settings_regeneration_and_rename_race_follow_reader_contract
     }
     assert!(busy && done);
 }
+
+#[test]
+fn automatic_title_with_codex_preference_uses_fallback() {
+    let seen = Arc::new(Mutex::new(vec![]));
+    let s = support::start(|s| *s.provider.lock().unwrap() = Some(Arc::new(Titles(seen.clone()))));
+    let c = s.connect();
+    let root = s.dir.join("repo");
+    std::fs::create_dir_all(&root).unwrap();
+    c.rpc("projects.mutate",json!({"type":"project.create","commandId":"p","projectId":"p","title":"Proof","workspaceRoot":root})).unwrap();
+    t3_protocol::api::server::update_settings(&c, &json!({"textGenerationModelSelection":{"instanceId":"codex","model":"test"}}), None).unwrap();
+    c.rpc("orchestration.launchThread",json!({"commandId":"launch","threadId":"t","projectId":"p","title":"Untitled","modelSelection":{"instanceId":"claudeAgent","model":"test"},"runtimeMode":"full-access","interactionMode":"default","generateTitle":true,"workspaceStrategy":{"type":"root"},"initialMessage":{"text":"Honest fallback title","attachments":[]}})).unwrap();
+    wait(&c, |p| p["thread"]["title"] == "Honest fallback title" && p["thread"]["titleRegeneration"].is_null());
+    assert!(seen.lock().unwrap().is_empty());
+}

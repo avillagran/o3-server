@@ -176,7 +176,7 @@ fn real_settings_and_action_readers_cover_commit_review_and_failure_paths() {
         .unwrap()
         .contains("Required validation section"));
     drop(traces);
-    c.rpc("server.updateSettings",json!({"patch":{"sourceControlWriterModelSelection":{"instanceId":"claudeAgent","model":"fail"}}})).unwrap();
+    c.rpc("server.updateSettings",json!({"patch":{"sourceControlWriterModelSelection":{"instanceId":"codex","model":"writer"}}})).unwrap();
     std::fs::write(root.join("a"), "third").unwrap();
     run("fallback", "commit", false, None);
     assert_eq!(git(&root, &["log", "-1", "--format=%s"]), "Update a");

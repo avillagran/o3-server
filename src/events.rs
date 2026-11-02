@@ -1421,9 +1421,6 @@ fn new_thread(db: &Connection, c: &Value, tid: &str, at: &str) -> Result<Value> 
 }
 
 pub fn launch(s: &std::sync::Arc<State>, p: &Value) -> Result<Value> {
-    if p["generateTitle"] == true {
-        crate::title::check_project(s, p["projectId"].as_str().unwrap_or(""))?;
-    }
     let _worktree = s
         .worktree_gate
         .try_read()
