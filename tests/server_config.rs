@@ -87,7 +87,7 @@ fn custom_instances_route_native_binary_environment_and_home_and_reconfigure() {
         assert_eq!(row["canAuthenticate"], true);
         assert_eq!(row["canLogout"], true);
         assert_eq!(row["canInstall"], false);
-        assert_eq!(row["canUpdate"], driver == "claudeAgent");
+        assert_eq!(row["canUpdate"], false);
         assert_eq!(row["versionStatus"], "unknown");
         assert!(
             provider["skills"]

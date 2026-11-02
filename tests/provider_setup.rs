@@ -192,14 +192,11 @@ esac"#,
         .to_string();
     assert!(denied.contains("write_not_authorized"), "{denied}");
 
-    // Update runs `claude update`; other drivers are refused with a typed reason.
-    let upd = c
+    // Unknown ownership refuses self-update, even for Claude.
+    assert!(c
         .rpc("server.updateProvider", json!({"provider":"claudeAgent"}))
-        .unwrap();
-    assert!(upd["providers"].is_array());
-    assert!(std::fs::read_to_string(bin.join("update.log"))
-        .unwrap()
-        .contains("updating"));
+        .is_err());
+    assert!(!bin.join("update.log").exists());
     let refused = raw_exit(
         &server,
         "server.updateProvider",

@@ -1,7 +1,7 @@
 //! Provider setup: `provider.auth.*`, `provider.install.*`, `server.updateProvider` and the ACP
 //! registry reads. Sign-in drives the vendor CLI (`claude auth login`, `codex login --device-auth`)
 //! as a child process owned by a task that exists only while a flow runs. Built-in missing CLIs
-//! may be installed in versioned data-directory prefixes; existing external CLIs are never replaced.
+//! may be installed in versioned data-directory prefixes; external CLI updates require verified ownership of the original npm prefix.
 use crate::{
     p2::{invalid, str_field, Reply},
     store::{iso, now_ms, random_id, State},
@@ -64,6 +64,7 @@ pub struct Registry {
     versions: Mutex<HashMap<String, Value>>,
     installs: Mutex<HashMap<String, Value>>,
     install_cancels: Mutex<HashMap<String, Arc<Notify>>>,
+    external_lock: tokio::sync::Mutex<()>,
 }
 
 impl Registry {
@@ -78,17 +79,17 @@ pub fn decorate(s: &State, config: &mut Value) {
     for p in config["providers"].as_array_mut().into_iter().flatten() {
         let supported = matches!(p["driver"].as_str(), Some("claudeAgent" | "codex"));
         let installed = p["installed"] == true;
-        let id = p["instanceId"].as_str().unwrap_or("");
-        let managed = managed_binary(s, id).is_some_and(|path| {
+        let id = p["instanceId"].as_str().unwrap_or("").to_owned();
+        let managed = managed_binary(s, &id).is_some_and(|path| {
             p["executablePath"]
                 .as_str()
                 .is_some_and(|v| std::path::Path::new(v) == path)
                 || crate::settings::read(s).ok().is_some_and(|v| {
-                    v["providerInstances"][id]["config"]["binaryPath"]
+                    v["providerInstances"][&id]["config"]["binaryPath"]
                         == path.to_string_lossy().as_ref()
                 })
         });
-        let installable = matches!(id, "codex" | "claudeAgent")
+        let installable = matches!(id.as_str(), "codex" | "claudeAgent")
             && which("npm").is_some()
             && which("node").is_some();
         p["setup"] =
@@ -97,10 +98,20 @@ pub fn decorate(s: &State, config: &mut Value) {
             p["auth"] = json!({"status":"unknown"});
         }
         p["auth"]["canLogout"] = json!(supported && installed);
+        let external = crate::external_update::detect(
+            &driver(s, &id, "update")
+                .map(|d| d.binary)
+                .unwrap_or_default(),
+            p["driver"].as_str().unwrap_or(""),
+        );
+        let command = external
+            .as_ref()
+            .map(|plan| plan.command.clone())
+            .unwrap_or_else(|e| e.to_string());
         p["versionAdvisory"] = json!({"status":"unknown","currentVersion":p["version"],"latestVersion":null,
-            "updateCommand":if managed&&installable {json!("Managed provider update")}else if p["driver"]=="claudeAgent" {json!("claude update")}else{Value::Null},
-            "canUpdate":installed&&(p["driver"]=="claudeAgent"||managed&&installable),"canInstallVersion":installable&&(managed||!installed),
-            "checkedAt":p["checkedAt"],"message":"Latest-version lookup is unavailable; installed version is reported by the native CLI."});
+            "updateCommand":if managed&&installable {"Managed provider update"}else{&command},
+            "canUpdate":installed&&(managed&&installable||external.is_ok()),"canInstallVersion":installable&&(managed||!installed),
+            "checkedAt":p["checkedAt"],"message":if external.is_err()&&!managed {command.as_str()}else{"Latest-version lookup is unavailable; installed version is reported by the native CLI."}});
         if let Some(advisory) = s
             .streams
             .p2
@@ -765,49 +776,107 @@ async fn update_provider(s: &Arc<State>, p: &Value) -> Reply {
                 .map_err(|_| fail("Server stopped during update"))?;
         }
     }
-    if provider != "claudeAgent" {
-        return Err(fail("o3-server can only update the Claude CLI (`claude update`); update this provider with its package manager"));
-    }
     if p["targetVersion"].as_str().is_some() {
         return Err(fail(
-            "the Claude CLI updates to its latest release; pinning a version is not supported",
+            "External updates support latest only; use the original installer to pin a version.",
         ));
     }
-    let instance = p["instanceId"].as_str().unwrap_or("claudeAgent");
-    let d = driver(s, instance, "update")
-        .map_err(|e| fail(e["detail"].as_str().unwrap_or("provider unavailable")))?;
-    if d.kind != "claudeAgent" {
-        return Err(fail("the instance does not use the Claude driver"));
+    let d = driver(s, instance, "update").map_err(|_| fail("Provider unavailable"))?;
+    if d.kind != provider {
+        return Err(fail("Provider driver does not match instance"));
     }
+    let _lease = s
+        .streams
+        .p2
+        .setup
+        .external_lock
+        .try_lock()
+        .map_err(|_| fail("Another external update is running; retry when it completes."))?;
+    let plan = crate::external_update::detect(&d.binary, d.kind).map_err(fail)?;
     let started = iso(now_ms());
-    s.streams.p2.setup.updates.lock().unwrap().insert(instance.into(),json!({"status":"running","startedAt":started,"finishedAt":null,"message":null,"output":null}));
-    s.notify();
-    let result = run_quiet(&d, &["update"], Duration::from_secs(300)).await;
-    s.streams.p2.setup.updates.lock().unwrap().insert(instance.into(),json!({"status":if result.as_ref().is_some_and(|(code,_)|*code==0){"succeeded"}else{"failed"},"startedAt":started,"finishedAt":iso(now_ms()),"message":null,"output":result.as_ref().map(|(_,text)|text.chars().take(10000).collect::<String>())}));
-    s.notify();
-    let (code, text) = result.ok_or_else(|| fail("`claude update` did not finish"))?;
-    if code != 0 {
-        return Err(fail(
-            text.trim()
-                .lines()
-                .last()
-                .unwrap_or("`claude update` failed"),
-        ));
-    }
-    let registry = s.provider.lock().unwrap().clone();
-    if let Some(provider) = registry {
-        let _ = provider.refresh().await;
-    }
-    check_versions(s).await;
-    s.notify();
-    let providers = s
-        .provider
+    let cancel = Arc::new(Notify::new());
+    let operation = random_id().map_err(|_| fail("Cannot create operation"))?;
+    s.streams
+        .p2
+        .setup
+        .install_cancels
         .lock()
         .unwrap()
-        .as_ref()
-        .map(|p| p.config())
-        .unwrap_or_default();
-    Ok(json!({"providers":providers}))
+        .insert(instance.into(), cancel.clone());
+    s.streams.p2.setup.installs.lock().unwrap().insert(instance.into(),json!({"driver":provider,"operationId":operation,"phase":"installing","downloadedBytes":0,"totalBytes":null,"version":null,"installedVersion":null,"executablePath":null,"source":"local","canRemove":false,"message":"Updating with original npm prefix"}));
+    s.streams.p2.setup.updates.lock().unwrap().insert(instance.into(),json!({"status":"running","startedAt":started,"finishedAt":null,"message":"Updating with original npm prefix","output":null}));
+    s.streams.p2.setup.touch(s);
+    s.notify();
+    let args: Vec<_> = plan.args.iter().map(String::as_str).collect();
+    let opts = crate::proc::Opts {
+        timeout: Duration::from_secs(240),
+        cap: 16384,
+        allow_truncate: false,
+    };
+    let result = tokio::select! {
+        r=crate::proc::run(plan.program.to_str().ok_or_else(||fail("Invalid installer path"))?,&s.dir,&args,opts,&[])=>r.is_ok_and(|r|r.ok()),
+        _=cancel.notified()=>false,
+    };
+    // Only a bounded, parseable --version result establishes success. Never publish installer output.
+    let verified = if result {
+        let binary = crate::executable::resolve(&d.binary);
+        if let Some(binary) = binary.and_then(|b| b.to_str().map(str::to_owned)) {
+            crate::proc::run(
+                &binary,
+                &s.dir,
+                &["--version"],
+                crate::proc::Opts {
+                    timeout: Duration::from_secs(5),
+                    cap: 1024,
+                    allow_truncate: false,
+                },
+                &[],
+            )
+            .await
+            .ok()
+            .filter(|o| o.ok())
+            .and_then(|o| version_parts(&o.text()))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    let success = verified.is_some();
+    let message = if success {
+        "Update completed and CLI version verified"
+    } else {
+        "Update failed, was cancelled, or version verification failed. Refresh providers and use the original installer to recover."
+    };
+    s.streams
+        .p2
+        .setup
+        .install_cancels
+        .lock()
+        .unwrap()
+        .remove(instance);
+    s.streams
+        .p2
+        .setup
+        .installs
+        .lock()
+        .unwrap()
+        .get_mut(instance)
+        .unwrap()["phase"] = json!(if success { "succeeded" } else { "failed" });
+    s.streams.p2.setup.updates.lock().unwrap().insert(instance.into(),json!({"status":if success{"succeeded"}else{"failed"},"startedAt":started,"finishedAt":iso(now_ms()),"message":message,"output":null}));
+    s.streams.p2.setup.touch(s);
+    s.notify();
+    if !success {
+        return Err(fail(message));
+    }
+    let registry = s.provider.lock().unwrap().clone();
+    if let Some(registry) = registry {
+        let _ = registry.refresh().await;
+    }
+    s.notify();
+    Ok(
+        json!({"providers":s.provider.lock().unwrap().as_ref().map(|p|p.config()).unwrap_or_default()}),
+    )
 }
 
 // ---- ACP registry -------------------------------------------------------------------------
@@ -1069,7 +1138,7 @@ fn managed_binary(s: &State, id: &str) -> Option<PathBuf> {
     };
     let root = s.dir.join("provider-clis").join(id);
     if let Some(path) = crate::settings::read(s).ok().and_then(|v| {
-        v["providerInstances"][id]["config"]["binaryPath"]
+        v["providerInstances"][&id]["config"]["binaryPath"]
             .as_str()
             .map(PathBuf::from)
     }) {
@@ -1080,7 +1149,7 @@ fn managed_binary(s: &State, id: &str) -> Option<PathBuf> {
     Some(root.join("node_modules/.bin").join(name))
 }
 async fn start_managed(s: &Arc<State>, id: &str, version: Option<&str>) -> Reply {
-    let _identity = managed_binary(s, id).ok_or_else(|| {
+    let _identity = managed_binary(s, &id).ok_or_else(|| {
         setup_error(
             id,
             "install",
