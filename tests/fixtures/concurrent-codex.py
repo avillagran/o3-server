@@ -26,6 +26,12 @@ for line in sys.stdin:
     f = json.loads(line)
     m, p, i = f.get('method'), f.get('params') or {}, f.get('id')
     if i is None: continue
+    if m is None:
+        if str(i).startswith('approval-'):
+            turn = str(i)[len('approval-'):]
+            active.pop(turn, None)
+            notify('turn/completed', 'native-fixture', turn=dict(id=turn, status='interrupted', items=[], error=None))
+        continue
     with (root / 'peer-methods.log').open('a') as log: log.write(str(m) + '\n')
     if m == 'initialize': result = dict(userAgent='fixture/0.166.0', codexHome=str(root / 'codex'), platformFamily='unix', platformOs='linux')
     elif m == 'account/read': result = dict(account=dict(type='apiKey'), requiresOpenaiAuth=False)
@@ -46,7 +52,14 @@ for line in sys.stdin:
         send(dict(id=i, result=result))
         notify('turn/started', tid, turn=result['turn'])
         (root / ('started-' + str(turns))).touch()
-        threading.Thread(target=finish, args=(tid, turn, turns), daemon=True).start()
+        if (root / 'approval-mode').exists():
+            send(dict(id=5000+turns, method='item/commandExecution/requestApproval', params=dict(kind='command', startedAtMs=int(time.time()*1000), environmentId='local', commandActions=[dict(type='unknown',command='echo fixture')], threadId=tid, turnId=turn, itemId='approval-item', command='echo fixture', cwd=str(root), reason='fixture approval', availableDecisions=['accept','decline','cancel'])))
+        elif (root / 'background-mode').exists():
+            notify('item/started', tid, turnId=turn, item=dict(id='bg-'+turn, type='commandExecution', command='sleep 1', status='inProgress'))
+            notify('turn/completed', tid, turn=dict(id=turn, status='completed', items=[], error=None))
+            (root / 'background-result').touch()
+        else:
+            threading.Thread(target=finish, args=(tid, turn, turns), daemon=True).start()
         continue
     elif m == 'turn/steer':
         (root / 'steer-received').touch()
@@ -55,13 +68,18 @@ for line in sys.stdin:
     elif m == 'turn/interrupt':
         if (root / 'die-interrupt').exists(): os._exit(7)
         turn = p['turnId']; active.pop(turn, None)
+        if (root / 'approval-mode').exists():
+            notify('serverRequest/resolved', p['threadId'], requestId=5000+int(turn.split('-')[-1]))
         send(dict(id=i, result={}))
         (root / 'interrupt-received').touch()
         end = time.monotonic() + 30
         while not (root / 'release-interrupt').exists():
             if time.monotonic() > end: break
             time.sleep(.01)
-        notify('turn/completed', p['threadId'], turn=dict(id=turn, status='interrupted', items=[], error=None))
+        if (root / 'background-mode').exists():
+            notify('item/completed', p['threadId'], turnId=turn, item=dict(id='bg-'+turn, type='commandExecution', command='sleep 1', status='completed', exitCode=0))
+        else:
+            notify('turn/completed', p['threadId'], turn=dict(id=turn, status='interrupted', items=[], error=None))
         continue
     elif m in ('thread/read',): result = dict(thread=dict(id=p['threadId'], turns=[]))
     else: result = {}

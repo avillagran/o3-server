@@ -763,7 +763,7 @@ fn first_thread(c: &Connection) -> Value {
     snapshot
 }
 fn reader_outputs(p: &Value) -> Value {
-    json!({"timeline":t3_protocol::timeline::view(p, &json!({}), &t3_protocol::timeline::Render::neutral(false)).unwrap(),"queue":t3_protocol::queue::derive(p)})
+    json!({"timeline":t3_protocol::timeline::view(p, &json!({}), &t3_protocol::timeline::Render::neutral(false)).unwrap(),"queue":t3_protocol::queue::derive(p),"approvals":t3_protocol::approvals::pending(p),"compaction":t3_protocol::compaction::candidate(p,&json!({}),4102444800000)})
 }
 struct Observer {
     stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -895,6 +895,76 @@ fn dispatch_command(c: &Connection, mut v: Value) {
     c.rpc("orchestration.dispatchCommand", v)
         .unwrap_or_else(|e| panic!("{kind}: {e}"));
 }
+fn verify_observers(
+    s: &Server,
+    observers: [Observer; 2],
+    view: &Value,
+    reference: bool,
+) -> (Vec<Value>, usize) {
+    let mut replay_differences = Vec::new();
+    let mut ignored_reference_replay = 0;
+    for obs in observers {
+        let end = Instant::now() + Duration::from_secs(20);
+        loop {
+            let p = obs
+                .rx
+                .recv_timeout(end.saturating_duration_since(Instant::now()))
+                .unwrap();
+            if reader_outputs(&p) == *view {
+                break;
+            }
+        }
+        eprintln!("observer converged");
+        obs.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        let (reduced, boundary, tail) = obs.join.join().unwrap();
+        eprintln!("observer joined: tail={}", tail.len());
+        if !tail.is_empty() {
+            let done = std::cell::Cell::new(false);
+            let mut replay = Vec::new();
+            let deadline = Instant::now() + Duration::from_secs(15);
+            connect(s)
+                .subscribe(
+                    "orchestration.subscribeThread",
+                    json!({"threadId":"concurrent","afterSequence":boundary,"requestCompletionMarker":true}),
+                    || done.get() || Instant::now() > deadline,
+                    |v| {
+                        if let Some(v) = v {
+                            if v["kind"] == "synchronized" { done.set(true); return Ok(()); }
+                            replay.push(v);
+                            if replay.len() == tail.len() {
+                                done.set(true);
+                            }
+                        }
+                        Ok(())
+                    },
+                )
+                .unwrap();
+            assert_eq!(replay.len(), tail.len(), "replay event count differs");
+            for (replayed, observed) in replay.iter().zip(&tail) {
+                assert_eq!(
+                    replayed["sequence"], observed["sequence"],
+                    "replay reordered sequence"
+                );
+                assert_eq!(
+                    replayed["event"]["id"], observed["event"]["id"],
+                    "replay changed identity"
+                );
+                ignored_reference_replay += replay_differences_checked(
+                    replayed,
+                    observed,
+                    reference,
+                    &mut replay_differences,
+                );
+            }
+        }
+        assert_eq!(
+            reader_outputs(&reduced),
+            *view,
+            "subscriber differs from fresh snapshot"
+        );
+    }
+    (replay_differences, ignored_reference_replay)
+}
 fn concurrent_scenario(s: &Server, home: &Path, reference: bool) -> Value {
     let c = connect(s);
     c.rpc("server.updateSettings",json!({"patch":{"textGenerationModelSelection":{"instanceId":"unavailable","model":"fixture"}}})).unwrap();
@@ -981,6 +1051,80 @@ fn concurrent_scenario(s: &Server, home: &Path, reference: bool) -> Value {
                     .all(|r| matches!(r["status"].as_str(), Some("completed" | "interrupted")))
         })
     });
+    // Keep each complete replay range below the reference's replay cap.
+    let before = reader_outputs(&first_thread(&c)["projection"]);
+    let (mut replay_differences, mut ignored_reference_replay) =
+        verify_observers(s, [a, b], &before, reference);
+    let a = observe(s);
+    let b = observe(s);
+    for mode in ["approval"] {
+        std::fs::write(home.join(format!("{mode}-mode")), "").unwrap();
+        dispatch_command(
+            &c,
+            json!({"type":"message.dispatch","commandId":format!("{mode}-message"),"messageId":format!("{mode}-message"),"threadId":"concurrent","text":mode,"attachments":[],"dispatchMode":{"type":"start_immediately"}}),
+        );
+        let pending = wait_projection(&c, |p| {
+            if mode == "approval" {
+                !t3_protocol::approvals::pending(p)
+                    .as_array()
+                    .unwrap()
+                    .is_empty()
+            } else {
+                home.join("background-result").exists()
+                    && p["providerThreads"].as_array().unwrap().iter().any(|r| {
+                        r["pendingBackgroundTasks"]
+                            .as_array()
+                            .is_some_and(|a| !a.is_empty())
+                    })
+            }
+        });
+        if mode == "approval" {
+            let rows = t3_protocol::approvals::pending(&pending);
+            assert_eq!(rows[0]["responseCapability"], "live");
+            for obs in [&a, &b] {
+                let end = Instant::now() + Duration::from_secs(20);
+                loop {
+                    let reduced = obs
+                        .rx
+                        .recv_timeout(end.saturating_duration_since(Instant::now()))
+                        .unwrap();
+                    if t3_protocol::approvals::pending(&reduced) == rows {
+                        assert_eq!(
+                            reader_outputs(&reduced)["approvals"],
+                            reader_outputs(&pending)["approvals"]
+                        );
+                        t3_protocol::approvals::command(&json!({"thread":"concurrent","runtimeRequestId":rows[0]["requestId"],"decision":"cancel"}), &reduced).unwrap();
+                        break;
+                    }
+                }
+            }
+            t3_protocol::approvals::command(&json!({"thread":"concurrent","runtimeRequestId":rows[0]["requestId"],"decision":"cancel"}), &pending).unwrap();
+        }
+        dispatch_command(
+            &c,
+            json!({"type":"thread.stop","commandId":format!("{mode}-stop"),"threadId":"concurrent"}),
+        );
+        wait_projection(&c, |p| {
+            !p["runs"].as_array().unwrap().iter().any(|r| {
+                matches!(
+                    r["status"].as_str(),
+                    Some("running" | "waiting" | "starting" | "preparing")
+                )
+            })
+        });
+        let stopped = first_thread(&c)["projection"].clone();
+        if mode == "approval" {
+            assert_eq!(
+                t3_protocol::approvals::pending(&stopped)[0]["responseCapability"],
+                "live"
+            );
+        }
+        std::fs::remove_file(home.join(format!("{mode}-mode"))).unwrap();
+        dispatch_command(
+            &c,
+            json!({"type":"queue.resume","commandId":format!("{mode}-resume"),"threadId":"concurrent"}),
+        );
+    }
     dispatch_command(
         &c,
         json!({"type":"thread.unsettle","commandId":"unsettle-final","threadId":"concurrent","reason":"user"}),
@@ -1098,63 +1242,9 @@ fn concurrent_scenario(s: &Server, home: &Path, reference: bool) -> Value {
             "missing or duplicated user message"
         );
     }
-    let mut replay_differences = Vec::new();
-    let mut ignored_reference_replay = 0;
-    for obs in [a, b] {
-        let end = Instant::now() + Duration::from_secs(20);
-        loop {
-            let p = obs
-                .rx
-                .recv_timeout(end.saturating_duration_since(Instant::now()))
-                .unwrap();
-            if reader_outputs(&p) == view {
-                break;
-            }
-        }
-        obs.stop.store(true, std::sync::atomic::Ordering::Relaxed);
-        let (reduced, boundary, tail) = obs.join.join().unwrap();
-        if !tail.is_empty() {
-            let done = std::cell::Cell::new(false);
-            let mut replay = Vec::new();
-            connect(s)
-                .subscribe(
-                    "orchestration.subscribeThread",
-                    json!({"threadId":"concurrent","afterSequence":boundary}),
-                    || done.get(),
-                    |v| {
-                        if let Some(v) = v {
-                            replay.push(v);
-                            if replay.len() == tail.len() {
-                                done.set(true);
-                            }
-                        }
-                        Ok(())
-                    },
-                )
-                .unwrap();
-            for (replayed, observed) in replay.iter().zip(&tail) {
-                assert_eq!(
-                    replayed["sequence"], observed["sequence"],
-                    "replay reordered sequence"
-                );
-                assert_eq!(
-                    replayed["event"]["id"], observed["event"]["id"],
-                    "replay changed identity"
-                );
-                ignored_reference_replay += replay_differences_checked(
-                    replayed,
-                    observed,
-                    reference,
-                    &mut replay_differences,
-                );
-            }
-        }
-        assert_eq!(
-            reader_outputs(&reduced),
-            view,
-            "subscriber differs from fresh snapshot"
-        );
-    }
+    let (extra_differences, extra_ignored) = verify_observers(s, [a, b], &view, reference);
+    replay_differences.extend(extra_differences);
+    ignored_reference_replay += extra_ignored;
     let done = std::cell::Cell::new(false);
     let mut sidebar = Value::Null;
     let shell_connection = connect(s);
@@ -1237,7 +1327,7 @@ fn upstream_concurrent_differential() {
     let replay_differences: Vec<_> = views.iter().enumerate()
         .filter(|(_,v)| !v["replayDifferences"].as_array().unwrap().is_empty())
         .map(|(i,v)| json!({"server":if i==0 {"reference"}else{"o3"},"differences":v["replayDifferences"]})).collect();
-    let report = json!({"dispatchFrames": views.iter().map(|v| &v["dispatchFrames"]).collect::<Vec<_>>(), "ignoredReferenceReplay": views[0]["ignoredReferenceReplay"], "replayDifferences":replay_differences,"referenceVersion":"0.1.7-nightly.20261031.3991","provider":"deterministic gated stdio peer; no credentials or inference","perServer":"two subscribers: snapshot before tail, strictly increasing sequences, unique run creation, four user messages exactly once, final timeline/queue readers equal fresh snapshot; nonempty sidebar reader","differences":differences});
+    let report = json!({"dispatchFrames": views.iter().map(|v| &v["dispatchFrames"]).collect::<Vec<_>>(), "ignoredReferenceReplay": views[0]["ignoredReferenceReplay"], "replayDifferences":replay_differences,"referenceVersion":"0.1.7-nightly.20261031.3991","provider":"deterministic gated stdio peer; no credentials or inference","perServer":"two subscribers: snapshot before tail, strictly increasing sequences, unique run creation, four original user messages exactly once plus approval-pending stop, two complete replay checkpoints, reduced/fresh timeline/queue/approval readers and decision builder, compaction candidate reader (no token context), nonempty sidebar reader","differences":differences});
     let report_path = std::env::var_os("O3_CONCURRENT_REPORT")
         .map(PathBuf::from)
         .unwrap_or_else(|| root.join("reader-shapes.json"));
@@ -1313,11 +1403,13 @@ fn normalize_concurrent_ids(
         {
             json!(1)
         }
+        Value::String(_) if key.ends_with("At") => json!("timestamp"),
         Value::String(_) if matches!(key, "rev" | "revision") => json!("opaque-revision"),
         Value::String(_)
             if matches!(
                 key,
                 "mergeBackRunId"
+                    | "requestId"
                     | "activeRunId"
                     | "rev"
                     | "revision"
@@ -1460,131 +1552,166 @@ fn upstream_control_windows() {
         command(&reference_binary(), Path::new("/var/tmp/o3-build/tmp")).arg("--version"),
     );
     assert!(String::from_utf8_lossy(&version.stdout).contains("0.1.7-nightly.20261031.3991"));
-    for mode in ["init", "steer", "death", "restart", "disabled"] {
-        for reference in [true, false] {
-            let home = root.join(format!("{mode}-{reference}"));
-            std::fs::create_dir_all(home.join("bin")).unwrap();
-            std::os::unix::fs::symlink(
-                Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/concurrent-codex.py"),
-                home.join("bin/codex"),
-            )
-            .unwrap();
-            if mode == "init" {
-                std::fs::write(home.join("gate-init"), "").unwrap();
-            }
-            if mode == "death" {
-                std::fs::write(home.join("die-interrupt"), "").unwrap();
-            }
-            let bin = if reference {
-                reference_binary()
-            } else {
-                PathBuf::from(env!("CARGO_BIN_EXE_o3-server"))
-            };
-            let mut server = start(&bin, &home);
-            let c = connect(&server);
-            c.rpc("server.updateSettings",json!({"patch":{"continueThreadsAfterServerUpdate": mode != "disabled","textGenerationModelSelection":{"instanceId":"unavailable","model":"fixture"}}})).unwrap();
-            c.rpc("projects.mutate",json!({"type":"project.create","commandId":"p","projectId":"fixture-project","title":"Fixture","workspaceRoot":home,"scripts":[]})).unwrap();
-            dispatch_command(
-                &c,
-                json!({"type":"thread.create","commandId":"t","threadId":"concurrent","projectId":"fixture-project","title":"Fixture","modelSelection":{"instanceId":"codex","model":"fixture"},"runtimeMode":"full-access","interactionMode":"default","branch":null,"worktreePath":null}),
-            );
-            dispatch_command(
-                &c,
-                json!({"type":"message.dispatch","commandId":"m","messageId":"m","threadId":"concurrent","text":"first","attachments":[],"dispatchMode":{"type":"start_immediately"}}),
-            );
-            wait_file(&home.join(if mode == "init" {
-                "init-received"
-            } else {
-                "started-1"
-            }));
-            let p = if mode == "init" {
-                first_thread(&c)["projection"].clone()
-            } else {
-                wait_projection(&c, |p| {
-                    p["runs"][0]["status"] == "running" && !p["runs"][0]["startedAt"].is_null()
-                })
-            };
-            let rid = p["runs"][0]["id"].clone();
-            if mode == "steer" {
-                dispatch_command(
-                    &c,
-                    json!({"type":"message.dispatch","commandId":"steer","messageId":"steer","threadId":"concurrent","text":"steer","attachments":[],"dispatchMode":{"type":"steer_active","targetRunId":rid}}),
-                );
-                wait_file(&home.join("steer-received"));
-            }
-            if mode != "disabled" {
-                dispatch_command(
-                    &c,
-                    json!({"type":"run.interrupt","commandId":"i","threadId":"concurrent","runId":rid,"holdQueue":true}),
-                );
-            }
-            if mode == "steer" {
-                std::fs::write(home.join("release-steer"), "").unwrap();
-                wait_file(&home.join("interrupt-received"));
-                let mid = first_thread(&c)["projection"].clone();
-                assert_eq!(
-                    reader_outputs(&mid)["timeline"]["threadState"]["working"],
-                    true
-                );
-                assert!(!mid["turnItems"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .any(|i| i["type"] == "run_interrupt_result"));
-            }
-            if matches!(mode, "restart" | "disabled") {
-                if mode == "restart" {
-                    wait_file(&home.join("interrupt-received"));
+    let selected = std::env::var("O3_CONTROL_CASE").ok();
+    for instance in ["codex", "claudeAgent"] {
+        for mode in ["init", "steer", "death", "restart", "disabled"] {
+            for reference in [true, false] {
+                if selected
+                    .as_ref()
+                    .is_some_and(|s| s != &format!("{instance}:{mode}"))
+                {
+                    continue;
                 }
-                server.child.kill().unwrap();
-                server.child.wait().unwrap();
-                drop(server);
-                server = start(&bin, &home);
-            } else {
-                std::fs::write(home.join("release-interrupt"), "").unwrap();
-            }
-            let c = connect(&server);
-            let p = wait_projection(&c, |p| {
-                reader_outputs(p)["timeline"]["threadState"]["working"] == false
-            });
-            std::fs::write(home.join("release-init"), "").unwrap();
-            if mode == "init" {
-                std::thread::sleep(Duration::from_millis(250));
-                assert!(
-                    !home.join("started-1").exists(),
-                    "cancelled init launched a late native turn"
-                );
-            }
-            if matches!(mode, "init" | "steer") {
-                assert_eq!(p["runs"][0]["status"], "interrupted");
-            }
-            if mode == "disabled" {
-                assert_eq!(p["runs"][0]["status"], "cancelled");
-                assert!(p["turnItems"].as_array().unwrap().iter().all(|i| !matches!(
-                    i["type"].as_str(),
-                    Some("run_interrupt_request" | "run_interrupt_result")
-                )));
-                std::fs::write(
-                    home.join("disabled-readers.json"),
-                    serde_json::to_vec_pretty(&reader_outputs(&p)).unwrap(),
+                if instance == "claudeAgent" && (reference || mode == "disabled") {
+                    continue;
+                }
+                let home = root.join(if instance == "codex" {
+                    format!("{mode}-{reference}")
+                } else {
+                    format!("claude-{mode}-{reference}")
+                });
+                std::fs::create_dir_all(home.join("bin")).unwrap();
+                std::os::unix::fs::symlink(
+                    Path::new(env!("CARGO_MANIFEST_DIR")).join(if instance == "codex" {
+                        "tests/fixtures/concurrent-codex.py"
+                    } else {
+                        "tests/fixtures/concurrent-claude.py"
+                    }),
+                    home.join(if instance == "codex" {
+                        "bin/codex"
+                    } else {
+                        "bin/claude"
+                    }),
                 )
                 .unwrap();
+                if mode == "init" {
+                    std::fs::write(home.join("gate-init"), "").unwrap();
+                }
+                if mode == "death" {
+                    std::fs::write(home.join("die-interrupt"), "").unwrap();
+                }
+                let bin = if reference {
+                    reference_binary()
+                } else {
+                    PathBuf::from(env!("CARGO_BIN_EXE_o3-server"))
+                };
+                let mut server = start(&bin, &home);
+                let c = connect(&server);
+                c.rpc("server.updateSettings",json!({"patch":{"continueThreadsAfterServerUpdate": mode != "disabled","textGenerationModelSelection":{"instanceId":"unavailable","model":"fixture"}}})).unwrap();
+                c.rpc("projects.mutate",json!({"type":"project.create","commandId":"p","projectId":"fixture-project","title":"Fixture","workspaceRoot":home,"scripts":[]})).unwrap();
+                dispatch_command(
+                    &c,
+                    json!({"type":"thread.create","commandId":"t","threadId":"concurrent","projectId":"fixture-project","title":"Fixture","modelSelection":{"instanceId":instance,"model":"fixture"},"runtimeMode":"full-access","interactionMode":"default","branch":null,"worktreePath":null}),
+                );
+                dispatch_command(
+                    &c,
+                    json!({"type":"message.dispatch","commandId":"m","messageId":"m","threadId":"concurrent","text":"first","attachments":[],"dispatchMode":{"type":"start_immediately"}}),
+                );
+                wait_file(&home.join(if mode == "init" {
+                    "init-received"
+                } else {
+                    "started-1"
+                }));
+                let p = if mode == "init" {
+                    first_thread(&c)["projection"].clone()
+                } else {
+                    wait_projection(&c, |p| {
+                        p["runs"][0]["status"] == "running" && !p["runs"][0]["startedAt"].is_null()
+                    })
+                };
+                let rid = p["runs"][0]["id"].clone();
+                if mode == "steer" {
+                    dispatch_command(
+                        &c,
+                        json!({"type":"message.dispatch","commandId":"steer","messageId":"steer","threadId":"concurrent","text":"steer","attachments":[],"dispatchMode":{"type":"steer_active","targetRunId":rid}}),
+                    );
+                    wait_file(&home.join("steer-received"));
+                }
+                if mode != "disabled" {
+                    dispatch_command(
+                        &c,
+                        json!({"type":"run.interrupt","commandId":"i","threadId":"concurrent","runId":rid,"holdQueue":true}),
+                    );
+                }
+                if mode == "steer" {
+                    // Within Codex's 30s RPC budget, beyond the former 15s
+                    // acceptance deadline. The interrupt is still queued here.
+                    if instance == "codex" {
+                        std::thread::sleep(Duration::from_secs(20));
+                    }
+                    let queued = first_thread(&c)["projection"].clone();
+                    assert_eq!(queued["runs"][0]["status"], "running");
+                    assert!(!home.join("interrupt-received").exists());
+                    std::fs::write(home.join("release-steer"), "").unwrap();
+                    wait_file(&home.join("interrupt-received"));
+                    let mid = first_thread(&c)["projection"].clone();
+                    assert_eq!(
+                        reader_outputs(&mid)["timeline"]["threadState"]["working"],
+                        true
+                    );
+                    assert!(!mid["turnItems"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|i| i["type"] == "run_interrupt_result"));
+                }
+                if matches!(mode, "restart" | "disabled") {
+                    if mode == "restart" {
+                        wait_file(&home.join("interrupt-received"));
+                    }
+                    server.child.kill().unwrap();
+                    server.child.wait().unwrap();
+                    drop(server);
+                    server = start(&bin, &home);
+                } else {
+                    std::fs::write(home.join("release-interrupt"), "").unwrap();
+                }
+                let c = connect(&server);
+                let p = wait_projection(&c, |p| {
+                    reader_outputs(p)["timeline"]["threadState"]["working"] == false
+                });
+                std::fs::write(home.join("release-init"), "").unwrap();
+                if mode == "init" {
+                    std::thread::sleep(Duration::from_millis(250));
+                    assert!(
+                        !home.join("started-1").exists(),
+                        "cancelled init launched a late native turn"
+                    );
+                }
+                if matches!(mode, "init" | "steer") {
+                    assert_eq!(p["runs"][0]["status"], "interrupted");
+                }
+                if mode == "disabled" {
+                    assert_eq!(p["runs"][0]["status"], "cancelled");
+                    assert!(p["turnItems"].as_array().unwrap().iter().all(|i| !matches!(
+                        i["type"].as_str(),
+                        Some("run_interrupt_request" | "run_interrupt_result")
+                    )));
+                    std::fs::write(
+                        home.join("disabled-readers.json"),
+                        serde_json::to_vec_pretty(&reader_outputs(&p)).unwrap(),
+                    )
+                    .unwrap();
+                }
+                if !reference && matches!(mode, "death" | "restart") {
+                    assert_eq!(p["runs"][0]["status"], "failed");
+                    assert!(!p["turnItems"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|i| i["type"] == "run_interrupt_result"));
+                    let db = rusqlite::Connection::open(home.join("userdata/o3.sqlite")).unwrap();
+                    assert_eq!(db.query_row("SELECT json_extract(body,'$.status') FROM records WHERE kind='controlOutbox' AND id='i'",[],|r|r.get::<_,String>(0)).unwrap(), "delivery-unknown");
+                }
+                let result = json!({"provider":instance,"mode":mode,"reference":reference,"status":p["runs"][0]["status"],"items":p["turnItems"].as_array().unwrap().iter().map(|i|json!({"type":i["type"],"status":i["status"],"message":i["message"]})).collect::<Vec<_>>(),"working":reader_outputs(&p)["timeline"]["threadState"]["working"]});
+                eprintln!("control window: {result}");
+                results.push(result);
+                drop(server);
             }
-            if !reference && matches!(mode, "death" | "restart") {
-                assert_eq!(p["runs"][0]["status"], "failed");
-                assert!(!p["turnItems"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .any(|i| i["type"] == "run_interrupt_result"));
-                let db = rusqlite::Connection::open(home.join("userdata/o3.sqlite")).unwrap();
-                assert_eq!(db.query_row("SELECT json_extract(body,'$.status') FROM records WHERE kind='controlOutbox' AND id='i'",[],|r|r.get::<_,String>(0)).unwrap(), "delivery-unknown");
-            }
-            let result = json!({"mode":mode,"reference":reference,"status":p["runs"][0]["status"],"items":p["turnItems"].as_array().unwrap().iter().map(|i|json!({"type":i["type"],"status":i["status"],"message":i["message"]})).collect::<Vec<_>>(),"working":reader_outputs(&p)["timeline"]["threadState"]["working"]});
-            eprintln!("control window: {result}");
-            results.push(result);
-            drop(server);
         }
+    }
+    if selected.is_some() {
+        return;
     }
     let disabled: Vec<Value> = [true, false]
         .into_iter()
