@@ -1683,3 +1683,8 @@ Not established, and stated in the row notes: exhaustive race schedules, authent
 live provider inference for these paths, and the 30-minute expiry or late answer as
 observed on 3991, where they come from source. `orchestration.subscribeShell` and
 `server.getConfig` stay partial for their own reasons.
+
+The merged release also started twice on a private copy of a real imported profile (375
+threads, 25 projects, 800 MB database), which ran the migration for real: thread and
+message counts kept, none of the moved run fields on the wire, SQLite integrity check ok,
+14.5 MB RSS after startup, clean exit both times. Start time was not measured.
