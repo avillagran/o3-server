@@ -391,14 +391,16 @@ pub fn tick(s: &Arc<State>) {
                 .ok()
                 .flatten()
                 .is_some();
-        if !dispatched && enabled && now_ms() <= expires {
-            if crate::scheduled::fire_prompt_key(s, &task, Some(&prompt), Some(&id)).is_err() {
-                let _ = s.db.lock().unwrap().execute(
-                    "UPDATE hook_queue SET due=? WHERE id=?",
-                    params![now_ms() + 30000, id],
-                );
-                return;
-            }
+        if !dispatched
+            && enabled
+            && now_ms() <= expires
+            && crate::scheduled::fire_prompt_key(s, &task, Some(&prompt), Some(&id)).is_err()
+        {
+            let _ = s.db.lock().unwrap().execute(
+                "UPDATE hook_queue SET due=? WHERE id=?",
+                params![now_ms() + 30000, id],
+            );
+            return;
         }
         // A durable command receipt deduplicates retries after a crash at handoff.
         let _ =
