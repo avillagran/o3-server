@@ -134,3 +134,28 @@ fn historical_fork_supplies_image_and_context_to_fresh_native_peers() {
         }
     }
 }
+
+#[test]
+fn fallback_tool_context_drops_oldest_with_an_explicit_marker() {
+    let s = support::start(|_| {});
+    let c = s.connect();
+    c.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"create","threadId":"t","projectId":"p","title":"Bounded","modelSelection":{"instanceId":"codex","model":"test"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
+    {
+        let db = s.state.db.lock().unwrap();
+        db.execute(
+            "INSERT INTO records(kind,id,thread_id,body) VALUES ('runs','r','t',?)",
+            [json!({"id":"r","ordinal":1,"status":"failed"}).to_string()],
+        )
+        .unwrap();
+        for n in 0..3 {
+            db.execute("INSERT INTO records(kind,id,thread_id,body) VALUES ('turnItems',?,'t',?)",rusqlite::params![format!("tool{n}"),json!({"id":format!("tool{n}"),"runId":"r","type":"dynamic_tool","toolName":"Read","output":format!("proof-{n} {}", "x".repeat(600000))}).to_string()]).unwrap();
+        }
+    }
+    c.rpc("orchestration.dispatchCommand",json!({"type":"thread.fork","commandId":"fork","sourceThreadId":"t","targetThreadId":"fork","sourcePoint":{"type":"latest_stable"}})).unwrap();
+    let p = orchestration::thread_projection(&c, "fork").unwrap();
+    let text = p["thread"]["providerHandoff"].as_str().unwrap();
+    assert!(text.len() <= 1024 * 1024);
+    assert!(text.contains("Historical context truncated"));
+    assert!(!text.contains("proof-0"));
+    assert!(text.contains("proof-2"));
+}

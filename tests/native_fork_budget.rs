@@ -31,4 +31,22 @@ fn native_fork_does_not_apply_fallback_attachment_budget() {
     c.rpc("orchestration.dispatchCommand",json!({"type":"thread.fork","commandId":"fork","sourceThreadId":"t","targetThreadId":"fork","sourcePoint":{"type":"latest_stable"}})).unwrap();
     let p = orchestration::thread_projection(&c, "fork").unwrap();
     assert_eq!(p["thread"]["nativeForkSource"], "native-proof");
+    // An older boundary cannot use the latest native session.
+    s.state
+        .db
+        .lock()
+        .unwrap()
+        .execute(
+            "INSERT INTO records(kind,id,thread_id,body) VALUES ('runs','r2','t',?)",
+            [json!({"id":"r2","threadId":"t","ordinal":2,"status":"completed"}).to_string()],
+        )
+        .unwrap();
+    let error = c.rpc("orchestration.dispatchCommand",json!({"type":"thread.fork","commandId":"historical","sourceThreadId":"t","targetThreadId":"historical","sourcePoint":{"type":"run","runId":"r"}})).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("historical attachments exceed handoff budget"),
+        "{error}"
+    );
+    assert!(orchestration::thread_projection(&c, "historical").is_err());
 }
