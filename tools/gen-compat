@@ -12,7 +12,7 @@ for tag, meta in sorted(contract["methods"].items()):
 counts = collections.Counter(status.get(t, {}).get("status", "todo") for t in contract["methods"])
 out = ["# Compatibilidad o3-server ↔ T3", "",
        f"Contrato: `{contract['contract']}`. Generado por `tools/gen-compat`; editar `docs/compat-status.json`.", "",
-       "Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ningún cliente lo usa)", "",
+       "Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 backlog de paridad completa (sin consumidor actual o no disponible)", "",
        f"**Resumen:** {counts['done']} ✅ · {counts['partial']} 🟡 · {counts['todo']} ⬜ · {counts['skip']} 🚫 de {len(contract['methods'])} RPC", ""]
 out += ["## P0/P1 RPC status", "", "| Priority | Done | Partial | Todo |", "|---|---:|---:|---:|"]
 for priority in ("P0", "P1"):

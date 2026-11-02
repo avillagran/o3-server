@@ -2,7 +2,7 @@
 
 Contrato: `t3code@3f9448747`. Generado por `tools/gen-compat`; editar `docs/compat-status.json`.
 
-Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ningún cliente lo usa)
+Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 backlog de paridad completa (sin consumidor actual o no disponible)
 
 **Resumen:** 98 ✅ · 20 🟡 · 0 ⬜ · 85 🚫 de 203 RPC
 

@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""Read upstream releases/source; produce review evidence without executing upstream code."""
+import argparse
+import collections
+import datetime
+import json
+import os
+import pathlib
+import re
+import subprocess
+import urllib.request
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+REPO = 'https://github.com/pingdotgg/t3code.git'
+PIN = '3f9448747bb8848050dc2cacf83affa6f94a66a1'
+SURFACES = ['packages/contracts', 'apps/server', 'apps/web', 'apps/desktop', 'packages/shared']
+
+
+def git(cache, *args):
+    return subprocess.check_output(['git', '-C', str(cache), *args], text=True, timeout=180).strip()
+
+
+def releases():
+    request = urllib.request.Request('https://api.github.com/repos/pingdotgg/t3code/releases?per_page=100', headers={'Accept': 'application/vnd.github+json', 'User-Agent': 'o3-nightly-watch'})
+    if os.environ.get('GH_TOKEN'):
+        request.add_header('Authorization', 'Bearer ' + os.environ['GH_TOKEN'])
+    with urllib.request.urlopen(request, timeout=45) as response:
+        items = json.load(response)
+    items = [r for r in items if not r['draft'] and re.fullmatch(r'v\d+\.\d+\.\d+-nightly\.\d{8}\.\d+', r['tag_name'])]
+    if not items:
+        raise ValueError('No published nightly in the latest 100 releases; refusing stale success')
+    return sorted(items, key=lambda r: tuple(map(int, re.findall(r'\d+', r['tag_name']))), reverse=True)
+
+
+def rpc_names(text):
+    # Discovery only: no schema/semantic equivalence claim from this scan.
+    names = set(re.findall(r'Rpc\.make\(\s*["\']([^"\']+)["\']', text))
+    for block in re.findall(r'export const (?:ORCHESTRATION_V2_)?WS_METHODS\s*=\s*\{(.*?)\}\s*as const', text, re.S):
+        names.update(re.findall(r':\s*["\']([^"\']+)["\']', block))
+    if not names:
+        raise ValueError('RPC discovery found no names; source layout may have changed')
+    return sorted(names)
+
+
+def collect(cache, selected):
+    cache.mkdir(parents=True, exist_ok=True)
+    if not (cache / 'HEAD').exists():
+        subprocess.run(['git', 'init', '--bare', str(cache)], check=True, capture_output=True)
+    refs = [PIN] + [r['tag_name'] for r in selected]
+    subprocess.run(['git', '-C', str(cache), 'fetch', '--quiet', '--no-tags', '--filter=blob:none', REPO, *refs], check=True, timeout=240)
+    # Explicit tag destinations: FETCH_HEAD alone does not retain all selected names.
+    for r in selected:
+        subprocess.run(['git', '-C', str(cache), 'fetch', '--quiet', '--no-tags', REPO, f"refs/tags/{r['tag_name']}:refs/tags/{r['tag_name']}"], check=True, timeout=180)
+    def inventory(ref):
+        return set(rpc_names('\n'.join(git(cache, 'show', ref + ':packages/contracts/src/' + file) for file in ('rpc.ts', 'orchestrationV2.ts'))))
+    baseline = inventory(PIN)
+    rows = []
+    for r in selected:
+        sha = git(cache, 'rev-parse', r['tag_name'] + '^{commit}')
+        names = inventory(sha)
+        files = git(cache, 'diff', '--name-status', PIN, sha, '--', *SURFACES).splitlines()
+        previous = selected[selected.index(r) + 1]['tag_name'] if selected.index(r) + 1 < len(selected) else PIN
+        commits = git(cache, 'log', '--format=%H %s', previous + '..' + sha, '--', *SURFACES).splitlines()
+        rows.append({'tag': r['tag_name'], 'sha': sha, 'publishedAt': r['published_at'], 'url': r['html_url'], 'previous': previous, 'changesSincePrevious': commits, 'changedFilesSincePinned': files, 'rpcAddedSincePinned': sorted(names - baseline), 'rpcRemovedSincePinned': sorted(baseline - names)})
+    return rows
+
+
+def render(report):
+    counts = report['portStatus']
+    lines = ['# Seguimiento nightly de T3 Code', '', f"Referencia validada del inventario: `{PIN}`.", '', 'Detección de cambios; ninguna nightly está certificada por este informe.', '', '## Registro de portabilidad', '', *[f'- {k}: {v}' for k, v in sorted(counts.items())], '', '`done` conserva su evidencia y sus límites del inventario; no demuestra paridad completa.', '`skip` es backlog para paridad completa, aunque hoy no tenga consumidor.', 'RPC no cubre por sí solo HTTP, CLI, comandos, streams, UI ni comportamiento nativo.', '']
+    for r in report['releases']:
+        lines += [f"## {r['tag']}", '', f"Fuente: {r['url']}", f"Commit: `{r['sha']}`; publicada: {r['publishedAt']}.", f"Archivos de superficies vigiladas cambiados desde 3726: {len(r['changedFilesSincePinned'])}.", f"RPC nuevos detectados: {', '.join(r['rpcAddedSincePinned']) or 'ninguno'}.", f"RPC retirados detectados: {', '.join(r['rpcRemovedSincePinned']) or 'ninguno'}.", '', f"Cambios desde `{r['previous']}` (triage pendiente):", '']
+        lines += ['- ' + c for c in r['changesSincePrevious']]
+        lines += ['']
+    return '\n'.join(lines)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--cache', type=pathlib.Path, default=pathlib.Path('/var/tmp/o3-build/upstream-watch.git'))
+    parser.add_argument('--output', type=pathlib.Path, default=ROOT / 'docs/nightly')
+    parser.add_argument('--count', type=int, default=5)
+    args = parser.parse_args()
+    if not 2 <= args.count <= 10:
+        parser.error('--count must be between 2 and 10')
+    rows = collect(args.cache, releases()[:args.count])
+    status = json.loads((ROOT / 'docs/compat-status.json').read_text())
+    report = {'checkedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'pinnedCommit': PIN, 'portStatus': dict(collections.Counter(x['status'] for x in status['methods'].values())), 'releases': rows}
+    args.output.mkdir(parents=True, exist_ok=True)
+    (args.output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
+    (args.output / 'REPORT.md').write_text(render(report) + '\n')
+    print(f"Latest: {rows[0]['tag']} {rows[0]['sha']}; evidence: {args.output}")
+
+
+if __name__ == '__main__':
+    main()
