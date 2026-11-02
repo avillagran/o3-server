@@ -79,7 +79,16 @@ with tempfile.TemporaryDirectory(prefix='o3-rss-',dir='/var/tmp/o3-build') as te
   assert {p['instanceId'] for p in providers}=={'claudeAgent','codex'},providers
   ws.rpc('orchestration.dispatchCommand',{'type':'thread.create','commandId':'create','threadId':'rss-thread','projectId':'rss-project','title':'RSS workload','modelSelection':{'instanceId':'scripted','model':'test','options':[]},'runtimeMode':'full-access','interactionMode':'default','branch':None,'worktreePath':None})
   for j in range(1,20):ws.rpc('orchestration.dispatchCommand',{'type':'thread.create','commandId':f'create-{j}','threadId':f'thread-{j}','projectId':'rss-project','title':'RSS thread','modelSelection':{'instanceId':'scripted','model':'test','options':[]},'runtimeMode':'full-access','interactionMode':'default'})
-  for i in range(1000):ws.rpc('orchestration.dispatchCommand',{'type':'message.dispatch','commandId':f'c{i}','messageId':f'm{i}','threadId':'rss-thread','text':f'message {i}: '+('x'*1000),'attachments':[],'dispatchMode':{'type':'defer_start'}})
+  append_ms=[]
+  for i in range(1000):
+   begin=time.perf_counter()
+   ws.rpc('orchestration.dispatchCommand',{'type':'message.dispatch','commandId':f'c{i}','messageId':f'm{i}','threadId':'rss-thread','text':f'message {i}: '+('x'*1000),'attachments':[],'dispatchMode':{'type':'defer_start'}})
+   append_ms.append((time.perf_counter()-begin)*1000)
+  metadata_ms=[]
+  for i in range(100):
+   begin=time.perf_counter()
+   ws.rpc('orchestration.dispatchCommand',{'type':'thread.metadata.update','commandId':f'title-{i}','threadId':'rss-thread','title':f'History append {i}'})
+   metadata_ms.append((time.perf_counter()-begin)*1000)
   ws.s.close();time.sleep(.1);idle=memory(process.pid)
   subscribers=[];counts=[]
   for i in range(3):
@@ -92,7 +101,7 @@ with tempfile.TemporaryDirectory(prefix='o3-rss-',dir='/var/tmp/o3-build') as te
   for i in range(1000):churn.rpc('server.getSettings',{})
   churn.s.close();time.sleep(.2)
   final=memory(process.pid)
-  result={'measured_at_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'binary':str(binary),'binary_bytes':binary.stat().st_size,'seed_messages':1000,'threads':20,'subscribers':3,'unary_calls':1000,'text_bytes_per_message':1000,'cold_kib':cold,'seeded_kib':idle,'subscribed_kib':subscribed,'after_churn_kib':final,'snapshot_messages':counts,'under_50_mib':final['VmHWM']<50*1024,'under_50_mb':final['VmHWM']*1024<50_000_000,'providers':[{'instanceId':p['instanceId'],'installed':p.get('installed'),'status':p.get('status')} for p in providers],'bridge_enabled':True,'gateway_hosting':bool(gateway_args),'provider_workload':'registered and probed; inference excluded (defer_start)','measurement':'Linux /proc/PID/status; disk profile under /var/tmp','allocator_env':{k:v for k,v in env.items() if k.startswith('MIMALLOC_')}}
+  result={'measured_at_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'binary':str(binary),'binary_bytes':binary.stat().st_size,'seed_messages':1000,'append_last_100_ms':{'median':sorted(append_ms[-100:])[50],'p95':sorted(append_ms[-100:])[94],'max':max(append_ms[-100:])},'metadata_append_100_ms':{'median':sorted(metadata_ms)[50],'p95':sorted(metadata_ms)[94],'max':max(metadata_ms)},'threads':20,'subscribers':3,'unary_calls':1000,'text_bytes_per_message':1000,'cold_kib':cold,'seeded_kib':idle,'subscribed_kib':subscribed,'after_churn_kib':final,'snapshot_messages':counts,'under_50_mib':final['VmHWM']<50*1024,'under_50_mb':final['VmHWM']*1024<50_000_000,'providers':[{'instanceId':p['instanceId'],'installed':p.get('installed'),'status':p.get('status')} for p in providers],'bridge_enabled':True,'gateway_hosting':bool(gateway_args),'provider_workload':'registered and probed; inference excluded (defer_start)','measurement':'Linux /proc/PID/status; disk profile under /var/tmp','allocator_env':{k:v for k,v in env.items() if k.startswith('MIMALLOC_')}}
   print(json.dumps(result,indent=2))
   assert result['under_50_mb'], 'server HWM exceeded 50 MB'
   for ws in subscribers:ws.s.close()
