@@ -138,10 +138,11 @@ fn stop_interrupts_approval_blocked_run_without_inventing_native_request_resolut
     )
     .unwrap();
     let p = wait(&c, |p| {
-        !t3_protocol::approvals::pending(p)
-            .as_array()
-            .unwrap()
-            .is_empty()
+        p["runs"][0]["status"] == "waiting"
+            && !t3_protocol::approvals::pending(p)
+                .as_array()
+                .unwrap()
+                .is_empty()
     });
     assert_eq!(p["runs"][0]["status"], "waiting");
     assert_eq!(
