@@ -205,6 +205,7 @@ pub(crate) fn shell_thread(db: &Connection, t: &Value) -> Result<Value> {
     t["latestRunStopRequested"] = json!(false);
     if let Some(run) = list(db, "runs", Some(tid), 1)?.pop() {
         t["latestRunId"] = run["id"].clone();
+        t["latestRunStopRequested"] = json!(db.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='turnItems' AND thread_id=? AND json_extract(body,'$.runId')=? AND json_extract(body,'$.type')='run_interrupt_request')",params![tid,run["id"].as_str().unwrap_or("")],|r|r.get::<_,bool>(0)).map_err(|e|e.to_string())?);
         t["latestRunRequestedAt"] = run["requestedAt"].clone();
         t["latestRunStartedAt"] = run["startedAt"].clone();
         t["latestRunCompletedAt"] = run["completedAt"].clone();
@@ -412,6 +413,29 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
         .is_some_and(crate::thread_commands::handles)
     {
         return crate::thread_commands::dispatch(s, c);
+    }
+    if c["type"] == "thread.stop" {
+        let target = {
+            let db = s.db.lock().unwrap();
+            list(&db, "runs", c["threadId"].as_str(), 10000)?
+                .into_iter()
+                .rev()
+                .find(|r| {
+                    matches!(
+                        r["status"].as_str(),
+                        Some("preparing" | "starting" | "running")
+                    )
+                })
+        };
+        if let Some(run) = target {
+            let mut interrupt = c.clone();
+            interrupt["type"] = json!("run.interrupt");
+            interrupt["runId"] = run["id"].clone();
+            interrupt["holdQueue"] = json!(true);
+            if let Ok(result) = dispatch(s, &interrupt) {
+                return Ok(result);
+            }
+        }
     }
     let mut db = s.db.lock().unwrap();
     let tx = db.transaction().map_err(|e| e.to_string())?;
@@ -623,41 +647,76 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             }
             return Ok(result);
         }
+        "thread.stop" => {
+            if t["deletedAt"].is_null() {
+                if let Some(run) = list(&tx, "runs", Some(tid), 10000)?
+                    .into_iter()
+                    .rev()
+                    .find(|r| r["status"] != "queued")
+                {
+                    if run["rootNodeId"].is_string() && run["providerThreadId"].is_string() {
+                        interrupt_request(&tx, tid, &run, &t, &at, c)?;
+                    }
+                }
+                crate::thread_commands::hold_queue(&tx, tid, &t)?;
+            }
+            "thread.metadata-updated"
+        }
         "run.interrupt" => {
             let rid = c["runId"].as_str().ok_or("runId required")?;
             let mut run = get(&tx, "runs", rid)?;
             if run["threadId"] != tid {
                 return Err("run belongs to another thread".into());
             }
-            let permit = match s.active.lock().unwrap().get(rid).cloned() {
-                Some(sender) => Some(
-                    sender
-                        .try_reserve_owned()
-                        .map_err(|_| "provider control busy")?,
-                ),
-                None => None,
+            let root = get(&tx, "nodes", run["rootNodeId"].as_str().unwrap_or("")).ok();
+            let owner = get(
+                &tx,
+                "providerThreads",
+                run["providerThreadId"].as_str().unwrap_or(""),
+            )
+            .ok();
+            if root.is_none()
+                || owner.is_none()
+                || matches!(
+                    run["status"].as_str(),
+                    Some("completed" | "failed" | "cancelled" | "interrupted" | "queued")
+                )
+            {
+                return Err(format!("Run {rid} is not interruptible."));
+            }
+            let native_started = root
+                .as_ref()
+                .is_some_and(|n| n["providerTurnId"].is_string());
+            let permit = if native_started {
+                match s.active.lock().unwrap().get(rid).cloned() {
+                    Some(sender) => Some(
+                        sender
+                            .try_reserve_owned()
+                            .map_err(|_| "provider control busy")?,
+                    ),
+                    None => None,
+                }
+            } else {
+                None
             };
-            let settled = matches!(
-                run["status"].as_str(),
-                Some("completed" | "failed" | "interrupted" | "cancelled")
-            );
-            crate::projection::finish(&tx, tid, rid, &t, &at, "interrupted")?;
-            let mid = format!("assistant-{rid}");
-            if let Ok(mut message) = get(&tx, "messages", &mid) {
-                message["streaming"] = json!(false);
-                message["updatedAt"] = json!(at);
-                put(&tx, "messages", &mid, tid, &message)?;
-                append(&tx, tid, "message.updated", message.clone(), &t)?;
-                let item = message_item(&tx, tid, &message)?;
-                append(&tx, tid, "turn-item.updated", item, &t)?;
+            interrupt_request(&tx, tid, &run, &t, &at, c)?;
+            if permit.is_none() {
+                crate::projection::finish(&tx, tid, rid, &t, &at, "interrupted")?;
+                interrupt_result(
+                    &tx,
+                    tid,
+                    &run,
+                    &t,
+                    &at,
+                    "Run interrupted before provider start",
+                    false,
+                )?;
+                run["status"] = json!("interrupted");
+                run["completedAt"] = json!(at);
+                put(&tx, "runs", rid, tid, &run)?;
+                append(&tx, tid, "run.updated", run, &t)?;
             }
-            if !settled {
-                interrupt_items(&tx, tid, &run, &t, &at, c, permit.is_some())?;
-            }
-            run["status"] = json!("interrupted");
-            run["completedAt"] = json!(at);
-            put(&tx, "runs", rid, tid, &run)?;
-            let seq = append(&tx, tid, "run.updated", run, &t)?;
+            let seq = sequence(&tx)?;
             if c["holdQueue"] == true {
                 crate::thread_commands::hold_queue(&tx, tid, &t)?;
             }
@@ -673,6 +732,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             if let Some(permit) = permit {
                 permit.send(crate::provider::ProviderControl::Interrupt);
                 crate::outbox::handed_off(s, cid)?;
+                crate::provider::interrupt_deadline(s.clone(), tid.to_owned(), rid.to_owned());
             }
             s.notify();
             return Ok(result);
@@ -819,8 +879,71 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
     Ok(result)
 }
 
-/// The timeline pair readers show for a stop. The run is terminal here, so the result
-/// records that state; native delivery is tracked by the control outbox, not by this item.
+fn interrupt_request(
+    db: &Connection,
+    tid: &str,
+    run: &Value,
+    t: &Value,
+    at: &str,
+    c: &Value,
+) -> Result<()> {
+    let rid = run["id"].as_str().ok_or("run id required")?;
+    let id = format!("{rid}-interrupt-request");
+    if get(db, "turnItems", &id).is_ok() {
+        return Ok(());
+    }
+    interrupt_signal(
+        db,
+        tid,
+        run,
+        t,
+        at,
+        false,
+        c["reason"].as_str().unwrap_or("Interrupt requested"),
+        c["type"] != "thread.stop",
+    )
+}
+pub(crate) fn interrupt_result(
+    db: &Connection,
+    tid: &str,
+    run: &Value,
+    t: &Value,
+    at: &str,
+    message: &str,
+    native: bool,
+) -> Result<()> {
+    interrupt_signal(db, tid, run, t, at, true, message, native)
+}
+#[allow(clippy::too_many_arguments)]
+fn interrupt_signal(
+    db: &Connection,
+    tid: &str,
+    run: &Value,
+    t: &Value,
+    at: &str,
+    result: bool,
+    message: &str,
+    native: bool,
+) -> Result<()> {
+    let rid = run["id"].as_str().ok_or("run id required")?;
+    let suffix = if result { "result" } else { "request" };
+    let id = format!("{rid}-interrupt-{suffix}");
+    if get(db, "turnItems", &id).is_ok() {
+        return Ok(());
+    }
+    let ordinal: i64 = db.query_row("SELECT coalesce(max(json_extract(body,'$.ordinal')),-1)+1 FROM records WHERE kind='turnItems' AND thread_id=?",[tid],|r|r.get(0)).map_err(|e|e.to_string())?;
+    let turn = if native && !(result && run["codexProviderTurnId"].is_string()) {
+        get(db, "nodes", run["rootNodeId"].as_str().unwrap_or(""))
+            .ok()
+            .map(|n| n["providerTurnId"].clone())
+            .unwrap_or(Value::Null)
+    } else {
+        Value::Null
+    };
+    let item = json!({"id":id,"threadId":tid,"runId":rid,"nodeId":run["rootNodeId"],"providerThreadId":run["providerThreadId"],"providerTurnId":turn,"nativeItemRef":null,"parentItemId":if result {json!(format!("{rid}-interrupt-request"))}else{Value::Null},"ordinal":ordinal,"status":if result {"interrupted"}else{"completed"},"title":if result {"Interrupted"}else{"Interrupt requested"},"startedAt":at,"completedAt":at,"updatedAt":at,"type":format!("run_interrupt_{suffix}"),"message":message});
+    crate::projection::save_item(db, tid, t, item)
+}
+#[cfg(test)]
 fn interrupt_items(
     db: &Connection,
     tid: &str,
@@ -828,55 +951,18 @@ fn interrupt_items(
     t: &Value,
     at: &str,
     c: &Value,
-    provider_started: bool,
+    native: bool,
 ) -> Result<()> {
-    let rid = run["id"].as_str().ok_or("run id required")?;
-    let request_id = format!("{rid}-interrupt-request");
-    let ordinal: i64 = db
-        .query_row(
-            "SELECT coalesce(max(json_extract(body,'$.ordinal')),-1)+1 FROM records WHERE kind='turnItems' AND thread_id=?",
-            [tid],
-            |r| r.get(0),
-        )
-        .map_err(|e| e.to_string())?;
-    let item = |id: &str, ordinal: i64, parent: Value, status, title, kind, message: &str| json!({"id":id,"threadId":tid,"runId":rid,"nodeId":run["rootNodeId"],"providerThreadId":run["providerThreadId"],"providerTurnId":run["codexProviderTurnId"],"nativeItemRef":null,"parentItemId":parent,"ordinal":ordinal,"status":status,"title":title,"startedAt":at,"completedAt":at,"updatedAt":at,"type":kind,"message":message});
-    let request = item(
-        &request_id,
-        ordinal,
-        Value::Null,
-        "completed",
-        "Interrupt requested",
-        "run_interrupt_request",
-        c["reason"].as_str().unwrap_or("Interrupt requested"),
-    );
-    let mut result = item(
-        &format!("{rid}-interrupt-result"),
-        ordinal + 1,
-        json!(request_id),
-        "interrupted",
-        "Interrupted",
-        "run_interrupt_result",
-        if provider_started {
-            "Run interrupted by user"
-        } else {
-            "Run interrupted before provider start"
-        },
-    );
-    // The result is a server record, not a provider item; only the request names the turn.
-    result["providerTurnId"] = Value::Null;
-    for item in [request, result] {
-        let id = item["id"].as_str().unwrap_or_default().to_owned();
-        put(db, "turnItems", &id, tid, &item)?;
-        put(
-            db,
-            "visibleTurnItems",
-            &id,
-            tid,
-            &json!({"position":item["ordinal"],"visibility":"local","sourceThreadId":tid,"sourceItemId":id,"item":item}),
-        )?;
-        append(db, tid, "turn-item.updated", item, t)?;
-    }
-    Ok(())
+    interrupt_request(db, tid, run, t, at, c)?;
+    interrupt_result(
+        db,
+        tid,
+        run,
+        t,
+        at,
+        "Run interrupted before provider start",
+        native,
+    )
 }
 
 pub(crate) fn message_item(db: &Connection, tid: &str, m: &Value) -> Result<Value> {

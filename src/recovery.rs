@@ -86,7 +86,9 @@ pub fn recover(db: &mut Connection) -> Result<(), String> {
                     if matches!(
                         t["providerInstanceId"].as_str(),
                         Some("codex" | "claudeAgent" | "claude" | "claude-code")
-                    ) && crate::projection::native_id(&tx, &t).is_some_and(|id| !id.is_empty())
+                    ) && events::get(&tx, "turnItems", &format!("{id}-interrupt-request"))
+                        .is_err()
+                        && crate::projection::native_id(&tx, &t).is_some_and(|id| !id.is_empty())
                     {
                         v["status"] = json!("starting");
                         v["completedAt"] = Value::Null;

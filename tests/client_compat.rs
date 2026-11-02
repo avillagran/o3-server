@@ -392,14 +392,14 @@ fn run_interrupt_and_input_dismiss() {
         json!({"type":"run.interrupt","commandId":"stop","threadId":"t1","runId":rid}),
     )
     .unwrap();
-    let projection = snap(&c, "t1")["projection"].clone();
+    let projection = wait_status(&c, "interrupted")["projection"].clone();
     assert_eq!(projection["runs"][0]["status"], "interrupted");
-    // Timeline readers group this pair; a repeated stop on a settled run adds nothing.
+    // Timeline readers group this pair; a new stop on a settled run is rejected.
     c.rpc(
         "orchestration.dispatchCommand",
         json!({"type":"run.interrupt","commandId":"stop-again","threadId":"t1","runId":rid}),
     )
-    .unwrap();
+    .unwrap_err();
     let items = snap(&c, "t1")["projection"]["turnItems"].clone();
     for (kind, status) in [
         ("run_interrupt_request", "completed"),

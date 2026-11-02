@@ -241,6 +241,7 @@ impl ClaudeProvider {
             output.send(ProviderEvent::Started).await.map_err(|_|"receiver closed")?;
             let mut pending: HashMap<String, Value> = HashMap::new();
             let mut boundary=TurnBoundary::default();
+            let mut interrupt_requested=false;
             loop {
                 tokio::select! {
                     biased;
@@ -249,8 +250,7 @@ impl ClaudeProvider {
                     c=control.recv()=>match c {
                         Some(ProviderControl::Interrupt)=>{
                             session.control("interrupt",json!({"subtype":"interrupt"})).await?;
-                            output.send(ProviderEvent::Interrupted).await.map_err(|_| "receiver closed")?;
-                            return Ok(false);
+                            interrupt_requested=true;
                         },
                         Some(ProviderControl::SteerContent(content))=>session.send(json!({"type":"user","message":{"role":"user","content":content},"parent_tool_use_id":null,"session_id":session.native})).await?,
                         Some(ProviderControl::Steer(text))=>session.prompt(&text).await?,
@@ -311,7 +311,7 @@ impl ClaudeProvider {
                         } else {
                             boundary.observe(&v)?;
                             for event in decode(&v) {
-                                if matches!(event,ProviderEvent::Completed|ProviderEvent::Failed(_)) {boundary.terminal=Some(event);} else {output.send(event).await.map_err(|_|"receiver closed")?;}
+                                if matches!(event,ProviderEvent::Completed|ProviderEvent::Failed(_)) {boundary.terminal=Some(if interrupt_requested {ProviderEvent::Interrupted}else{event});} else {output.send(event).await.map_err(|_|"receiver closed")?;}
                             }
                         }
                         if boundary.ready() {output.send(boundary.terminal.take().unwrap()).await.map_err(|_|"receiver closed")?;return Ok(true); }

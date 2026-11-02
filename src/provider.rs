@@ -205,7 +205,14 @@ pub(crate) fn start(
         let mut checkpoint_finished = false;
         let mut finished = false;
         let mut failure = None;
-        while let Some(event) = events.recv().await {
+        loop {
+            let event = tokio::select! {
+                event = events.recv() => match event { Some(event) => event, None => break },
+                _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
+                    if crate::events::get(&s.db.lock().unwrap(), "runs", &rid).is_ok_and(|r| matches!(r["status"].as_str(), Some("completed" | "failed" | "interrupted" | "cancelled"))) { break; }
+                    continue;
+                }
+            };
             if let ProviderEvent::TextDelta(delta) = event {
                 if buffered.len().saturating_add(delta.len()) > 1024 * 1024 {
                     failure = Some("assistant message exceeds 1 MiB".into());
@@ -334,6 +341,24 @@ pub(crate) fn start(
         crate::thread_commands::advance(&s, &tid);
     });
 }
+/// A native acknowledgement may never arrive. Failure is explicit, never native success.
+pub(crate) fn interrupt_deadline(s: std::sync::Arc<crate::store::State>, tid: String, rid: String) {
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+        let _ = tokio::task::spawn_blocking(move || {
+            let _ = persist(
+                &s,
+                &tid,
+                &rid,
+                ProviderEvent::Failed(
+                    "Interrupt acknowledgement timed out; native delivery unknown".into(),
+                ),
+            );
+        })
+        .await;
+    });
+}
+
 fn persist(
     s: &crate::store::State,
     tid: &str,
@@ -447,6 +472,20 @@ fn persist(
             run["completedAt"] = json!(at);
             if let ProviderEvent::Failed(ref error) = event {
                 run["error"] = json!(error);
+            }
+            if matches!(event, ProviderEvent::Failed(_)) {
+                tx.execute("UPDATE records SET body=json_set(body,'$.status','delivery-unknown','$.error','provider ended without interrupt acknowledgement') WHERE kind='controlOutbox' AND thread_id=?1 AND json_extract(body,'$.command.runId')=?2 AND json_extract(body,'$.status') IN ('pending','handed-off')", rusqlite::params![tid,rid]).map_err(|e|e.to_string())?;
+            }
+            if matches!(event, ProviderEvent::Interrupted) {
+                crate::events::interrupt_result(
+                    &tx,
+                    tid,
+                    &run,
+                    &thread,
+                    &at,
+                    "Run interrupted by user",
+                    true,
+                )?;
             }
             crate::projection::finish(
                 &tx,
@@ -594,6 +633,47 @@ impl Provider for Providers {
 mod tests {
     use super::*;
     use serde_json::{json, Value};
+    #[test]
+    fn native_interruption_finalizes_result_once_with_claude_root_turn() {
+        let dir = std::env::temp_dir().join(crate::store::random_id().unwrap());
+        let s = crate::store::State::open(&dir).unwrap();
+        {
+            let db = s.db.lock().unwrap();
+            for (kind, id, v) in [
+                (
+                    "thread",
+                    "t",
+                    json!({"id":"t","providerInstanceId":"claude"}),
+                ),
+                (
+                    "runs",
+                    "r",
+                    json!({"id":"r","threadId":"t","status":"running","rootNodeId":"root","providerThreadId":"owner"}),
+                ),
+                (
+                    "nodes",
+                    "root",
+                    json!({"id":"root","runId":"r","providerTurnId":"real-turn","status":"running"}),
+                ),
+            ] {
+                crate::events::put(&db, kind, id, "t", &v).unwrap();
+            }
+        }
+        persist(&s, "t", "r", ProviderEvent::Interrupted).unwrap();
+        let db = s.db.lock().unwrap();
+        assert_eq!(
+            crate::events::get(&db, "runs", "r").unwrap()["status"],
+            "interrupted"
+        );
+        let result = crate::events::get(&db, "turnItems", "r-interrupt-result").unwrap();
+        assert_eq!(result["providerTurnId"], "real-turn");
+        let seq = crate::events::sequence(&db).unwrap();
+        drop(db);
+        persist(&s, "t", "r", ProviderEvent::Interrupted).unwrap();
+        assert_eq!(crate::events::sequence(&s.db.lock().unwrap()).unwrap(), seq);
+        drop(s);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn real_frames_reduce_to_renderable_items_and_native_identity() {
         for (name, fixture) in [
