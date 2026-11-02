@@ -1015,3 +1015,43 @@ fn file_asset_grants_require_filesystem_scope_and_registered_boundaries() {
         404
     );
 }
+
+#[test]
+fn desktop_workspace_media_extensions_download_through_real_reader() {
+    let e = setup("workspace-media");
+    let root = e.dir("workspace");
+    e.project("p", &root);
+    e.thread("t", "p");
+    for (name, bytes, mime) in [
+        (
+            "clip.aac",
+            b"\xff\xf1\x50\x80\x00\x1f\xfc".as_slice(),
+            "audio/aac",
+        ),
+        ("clip.opus", b"OggS\0OpusHead".as_slice(), "audio/ogg"),
+        (
+            "clip.avi",
+            b"RIFF\x04\0\0\0AVI ".as_slice(),
+            "video/x-msvideo",
+        ),
+        ("clip.ogv", b"OggS\0theora".as_slice(), "video/ogg"),
+    ] {
+        write(&root.join(name), bytes);
+        let asset = e
+            .conn
+            .asset_bytes(
+                json!({"_tag":"media-file","threadId":"t","path":name}),
+                1024,
+            )
+            .unwrap();
+        assert_eq!(asset.bytes, bytes);
+        assert_eq!(o3_server::assets::mime_for(name), Some(mime));
+    }
+    assert!(e
+        .conn
+        .asset_bytes(
+            json!({"_tag":"media-file","threadId":"t","path":"../outside.avi"}),
+            1024
+        )
+        .is_err());
+}
