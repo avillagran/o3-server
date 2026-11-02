@@ -580,6 +580,18 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                 {
                     return Err("invalid model selection".into());
                 }
+                if t["providerInstanceId"] != value["instanceId"] {
+                    let ordinal = tx.query_row(
+                        "SELECT coalesce(max(json_extract(body,'$.ordinal')),0) FROM records WHERE kind='runs' AND thread_id=?",
+                        [tid], |r| r.get::<_, i64>(0),
+                    ).map_err(|e| e.to_string())?;
+                    t["providerHandoff"] =
+                        json!(crate::thread_commands::handoff(&tx, tid, ordinal)?);
+                    t["providerGeneration"] = c["commandId"].clone();
+                    t["activeProviderThreadId"] = Value::Null;
+                    t["codexNativeThreadId"] = Value::Null;
+                    t["nativeForkSource"] = Value::Null;
+                }
                 t["providerInstanceId"] = value["instanceId"].clone();
             } else if key == "runtimeMode"
                 && !matches!(

@@ -625,7 +625,7 @@ fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outco
 }
 
 /// Explicit transcript boundary: later messages are never supplied to a fresh session.
-fn handoff(db: &Connection, tid: &str, ordinal: i64) -> Result<String> {
+pub(crate) fn handoff(db: &Connection, tid: &str, ordinal: i64) -> Result<String> {
     let mut q = db.prepare("SELECT m.body FROM records m JOIN records r ON r.kind='runs' AND r.id=json_extract(m.body,'$.runId') WHERE m.kind='messages' AND m.thread_id=? AND json_extract(r.body,'$.ordinal')<=? AND coalesce(json_extract(r.body,'$.contextDiscarded'),0)=0 ORDER BY r.rowid,m.rowid").map_err(|e| e.to_string())?;
     let rows = q
         .query_map(params![tid, ordinal], |r| r.get::<_, String>(0))
