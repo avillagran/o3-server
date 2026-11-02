@@ -11,7 +11,7 @@ for line in sys.stdin:
     f = json.loads(line)
     if claude:
         if f['type'] == 'control_request':
-            print(json.dumps({'type':'control_response','response':{'subtype':'success','request_id':f['request_id'],'response':{'commands':[{'name':'native-command','description':'Discovered before inference'}]}}}), flush=True)
+            print(json.dumps({'type':'control_response','response':{'subtype':'success','request_id':f['request_id'],'response':{'account':{'email':'fixture@example.invalid','apiProvider':'firstParty','tokenSource':'fixture'},'commands':[{'name':'native-command','description':'Discovered before inference'}]}}}), flush=True)
         elif f['type'] == 'user':
             print(json.dumps({'type':'system','subtype':'init','session_id':home.name}),flush=True)
             print(json.dumps({'type':'result','subtype':'success','session_id':home.name}),flush=True)
