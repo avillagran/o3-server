@@ -198,7 +198,11 @@ pub(crate) fn persist(
                 i["completedAt"] = Value::Null;
             }
             if i["type"] == "subagent" {
-                let sub = json!({"id":id,"threadId":tid,"runId":rid,"parentNodeId":rid,"origin":"provider_native","createdBy":"agent","driver":"claudeAgent","providerInstanceId":t["providerInstanceId"],"providerThreadId":t["activeProviderThreadId"],"childThreadId":null,"nativeTaskRef":reference(native),"prompt":i["prompt"],"title":i["title"],"model":null,"status":i["status"],"result":i["result"],"startedAt":i["startedAt"],"completedAt":i["completedAt"],"updatedAt":at});
+                let native_task = get(db, "subagents", &id)
+                    .ok()
+                    .map(|v| v["nativeTaskId"].clone())
+                    .unwrap_or(Value::Null);
+                let sub = json!({"nativeTaskId":native_task,"id":id,"threadId":tid,"runId":rid,"parentNodeId":rid,"origin":"provider_native","createdBy":"agent","driver":"claudeAgent","providerInstanceId":t["providerInstanceId"],"providerThreadId":t["activeProviderThreadId"],"childThreadId":null,"nativeTaskRef":reference(native),"prompt":i["prompt"],"title":i["title"],"model":null,"status":i["status"],"result":i["result"],"startedAt":i["startedAt"],"completedAt":i["completedAt"],"updatedAt":at});
                 put(db, "subagents", &id, tid, &sub)?;
                 append(db, tid, "subagent.updated", sub, t)?;
             }

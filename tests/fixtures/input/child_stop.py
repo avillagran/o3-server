@@ -17,5 +17,6 @@ for line in sys.stdin:
             silent = f['message']['content'][0]['text'] == 'silent'
             emit({'type':'assistant','message':{'content':[{'type':'tool_use','id':'child-tool','name':'Agent','input':{'prompt':'work','description':'Child'}}]}})
             emit({'type':'system','subtype':'task_started','task_id':'child-task','tool_use_id':'child-tool','task_type':'local_agent'})
+            emit({'type':'user','message':{'content':[{'type':'tool_result','tool_use_id':'child-tool','content':'background-task-returned'}]}})
         else: emit({'type':'result','subtype':'success','session_id':'owner'})
         started=True

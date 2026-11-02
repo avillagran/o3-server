@@ -88,10 +88,11 @@ fn claude_child_stop_is_scoped_and_native_confirmed() {
         c.rpc("orchestration.dispatchCommand", json!({"type":"thread.create","commandId":"c","threadId":"t","projectId":"p","title":"Stop child","modelSelection":{"instanceId":"claudeAgent","model":"test"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
         c.rpc("orchestration.dispatchCommand", json!({"type":"message.dispatch","commandId":"m","threadId":"t","messageId":"m","text":if silent {"silent"}else{"wait"},"attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
         assert!(support::wait_for(Duration::from_secs(10), || {
-            !orchestration::thread_projection(&c, "t").unwrap()["subagents"]
+            orchestration::thread_projection(&c, "t").unwrap()["subagents"]
                 .as_array()
                 .unwrap()
-                .is_empty()
+                .iter()
+                .any(|s| s["result"] == "background-task-returned")
         }));
         let p = orchestration::thread_projection(&c, "t").unwrap();
         let rid = p["runs"][0]["id"].as_str().unwrap();
