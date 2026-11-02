@@ -299,7 +299,7 @@ pub(crate) fn persist(
                 )?;
             }
             if frame["subtype"] == "task_notification" {
-                db.execute("UPDATE records SET body=json_set(body,'$.status',?1) WHERE kind='controlOutbox' AND thread_id=?2 AND json_extract(body,'$.command.subagentId')=?3 AND json_extract(body,'$.status') IN ('pending','handed-off')", rusqlite::params![if frame["summary"] == "Child stop was not confirmed by the provider; child execution may continue." {"delivery-unknown"}else{"acknowledged"},tid,id]).map_err(|e|e.to_string())?;
+                db.execute("UPDATE records SET body=json_set(body,'$.status',?1) WHERE kind='controlOutbox' AND thread_id=?2 AND json_extract(body,'$.command.subagentId')=?3 AND json_extract(body,'$.status') IN ('pending','handed-off')", rusqlite::params!["acknowledged",tid,id]).map_err(|e|e.to_string())?;
                 if let Ok(mut sub) = get(db, "subagents", &id) {
                     sub["status"] = json!(outcome);
                     sub["result"] = frame["summary"].clone();

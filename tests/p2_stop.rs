@@ -72,8 +72,8 @@ fn unsupported_subagent_stop_preserves_real_native_owner() {
 }
 
 #[test]
-fn claude_child_stop_is_scoped_and_native_confirmed() {
-    for silent in [false, true] {
+fn claude_child_stop_safely_rejected_including_silent_and_late_peers() {
+    for scenario in ["wait", "silent", "late"] {
         let peer = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests/fixtures/input/child_stop.py");
         let s = support::start(|s| {
@@ -86,7 +86,7 @@ fn claude_child_stop_is_scoped_and_native_confirmed() {
         });
         let c = s.connect();
         c.rpc("orchestration.dispatchCommand", json!({"type":"thread.create","commandId":"c","threadId":"t","projectId":"p","title":"Stop child","modelSelection":{"instanceId":"claudeAgent","model":"test"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
-        c.rpc("orchestration.dispatchCommand", json!({"type":"message.dispatch","commandId":"m","threadId":"t","messageId":"m","text":if silent {"silent"}else{"wait"},"attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
+        c.rpc("orchestration.dispatchCommand", json!({"type":"message.dispatch","commandId":"m","threadId":"t","messageId":"m","text":scenario,"attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
         assert!(support::wait_for(Duration::from_secs(10), || {
             orchestration::thread_projection(&c, "t").unwrap()["subagents"]
                 .as_array()
@@ -106,16 +106,17 @@ fn claude_child_stop_is_scoped_and_native_confirmed() {
                 subagent_id: sid.into(),
             },
         )
-        .unwrap();
+        .unwrap_err();
+        std::thread::sleep(Duration::from_secs(3));
         assert!(support::wait_for(
             Duration::from_secs(8),
             || orchestration::thread_projection(&c, "t").unwrap()["subagents"][0]["status"]
-                == if silent { "failed" } else { "cancelled" }
+                == "running"
         ));
         let p = orchestration::thread_projection(&c, "t").unwrap();
         assert_eq!(p["runs"][0]["status"], "running", "{p}");
         c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"continue","threadId":"t","messageId":"next","text":"finish","attachments":[],"dispatchMode":{"type":"steer_active","targetRunId":rid}})).unwrap();
-        if !silent {
+        {
             assert!(support::wait_for(
                 Duration::from_secs(10),
                 || orchestration::thread_projection(&c, "t").unwrap()["runs"][0]["status"]

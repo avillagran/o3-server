@@ -613,34 +613,7 @@ fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outco
                     sub["status"].as_str().unwrap_or("finished")
                 ));
             }
-            if crate::provider_input::driver(s, &t["providerInstanceId"])? != "claudeAgent" {
-                return Err("Independent native subagent cancellation is unavailable; the owning turn was left running.".into());
-            }
-            let task = sub["nativeTaskId"]
-                .as_str()
-                .ok_or("Subagent has no live native task identity; owner left running.")?;
-            let rid = string(c, "runId")?;
-            let sender = s
-                .active
-                .lock()
-                .unwrap()
-                .get(rid)
-                .cloned()
-                .ok_or("provider control unavailable")?;
-            let permit = sender
-                .try_reserve_owned()
-                .map_err(|_| "provider control busy")?;
-            steer = Some((
-                permit,
-                crate::provider::ProviderControl::StopTask(task.into()),
-            ));
-            append(
-                tx,
-                tid,
-                "subagent.stop-requested",
-                json!({"subagentId":sid,"requestedAt":at}),
-                &t,
-            )?
+            return Err("Independent native subagent cancellation is unavailable; the owning turn was left running.".into());
         }
         "thread.pull-request.link"
         | "thread.pull-request.unlink"
