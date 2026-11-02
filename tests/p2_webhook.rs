@@ -144,24 +144,35 @@ fn unsigned_template_and_filter_inputs_are_rejected() {
 }
 
 #[test]
-fn unknown_hooks_reject_before_body_and_writer_and_limit_bursts() {
+fn unauthenticated_traffic_cannot_lock_out_or_enumerate_hooks() {
     let s = support::start(|_| {});
-    let _c = s.connect();
+    let c = s.connect();
+    let p = json!({"id":"guarded","title":"Hook","prompt":"safe {{body.action}}","enabled":true,"schedule":{"type":"webhook","signature":{"header":"x-hub-signature-256","encoding":"hex","prefix":"sha256=","secret":"fixture-only-key"}},"projectId":"missing-project","workspaceStrategy":{"type":"root"},"modelSelection":{"instanceId":"scripted","model":"m"},"runtimeMode":"full-access","interactionMode":"default"});
+    let reply = scheduled_tasks::upsert(&c, &TaskUpsert::from_json(&p).unwrap()).unwrap();
+    let path = reply["task"]["webhook"]["path"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let wrong_token = format!("{}/{}", path.rsplit_once('/').unwrap().0, "not-the-token");
+    let status = |reply: &str| reply.lines().next().unwrap_or("").to_owned();
+    let body_of = |reply: &str| reply.rsplit("\r\n\r\n").next().unwrap_or("").to_owned();
+    // An unknown hook and a known hook with a wrong token must be indistinguishable.
+    let unknown = post(&s.base, "/api/hooks/missing/token", "{}", "bad");
+    let wrong = post(&s.base, &wrong_token, "{}", "bad");
+    assert_eq!(status(&unknown), status(&wrong));
+    assert_eq!(body_of(&unknown), body_of(&wrong));
+    assert!(status(&unknown).contains("404"), "{unknown}");
+    // A burst of unauthenticated traffic, held writer included, never costs the real sender.
     let writer = s.state.db.lock().unwrap();
     let started = std::time::Instant::now();
-    let mut limited = 0;
-    for _ in 0..40 {
-        let reply = post(&s.base, "/api/hooks/missing/token", "", "bad");
-        assert!(reply.contains("404") || reply.contains("429"), "{reply}");
-        limited += usize::from(reply.contains("429"));
+    for _ in 0..80 {
+        post(&s.base, "/api/hooks/missing/token", "", "bad");
     }
-    eprintln!(
-        "40 invalid hooks while writer held: {:?}, limited={limited}",
-        started.elapsed()
-    );
-    assert!(limited > 0);
     assert!(started.elapsed() < std::time::Duration::from_secs(2));
     drop(writer);
+    let body = r#"{"action":"go"}"#;
+    let delivered = post(&s.base, &path, body, &sign(body));
+    assert!(delivered.contains("accepted"), "{delivered}");
 }
 
 #[test]

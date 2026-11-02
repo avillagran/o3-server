@@ -47,19 +47,19 @@
       "note": "Rotate now maps natural orientation through wm size, emulator accelerometer or physical cmd window rotation; real lib DeviceAction and fixture argv pass. Existing Android settings fixtures retained. 9 s overall mutation budget. No native device behavior or pinned action parity tested; other offered controls still require audit. Status unchanged."
     },
     "device.close": {
-      "status": "partial",
+      "status": "done",
       "priority": "P2",
-      "note": "Shutdown now invokes serial-scoped adb emu kill for emulators or shell reboot -p for physical Android targets; real lib close and fixture argv pass. Ordinary session close retained. No real shutdown/device lifecycle or pinned parity tested; status unchanged."
+      "note": "Session close and serial-scoped shutdown pass the real reader with fixture adb; desktop consumes the null success. Physical shutdown not exercised."
     },
     "device.configure": {
-      "status": "partial",
+      "status": "done",
       "priority": "P2",
-      "note": "Now writes enableDeviceSupport and enableAgentDeviceAccess, the settings desktop reads back; off by default as in T3. Fix passes a real reader but has no audit of its own."
+      "note": "Writes enableDeviceSupport and enableAgentDeviceAccess, the keys desktop reads back (integration_devices.rs:510); off by default as in T3. Two independent audits passed it with the real reader."
     },
     "device.detail": {
-      "status": "partial",
+      "status": "done",
       "priority": "P2",
-      "note": "Optional queries share an 8 s budget and return partial settings inside the client's 12 s timeout. Fix passes a real reader but has no audit of its own."
+      "note": "Connected Android settings and foreground fields; optional queries share an 8 s budget and return partial detail inside the client's 12 s timeout. Two independent audits passed it."
     },
     "device.easAccount": {
       "status": "partial",
@@ -74,7 +74,7 @@
     "device.open": {
       "status": "partial",
       "priority": "P2",
-      "note": "Fixture adb screenrecord H264 streams bounded SEMU packets to the real lib reader and ffmpeg decoder; PNG endpoint retained. Socket disconnect kills/reaps recorder; sends/auth rechecks bounded. tests/p2_device_stream.rs failed before (no SEMU), passes including real open and decode. No native encoder, real device/emulator/UI or pinned device parity tested. Other platforms remain unsupported; status unchanged. Recorder EOF regression failed with ResetWithoutClosingHandshake; now reaps/restarts recorder on the same socket (250 ms backoff, three empty restarts), second SEMU frame read through real client. Shake remains unsupported; desktop client change outside this worktree is not included."
+      "note": "Real reader receives H.264 from a recorder that restarts on the same socket, at most three times per minute. Fixture only; native encoder and hardware parity unproven."
     },
     "device.shutdown": {
       "status": "skip",
@@ -644,7 +644,7 @@
     "scheduledTasks.upsert": {
       "status": "partial",
       "priority": "P2",
-      "note": "Authenticated inbound triggers: only HMAC-SHA256 signed raw body fields may affect filters or prompt/coalescing templates; unsigned templates are rejected, including legacy definitions at delivery. Raw-body SHA256 replay identity is permanent per hook; no authenticated timestamp exists, so maxDeliveryAgeMinutes bounds queue residence only, not sender age. Anyone possessing hook URL/token and signing secret can launch the configured task/thread prompt in its inherited permission mode: full-access may mean Codex approvalPolicy never/danger-full-access or Claude bypassPermissions. Do not expose the signing secret to untrusted senders. Signature headers are never exposed to templates (case independent). Read-only lookup and signature verification run off async workers before writer admission; 30/IP/s and 60/global/s, existing 128 global/16 per-IP connection caps. Frozen durable queue claims use stable receipt command IDs, retain failures, and replay after interrupted handoff. Queue/replay count and 8 MiB logical byte budgets; body 1 MiB, prompt 64 KiB. Regression negative controls failed then passed with real Connection/readers; loopback 40 invalid requests with writer held ~11 ms/10 limited. Pinned 3991 permits unsigned query templates: intentional security hardening, not parity. secretRef/relay/delivery logs and real power-loss/external-side-effect exactly-once remain unproven. Status unchanged."
+      "note": "Signed inbound webhooks: body-only signature, templates and filters limited to signed body fields, permanent body-digest dedupe per task, bounded queue, durable dispatch claim. Unknown hooks and wrong tokens get the same 404 without the body being read. Pinned 3991 accepts unsigned query templates; o3 rejects them on purpose. Remaining: desktop T3ScheduledTasks.qml:21 and Android TaskEditor.kt:72 have no signing controls, so users cannot save a new webhook task; that needs client work. Triggered runs use the task's or thread's runtime mode, which can be full access."
     },
     "secrets.answerRequest": {
       "status": "done",
@@ -772,9 +772,9 @@
       "note": "Real Connection Codex-peer test probes the registered drivers and returns both provider descriptors; Claude authentication is checked at execution and reported unknown beforehand."
     },
     "server.refreshUsageRates": {
-      "status": "partial",
+      "status": "done",
       "priority": "P2",
-      "note": "Refresh is bounded to 9 s and a concurrent caller gets cached state, inside the client's 12 s timeout. Fix passes a real reader but has no audit of its own."
+      "note": "Fresh pricing from the public LiteLLM document on explicit refresh only, stale cache kept on failure, whole refresh bounded to 9 s and concurrent callers answered from cache, inside the client's 12 s read timeout. Two independent audits found no client-read gap."
     },
     "server.removeKeybinding": {
       "status": "done",
@@ -1021,7 +1021,7 @@
     "checkpoint.rollback": {
       "status": "partial",
       "priority": "P2",
-      "note": "Rollback scope records canonical workspace device/inode and canonical git common/worktree dirs with device/inode, thread and project; durable intent carries the binding. Symlink components, changed repository/project/thread or missing legacy identity refuse restore/replay. Restore uses pinned directory fd to prevent path replacement redirect. Restored regular files and directories are synced before FULL-synchronous SQLite receipt commit, then intent unlink and journal-directory fsync. Real Connection/projection tests reproduce symlink exploit before fix and pass after; simulated before-restore/after-restore/after-receipt/after-unlink restart states covered. NORMAL-synchronous negative control fails durability assertion; one-shot errors after journal/files/receipt/unlink exercise recovery through real client readers. Actual power loss, filesystem fsync errors and adversarial git-dir replacement races unproven. Status unchanged."
+      "note": "Journaled with startup replay that refuses a changed workspace or repository identity, FULL-synchronous receipt and synced files. Remaining, also on earlier main: the checkpoint is stored by ref name, so a moved ref restores different contents while the RPC reports success; .git can be swapped between identity check and use. Physical power loss not tested."
     },
     "delegated_task.completion-delivery.acknowledge": {
       "status": "skip",

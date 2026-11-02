@@ -209,29 +209,27 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
                 return Ok(json_reply(StatusCode::NOT_FOUND, "{}".into()));
             }
             let (id, token) = (parts[0].to_owned(), parts[1].to_owned());
+            // Every rejection looks the same and costs one keyed lookup: no body is read
+            // without the hook's token, so unauthenticated traffic cannot crowd out its sender.
+            let check_state = state.clone();
+            let (check_id, check_token) = (id.clone(), token.clone());
+            if !tokio::task::spawn_blocking(move || {
+                crate::webhook::admits(&check_state, &check_id, &check_token)
+            })
+            .await
+            .unwrap_or(false)
             {
-                let ip = request
-                    .extensions()
-                    .get::<std::net::IpAddr>()
-                    .copied()
-                    .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
+                return Ok(json_reply(StatusCode::NOT_FOUND, "{}".into()));
+            }
+            {
                 let mut window = state.http.hook_window.lock().unwrap();
                 if window.0.elapsed() >= std::time::Duration::from_secs(1) {
                     *window = (std::time::Instant::now(), 0, Default::default());
                 }
-                if window.1 >= 60 || window.2.get(&ip).copied().unwrap_or(0) >= 30 {
+                if window.1 >= 60 {
                     return Ok(json_reply(StatusCode::TOO_MANY_REQUESTS, "{}".into()));
                 }
                 window.1 += 1;
-                *window.2.entry(ip).or_default() += 1;
-            }
-            let check_state = state.clone();
-            let check_id = id.clone();
-            if !tokio::task::spawn_blocking(move || crate::webhook::exists(&check_state, &check_id))
-                .await
-                .unwrap_or(false)
-            {
-                return Ok(json_reply(StatusCode::NOT_FOUND, "{}".into()));
             }
             let headers = request.headers().clone();
             let query = request.uri().query().unwrap_or("").to_owned();
@@ -249,6 +247,9 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
             })
             .await
             .unwrap_or((503, "error"));
+            if result.0 == 404 {
+                return Ok(json_reply(StatusCode::NOT_FOUND, "{}".into()));
+            }
             let mut response = json_reply(
                 StatusCode::from_u16(result.0).unwrap(),
                 json!({"outcome":result.1}).to_string(),
@@ -323,7 +324,8 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
                         use tokio::io::AsyncReadExt;
                         let mut recorder: Option<tokio::process::Child> = None;
                         let mut video = vec![0u8; 64 * 1024];
-                        let mut empty_restarts = 0;
+                        let mut restarts: std::collections::VecDeque<std::time::Instant> =
+                            Default::default();
                         let mut timer = tokio::time::interval(std::time::Duration::from_secs(2));
                         loop {
                             let settings = crate::settings::read(&device_state).unwrap_or_default();
@@ -339,8 +341,10 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
                                     let Ok(n)=read else{break;};
                                     if n==0 {
                                         if let Some(mut child)=recorder.take(){let _=child.start_kill();let _=child.wait().await;}
-                                        empty_restarts += 1;
-                                        if empty_restarts > 3 { break; }
+                                        // Bytes before each exit must not reset the budget, or a failing recorder loops forever.
+                                        restarts.retain(|t| t.elapsed() < std::time::Duration::from_secs(60));
+                                        restarts.push_back(std::time::Instant::now());
+                                        if restarts.len() > 3 { break; }
                                         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
                                         match crate::device::recorder(&serial) {
                                             Ok(child)=>recorder=Some(child),
@@ -348,7 +352,6 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
                                         }
                                         continue;
                                     }
-                                    empty_restarts = 0;
                                     let mut packet=vec![0u8;16];packet[..4].copy_from_slice(b"SEMU");packet[4]=1;packet[5]=1;
                                     packet.extend_from_slice(&video[..n]);
                                     let send=ws.send(tokio_tungstenite::tungstenite::Message::Binary(packet.into()));

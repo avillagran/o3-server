@@ -2442,3 +2442,19 @@ notes pass. Eight pinned binary differentials pass, including observed acceptanc
 of unsigned query templates in 3991 and rejection here. Release HWM 18332 KiB
 (18.77 MB), WebSocket availability 12.48 ms; synthetic profile, no inference.
 See `docs/rss-security-audit.json` for the complete measurement and scope.
+
+## Security recheck and merge (2026-11-02)
+
+The recheck of b94f8ec confirmed the webhook and rollback fixes and found two blocking
+issues that also exist on earlier main, so they are recorded on their rows instead of
+holding this merge: rollback trusts a mutable checkpoint ref name, and a run whose receipt
+committed before its provider started is failed on restart with an explicit reason rather
+than executed. Exactly-once external effects are not claimed.
+
+It also found three issues new to this branch, fixed afterwards with tests that failed
+first and not audited on their own: unauthenticated traffic shared a rate bucket with the
+real sender and could lock it out; unknown hooks and wrong tokens returned different
+bodies, revealing which hooks exist; a recorder printing bytes before each failure could
+restart forever. The token is now checked before any body is read, every rejection is the
+same `404 {}`, only token holders count against a 60 per second budget, and the recorder
+restarts at most three times per minute.

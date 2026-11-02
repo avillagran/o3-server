@@ -175,9 +175,25 @@ fn matches(f: &Value, root: &Value) -> bool {
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
-pub fn exists(s: &State, id: &str) -> bool {
-    get(&s.reader.lock().unwrap(), "scheduledTasks", id)
-        .is_ok_and(|t| t["schedule"]["type"] == "webhook")
+/// Whether the path names an enabled-or-not webhook task and carries its token. Checked before
+/// any body is read, so only holders of the hook URL cost more than one keyed lookup.
+pub fn admits(s: &State, id: &str, token: &str) -> bool {
+    let reader = s.reader.lock().unwrap();
+    let webhook =
+        get(&reader, "scheduledTasks", id).is_ok_and(|t| t["schedule"]["type"] == "webhook");
+    let Ok(creds) = get(&reader, "hookCredentials", id) else {
+        return false;
+    };
+    drop(reader);
+    let mut expected =
+        Hmac::<Sha256>::new_from_slice(creds["token"].as_str().unwrap_or("").as_bytes()).unwrap();
+    expected.update(b"hook-token");
+    let mut candidate = Hmac::<Sha256>::new_from_slice(token.as_bytes()).unwrap();
+    candidate.update(b"hook-token");
+    webhook
+        && expected
+            .verify_slice(&candidate.finalize().into_bytes())
+            .is_ok()
 }
 pub fn accept(
     s: &State,
