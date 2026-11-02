@@ -20,7 +20,19 @@ fn signed_webhook_definition_is_readable_without_leaking_secret() {
     assert!(post(&s.base, path, &" ".repeat(1024 * 1024 + 1), "bad").contains("413"));
     let signature = sign(body);
     assert!(post(&s.base, path, body, &signature).contains("accepted"));
-    assert!(post(&s.base, path, body, &signature).contains("duplicate"));
+    s.state
+        .db
+        .lock()
+        .unwrap()
+        .execute("UPDATE hook_replay SET expires=0", [])
+        .unwrap();
+    assert!(post(
+        &s.base,
+        &format!("{path}?text=attacker&delivery=changed"),
+        body,
+        &signature
+    )
+    .contains("duplicate"));
     let filtered = r#"{"id":"two","group":"batch","action":"closed"}"#;
     assert!(post(&s.base, path, filtered, &sign(filtered)).contains("filtered"));
     let second = r#"{"id":"two","group":"batch","action":"opened"}"#;
@@ -91,11 +103,102 @@ fn unsigned_template_and_filter_inputs_are_rejected() {
     let c = s.connect();
     for (prompt, filters, dedupe) in [
         ("{{query.text}}", json!([]), json!({})),
-        ("safe", json!([{"path":"headers.x-event","op":"equals","value":"go"}]), json!({})),
-        ("safe", json!([]), json!({"replayKey":"{{headers.x-delivery}}"})),
+        (
+            "safe",
+            json!([{"path":"headers.x-event","op":"equals","value":"go"}]),
+            json!({}),
+        ),
+        (
+            "safe",
+            json!([]),
+            json!({"replayKey":"{{headers.x-delivery}}"}),
+        ),
         ("safe", json!([]), json!({"coalesceKey":"{{query.group}}"})),
     ] {
         let p = json!({"id":"unsafe","title":"Hook","prompt":prompt,"enabled":true,"schedule":{"type":"webhook","signature":{"header":"X-Hub-Signature-256","encoding":"hex","prefix":"sha256=","secret":"fixture-only-key"},"filters":filters,"dedupe":dedupe},"projectId":"p","workspaceStrategy":{"type":"root"},"modelSelection":{"instanceId":"scripted","model":"m"},"runtimeMode":"full-access","interactionMode":"default"});
-        assert!(scheduled_tasks::upsert(&c, &TaskUpsert::from_json(&p).unwrap()).is_err(), "unsigned input accepted: {p}");
+        assert!(
+            scheduled_tasks::upsert(&c, &TaskUpsert::from_json(&p).unwrap()).is_err(),
+            "unsigned input accepted: {p}"
+        );
     }
+}
+
+#[test]
+fn unknown_hooks_reject_before_body_and_writer_and_limit_bursts() {
+    let s = support::start(|_| {});
+    let _c = s.connect();
+    let writer = s.state.db.lock().unwrap();
+    let started = std::time::Instant::now();
+    let mut limited = 0;
+    for _ in 0..40 {
+        let reply = post(&s.base, "/api/hooks/missing/token", "", "bad");
+        assert!(reply.contains("404") || reply.contains("429"), "{reply}");
+        limited += usize::from(reply.contains("429"));
+    }
+    eprintln!(
+        "40 invalid hooks while writer held: {:?}, limited={limited}",
+        started.elapsed()
+    );
+    assert!(limited > 0);
+    assert!(started.elapsed() < std::time::Duration::from_secs(2));
+    drop(writer);
+}
+
+#[test]
+fn failed_dispatch_keeps_accepted_work_durable() {
+    let s = support::start(|_| {});
+    let c = s.connect();
+    let p = json!({"id":"retry","title":"Hook","prompt":"safe {{body.action}}","enabled":true,"schedule":{"type":"webhook","signature":{"header":"x-hub-signature-256","encoding":"hex","prefix":"sha256=","secret":"fixture-only-key"}},"projectId":"missing-project","workspaceStrategy":{"type":"root"},"modelSelection":{"instanceId":"scripted","model":"m"},"runtimeMode":"full-access","interactionMode":"default"});
+    let reply = scheduled_tasks::upsert(&c, &TaskUpsert::from_json(&p).unwrap()).unwrap();
+    let body = r#"{"action":"go"}"#;
+    assert!(post(
+        &s.base,
+        reply["task"]["webhook"]["path"].as_str().unwrap(),
+        body,
+        &sign(body)
+    )
+    .contains("accepted"));
+    assert!(support::wait_for(std::time::Duration::from_secs(2), || {
+        scheduled_tasks::list(&c).unwrap()["tasks"][0]["runCount"]
+            .as_u64()
+            .unwrap_or(0)
+            > 0
+    }));
+    assert_eq!(
+        s.state
+            .db
+            .lock()
+            .unwrap()
+            .query_row("SELECT count(*) FROM hook_queue", [], |r| r
+                .get::<_, i64>(0))
+            .unwrap(),
+        1,
+        "failed dispatch lost accepted job"
+    );
+    // Simulate a crash after the dispatch receipt commit but before queue deletion.
+    let db = s.state.db.lock().unwrap();
+    let job: String = db
+        .query_row("SELECT id FROM hook_queue", [], |r| r.get(0))
+        .unwrap();
+    db.execute(
+        "INSERT INTO receipts VALUES(?,'{}')",
+        [format!("webhook:retry:{job}")],
+    )
+    .unwrap();
+    db.execute("UPDATE hook_queue SET due=0", []).unwrap();
+    drop(db);
+    scheduled_tasks::set_enabled(&c, "retry", true).unwrap();
+    assert!(support::wait_for(std::time::Duration::from_secs(2), || s
+        .state
+        .db
+        .lock()
+        .unwrap()
+        .query_row("SELECT count(*) FROM hook_queue", [], |r| r
+            .get::<_, i64>(0))
+        .unwrap()
+        == 0));
+    assert_eq!(
+        scheduled_tasks::list(&c).unwrap()["tasks"][0]["runCount"],
+        1
+    );
 }

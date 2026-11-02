@@ -1947,6 +1947,17 @@ fn upstream_p2_webhook_reader() {
         let c = connect(&s);
         c.rpc("projects.mutate",json!({"type":"project.create","commandId":"p","projectId":"p","title":"Hook fixture","workspaceRoot":home})).unwrap();
         let input = json!({"id":"fixture-hook","title":"Hook","prompt":"inspect {{body.action}}","enabled":true,"schedule":{"type":"webhook","signature":{"header":"x-hub-signature-256","encoding":"hex","prefix":"sha256=","secret":"fixture-only-key"},"maxDeliveryAgeMinutes":5,"filters":[{"path":"body.action","op":"equals","value":"opened"}],"dedupe":{"replayKey":"{{body.id}}","coalesceKey":"{{body.group}}","coalesceWindowSeconds":60}},"projectId":"p","workspaceStrategy":{"type":"root"},"modelSelection":{"instanceId":"codex","model":"fixture"},"runtimeMode":"full-access","interactionMode":"default"});
+        let mut unsafe_input = input.clone();
+        unsafe_input["id"] = json!("unsigned-hook");
+        unsafe_input["prompt"] = json!("{{query.text}}");
+        let unsigned_accepted =
+            scheduled_tasks::upsert(&c, &TaskUpsert::from_json(&unsafe_input).unwrap()).is_ok();
+        eprintln!("{label}: unsigned query template accepted={unsigned_accepted}");
+        assert_eq!(
+            unsigned_accepted,
+            label == "reference",
+            "intentional hardening differs from pinned body-only contract"
+        );
         let result = scheduled_tasks::upsert(&c, &TaskUpsert::from_json(&input).unwrap());
         let Ok(result) = result else {
             panic!("{label} rejected signed definition: {result:?}");

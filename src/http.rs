@@ -27,6 +27,11 @@ pub(crate) struct Limits {
     peers: std::sync::Mutex<
         std::collections::HashMap<std::net::IpAddr, std::sync::Weak<tokio::sync::Semaphore>>,
     >,
+    hook_window: std::sync::Mutex<(
+        std::time::Instant,
+        usize,
+        std::collections::HashMap<std::net::IpAddr, usize>,
+    )>,
     token_window: std::sync::Mutex<(std::time::Instant, usize)>,
 }
 impl Default for Limits {
@@ -34,6 +39,7 @@ impl Default for Limits {
         Self {
             connections: Arc::new(tokio::sync::Semaphore::new(128)),
             peers: Default::default(),
+            hook_window: std::sync::Mutex::new((std::time::Instant::now(), 0, Default::default())),
             token_window: std::sync::Mutex::new((std::time::Instant::now(), 0)),
         }
     }
@@ -203,6 +209,30 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
                 return Ok(json_reply(StatusCode::NOT_FOUND, "{}".into()));
             }
             let (id, token) = (parts[0].to_owned(), parts[1].to_owned());
+            {
+                let ip = request
+                    .extensions()
+                    .get::<std::net::IpAddr>()
+                    .copied()
+                    .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
+                let mut window = state.http.hook_window.lock().unwrap();
+                if window.0.elapsed() >= std::time::Duration::from_secs(1) {
+                    *window = (std::time::Instant::now(), 0, Default::default());
+                }
+                if window.1 >= 60 || window.2.get(&ip).copied().unwrap_or(0) >= 30 {
+                    return Ok(json_reply(StatusCode::TOO_MANY_REQUESTS, "{}".into()));
+                }
+                window.1 += 1;
+                *window.2.entry(ip).or_default() += 1;
+            }
+            let check_state = state.clone();
+            let check_id = id.clone();
+            if !tokio::task::spawn_blocking(move || crate::webhook::exists(&check_state, &check_id))
+                .await
+                .unwrap_or(false)
+            {
+                return Ok(json_reply(StatusCode::NOT_FOUND, "{}".into()));
+            }
             let headers = request.headers().clone();
             let query = request.uri().query().unwrap_or("").to_owned();
             let bytes = tokio::time::timeout(
@@ -213,8 +243,12 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
             let Ok(Ok(bytes)) = bytes else {
                 return Ok(json_reply(StatusCode::PAYLOAD_TOO_LARGE, "{}".into()));
             };
-            let result =
-                crate::webhook::accept(&state, &id, &token, &headers, &query, &bytes.to_bytes());
+            let bytes = bytes.to_bytes();
+            let result = tokio::task::spawn_blocking(move || {
+                crate::webhook::accept(&state, &id, &token, &headers, &query, &bytes)
+            })
+            .await
+            .unwrap_or((503, "error"));
             let mut response = json_reply(
                 StatusCode::from_u16(result.0).unwrap(),
                 json!({"outcome":result.1}).to_string(),
@@ -485,12 +519,13 @@ pub async fn serve_io<I>(io: I, state: Arc<State>) -> std::io::Result<()>
 where
     I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
-    serve_connection(io, state, None).await
+    serve_connection(io, state, None, None).await
 }
 async fn serve_connection<I>(
     io: I,
     state: Arc<State>,
     peer: Option<tokio::sync::OwnedSemaphorePermit>,
+    address: Option<std::net::IpAddr>,
 ) -> std::io::Result<()>
 where
     I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
@@ -507,6 +542,9 @@ where
     crate::projects::ensure_identity_watcher(&state);
     let service = service_fn(move |mut request: Request<Incoming>| {
         request.extensions_mut().insert(lease.clone());
+        if let Some(ip) = address {
+            request.extensions_mut().insert(ip);
+        }
         route(state.clone(), request)
     });
     hyper::server::conn::http1::Builder::new()
@@ -553,7 +591,7 @@ pub async fn serve(listener: TcpListener, state: Arc<State>) -> std::io::Result<
         let _ = socket.set_nodelay(true);
         let state = state.clone();
         tokio::spawn(async move {
-            let _ = serve_connection(socket, state, Some(peer)).await;
+            let _ = serve_connection(socket, state, Some(peer), Some(address.ip())).await;
             crate::heap::collect();
         });
     }

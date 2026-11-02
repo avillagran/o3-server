@@ -13,8 +13,12 @@ use std::sync::Arc;
 fn signed_template(template: &str) -> bool {
     let mut rest = template;
     while let Some((_, tail)) = rest.split_once("{{") {
-        let Some((path, after)) = tail.split_once("}}") else { return false; };
-        if path.trim() != "body" && !path.trim().starts_with("body.") { return false; }
+        let Some((path, after)) = tail.split_once("}}") else {
+            return false;
+        };
+        if path.trim() != "body" && !path.trim().starts_with("body.") {
+            return false;
+        }
         rest = after;
     }
     true
@@ -44,10 +48,9 @@ pub fn validate(s: &Value) -> Result<(), &'static str> {
                 !matches!(
                     f["op"].as_str(),
                     Some("exists" | "equals" | "notEquals" | "in" | "startsWith")
-                ) || f["path"].as_str().is_none_or(|p| {
-                    p.len() > 1024
-                        || !matches!(p.split('.').next(), Some("body"))
-                })
+                ) || f["path"]
+                    .as_str()
+                    .is_none_or(|p| p.len() > 1024 || !matches!(p.split('.').next(), Some("body")))
             })
     }) {
         return Err("invalid webhook filters");
@@ -59,7 +62,10 @@ pub fn validate(s: &Value) -> Result<(), &'static str> {
         return Err("invalid coalesce window");
     }
     for key in ["replayKey", "coalesceKey"] {
-        if s["dedupe"][key].as_str().is_some_and(|t| !signed_template(t)) {
+        if s["dedupe"][key]
+            .as_str()
+            .is_some_and(|t| !signed_template(t))
+        {
             return Err("webhook templates require signed body fields");
         }
     }
@@ -169,6 +175,10 @@ fn matches(f: &Value, root: &Value) -> bool {
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
+pub fn exists(s: &State, id: &str) -> bool {
+    get(&s.reader.lock().unwrap(), "scheduledTasks", id)
+        .is_ok_and(|t| t["schedule"]["type"] == "webhook")
+}
 pub fn accept(
     s: &State,
     id: &str,
@@ -177,14 +187,11 @@ pub fn accept(
     _query: &str,
     body: &[u8],
 ) -> (u16, &'static str) {
-    let mut db = s.db.lock().unwrap();
-    let Ok(tx) = db.transaction() else {
-        return (503, "error");
-    };
-    let Ok(task) = get(&tx, "scheduledTasks", id) else {
+    let reader = s.reader.lock().unwrap();
+    let Ok(task) = get(&reader, "scheduledTasks", id) else {
         return (404, "not_found");
     };
-    let Ok(creds) = get(&tx, "hookCredentials", id) else {
+    let Ok(creds) = get(&reader, "hookCredentials", id) else {
         return (404, "not_found");
     };
     // HMAC verification compares fixed digests in constant time, including token length.
@@ -244,8 +251,21 @@ pub fn accept(
     }
     // The wire contract authenticates only raw body bytes. Never expose unsigned
     // headers (including the signature) or query values to execution decisions.
-    if validate(&task["schedule"]).is_err() || !signed_template(task["prompt"].as_str().unwrap_or("")) {
+    if validate(&task["schedule"]).is_err()
+        || !signed_template(task["prompt"].as_str().unwrap_or(""))
+    {
         return (400, "unsigned_template");
+    }
+    drop(reader);
+    let mut db = s.db.lock().unwrap();
+    let Ok(tx) = db.transaction() else {
+        return (503, "error");
+    };
+    // A definition edit or credential rotation invalidates the verified snapshot.
+    if get(&tx, "scheduledTasks", id).ok().as_ref() != Some(&task)
+        || get(&tx, "hookCredentials", id).ok().as_ref() != Some(&creds)
+    {
+        return (409, "definition_changed");
     }
     let replay = hex(&Sha256::digest(body));
     let body: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
@@ -276,18 +296,33 @@ pub fn accept(
     let replays: i64 = tx
         .query_row("SELECT count(*) FROM hook_replay", [], |r| r.get(0))
         .unwrap_or(100000);
-    if count >= 500 || replays >= 100000 {
+    let queue_bytes: i64 = tx.query_row("SELECT coalesce(sum(length(CAST(prompt AS BLOB))+length(CAST(coalesce AS BLOB))),0) FROM hook_queue", [], |r| r.get(0)).unwrap_or(i64::MAX);
+    let replay_bytes: i64 = tx
+        .query_row(
+            "SELECT coalesce(sum(length(CAST(key AS BLOB))),0) FROM hook_replay",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(i64::MAX);
+    if count >= 500
+        || replays >= 100000
+        || queue_bytes >= 8 * 1024 * 1024 - 70 * 1024
+        || replay_bytes >= 8 * 1024 * 1024 - 64
+    {
         return (429, "queue_full");
     }
     let coalesce = dedupe["coalesceKey"]
         .as_str()
         .map(|t| render(t, &root, false))
         .unwrap_or_default();
+    if coalesce.len() > 4096 {
+        return (400, "invalid_key");
+    }
     let pending = if coalesce.is_empty() {
         None
     } else {
         tx.query_row(
-            "SELECT id FROM hook_queue WHERE task=? AND coalesce=?",
+            "SELECT id FROM hook_queue WHERE task=? AND coalesce=? AND due != 9223372036854775807",
             params![id, coalesce],
             |r| r.get::<_, String>(0),
         )
@@ -324,10 +359,15 @@ pub fn tick(s: &Arc<State>) {
     for _ in 0..8 {
         let job = {
             let db = s.db.lock().unwrap();
-            let v=db.query_row("SELECT id,task,expires,prompt FROM hook_queue WHERE due<=? ORDER BY due LIMIT 1",[now_ms()],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,i64>(2)?,r.get::<_,String>(3)?))).optional().ok().flatten();
+            let v=db.query_row("SELECT id,task,expires,prompt FROM hook_queue WHERE due<=? OR due=9223372036854775807 ORDER BY due LIMIT 1",[now_ms()],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,i64>(2)?,r.get::<_,String>(3)?))).optional().ok().flatten();
             if let Some((id, _, _, _)) = &v {
+                // Freeze the prompt while dispatching. A new coalesced delivery gets
+                // its own job; a crash leaves this claim eligible for receipt replay.
                 if db
-                    .execute("DELETE FROM hook_queue WHERE id=?", [id])
+                    .execute(
+                        "UPDATE hook_queue SET due=9223372036854775807 WHERE id=?",
+                        [id],
+                    )
                     .is_err()
                 {
                     return;
@@ -335,13 +375,35 @@ pub fn tick(s: &Arc<State>) {
             }
             v
         };
-        let Some((_, task, expires, prompt)) = job else {
+        let Some((id, task, expires, prompt)) = job else {
             return;
         };
         let enabled = get(&s.db.lock().unwrap(), "scheduledTasks", &task)
             .is_ok_and(|t| t["enabled"] == true && t["schedule"]["type"] == "webhook");
-        if enabled && now_ms() <= expires {
-            let _ = crate::scheduled::fire_prompt(s, &task, Some(&prompt));
+        let cid = format!("webhook:{task}:{id}");
+        let dispatched =
+            s.db.lock()
+                .unwrap()
+                .query_row("SELECT 1 FROM receipts WHERE command_id=?", [&cid], |_| {
+                    Ok(())
+                })
+                .optional()
+                .ok()
+                .flatten()
+                .is_some();
+        if !dispatched && enabled && now_ms() <= expires {
+            if crate::scheduled::fire_prompt_key(s, &task, Some(&prompt), Some(&id)).is_err() {
+                let _ = s.db.lock().unwrap().execute(
+                    "UPDATE hook_queue SET due=? WHERE id=?",
+                    params![now_ms() + 30000, id],
+                );
+                return;
+            }
         }
+        // A durable command receipt deduplicates retries after a crash at handoff.
+        let _ =
+            s.db.lock()
+                .unwrap()
+                .execute("DELETE FROM hook_queue WHERE id=?", [&id]);
     }
 }

@@ -294,14 +294,26 @@ fn fire(s: &Arc<State>, id: &str) -> Reply {
     fire_prompt(s, id, None)
 }
 pub(crate) fn fire_prompt(s: &Arc<State>, id: &str, prompt: Option<&str>) -> Reply {
+    fire_prompt_key(s, id, prompt, None)
+}
+pub(crate) fn fire_prompt_key(
+    s: &Arc<State>,
+    id: &str,
+    prompt: Option<&str>,
+    job: Option<&str>,
+) -> Reply {
     let mut task = get(&s.db.lock().unwrap(), KIND, id)
         .map_err(|_| failure("The scheduled task does not exist.", Some(id)))?;
     if let Some(prompt) = prompt {
         task["prompt"] = json!(prompt);
     }
     let number = task["runCount"].as_i64().unwrap_or(0) + 1;
-    let cid = format!("scheduled:{id}:{number}");
-    let message = format!("scheduled-{id}-{number}");
+    let cid = job
+        .map(|j| format!("webhook:{id}:{j}"))
+        .unwrap_or_else(|| format!("scheduled:{id}:{number}"));
+    let message = job
+        .map(|j| format!("webhook-{j}"))
+        .unwrap_or_else(|| format!("scheduled-{id}-{number}"));
     let outcome = match task["threadId"].as_str() {
         Some(thread) => crate::events::dispatch(s, &json!({"type":"message.dispatch","commandId":cid,"messageId":message,"threadId":thread,"text":task["prompt"],"attachments":[],"scheduledTaskId":id,"dispatchMode":{"type":"start_immediately"}})).map(|_| ()),
         None => crate::events::launch(s, &json!({"commandId":cid,"projectId":task["projectId"],"title":task["title"],"modelSelection":task["modelSelection"],"runtimeMode":task["runtimeMode"],"interactionMode":task["interactionMode"],"workspaceStrategy":task["workspaceStrategy"],"creationSource":task["creationSource"],"initialMessage":{"messageId":message,"text":task["prompt"],"attachments":[]}})).map(|_| ()),
@@ -334,6 +346,9 @@ pub(crate) fn fire_prompt(s: &Arc<State>, id: &str, prompt: Option<&str>) -> Rep
     put(&db, KIND, id, "", &task).map_err(|e| failure(&e, Some(id)))?;
     drop(db);
     s.streams.ops.wake_scheduler();
+    if job.is_some() {
+        outcome.map_err(|e| failure(&e, Some(id)))?;
+    }
     Ok(task)
 }
 
