@@ -23,7 +23,10 @@ fn writable(path: &Path) -> bool {
 // A recognized layout alone cannot authorize executing an arbitrary helper.
 fn installer(path: &Path, prefix: &Path, tool: &str) -> Result<PathBuf, &'static str> {
     use std::{
-        os::unix::fs::MetadataExt,
+        os::{
+            fd::AsRawFd,
+            unix::{fs::MetadataExt, process::CommandExt},
+        },
         process::Stdio,
         time::{Duration, Instant},
     };
@@ -39,7 +42,7 @@ fn installer(path: &Path, prefix: &Path, tool: &str) -> Result<PathBuf, &'static
             && (real == Path::new("/usr/bin/npm") || real.starts_with("/usr/share/nodejs/npm/")))
             || (tool == "brew" && real.starts_with("/opt/homebrew/")));
     if !m.is_file()
-        || m.mode() & 0o6111 == 0
+        || m.mode() & 0o111 == 0
         || m.mode() & 0o6022 != 0
         || !(system
             || m.uid() == uid
@@ -64,8 +67,17 @@ fn installer(path: &Path, prefix: &Path, tool: &str) -> Result<PathBuf, &'static
             return Err("Installer directory can be replaced by another user; update manually.");
         }
     }
+    struct ProbeGroup(u32);
+    impl Drop for ProbeGroup {
+        fn drop(&mut self) {
+            unsafe {
+                libc::kill(-(self.0 as i32), libc::SIGKILL);
+            }
+        }
+    }
     let mut child = std::process::Command::new(&real)
         .arg("--version")
+        .process_group(0)
         .env_clear()
         .env("PATH", "/usr/bin:/bin")
         .env("HOME", prefix)
@@ -74,6 +86,7 @@ fn installer(path: &Path, prefix: &Path, tool: &str) -> Result<PathBuf, &'static
         .stderr(Stdio::null())
         .spawn()
         .map_err(|_| "Cannot verify installer identity")?;
+    let _group = ProbeGroup(child.id());
     let deadline = Instant::now() + Duration::from_secs(2);
     let status = loop {
         match child.try_wait() {
@@ -87,24 +100,38 @@ fn installer(path: &Path, prefix: &Path, tool: &str) -> Result<PathBuf, &'static
         }
     };
     let mut bytes = Vec::new();
-    child
-        .stdout
-        .take()
-        .unwrap()
-        .take(1025)
-        .read_to_end(&mut bytes)
-        .map_err(|_| "Invalid installer identity")?;
+    // A descendant may retain stdout after the direct child exits. Never wait
+    // for that writer to close; the guard also stops the probe process group.
+    let stdout = child.stdout.take().unwrap();
+    let fd = stdout.as_raw_fd();
+    unsafe {
+        let flags = libc::fcntl(fd, libc::F_GETFL);
+        if flags < 0 || libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) < 0 {
+            return Err("Cannot bound installer output");
+        }
+    }
+    match stdout.take(1025).read_to_end(&mut bytes) {
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+        Err(_) => return Err("Invalid installer identity"),
+    }
     let text = String::from_utf8_lossy(&bytes);
     let identity = match tool {
         "npm" => {
             text.trim().split('.').count() == 3
-                && text.trim().chars().all(|c| c.is_ascii_digit() || c == '.')
+                && text
+                    .trim()
+                    .split('.')
+                    .all(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
         }
         "brew" => text.starts_with("Homebrew "),
         "claude" => text.contains("Claude Code"),
         "opencode" => {
             text.trim().split('.').count() == 3
-                && text.trim().chars().all(|c| c.is_ascii_digit() || c == '.')
+                && text
+                    .trim()
+                    .split('.')
+                    .all(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
         }
         _ => false,
     };
@@ -324,5 +351,30 @@ mod audit_tests {
             "privileged helper advertised as npm"
         );
         std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod probe_tests {
+    use super::*;
+    #[test]
+    fn probe_does_not_wait_for_descendant_stdout() {
+        use std::os::unix::fs::PermissionsExt;
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("o3-probe-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let npm = root.join("npm");
+        std::fs::write(&npm, "#!/bin/sh\n/bin/sleep 3 &\necho 10.1.0\n").unwrap();
+        std::fs::set_permissions(&npm, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let start = std::time::Instant::now();
+        assert!(installer(&npm, &root, "npm").is_ok());
+        let elapsed = start.elapsed();
+        std::fs::remove_dir_all(root).unwrap();
+        assert!(
+            elapsed < std::time::Duration::from_secs(2),
+            "probe waited for inherited stdout"
+        );
     }
 }

@@ -55,8 +55,7 @@ fn clean_old_profiles() {
         else {
             continue;
         };
-        if unsafe { libc::kill(pid, 0) } == -1
-            && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+        if !Path::new("/proc").join(pid.to_string()).exists()
             && entry.file_type().is_ok_and(|t| t.is_dir())
         {
             let _ = std::fs::remove_dir_all(entry.path());
