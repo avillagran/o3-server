@@ -465,6 +465,16 @@ pub(crate) fn append(
     Ok(seq)
 }
 pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
+    if c["regenerateTitle"] == true {
+        let project = {
+            let db = s.db.lock().unwrap();
+            get(&db, "thread", c["threadId"].as_str().unwrap_or(""))?["projectId"]
+                .as_str()
+                .unwrap_or("")
+                .to_owned()
+        };
+        crate::title::check_project(s, &project)?;
+    }
     let _worktree = s
         .worktree_gate
         .try_read()
@@ -1405,6 +1415,9 @@ fn new_thread(db: &Connection, c: &Value, tid: &str, at: &str) -> Result<Value> 
 }
 
 pub fn launch(s: &std::sync::Arc<State>, p: &Value) -> Result<Value> {
+    if p["generateTitle"] == true {
+        crate::title::check_project(s, p["projectId"].as_str().unwrap_or(""))?;
+    }
     let _worktree = s
         .worktree_gate
         .try_read()

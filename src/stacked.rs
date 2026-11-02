@@ -347,6 +347,12 @@ async fn steps(
                     .ok()
                     .map(|o| o.text())
                     .unwrap_or_default();
+                    crate::title::check_settings(
+                        &run.state,
+                        &crate::source_control::effective(&run.state, root),
+                        "sourceControlWriterModelSelection",
+                    )
+                    .map_err(|message| fail(op, root, &message, None))?;
                     crate::source_control::generate(&run.state, root, "commit", &diff)
                         .await
                         .unwrap_or(fallback)

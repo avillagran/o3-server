@@ -1795,3 +1795,17 @@ fn upstream_p1_readers() {
     assert_eq!(views[0], views[1], "consumed P1 reader mismatch");
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+#[ignore = "isolated pinned settings acceptance probe, no inference"]
+fn upstream_generation_setting_acceptance() {
+    let home = PathBuf::from("/var/tmp/o3-build/tmp")
+        .join(format!("generation-setting-{}", std::process::id()));
+    std::fs::create_dir_all(&home).unwrap();
+    let server = start(&reference_binary(), &home);
+    let c = connect(&server);
+    let result = c.rpc("server.updateSettings",json!({"patch":{"textGenerationModelSelection":{"instanceId":"codex","model":"fixture"}}})).unwrap();
+    let saved = t3_protocol::api::server::settings(&c).unwrap();
+    assert_eq!(saved["textGenerationModelSelection"]["instanceId"], "codex");
+    std::fs::write(Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/generation-settings-reference.json"),serde_json::to_vec_pretty(&json!({"accepted":true,"savedSelection":saved["textGenerationModelSelection"],"responseHasSettings":result.get("settings").is_some()})).unwrap()).unwrap();
+}

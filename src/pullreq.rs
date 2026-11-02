@@ -1569,6 +1569,8 @@ async fn review_guide(s: &State, tag: &str, p: &Value) -> Reply {
             None,
         )
         .await?;
+    crate::title::check_settings(s, &settings, "reviewGuideModelSelection")
+        .map_err(|message| operation(tag, &message, false))?;
     let text = crate::source_control::generate(s, &pr.project.root, "review", &diff)
         .await
         .ok_or_else(|| operation(tag, "Review generation failed or requested tools", false))?;

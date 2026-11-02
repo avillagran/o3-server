@@ -113,7 +113,7 @@ fn generated_titles_settings_regeneration_and_rename_race_follow_reader_contract
         json!({"patch":{"textGenerationModelSelection":{"instanceId":"codex","model":"fail"}}}),
     )
     .unwrap();
-    orchestration::dispatch(
+    let err = orchestration::dispatch(
         &c,
         &Command::thread_action(
             "fallback",
@@ -121,9 +121,12 @@ fn generated_titles_settings_regeneration_and_rename_race_follow_reader_contract
         )
         .unwrap(),
     )
-    .unwrap();
-    let p = wait(&c, |p| p["thread"]["titleRegeneration"].is_null());
-    assert_eq!(p["thread"]["title"], "A long request to fix a bug");
+    .unwrap_err();
+    assert!(err.to_string().contains("Select a Claude"));
+    assert_eq!(
+        orchestration::thread_projection(&c, "t").unwrap()["thread"]["title"],
+        "User title"
+    );
     let mut mirror = result["projection"].clone();
     let mut seq = 0;
     let mut busy = false;
