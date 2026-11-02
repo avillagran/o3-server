@@ -196,6 +196,9 @@ fn admin_reads_project_helpers_and_unavailable_surfaces() {
         (cloned["projectId"].as_str(), cloned["cwd"].as_str()),
         (Some("clone-1"), dest.to_str())
     );
+    assert!(support::wait_for(Duration::from_secs(10), || dest
+        .join("f.txt")
+        .exists()));
     assert_eq!(
         std::fs::read_to_string(dest.join("f.txt")).unwrap(),
         "hello"
@@ -204,7 +207,8 @@ fn admin_reads_project_helpers_and_unavailable_surfaces() {
     assert!(busy.contains("not empty"), "{busy}");
     let bad_dest = scratch.join("clones/bad");
     let missing = c.rpc("projectClone.start", json!({"projectId":"clone-3","title":"Bad","createdAt":"2026-01-01T00:00:00.000Z","remoteUrl":scratch.join("no-such-origin").to_str().unwrap(),"destinationPath":bad_dest}));
-    assert!(missing.is_err() && !bad_dest.exists());
+    assert!(missing.is_ok());
+    assert!(support::wait_for(Duration::from_secs(10), || !bad_dest.exists()));
     assert!(c.rpc("projectClone.start", json!({"projectId":"c4","title":"x","createdAt":"2026-01-01T00:00:00.000Z","remoteUrl":"--upload-pack=touch /tmp/x","destinationPath":scratch.join("clones/evil")})).is_err());
 
     // Worktree setup is never staged: nothing to cancel, the stream says null.

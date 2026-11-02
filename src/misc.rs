@@ -19,6 +19,7 @@ pub fn handles(tag: &str) -> bool {
             | "projects.listIgnoredFiles"
             | "projects.createNew"
             | "projectClone.start"
+            | "projectClone.cancel"
             | "worktreeSetup.cancel"
             | "orchestration.getOlderSettledThreads"
             | "orchestration.getWorkflowScript"
@@ -30,7 +31,7 @@ pub fn handles(tag: &str) -> bool {
     ) || tag.starts_with("device.")
 }
 
-pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
+pub async fn call(s: &std::sync::Arc<State>, tag: &str, p: &Value) -> Reply {
     if tag.starts_with("device.") {
         return crate::device::call(s, tag, p).await;
     }
@@ -41,6 +42,7 @@ pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
         "projects.listIgnoredFiles" => list_ignored(p).await,
         "projects.createNew" => create_new(s, p).await,
         "projectClone.start" => clone_start(s, p).await,
+        "projectClone.cancel" => Ok(crate::clone_jobs::cancel(s, str_field(p, "projectId")?)),
         "worktreeSetup.cancel" => {
             Ok(json!({"cancelled":crate::worktree_progress::cancel(s,str_field(p,"threadId")?)}))
         }
@@ -454,9 +456,9 @@ fn repository_error(operation: &str, detail: &str) -> Value {
     json!({"_tag":"SourceControlRepositoryError","provider":"github","operation":operation,"detail":detail,"message":format!("Source control repository operation {operation} failed for github: {detail}")})
 }
 
-async fn clone_start(s: &State, p: &Value) -> Reply {
-    let project_id = str_field(p, "projectId")?.to_owned();
-    let title = str_field(p, "title")?.to_owned();
+async fn clone_start(s: &std::sync::Arc<State>, p: &Value) -> Reply {
+    str_field(p, "projectId")?;
+    str_field(p, "title")?;
     let destination =
         paths::normalize(&paths::expand_home(str_field(p, "destinationPath")?.trim()));
     if !destination.is_absolute() {
@@ -504,43 +506,20 @@ async fn clone_start(s: &State, p: &Value) -> Reply {
     if let Some(parent) = destination.parent() {
         std::fs::create_dir_all(parent).map_err(|e| repository_error("clone", &e.to_string()))?;
     }
-    let dest_text = destination.to_string_lossy().into_owned();
-    // The clone blocks until it ends (capabilities.projectCloneTracking is off): at most half an hour.
-    let opts = Opts {
-        timeout: Duration::from_secs(1800),
-        cap: 1024 * 1024,
-        allow_truncate: true,
-    };
-    let parent = destination.parent().unwrap_or(Path::new("/")).to_path_buf();
-    let cloned = proc::git(
-        &parent,
-        &["clone", "--no-tags", "--", &remote, &dest_text],
-        opts,
-    )
-    .await;
-    match cloned {
-        Ok(o) if o.ok() => {}
-        Ok(o) => {
-            let _ = std::fs::remove_dir_all(&destination);
-            let detail = o
-                .stderr
-                .trim()
-                .lines()
-                .last()
-                .unwrap_or("git clone failed")
-                .to_owned();
-            return Err(repository_error("clone", &detail));
-        }
-        Err(e) => {
-            let _ = std::fs::remove_dir_all(&destination);
-            return Err(repository_error("clone", &format!("{e:?}")));
+    // Refuse URL userinfo: snapshots and start responses must never contain credentials.
+    if let Ok(url) = url::Url::parse(&remote) {
+        if !url.username().is_empty()
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+        {
+            return Err(repository_error(
+                "clone",
+                "Credential-bearing remote URLs are not accepted.",
+            ));
         }
     }
-    let created = crate::projects::mutate_resolved(s, &json!({"type":"project.create","commandId":format!("project-clone:{project_id}"),"projectId":project_id,"title":title,"workspaceRoot":dest_text,"createdAt":p["createdAt"],"scripts":[]})).await;
-    if let Err(e) = created {
-        return Err(dispatch_error(&e));
-    }
-    Ok(json!({"projectId":project_id,"cwd":dest_text,"remoteUrl":remote,"repository":null}))
+    crate::clone_jobs::start(s.clone(), p.clone(), destination, remote)
 }
 
 // ---- older settled threads -----------------------------------------------------------------

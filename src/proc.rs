@@ -65,13 +65,21 @@ impl Opts {
     };
 }
 
-async fn read_capped<R: AsyncRead + Unpin>(mut r: R, cap: usize) -> (Vec<u8>, bool) {
+type Observer = Arc<dyn Fn(&[u8]) + Send + Sync>;
+async fn read_capped<R: AsyncRead + Unpin>(
+    mut r: R,
+    cap: usize,
+    observer: Option<Observer>,
+) -> (Vec<u8>, bool) {
     let mut out = Vec::new();
     let mut buf = [0u8; 16 * 1024];
     loop {
         match r.read(&mut buf).await {
             Ok(0) | Err(_) => return (out, false),
             Ok(n) => {
+                if let Some(observer) = &observer {
+                    observer(&buf[..n]);
+                }
                 let room = cap.saturating_sub(out.len());
                 out.extend_from_slice(&buf[..n.min(room)]);
                 if n > room {
@@ -138,6 +146,16 @@ pub async fn run(
     opts: Opts,
     env: &[(&str, &Path)],
 ) -> Result<Out, RunError> {
+    run_observed(program, cwd, args, opts, env, None).await
+}
+async fn run_observed(
+    program: &str,
+    cwd: &Path,
+    args: &[&str],
+    opts: Opts,
+    env: &[(&str, &Path)],
+    observer: Option<Observer>,
+) -> Result<Out, RunError> {
     let mut command = base_command(program, cwd, args);
     for (k, v) in env {
         command.env(k, v);
@@ -150,15 +168,15 @@ pub async fn run(
     let stderr = child.stderr.take().expect("piped");
     // Boxed: debug builds give big futures big frames, and sockets run on small stacks.
     let work = Box::pin(async {
-        let ((out, cut), (err, _)) = tokio::join!(
-            read_capped(stdout, opts.cap),
-            read_capped(stderr, STDERR_CAP)
+        let ((out, cut), (err, err_cut)) = tokio::join!(
+            read_capped(stdout, opts.cap, None),
+            read_capped(stderr, STDERR_CAP, observer)
         );
-        if cut {
+        if cut || err_cut {
             let _ = child.start_kill();
         }
         let status = child.wait().await.ok();
-        (out, cut, err, status)
+        (out, cut || err_cut, err, status)
     });
     match tokio::time::timeout(opts.timeout, work).await {
         Ok((stdout, cut, err, status)) => Ok(Out {
@@ -215,4 +233,13 @@ pub(crate) fn try_lock_common_dir(key: PathBuf) -> Option<OwnedMutexGuard<()>> {
         map.entry(key).or_default().clone()
     };
     mutex.try_lock_owned().ok()
+}
+
+pub async fn git_progress(
+    cwd: &Path,
+    args: &[&str],
+    opts: Opts,
+    observer: Observer,
+) -> Result<Out, RunError> {
+    run_observed("git", cwd, args, opts, &[], Some(observer)).await
 }

@@ -91,3 +91,5 @@ mod usage_ledger;
 mod webhook;
 
 pub mod worktree_progress;
+
+pub mod clone_jobs;
