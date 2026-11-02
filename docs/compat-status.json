@@ -232,14 +232,14 @@
       "note": "Real lib reducers and timeline, queue, approval, compaction-candidate and sidebar readers run on server output. Gated Codex vs isolated T3 3991 passes strictly: two subscribers, request-before-result window, unique run creation, terminal causality, exact replay order and identity, stable ID relationships. One recorded reference-only exception: lastSnoozeWakeAt null-to-absent in T3's replay, which no client reads. Reader-state equality, not JSON equality of every record. Accepted limits: other-owner and delegated-cohort cases with no client flow; RECOVERY.md's exact original-process reattachment. See concurrent-reader-report.json and CONFORMANCE.md. Audit follow-up: historical text/tool results now truncate oldest-first with a marker at 1 MiB; attachment overflow still rejects explicitly. Native latest forks skip fallback-only limits."
     },
     "preview.adjust": {
-      "status": "done",
+      "status": "partial",
       "priority": "P2",
-      "note": "Client registry plus lazy system Chromium over private CDP pipes. Shared persistent-profile tabs, scoped ephemeral agent contexts, basic navigation/history reconciliation, appearance/viewport and authenticated ACK-paced JPEG viewer. Fixture CDP and real lib readers cover lifecycle; full events/advanced tools and actual Chromium behavior remain unproven. See provider-browser-follow-up.md. Original classification unchanged for independent audit."
+      "note": "Client registry plus lazy system Chromium over private CDP pipes. Shared persistent-profile tabs, scoped ephemeral agent contexts, basic navigation/history reconciliation, appearance/viewport and authenticated ACK-paced JPEG viewer. Fixture CDP and real lib readers cover lifecycle; full events/advanced tools and actual Chromium behavior remain unproven. See provider-browser-follow-up.md. Original classification unchanged for independent audit. Remaining: zoom uses pinch scaling, keeping layout width 640 where T3 lays out at 320 for zoom 2."
     },
     "preview.clearProfile": {
-      "status": "skip",
-      "priority": "unused",
-      "note": "System-browser profile cleanup now closes/reaps the child, deletes confined hashed storage, rejects symlink roots and removes preview snapshots. Real lib reader and fixture CDP lifecycle pass. Desktop gates on serverBrowser. Original skip/unused classification retained for independent audit; full agent browser contract remains incomplete."
+      "status": "done",
+      "priority": "P2",
+      "note": "Desktop browser_profiles.rs:35 calls it once serverBrowser is available, which o3 now provides. Closes and reaps the child, refuses symlinked profile paths and deletes confined storage, through the real reader."
     },
     "preview.close": {
       "status": "done",
@@ -257,14 +257,14 @@
       "note": "Audit remediation: Page.navigate errorText now returns an RPC failure to the actual lib preview reader; rejected-navigation fixture fails before and passes after the fix. No real-engine failure parity claim. Independent status retained."
     },
     "preview.open": {
-      "status": "done",
+      "status": "partial",
       "priority": "P2",
-      "note": "Audit remediation: initial freeform/preset metrics are acknowledged by CDP before returning the requested viewport; fixture regression passes. Fill retains browser sizing. Actual Chromium recheck is recorded in CONFORMANCE.md. Independent status retained."
+      "note": "Audit remediation: initial freeform/preset metrics are acknowledged by CDP before returning the requested viewport; fixture regression passes. Fill retains browser sizing. Actual Chromium recheck is recorded in CONFORMANCE.md. Independent status retained. Remaining: warm tabs run initial page scripts at width 780 before the requested 640 viewport applies, so desktop renders the first layout wrong."
     },
     "preview.refresh": {
-      "status": "done",
+      "status": "partial",
       "priority": "P2",
-      "note": "Client registry plus lazy system Chromium over private CDP pipes. Shared persistent-profile tabs, scoped ephemeral agent contexts, basic navigation/history reconciliation, appearance/viewport and authenticated ACK-paced JPEG viewer. Fixture CDP and real lib readers cover lifecycle; full events/advanced tools and actual Chromium behavior remain unproven. See provider-browser-follow-up.md. Original classification unchanged for independent audit."
+      "note": "Client registry plus lazy system Chromium over private CDP pipes. Shared persistent-profile tabs, scoped ephemeral agent contexts, basic navigation/history reconciliation, appearance/viewport and authenticated ACK-paced JPEG viewer. Fixture CDP and real lib readers cover lifecycle; full events/advanced tools and actual Chromium behavior remain unproven. See provider-browser-follow-up.md. Original classification unchanged for independent audit. Remaining: the CDP reload path has no test through the real refresh reader."
     },
     "preview.reportProfiles": {
       "status": "skip",
@@ -687,9 +687,9 @@
       "note": "No client call site in inventory."
     },
     "server.getConfig": {
-      "status": "partial",
+      "status": "done",
       "priority": "P0",
-      "note": "Partial: verified user-owned original-prefix npm (including OpenCode/Pi/Grok), Homebrew core formula and native Claude/OpenCode update plans; bounded/cancellable/version-verified execution. Unknown ownership/casks/custom taps/other native layouts remain manual. Scoped loopback MCP browser tools reach native Claude/Codex sessions with global/project gates and ephemeral contexts; fixture-backed core subset only. Full browser contract, real CLI handshake and Chromium confinement/rendering remain unproven. See provider-browser-follow-up.md; statuses unchanged for independent audit. Audit remediation adds installer trust/version checks and private Claude MCP config; row status is reserved for independent audit."
+      "note": "Real config, model and provider projection and settings readers pass. In scope by owner decision: explicit-request updates of provider CLIs installed outside o3 (npm global with the original prefix, Homebrew, native Claude and OpenCode installers), refusing privileged, foreign-owned or unverifiable layouts with manual advice; and the agent browser service, a system Chromium over a private CDP pipe exposed to Claude and Codex through a per-session loopback MCP bridge whose credential lives in a 0600 file. Evidence limits: real updates and native CLI MCP acceptance were not run."
     },
     "server.getDatabaseStorage": {
       "status": "skip",

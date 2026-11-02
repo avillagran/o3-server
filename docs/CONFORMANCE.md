@@ -2667,3 +2667,14 @@ Chromium descendant RSS 1,096,020 KiB across 13 processes; that aggregate double
 counts shared pages and is not PSS. These are single samples, not a performance
 regression study. The measured release source was 7907bb1; binary SHA-256:
 fcb41db40d88bb856d61712b4a1aa5d9845a2ecd25c016cb1f709323c75b008e.
+
+## Provider updates and agent browser merged (2026-11-02)
+
+The owner put `server.getConfig` fully in scope. After two audits and a final recheck of
+63ab15d, it is promoted: the bearer no longer appears in any child's argv and privileged or
+foreign-owned updater layouts are refused. Native CLI MCP acceptance and real updates were
+not run and are recorded as evidence limits. Three preview rows go back to partial for
+defects the recheck demonstrated: initial layout at the wrong width, pinch zoom instead of
+T3's layout zoom, and refresh without a real-reader test. Four crashed MCP tabs still block
+new tabs at the limit of four. These are defects of a feature main did not have, and agent
+browser access defaults to on as in T3.
