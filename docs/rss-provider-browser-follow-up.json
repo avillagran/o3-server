@@ -1,0 +1,99 @@
+{
+  "startup_to_websocket_ms": 12.03577101114206,
+  "measured_at_utc": "2026-11-02T18:19:47Z",
+  "binary_sha256": "1e0d0d3c07675e0611887a3fca3d33b71b70b8de917e58cbe19b9f806918f33e",
+  "binary": "/var/tmp/o3-build/main/release/o3-server",
+  "binary_bytes": 16036824,
+  "seed_messages": 1000,
+  "message_model_selection": false,
+  "append_last_100_ms": {
+    "median": 4.40052998601459,
+    "p95": 5.123024981003255,
+    "max": 17.667505977442488
+  },
+  "metadata_append_100_ms": {
+    "median": 1.8983549962285906,
+    "p95": 2.1716410119552165,
+    "max": 10.137153993127868
+  },
+  "threads": 20,
+  "subscribers": 3,
+  "unary_calls": 1000,
+  "text_bytes_per_message": 1000,
+  "cold_kib": {
+    "VmHWM": 11768,
+    "VmRSS": 11768,
+    "RssAnon": 2044,
+    "RssFile": 9724,
+    "THP_enabled": 0,
+    "Threads": 4
+  },
+  "seeded_kib": {
+    "VmHWM": 17552,
+    "VmRSS": 17304,
+    "RssAnon": 3416,
+    "RssFile": 13888,
+    "THP_enabled": 0,
+    "Threads": 5
+  },
+  "subscribed_kib": {
+    "VmHWM": 18952,
+    "VmRSS": 18104,
+    "RssAnon": 4216,
+    "RssFile": 13888,
+    "THP_enabled": 0,
+    "Threads": 6
+  },
+  "after_churn_kib": {
+    "VmHWM": 18952,
+    "VmRSS": 18076,
+    "RssAnon": 4188,
+    "RssFile": 13888,
+    "THP_enabled": 0,
+    "Threads": 6
+  },
+  "snapshot_messages": [
+    10,
+    10,
+    10
+  ],
+  "under_50_mib": true,
+  "under_50_mb": true,
+  "providers": [
+    {
+      "instanceId": "claudeAgent",
+      "installed": false,
+      "status": "disabled"
+    },
+    {
+      "instanceId": "codex",
+      "installed": false,
+      "status": "disabled"
+    }
+  ],
+  "bridge_enabled": true,
+  "gateway_hosting": false,
+  "provider_workload": "registered and probed; inference excluded (defer_start)",
+  "measurement": "Linux /proc/PID/status; disk profile under /var/tmp",
+  "allocator_env": {},
+  "browser_idle": {
+    "server_kib": {
+      "VmHWM": 17920,
+      "VmRSS": 17920,
+      "RssAnon": 4224,
+      "RssFile": 13696,
+      "THP_enabled": 0,
+      "Threads": 5
+    },
+    "fixture_child_kib": {
+      "VmHWM": 11164,
+      "VmRSS": 11164,
+      "RssAnon": 4500,
+      "RssFile": 6664,
+      "THP_enabled": 0,
+      "Threads": 1
+    },
+    "child_kind": "Python CDP fixture, not Chromium",
+    "actual_chromium_rss": null
+  }
+}

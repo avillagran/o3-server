@@ -47,7 +47,9 @@ def memory(pid):
  return {k:int(v.split()[0]) for k,v in (line.split(':',1) for line in pathlib.Path(f'/proc/{pid}/status').read_text().splitlines() if ':' in line) if k in ('VmRSS','VmHWM','RssAnon','RssFile','Threads','THP_enabled')}
 with tempfile.TemporaryDirectory(prefix='o3-rss-',dir='/var/tmp/o3-build') as temp:
  env={**os.environ,'T3CODE_HOME':temp,'HOME':temp,'CODEX_HOME':str(pathlib.Path(temp)/'codex'),'CLAUDE_CONFIG_DIR':str(pathlib.Path(temp)/'claude')}
- token=subprocess.check_output([str(binary),'auth','session','issue','--scope','orchestration:read','--scope','orchestration:operate','--scope','providers:manage','--token-only'],env=env,text=True).strip()
+ browser_fixture=os.environ.get('O3_BENCH_BROWSER_FIXTURE')=='1'
+ if browser_fixture:env['O3_BROWSER_BINARY']=str(repo/'tests/fixtures/browser-cdp.py')
+ token=subprocess.check_output([str(binary),'auth','session','issue','--scope','orchestration:read','--scope','orchestration:operate','--scope','providers:manage','--scope','preview:operate','--token-only'],env=env,text=True).strip()
  gateway_args=[]
  if os.environ.get('O3_BENCH_GATEWAY')=='1':
   cert=pathlib.Path(temp)/'cert.pem';key=pathlib.Path(temp)/'key.pem'
@@ -69,6 +71,13 @@ with tempfile.TemporaryDirectory(prefix='o3-rss-',dir='/var/tmp/o3-build') as te
   startup_to_websocket_ms=(time.perf_counter()-process_started)*1000
   ws.rpc('server.refreshProviders',{})
   config=ws.rpc('server.getConfig',{})
+  browser_idle=None
+  if browser_fixture:
+   ws.rpc('preview.open',{'threadId':'rss-browser','runtime':'server','profileId':'incognito','url':'http://localhost:1234'})
+   profile=pathlib.Path(temp)/'userdata/browser-profiles'
+   pid=int(next(profile.glob('*/fixture.pid')).read_text())
+   browser_idle={'server_kib':memory(process.pid),'fixture_child_kib':memory(pid),'child_kind':'Python CDP fixture, not Chromium','actual_chromium_rss':None}
+
   while not (pathlib.Path(temp)/'omabridge/endpoint.json').exists():
    assert time.monotonic()<deadline, 'bridge startup timeout'
    time.sleep(.05)
@@ -105,6 +114,7 @@ with tempfile.TemporaryDirectory(prefix='o3-rss-',dir='/var/tmp/o3-build') as te
   churn.s.close();time.sleep(.2)
   final=memory(process.pid)
   result={'startup_to_websocket_ms':startup_to_websocket_ms,'measured_at_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'binary':str(binary),'binary_bytes':binary.stat().st_size,'seed_messages':1000,'message_model_selection':bool(selection),'append_last_100_ms':{'median':sorted(append_ms[-100:])[50],'p95':sorted(append_ms[-100:])[94],'max':max(append_ms[-100:])},'metadata_append_100_ms':{'median':sorted(metadata_ms)[50],'p95':sorted(metadata_ms)[94],'max':max(metadata_ms)},'threads':20,'subscribers':3,'unary_calls':1000,'text_bytes_per_message':1000,'cold_kib':cold,'seeded_kib':idle,'subscribed_kib':subscribed,'after_churn_kib':final,'snapshot_messages':counts,'under_50_mib':final['VmHWM']<50*1024,'under_50_mb':final['VmHWM']*1024<50_000_000,'providers':[{'instanceId':p['instanceId'],'installed':p.get('installed'),'status':p.get('status')} for p in providers],'bridge_enabled':True,'gateway_hosting':bool(gateway_args),'provider_workload':'registered and probed; inference excluded (defer_start)','measurement':'Linux /proc/PID/status; disk profile under /var/tmp','allocator_env':{k:v for k,v in env.items() if k.startswith('MIMALLOC_')}}
+  result['browser_idle']=browser_idle
   print(json.dumps(result,indent=2))
   assert result['under_50_mb'], 'server HWM exceeded 50 MB'
   for ws in subscribers:ws.s.close()

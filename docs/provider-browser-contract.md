@@ -1,5 +1,9 @@
 # Provider updates and server browser contract (2026-11-02)
 
+Historical inventory at `08f03a9`. Implementation limits below describe that
+round; see [the follow-up](provider-browser-follow-up.md) for current changes
+and remaining gaps.
+
 Reader inventory (local source; not pinned binary evidence):
 
 - Desktop `src/provider_updates.rs::advisory` reads enabled, driver,

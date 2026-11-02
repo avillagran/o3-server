@@ -234,7 +234,7 @@
     "preview.adjust": {
       "status": "done",
       "priority": "P2",
-      "note": "tests/preview.rs: in-memory registry of tabs a client renders (revision/serverEpoch events, ring of 256). The server renders nothing: runtime 'server' is refused and capabilities.serverBrowser stays off. No state until a client opens a tab."
+      "note": "Client registry plus lazy system Chromium over private CDP pipes. Shared persistent-profile tabs, scoped ephemeral agent contexts, basic navigation/history reconciliation, appearance/viewport and authenticated ACK-paced JPEG viewer. Fixture CDP and real lib readers cover lifecycle; full events/advanced tools and actual Chromium behavior remain unproven. See provider-browser-follow-up.md. Original classification unchanged for independent audit."
     },
     "preview.clearProfile": {
       "status": "skip",
@@ -244,27 +244,27 @@
     "preview.close": {
       "status": "done",
       "priority": "P2",
-      "note": "tests/preview.rs: in-memory registry of tabs a client renders (revision/serverEpoch events, ring of 256). The server renders nothing: runtime 'server' is refused and capabilities.serverBrowser stays off. No state until a client opens a tab."
+      "note": "Client registry plus lazy system Chromium over private CDP pipes. Shared persistent-profile tabs, scoped ephemeral agent contexts, basic navigation/history reconciliation, appearance/viewport and authenticated ACK-paced JPEG viewer. Fixture CDP and real lib readers cover lifecycle; full events/advanced tools and actual Chromium behavior remain unproven. See provider-browser-follow-up.md. Original classification unchanged for independent audit."
     },
     "preview.list": {
       "status": "done",
       "priority": "P2",
-      "note": "tests/preview.rs: in-memory registry of tabs a client renders (revision/serverEpoch events, ring of 256). The server renders nothing: runtime 'server' is refused and capabilities.serverBrowser stays off. No state until a client opens a tab."
+      "note": "Client registry plus lazy system Chromium over private CDP pipes. Shared persistent-profile tabs, scoped ephemeral agent contexts, basic navigation/history reconciliation, appearance/viewport and authenticated ACK-paced JPEG viewer. Fixture CDP and real lib readers cover lifecycle; full events/advanced tools and actual Chromium behavior remain unproven. See provider-browser-follow-up.md. Original classification unchanged for independent audit."
     },
     "preview.navigate": {
       "status": "done",
       "priority": "P2",
-      "note": "tests/preview.rs: in-memory registry of tabs a client renders (revision/serverEpoch events, ring of 256). The server renders nothing: runtime 'server' is refused and capabilities.serverBrowser stays off. No state until a client opens a tab."
+      "note": "Client registry plus lazy system Chromium over private CDP pipes. Shared persistent-profile tabs, scoped ephemeral agent contexts, basic navigation/history reconciliation, appearance/viewport and authenticated ACK-paced JPEG viewer. Fixture CDP and real lib readers cover lifecycle; full events/advanced tools and actual Chromium behavior remain unproven. See provider-browser-follow-up.md. Original classification unchanged for independent audit."
     },
     "preview.open": {
       "status": "done",
       "priority": "P2",
-      "note": "tests/preview.rs: in-memory registry of tabs a client renders (revision/serverEpoch events, ring of 256). The server renders nothing: runtime 'server' is refused and capabilities.serverBrowser stays off. No state until a client opens a tab."
+      "note": "Client registry plus lazy system Chromium over private CDP pipes. Shared persistent-profile tabs, scoped ephemeral agent contexts, basic navigation/history reconciliation, appearance/viewport and authenticated ACK-paced JPEG viewer. Fixture CDP and real lib readers cover lifecycle; full events/advanced tools and actual Chromium behavior remain unproven. See provider-browser-follow-up.md. Original classification unchanged for independent audit."
     },
     "preview.refresh": {
       "status": "done",
       "priority": "P2",
-      "note": "tests/preview.rs: in-memory registry of tabs a client renders (revision/serverEpoch events, ring of 256). The server renders nothing: runtime 'server' is refused and capabilities.serverBrowser stays off. No state until a client opens a tab."
+      "note": "Client registry plus lazy system Chromium over private CDP pipes. Shared persistent-profile tabs, scoped ephemeral agent contexts, basic navigation/history reconciliation, appearance/viewport and authenticated ACK-paced JPEG viewer. Fixture CDP and real lib readers cover lifecycle; full events/advanced tools and actual Chromium behavior remain unproven. See provider-browser-follow-up.md. Original classification unchanged for independent audit."
     },
     "preview.reportProfiles": {
       "status": "skip",
@@ -274,12 +274,12 @@
     "preview.reportStatus": {
       "status": "done",
       "priority": "P2",
-      "note": "tests/preview.rs: in-memory registry of tabs a client renders (revision/serverEpoch events, ring of 256). The server renders nothing: runtime 'server' is refused and capabilities.serverBrowser stays off. No state until a client opens a tab."
+      "note": "Client registry plus lazy system Chromium over private CDP pipes. Shared persistent-profile tabs, scoped ephemeral agent contexts, basic navigation/history reconciliation, appearance/viewport and authenticated ACK-paced JPEG viewer. Fixture CDP and real lib readers cover lifecycle; full events/advanced tools and actual Chromium behavior remain unproven. See provider-browser-follow-up.md. Original classification unchanged for independent audit."
     },
     "preview.resize": {
       "status": "done",
       "priority": "P2",
-      "note": "tests/preview.rs: in-memory registry of tabs a client renders (revision/serverEpoch events, ring of 256). The server renders nothing: runtime 'server' is refused and capabilities.serverBrowser stays off. No state until a client opens a tab."
+      "note": "Client registry plus lazy system Chromium over private CDP pipes. Shared persistent-profile tabs, scoped ephemeral agent contexts, basic navigation/history reconciliation, appearance/viewport and authenticated ACK-paced JPEG viewer. Fixture CDP and real lib readers cover lifecycle; full events/advanced tools and actual Chromium behavior remain unproven. See provider-browser-follow-up.md. Original classification unchanged for independent audit."
     },
     "projectClone.cancel": {
       "status": "skip",
@@ -689,7 +689,7 @@
     "server.getConfig": {
       "status": "partial",
       "priority": "P0",
-      "note": "Partial: external updates now refuse unowned Claude self-updates and support explicit original-prefix, user-owned npm updates with bounded execution, cancellation and version verification. Homebrew/system/manual/other drivers provide manual advice. Lazy system Chromium CDP child and authenticated preview stream are implemented; agent automation broker and full browser contract remain unfinished (agentBrowserAccess false). See provider-browser-contract.md and CONFORMANCE.md; no owner decision blocks this work."
+      "note": "Partial: verified user-owned original-prefix npm (including OpenCode/Pi/Grok), Homebrew core formula and native Claude/OpenCode update plans; bounded/cancellable/version-verified execution. Unknown ownership/casks/custom taps/other native layouts remain manual. Scoped loopback MCP browser tools reach native Claude/Codex sessions with global/project gates and ephemeral contexts; fixture-backed core subset only. Full browser contract, real CLI handshake and Chromium confinement/rendering remain unproven. See provider-browser-follow-up.md; statuses unchanged for independent audit."
     },
     "server.getDatabaseStorage": {
       "status": "skip",
@@ -824,7 +824,7 @@
     "server.updateProvider": {
       "status": "done",
       "priority": "P2",
-      "note": "Explicit original-prefix external npm updates added for native drivers; unknown/privileged installs fail with manual advice, never guessed Claude self-update. Config updateState and install operation/cancel readers use fixture tests, version verification and output suppression. Managed path retained. Homebrew/native/other-driver automatic maintenance not implemented; no real update ran. Status unchanged."
+      "note": "Explicit original-prefix user-owned npm updates for native drivers plus OpenCode/Pi/Grok; verified core Homebrew formula receipts and native Claude/OpenCode layouts. Unknown/privileged/unrecognized cask or standalone ownership receives manual advice. Fixed argv, bounded/cancellable execution, output suppression and post-update version probe use fixtures and real config/operation readers. Managed path retained. No real updater or registry-latest equivalence tested. See provider-browser-follow-up.md; status unchanged for independent audit."
     },
     "server.updateServer": {
       "status": "skip",

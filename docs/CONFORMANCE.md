@@ -2520,3 +2520,69 @@ median/p95 1.970/2.235 ms. These are synthetic workload observations, not a
 controlled performance comparison. [Measurement](rss-provider-browser.json)
 separately records the Python fixture child and explicitly leaves actual
 Chromium RSS unmeasured. No combined-server/browser memory claim is made.
+
+## 2026-11-02 — Verified installers and scoped browser broker follow-up
+
+Statuses and priorities remain unchanged. See
+[the implementation record and outstanding gaps](provider-browser-follow-up.md).
+The broader browser contract remains incomplete; the new capability means that
+scoped core browser tools can be delivered to providers, not that every upstream
+preview tool is implemented.
+
+Maintenance adds verified user-owned Homebrew core formula receipts, Claude's
+native versioned symlink installer and OpenCode's native binary layout. npm
+updates now recognize additional configured OpenCode (v1/v2), Pi and Grok package
+identities, including unscoped global packages. Unknown ownership, unrecognized
+casks/custom taps and other standalone layouts stay manual with original-installer
+advice. There is no sudo, shell command construction or implicit update. Existing
+execution bounds, cancellation, output suppression and version verification apply
+to each plan. A running CLI version is verified; registry-latest is not certified.
+
+The browser broker issues a per-run bearer-protected loopback MCP listener and
+injects it into native Claude/Codex configurations. Global and project settings
+are checked when issuing access and on calls. It exposes status/open/navigation,
+close/resize/evaluate, textual snapshot and basic CSS/key interactions. Agent
+profiles are private ephemeral directories; scope guards close and reap owned
+tabs at the end of a run. Persistent-profile tabs share a browser process with
+separate attached CDP sessions. Viewer input has an exclusive human controller;
+agent mutations reject a currently human-controlled tab. History reconciliation,
+back/forward viewer input, appearance, zoom and cache/cookie/reload operations
+now reach CDP. HTTP(S) development URLs, including local network addresses,
+follow newer source behaviour; explicit file navigation is rejected and CDP
+is configured with file/FTP block patterns. Actual Chromium enforcement is unproven.
+
+Failing-first evidence: the real Connection/config/projection test rejected the
+Homebrew fixture as non-updatable before implementation; the same test now passes
+for Homebrew and native Claude, checks no update on config reads, then rejects a
+removed receipt. The real config reader initially returned agentBrowserAccess=false
+with an available fixture; it now returns true and respects disabling settings.
+Native peers on both transports initialize and call the real broker, reject a
+wrong bearer/file URL/foreign tab, then receive no browser access on the next
+turn after a project override. The lifecycle regression checks two tabs sharing
+one persistent context and a surviving process after closing only one tab.
+These are fixture tests, not real provider inference or real installer/browser
+acceptance. No real CLI update, credentials, user browser profile, service,
+emulator, external network access, push or merge was used.
+
+Validation: 258 default and 256 no-default-features tests pass, with 19 ignored
+in each configuration. Strict Clippy (`--all-targets`, warnings denied) passes in
+both configurations; fmt and regenerated compatibility notes pass. All eight
+isolated 3991 differentials pass (176.32 seconds). No new pinned-browser or
+external-updater equivalence claim follows from those probes.
+
+Release `tools/bench-rss` with an explicitly enabled Python CDP fixture and an
+isolated PATH (no real provider CLIs) measured server RSS/HWM **17,920 KiB** with
+the browser fixture open and idle. Across the synthetic 1000-message, 20-thread,
+three-subscriber workload, maximum sampled server HWM was **18,952 KiB (19.41 MB)**,
+below 50 MB. The separate fixture child RSS was **11,164 KiB**, not Chromium.
+Startup to authenticated WebSocket was 12.04 ms. Append last-100 median/p95 was
+4.401/5.123 ms; metadata median/p95 was 1.898/2.172 ms. These are observations,
+not a controlled performance comparison. No real Chromium was run; actual
+Chromium rendering, sandbox/dependencies, file/redirect enforcement and child RSS
+remain unproven. [Measurement](rss-provider-browser-follow-up.json).
+
+Remaining work is explicit in the follow-up: semantic/ARIA/frame and advanced
+browser tools, selectable saved-login contexts/reveal details, full unsolicited
+load/dialog/download events, takeover races and crash recovery. These are not
+proven infeasible. Unrecognized maintenance ownership stays manual, not guessed.
+This implementation does not justify declaring the entire owner's scope complete.
