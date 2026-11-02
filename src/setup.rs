@@ -236,6 +236,14 @@ fn driver(s: &State, instance: &str, operation: &str) -> Result<Driver, Value> {
     let kind = match configured["driver"].as_str() {
         Some("claudeAgent") => "claudeAgent",
         Some("codex") => "codex",
+        Some("opencode") if operation == "update" => "opencode",
+        Some("pi") if operation == "update" => "pi",
+        Some("grok") if operation == "update" => "grok",
+        Some("cursor") if operation == "update" => "cursor",
+        Some("muse") if operation == "update" => "muse",
+        Some("fx") if operation == "update" => "fx",
+        Some("antigravity") if operation == "update" => "antigravity",
+        Some("acpRegistry") if operation == "update" => "acpRegistry",
         Some(other) => {
             return Err(setup_error(
                 instance,
@@ -255,7 +263,11 @@ fn driver(s: &State, instance: &str, operation: &str) -> Result<Driver, Value> {
             }
         },
     };
-    let name = if kind == "codex" { "codex" } else { "claude" };
+    let name = if kind == "claudeAgent" {
+        "claude"
+    } else {
+        kind
+    };
     let binary = crate::provider::instance_binary(configured, name);
     Ok(Driver {
         instance: instance.into(),
