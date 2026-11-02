@@ -2,8 +2,9 @@
 """Reject foreign native IDs and require the previous turn's transcript."""
 import json, sys
 claude = '-p' in sys.argv
-if claude:
-    pass
+seen_seed = claude and '--resume' in sys.argv
+if seen_seed:
+    assert sys.argv[sys.argv.index('--resume')+1] == 'claude-native'
 for line in sys.stdin:
     f = json.loads(line)
     if claude:
@@ -17,14 +18,21 @@ for line in sys.stdin:
         if i is None: continue
         assert m != 'thread/fork'
         if m == 'initialize': result = {'capabilities':{}}
-        elif m in ('thread/start', 'thread/resume'): result = {'thread':{'id':'codex-native'}}
+        elif m in ('thread/start', 'thread/resume'):
+            if m == 'thread/resume': assert f['params']['threadId'] == 'codex-native'
+            seen_seed = m == 'thread/resume'
+            result = {'thread':{'id':'codex-native'}}
         elif m == 'turn/start':
             text = f['params']['input'][0]['text']
             result = {'turn':{'id':'turn'}}
         else: result = {}
         print(json.dumps({'id':i,'result':result}), flush=True)
         if m != 'turn/start': continue
+    if text == 'later-proof':
+        assert seen_seed, 'same-instance model change lost native context'
+    if text.startswith('seed-proof'): seen_seed = True
     if 'fork-proof' in text:
+
         assert 'user: seed-proof' in text and 'context-proof' in text, text
         assert 'later-proof' not in text, text
         blocks = f['message']['content'] if claude else f['params']['input']
