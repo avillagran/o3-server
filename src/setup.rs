@@ -803,8 +803,8 @@ async fn update_provider(s: &Arc<State>, p: &Value) -> Reply {
         .lock()
         .unwrap()
         .insert(instance.into(), cancel.clone());
-    s.streams.p2.setup.installs.lock().unwrap().insert(instance.into(),json!({"driver":provider,"operationId":operation,"phase":"installing","downloadedBytes":0,"totalBytes":null,"version":null,"installedVersion":null,"executablePath":null,"source":"local","canRemove":false,"message":"Updating with original npm prefix"}));
-    s.streams.p2.setup.updates.lock().unwrap().insert(instance.into(),json!({"status":"running","startedAt":started,"finishedAt":null,"message":"Updating with original npm prefix","output":null}));
+    s.streams.p2.setup.installs.lock().unwrap().insert(instance.into(),json!({"driver":provider,"operationId":operation,"phase":"installing","downloadedBytes":0,"totalBytes":null,"version":null,"installedVersion":null,"executablePath":null,"source":"local","canRemove":false,"message":"Updating with verified original installer"}));
+    s.streams.p2.setup.updates.lock().unwrap().insert(instance.into(),json!({"status":"running","startedAt":started,"finishedAt":null,"message":"Updating with verified original installer","output":null}));
     s.streams.p2.setup.touch(s);
     s.notify();
     let args: Vec<_> = plan.args.iter().map(String::as_str).collect();
