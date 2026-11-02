@@ -36,10 +36,13 @@ pub fn pricing(s: &State) -> Value {
     )
 }
 
+/// The whole fetch, body included, stays inside the client's 12 s read timeout.
+const FETCH_BUDGET: std::time::Duration = std::time::Duration::from_secs(9);
+
 async fn fetch() -> Result<Value, String> {
     let url = std::env::var("O3_USAGE_RATES_URL").unwrap_or_else(|_| URL.into());
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
+        .timeout(FETCH_BUDGET)
         .redirect(reqwest::redirect::Policy::limited(3))
         .build()
         .map_err(|e| e.to_string())?;
@@ -81,7 +84,10 @@ async fn fetch() -> Result<Value, String> {
     Ok(json!({"fetchedAtMs":now_ms(),"document":prices}))
 }
 pub async fn refresh(s: &State) -> Value {
-    let _refresh = s.streams.ops.usage_rate_refresh.lock().await;
+    // A concurrent caller gets the cached state: waiting could outlast its read timeout.
+    let Ok(_refresh) = s.streams.ops.usage_rate_refresh.try_lock() else {
+        return describe(load(s).as_ref(), true);
+    };
     s.streams
         .ops
         .usage_rate_failure

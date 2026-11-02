@@ -41,6 +41,7 @@ esac
         format!("{}:{}", bin.display(), old.to_string_lossy()),
     );
     let c = server.connect();
+    t3_protocol::api::device::configure(&c, Some(true), None, None).unwrap();
     let list = t3_protocol::api::device::list(&c, None, Some(true), None).unwrap();
     assert_eq!(list["devices"].as_array().unwrap().len(), 2);
     assert_eq!(list["devices"][0]["id"], "phone");
@@ -158,6 +159,7 @@ esac
         format!("{}:{}", bin.display(), old.to_string_lossy()),
     );
     let c = server.connect();
+    t3_protocol::api::device::configure(&c, Some(true), None, None).unwrap();
     for action in [
         Action::SetAppearance("light".into()),
         Action::SetTextSize("large".into()),
@@ -189,4 +191,41 @@ esac
     assert!(calls.contains("shell svc data disable"));
     assert!(calls.contains("shell settings put global window_animation_scale 0"));
     std::env::set_var("PATH", old);
+}
+
+#[test]
+fn detail_answers_within_the_client_timeout_when_optional_queries_are_slow() {
+    let _lock = ADB.lock().unwrap_or_else(|e| e.into_inner());
+    let server = support::start(|_| {});
+    let bin = server.dir.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let adb = bin.join("adb");
+    std::fs::write(
+        &adb,
+        "#!/bin/sh\ncase \"$*\" in\n\"devices -l\") printf 'List of devices attached\\nphone\tdevice model:Pixel\\n';;\n\"-s phone get-state\") echo device;;\n*) sleep 3; echo 1;;\nesac\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&adb, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let old = std::env::var_os("PATH").unwrap();
+    std::env::set_var(
+        "PATH",
+        format!("{}:{}", bin.display(), old.to_string_lossy()),
+    );
+    let c = server.connect();
+    t3_protocol::api::device::configure(&c, Some(true), None, None).unwrap();
+    let started = std::time::Instant::now();
+    let detail = t3_protocol::api::device::detail(&c, "phone", None);
+    std::env::set_var("PATH", old);
+    assert!(detail.is_ok(), "{detail:?}");
+    assert!(started.elapsed() < Duration::from_secs(11));
+}
+
+#[test]
+fn configure_writes_the_settings_clients_read_back() {
+    let server = support::start(|_| {});
+    let c = server.connect();
+    t3_protocol::api::device::configure(&c, Some(true), Some(true), None).unwrap();
+    let settings = c.rpc("server.getSettings", json!({})).unwrap();
+    assert_eq!(settings["enableDeviceSupport"], true);
+    assert_eq!(settings["enableAgentDeviceAccess"], true);
 }

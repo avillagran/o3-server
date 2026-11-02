@@ -44,37 +44,37 @@
     "device.action": {
       "status": "partial",
       "priority": "P2",
-      "note": "2026-11-02: tests/device.rs adds failing-then-passing real lib action readers for Android appearance, text size, reduced motion and network toggles with fixture adb; detail reads actual fixture settings and foreground app. Other actions, platforms and native operation remain unproven. Font scale mappings inspected in newer source only, not pinned equivalence. Review 2026-11-02: New real reader fixture failed unsupported before fix; appearance/font/network/reduced-motion actions pass. Other action variants/platforms unsupported. Newer-source mappings only, not pinned parity."
+      "note": "Remaining: desktop T3DevicePanel.qml:210 offers Rotate, which returns unsupported. Four Android settings pass through fixture adb."
     },
     "device.close": {
       "status": "partial",
       "priority": "P2",
-      "note": "tests/device.rs real t3-protocol client with fake adb on PATH: connected authorized local Android discovery, configure, sessions, detail, PNG screenshots, key input and subscription cancellation. No boot/shutdown, emulator creation, iOS, SSH/EAS, tool installation, H264 video, full detail/settings or action parity; unsupported operations return typed reasons. Per-subscription polling only while subscribed; no idle adb process. Desktop with installed decoder does not fall back to PNG. Review 2026-11-02: Shutdown still unavailable. Fixture session close does not establish device power/session shutdown; no hardware action run."
+      "note": "Remaining: device_screen.rs:113 shutdown requests fail and leave the device running. Ordinary session close passes."
     },
     "device.configure": {
       "status": "partial",
       "priority": "P2",
-      "note": "tests/device.rs real t3-protocol client with fake adb on PATH: connected authorized local Android discovery, configure, sessions, detail, PNG screenshots, key input and subscription cancellation. No boot/shutdown, emulator creation, iOS, SSH/EAS, tool installation, H264 video, full detail/settings or action parity; unsupported operations return typed reasons. Per-subscription polling only while subscribed; no idle adb process. Desktop with installed decoder does not fall back to PNG. Review 2026-11-02: Local hub configuration exists; SSH/EAS host and tool install transports are absent. No real install or credentials used."
+      "note": "Now writes enableDeviceSupport and enableAgentDeviceAccess, the settings desktop reads back; off by default as in T3. Fix passes a real reader but has no audit of its own."
     },
     "device.detail": {
       "status": "partial",
       "priority": "P2",
-      "note": "2026-11-02: real lib detail/action reader fixture now covers appearance, font size, reduced motion, network and foreground package. Missing settings are omitted when adb fails, rather than invented. Other device/platform detail and native behavior unproven. Review 2026-11-02: Real reader fixture reads settings and foreground package; fields whose commands fail remain absent. Other detail/platform fields and native behavior unproven."
+      "note": "Optional queries share an 8 s budget and return partial settings inside the client's 12 s timeout. Fix passes a real reader but has no audit of its own."
     },
     "device.easAccount": {
       "status": "partial",
       "priority": "P2",
-      "note": "tests/device.rs real t3-protocol client with fake adb on PATH: connected authorized local Android discovery, configure, sessions, detail, PNG screenshots, key input and subscription cancellation. No boot/shutdown, emulator creation, iOS, SSH/EAS, tool installation, H264 video, full detail/settings or action parity; unsupported operations return typed reasons. Per-subscription polling only while subscribed; no idle adb process. Desktop with installed decoder does not fall back to PNG. Review 2026-11-02: No EAS credential/account transport exists; cannot report authenticated account success from a fabricated fixture."
+      "note": "Remaining: desktop T3EasHosts.qml:28 Check Expo account receives an unsupported-integration error."
     },
     "device.list": {
       "status": "partial",
       "priority": "P2",
-      "note": "tests/device.rs real t3-protocol client with fake adb on PATH: connected authorized local Android discovery, configure, sessions, detail, PNG screenshots, key input and subscription cancellation. No boot/shutdown, emulator creation, iOS, SSH/EAS, tool installation, H264 video, full detail/settings or action parity; unsupported operations return typed reasons. Per-subscription polling only while subscribed; no idle adb process. Desktop with installed decoder does not fall back to PNG. Review 2026-11-02: Local authorized adb only; no remote discovery/tool update implementation. No physical discovery attempted."
+      "note": "Remaining: configured remote devices never appear (integration_devices.rs:423)."
     },
     "device.open": {
       "status": "partial",
       "priority": "P2",
-      "note": "tests/device.rs real t3-protocol client with fake adb on PATH: connected authorized local Android discovery, configure, sessions, detail, PNG screenshots, key input and subscription cancellation. No boot/shutdown, emulator creation, iOS, SSH/EAS, tool installation, H264 video, full detail/settings or action parity; unsupported operations return typed reasons. Per-subscription polling only while subscribed; no idle adb process. Desktop with installed decoder does not fall back to PNG. Review 2026-11-02: PNG path exists; desktop decoder chooses H264, which has no server encoder/transport implementation. Not repaired by PNG fixtures."
+      "note": "Remaining: with ffmpeg available the desktop viewer chooses H264 and gets no video (device_screen.rs:277,396); PNG fallback runs only without a decoder."
     },
     "device.shutdown": {
       "status": "skip",
@@ -84,7 +84,7 @@
     "device.testHost": {
       "status": "partial",
       "priority": "P2",
-      "note": "tests/device.rs real t3-protocol client with fake adb on PATH: connected authorized local Android discovery, configure, sessions, detail, PNG screenshots, key input and subscription cancellation. No boot/shutdown, emulator creation, iOS, SSH/EAS, tool installation, H264 video, full detail/settings or action parity; unsupported operations return typed reasons. Per-subscription polling only while subscribed; no idle adb process. Desktop with installed decoder does not fall back to PNG. Review 2026-11-02: No SSH host transport exists; no real host contact attempted."
+      "note": "Remaining: SSH host testing always returns unavailable (integration_devices.rs:457)."
     },
     "filesystem.browse": {
       "status": "done",
@@ -144,7 +144,7 @@
     "orchestration.getArchivedShellSnapshot": {
       "status": "partial",
       "priority": "P2",
-      "note": "Queries only archived nondeleted rows; does not construct active shell rows or copy message text. Existing readers have no archive pagination mechanism. See dated measurements and remaining size limits in CONFORMANCE.md. Review 2026-11-02: Current reader requests all archived rows; sufficient metadata can exceed its 8 MiB response boundary. No client pagination exists; retain records and leave protocol/client size work open."
+      "note": "Remaining: sufficiently large unpaginated archives exceed the reader's 8 MiB boundary and fail to load (archive_management.rs:150)."
     },
     "orchestration.getFullThreadDiff": {
       "status": "done",
@@ -237,9 +237,9 @@
       "note": "tests/preview.rs: in-memory registry of tabs a client renders (revision/serverEpoch events, ring of 256). The server renders nothing: runtime 'server' is refused and capabilities.serverBrowser stays off. No state until a client opens a tab."
     },
     "preview.clearProfile": {
-      "status": "partial",
-      "priority": "P2",
-      "note": "Accepted as a no-op; o3 has no server browser profile. 2026-11-02 inventory: desktop browser_profiles.rs:170 gates the RPC on serverBrowser, absent from o3 capabilities, and :202 clears local profiles independently. No enabled o3 production caller or consumed cleanup gap found; recommend independent priority/status review, unchanged here. Review 2026-11-02: No enabled o3 production RPC caller: serverBrowser is false; desktop clears client-owned profiles locally. Audit disposition only."
+      "status": "skip",
+      "priority": "unused",
+      "note": "Unused against o3: desktop browser_profiles.rs:35 gates this RPC on serverBrowser and cleans up locally. Reclassified by independent audit on 2026-11-02."
     },
     "preview.close": {
       "status": "done",
@@ -294,7 +294,7 @@
     "projectClone.start": {
       "status": "partial",
       "priority": "P2",
-      "note": "tests/admin_reads.rs: git clone of remoteUrl or github owner/name, blocks until it ends (capabilities.projectCloneTracking stays off, no progress stream); refuses non-empty destinations and removes a failed clone. Review 2026-11-02: Open implementation gap: synchronous clone has no durable progress/job lifecycle; desktop gates on cloneTracking=false."
+      "note": "Remaining: desktop disables cloning because tracking is false (T3AddProject.qml:49-51)."
     },
     "projects.createNew": {
       "status": "done",
@@ -397,9 +397,9 @@
       "note": "No client call site in inventory."
     },
     "provider.install.cancel": {
-      "status": "partial",
+      "status": "done",
       "priority": "P2",
-      "note": "Managed built-in npm installs use private versioned prefixes and isolated config; a successful --version matching package metadata is required before settings change. Real-client install/update and provider reader coverage; opt-in real npm installs both CLIs. Removal and external/custom installs remain unavailable. Review 2026-11-02: Managed cancellation exists. Custom distribution depends on the same owner decision; removal is not a cancellation gap."
+      "note": "Desktop provider_setup.rs:47, T3ProviderInstances.qml:108. Managed cancellation implemented; a real reader passes on a completed operation, active cancellation not rerun independently. No custom-install flow exists in the clients."
     },
     "provider.install.remove": {
       "status": "skip",
@@ -407,14 +407,14 @@
       "note": "Managed version removal is unavailable; old prefixes are retained. Existing external installations are never removed."
     },
     "provider.install.start": {
-      "status": "partial",
+      "status": "done",
       "priority": "P2",
-      "note": "Managed built-in npm installs use private versioned prefixes and isolated config; a successful --version matching package metadata is required before settings change. Real-client install/update and provider reader coverage; opt-in real npm installs both CLIs. Removal and external/custom installs remain unavailable. Review 2026-11-02: Managed built-ins already use private prefixes and real reader fixtures. External/custom distribution ownership decision remains open; no real install modified."
+      "note": "Desktop provider_setup.rs:45, T3ProviderInstances.qml:119. Managed built-in start and installation pass with a real reader. Custom instances do not advertise installation."
     },
     "provider.install.subscribe": {
-      "status": "partial",
+      "status": "done",
       "priority": "P2",
-      "note": "Managed built-in npm installs use private versioned prefixes and isolated config; a successful --version matching package metadata is required before settings change. Real-client install/update and provider reader coverage; opt-in real npm installs both CLIs. Removal and external/custom installs remain unavailable. Review 2026-11-02: Managed state reader already covered; custom operation has no supported job to subscribe to. Owner decision unchanged."
+      "note": "Desktop provider_setup.rs:48. The real install stream reader passes over fixture installation output."
     },
     "provider.uploadFeedback": {
       "status": "skip",
@@ -482,9 +482,9 @@
       "note": "No client call site in inventory."
     },
     "pullRequests.list": {
-      "status": "partial",
+      "status": "done",
       "priority": "P2",
-      "note": "2026-11-02: tests/pull_requests.rs now runs actual lib list query/reader over real Connection with scripted gh. Combined reviewing/draft/review/checks/grouped-label/excluded-label/author/query qualifiers share one search expression; consumed entry fields pass. No new defect or failing-before claim; network GitHub behavior and all pagination/filter combinations remain unproven. Review 2026-11-02: Actual lib list query/reader now executes combined filters over scripted gh and checks consumed entry fields. Passes without server change; no failing-before claim. GitHub network semantics, every filter combination and cursor behavior unproven."
+      "note": "Desktop connection_github.rs:16. The real list reader and combined filters pass on fixtures; live GitHub equivalence not rerun."
     },
     "pullRequests.listStats": {
       "status": "skip",
@@ -627,9 +627,9 @@
       "note": "No client call site in inventory."
     },
     "scheduledTasks.runNow": {
-      "status": "partial",
+      "status": "done",
       "priority": "P2",
-      "note": "tests/ops.rs: launches a thread or messages one; the in-process timer fires due tasks. \"succeeded\" means launched, not that the agent finished. Review 2026-11-02: Existing dispatch and timer tests cover launch. Whether reference run completion means agent completion is unproven; no semantics changed without pinned evidence."
+      "note": "Desktop scheduled_tasks.rs:68, Android MaintenanceScreen.kt:83. A real reader passes; succeeded means dispatch and launch succeeded."
     },
     "scheduledTasks.setEnabled": {
       "status": "done",
@@ -644,7 +644,7 @@
     "scheduledTasks.upsert": {
       "status": "partial",
       "priority": "P2",
-      "note": "tests/ops.rs: interval and fixed_time (UTC) schedules, commandId idempotency, requireExisting. Webhook schedules are refused. Review 2026-11-02: Open implementation gap: webhook needs authenticated inbound delivery route and signature lifecycle, neither implemented. UTC fixed-time behavior has no pinned comparison here."
+      "note": "Remaining: desktop T3ScheduledTasks.qml:70 and Android TaskEditor.kt:41 offer Webhook, which saving rejects."
     },
     "secrets.answerRequest": {
       "status": "done",
@@ -714,7 +714,7 @@
     "server.getResourceTelemetryHistory": {
       "status": "partial",
       "priority": "P2",
-      "note": "2026-11-02: real Connection/lib telemetry reader regression fails before and passes after process-tree CPU accounting (tests/p2_telemetry.rs). PID/start-time baselines avoid recycled identity and exited-child counter subtraction. History still starts on demand; pre-open history is unavailable. Desktop/Android read bucket CPU/RSS, not per-process IO or desktop-source health. Isolated pinned probe is documented in CONFORMANCE.md; no parity promotion. Review 2026-11-02: Prior process-tree CPU fix retained; no pre-open samples and no reference samples. Short-lived processes between samples remain unseen."
+      "note": "Long-lived child CPU is included. Remaining: no history before first open, and short-lived children leave the graph understated."
     },
     "server.getSettings": {
       "status": "done",
@@ -722,9 +722,9 @@
       "note": "Connection test: persisted settings, unknown fields and secret sentinel round-trip."
     },
     "server.getStorageCleanupReport": {
-      "status": "partial",
+      "status": "done",
       "priority": "P2",
-      "note": "2026-11-02 note correction: automatic cleanup already runs in scheduled.rs; tests/ops.rs and storage_policies.rs exercise policy/report behavior. Automatic timer-to-real-client stream delivery is not newly proven. Previous no-automatic-runs note was stale. Review 2026-11-02: Stale no-automatic-run note corrected: scheduled.rs invokes automatic cleanup. Automatic timer-to-client stream delivery still unproven."
+      "note": "Desktop storage_cleanup.rs:20. The real stream reader returns the manual report."
     },
     "server.getTraceDiagnostics": {
       "status": "skip",
@@ -734,7 +734,7 @@
     "server.getUsageSummary": {
       "status": "partial",
       "priority": "P2",
-      "note": "2026-11-02: still returns empty usage buckets; desktop usage_summary.rs and Android UsageViewModel display zero totals despite provider ledger data. Pricing metadata now comes from bounded persisted public rate refresh (tests/p2_rates.rs). Ledger discovery, bounded incremental parsing, timezone conversion, deduplication and cost aggregation remain unimplemented; this is an implementation gap, not an ownership blocker. Review 2026-11-02: Open implementation gap: no ledger scan, timezone bucketing, dedup or cost aggregation. Desktop and Android still show zero usage. New pricing metadata alone does not fix this."
+      "note": "Remaining: empty buckets and sources make actual usage appear as zero (usage_summary.rs:34, UsageViewModel.kt:46). Needs ledger aggregation."
     },
     "server.importAcpRegistrySession": {
       "status": "skip",
@@ -759,7 +759,7 @@
     "server.prepareAcpRegistryAgent": {
       "status": "partial",
       "priority": "P2",
-      "note": "tests/provider_setup.rs: npx/uvx agents verify that the runner exists and answer prepared; binary distributions answer unsupported_distribution. o3-server has no ACP provider driver, so a prepared agent cannot be started yet. Review 2026-11-02: No ACP driver exists, so runner preparation cannot establish runnable agent support. Unsupported distributions remain explicit."
+      "note": "Remaining: preparation can report success without an ACP execution driver, so the prepared provider cannot run (acp_registry.rs:16)."
     },
     "server.probe": {
       "status": "skip",
@@ -774,7 +774,7 @@
     "server.refreshUsageRates": {
       "status": "partial",
       "priority": "P2",
-      "note": "tests/p2_rates.rs: real Connection/lib refresh and summary readers, deterministic HTTP peer. Bounded on-demand public LiteLLM fetch, validated numeric model rates, atomic persistent cache, stale-cache fallback after failed refresh and reload. No network at startup. No pinned rate equivalence or automatic refresh claimed; usage ledger/cost aggregation remains absent. Review 2026-11-02: Real lib refresh/summary regression failed unavailable→fresh before fix; deterministic HTTP document, validated prices, persistent cache and stale fallback pass. No public network request or pinned parity in this test; pricing application to ledger records remains open."
+      "note": "Refresh is bounded to 9 s and a concurrent caller gets cached state, inside the client's 12 s timeout. Fix passes a real reader but has no audit of its own."
     },
     "server.removeKeybinding": {
       "status": "done",
@@ -797,9 +797,9 @@
       "note": "No client call site in inventory."
     },
     "server.runStorageCleanup": {
-      "status": "partial",
+      "status": "done",
       "priority": "P2",
-      "note": "2026-11-02 note correction: ops.rs already cleans logs, worktrees and browser artifacts under policy; tests/storage_policies.rs covers cleanup safety. Previous missing-worktree/browser note was stale; no new implementation or parity promotion. Review 2026-11-02: Stale missing-worktree/browser note corrected: ops.rs already implements them. Existing policy/safety tests retained; no new parity claim."
+      "note": "Desktop storage_cleanup.rs:36, Android MaintenanceScreen.kt:58. Policy tests and the real report reader pass, including worktrees and artifacts."
     },
     "server.searchAcpRegistry": {
       "status": "done",
@@ -822,9 +822,9 @@
       "note": "No client call site in inventory."
     },
     "server.updateProvider": {
-      "status": "partial",
+      "status": "done",
       "priority": "P2",
-      "note": "Managed installs and pinned updates validate --version before switching the private configured binary, preserving other instances. Real npm installs both built-ins in isolated prefixes; native claude update remains fixture-covered, so this row stays partial. Review 2026-11-02: Managed/pinned paths covered offline; external CLIs of unknown ownership remain subject to owner's open decision. No real update run."
+      "note": "Desktop provider_updates.rs:46. The managed update reader passes with fixture npm and native Claude fixture coverage; no real update ran. External updates are not advertised as working and stay with the server.getConfig owner decision."
     },
     "server.updateServer": {
       "status": "skip",
@@ -847,9 +847,9 @@
       "note": "tests/keybindings.rs: upsert/remove persist only the user's rules in keybindings.json (atomic write), T3's 82 default bindings are served and replaced per command, shortcuts/when expressions validated, malformed files reported as issues and never overwritten. getConfig now returns keybindings/issues."
     },
     "shell.openInEditor": {
-      "status": "partial",
+      "status": "done",
       "priority": "P2",
-      "note": "Real-client test with a fake editor on PATH: argv launch without a shell, unknown editor and option-like cwd refused, missing editor fails. Opens the folder only: goto/line-column styles and file-manager reveal are not implemented. 2026-11-02 inventory: desktop thread_details.rs:36 opens a workspace and keybinding_settings.rs:278 a file; neither supplies line/column. No consumed goto gap established by those callers; reveal remains to audit. Review 2026-11-02: Actual callers supply folder/file without line-column, so no demonstrated goto gap. File-manager reveal ownership remains an audit question."
+      "note": "Desktop thread_details.rs:36, keybinding_settings.rs:278. A real reader and argv fixture pass. These callers send no location or reveal request."
     },
     "sourceControl.cloneRepository": {
       "status": "skip",
@@ -879,7 +879,7 @@
     "subscribeDeviceState": {
       "status": "partial",
       "priority": "P2",
-      "note": "tests/device.rs real t3-protocol client with fake adb on PATH: connected authorized local Android discovery, configure, sessions, detail, PNG screenshots, key input and subscription cancellation. No boot/shutdown, emulator creation, iOS, SSH/EAS, tool installation, H264 video, full detail/settings or action parity; unsupported operations return typed reasons. Per-subscription polling only while subscribed; no idle adb process. Desktop with installed decoder does not fall back to PNG. Review 2026-11-02: Local adb polling only; no remote/tool lifecycle to publish. Settings fixtures do not prove remote state streams."
+      "note": "Remaining: the stream only represents local adb, omitting configured remote hosts (integration_devices.rs:179)."
     },
     "subscribeDiscoveredLocalServers": {
       "status": "done",
@@ -929,7 +929,7 @@
     "subscribeWorktreeSetup": {
       "status": "partial",
       "priority": "P2",
-      "note": "tests/admin_reads.rs: worktree preparation is not staged, so no setup is ever running: cancel answers cancelled:false and the stream sends null once. Review 2026-11-02: Same missing staged job lifecycle; stream still sends null. No fabricated progress added."
+      "note": "Remaining: null output suppresses setup stages, progress and Cancel (worktree_setup.rs:22, T3Composer.qml:302-306)."
     },
     "terminal.attach": {
       "status": "done",
@@ -962,9 +962,9 @@
       "note": "tests/terminal.rs: stty reports the new size."
     },
     "terminal.restart": {
-      "status": "partial",
+      "status": "skip",
       "priority": "unused",
-      "note": "tests/terminal.rs: new pid, restarted event, fresh history.  Selected provider environment (including sensitive values) is applied; explicit terminal env wins, covered by real PTY/client test. Restart-persistent scrollback remains unsupported. Review 2026-11-02: No production caller found in inventory; existing real PTY restart evidence retained. No speculative scrollback work."
+      "note": "Implemented, tested in tests/terminal.rs, but no production desktop or Android caller. Reclassified by independent audit on 2026-11-02."
     },
     "terminal.write": {
       "status": "done",
@@ -1014,14 +1014,14 @@
     "worktreeSetup.cancel": {
       "status": "partial",
       "priority": "P2",
-      "note": "tests/admin_reads.rs: worktree preparation is not staged, so no setup is ever running: cancel answers cancelled:false and the stream sends null once. Review 2026-11-02: Open implementation gap: synchronous workspace preparation has no staged job/process ownership to cancel. A false success would leave Git/hooks running."
+      "note": "Remaining: Cancel is hidden without running setup, so synchronous preparation cannot be cancelled (write.rs:406)."
     }
   },
   "commands": {
     "checkpoint.rollback": {
       "status": "partial",
       "priority": "P2",
-      "note": "Restores Git checkpoint files; refuses active runs. Next turn uses a fresh native session and explicit transcript handoff through checkpoint ordinal, with a new Claude cache generation. Crash-safe filesystem restore replay remains unavailable. Review 2026-11-02: Existing normal real-client Git restore is in codex_contract.rs. Crash during filesystem restore still has no durable replay journal; not repaired here."
+      "note": "Remaining: filesystem restore precedes transaction completion (src/thread_commands.rs:547), so a crash can leave partially restored files. Normal restore passes."
     },
     "delegated_task.completion-delivery.acknowledge": {
       "status": "skip",
@@ -1126,7 +1126,7 @@
     "subagent.stop": {
       "status": "partial",
       "priority": "P2",
-      "note": "tests/p2_stop.rs: real Connection/lib dispatch and projection readers with deterministic Claude/Codex peers prove unsupported child stop is rejected without changing child evidence; owner continues to completion. Unsafe owner interrupt removed. Independent cancellation remains unavailable: verified task identity and acknowledged task-scoped controls are missing. No pinned cancellation equivalence claimed. Review 2026-11-02: Unsafe owner interruption removed. Real Connection/lib dispatch/projection regression failed on accepted stop before fix, passes on deterministic Claude and Codex peers with owner continuation. Independent stop remains unavailable: adapters lack acknowledged child-scoped controls and verified task identity mapping. Seeded child evidence does not prove native discovery or cancellation."
+      "note": "Unsafe stops are rejected and the owner keeps running, on both native peers. Remaining: desktop Stop subagent (T3Composer.qml:323) shows the rejection and the child continues; independent cancellation is not implemented."
     },
     "thread.active.reorder": {
       "status": "done",

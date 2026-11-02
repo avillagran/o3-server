@@ -67,7 +67,7 @@ pub fn id(p: &Value) -> Result<&str, Value> {
 }
 pub async fn state(s: &State) -> Reply {
     let settings = crate::settings::read(s).map_err(invalid)?;
-    let enabled = settings["deviceEnabled"].as_bool().unwrap_or(true);
+    let enabled = settings["enableDeviceSupport"].as_bool().unwrap_or(true);
     let mut devices = Vec::new();
     let mut status = "disabled";
     let mut detail = String::new();
@@ -104,7 +104,7 @@ pub async fn state(s: &State) -> Reply {
         json!({"hosts":[{"id":"local","kind":"local","label":"Local ADB","platforms":[{"platform":"android","available":available()},{"platform":"ios","available":false,"reason":"iOS is unsupported"}],"hubInstalled":false,"agentDeviceInstalled":false}],
     "devices":devices,"sessions":s.streams.p2.device.sessions.lock().unwrap().clone(),
     "hostStatus":status,"hostStatusDetail":detail,"hostStatuses":{"local":{"status":status,"detail":detail}},
-    "onboardingCompleted":settings["deviceOnboardingCompleted"],"agentAccessEnabled":settings["deviceAgentAccessEnabled"].as_bool().unwrap_or(false),
+    "onboardingCompleted":settings["deviceOnboardingCompleted"],"agentAccessEnabled":settings["enableAgentDeviceAccess"].as_bool().unwrap_or(false),
     "hubBasePath":"/api/device-hub","revision":crate::store::now_ms(),"supportsHostRetry":false,"supportsToolUpdate":false,"supportsEasHosts":false}),
     )
 }
@@ -117,30 +117,33 @@ async fn connected(p: &Value) -> Result<&str, Value> {
     Ok(serial)
 }
 async fn detail(p: &Value) -> Reply {
+    // Clients stop reading at 12 s, so slow optional settings are left out instead.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(8);
     let serial = connected(p).await?;
-    async fn read(args: Vec<&str>) -> Option<String> {
-        adb(&args)
-            .await
-            .ok()
-            .map(|v| String::from_utf8_lossy(&v).trim().to_owned())
-    }
+    let read = |args: Vec<&'static str>, serial: &str| {
+        let mut args: Vec<String> = args.into_iter().map(str::to_owned).collect();
+        args.splice(0..0, ["-s".to_owned(), serial.to_owned()]);
+        async move {
+            let args: Vec<&str> = args.iter().map(String::as_str).collect();
+            tokio::time::timeout_at(deadline, adb(&args))
+                .await
+                .ok()?
+                .ok()
+                .map(|v| String::from_utf8_lossy(&v).trim().to_owned())
+        }
+    };
     let mut settings = json!({});
-    if let Some(night) = read(vec!["-s", serial, "shell", "cmd", "uimode", "night"]).await {
+    if let Some(night) = read(vec!["shell", "cmd", "uimode", "night"], serial).await {
         if night.contains("yes") {
             settings["appearance"] = json!("dark");
         } else if night.contains("no") {
             settings["appearance"] = json!("light");
         }
     }
-    if let Some(scale) = read(vec![
-        "-s",
+    if let Some(scale) = read(
+        vec!["shell", "settings", "get", "system", "font_scale"],
         serial,
-        "shell",
-        "settings",
-        "get",
-        "system",
-        "font_scale",
-    ])
+    )
     .await
     .and_then(|s| s.parse::<f64>().ok())
     .filter(|n| n.is_finite())
@@ -155,31 +158,33 @@ async fn detail(p: &Value) -> Reply {
             "extra-large"
         });
     }
-    if let Some(scale) = read(vec![
-        "-s",
+    if let Some(scale) = read(
+        vec![
+            "shell",
+            "settings",
+            "get",
+            "global",
+            "animator_duration_scale",
+        ],
         serial,
-        "shell",
-        "settings",
-        "get",
-        "global",
-        "animator_duration_scale",
-    ])
+    )
     .await
     .and_then(|s| s.parse::<f64>().ok())
     .filter(|n| n.is_finite())
     {
         settings["reduceMotion"] = json!(scale == 0.0);
     }
-    if let Some(wifi) = read(vec![
-        "-s", serial, "shell", "settings", "get", "global", "wifi_on",
-    ])
+    if let Some(wifi) = read(
+        vec!["shell", "settings", "get", "global", "wifi_on"],
+        serial,
+    )
     .await
     .filter(|s| matches!(s.as_str(), "0" | "1"))
     {
         settings["networkEnabled"] = json!(wifi == "1");
     }
     let mut foreground = Value::Null;
-    if let Some(focus) = read(vec!["-s", serial, "shell", "dumpsys", "window"]).await {
+    if let Some(focus) = read(vec!["shell", "dumpsys", "window"], serial).await {
         for line in focus
             .lines()
             .filter(|l| l.contains("mCurrentFocus=") || l.contains("mFocusedApp="))
@@ -206,7 +211,7 @@ async fn detail(p: &Value) -> Reply {
 pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
     if matches!(tag, "device.open" | "device.action" | "device.detail") {
         let settings = crate::settings::read(s).map_err(invalid)?;
-        if settings["deviceEnabled"] == false {
+        if settings["enableDeviceSupport"] == false {
             return Err(unavailable("devices are disabled"));
         }
     }
@@ -222,8 +227,8 @@ pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
         "device.configure" => {
             let mut patch = json!({});
             for (a, b) in [
-                ("enabled", "deviceEnabled"),
-                ("agentAccessEnabled", "deviceAgentAccessEnabled"),
+                ("enabled", "enableDeviceSupport"),
+                ("agentAccessEnabled", "enableAgentDeviceAccess"),
                 ("onboardingCompleted", "deviceOnboardingCompleted"),
             ] {
                 if let Some(v) = p.get(a) {

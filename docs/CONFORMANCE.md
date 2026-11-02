@@ -2276,3 +2276,21 @@ workload, no inference and no provider-child RSS. Append p95 3.24 ms; metadata a
 p95 0.53 ms. See `rss-p2-implementation.json`. This measures the ordinary startup/hot
 path, not large ledger/rate-cache stress or native device latency; no performance
 improvement or universal memory bound is claimed.
+
+## P2 audit and promotion (2026-11-02)
+
+The independent audit of head cbd63e8 reproduced two regressions, both past the clients' 12 s
+read timeout: a rate refresh waiting on a silent source, and five sequential device queries.
+It also found that `device.configure` wrote settings keys clients never read back. Each fix
+has a test that failed first: refresh is bounded to 9 s and concurrent callers get cached
+state; device detail shares an 8 s budget and returns partial settings; configure writes
+`enableDeviceSupport` and `enableAgentDeviceAccess`. Device support is therefore off by
+default, as in T3, until a client enables it. These three fixes were not audited on their own,
+so their rows stay partial.
+
+Nine rows are promoted and two move to unused on that audit's table.
+[p2-reader-inventory.md](p2-reader-inventory.md) is the author's starting point; the row notes
+carry the audited gaps and win where they differ. By user impact the audit ranks next: usage
+aggregation, desktop device viewing and offered controls, child-scoped subagent cancellation,
+staged setup with progress and cancellation, tracked cloning, webhook schedules, ACP execution,
+archive size and rollback crash recovery.
