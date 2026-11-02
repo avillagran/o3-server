@@ -270,6 +270,12 @@ pub fn search_threads(s: &State, p: &Value) -> Reply {
         }
     }
     matches.sort_by(|a, b| {
+        if p["titlesOnly"] == true {
+            return b["quality"]
+                .as_f64()
+                .unwrap_or(0.0)
+                .total_cmp(&a["quality"].as_f64().unwrap_or(0.0));
+        }
         (a["source"] != "user")
             .cmp(&(b["source"] != "user"))
             .then_with(|| {

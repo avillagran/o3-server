@@ -25,6 +25,7 @@ pub(crate) fn materialize(
         text.push_str("\n\nAdditional context supplied by the user:\n");
         text.push_str(&serde_json::to_string(context).map_err(|e| e.to_string())?);
     }
+    let mut budget = text.len().saturating_add(1024);
     let mut out = vec![json!({"type":"text","text":text})];
     for a in attachments.as_array().into_iter().flatten() {
         let id = a["id"].as_str().ok_or("attachment id required")?;
@@ -36,6 +37,17 @@ pub(crate) fn materialize(
             mime,
             "image/png" | "image/jpeg" | "image/gif" | "image/webp"
         ) {
+            let size = std::fs::metadata(&path).map_err(|e| e.to_string())?.len();
+            budget = budget.saturating_add(
+                usize::try_from(size)
+                    .unwrap_or(usize::MAX)
+                    .saturating_mul(4)
+                    / 3
+                    + 1024,
+            );
+            if budget > 8 * 1024 * 1024 {
+                return Err("provider images exceed input budget".into());
+            }
             if claude {
                 // Keep the transport bounded, including base64 expansion.
                 let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
