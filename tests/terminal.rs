@@ -368,13 +368,14 @@ fn scrollback_is_bounded_per_terminal() {
     stream.next(T);
     // 2 MiB of numbered lines: far more than the 512 KiB scrollback.
     write(&c, "t1", "term-1", "i=0; while [ $i -lt 40000 ]; do echo \"scrollback-line-$i-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"; i=$((i+1)); done; echo DONE-$i\n");
-    // A subscriber that cannot keep up is resynchronised with a snapshot, which replaces its screen.
+    // Live delivery may keep pace and accumulate more than retained scrollback.
+    // A slow subscriber can instead receive replacement snapshots. Both must
+    // reach the completion marker; retention bounds apply to the server snapshot.
     let mut screen = Screen::default();
     stream.until(Duration::from_secs(60), |e| {
         screen.feed(e);
         screen.text.contains("DONE-40000\r\n")
     });
-    assert!(screen.text.len() <= 512 * 1024 + 64 * 1024);
     let mut check = subscribe(
         s.connect(),
         "terminal.observe",
