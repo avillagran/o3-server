@@ -185,3 +185,48 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
+
+/// Filesystem intent is synced before restore, independently of the receipt transaction.
+pub(crate) fn journal(s: &State, command: &serde_json::Value) -> Result<(), String> {
+    use std::io::Write;
+    if s.rollback_pending.swap(true,std::sync::atomic::Ordering::AcqRel) {
+        return Err("a rollback requires recovery before another mutation".into());
+    }
+    let result=(|| {
+        let dir=s.dir.join("rollback-journal");
+        std::fs::create_dir_all(&dir).map_err(|e|e.to_string())?;
+        std::fs::File::open(&s.dir).and_then(|f|f.sync_all()).map_err(|e|e.to_string())?;
+        let temp=dir.join("intent.part");
+        let mut f=std::fs::File::create(&temp).map_err(|e|e.to_string())?;
+        f.write_all(command.to_string().as_bytes()).and_then(|_|f.sync_all()).map_err(|e|e.to_string())?;
+        std::fs::rename(temp,dir.join("intent.json")).map_err(|e|e.to_string())?;
+        std::fs::File::open(dir).and_then(|f|f.sync_all()).map_err(|e|e.to_string())
+    })();
+    // A failed sync leaves recovery required: do not allow unrelated mutations.
+    result
+}
+pub(crate) fn complete_journal(s:&State)->Result<(),String>{
+    let dir=s.dir.join("rollback-journal");
+    match std::fs::remove_file(dir.join("intent.json")) {Ok(())=>{},Err(e) if e.kind()==std::io::ErrorKind::NotFound=>{},Err(e)=>return Err(e.to_string())}
+    std::fs::File::open(dir).and_then(|f|f.sync_all()).map_err(|e|e.to_string())?;
+    s.rollback_pending.store(false,std::sync::atomic::Ordering::Release);Ok(())
+}
+/// Replay before serving requests or resuming providers. An invalid intent fails startup closed.
+pub(crate) fn recover_rollbacks(s:&std::sync::Arc<State>)->Result<(),String>{
+    use std::io::Read;
+    let dir=s.dir.join("rollback-journal");
+    let entries=match std::fs::read_dir(&dir){Ok(v)=>v,Err(e) if e.kind()==std::io::ErrorKind::NotFound=>return Ok(()),Err(e)=>return Err(e.to_string())};
+    let paths=entries.take(1025).map(|e|e.map(|v|v.path()).map_err(|e|e.to_string())).collect::<Result<Vec<_>,_>>()?;
+    if paths.len()>1024 {return Err("too many rollback intents".into());}
+    for path in paths {
+        if path.extension().is_none_or(|e|e!="json"){continue;}
+        let mut bytes=Vec::new();std::fs::File::open(&path).map_err(|e|e.to_string())?.take(65537).read_to_end(&mut bytes).map_err(|e|e.to_string())?;
+        if bytes.len()>65536{return Err("rollback intent exceeds recovery budget".into());}
+        let c:serde_json::Value=serde_json::from_slice(&bytes).map_err(|_|"invalid rollback intent")?;
+        if c["type"]!="checkpoint.rollback"{return Err("invalid rollback intent command".into());}
+        crate::thread_commands::dispatch(s,&c)?;
+        match std::fs::remove_file(path){Ok(())=>{},Err(e) if e.kind()==std::io::ErrorKind::NotFound=>{},Err(e)=>return Err(e.to_string())}
+        std::fs::File::open(&dir).and_then(|f|f.sync_all()).map_err(|e|e.to_string())?;
+    }
+    s.rollback_pending.store(false,std::sync::atomic::Ordering::Release);Ok(())
+}
