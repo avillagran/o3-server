@@ -118,3 +118,67 @@ fn command_output_replaces_then_appends_then_settles() {
         json!({"kind":"replace","text":"hello\nworld\n","truncated":false,"running":false})
     );
 }
+
+#[test]
+fn multiline_progress_reaches_real_output_reader_live_and_settled() {
+    use o3_server::command_output::{persist, CommandEvent};
+    let s = start(|_| {});
+    let c = s.connect();
+    c.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"c","threadId":"t","projectId":"p","title":"Output","modelSelection":{"instanceId":"scripted","model":"m"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
+    persist(
+        &s.state,
+        "t",
+        "r",
+        CommandEvent::Started {
+            item_id: "cmd".into(),
+            input: "progress".into(),
+        },
+    )
+    .unwrap();
+    let mut stream = subscribe(
+        c.clone(),
+        "orchestration.subscribeCommandOutput",
+        json!({"threadId":"t","itemId":"cmd"}),
+    );
+    let mut frames = vec![stream.next(T)];
+    for chunk in [
+        "first 10%\nsecond 20%",
+        "\x1b[1A\rfirst 90%\x1b[K",
+        "\x1b[1B\rsecond 99%\x1b[K",
+    ] {
+        persist(
+            &s.state,
+            "t",
+            "r",
+            CommandEvent::Output {
+                item_id: "cmd".into(),
+                chunk: chunk.into(),
+            },
+        )
+        .unwrap();
+        frames.push(stream.next(T));
+    }
+    let live = t3_protocol::parity::output(
+        &json!({"reference":{"threadId":"t","itemId":"cmd"},"frames":frames,"closed":false}),
+    )
+    .unwrap();
+    assert_eq!(live["text"], "first 90%\nsecond 99%");
+    persist(
+        &s.state,
+        "t",
+        "r",
+        CommandEvent::Finished {
+            item_id: "cmd".into(),
+            exit_code: Some(0),
+            output: None,
+        },
+    )
+    .unwrap();
+    frames.push(stream.next(T));
+    let settled = t3_protocol::parity::output(
+        &json!({"reference":{"threadId":"t","itemId":"cmd"},"frames":frames,"closed":true}),
+    )
+    .unwrap();
+    assert_eq!(settled["text"], "first 90%\nsecond 99%");
+    assert_eq!(settled["running"], false);
+}

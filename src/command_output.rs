@@ -4,7 +4,7 @@
 //! here; the turn item is persisted when the command starts and again when it finishes. Subscribers
 //! hold an absolute offset into the tail, so a slow viewer is sent a `replace` of the tail instead of
 //! a queue of appends. Progress folding handles CR, backspace and bounded CSI sequences;
-//! arbitrary multi-line terminal emulation is deliberately outside this surface.
+//! cursor movement folds within the retained rows; this is not a full terminal emulator.
 use crate::{
     events::{append, get, put},
     store::{iso, now_ms, State},
@@ -47,6 +47,7 @@ struct Tail {
     total: u64,
     truncated: bool,
     cursor: usize,
+    rows_back: usize,
     escape: String,
     rewritten: u64,
 }
@@ -61,7 +62,8 @@ impl Tail {
             self.escape.clear();
         }
         let chunk = &chunk[cut..];
-        let plain = self.escape.is_empty()
+        let plain = self.rows_back == 0
+            && self.escape.is_empty()
             && !chunk.chars().any(|c| c.is_control() && c != '\n')
             && self.cursor == self.text.rsplit('\n').next().unwrap_or("").chars().count();
         if plain {
@@ -70,10 +72,12 @@ impl Tail {
             self.total += chunk.len() as u64;
         } else {
             self.rewritten += 1;
-            let start = self.text.rfind('\n').map_or(0, |n| n + 1);
-            let mut line: Vec<char> = self.text[start..].chars().collect();
-            self.text.truncate(start);
+            let mut lines: Vec<Vec<char>> =
+                self.text.split('\n').map(|l| l.chars().collect()).collect();
+            let mut row = lines.len().saturating_sub(1 + self.rows_back);
             for c in chunk.chars() {
+                let last_row = lines.len() - 1;
+                let line = &mut lines[row];
                 if !self.escape.is_empty() {
                     self.escape.push(c);
                     if self.escape.len() > 64 {
@@ -87,6 +91,16 @@ impl Tail {
                         let args = &self.escape[2..self.escape.len() - 1];
                         let n = args.parse::<usize>().unwrap_or(1).clamp(1, TAIL_BYTES);
                         match c {
+                            'A' => row = row.saturating_sub(n),
+                            'B' => row = row.saturating_add(n).min(last_row),
+                            'E' => {
+                                row = row.saturating_add(n).min(last_row);
+                                self.cursor = 0;
+                            }
+                            'F' => {
+                                row = row.saturating_sub(n);
+                                self.cursor = 0;
+                            }
                             'G' => self.cursor = (n - 1).min(line.len()),
                             'C' => self.cursor = self.cursor.saturating_add(n).min(line.len()),
                             'D' => self.cursor = self.cursor.saturating_sub(n),
@@ -109,11 +123,15 @@ impl Tail {
                     '\r' => self.cursor = 0,
                     '\x08' => self.cursor = self.cursor.saturating_sub(1),
                     '\n' => {
-                        self.text.extend(line.drain(..));
-                        self.text.push('\n');
+                        if row == last_row {
+                            lines.push(Vec::new());
+                        }
+                        row += 1;
                         self.cursor = 0;
-                        if self.text.len() > 2 * TAIL_BYTES {
-                            self.trim();
+                        if lines.len() > 8192 {
+                            lines.drain(..4096);
+                            row = row.saturating_sub(4096);
+                            self.truncated = true;
                         }
                     }
                     c if !c.is_control() || c == '\t' => {
@@ -144,7 +162,14 @@ impl Tail {
                     _ => {}
                 }
             }
-            self.text.extend(line);
+            self.rows_back = lines.len() - 1 - row;
+            self.text.clear();
+            for (i, line) in lines.into_iter().enumerate() {
+                if i > 0 {
+                    self.text.push('\n');
+                }
+                self.text.extend(line);
+            }
             self.total += chunk.len() as u64 + self.text.len() as u64;
             self.start = self.total - self.text.len() as u64;
         }
@@ -163,6 +188,9 @@ impl Tail {
             }
             let old_line = self.text.rsplit('\n').next().unwrap_or("").chars().count();
             self.text.drain(..cut);
+            self.rows_back = self
+                .rows_back
+                .min(self.text.bytes().filter(|b| *b == b'\n').count());
             self.start += cut as u64;
             self.truncated = true;
             let new_line = self.text.rsplit('\n').next().unwrap_or("").chars().count();
@@ -500,8 +528,19 @@ impl crate::provider::Provider for ScriptedCommandProvider {
 mod progress_tests {
     use super::*;
     #[test]
+    fn multiline_redraw_across_chunks_updates_previous_rows() {
+        let mut t = Tail::default();
+        t.push("first 10%\nsecond 20%");
+        t.push("\x1b[");
+        t.push("1A\rfirst 90%\x1b[K");
+        t.push("\x1b[1B\rsecond 99%\x1b[K");
+        assert_eq!(t.text, "first 90%\nsecond 99%");
+        t.push("\x1b[999999999A\rTOP\x1b[2K\rfirst done\x1b[999999999B\rsecond done");
+        assert_eq!(t.text, "first done\nsecond done");
+    }
+    #[test]
     fn adversarial_cursor_moves_are_linear_and_bounded() {
-        let input = "\x1b[65536Cx\n".repeat(100_000);
+        let input = "\x1b[65536Cx\n\x1b[65536A\x1b[65536B".repeat(100_000);
         let start = std::time::Instant::now();
         let mut tail = Tail::default();
         tail.push(&input);
