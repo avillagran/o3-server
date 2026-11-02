@@ -374,7 +374,7 @@ mod tests {
 
 #[cfg(test)]
 #[path = "../tests/support/mod.rs"]
-mod recovery_test_support;
+pub(crate) mod recovery_test_support;
 #[cfg(test)]
 static FAULTS: std::sync::LazyLock<
     std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, &'static str>>,

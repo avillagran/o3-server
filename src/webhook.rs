@@ -351,7 +351,11 @@ pub fn accept(
 pub fn next_due(s: &State) -> Option<i64> {
     s.db.lock()
         .unwrap()
-        .query_row("SELECT min(due) FROM hook_queue", [], |r| r.get(0))
+        .query_row(
+            "SELECT min(CASE WHEN due=9223372036854775807 THEN 0 ELSE due END) FROM hook_queue",
+            [],
+            |r| r.get(0),
+        )
         .ok()
         .flatten()
 }
@@ -378,6 +382,10 @@ pub fn tick(s: &Arc<State>) {
         let Some((id, task, expires, prompt)) = job else {
             return;
         };
+        #[cfg(test)]
+        if crash_tests::stop(s, "claim") {
+            return;
+        }
         let enabled = get(&s.db.lock().unwrap(), "scheduledTasks", &task)
             .is_ok_and(|t| t["enabled"] == true && t["schedule"]["type"] == "webhook");
         let cid = format!("webhook:{task}:{id}");
@@ -402,10 +410,113 @@ pub fn tick(s: &Arc<State>) {
             );
             return;
         }
+        #[cfg(test)]
+        if crash_tests::stop(s, "dispatch") {
+            return;
+        }
         // A durable command receipt deduplicates retries after a crash at handoff.
         let _ =
             s.db.lock()
                 .unwrap()
                 .execute("DELETE FROM hook_queue WHERE id=?", [&id]);
+    }
+}
+
+#[cfg(test)]
+mod crash_tests {
+    use super::*;
+    static FAULT: std::sync::Mutex<Option<(std::path::PathBuf, &'static str)>> =
+        std::sync::Mutex::new(None);
+    pub(super) fn stop(s: &State, stage: &str) -> bool {
+        let fault = FAULT.lock().unwrap();
+        fault
+            .as_ref()
+            .is_some_and(|(p, at)| p == &s.dir && *at == stage)
+    }
+    #[test]
+    fn durable_claim_and_receipt_survive_interrupted_dispatch_once() {
+        use t3_protocol::api::{
+            orchestration,
+            scheduled_tasks::{self, TaskUpsert},
+        };
+        let s = crate::checkpoint::recovery_test_support::start(|s| {
+            *s.provider.lock().unwrap() = Some(Arc::new(crate::provider::ScriptedProvider));
+        });
+        let c = s.connect();
+        c.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"create","threadId":"t","projectId":"p","title":"Hook","modelSelection":{"instanceId":"scripted","model":"fixture"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
+        let input = json!({"id":"crash-hook","title":"Hook","threadId":"t","projectId":"p","prompt":"inspect {{body.action}}","enabled":true,"schedule":{"type":"webhook","signature":{"header":"x-signature","encoding":"hex","prefix":"","secret":"fixture-key"},"dedupe":{"coalesceKey":"{{body.action}}","coalesceWindowSeconds":60}},"workspaceStrategy":{"type":"root"},"modelSelection":{"instanceId":"scripted","model":"fixture"},"runtimeMode":"full-access","interactionMode":"default"});
+        let task = scheduled_tasks::upsert(&c, &TaskUpsert::from_json(&input).unwrap()).unwrap();
+        let path = task["task"]["webhook"]["path"].as_str().unwrap();
+        let token = path.rsplit('/').next().unwrap();
+        let body = br#"{"action":"go"}"#;
+        let mut mac = Hmac::<Sha256>::new_from_slice(b"fixture-key").unwrap();
+        mac.update(body);
+        let mut headers = hyper::HeaderMap::new();
+        headers.insert(
+            "x-signature",
+            hex(&mac.finalize().into_bytes()).parse().unwrap(),
+        );
+        assert_eq!(
+            accept(&s.state, "crash-hook", token, &headers, "", body).1,
+            "accepted"
+        );
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        for stage in ["claim", "dispatch"] {
+            *FAULT.lock().unwrap() = Some((s.dir.clone(), stage));
+            if stage == "claim" {
+                s.state
+                    .db
+                    .lock()
+                    .unwrap()
+                    .execute("UPDATE hook_queue SET due=0", [])
+                    .unwrap();
+            }
+            runtime.block_on(async {
+                tick(&s.state);
+            });
+            assert!(
+                next_due(&s.state).is_some_and(|due| due <= now_ms()),
+                "interrupted claims must be scheduled immediately on recovery"
+            );
+            assert_eq!(
+                s.state
+                    .db
+                    .lock()
+                    .unwrap()
+                    .query_row("SELECT count(*) FROM hook_queue", [], |r| r
+                        .get::<_, i64>(0))
+                    .unwrap(),
+                1,
+                "interrupted {stage} lost queue item"
+            );
+        }
+        *FAULT.lock().unwrap() = None;
+        runtime.block_on(async {
+            tick(&s.state);
+        });
+        assert_eq!(
+            s.state
+                .db
+                .lock()
+                .unwrap()
+                .query_row("SELECT count(*) FROM hook_queue", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            scheduled_tasks::list(&c).unwrap()["tasks"][0]["runCount"],
+            1
+        );
+        let projection = orchestration::thread_projection(&c, "t").unwrap();
+        assert_eq!(
+            projection["runs"].as_array().unwrap().len(),
+            1,
+            "{projection}"
+        );
     }
 }
