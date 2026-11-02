@@ -31,8 +31,8 @@ fn script() -> String {
     format!(
         r#"case "$1 $2" in
 "api user") echo me;;
-"pr list") echo '[{pr}]';;
-"pr view") echo '{pr}';;
+"pr list") printf '%s\n' '[{pr}]';;
+"pr view") printf '%s\n' '{pr}';;
 "repo view") echo '{{"mergeCommitAllowed":true,"squashMergeAllowed":true,"rebaseMergeAllowed":false}}';;
 "label list") echo '[{{"name":"bug","color":"ff0000","description":""}},{{"name":"docs","color":"0000ff","description":""}}]';;
 "api graphql") echo '{{"data":{{"repository":{{"pullRequest":{{"reviewThreads":{{"totalCount":1,"nodes":[{{"id":"T_1","isResolved":false,"isOutdated":false,"path":"src/a.rs","line":3,"diffSide":"RIGHT","viewerCanResolve":true,"comments":{{"totalCount":1,"nodes":[{{"id":"TC_1","body":"fix","createdAt":"2026-01-01T04:00:00Z","lastEditedAt":null,"url":"u","viewerCanUpdate":false,"author":{{"login":"rev","avatarUrl":"a"}}}}]}}}}]}}}}}}}}}}';;
@@ -47,6 +47,18 @@ esac"#,
         pr = PR,
         d = bin_dir().display()
     )
+}
+
+#[test]
+fn gh_fixture_preserves_json_escapes_with_interpreting_echo_shells() {
+    // dash interprets echo escapes by default; bash can reproduce that behavior.
+    let output = std::process::Command::new("/bin/sh")
+        .env("BASHOPTS", "xpg_echo")
+        .args(["-c", &script(), "gh", "pr", "view"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), format!("{PR}\n"));
 }
 
 #[test]

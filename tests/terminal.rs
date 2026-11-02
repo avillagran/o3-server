@@ -18,7 +18,9 @@ fn server() -> (Server, PathBuf) {
         ));
         std::fs::create_dir_all(&dir).unwrap();
         let script = dir.join("shell.sh");
-        std::fs::write(&script, "#!/bin/sh\nexec env -i PATH=\"$PATH\" HOME=/nonexistent PS1='READY> ' TERM=xterm /bin/sh\n").unwrap();
+        let shell = std::env::var("O3_TEST_TERMINAL_SHELL").unwrap_or_else(|_| "/bin/sh".into());
+        let shell = shell.replace('\'', "'\"'\"'");
+        std::fs::write(&script, format!("#!/bin/sh\nexec env -i PATH=\"$PATH\" HOME=/nonexistent PS1='READY> ' TERM=xterm '{shell}'\n")).unwrap();
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
         state.streams.terminals.set_shell(script.to_str().unwrap());
@@ -180,6 +182,7 @@ fn attach_snapshot_then_live_tail_loses_and_duplicates_nothing() {
     let mut numbers = Vec::new();
     for part in rendered.split("\r\n") {
         let tail = part.rsplit('\r').next().unwrap();
+        let tail = tail.strip_prefix("READY> ").unwrap_or(tail);
         if let Some(n) = tail
             .strip_prefix("line")
             .and_then(|r| r.parse::<u32>().ok())
@@ -273,9 +276,18 @@ fn close_kills_the_whole_process_group_and_tells_subscribers() {
     let (s, cwd) = server();
     let c = s.connect();
     open(&c, "t1", "term-1", &cwd);
+    let sibling = open(&c, "t1", "term-sibling", &cwd);
+    let sibling_pid = sibling["pid"].as_i64().unwrap();
     let mut stream = attach(s.connect(), "t1", "term-1", json!({}));
     stream.next(T);
-    write(&c, "t1", "term-1", "sleep 300 & echo BG=$!\n");
+    // Interactive shells may place jobs in their own process groups. The job
+    // also ignores graceful signals, so closing must finish the whole session.
+    write(
+        &c,
+        "t1",
+        "term-1",
+        "set -m; sh -c 'trap \"\" HUP TERM; echo BG=$$; exec sleep 300' &\n",
+    );
     let mut screen = Screen::default();
     let mut pid = None;
     stream.until(T, |e| {
@@ -300,6 +312,15 @@ fn close_kills_the_whole_process_group_and_tells_subscribers() {
         wait_for(Duration::from_secs(5), || is_dead(pid)),
         "background job {pid} survived close"
     );
+    assert!(
+        !is_dead(sibling_pid),
+        "closing one PTY must preserve another session"
+    );
+    c.rpc(
+        "terminal.close",
+        json!({"threadId":"t1","terminalId":"term-sibling"}),
+    )
+    .unwrap();
     let err = c
         .rpc(
             "terminal.write",

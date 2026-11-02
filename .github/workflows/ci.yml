@@ -10,6 +10,7 @@ jobs:
   rust:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         features: ['', '--no-default-features']
     env:
@@ -17,6 +18,8 @@ jobs:
       TMPDIR: /var/tmp/o3-build/tmp
     steps:
       - uses: actions/checkout@v4
+      - name: Install video decoder required by device stream regression
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - run: mkdir -p "$TMPDIR"
       - run: rustup component add rustfmt clippy
       - run: cargo fmt --check
