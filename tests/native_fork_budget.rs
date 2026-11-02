@@ -41,12 +41,16 @@ fn native_fork_does_not_apply_fallback_attachment_budget() {
             [json!({"id":"r2","threadId":"t","ordinal":2,"status":"completed"}).to_string()],
         )
         .unwrap();
-    let error = c.rpc("orchestration.dispatchCommand",json!({"type":"thread.fork","commandId":"historical","sourceThreadId":"t","targetThreadId":"historical","sourcePoint":{"type":"run","runId":"r"}})).unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("historical attachments exceed handoff budget"),
-        "{error}"
-    );
-    assert!(orchestration::thread_projection(&c, "historical").is_err());
+    c.rpc("orchestration.dispatchCommand",json!({"type":"thread.fork","commandId":"historical","sourceThreadId":"t","targetThreadId":"historical","sourcePoint":{"type":"run","runId":"r"}})).unwrap();
+    let p = orchestration::thread_projection(&c, "historical").unwrap();
+    let media = p["thread"]["inheritedProviderAttachments"]
+        .as_array()
+        .unwrap();
+    assert_eq!(media.len(), 32);
+    assert_eq!(media[0]["id"], "a1");
+    assert_eq!(media[31]["id"], "a32");
+    assert!(p["thread"]["inheritedProviderContext"]
+        .as_str()
+        .unwrap()
+        .contains("attachments truncated"));
 }

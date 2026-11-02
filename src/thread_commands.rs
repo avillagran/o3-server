@@ -637,6 +637,7 @@ pub(crate) fn capture_handoff(
         .cloned()
         .unwrap_or_default();
     let mut q = db.prepare("SELECT m.body FROM records m JOIN records r ON r.kind='runs' AND r.id=json_extract(m.body,'$.runId') WHERE m.kind='messages' AND m.thread_id=? AND json_extract(r.body,'$.ordinal')<=? AND coalesce(json_extract(r.body,'$.contextDiscarded'),0)=0 ORDER BY r.rowid,m.rowid").map_err(|e|e.to_string())?;
+    let mut truncated = false;
     for row in q
         .query_map(params![tid, ordinal], |r| r.get::<_, String>(0))
         .map_err(|e| e.to_string())?
@@ -647,12 +648,17 @@ pub(crate) fn capture_handoff(
             if !media.iter().any(|old| old["id"] == a["id"]) {
                 media.push(a.clone());
             }
-            if media.len() > 32
+            while media.len() > 32
                 || serde_json::to_vec(&media).map_err(|e| e.to_string())?.len() > 65536
             {
-                return Err("historical attachments exceed handoff budget".into());
+                media.remove(0);
+                truncated = true;
             }
         }
+    }
+    if truncated {
+        let text = t["providerHandoff"].as_str().unwrap_or("");
+        t["providerHandoff"] = json!(format!("[Historical attachments truncated: oldest descriptors omitted; newest retained.]\n{text}"));
     }
     t["providerHandoffAttachments"] = json!(media);
     Ok(())
