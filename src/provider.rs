@@ -34,6 +34,7 @@ pub enum ProviderControl {
     Steer(String),
     SteerContent(Vec<serde_json::Value>),
     Interrupt,
+    StopTask(String),
     Respond {
         request_id: String,
         decision: serde_json::Value,

@@ -70,3 +70,56 @@ fn unsupported_subagent_stop_preserves_real_native_owner() {
         }));
     }
 }
+
+#[test]
+fn claude_child_stop_is_scoped_and_native_confirmed() {
+    for silent in [false, true] {
+        let peer = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/input/child_stop.py");
+        let s = support::start(|s| {
+            *s.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::Providers {
+                claude: Some(Arc::new(o3_server::claude::ClaudeProvider::new(
+                    peer.clone(),
+                ))),
+                codex: Arc::new(o3_server::codex::CodexProvider::new(peer, None)),
+            }));
+        });
+        let c = s.connect();
+        c.rpc("orchestration.dispatchCommand", json!({"type":"thread.create","commandId":"c","threadId":"t","projectId":"p","title":"Stop child","modelSelection":{"instanceId":"claudeAgent","model":"test"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
+        c.rpc("orchestration.dispatchCommand", json!({"type":"message.dispatch","commandId":"m","threadId":"t","messageId":"m","text":if silent {"silent"}else{"wait"},"attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
+        assert!(support::wait_for(Duration::from_secs(10), || {
+            !orchestration::thread_projection(&c, "t").unwrap()["subagents"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        }));
+        let p = orchestration::thread_projection(&c, "t").unwrap();
+        let rid = p["runs"][0]["id"].as_str().unwrap();
+        let sid = p["subagents"][0]["id"].as_str().unwrap();
+        orchestration::dispatch(
+            &c,
+            &orchestration::Command::SubagentStop {
+                command_id: "stop".into(),
+                thread_id: "t".into(),
+                run_id: rid.into(),
+                subagent_id: sid.into(),
+            },
+        )
+        .unwrap();
+        assert!(support::wait_for(
+            Duration::from_secs(8),
+            || orchestration::thread_projection(&c, "t").unwrap()["subagents"][0]["status"]
+                == if silent { "failed" } else { "cancelled" }
+        ));
+        let p = orchestration::thread_projection(&c, "t").unwrap();
+        assert_eq!(p["runs"][0]["status"], "running", "{p}");
+        c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"continue","threadId":"t","messageId":"next","text":"finish","attachments":[],"dispatchMode":{"type":"steer_active","targetRunId":rid}})).unwrap();
+        if !silent {
+            assert!(support::wait_for(
+                Duration::from_secs(10),
+                || orchestration::thread_projection(&c, "t").unwrap()["runs"][0]["status"]
+                    == "completed"
+            ));
+        }
+    }
+}

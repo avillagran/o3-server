@@ -243,12 +243,28 @@ impl ClaudeProvider {
             let mut pending: HashMap<String, Value> = HashMap::new();
             let mut boundary=TurnBoundary::default();
             let mut interrupt_requested=false;
+            let mut child_stops: HashMap<String, tokio::time::Instant> = HashMap::new();
             loop {
                 tokio::select! {
                     biased;
                     _=output.closed()=>return Ok(false),
                     _=cancel.changed()=>return Ok(false),
+                    _=tokio::time::sleep_until(child_stops.values().copied().min().unwrap_or_else(||tokio::time::Instant::now()+std::time::Duration::from_secs(86400))), if !child_stops.is_empty()=> {
+                        let expired:Vec<_>=child_stops.iter().filter(|(_,at)| **at<=tokio::time::Instant::now()).map(|(id,_)|id.clone()).collect();
+                        for id in expired {
+                            child_stops.remove(&id);
+                            // Failure records an unconfirmed stop, never an invented cancellation.
+                            output.send(ProviderEvent::Native(json!({"type":"task","frame":{"type":"system","subtype":"task_notification","task_id":id,"status":"failed","summary":"Child stop was not confirmed by the provider; child execution may continue."}}))).await.map_err(|_|"receiver closed")?;
+                        }
+                    },
                     c=control.recv()=>match c {
+                        Some(ProviderControl::StopTask(task))=>{
+                            if child_stops.len()<64 && !child_stops.contains_key(&task) {
+                                let request=format!("stop-child:{task}");
+                                session.control(&request,json!({"subtype":"stop_task","task_id":task})).await?;
+                                child_stops.insert(task,tokio::time::Instant::now()+std::time::Duration::from_secs(2));
+                            }
+                        },
                         Some(ProviderControl::Interrupt)=>{
                             session.control("interrupt",json!({"subtype":"interrupt"})).await?;
                             interrupt_requested=true;
@@ -294,6 +310,8 @@ impl ClaudeProvider {
                             self.metadata.lock().unwrap()["usageLimits"]=usage_limits(&v["rate_limit_info"]);
                         }
                         if let Some(id)=v["session_id"].as_str() { session.native=id.into(); }
+                        if v["type"]=="system" && v["subtype"]=="task_notification" { if let Some(id)=v["task_id"].as_str() {child_stops.remove(id);} }
+                        if v["type"]=="control_response" && v["response"]["request_id"].as_str().is_some_and(|id| id.starts_with("stop-child:")) { continue; }
                         if v["type"]=="control_response" && v["response"]["subtype"]=="error" { return Err(format!("Claude control rejected: {}",v["response"]["error"])); }
                         if v["type"]=="control_request" {
                             let native=v["request_id"].as_str().ok_or("missing request id")?;

@@ -341,6 +341,7 @@ impl CodexProvider {
                     _=output.closed()=> { let _=c.call("turn/interrupt",json!({"threadId":tid,"turnId":turn})).await; return Ok(()); },
                     _=cancel.changed()=>continue,
                     action=control.recv()=>match action {
+                        Some(ProviderControl::StopTask(_))=>{},
                         Some(ProviderControl::Interrupt)=>{ if terminal.is_some() { terminal=Some(ProviderEvent::Interrupted); } c.call("turn/interrupt",json!({"threadId":tid,"turnId":turn})).await?; },
                         None=>return Err("provider control channel closed".into()),
                         Some(ProviderControl::SteerContent(content))=>{ c.call("turn/steer",json!({"threadId":tid,"expectedTurnId":turn,"input":content})).await?; },
