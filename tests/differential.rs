@@ -768,7 +768,7 @@ fn reader_outputs(p: &Value) -> Value {
 struct Observer {
     stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
     rx: std::sync::mpsc::Receiver<Value>,
-    join: std::thread::JoinHandle<Value>,
+    join: std::thread::JoinHandle<(Value, u64, Vec<Value>)>,
 }
 fn observe(s: &Server) -> Observer {
     let c = connect(s);
@@ -778,7 +778,10 @@ fn observe(s: &Server) -> Observer {
     let join = std::thread::spawn(move || {
         let mut p = Value::Null;
         let mut seq = 0;
+        let mut boundary = 0;
+        let mut tail = Vec::new();
         let mut records = std::collections::BTreeSet::new();
+        let mut terminal_records = std::collections::BTreeSet::new();
         let deadline = Instant::now() + Duration::from_secs(90);
         c.subscribe(
             "orchestration.subscribeThread",
@@ -791,6 +794,7 @@ fn observe(s: &Server) -> Observer {
                         p = v["projection"].clone();
                         seq = t3_protocol::stream::cursor_of("orchestration.subscribeThread", &v)
                             .unwrap();
+                        boundary = seq;
                         for kind in [
                             "runs",
                             "messages",
@@ -809,20 +813,41 @@ fn observe(s: &Server) -> Observer {
                             .unwrap();
                         assert!(n > seq, "nonmonotonic or duplicated sequence");
                         seq = n;
+                        tail.push(v.clone());
                         let e = &v["event"];
                         let typ = e["type"].as_str().unwrap();
                         if typ == "run.created" {
-                            let key = (
-                                typ.trim_end_matches(".created").to_owned(),
-                                e["payload"]["id"].to_string(),
-                            );
+                            let key = ("runs".to_owned(), e["payload"]["id"].to_string());
                             assert!(
                                 records.insert(key.clone()),
                                 "duplicated record creation: {key:?}, {}",
                                 shape(e, "")
                             );
                         }
-                        t3_protocol::projection::apply(&mut p, e);
+                        if matches!(
+                            typ,
+                            "run.updated"
+                                | "node.updated"
+                                | "run-attempt.updated"
+                                | "provider-turn.updated"
+                        ) {
+                            let key = (typ.to_owned(), e["payload"]["id"].to_string());
+                            let terminal = matches!(
+                                e["payload"]["status"].as_str(),
+                                Some("completed" | "failed" | "interrupted" | "cancelled")
+                            );
+                            assert!(
+                                !terminal_records.contains(&key) || terminal,
+                                "terminal record became active: {e}"
+                            );
+                            if terminal {
+                                terminal_records.insert(key);
+                            }
+                        }
+                        assert!(
+                            t3_protocol::projection::apply(&mut p, e),
+                            "unapplied event: {typ}"
+                        );
                     }
                     // Execute actual readers throughout the stream, including mid-flight queue state.
                     reader_outputs(&p);
@@ -832,7 +857,7 @@ fn observe(s: &Server) -> Observer {
             },
         )
         .unwrap();
-        p
+        (p, boundary, tail)
     });
     let observer = Observer { stop, rx, join };
     observer.rx.recv_timeout(Duration::from_secs(20)).unwrap();
@@ -921,6 +946,23 @@ fn concurrent_scenario(s: &Server, home: &Path) -> Value {
         &c,
         json!({"type":"run.interrupt","commandId":"interrupt-concurrent","threadId":"concurrent","runId":run,"holdQueue":true}),
     );
+    let requested = wait_projection(&c, |p| {
+        p["turnItems"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|i| i["type"] == "run_interrupt_request")
+    });
+    let mid = reader_outputs(&requested);
+    assert_eq!(mid["timeline"]["threadState"]["working"], true);
+    assert_eq!(mid["queue"]["canSteer"], true);
+    assert_eq!(mid["queue"]["activeRunId"], run);
+    assert!(!requested["turnItems"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|i| i["type"] == "run_interrupt_result"));
+    std::fs::write(home.join("release-interrupt"), "").unwrap();
     wait_projection(&c, |p| {
         reader_outputs(p)["timeline"]["threadState"]["working"] == false
     });
@@ -943,6 +985,10 @@ fn concurrent_scenario(s: &Server, home: &Path) -> Value {
         &c,
         json!({"type":"thread.unsettle","commandId":"unsettle-final","threadId":"concurrent","reason":"user"}),
     );
+    dispatch_command(
+        &c,
+        json!({"type":"thread.stop","commandId":"stop-idle","threadId":"concurrent"}),
+    );
     eprintln!("quiescent");
     let fresh = first_thread(&c)["projection"].clone();
     let view = reader_outputs(&fresh);
@@ -954,6 +1000,7 @@ fn concurrent_scenario(s: &Server, home: &Path) -> Value {
             "missing or duplicated user message"
         );
     }
+    let mut replay_differences = Vec::new();
     for obs in [a, b] {
         let end = Instant::now() + Duration::from_secs(20);
         loop {
@@ -966,7 +1013,38 @@ fn concurrent_scenario(s: &Server, home: &Path) -> Value {
             }
         }
         obs.stop.store(true, std::sync::atomic::Ordering::Relaxed);
-        let reduced = obs.join.join().unwrap();
+        let (reduced, boundary, tail) = obs.join.join().unwrap();
+        if !tail.is_empty() {
+            let done = std::cell::Cell::new(false);
+            let mut replay = Vec::new();
+            connect(s)
+                .subscribe(
+                    "orchestration.subscribeThread",
+                    json!({"threadId":"concurrent","afterSequence":boundary}),
+                    || done.get(),
+                    |v| {
+                        if let Some(v) = v {
+                            replay.push(v);
+                            if replay.len() == tail.len() {
+                                done.set(true);
+                            }
+                        }
+                        Ok(())
+                    },
+                )
+                .unwrap();
+            for (replayed, observed) in replay.iter().zip(&tail) {
+                assert_eq!(
+                    replayed["sequence"], observed["sequence"],
+                    "replay reordered sequence"
+                );
+                assert_eq!(
+                    replayed["event"]["id"], observed["event"]["id"],
+                    "replay changed identity"
+                );
+                reader_differences(replayed, observed, "/replay", &mut replay_differences);
+            }
+        }
         assert_eq!(
             reader_outputs(&reduced),
             view,
@@ -1000,7 +1078,7 @@ fn concurrent_scenario(s: &Server, home: &Path) -> Value {
             },
         )
         .unwrap();
-    json!({"thread":view,"sidebar":sidebar})
+    json!({"thread":view,"sidebar":sidebar,"replayDifferences":replay_differences,"interruptPending":{"working":mid["timeline"]["threadState"]["working"],"canSteer":mid["queue"]["canSteer"],"activeRunId":mid["queue"]["activeRunId"]}})
 }
 #[test]
 #[ignore = "real isolated reference and credential-free gated Codex; tools/conformance-diff concurrent"]
@@ -1044,13 +1122,16 @@ fn upstream_concurrent_differential() {
     let normalized: Vec<_> = views.iter().map(|v| normalize_concurrent(v, "")).collect();
     let mut differences = vec![];
     reader_differences(&normalized[0], &normalized[1], "", &mut differences);
-    let report = json!({"referenceVersion":"0.1.7-nightly.20261031.3991","provider":"deterministic gated stdio peer; no credentials or inference","perServer":"two subscribers: snapshot before tail, strictly increasing sequences, unique run creation, four user messages exactly once, final timeline/queue readers equal fresh snapshot; nonempty sidebar reader","differences":differences});
+    let replay_differences: Vec<_> = views.iter().enumerate()
+        .filter(|(_,v)| !v["replayDifferences"].as_array().unwrap().is_empty())
+        .map(|(i,v)| json!({"server":if i==0 {"reference"}else{"o3"},"differences":v["replayDifferences"]})).collect();
+    let report = json!({"replayDifferences":replay_differences,"referenceVersion":"0.1.7-nightly.20261031.3991","provider":"deterministic gated stdio peer; no credentials or inference","perServer":"two subscribers: snapshot before tail, strictly increasing sequences, unique run creation, four user messages exactly once, final timeline/queue readers equal fresh snapshot; nonempty sidebar reader","differences":differences});
     let report_path = std::env::var_os("O3_CONCURRENT_REPORT")
         .map(PathBuf::from)
         .unwrap_or_else(|| root.join("reader-shapes.json"));
     std::fs::write(&report_path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
     assert!(
-        differences.is_empty(),
+        differences.is_empty() && replay_differences.is_empty(),
         "reader differences: {}; sanitized report: {}",
         differences.len(),
         report_path.display()
@@ -1065,6 +1146,13 @@ fn upstream_concurrent_differential() {
 // strings, booleans and counts. Only independently dispatched user rows and their
 // acknowledgement list may permute under the accepted interleaving contract.
 fn normalize_concurrent(v: &Value, key: &str) -> Value {
+    normalize_concurrent_ids(v, key, &mut std::collections::BTreeMap::new())
+}
+fn normalize_concurrent_ids(
+    v: &Value,
+    key: &str,
+    ids: &mut std::collections::BTreeMap<String, String>,
+) -> Value {
     match v {
         Value::Object(m) => Value::Object(
             m.iter()
@@ -1074,16 +1162,19 @@ fn normalize_concurrent(v: &Value, key: &str) -> Value {
                         && v.is_string()
                         && (m.contains_key("activity") || matches!(key, "activity" | "entries"));
                     let value = if derived {
-                        json!("opaque")
+                        mapped_id(v, ids)
                     } else {
-                        normalize_concurrent(v, k)
+                        normalize_concurrent_ids(v, k, ids)
                     };
                     (k.clone(), value)
                 })
                 .collect(),
         ),
         Value::Array(a) => {
-            let mut a: Vec<_> = a.iter().map(|v| normalize_concurrent(v, key)).collect();
+            let mut a: Vec<_> = a
+                .iter()
+                .map(|v| normalize_concurrent_ids(v, key, ids))
+                .collect();
             if matches!(key, "messages" | "timeline" | "acknowledgedMessageIds") {
                 let independent = |v: &Value| {
                     v.as_str()
@@ -1106,16 +1197,47 @@ fn normalize_concurrent(v: &Value, key: &str) -> Value {
         {
             json!(1)
         }
+        Value::String(_) if matches!(key, "rev" | "revision") => json!("opaque-revision"),
         Value::String(_)
             if matches!(
                 key,
-                "mergeBackRunId" | "rev" | "revision" | "runId" | "sourceItemId" | "providerTurnId"
+                "mergeBackRunId"
+                    | "activeRunId"
+                    | "rev"
+                    | "revision"
+                    | "runId"
+                    | "sourceItemId"
+                    | "providerTurnId"
             ) =>
         {
-            json!("opaque")
+            mapped_id(v, ids)
         }
         _ => v.clone(),
     }
+}
+
+#[test]
+fn concurrent_normalization_preserves_identity_relationships() {
+    let v = normalize_concurrent(
+        &json!({"runId":"a","providerTurnId":"a","mergeBackRunId":"b","sourceItemId":null}),
+        "",
+    );
+    assert_eq!(v["runId"], v["providerTurnId"]);
+    assert_ne!(v["runId"], v["mergeBackRunId"]);
+    assert!(v["sourceItemId"].is_null());
+    assert_ne!(
+        v,
+        normalize_concurrent(
+            &json!({"runId":"a","providerTurnId":"b","mergeBackRunId":"b","sourceItemId":null}),
+            ""
+        )
+    );
+}
+
+fn mapped_id(v: &Value, ids: &mut std::collections::BTreeMap<String, String>) -> Value {
+    let raw = v.as_str().unwrap();
+    let next = format!("identity-{}", ids.len());
+    json!(ids.entry(raw.to_owned()).or_insert(next))
 }
 
 fn reader_differences(a: &Value, b: &Value, path: &str, out: &mut Vec<Value>) {

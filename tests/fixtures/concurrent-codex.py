@@ -48,6 +48,11 @@ for line in sys.stdin:
     elif m == 'turn/interrupt':
         turn = p['turnId']; active.pop(turn, None)
         send(dict(id=i, result={}))
+        (root / 'interrupt-received').touch()
+        end = time.monotonic() + 30
+        while not (root / 'release-interrupt').exists():
+            if time.monotonic() > end: break
+            time.sleep(.01)
         notify('turn/completed', p['threadId'], turn=dict(id=turn, status='interrupted', items=[], error=None))
         continue
     elif m in ('thread/read',): result = dict(thread=dict(id=p['threadId'], turns=[]))
