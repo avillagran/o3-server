@@ -776,10 +776,13 @@ pub(crate) fn message_item(db: &Connection, tid: &str, m: &Value) -> Result<Valu
         item.as_object_mut().unwrap().remove("streaming");
         item["createdBy"] = json!("user");
         item["creationSource"] = json!("web");
-        item["inputIntent"] = json!("turn_start");
+        item["inputIntent"] = m.get("inputIntent").cloned().unwrap_or(json!("turn_start"));
     }
     if let Ok(old) = get(db, "turnItems", &id) {
         item["ordinal"] = old["ordinal"].clone();
+        if let Some(intent) = old.get("inputIntent") {
+            item["inputIntent"] = intent.clone();
+        }
     }
     put(db, "turnItems", &id, tid, &item)?;
     put(
@@ -930,6 +933,9 @@ fn stage_message(
     }
     let mut item_message = m.clone();
     item_message["providerThreadId"] = run["providerThreadId"].clone();
+    if queued {
+        item_message["inputIntent"] = json!("queued_turn");
+    }
     let item = message_item(tx, tid, &item_message)?;
     append(tx, tid, "turn-item.updated", item.clone(), t)?;
     if mode == Some("defer_start") {
