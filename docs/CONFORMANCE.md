@@ -1928,7 +1928,9 @@ No credentials, inference, services, emulators, pushes or merges were used.
 
 1. Repository endpoint identity: the PR fixture cached PR 7 at port 8443,
    changed the remote to 9443 and simulated host failure. Before the fix it
-   returned the foreign PR; after the fix it returns no PR. Same-endpoint,
+   returned the foreign PR; after the fix it returns no PR. The actual lib
+   git_controls validator/actions reader also failed with the PR action disabled
+   before the fix and passes afterward in both feature configurations. Same-endpoint,
    branch-change and authoritative-empty tests still pass. Nondefault ports
    are retained in canonicalKey, also used by desktop connection routing and
    lib sidebar grouping. Default URL ports normalize as before; ordinary

@@ -788,11 +788,22 @@ fn z_status_reports_host_and_pull_request_and_local_only_skips_host() {
             "https://github.com:9443/owner/repo.git",
         ],
     );
+    let changed_port = e
+        .conn
+        .rpc("vcs.refreshStatus", json!({"cwd":root}))
+        .unwrap();
+    t3_protocol::git_controls::validate_status(&changed_port).unwrap();
+    assert_eq!(
+        t3_protocol::git_controls::actions(&stale)["commit_push_pr"],
+        false
+    );
+    assert_eq!(
+        t3_protocol::git_controls::actions(&changed_port)["commit_push_pr"],
+        true,
+        "foreign PR must not disable the PR action"
+    );
     assert!(
-        e.conn
-            .rpc("vcs.refreshStatus", json!({"cwd":root}))
-            .unwrap()["pr"]
-            .is_null(),
+        changed_port["pr"].is_null(),
         "port changes must invalidate fallback"
     );
     git(
