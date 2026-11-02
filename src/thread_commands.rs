@@ -201,6 +201,7 @@ pub fn dispatch(s: &Arc<State>, c: &Value) -> Result<Value> {
     tx.commit().map_err(|e| e.to_string())?;
     drop(db);
     if kind == "checkpoint.rollback" {
+        crate::checkpoint::boundary(s, "receipt")?;
         crate::checkpoint::complete_journal(s)?;
     }
     s.notify();
@@ -568,12 +569,14 @@ fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outco
             let mut intent = c.clone();
             intent["rollbackIdentity"] = identity.clone();
             crate::checkpoint::journal(s, &intent)?;
+            crate::checkpoint::boundary(s, "journal")?;
             crate::checkpoint::restore_bound(
                 s,
                 cwd,
                 &identity,
                 checkpoint["ref"].as_str().ok_or("checkpoint ref missing")?,
             )?;
+            crate::checkpoint::boundary(s, "files")?;
             let ordinal = checkpoint["appRunOrdinal"].as_i64().unwrap_or(0);
             capture_handoff(tx, &mut t, tid, ordinal)?;
             tx.execute("UPDATE records SET body=json_set(body,'$.contextDiscarded',json('true')) WHERE kind='runs' AND thread_id=? AND json_extract(body,'$.ordinal')>?", params![tid,ordinal]).map_err(|e| e.to_string())?;

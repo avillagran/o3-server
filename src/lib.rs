@@ -1,4 +1,6 @@
 //! o3-server: T3 Code wire-compatible server. See docs/COMPATIBILITY.md.
+#[cfg(test)]
+extern crate self as o3_server;
 pub mod auth;
 pub mod http;
 pub mod rpc;

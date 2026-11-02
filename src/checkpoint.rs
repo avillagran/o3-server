@@ -193,6 +193,7 @@ pub(crate) fn complete_journal(s: &State) -> Result<(), String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => return Err(e.to_string()),
     }
+    boundary(s, "unlink")?;
     std::fs::File::open(dir)
         .and_then(|f| f.sync_all())
         .map_err(|e| e.to_string())?;
@@ -368,5 +369,80 @@ mod tests {
         assert!(!root.join("new").exists());
         assert!(!root.join(".git/index").exists());
         std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[cfg(test)]
+#[path = "../tests/support/mod.rs"]
+mod recovery_test_support;
+#[cfg(test)]
+static FAULTS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, &'static str>>,
+> = std::sync::LazyLock::new(Default::default);
+#[allow(unused_variables)]
+pub(crate) fn boundary(s: &State, name: &str) -> Result<(), String> {
+    #[cfg(test)]
+    {
+        let mut faults = FAULTS.lock().unwrap();
+        if faults.get(&s.dir).copied() == Some(name) {
+            faults.remove(&s.dir);
+            return Err(format!("injected rollback failure: {name}"));
+        }
+    }
+    Ok(())
+}
+#[cfg(test)]
+mod durability_fault_tests {
+    use super::*;
+    #[test]
+    fn recovery_survives_each_injected_durability_boundary_with_real_reader() {
+        for boundary in ["journal", "files", "receipt", "unlink"] {
+            let s = recovery_test_support::start(|s| {
+                let root = s.dir.join("repo");
+                std::fs::create_dir_all(&root).unwrap();
+                assert!(Command::new("git")
+                    .args(["init", "-q"])
+                    .arg(&root)
+                    .status()
+                    .unwrap()
+                    .success());
+                std::fs::write(root.join("file"), "baseline").unwrap();
+                let db = s.db.lock().unwrap();
+                put(&db, "thread", "t", "t", &json!({"id":"t","projectId":"p"})).unwrap();
+                put(
+                    &db,
+                    "runs",
+                    "r",
+                    "t",
+                    &json!({"id":"r","threadId":"t","ordinal":1,"status":"completed"}),
+                )
+                .unwrap();
+                drop(db);
+                capture(s, "t", "r", &root, true).unwrap();
+                std::fs::write(root.join("file"), "later").unwrap();
+                std::fs::write(root.join("untracked"), "later").unwrap();
+            });
+            let c = s.connect();
+            FAULTS.lock().unwrap().insert(s.dir.clone(), boundary);
+            let error = c.rpc("orchestration.dispatchCommand",json!({"type":"checkpoint.rollback","commandId":"restore","threadId":"t","scopeId":"scope-t","checkpointId":"r-baseline"})).unwrap_err();
+            assert!(
+                error.to_string().contains("injected rollback failure"),
+                "{error}"
+            );
+            // Simulate process-local flag reset; all durable files and SQLite state
+            // are exactly those left by the injected error, not manually reseeded.
+            s.state
+                .rollback_pending
+                .store(false, std::sync::atomic::Ordering::Release);
+            recover_rollbacks(&s.state).unwrap();
+            let p = t3_protocol::api::orchestration::thread_projection(&c, "t").unwrap();
+            assert_eq!(p["thread"]["rollbackRequestId"], "restore");
+            assert_eq!(
+                std::fs::read_to_string(s.dir.join("repo/file")).unwrap(),
+                "baseline"
+            );
+            assert!(!s.dir.join("repo/untracked").exists());
+            assert!(!s.dir.join("rollback-journal/intent.json").exists());
+        }
     }
 }
