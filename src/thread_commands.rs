@@ -1004,8 +1004,7 @@ mod handoff_tests {
     #[test]
     fn transcript_stops_at_checkpoint_boundary() {
         let db = Connection::open_in_memory().unwrap();
-        db.execute_batch("CREATE TABLE records(kind TEXT,id TEXT,thread_id TEXT,body TEXT,PRIMARY KEY(kind,id));").unwrap();
-        crate::threadq::initialize(&db).unwrap();
+        crate::events::initialize(&db).unwrap();
         for (id, ordinal, text) in [("r1", 1, "retained"), ("r2", 2, "stale secret")] {
             put(&db, "runs", id, "t", &json!({"id":id,"ordinal":ordinal})).unwrap();
             put(

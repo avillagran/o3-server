@@ -15,7 +15,11 @@ pub fn recover(db: &mut Connection) -> Result<(), String> {
             break;
         };
         cursor = rowid;
-        let mut v: Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+        let mut v: Value = if kind == "runs" {
+            events::get(&tx, &kind, &id)?
+        } else {
+            serde_json::from_str(&body).map_err(|e| e.to_string())?
+        };
         let event = match kind.as_str() {
             "thread" if !v["titleRegeneration"].is_null() => {
                 v["titleRegeneration"] = Value::Null;
@@ -134,7 +138,7 @@ pub fn recover(db: &mut Connection) -> Result<(), String> {
 pub fn resume(state: &std::sync::Arc<crate::store::State>) -> Result<(), String> {
     let rows = {
         let db = state.db.lock().unwrap();
-        let mut q = db.prepare("SELECT thread_id,id FROM records WHERE kind='runs' AND json_extract(body,'$.recoveryPending')=1 AND json_extract(body,'$.status')='starting'").map_err(|e|e.to_string())?;
+        let mut q = db.prepare("SELECT thread_id,id FROM records WHERE kind='runs' AND id IN (SELECT id FROM run_internal WHERE json_extract(body,'$.recoveryPending')=1) AND json_extract(body,'$.status')='starting'").map_err(|e|e.to_string())?;
         let rows = q
             .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
             .map_err(|e| e.to_string())?

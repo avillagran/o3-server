@@ -7,9 +7,41 @@ pub fn initialize(db: &Connection) -> Result<()> {
     db.execute_batch("CREATE TABLE IF NOT EXISTS records(kind TEXT NOT NULL,id TEXT NOT NULL,thread_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(kind,id)); CREATE INDEX IF NOT EXISTS records_thread ON records(thread_id,kind); CREATE TABLE IF NOT EXISTS events(sequence INTEGER PRIMARY KEY AUTOINCREMENT,thread_id TEXT NOT NULL,body TEXT NOT NULL,shell TEXT); CREATE TABLE IF NOT EXISTS receipts(command_id TEXT PRIMARY KEY,result TEXT NOT NULL);").map_err(|e|e.to_string())?;
     // The partial index finds the latest user without reading assistant bodies.
     db.execute_batch("CREATE INDEX IF NOT EXISTS records_user_message ON records(thread_id) WHERE kind='messages' AND json_extract(body,'$.role')='user';").map_err(|e|e.to_string())?;
+    initialize_run_internal(db)?;
     crate::threadq::initialize(db)
 }
+// Durable execution bookkeeping is deliberately separate from wire records.
+const INTERNAL_RUN_FIELDS: [&str; 3] = ["executionRequested", "recoveryPending", "recoveryReason"];
+fn take_run_internal(v: &mut Value) -> Value {
+    let mut internal = json!({});
+    for key in INTERNAL_RUN_FIELDS {
+        if let Some(value) = v.as_object_mut().and_then(|v| v.remove(key)) {
+            internal[key] = value;
+        }
+    }
+    internal
+}
+fn initialize_run_internal(db: &Connection) -> Result<()> {
+    // Idempotent migration also removes fields from old replay and launch receipts.
+    db.execute_batch("SAVEPOINT run_internal_migration;
+        CREATE TABLE IF NOT EXISTS run_internal(id TEXT PRIMARY KEY,body TEXT NOT NULL);
+        INSERT INTO run_internal SELECT id,json_object('executionRequested',json(body -> '$.executionRequested'),'recoveryPending',json(body -> '$.recoveryPending'),'recoveryReason',json(body -> '$.recoveryReason')) FROM records WHERE kind='runs' AND (json_type(body,'$.executionRequested') IS NOT NULL OR json_type(body,'$.recoveryPending') IS NOT NULL OR json_type(body,'$.recoveryReason') IS NOT NULL) ON CONFLICT(id) DO UPDATE SET body=json_patch(run_internal.body,excluded.body);
+        UPDATE records SET body=json_remove(body,'$.executionRequested','$.recoveryPending','$.recoveryReason') WHERE kind='runs' AND (json_type(body,'$.executionRequested') IS NOT NULL OR json_type(body,'$.recoveryPending') IS NOT NULL OR json_type(body,'$.recoveryReason') IS NOT NULL);
+        UPDATE events SET body=json_remove(body,'$.payload.executionRequested','$.payload.recoveryPending','$.payload.recoveryReason') WHERE json_extract(body,'$.type') IN ('run.created','run.updated') AND (json_type(body,'$.payload.executionRequested') IS NOT NULL OR json_type(body,'$.payload.recoveryPending') IS NOT NULL OR json_type(body,'$.payload.recoveryReason') IS NOT NULL);
+        UPDATE receipts SET result=json_set(result,'$.projection.runs',json(coalesce((SELECT json_group_array(json(json_remove(value,'$.executionRequested','$.recoveryPending','$.recoveryReason'))) FROM json_each(result,'$.projection.runs')),'[]'))) WHERE json_type(result,'$.projection.runs')='array';
+        UPDATE events SET body=json_set(body,'$.type','run-attempt.updated') WHERE json_extract(body,'$.type')='attempt.updated';
+        RELEASE run_internal_migration;").map_err(|e| e.to_string())
+}
 pub(crate) fn put(db: &Connection, kind: &str, id: &str, tid: &str, v: &Value) -> Result<()> {
+    let public = if kind == "runs" {
+        let mut public = v.clone();
+        let internal = take_run_internal(&mut public);
+        db.execute("INSERT INTO run_internal VALUES(?,?) ON CONFLICT(id) DO UPDATE SET body=json_patch(run_internal.body,excluded.body)", params![id,internal.to_string()]).map_err(|e|e.to_string())?;
+        Some(public)
+    } else {
+        None
+    };
+    let v = public.as_ref().unwrap_or(v);
     if kind == "messages" {
         crate::threadq::index_message(db, tid, v)?;
     }
@@ -28,7 +60,22 @@ pub(crate) fn get(db: &Connection, kind: &str, id: &str) -> Result<Value> {
             |r| r.get(0),
         )
         .map_err(|e| e.to_string())?;
-    serde_json::from_str(&s).map_err(|e| e.to_string())
+    let mut v: Value = serde_json::from_str(&s).map_err(|e| e.to_string())?;
+    if kind == "runs" {
+        let internal: Option<String> = db
+            .query_row("SELECT body FROM run_internal WHERE id=?", [id], |r| {
+                r.get(0)
+            })
+            .optional()
+            .map_err(|e| e.to_string())?;
+        if let Some(internal) = internal {
+            let internal: Value = serde_json::from_str(&internal).map_err(|e| e.to_string())?;
+            v.as_object_mut()
+                .ok_or("invalid run")?
+                .extend(internal.as_object().ok_or("invalid internal run")?.clone());
+        }
+    }
+    Ok(v)
 }
 fn list(db: &Connection, kind: &str, tid: Option<&str>, limit: usize) -> Result<Vec<Value>> {
     // A nullable OR hides the (thread_id,kind,rowid) index from SQLite and
@@ -257,9 +304,18 @@ pub(crate) fn append(
     db: &Connection,
     tid: &str,
     kind: &str,
-    payload: Value,
+    mut payload: Value,
     thread: &Value,
 ) -> Result<i64> {
+    // Older internal producers used an alias the real client reducer ignores.
+    let kind = if kind == "attempt.updated" {
+        "run-attempt.updated"
+    } else {
+        kind
+    };
+    if matches!(kind, "run.created" | "run.updated") {
+        take_run_internal(&mut payload);
+    }
     let mut event = json!({"id":random_id()?,"threadId":tid,"occurredAt":iso(now_ms()),"type":kind,"payload":payload});
     for key in ["runId", "nodeId"] {
         if let Some(v) = payload.get(key).filter(|v| !v.is_null()) {
@@ -1200,4 +1256,80 @@ pub fn mutate_project(s: &State, c: &Value) -> Result<Value> {
     drop(db);
     s.notify();
     Ok(p)
+}
+
+#[cfg(test)]
+mod internal_run_tests {
+    use super::*;
+    #[test]
+    fn legacy_run_bookkeeping_migrates_without_entering_any_public_record() {
+        let mut db = Connection::open_in_memory().unwrap();
+        initialize(&db).unwrap();
+        let run = json!({"id":"r","threadId":"t","status":"preparing","executionRequested":true,"recoveryPending":true,"recoveryReason":"restart"});
+        let thread = json!({"id":"t","providerInstanceId":"fixture"});
+        put(&db, "thread", "t", "t", &thread).unwrap();
+        db.execute(
+            "INSERT INTO records VALUES('runs','r','t',?)",
+            [run.to_string()],
+        )
+        .unwrap();
+        let event = json!({"type":"run.created","payload":run});
+        db.execute(
+            "INSERT INTO events(thread_id,body) VALUES('t',?)",
+            [event.to_string()],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO receipts VALUES('launch',?)",
+            [json!({"projection":{"runs":[run]}}).to_string()],
+        )
+        .unwrap();
+        for _ in 0..2 {
+            initialize(&db).unwrap();
+        }
+        assert_eq!(get(&db, "runs", "r").unwrap()["executionRequested"], true);
+        // An existing preparing execution still fails visibly after restart.
+        crate::recovery::recover(&mut db).unwrap();
+        assert_eq!(get(&db, "runs", "r").unwrap()["status"], "failed");
+        let mut updated = get(&db, "runs", "r").unwrap();
+        updated["recoveryPending"] = json!(false);
+        put(&db, "runs", "r", "t", &updated).unwrap();
+        append(&db, "t", "run.updated", updated, &thread).unwrap();
+        initialize(&db).unwrap();
+        assert_eq!(get(&db, "runs", "r").unwrap()["recoveryPending"], false);
+        let seq = append(
+            &db,
+            "t",
+            "attempt.updated",
+            json!({"id":"a","status":"completed"}),
+            &thread,
+        )
+        .unwrap();
+        let body: String = db
+            .query_row("SELECT body FROM events WHERE sequence=?", [seq], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        let event: Value = serde_json::from_str(&body).unwrap();
+        let mut mirror = json!({"thread":{"id":"t"},"attempts":[]});
+        assert!(t3_protocol::projection::apply(&mut mirror, &event));
+        assert_eq!(mirror["attempts"][0]["status"], "completed");
+        let projection = projection_db(&db, "t").unwrap();
+        let receipt: String = db
+            .query_row("SELECT result FROM receipts", [], |r| r.get(0))
+            .unwrap();
+        let mut q = db
+            .prepare("SELECT body FROM records WHERE kind='runs' UNION ALL SELECT body FROM events")
+            .unwrap();
+        let bodies = q
+            .query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .map(std::result::Result::unwrap)
+            .chain([projection.to_string(), receipt]);
+        for body in bodies {
+            for field in INTERNAL_RUN_FIELDS {
+                assert!(!body.contains(field), "leaked {field}");
+            }
+        }
+    }
 }

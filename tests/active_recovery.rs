@@ -135,7 +135,14 @@ fn sigkill_active_native_sessions_continue_after_restart() {
             .as_str()
             .unwrap()
             .contains("server-restarted"));
-        assert!(events::get(&db, "runs", "r").unwrap()["recoveryReason"].is_string());
+        assert!(db
+            .query_row(
+                "SELECT json_extract(body,'$.recoveryReason') FROM run_internal WHERE id='r'",
+                [],
+                |r| r.get::<_, String>(0)
+            )
+            .unwrap()
+            .contains("server restarted"));
         child.kill().unwrap();
         child.wait().unwrap();
         drop(db);

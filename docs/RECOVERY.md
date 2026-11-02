@@ -25,8 +25,7 @@ verifies durable evidence across reopening. Receipt retries remain idempotent.
 Pending approvals are cancelled with an explicit `resolutionReason` explaining that
 the native channel died and a new message is needed to request approval again.
 Active runs without a durable supported native session fail with a restart error.
-Runs with Claude/Codex native IDs enter `starting` with `recoveryPending` and a
-visible `recoveryReason`, then continue automatically after provider registration.
+Runs with Claude/Codex native IDs enter `starting` with durable internal continuation bookkeeping, then continue automatically after provider registration.
 This is a durable handoff journal, not exactly-once native delivery or a replay worker.
 The native protocols do not expose an idempotent command acknowledgement across
 restarts. Records are retained in SQLite; retention/GC and frontend presentation of
@@ -52,8 +51,11 @@ old inference process. Claude uses `--resume`; Codex uses `thread/resume` follow
 by `turn/start`. The original run ID stays stable. A dedicated continuation prompt
 asks the provider to inspect state, avoid repeating completed work, and ask again
 for cancelled approvals/questions. Original attachments/context are not resent.
-`recoveryReason` stays on the run in normal `run.updated` events after completion;
-`recoveryPending` clears on provider start. Native resume errors fail visibly;
+The continuation reason stays in the private `run_internal` table after completion;
+the pending bit clears on provider start. `executionRequested`, `recoveryPending`
+and `recoveryReason` are internal bookkeeping, absent from public run records and
+replay events. Existing records, event history and cached launch receipts are
+migrated at startup without changing their sequence numbers. Native resume errors fail visibly;
 there is no fallback to a new conversation. Missing native IDs fail conservatively.
 Tools may have executed before the crash: this does not promise exactly-once side
 effects, replay the original user prompt, or recover the old native control channel.
@@ -61,7 +63,7 @@ effects, replay the original user prompt, or recover the old native control chan
 `tests/active_recovery.rs` seeds durable native sessions, starts the actual server
 against deterministic Claude/Codex stdio peers, SIGKILLs it during execution, and
 starts a second process. Both native IDs are asserted by peers; the same run
-completes, recovery metadata survives, and the old request is visibly cancelled.
+completes, internal recovery metadata survives, and the old request is visibly cancelled.
 The peers exit on stdin EOF so killed servers do not leave inference running.
 
 Live verification (2026-11-01, NODE): installed Claude Haiku, copied credentials
