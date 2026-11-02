@@ -1807,3 +1807,25 @@ author's starting point. Where they differ, this section wins.
   message-search snippets that omit the match (`src/threadq.rs`); workspace `.aac`, `.opus`,
   `.avi` and `.ogv` rejected (`src/assets.rs`); PR metadata lost on a transient failure;
   multi-line command-output redraws; Codex text generation; GitCafe credential status.
+
+## Client-visible audit implementation (2026-11-02)
+
+No compatibility status is promoted. Evidence here applies only to the tested
+reader paths; independent audit decides row status.
+
+Codex text generation remains unavailable. An offline probe of installed CLI
+0.166.0 generated both stable and experimental app-server schemas under an empty
+isolated home, without starting a thread or inference. Neither thread/start,
+thread/resume nor turn/start exposes a tool policy, tool choice or universal
+empty tool allowlist. The property lists and schema hashes are recorded in
+[codex-tool-free-probe.json](codex-tool-free-probe.json). The config object accepts
+arbitrary keys, so accepting an invented disable flag would not establish that
+it takes effect. Read-only sandboxing permits reads and commands and does not
+meet the requested tool-free guarantee. The adapter therefore still rejects
+text-only mode rather than treating a prompt or sandbox as a tool ban.
+[Official app-server documentation](https://learn.chatgpt.com/docs/app-server)
+describes dynamicTools as additional client tools, not a switch for built-ins;
+the [configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference)
+provides individual feature controls, not a verified universal tool-free mode.
+This is a limitation of the inspected installed contract, not proof that every
+future version lacks such a mode. No live inference was attempted.

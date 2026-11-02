@@ -1,0 +1,160 @@
+{
+  "version": "codex-cli 0.166.0",
+  "method": "offline app-server generate-json-schema, stable and --experimental; empty isolated HOME and CODEX_HOME; no thread or turn started",
+  "schemas": {
+    "schema": {
+      "ThreadStartParams.json": {
+        "sha256": "e9c6d3cc18d049bfbc0249add3808fb8e5a27e1a0b5a423767aafbc3859a9428",
+        "properties": [
+          "approvalPolicy",
+          "approvalsReviewer",
+          "baseInstructions",
+          "config",
+          "cwd",
+          "developerInstructions",
+          "ephemeral",
+          "model",
+          "modelProvider",
+          "personality",
+          "sandbox",
+          "serviceName",
+          "serviceTier",
+          "sessionStartSource",
+          "threadSource"
+        ]
+      },
+      "ThreadResumeParams.json": {
+        "sha256": "8dceca415b2c16693b55658ea629cba5ffc82ac300dcd403db0ba7455e491496",
+        "properties": [
+          "approvalPolicy",
+          "approvalsReviewer",
+          "baseInstructions",
+          "config",
+          "cwd",
+          "developerInstructions",
+          "excludeTurns",
+          "model",
+          "modelProvider",
+          "personality",
+          "sandbox",
+          "serviceTier",
+          "threadId"
+        ]
+      },
+      "TurnStartParams.json": {
+        "sha256": "49e53282f327c25e7b39d97afacd038ef10ad5c4fb0431608b354d3a7bf6bcea",
+        "properties": [
+          "approvalPolicy",
+          "approvalsReviewer",
+          "clientUserMessageId",
+          "cwd",
+          "disabledPluginIds",
+          "effort",
+          "input",
+          "model",
+          "outputSchema",
+          "parentTurnId",
+          "personality",
+          "rootTurnId",
+          "sandboxPolicy",
+          "serviceTier",
+          "serviceTierForTurn",
+          "summary",
+          "threadId",
+          "toolOutput",
+          "turnTrigger"
+        ]
+      }
+    },
+    "experimental": {
+      "ThreadStartParams.json": {
+        "sha256": "80a40a7fac15b4bf70efb7f893fb353acc0a0d30c68f54aee4f01923deca85de",
+        "properties": [
+          "allowProviderModelFallback",
+          "approvalPolicy",
+          "approvalsReviewer",
+          "baseInstructions",
+          "config",
+          "cwd",
+          "daybreakEnabled",
+          "developerInstructions",
+          "dynamicTools",
+          "environments",
+          "ephemeral",
+          "experimentalRawEvents",
+          "historyMode",
+          "mockExperimentalField",
+          "model",
+          "modelProvider",
+          "multiAgentMode",
+          "permissions",
+          "personality",
+          "projectId",
+          "runtimeWorkspaceRoots",
+          "sandbox",
+          "selectedCapabilityRoots",
+          "serviceName",
+          "serviceTier",
+          "sessionStartSource",
+          "threadSource"
+        ]
+      },
+      "ThreadResumeParams.json": {
+        "sha256": "8152ea774ace4eb5623081abd64a1135f28cbff1e73ca641cfb80ac16f6eed32",
+        "properties": [
+          "approvalPolicy",
+          "approvalsReviewer",
+          "baseInstructions",
+          "config",
+          "cwd",
+          "developerInstructions",
+          "excludeTurns",
+          "history",
+          "initialTurnsPage",
+          "model",
+          "modelProvider",
+          "path",
+          "permissions",
+          "personality",
+          "runtimeWorkspaceRoots",
+          "sandbox",
+          "serviceTier",
+          "threadId"
+        ]
+      },
+      "TurnStartParams.json": {
+        "sha256": "c7483aee79757d260c4fc1bb5c68b1a8d6f72846388e9f1e88d6f76f423287c8",
+        "properties": [
+          "additionalContext",
+          "approvalPolicy",
+          "approvalsReviewer",
+          "clientUserMessageId",
+          "collaborationMode",
+          "cwd",
+          "cyberAccessProgram",
+          "disabledPluginIds",
+          "effort",
+          "environments",
+          "input",
+          "model",
+          "multiAgentMode",
+          "outputSchema",
+          "parentTurnId",
+          "permissions",
+          "personality",
+          "responsesapiClientMetadata",
+          "responsesapiClientMetadataPatch",
+          "rootTurnId",
+          "runtimeWorkspaceRoots",
+          "sandboxPolicy",
+          "serviceTier",
+          "serviceTierForTurn",
+          "summary",
+          "threadId",
+          "toolOutput",
+          "turnTrigger"
+        ]
+      }
+    }
+  }
+}
