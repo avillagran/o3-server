@@ -459,28 +459,27 @@ fn rollback_and_subagent_stop_validate_and_record() {
         .lock()
         .unwrap()
         .insert("run-1".into(), control);
-    cmd(&c, json!({"type":"subagent.stop","commandId":"ss1","threadId":"t1","runId":"run-1","subagentId":"sub-1"})).unwrap();
-    let sub: Value = {
-        let body: String = s
-            .state
-            .db
-            .lock()
-            .unwrap()
-            .query_row(
-                "SELECT body FROM records WHERE kind='subagents' AND id='sub-1'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        serde_json::from_str(&body).unwrap()
-    };
-    assert_eq!(sub["status"], "cancelled");
-    assert!(matches!(
-        controls.try_recv().unwrap(),
-        o3_server::provider::ProviderControl::Interrupt
-    ));
-    let err = cmd(&c, json!({"type":"subagent.stop","commandId":"ss2","threadId":"t1","runId":"run-1","subagentId":"sub-1"})).unwrap_err().to_string();
-    assert!(err.contains("already cancelled"), "{err}");
+    let err = cmd(&c, json!({"type":"subagent.stop","commandId":"ss1","threadId":"t1","runId":"run-1","subagentId":"sub-1"})).unwrap_err().to_string();
+    assert!(
+        err.contains("Independent native subagent cancellation is unavailable"),
+        "{err}"
+    );
+    assert!(controls.try_recv().is_err());
+    let body: String = s
+        .state
+        .db
+        .lock()
+        .unwrap()
+        .query_row(
+            "SELECT body FROM records WHERE kind='subagents' AND id='sub-1'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&body).unwrap()["status"],
+        "running"
+    );
 }
 
 fn rusqlite_params(kind: &str, id: &str, body: &Value) -> [String; 4] {

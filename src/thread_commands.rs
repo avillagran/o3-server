@@ -575,7 +575,7 @@ fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outco
         }
         "subagent.stop" => {
             let sid = string(c, "subagentId")?;
-            let mut sub =
+            let sub =
                 get(tx, "subagents", sid).map_err(|_| format!("Subagent {sid} was not found."))?;
             if sub["threadId"] != tid || sub["runId"] != c["runId"] {
                 return Err(format!("Subagent {sid} does not belong to that run."));
@@ -589,24 +589,9 @@ fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outco
                     sub["status"].as_str().unwrap_or("finished")
                 ));
             }
-            // Native peers cannot independently stop every delegated tool. Interrupt the owning
-            // turn rather than claim cancellation while it continues executing.
-            let sender = s
-                .active
-                .lock()
-                .unwrap()
-                .get(c["runId"].as_str().unwrap_or(""))
-                .cloned()
-                .ok_or("subagent provider turn is unavailable")?;
-            let permit = sender
-                .try_reserve_owned()
-                .map_err(|_| "provider control unavailable")?;
-            steer = Some((permit, crate::provider::ProviderControl::Interrupt));
-            sub["status"] = json!("cancelled");
-            sub["completedAt"] = json!(at);
-            sub["updatedAt"] = json!(at);
-            put(tx, "subagents", sid, tid, &sub)?;
-            append(tx, tid, "subagent.updated", sub, &t)?
+            // Neither native adapter exposes an acknowledged, task-scoped stop yet.
+            // Refuse the operation without mutating child evidence or interrupting its owner.
+            return Err("Independent native subagent cancellation is unavailable; the owning turn was left running.".into());
         }
         "thread.pull-request.link"
         | "thread.pull-request.unlink"
