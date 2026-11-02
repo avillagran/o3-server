@@ -42,3 +42,56 @@ fn shell_keeps_all_live_records_after_ten_thousand_newer_deleted_records() {
             .join(" ")
     );
 }
+
+#[test]
+fn long_latest_messages_fit_real_http_and_shell_readers() {
+    let s = support::start(|_| {});
+    let c = s.connect();
+    {
+        let mut db = s.state.db.lock().unwrap();
+        let tx = db.transaction().unwrap();
+        for n in 0..375 {
+            let id = format!("long{n}");
+            let t = json!({"id":id,"projectId":"p","title":"Scale","createdAt":"2026-11-02T00:00:00Z","updatedAt":"2026-11-02T00:00:00Z","archivedAt":null,"deletedAt":null});
+            tx.execute(
+                "INSERT INTO records(kind,id,thread_id,body) VALUES ('thread',?1,?1,?2)",
+                [&id, &t.to_string()],
+            )
+            .unwrap();
+            let m = json!({"id":id,"role":"user","createdAt":"2026-11-02T00:00:00Z","text":"界".repeat(32768),"updatedAt":"2026-11-02T00:00:00Z"});
+            tx.execute(
+                "INSERT INTO records(kind,id,thread_id,body) VALUES ('messages',?1,?1,?2)",
+                [&id, &m.to_string()],
+            )
+            .unwrap();
+        }
+        tx.commit().unwrap();
+    }
+    let shell = c
+        .request_json("GET", "/api/orchestration/shell", None, true)
+        .unwrap();
+    assert_eq!(shell["threads"].as_array().unwrap().len(), 375);
+    assert!(shell["threads"][0]["latestVisibleMessage"].is_null());
+    let mut stream = support::subscribe(s.connect(), "orchestration.subscribeShell", json!({}));
+    let frame = stream.next(std::time::Duration::from_secs(10));
+    assert_eq!(frame["snapshot"]["threads"].as_array().unwrap().len(), 375);
+    eprintln!(
+        "bounded shell bytes={}",
+        serde_json::to_vec(&shell).unwrap().len()
+    );
+}
+
+#[test]
+fn archive_does_not_build_active_rows() {
+    let s = support::start(|_| {});
+    let c = s.connect();
+    let db = s.state.db.lock().unwrap();
+    db.execute(
+        "INSERT INTO records(kind,id,thread_id,body) VALUES ('thread','active','active','{}')",
+        [],
+    )
+    .unwrap();
+    drop(db);
+    let archive = orchestration::archived_shell(&c).unwrap();
+    assert!(archive["threads"].as_array().unwrap().is_empty());
+}

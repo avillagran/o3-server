@@ -1809,3 +1809,33 @@ fn upstream_generation_setting_acceptance() {
     assert_eq!(saved["textGenerationModelSelection"]["instanceId"], "codex");
     std::fs::write(Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/generation-settings-reference.json"),serde_json::to_vec_pretty(&json!({"accepted":true,"savedSelection":saved["textGenerationModelSelection"],"responseHasSettings":result.get("settings").is_some()})).unwrap()).unwrap();
 }
+
+#[test]
+#[ignore = "isolated pinned shell preview and automatic launch probe, no inference"]
+fn upstream_shell_preview_and_launch() {
+    let home = PathBuf::from("/var/tmp/o3-build/tmp")
+        .join(format!("shell-preview-{}", std::process::id()));
+    std::fs::create_dir_all(&home).unwrap();
+    let server = start(&reference_binary(), &home);
+    let c = connect(&server);
+    c.rpc(
+        "server.updateSettings",
+        json!({"patch":{"textGenerationModelSelection":{"instanceId":"codex","model":"fixture"}}}),
+    )
+    .unwrap();
+    c.rpc("projects.mutate",json!({"type":"project.create","commandId":"p","projectId":"p","title":"Fixture","workspaceRoot":home,"scripts":[]})).unwrap();
+    let launch = outcome(c.rpc("orchestration.launchThread",json!({"commandId":"launch","threadId":"t","projectId":"p","title":"Untitled","modelSelection":{"instanceId":"claudeAgent","model":"fixture"},"runtimeMode":"full-access","interactionMode":"default","workspaceStrategy":{"type":"root"},"generateTitle":true})));
+    assert!(launch.get("ok").is_some(), "{launch}");
+    c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"message","threadId":"t","messageId":"m","text":"x".repeat(32768),"createdBy":"user","creationSource":"web","attachments":[],"dispatchMode":{"type":"defer_start"}})).unwrap();
+    let shell = c
+        .request_json("GET", "/api/orchestration/shell", None, true)
+        .unwrap();
+    let preview = &shell["threads"][0]["latestVisibleMessage"];
+    let report = json!({"referenceVersion":"0.1.7-nightly.20261031.3991","launchAccepted":true,"scope":"empty automatic launch with saved Codex generation selection; deferred message, no inference","latestVisibleMessage":preview,"previewBytes":preview["text"].as_str().map(str::len)});
+    std::fs::write(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/shell-preview-reference.json"),
+        serde_json::to_vec_pretty(&report).unwrap(),
+    )
+    .unwrap();
+    eprintln!("pinned preview bytes: {}", report["previewBytes"]);
+}

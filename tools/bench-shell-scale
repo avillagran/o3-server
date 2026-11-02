@@ -27,12 +27,17 @@ with tempfile.TemporaryDirectory(prefix="shell-scale-", dir="/var/tmp/o3-build/t
         "orchestration:read", "--token-only"], env=env, text=True).strip()
     at = "2026-11-02T00:00:00Z"
     with sqlite3.connect(pathlib.Path(temp) / "userdata/o3.sqlite") as db:
-        for n in range(20003):
+        count = int(os.environ.get("O3_SHELL_THREADS", "20003"))
+        message_bytes = int(os.environ.get("O3_SHELL_MESSAGE_BYTES", "0"))
+        for n in range(count):
             tid = f"t{n}"
             body = {"id": tid, "projectId": "p", "title": "Scale", "createdAt": at, "updatedAt": at,
                     "archivedAt": at if n == 0 else None, "deletedAt": at if n >= 10002 else None}
             db.execute("INSERT INTO records(kind,id,thread_id,body) VALUES ('thread',?,?,?)",
                        (tid, tid, json.dumps(body)))
+            if message_bytes:
+                message = {"id": tid, "role":"user", "text":"x" * message_bytes, "createdAt":at, "updatedAt":at}
+                db.execute("INSERT INTO records(kind,id,thread_id,body) VALUES ('messages',?,?,?)",(tid,tid,json.dumps(message)))
     process = subprocess.Popen([str(binary), "serve", "--port", "0", "--host", "127.0.0.1"],
         env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     def memory():
@@ -53,7 +58,7 @@ with tempfile.TemporaryDirectory(prefix="shell-scale-", dir="/var/tmp/o3-build/t
         frame = ws.recv()
         snapshot = frame["values"][0]["snapshot"]
         streamed_ms = (time.monotonic() - start) * 1000
-        assert len(snapshot["threads"]) == 10001 and len(snapshot["archivedThreads"]) == 1
+        assert len(snapshot["threads"]) == min(count - 1, 10001) and len(snapshot["archivedThreads"]) == 1
         streamed = memory()
         ws.s.close()
         ws = WS(port, token)
@@ -63,10 +68,10 @@ with tempfile.TemporaryDirectory(prefix="shell-scale-", dir="/var/tmp/o3-build/t
         assert [t["id"] for t in archived["threads"]] == ["t0"]
         materialized = memory()
         ws.s.close()
-        result = {"records":20003,"active":10001,"archived":1,"newer_deleted":10001,
+        result = {"records":count,"active":min(count-1,10001),"archived":1,"message_bytes":message_bytes,"shell_bytes":len(json.dumps(snapshot,separators=(",",":")).encode()),
                   "streamed_snapshot_ms":round(streamed_ms,2),"archived_snapshot_ms":round(archived_ms,2),
                   "idle_kib":idle,"after_streamed_kib":streamed,"after_materialized_kib":materialized,
-                  "measurement":"release server /proc/PID/status; client RSS excluded; synthetic empty threads; no inference",
+                  "measurement":"release server /proc/PID/status; client RSS excluded; synthetic threads/messages; no inference",
                   "binary_sha256":hashlib.sha256(binary.read_bytes()).hexdigest()}
         print(json.dumps(result, indent=2))
     finally:

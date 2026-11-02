@@ -292,11 +292,34 @@ pub fn search_threads(s: &State, p: &Value) -> Reply {
 // ------------------------------------------------------------------ simple reads
 
 pub fn archived_shell(s: &State) -> Reply {
-    let shell = events::shell(s)
-        .map_err(|m| json!({"_tag":"OrchestrationV2GetShellSnapshotError","message":m}))?;
-    Ok(
-        json!({"schemaVersion":shell["schemaVersion"],"snapshotSequence":shell["snapshotSequence"],"projects":shell["projects"],"threads":shell["archivedThreads"]}),
-    )
+    let db = s.reader.lock().unwrap();
+    let result = (|| -> Result<Value, String> {
+        let mut q = db.prepare("SELECT body FROM records WHERE kind='thread' AND json_extract(body,'$.deletedAt') IS NULL AND json_extract(body,'$.archivedAt') IS NOT NULL ORDER BY rowid").map_err(|e| e.to_string())?;
+        let mut threads = Vec::new();
+        for row in q
+            .query_map([], |r| r.get::<_, String>(0))
+            .map_err(|e| e.to_string())?
+        {
+            let t: Value = serde_json::from_str(&row.map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+            threads.push(events::shell_thread(&db, &t)?);
+        }
+        let mut projects = Vec::new();
+        let mut q = db.prepare("SELECT body FROM records WHERE kind='project' AND json_extract(body,'$.deletedAt') IS NULL ORDER BY rowid").map_err(|e|e.to_string())?;
+        for row in q
+            .query_map([], |r| r.get::<_, String>(0))
+            .map_err(|e| e.to_string())?
+        {
+            projects.push(
+                serde_json::from_str::<Value>(&row.map_err(|e| e.to_string())?)
+                    .map_err(|e| e.to_string())?,
+            );
+        }
+        Ok(
+            json!({"schemaVersion":2,"snapshotSequence":events::sequence(&db)?,"projects":projects,"threads":threads}),
+        )
+    })();
+    result.map_err(|m| json!({"_tag":"OrchestrationV2GetShellSnapshotError","message":m}))
 }
 
 pub fn turn_item(s: &State, p: &Value) -> Reply {
