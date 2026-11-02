@@ -2520,3 +2520,65 @@ no controlled baseline or performance-improvement claim. Active-job memory,
 native adapter hot-path overhead and child-stop latency with real providers remain
 unproven. All builds/tests ran serially under nice with four Cargo jobs and the
 required build/temp directories. No pushes or merges, including the local journal.
+
+## 2026-11-02 — Independent audit remediation
+
+This section supersedes the three-flow follow-up above. All compatibility row
+statuses and priorities remain unchanged; independent audit still decides them.
+
+- Setup cancellation: the real setup subscription/Connection regression first
+  failed because an escaped `setsid` child retained the output pipes for more than
+  four seconds. It now observes bounded launch rejection, a cancelled snapshot,
+  escaped-child death, worktree rollback and successful retry. Pipes are read
+  nonblocking in the runner; there are no blocking reader joins. Cleanup scans
+  process ancestry, owned groups/sessions and a unique inherited ownership marker,
+  checks PID start times, and rescans within a two-second cleanup budget. The
+  command deadline remains 120 seconds; output tails remain bounded.
+- Child stop: **reverted to main's safe rejection**, for both Claude and Codex.
+  The pre-fix silent-peer test observed a fabricated failed child. Targeted stop
+  now returns an error without sending `stop_task` or changing child/owner state.
+  Deterministic peers and the real projection reader verify both remain running
+  beyond the former two-second deadline, ignore a delayed control acknowledgement,
+  and complete only after genuine child notification and owner result. Native
+  targeted cancellation remains unfinished; no working stop capability is claimed.
+- Clone creation: the pre-fix missing-local-origin test failed its error-receipt
+  assertion. Start now waits for successful cloning, then registers the project
+  and returns success. Failed/cancelled clones return errors and leave no newly
+  registered project. This matches desktop's project-open-on-receipt and Android's
+  completion/journal-deletion-on-receipt behavior; neither consumes clone progress.
+  Real CloneStart and Connection tests pass for success, failure and cancellation.
+- Restart during setup: the isolated killed-server regression first found its
+  escaped setup session alive after reopening. Snapshot and ownership are now
+  persisted before process spawn. Serving startup cleans up interrupted processes and
+  reports failed, including active stage failure, through the setup subscription.
+  Retry reruns setup/submodule preparation on an existing worktree; the test sees
+  the invocation count advance from one to two and the script's completion file.
+- Empty clone destination: the pre-fix CloneStart test failed on a precreated empty
+  directory. Such destinations now work; nonempty destinations still reject.
+
+Recovery applies to jobs created with the new persisted ownership metadata; no
+upgrade recovery of previously untracked processes is claimed. Process scanning
+is not a security boundary against deliberately erased ownership metadata after
+reparenting. Uninterruptible tasks, forced filesystem cleanup failures, escaped
+clone transports, crash-mid-clone recovery, async setup semantics, setup terminal
+linkage, live provider inference and full desktop/Android GUI execution remain
+unproven. The pinned probes do not establish parity for targeted stop, setup
+cancellation/recovery or clone tracking. No controlled main/head latency comparison
+or active-job memory bound is claimed.
+
+Final verification: **256 default / 254 no-default tests passed**, zero failures,
+20 ignored in each full run (the new ignored subprocess helper runs through the
+restart regression). Strict Clippy with `--all-targets -- -D warnings` passes in
+both configurations; `cargo fmt --check` and `tools/gen-compat` pass. All **eight
+pinned 3991 differential probes pass**, including concurrent/control-window and
+actual P1 readers. The first full runs found a stale assertion for the former
+missing-task-identity error; it now checks the intentional safe rejection and
+still proves that no control is sent and the child stays running. Both complete
+suites were rerun successfully after that correction and the serving-startup fix.
+Final verification ran serially under nice with four Cargo jobs and offline mode.
+No pushes, merges, credentials, network clones, live inference or emulators.
+
+Release `tools/bench-rss` passes: **19,112 KiB peak (19.57 MB)**, below 50 MB;
+final RSS **17,948 KiB**, startup-to-authenticated-WebSocket **14.55 ms**.
+[Measurement with binary hash](rss-audit-remediation.json) covers the standard
+synthetic workload with inference excluded, not an active setup/clone stress test.

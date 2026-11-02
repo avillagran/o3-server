@@ -294,7 +294,7 @@
     "projectClone.start": {
       "status": "partial",
       "priority": "P2",
-      "note": "Tracking capability advertised; real CloneStart reader starts tracked local clones and real Connection consumes progress snapshots. Static stage messages exclude raw transport output; time/output limits, exclusive destination, cancellation/group cleanup and missing-origin cleanup tested. Remaining: pinned clone-job parity and production client progress/cancel consumption (current lib has no named clone subscription/cancel reader), restart recovery and rich provider repository selection. No network fixture. Status unchanged."
+      "note": "Start now waits for successful checkout and project registration before the real CloneStart reader receives success, matching desktop open and Android completion receipt handling. Missing local origin returns an error and leaves no project; precreated empty destinations succeed. Real Connection tests cover progress, same-group cancellation and bounded output/time. Jobs remain volatile; escaped clone transports and crash-mid-clone recovery are unproven. Pinned clone/UI parity unproven. Status unchanged."
     },
     "projects.createNew": {
       "status": "done",
@@ -929,7 +929,7 @@
     "subscribeWorktreeSetup": {
       "status": "partial",
       "priority": "P2",
-      "note": "Real lib subscription reads staged checkout, submodules and synchronous project setup output (bounded tail); local cancellation/retry regression fails before and passes after. Snapshots capped at 64 jobs. Remaining: async setup semantics, setup terminal linkage, fetch-stage parity and pinned launch/cancel comparisons; no desktop UI execution. Status unchanged."
+      "note": "Real lib setup reader covers staged output, escaped-session cancellation and retry. Snapshots and ownership marker are persisted before spawn; isolated killed-server test reads failed after restart, confirms orphan termination and reruns setup in the existing worktree. Active stages become failed on recovery. Async scripts, terminal linkage, fetch behavior, hostile marker removal and pinned setup parity unproven. Status unchanged."
     },
     "terminal.attach": {
       "status": "done",
@@ -1014,7 +1014,7 @@
     "worktreeSetup.cancel": {
       "status": "partial",
       "priority": "P2",
-      "note": "Stops owned setup process groups; local real-reader regression cancels a running setup script, removes owned worktree and retries successfully. Remaining: async script behavior, failure/cleanup matrix and pinned cancellation parity. Status unchanged."
+      "note": "Real lib cancel and setup subscription reproduce the escaped setsid pipe hang before the fix. Nonblocking pipes remove reader joins; bounded process-tree/group/session rescans use a unique inherited ownership marker and verify PID start times. Test observes launch rejection, terminal cancelled snapshot, escaped child death, rollback and successful retry. Deliberately erased ownership after reparenting, uninterruptible tasks and forced cleanup errors unproven. Status unchanged."
     }
   },
   "commands": {
@@ -1126,7 +1126,7 @@
     "subagent.stop": {
       "status": "partial",
       "priority": "P2",
-      "note": "Claude live task IDs now route stop_task without interrupting the owner; native notifications finalize child records/items/nodes, with a 2 s unconfirmed-stop failure and delivery-unknown outbox. tests/p2_stop.rs uses real Connection/projection readers and acknowledged/silent deterministic peers. Remaining: Codex child thread/turn identity tracking and targeted cancellation are unimplemented; unmapped/native item-only children safely reject. Claude wire behavior is deterministic-peer/newer-source evidence, not pinned stop parity. Status unchanged."
+      "note": "Reverted to main safe rejection for Claude and Codex: targeted stop is unavailable, owner and child stay running, no synthetic terminal task notification or stop_task is sent. Real Connection/projection deterministic tests cover the former timeout window, delayed control acknowledgement and subsequent genuine child/owner completion. Native targeted stop and pinned stop parity remain unfinished. Status unchanged."
     },
     "thread.active.reorder": {
       "status": "done",
