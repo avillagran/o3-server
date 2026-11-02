@@ -27,6 +27,8 @@ pub struct Ops {
     sampler: AtomicBool,
     report: Mutex<(u64, Option<Value>)>,
     pub scheduler: AtomicBool,
+    pub usage_rate_failure: AtomicBool,
+    pub usage_rate_refresh: tokio::sync::Mutex<()>,
     pub scheduler_wake: tokio::sync::Notify,
     notify: Notifier,
 }
@@ -49,6 +51,8 @@ impl Ops {
             sampler: AtomicBool::new(false),
             report: Mutex::new((0, None)),
             scheduler: AtomicBool::new(false),
+            usage_rate_failure: AtomicBool::new(false),
+            usage_rate_refresh: tokio::sync::Mutex::new(()),
             scheduler_wake: tokio::sync::Notify::new(),
             notify,
         }
@@ -101,7 +105,7 @@ pub async fn call(s: &std::sync::Arc<State>, tag: &str, p: &Value) -> Option<Rep
         "server.getProcessDiagnostics" => Ok(diagnostics()),
         "server.getResourceTelemetryHistory" => telemetry(s, p),
         "server.signalProcess" => signal(p),
-        "server.getUsageSummary" => usage(p),
+        "server.getUsageSummary" => usage(s, p),
         "server.runStorageCleanup" => cleanup(s),
         _ => return crate::scheduled::call(s, tag, p),
     })
@@ -619,7 +623,7 @@ fn telemetry(s: &std::sync::Arc<State>, p: &Value) -> Reply {
 
 // ---------------------------------------------------------------- usage
 
-fn usage(p: &Value) -> Reply {
+fn usage(s: &State, p: &Value) -> Reply {
     let (Some(since), Some(until), Some(zone)) = (
         p["sinceDay"].as_str(),
         p["untilDay"].as_str(),
@@ -629,7 +633,7 @@ fn usage(p: &Value) -> Reply {
     };
     // o3-server reads no provider transcripts or ledgers, so it has no usage to report.
     Ok(
-        json!({"contractVersion":6,"readAt":iso(now_ms()),"timeZone":zone,"sinceDay":since,"untilDay":until,"buckets":[],"sources":[],"pricing":{"status":"unavailable","source":"none","fetchedAt":null,"knownModels":0},"scanDurationMs":0}),
+        json!({"contractVersion":6,"readAt":iso(now_ms()),"timeZone":zone,"sinceDay":since,"untilDay":until,"buckets":[],"sources":[],"pricing":crate::usage_rates::pricing(s),"scanDurationMs":0}),
     )
 }
 

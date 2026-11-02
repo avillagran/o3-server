@@ -37,10 +37,7 @@ pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
     match tag {
         "server.getHostResources" => host_resources().await,
         "server.checkOtlpEndpoint" => check_otlp(p).await,
-        "server.refreshUsageRates" => Ok(
-            // No price list is fetched or bundled, so there is nothing fresh or cached to report.
-            json!({"status":"unavailable","source":"none","fetchedAt":null,"knownModels":0}),
-        ),
+        "server.refreshUsageRates" => Ok(crate::usage_rates::refresh(s).await),
         "projects.listIgnoredFiles" => list_ignored(p).await,
         "projects.createNew" => create_new(s, p).await,
         "projectClone.start" => clone_start(s, p).await,
