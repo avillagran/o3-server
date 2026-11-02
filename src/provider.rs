@@ -205,10 +205,11 @@ pub(crate) fn start(
         let mut checkpoint_finished = false;
         let mut finished = false;
         let mut failure = None;
+        let mut changed = s.changed.subscribe();
         loop {
             let event = tokio::select! {
                 event = events.recv() => match event { Some(event) => event, None => break },
-                _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
+                _ = changed.changed() => {
                     if crate::events::get(&s.db.lock().unwrap(), "runs", &rid).is_ok_and(|r| matches!(r["status"].as_str(), Some("completed" | "failed" | "interrupted" | "cancelled"))) { break; }
                     continue;
                 }
@@ -343,7 +344,7 @@ pub(crate) fn start(
 }
 /// A native acknowledgement may never arrive. Failure is explicit, never native success.
 pub(crate) fn interrupt_deadline(s: std::sync::Arc<crate::store::State>, tid: String, rid: String) {
-    interrupt_deadline_after(s, tid, rid, std::time::Duration::from_secs(15));
+    interrupt_deadline_after(s, tid, rid, std::time::Duration::from_secs(75));
 }
 fn interrupt_deadline_after(
     s: std::sync::Arc<crate::store::State>,
@@ -352,7 +353,23 @@ fn interrupt_deadline_after(
     timeout: std::time::Duration,
 ) {
     tokio::spawn(async move {
-        tokio::time::sleep(timeout).await;
+        let mut changed = s.changed.subscribe();
+        let deadline = tokio::time::sleep(timeout);
+        tokio::pin!(deadline);
+        loop {
+            if crate::events::get(&s.db.lock().unwrap(), "runs", &rid).is_ok_and(|r| {
+                matches!(
+                    r["status"].as_str(),
+                    Some("completed" | "failed" | "interrupted" | "cancelled")
+                )
+            }) {
+                return;
+            }
+            tokio::select! {
+                _ = &mut deadline => break,
+                _ = changed.changed() => {},
+            }
+        }
         let _ = tokio::task::spawn_blocking(move || {
             let _ = persist(
                 &s,
