@@ -206,6 +206,30 @@ fn fail(op: &str, cwd: &Path, message: &str, reason: Option<&str>) -> StepErr {
     (message.to_owned(), simple_fail(op, cwd, message, reason))
 }
 
+/// The host to name when no remote could be GitHub. `gh` chooses among remotes by its own
+/// rules, so any unrecognized remote passes: it may be GitHub Enterprise or an SSH alias.
+fn pull_request_refusal(urls: &[&str]) -> Option<&'static str> {
+    let host_of = |url: &str| -> Option<String> {
+        let host = match url::Url::parse(url) {
+            Ok(u) => u.host_str()?.to_owned(),
+            Err(_) => url.split_once(':')?.0.rsplit('@').next()?.to_owned(),
+        };
+        Some(host.to_lowercase())
+    };
+    let foreign = |url: &&str| match host_of(url)?.as_str() {
+        "gitlab.com" => Some("GitLab"),
+        "bitbucket.org" => Some("Bitbucket"),
+        "codeberg.org" => Some("Codeberg"),
+        "dev.azure.com" | "ssh.dev.azure.com" => Some("Azure DevOps"),
+        "git.cafe" => Some("GitCafe"),
+        _ => None,
+    };
+    if urls.is_empty() || !urls.iter().all(|u| foreign(u).is_some()) {
+        return None;
+    }
+    urls.first().and_then(foreign)
+}
+
 async fn steps(
     run: &Run,
     action: &str,
@@ -219,10 +243,21 @@ async fn steps(
     let do_pr = action.contains("pr");
     // Pull requests are created with `gh`. Refuse first: commit and push cannot be undone.
     if do_pr {
-        let identity = crate::projects::repository_identity(&root.to_string_lossy()).await;
-        if let Some(provider) = identity["provider"].as_str().filter(|p| *p != "github") {
+        let remotes = crate::proc::git(
+            root,
+            &["config", "--get-regexp", r"^remote\..*\.url$"],
+            Opts::READ,
+        )
+        .await
+        .map(|o| o.text())
+        .unwrap_or_default();
+        let urls: Vec<&str> = remotes
+            .lines()
+            .filter_map(|l| l.split_once(' ').map(|(_, url)| url))
+            .collect();
+        if let Some(host) = pull_request_refusal(&urls) {
             let message = format!(
-                "Creating pull requests is not supported for {provider} here. Nothing was changed; use Commit & push instead."
+                "Creating pull requests is not supported for {host} here. Nothing was changed; use Commit & push instead."
             );
             return Err(fail(op, root, &message, None));
         }
@@ -639,4 +674,29 @@ fn toast(r: &Value, action: &str) -> Value {
         return json!({"title":format!("Committed {}", short(&r["commit"]["commitSha"])),"description":r["commit"]["subject"],"cta":{"kind":"run_action","label":"Push","action":{"kind":"push"}}});
     }
     json!({"title":"Nothing to do","description":"No changes were committed or pushed.","cta":{"kind":"none"}})
+}
+
+#[cfg(test)]
+mod pull_request_host_tests {
+    use super::pull_request_refusal as refusal;
+    #[test]
+    fn refuses_only_when_no_remote_could_be_github() {
+        assert_eq!(refusal(&["https://gitlab.com/o/r.git"]), Some("GitLab"));
+        assert_eq!(refusal(&["git@bitbucket.org:o/r.git"]), Some("Bitbucket"));
+        assert_eq!(
+            refusal(&["ssh://git@ssh.dev.azure.com/v3/o/p/r"]),
+            Some("Azure DevOps")
+        );
+        // `gh` can use origin although upstream comes first in repository identity.
+        assert_eq!(
+            refusal(&["https://gitlab.com/o/r.git", "git@github.com:o/r.git"]),
+            None
+        );
+        assert_eq!(
+            refusal(&["https://gitlab.com/o/r.git", "git@ghe.example.com:o/r.git"]),
+            None
+        );
+        assert_eq!(refusal(&["git@gh-work:o/r.git"]), None);
+        assert_eq!(refusal(&[]), None);
+    }
 }

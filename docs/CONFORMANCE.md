@@ -2139,3 +2139,10 @@ far beyond today's 375 threads would need client changes. `getThreadProjection` 
 stay size-limited for a single multi-megabyte message, while the bounded mode both apps use
 accepted a 9 MiB event. Status has PR metadata for GitHub and GitLab only. FTS ranking has
 no wall-clock deadline. Credential-store-only GitCafe authentication stays unsupported.
+
+A later check found the first version of that refusal read `upstream` while `gh` may use
+`origin`, which would refuse a valid GitHub action. It now refuses only when every remote
+is a recognized host without `gh` support (GitLab, Bitbucket, Codeberg, Azure DevOps,
+GitCafe). Any unrecognized remote passes, so a self-hosted Forgejo can still fail at the
+pull request step, after commit and push. Status still has no PR metadata for those hosts,
+and the lib-t3-rust action menu has no capability to read; that part is client work.
