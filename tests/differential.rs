@@ -1805,7 +1805,7 @@ fn upstream_generation_setting_acceptance() {
     let server = start(&reference_binary(), &home);
     let c = connect(&server);
     let result = c.rpc("server.updateSettings",json!({"patch":{"textGenerationModelSelection":{"instanceId":"codex","model":"fixture"}}})).unwrap();
-    let saved = t3_protocol::api::server::settings(&c).unwrap();
+    let saved = t3_protocol::api::server::config(&c).unwrap()["settings"].clone();
     assert_eq!(saved["textGenerationModelSelection"]["instanceId"], "codex");
     std::fs::write(Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/generation-settings-reference.json"),serde_json::to_vec_pretty(&json!({"accepted":true,"savedSelection":saved["textGenerationModelSelection"],"responseHasSettings":result.get("settings").is_some()})).unwrap()).unwrap();
 }

@@ -176,6 +176,44 @@ pub(crate) async fn bounded(s: &State, input: RunInput) -> Option<String> {
     result
 }
 
+pub(crate) const UNAVAILABLE: &str = "Tool-free text generation is unavailable for the selected Codex provider. Select a Claude model in Text generation model (or the source-control/review override), or supply the text manually.";
+pub(crate) fn check_selection(s: &State, selection: &serde_json::Value) -> Result<(), String> {
+    let id = selection["instanceId"].as_str().unwrap_or("");
+    let codex = id == "codex"
+        || s.provider.lock().unwrap().as_ref().is_some_and(|p| {
+            p.config()
+                .iter()
+                .any(|p| p["instanceId"] == id && p["driver"] == "codex")
+        });
+    if codex {
+        Err(UNAVAILABLE.into())
+    } else {
+        Ok(())
+    }
+}
+pub(crate) fn check_settings(
+    s: &State,
+    settings: &serde_json::Value,
+    key: &str,
+) -> Result<(), String> {
+    let selection = if settings[key].is_object() {
+        &settings[key]
+    } else {
+        &settings["textGenerationModelSelection"]
+    };
+    check_selection(s, selection)
+}
+pub(crate) fn check_project(s: &State, project: &str) -> Result<(), String> {
+    let mut settings = crate::settings::read(s)?;
+    if let Some(v) = settings["projectSettingsOverrides"][project]["textGenerationModelSelection"]
+        .as_object()
+        .cloned()
+    {
+        settings["textGenerationModelSelection"] = json!(v);
+    }
+    check_settings(s, &settings, "textGenerationModelSelection")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -288,42 +326,4 @@ mod tests {
             std::fs::remove_dir_all(dir).unwrap();
         }
     }
-}
-
-pub(crate) const UNAVAILABLE: &str = "Tool-free text generation is unavailable for the selected Codex provider. Select a Claude model in Text generation model (or the source-control/review override), or supply the text manually.";
-pub(crate) fn check_selection(s: &State, selection: &serde_json::Value) -> Result<(), String> {
-    let id = selection["instanceId"].as_str().unwrap_or("");
-    let codex = id == "codex"
-        || s.provider.lock().unwrap().as_ref().is_some_and(|p| {
-            p.config()
-                .iter()
-                .any(|p| p["instanceId"] == id && p["driver"] == "codex")
-        });
-    if codex {
-        Err(UNAVAILABLE.into())
-    } else {
-        Ok(())
-    }
-}
-pub(crate) fn check_settings(
-    s: &State,
-    settings: &serde_json::Value,
-    key: &str,
-) -> Result<(), String> {
-    let selection = if settings[key].is_object() {
-        &settings[key]
-    } else {
-        &settings["textGenerationModelSelection"]
-    };
-    check_selection(s, selection)
-}
-pub(crate) fn check_project(s: &State, project: &str) -> Result<(), String> {
-    let mut settings = crate::settings::read(s)?;
-    if let Some(v) = settings["projectSettingsOverrides"][project]["textGenerationModelSelection"]
-        .as_object()
-        .cloned()
-    {
-        settings["textGenerationModelSelection"] = json!(v);
-    }
-    check_settings(s, &settings, "textGenerationModelSelection")
 }
