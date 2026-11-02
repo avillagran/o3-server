@@ -65,12 +65,31 @@ fn github_pull_requests_through_gh_argv() {
     );
     e.project("p1", &r);
 
-    let list = c
-        .rpc(
-            "pullRequests.list",
-            json!({"state":"open","projectId":"p1"}),
-        )
-        .unwrap();
+    let mut query = t3_protocol::api::pull_requests::ListQuery::new("open");
+    query.project_id = Some("p1".into());
+    query.involvement = Some("reviewing".into());
+    query.filters = Some(
+        json!({"draft":"hide","review":"review-required","checks":"passing","labels":[["bug","docs"]],"excludedLabels":["blocked"],"author":"@me"}),
+    );
+    query.query = Some("fix".into());
+    let list = t3_protocol::api::pull_requests::list(c, &query).unwrap();
+    let arguments = argv();
+    assert_eq!(arguments.matches("--search").count(), 1, "{arguments}");
+    for qualifier in [
+        "review-requested:@me",
+        "draft:false",
+        "review:review_required",
+        "status:success",
+        "label:\"bug\",\"docs\"",
+        "-label:\"blocked\"",
+        "--author me",
+        "fix",
+    ] {
+        assert!(
+            arguments.contains(qualifier),
+            "missing {qualifier}: {arguments}"
+        );
+    }
     assert_eq!(list["viewers"]["github.com"], "me");
     assert_eq!(list["providers"][0]["kind"], "github");
     let entry = &list["entries"][0];
