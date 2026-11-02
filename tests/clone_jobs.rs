@@ -18,7 +18,7 @@ fn tracked_local_clone_real_start_reader_and_connection() {
     std::env::set_var("GIT_CONFIG_VALUE_2", "cat");
     let s = support::start(|_| {});
     let c = s.connect();
-    let config = c.rpc("server.getConfig", json!({})).unwrap();
+    let config = t3_protocol::api::server::config(&c).unwrap();
     assert_eq!(
         config["environment"]["capabilities"]["projectCloneTracking"],
         true
@@ -39,6 +39,12 @@ fn tracked_local_clone_real_start_reader_and_connection() {
         remote_url: Some(origin.to_string_lossy().into()),
         protocol: None,
     };
+    let mut unsupported = request.clone();
+    unsupported.project_id = "unsupported".into();
+    unsupported.provider = Some("gitlab".into());
+    unsupported.remote_url = None;
+    unsupported.repository = Some("fixture/repo".into());
+    assert!(project_clone::start(&c, &unsupported).is_err());
     let result = project_clone::start(&c, &request).unwrap();
     assert_eq!(result["projectId"], "clone");
     let mut stream = support::subscribe(s.connect(), "subscribeProjectClones", json!({}));

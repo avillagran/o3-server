@@ -474,6 +474,12 @@ async fn clone_start(s: &std::sync::Arc<State>, p: &Value) -> Reply {
     {
         Some(url) => url.to_owned(),
         None => {
+            if p["provider"]
+                .as_str()
+                .is_some_and(|provider| provider != "github")
+            {
+                return Err(repository_error("clone","This provider requires an explicit remoteUrl; repository-name resolution is unavailable."));
+            }
             let repo = str_field(p, "repository")
                 .map_err(|_| repository_error("clone", "A remoteUrl or repository is required."))?;
             if repo.split('/').count() != 2 || repo.starts_with('-') {
