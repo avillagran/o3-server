@@ -93,3 +93,5 @@ mod webhook;
 pub mod worktree_progress;
 
 pub mod clone_jobs;
+
+mod setup_process;

@@ -103,14 +103,6 @@ fn prepare_inner(s: &State, p: &Value, tid: &str) -> Result<Prepared, String> {
             let name: String = tid.as_bytes().iter().map(|b| format!("{b:02x}")).collect();
             let path = directory.join(name);
             let checkout = path.to_str().ok_or("invalid worktree path")?;
-            if path.exists() {
-                git(&path, &["rev-parse", "--show-toplevel"])?;
-                return Ok(Prepared {
-                    path: serde_json::json!(path),
-                    branch,
-                    owned: None,
-                });
-            }
             let base = if strategy["startFromOrigin"] == true {
                 format!("origin/{}", base.trim_start_matches("origin/"))
             } else {
@@ -125,9 +117,15 @@ fn prepare_inner(s: &State, p: &Value, tid: &str) -> Result<Prepared, String> {
             let mut prepared = Prepared {
                 path: serde_json::json!(path),
                 branch: branch.clone(),
-                owned: Some((root.clone(), path.clone(), owned_branch)),
+                owned: if path.exists() {
+                    None
+                } else {
+                    Some((root.clone(), path.clone(), owned_branch))
+                },
             };
-            let result = if let Some(branch) = branch.as_str() {
+            let result = if path.exists() {
+                git(&path, &["rev-parse", "--show-toplevel"])
+            } else if let Some(branch) = branch.as_str() {
                 setup_git(
                     s,
                     tid,

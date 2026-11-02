@@ -37,6 +37,13 @@ pub fn start(configure: impl FnOnce(&Arc<o3_server::store::State>)) -> Server {
         COUNTER.fetch_add(1, Ordering::Relaxed)
     ));
     let _ = std::fs::remove_dir_all(&dir);
+    start_at(dir, configure)
+}
+
+pub fn start_at(
+    dir: std::path::PathBuf,
+    configure: impl FnOnce(&Arc<o3_server::store::State>),
+) -> Server {
     let state = Arc::new(o3_server::store::State::open(&dir).unwrap());
     let secret = state.issue_pairing(Some("test"), 60_000).unwrap()["credential"]
         .as_str()
