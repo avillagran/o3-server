@@ -1688,3 +1688,105 @@ The merged release also started twice on a private copy of a real imported profi
 threads, 25 projects, 800 MB database), which ran the migration for real: thread and
 message counts kept, none of the moved run fields on the wire, SQLite integrity check ok,
 14.5 MB RSS after startup, clean exit both times. Start time was not measured.
+
+## P1 consumed-reader implementation (2026-11-02)
+
+The pre-edit inventory and per-row opinions are in
+[p1-reader-inventory.md](p1-reader-inventory.md). No compatibility status changes.
+`subscribeShell` and `getConfig` were excluded. No live inference or credentials
+were used; the reference is the isolated versioned 3991 binary, not newer source.
+
+Two fixes:
+
+- Default search no longer synthesizes message matches from thread titles.
+  The real lib `search_threads` reader on 3991 returned zero matches for threads
+  whose unrelated messages did not contain the title query; o3 returned title
+  snippets. Desktop `src/thread_search.rs:39` and Android's MessageSearch consume
+  that array. [Before](p1-reader-before.json) preserves the counterexample;
+  [final isolated report](p1-reader-report.json) preserves ordered matches and
+  actual downloaded attachment bytes, without scalar-shape normalization.
+  `tests/threads_compat.rs::default_search_does_not_report_title_only_hits_as_messages`
+  uses the actual lib API, checks that only a matching message appears, and
+  retains explicit title-search coverage. Full message ranking is not certified.
+- Explicit idle instance switching resets foreign native session IDs, separates
+  provider process generations and sends a bounded transcript to the fresh
+  session. `tests/model_handoff.rs` drives actual Claude/Codex adapters with the
+  deterministic `tests/fixtures/input/handoff.py` peer through a Connection, then
+  applies the real timeline reader. Both directions retain user/assistant text;
+  the peer rejects foreign resume/fork calls. Removing the fix fails the test.
+  Attachment/context parity is not claimed. No production literal caller of the
+  explicit command was found beyond the lib allowlist; desktop `src/write.rs:189`
+  instead supplies a per-message selection. That path is not certified by this
+  explicit-command test.
+
+Additional evidence: native Claude structured-question dismissal now goes from
+`questions::command` through the native can_use_tool response to a peer asserting
+`deny`, then through `questions::pending` to the cancelled/hidden request and
+completed run. It adds coverage, not a new production recovery implementation.
+`tests/command_output.rs` applies real subscription frames to the shared
+`parity::output` reader, in addition to desktop-style assembly.
+
+Consumer correction: current desktop find (`ui/qml/T3Panel.qml:193`) and Android
+find (`ui/thread/TimelineReader.kt:87`) search loaded rows locally. No production
+`orchestration.searchThread` RPC consumer or actual lib RPC reader was found.
+Its historic Markdown segmentation limits are not a demonstrated consumed gap.
+Under the strict rule this is an audit/classification question, not a green-row
+claim based on a fabricated reader.
+
+Remaining consumed/unproven work, by row: broader media adapter/format evidence;
+message search ranking and fallback bounds; command multiline VT/reference live
+output; GitCafe/desktop source-control auth; non-GitHub/GitLab status and stale PR
+fallback; historical fork attachment/context continuity; cross-provider native
+context and per-message selection; dismissal restart/delivery-unknown windows.
+No opaque native-resume implementation equality or exhaustive schedule equality
+is demanded. The accepted independent-record stream contract does not excuse
+missing client-visible history or state.
+
+For config/settings, external CLI updates of unknown ownership and the agent
+browser service are owner decisions. Startup/custom discovery, generic model
+option/config normalization and settings effect coverage, and tool-free Codex
+text generation are separate non-owner gaps. Existing delta/native/scoped reader
+coverage remains evidence for its tested subset only. Neither owner decision is
+used to waive these remaining gaps.
+
+The source-control and settings limits are concrete: `src/vcs.rs:961` explicitly
+reports GitCafe credential validation unavailable; desktop `src/write.rs:75`
+consumes its auth.status. `src/title.rs:67` rejects Codex text-generation selection,
+which the native settings reader exposes (`lib/src/native_settings.rs:56`). These
+remain separate from the two owner decisions. Search regression also fails under
+a negative control restoring unconditional title hits.
+
+The isolated P1 comparison initially rejected incomplete thread-create arguments
+and workspace-file previews (preview type/path validation); it was narrowed to a
+real uploaded attachment. Those rejected probes are not asset parity evidence.
+The final assertion compares actual bytes and ordered search match values. The
+harness now defaults directly to the pinned versioned binary; it no longer picks
+the newest installed runtime by enumerating versions.
+
+Further asset-consumer correction: no production caller in the three trees sets
+renderIntent:mcp-app. Desktop src/documents.rs:10 fetches ordinary inline HTML
+attachments and ui/qml/T3Backend.qml:1202 supplies a local MCP bridge. The optional
+lib API descriptor is not a production caller. Therefore server HTML injection
+is not an established consumed asset gap. Media still has real consumers at
+desktop src/videos.rs:28 and Android core/transport/NativeT3Transport.kt:70; this
+run proves only the reported attachment download, not every media adapter.
+
+Final verification on the implementation commits: default `cargo test
+--no-fail-fast` **209 passed / 0 failed / 15 ignored**;
+`--no-default-features` **207 passed / 0 failed / 15 ignored**. Both strict
+all-target Clippy configurations, fmt check, gen-compat and diff check passed.
+The added isolated P1 differential passed against 3991 after the search fix;
+the concurrent differential ran once and passed its zero reader/replay difference
+assertions under the existing reference-only replay contract. Earlier local P1
+probe failures described above are not counted as passing parity evidence.
+
+`tools/bench-rss` rebuilt the release binary and passed: **16,248 KiB / 16.64 MB
+HWM**, below 50 MB. Message RPC last-100 median/p95: **2.709 / 2.967 ms**;
+metadata RPC median/p95: **0.463 / 0.665 ms**. This is a single workload sample,
+not a baseline speedup claim. Search removes the default title-scan pass; the
+transcript query is limited to explicit idle instance changes, not ordinary
+append/subscription paths. No background hot-path task was added. Raw sanitized
+sample and binary hash: [rss-p1-reader.json](rss-p1-reader.json). Inference and
+provider-child memory are excluded. All Cargo work ran serially under nice with
+four jobs; full suites used four test threads. No emulators, services, deployment,
+pushes or compatibility promotions were performed.

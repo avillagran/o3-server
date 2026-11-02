@@ -1,0 +1,59 @@
+{
+  "equal": true,
+  "o3": {
+    "assetBytes": [
+      60,
+      112,
+      62,
+      97,
+      115,
+      115,
+      101,
+      116,
+      45,
+      112,
+      114,
+      111,
+      111,
+      102,
+      60,
+      47,
+      112,
+      62
+    ],
+    "searches": {
+      "a needle": [],
+      "eedl": [],
+      "needle": []
+    }
+  },
+  "reference": {
+    "assetBytes": [
+      60,
+      112,
+      62,
+      97,
+      115,
+      115,
+      101,
+      116,
+      45,
+      112,
+      114,
+      111,
+      111,
+      102,
+      60,
+      47,
+      112,
+      62
+    ],
+    "searches": {
+      "a needle": [],
+      "eedl": [],
+      "needle": []
+    }
+  },
+  "referenceVersion": "0.1.7-nightly.20261031.3991",
+  "scope": "actual lib search_threads and asset_bytes readers on isolated server output; ordered title matches and uploaded attachment download only"
+}

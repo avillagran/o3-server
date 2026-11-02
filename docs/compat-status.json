@@ -14,7 +14,7 @@
     "assets.createUrl": {
       "status": "partial",
       "priority": "P1",
-      "note": "Real-client signed grants cover all resource tags, Range/HEAD, session/scope/canonical-boundary rechecks. GTK theme inheritance/XDG icon downloads, content-selected cached media and expired-cache collection tested. Partial: MCP HTML injection, complete platform discovery, media formats/host adapters. Tool-output images require orchestration:read; file grants require filesystem:read."
+      "note": "Real-client signed grants cover all resource tags, Range/HEAD, session/scope/canonical-boundary rechecks. GTK theme inheritance/XDG icon downloads, content-selected cached media and expired-cache collection tested. Partial: MCP HTML injection, complete platform discovery, media formats/host adapters. Tool-output images require orchestration:read; file grants require filesystem:read. 2026-11-02: isolated pinned 3991 comparison downloads identical HTML attachment bytes through actual Connection.asset_bytes. Consumer correction: no production caller sets renderIntent:mcp-app (only optional lib API descriptors); desktop src/documents.rs:10 fetches an ordinary inline attachment and ui/qml/T3Backend.qml:1202 supplies its own bridge. MCP HTML injection is not an established consumed asset gap. Actual media readers remain desktop src/videos.rs:28 and Android core/transport/NativeT3Transport.kt:70; this run does not certify every media format/adapter. No status change."
     },
     "assets.persistChatAttachments": {
       "status": "skip",
@@ -194,7 +194,7 @@
     "orchestration.searchThread": {
       "status": "partial",
       "priority": "P1",
-      "note": "Real Connection verifies rendered Markdown blocks, hidden link/context destinations, skill labels, folded-answer exclusion, canonical ordering and index/start/offset navigation. Partial: rich file/citation/artifact labels, legacy context envelopes and full upstream Markdown pipeline."
+      "note": "Real Connection verifies rendered Markdown blocks, hidden link/context destinations, skill labels, folded-answer exclusion, canonical ordering and index/start/offset navigation. Partial: rich file/citation/artifact labels, legacy context envelopes and full upstream Markdown pipeline. 2026-11-02 consumer correction: no production RPC caller found in the three clients. Desktop ui/qml/T3Panel.qml:193 searches transcript locally; Android ui/thread/TimelineReader.kt:87 uses transcriptMatches. Existing segmentation limits are not demonstrated client-read gaps in this RPC; no actual lib RPC reader exists to certify this row under the strict rule."
     },
     "orchestration.searchThreadStream": {
       "status": "skip",
@@ -204,7 +204,7 @@
     "orchestration.searchThreads": {
       "status": "partial",
       "priority": "P1",
-      "note": "Real Connection verifies metadata, shells, project/state filters, FTS plus folded substring fallback (4096 rows, 64K characters/row, 8 MiB scanned text), and title exact/prefix/substring priority. Partial: full palette word-boundary/recency/branch/pick scoring and matches beyond the fallback budget."
+      "note": "Real Connection verifies metadata, shells, project/state filters, FTS plus folded substring fallback (4096 rows, 64K characters/row, 8 MiB scanned text), and title exact/prefix/substring priority. Partial: full palette word-boundary/recency/branch/pick scoring and matches beyond the fallback budget. 2026-11-02: pinned 3991 exposed title-only hits incorrectly returned as default message matches (docs/p1-reader-before.json). Default search now excludes title-only hits; explicit titlesOnly remains. Real lib search_threads regression plus isolated differential compares ordered hits and attachment bytes. Full message ranking, fallback budget and older-settled equivalence remain unproven; no status change."
     },
     "orchestration.stopWorkflow": {
       "status": "skip",
@@ -219,7 +219,7 @@
     "orchestration.subscribeCommandOutput": {
       "status": "partial",
       "priority": "P1",
-      "note": "Real Connection verifies bounded command tails, replacement/final output. Bounded CR/backspace/CSI progress folding handles split sequences and long rewritten lines. Real Claude 2.1.316 Bash probe supplies output only at completion; Codex exposes outputDelta. Partial: live Claude command output unavailable on observed protocol; arbitrary multiline VT unsupported."
+      "note": "Real Connection verifies bounded command tails, replacement/final output. Bounded CR/backspace/CSI progress folding handles split sequences and long rewritten lines. Real Claude 2.1.316 Bash probe supplies output only at completion; Codex exposes outputDelta. Partial: live Claude command output unavailable on observed protocol; arbitrary multiline VT unsupported. 2026-11-02: tests/command_output.rs now applies actual server subscription frames to lib parity::output (Android commandOutput.apply), in addition to desktop-style text assembly. Completion-only Claude delivery is not newly proven against 3991 here; multiline VT equivalence remains unproven. No blanket live-output parity claim."
     },
     "orchestration.subscribeShell": {
       "status": "partial",
@@ -679,7 +679,7 @@
     "server.discoverSourceControl": {
       "status": "partial",
       "priority": "P1",
-      "note": "Actual lib API reader covers git/jj, CLI host descriptors and API-backed Bitbucket/Forgejo/GitCafe descriptors without CLI dependency. Bitbucket/Forgejo environment-token identity probes are bounded, nonredirecting and redact responses. Partial: live authenticated API acceptance, GitCafe token validation and desktop credential storage; unknown is reported truthfully."
+      "note": "Actual lib API reader covers git/jj, CLI host descriptors and API-backed Bitbucket/Forgejo/GitCafe descriptors without CLI dependency. Bitbucket/Forgejo environment-token identity probes are bounded, nonredirecting and redact responses. Partial: live authenticated API acceptance, GitCafe token validation and desktop credential storage; unknown is reported truthfully. 2026-11-02: desktop src/write.rs:75 consumes kind/status/auth.status, so unsupported GitCafe auth is not an unread field. No live auth or credential-store verification performed. CLI/API fixture coverage remains bounded, not host acceptance proof."
     },
     "server.getBackgroundPolicy": {
       "status": "skip",
@@ -839,7 +839,7 @@
     "server.updateSettings": {
       "status": "partial",
       "priority": "P1",
-      "note": "Partial: execution covers limit snoozing/recovery, restart continuation, response publication, merge-credit filtering and worktree submodules. Agent browser service is explicitly unavailable; not all settings have exhaustive client-reader effect coverage. Codex text generation fails closed pending a verified tool-free transport."
+      "note": "Partial: execution covers limit snoozing/recovery, restart continuation, response publication, merge-credit filtering and worktree submodules. Agent browser service is explicitly unavailable; not all settings have exhaustive client-reader effect coverage. Codex text generation fails closed pending a verified tool-free transport. 2026-11-02 split: external CLI update ownership and agent browser service await owner decisions. Tool-free Codex text generation and exhaustive non-owner settings effect/normalization coverage remain separate and unproven; real native/scoped settings readers consume these choices. No new inference or external updater executed."
     },
     "server.upsertKeybinding": {
       "status": "done",
@@ -904,7 +904,7 @@
     "subscribeServerConfig": {
       "status": "partial",
       "priority": "P1",
-      "note": "Partial: same honest config/settings limits as unary config, including unavailable agent browser service and external/custom managed setup paths. Existing native/scoped/storage/provider readers and typed deltas remain covered."
+      "note": "Partial: same honest config/settings limits as unary config, including unavailable agent browser service and external/custom managed setup paths. Existing native/scoped/storage/provider readers and typed deltas remain covered. 2026-11-02 split: owner decisions are external CLI updates of unknown ownership and the unavailable agent browser service. Separate non-owner gaps remain startup/custom instance discovery and generic model-option/config normalization effect coverage (lib native_settings.rs:119, scoped_settings.rs:47); existing typed delta tests do not certify all config readers. No owner decision is used to waive those gaps."
     },
     "subscribeServerLifecycle": {
       "status": "skip",
@@ -999,7 +999,7 @@
     "vcs.refreshStatus": {
       "status": "partial",
       "priority": "P1",
-      "note": "Real-client local/branch/upstream/GitHub tests plus real glab 1.126.0 through server/lib VCS reader against a local GitLab API fixture: MR metadata, explicit self-host ports, localOnly and 403/null behavior. Partial: live authenticated GitLab, other hosts and upstream stale-PR fallback/backoff parity."
+      "note": "Real-client local/branch/upstream/GitHub tests plus real glab 1.126.0 through server/lib VCS reader against a local GitLab API fixture: MR metadata, explicit self-host ports, localOnly and 403/null behavior. Partial: live authenticated GitLab, other hosts and upstream stale-PR fallback/backoff parity. 2026-11-02: desktop src/git_controls.rs:22 and branch_picker.rs:87 consume status; src/vcs.rs has PR adapters only for GitHub/GitLab (433,465). Other-host PR metadata and last-known fallback remain unproved consumed behavior; no new live host validation."
     },
     "vcs.removeWorktree": {
       "status": "skip",
@@ -1166,7 +1166,7 @@
     "thread.fork": {
       "status": "partial",
       "priority": "P1",
-      "note": "Native latest-completed forks: Claude --resume --fork-session, Codex thread/fork; historical points use bounded explicit transcript handoff. Clears inherited native IDs. Deterministic peers in tests/provider_lifecycle.rs. Native resume-at message mapping remains unavailable."
+      "note": "Native latest-completed forks: Claude --resume --fork-session, Codex thread/fork; historical points use bounded explicit transcript handoff. Clears inherited native IDs. Deterministic peers in tests/provider_lifecycle.rs. Native resume-at message mapping remains unavailable. 2026-11-02: explicit historical run points have production callers (desktop src/write.rs:263; Android ThreadViewModel.kt:684). Bounded text handoff is not native history equivalence; attachment/context continuity at historical points remains unproven and is not waived by the stream interleaving contract."
     },
     "thread.guest-message.dismiss": {
       "status": "todo",
@@ -1201,7 +1201,7 @@
     "thread.model-selection.set": {
       "status": "partial",
       "priority": "P1",
-      "note": "Idle model changes apply at next turn: Claude set_model control and Codex turn/start model preserve native session. Deterministic adapter peers cover same-session model change. Cross-provider context transfer remains unavailable."
+      "note": "Idle model changes apply at next turn: Claude set_model control and Codex turn/start model preserve native session. Deterministic adapter peers cover same-session model change. Cross-provider context transfer remains unavailable. 2026-11-02: explicit idle instance switch now clears foreign native IDs, changes session generation and supplies bounded transcript context. tests/model_handoff.rs runs both native peers through Connection and actual timeline reader; removing the fix fails. Text-only, not attachment/native-context parity. No production literal command caller found beyond lib API allowlist; desktop src/write.rs:189 instead sends message.dispatch modelSelection, not certified by this command test."
     },
     "thread.pin": {
       "status": "done",
@@ -1286,7 +1286,7 @@
     "thread.user-input.dismiss": {
       "status": "partial",
       "priority": "P1",
-      "note": "Real Connection scripted provider test; production delivery/recovery not complete."
+      "note": "Real Connection scripted provider test; production delivery/recovery not complete. 2026-11-02: tests/provider_input.rs now sends the actual questions::command dismissal through Claude native can_use_tool transport; peer verifies deny, completed run and actual questions::pending clears cancelled request. No new crash/delivery-unknown or pinned-reference dismissal equivalence proof; scripted-only note no longer describes all coverage."
     },
     "thread.visit": {
       "status": "done",
