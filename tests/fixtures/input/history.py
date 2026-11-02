@@ -35,6 +35,7 @@ for line in sys.stdin:
 
         assert 'user: seed-proof' in text and 'context-proof' in text, text
         assert 'later-proof' not in text, text
+        assert 'tool-output-proof' in text, text
         blocks = f['message']['content'] if claude else f['params']['input']
         images = [b for b in blocks if b['type'] in ('image','localImage')]
         assert len(images) == 1, blocks

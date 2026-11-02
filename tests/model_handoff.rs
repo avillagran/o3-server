@@ -118,6 +118,11 @@ fn historical_fork_supplies_image_and_context_to_fresh_native_peers() {
                 assert_eq!(p["thread"]["modelSelection"]["model"], "changed");
             }
             if n == 0 {
+                let db = s.state.db.lock().unwrap();
+                let rid = p["runs"][0]["id"].as_str().unwrap();
+                db.execute("INSERT INTO records(kind,id,thread_id,body) VALUES ('turnItems','read-proof','t',?)", [json!({"id":"read-proof","threadId":"t","runId":rid,"type":"dynamic_tool","toolName":"Read","input":{"path":"proof.txt"},"output":"tool-output-proof","status":"completed"}).to_string()]).unwrap();
+            }
+            if n == 0 {
                 boundary = p["runs"][0]["id"].clone();
             }
             let timeline =
