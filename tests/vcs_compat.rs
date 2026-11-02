@@ -758,14 +758,18 @@ fn z_status_reports_host_and_pull_request_and_local_only_skips_host() {
             "https://github.com/owner/repo.git",
         ],
     );
-    let script = bin_dir().join("gh");
-    let previous = std::fs::read(&script).unwrap();
-    std::fs::write(&script,b"#!/bin/sh\necho '[{\"number\":7,\"title\":\"Proof\",\"url\":\"https://github.com/owner/repo/pull/7\",\"baseRefName\":\"main\",\"headRefName\":\"feature\",\"state\":\"OPEN\",\"isDraft\":false,\"updatedAt\":null}]'\n").unwrap();
+    // Scope the fake host response to this workspace; replacing the shared gh
+    // executable races other tests creating PRs in the same process.
+    let fixture = root.join(".test-gh-pr-list.json");
+    write(
+        &fixture,
+        r#"[{"number":7,"title":"Proof","url":"https://github.com/owner/repo/pull/7","baseRefName":"main","headRefName":"feature","state":"OPEN","isDraft":false,"updatedAt":null}]"#,
+    );
     let r = e
         .conn
         .rpc("vcs.refreshStatus", json!({"cwd":root}))
         .unwrap();
-    std::fs::write(&script, previous).unwrap();
+    std::fs::remove_file(fixture).unwrap();
     assert_eq!(r["sourceControlProvider"]["kind"], "github");
     assert_eq!(r["pr"]["number"], 7);
     assert_eq!(r["pr"]["state"], "open");

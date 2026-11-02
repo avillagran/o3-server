@@ -35,7 +35,7 @@ fn init_process() {
             std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
         };
         script("code", &format!("printf '%s\\n' \"$@\" > {}/code.out", bin.display()));
-        script("gh", &format!("echo \"$@\" >> {0}/gh.log\ncase \"$1 $2\" in\n\"pr list\") echo '[]';;\n\"pr create\") echo https://github.com/o/r/pull/7;;\nesac", bin.display()));
+        script("gh", &format!("echo \"$@\" >> {0}/gh.log\ncase \"$1 $2\" in\n\"pr list\") if [ -f .test-gh-pr-list.json ]; then cat .test-gh-pr-list.json; else echo '[]'; fi;;\n\"pr create\") echo https://github.com/o/r/pull/7;;\nesac", bin.display()));
         let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
         // SAFETY: set once, before any server thread of this process exists.
         unsafe {
