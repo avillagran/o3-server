@@ -305,7 +305,13 @@ pub fn shell(s: &State) -> Result<Value> {
 pub(crate) fn shell_db(db: &Connection) -> Result<Value> {
     let mut active = Vec::new();
     let mut archive = Vec::new();
-    for t in list(db, "thread", None, 10000)? {
+    let mut q = db.prepare("SELECT body FROM records WHERE kind='thread' AND json_extract(body,'$.deletedAt') IS NULL ORDER BY rowid").map_err(|e|e.to_string())?;
+    let rows = q
+        .query_map([], |r| r.get::<_, String>(0))
+        .map_err(|e| e.to_string())?;
+    for row in rows {
+        let t: Value =
+            serde_json::from_str(&row.map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
         if !t["deletedAt"].is_null() {
             continue;
         }
@@ -317,7 +323,7 @@ pub(crate) fn shell_db(db: &Connection) -> Result<Value> {
         }
     }
     Ok(
-        json!({"schemaVersion":2,"snapshotSequence":sequence(db)?,"projects":list(db,"project",None,10000)?.into_iter().filter(|p|p["deletedAt"].is_null()).collect::<Vec<_>>(),"threads":active,"archivedThreads":archive}),
+        json!({"schemaVersion":2,"snapshotSequence":sequence(db)?,"projects":list(db,"project",None,i64::MAX as usize)?.into_iter().filter(|p|p["deletedAt"].is_null()).collect::<Vec<_>>(),"threads":active,"archivedThreads":archive}),
     )
 }
 pub fn projection(s: &State, tid: &str) -> Result<Value> {
