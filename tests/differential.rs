@@ -1068,7 +1068,18 @@ fn normalize_concurrent(v: &Value, key: &str) -> Value {
     match v {
         Value::Object(m) => Value::Object(
             m.iter()
-                .map(|(k, v)| (k.clone(), normalize_concurrent(v, k)))
+                .map(|(k, v)| {
+                    // Activity ids are server-derived; message ids stay client fixture values.
+                    let derived = k == "id"
+                        && v.is_string()
+                        && (m.contains_key("activity") || matches!(key, "activity" | "entries"));
+                    let value = if derived {
+                        json!("opaque")
+                    } else {
+                        normalize_concurrent(v, k)
+                    };
+                    (k.clone(), value)
+                })
                 .collect(),
         ),
         Value::Array(a) => {
@@ -1095,7 +1106,14 @@ fn normalize_concurrent(v: &Value, key: &str) -> Value {
         {
             json!(1)
         }
-        Value::String(_) if matches!(key, "mergeBackRunId" | "rev" | "revision") => json!("opaque"),
+        Value::String(_)
+            if matches!(
+                key,
+                "mergeBackRunId" | "rev" | "revision" | "runId" | "sourceItemId" | "providerTurnId"
+            ) =>
+        {
+            json!("opaque")
+        }
         _ => v.clone(),
     }
 }

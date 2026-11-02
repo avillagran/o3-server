@@ -392,10 +392,28 @@ fn run_interrupt_and_input_dismiss() {
         json!({"type":"run.interrupt","commandId":"stop","threadId":"t1","runId":rid}),
     )
     .unwrap();
-    assert_eq!(
-        snap(&c, "t1")["projection"]["runs"][0]["status"],
-        "interrupted"
-    );
+    let projection = snap(&c, "t1")["projection"].clone();
+    assert_eq!(projection["runs"][0]["status"], "interrupted");
+    // Timeline readers group this pair; a repeated stop on a settled run adds nothing.
+    c.rpc(
+        "orchestration.dispatchCommand",
+        json!({"type":"run.interrupt","commandId":"stop-again","threadId":"t1","runId":rid}),
+    )
+    .unwrap();
+    let items = snap(&c, "t1")["projection"]["turnItems"].clone();
+    for (kind, status) in [
+        ("run_interrupt_request", "completed"),
+        ("run_interrupt_result", "interrupted"),
+    ] {
+        let found: Vec<_> = items
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|i| i["type"] == kind)
+            .collect();
+        assert_eq!(found.len(), 1, "{kind}");
+        assert_eq!(found[0]["status"], status);
+    }
     c.rpc("orchestration.dispatchCommand",json!({"type":"thread.user-input.dismiss","commandId":"dismiss","threadId":"t1","requestId":"approval-1"})).unwrap();
     assert_eq!(
         snap(&c, "t1")["projection"]["runtimeRequests"][0]["status"],

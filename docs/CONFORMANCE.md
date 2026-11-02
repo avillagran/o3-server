@@ -1244,8 +1244,7 @@ queued-message support, enabling the real queue reader's `canReorder`.
 The legacy internal `attempt.updated` event alias is now persisted/replayed as
 `run-attempt.updated`, which the actual projection reducer recognizes; a reducer
 regression covers it and startup repairs historical aliases.
-The remaining strict differential failure is retained in
-[concurrent-reader-report.json](concurrent-reader-report.json): T3 renders one
+At that checkpoint the remaining strict differential failure was: T3 renders one
 additional timeline activity group containing `run_interrupt_request` and
 `run_interrupt_result`; o3 emits neither. This is client-read behavior, not an
 accepted interleaving difference. O3's current local interruption/hand-off is not a
@@ -1288,5 +1287,24 @@ opt-ins ignored in each configuration. Strict all-target Clippy passed in both
 configurations; formatting, diff checks and `tools/gen-compat` passed. Initial full
 suite attempts caught the hand-written test schema missing `run_internal`; the
 fixture now uses the real schema initializer and both full suites were rerun.
-The opt-in concurrent differential intentionally remains failing on its reported
-client-read gap; these ordinary suite totals do not count it as passed.
+The opt-in concurrent differential failed at this point on its reported client-read
+gap; these totals do not count it as passed.
+
+### Interrupt timeline pair, same day
+
+`run.interrupt` now writes `run_interrupt_request` and `run_interrupt_result` turn
+items in the transaction that makes the run terminal, with T3's titles, statuses,
+parent link and messages. O3 finishes the run locally, so the result states that
+terminal run state; native delivery stays with the control outbox and its
+`delivery-unknown` boundary, and this does not close the `run.interrupt` row. A stop on
+an already settled run adds nothing. The result carries a null `providerTurnId`, as T3
+did on this path. Reference timing differs: T3 can show the request alone until the
+provider confirms, o3 shows both at once.
+
+The first paired run after this produced the group, with 16 differences. Fifteen were
+server-derived activity, run, source-item and turn ids; the normalizer now erases those
+strings, keeping null against string and leaving client message ids compared. The
+other was the `providerTurnId` above, fixed in o3. Four later strict runs passed with
+zero reader differences. This replaces the failure in
+[concurrent-reader-report.json](concurrent-reader-report.json). Still reader-state
+equality, not full JSON equality of every record.

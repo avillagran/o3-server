@@ -587,6 +587,10 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                 ),
                 None => None,
             };
+            let settled = matches!(
+                run["status"].as_str(),
+                Some("completed" | "failed" | "interrupted" | "cancelled")
+            );
             crate::projection::finish(&tx, tid, rid, &t, &at, "interrupted")?;
             let mid = format!("assistant-{rid}");
             if let Ok(mut message) = get(&tx, "messages", &mid) {
@@ -596,6 +600,9 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                 append(&tx, tid, "message.updated", message.clone(), &t)?;
                 let item = message_item(&tx, tid, &message)?;
                 append(&tx, tid, "turn-item.updated", item, &t)?;
+            }
+            if !settled {
+                interrupt_items(&tx, tid, &run, &t, &at, c, permit.is_some())?;
             }
             run["status"] = json!("interrupted");
             run["completedAt"] = json!(at);
@@ -760,6 +767,66 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
         crate::title::start(s.clone(), tid.into(), cid.into(), text);
     }
     Ok(result)
+}
+
+/// The timeline pair readers show for a stop. The run is terminal here, so the result
+/// records that state; native delivery is tracked by the control outbox, not by this item.
+fn interrupt_items(
+    db: &Connection,
+    tid: &str,
+    run: &Value,
+    t: &Value,
+    at: &str,
+    c: &Value,
+    provider_started: bool,
+) -> Result<()> {
+    let rid = run["id"].as_str().ok_or("run id required")?;
+    let request_id = format!("{rid}-interrupt-request");
+    let ordinal: i64 = db
+        .query_row(
+            "SELECT count(*) FROM records WHERE kind='turnItems' AND thread_id=?",
+            [tid],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let item = |id: &str, ordinal: i64, parent: Value, status, title, kind, message: &str| json!({"id":id,"threadId":tid,"runId":rid,"nodeId":run["rootNodeId"],"providerThreadId":run["providerThreadId"],"providerTurnId":run["codexProviderTurnId"],"nativeItemRef":null,"parentItemId":parent,"ordinal":ordinal,"status":status,"title":title,"startedAt":at,"completedAt":at,"updatedAt":at,"type":kind,"message":message});
+    let request = item(
+        &request_id,
+        ordinal,
+        Value::Null,
+        "completed",
+        "Interrupt requested",
+        "run_interrupt_request",
+        c["reason"].as_str().unwrap_or("Interrupt requested"),
+    );
+    let mut result = item(
+        &format!("{rid}-interrupt-result"),
+        ordinal + 1,
+        json!(request_id),
+        "interrupted",
+        "Interrupted",
+        "run_interrupt_result",
+        if provider_started {
+            "Run interrupted by user"
+        } else {
+            "Run interrupted before provider start"
+        },
+    );
+    // The result is a server record, not a provider item; only the request names the turn.
+    result["providerTurnId"] = Value::Null;
+    for item in [request, result] {
+        let id = item["id"].as_str().unwrap_or_default().to_owned();
+        put(db, "turnItems", &id, tid, &item)?;
+        put(
+            db,
+            "visibleTurnItems",
+            &id,
+            tid,
+            &json!({"position":item["ordinal"],"visibility":"local","sourceThreadId":tid,"sourceItemId":id,"item":item}),
+        )?;
+        append(db, tid, "turn-item.updated", item, t)?;
+    }
+    Ok(())
 }
 
 pub(crate) fn message_item(db: &Connection, tid: &str, m: &Value) -> Result<Value> {

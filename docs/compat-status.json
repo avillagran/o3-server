@@ -229,7 +229,7 @@
     "orchestration.subscribeThread": {
       "status": "partial",
       "priority": "P0",
-      "note": "Internal execution/recovery bookkeeping is excluded from run records, snapshots, history, replay and cached launch receipts; legacy databases migrate without losing continuation. Real gated Codex vs isolated T3 3991 concurrency test exercises two subscribers, queued dispatches, pin/unsettle, interrupt/hold/resume and real lib reducers/readers. Fixed queued_turn intent, Codex queue capability and the attempt event tag. Partial: missing run_interrupt_request/result timeline activities; full reduced-record equality and broader native delivery/recovery remain unproved. See concurrent-reader-report.json and CONFORMANCE.md."
+      "note": "Internal execution/recovery bookkeeping is excluded from run records, snapshots, history, replay and cached launch receipts; legacy databases migrate without losing continuation. Real gated Codex vs isolated T3 3991 concurrency test exercises two subscribers, queued dispatches, pin/unsettle, interrupt/hold/resume and real lib reducers/readers. Fixed queued_turn intent, Codex queue capability and the attempt event tag. Stops now emit the run_interrupt_request/result pair readers group. Four strict repeats: zero reader differences. Partial: full reduced-record equality and broader native delivery/recovery remain unproved. See concurrent-reader-report.json and CONFORMANCE.md."
     },
     "preview.adjust": {
       "status": "done",
