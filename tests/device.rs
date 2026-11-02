@@ -1,8 +1,10 @@
 mod support;
 use serde_json::json;
 use std::{os::unix::fs::PermissionsExt, time::Duration};
+static ADB: std::sync::Mutex<()> = std::sync::Mutex::new(());
 #[test]
 fn connected_adb_contract() {
+    let _lock = ADB.lock().unwrap_or_else(|e| e.into_inner());
     let server = support::start(|_| {});
     let bin = server.dir.join("bin");
     std::fs::create_dir_all(&bin).unwrap();
@@ -124,5 +126,67 @@ esac
     assert!(String::from_utf8(before)
         .unwrap()
         .contains("shell input keyevent 3"));
+    std::env::set_var("PATH", old);
+}
+
+#[test]
+fn android_settings_actions_use_real_readers_and_fixture_adb() {
+    let _lock = ADB.lock().unwrap_or_else(|e| e.into_inner());
+    use t3_protocol::api::device::{self, Action, DeviceAction};
+    let server = support::start(|_| {});
+    let bin = server.dir.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let adb = bin.join("adb");
+    let log = server.dir.join("actions.log");
+    std::fs::write(&adb, format!(r#"#!/bin/sh
+echo "$*" >> '{}'
+case "$*" in
+"-s fixture get-state") echo device;;
+"-s fixture shell cmd uimode night") echo yes;;
+"-s fixture shell settings get system font_scale") echo 1.15;;
+"-s fixture shell settings get global animator_duration_scale") echo 0;;
+"-s fixture shell settings get global wifi_on") echo 1;;
+"-s fixture shell dumpsys window") echo 'mCurrentFocus=Window{{abc u0 test.app/.Main}}';;
+"-s fixture shell cmd uimode night no"|"-s fixture shell settings put system font_scale 1.15"|"-s fixture shell svc wifi disable"|"-s fixture shell svc data disable"|"-s fixture shell settings put global animator_duration_scale 0"|"-s fixture shell settings put global transition_animation_scale 0"|"-s fixture shell settings put global window_animation_scale 0") ;;
+*) exit 1;;
+esac
+"#,log.display())).unwrap();
+    std::fs::set_permissions(&adb, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let old = std::env::var_os("PATH").unwrap();
+    std::env::set_var(
+        "PATH",
+        format!("{}:{}", bin.display(), old.to_string_lossy()),
+    );
+    let c = server.connect();
+    for action in [
+        Action::SetAppearance("light".into()),
+        Action::SetTextSize("large".into()),
+        Action::SetToggle {
+            setting: "networkEnabled".into(),
+            value: false,
+        },
+        Action::SetToggle {
+            setting: "reduceMotion".into(),
+            value: true,
+        },
+    ] {
+        let detail = device::action(
+            &c,
+            &DeviceAction {
+                device_id: "fixture".into(),
+                host_id: None,
+                action,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            detail["settings"],
+            json!({"appearance":"dark","textSize":"large","reduceMotion":true,"networkEnabled":true})
+        );
+        assert_eq!(detail["foregroundApp"]["id"], "test.app");
+    }
+    let calls = std::fs::read_to_string(log).unwrap();
+    assert!(calls.contains("shell svc data disable"));
+    assert!(calls.contains("shell settings put global window_animation_scale 0"));
     std::env::set_var("PATH", old);
 }

@@ -118,8 +118,89 @@ async fn connected(p: &Value) -> Result<&str, Value> {
 }
 async fn detail(p: &Value) -> Reply {
     let serial = connected(p).await?;
+    async fn read(args: Vec<&str>) -> Option<String> {
+        adb(&args)
+            .await
+            .ok()
+            .map(|v| String::from_utf8_lossy(&v).trim().to_owned())
+    }
+    let mut settings = json!({});
+    if let Some(night) = read(vec!["-s", serial, "shell", "cmd", "uimode", "night"]).await {
+        if night.contains("yes") {
+            settings["appearance"] = json!("dark");
+        } else if night.contains("no") {
+            settings["appearance"] = json!("light");
+        }
+    }
+    if let Some(scale) = read(vec![
+        "-s",
+        serial,
+        "shell",
+        "settings",
+        "get",
+        "system",
+        "font_scale",
+    ])
+    .await
+    .and_then(|s| s.parse::<f64>().ok())
+    .filter(|n| n.is_finite())
+    {
+        settings["textSize"] = json!(if scale <= 0.9 {
+            "small"
+        } else if scale < 1.1 {
+            "default"
+        } else if scale < 1.25 {
+            "large"
+        } else {
+            "extra-large"
+        });
+    }
+    if let Some(scale) = read(vec![
+        "-s",
+        serial,
+        "shell",
+        "settings",
+        "get",
+        "global",
+        "animator_duration_scale",
+    ])
+    .await
+    .and_then(|s| s.parse::<f64>().ok())
+    .filter(|n| n.is_finite())
+    {
+        settings["reduceMotion"] = json!(scale == 0.0);
+    }
+    if let Some(wifi) = read(vec![
+        "-s", serial, "shell", "settings", "get", "global", "wifi_on",
+    ])
+    .await
+    .filter(|s| matches!(s.as_str(), "0" | "1"))
+    {
+        settings["networkEnabled"] = json!(wifi == "1");
+    }
+    let mut foreground = Value::Null;
+    if let Some(focus) = read(vec!["-s", serial, "shell", "dumpsys", "window"]).await {
+        for line in focus
+            .lines()
+            .filter(|l| l.contains("mCurrentFocus=") || l.contains("mFocusedApp="))
+        {
+            if let Some(id) = line
+                .split_whitespace()
+                .filter_map(|w| w.split_once('/').map(|(id, _)| id))
+                .find(|id| {
+                    !id.is_empty()
+                        && id
+                            .bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b"._".contains(&b))
+                })
+            {
+                foreground = json!({"id":id});
+                break;
+            }
+        }
+    }
     Ok(
-        json!({"hostId":"local","deviceId":serial,"settings":{},"foregroundApp":null,"readAt":crate::store::iso(crate::store::now_ms())}),
+        json!({"hostId":"local","deviceId":serial,"settings":settings,"foregroundApp":foreground,"readAt":crate::store::iso(crate::store::now_ms())}),
     )
 }
 pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
@@ -208,6 +289,74 @@ pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
                 Ok(v)
             };
             match p["type"].as_str().unwrap_or("") {
+                "setAppearance" => {
+                    let value = match p["value"].as_str() {
+                        Some("dark") => "yes",
+                        Some("light") => "no",
+                        _ => return Err(invalid("appearance")),
+                    };
+                    adb(&["-s", serial, "shell", "cmd", "uimode", "night", value]).await?;
+                }
+                "setTextSize" => {
+                    let value = match p["value"].as_str() {
+                        Some("small") => "0.85",
+                        Some("default") => "1.0",
+                        Some("large") => "1.15",
+                        Some("extra-large") => "1.3",
+                        _ => return Err(invalid("text size")),
+                    };
+                    adb(&[
+                        "-s",
+                        serial,
+                        "shell",
+                        "settings",
+                        "put",
+                        "system",
+                        "font_scale",
+                        value,
+                    ])
+                    .await?;
+                }
+                "setToggle" => {
+                    let enabled = p["value"]
+                        .as_bool()
+                        .ok_or_else(|| invalid("toggle value"))?;
+                    match p["setting"].as_str() {
+                        Some("networkEnabled") => {
+                            for service in ["wifi", "data"] {
+                                adb(&[
+                                    "-s",
+                                    serial,
+                                    "shell",
+                                    "svc",
+                                    service,
+                                    if enabled { "enable" } else { "disable" },
+                                ])
+                                .await?;
+                            }
+                        }
+                        Some("reduceMotion") => {
+                            for key in [
+                                "animator_duration_scale",
+                                "transition_animation_scale",
+                                "window_animation_scale",
+                            ] {
+                                adb(&[
+                                    "-s",
+                                    serial,
+                                    "shell",
+                                    "settings",
+                                    "put",
+                                    "global",
+                                    key,
+                                    if enabled { "0" } else { "1" },
+                                ])
+                                .await?;
+                            }
+                        }
+                        _ => return Err(unavailable("this Android toggle is unsupported")),
+                    }
+                }
                 "launchApp" => {
                     adb(&["-s", serial, "shell", "monkey", "-p", arg("appId")?, "1"]).await?;
                 }
