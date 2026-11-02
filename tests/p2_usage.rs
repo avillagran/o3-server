@@ -61,13 +61,13 @@ fn long_history_scan_has_bounded_aggregation_and_reports_cost() {
 }
 
 #[test]
-fn narrow_query_ignores_history_without_dates_or_accounting() {
+fn narrow_query_ignores_history_outside_exact_local_day() {
     let s = support::start(|s| {
         let mut db = s.db.lock().unwrap();
         let tx = db.transaction().unwrap();
         for n in 0..100_001 {
             tx.execute(
-                "INSERT INTO records VALUES('providerTurns',?,'t','{}')",
+                r#"INSERT INTO records VALUES('providerTurns',?,'t','{"driver":"codex","startedAt":"2026-11-01T12:00:00Z","tokenUsage":{"inputTokens":1}}')"#,
                 [n.to_string()],
             )
             .unwrap();

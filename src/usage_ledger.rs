@@ -1,6 +1,6 @@
 //! On-demand scan of canonical turns. No transcript reads, cache, or write-path work.
 use crate::store::{iso, now_ms, State};
-use chrono::{DateTime, NaiveDate};
+use chrono::{DateTime, NaiveDate, TimeZone};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -36,9 +36,29 @@ pub fn summary(
     .map_err(|e| e.to_string())?;
     db.execute_batch("PRAGMA cache_size=-512; PRAGMA mmap_size=0; PRAGMA busy_timeout=5000;")
         .map_err(|e| e.to_string())?;
-    // UTC guard band includes every local date even across DST and extreme offsets.
-    let lower = (lo - chrono::Duration::days(2)).to_string();
-    let upper = (hi + chrono::Duration::days(2)).to_string();
+    // Resolve the exact local-day boundaries, including zones whose midnight is
+    // skipped by DST (or an entire skipped civil day). Choose the first valid instant.
+    let midnight = |day: NaiveDate| -> Result<DateTime<chrono_tz::Tz>, String> {
+        let local = day.and_hms_opt(0, 0, 0).ok_or("invalid usage day")?;
+        for minute in 0..=1440 {
+            if let Some(at) = tz
+                .from_local_datetime(&(local + chrono::Duration::minutes(minute)))
+                .earliest()
+            {
+                return Ok(at);
+            }
+        }
+        Err("usage day has no resolvable boundary".into())
+    };
+    let mut lower = midnight(lo)?.fixed_offset();
+    let mut upper = midnight(hi.succ_opt().ok_or("invalid untilDay")?)?.fixed_offset();
+    if let Some(at) = start {
+        lower = lower.max(at);
+    }
+    if let Some(at) = end {
+        upper = upper.min(at);
+    }
+    let (lower, upper) = (lower.to_rfc3339(), upper.to_rfc3339());
     // Select only accounting and small identity fields, never turn content. The primary
     // key's kind prefix restricts the scan to turns even on large message histories.
     let mut q = db.prepare("SELECT json_object('usage',json_extract(t.body,'$.tokenUsage'),'at',coalesce(json_extract(t.body,'$.tokenUsage.updatedAt'),json_extract(t.body,'$.completedAt'),json_extract(t.body,'$.startedAt')),'driver',coalesce(json_extract(t.body,'$.driver'),json_extract(pt.body,'$.driver')),'model',coalesce(json_extract(t.body,'$.model'),json_extract(r.body,'$.modelSelection.model'),json_extract(ps.body,'$.model'),'unknown'),'session',coalesce(json_extract(t.body,'$.providerThreadId'),t.thread_id)) FROM records t LEFT JOIN records r ON r.kind='runs' AND r.id=coalesce(json_extract(t.body,'$.runId'),json_extract(t.body,'$.nodeId'),t.id) LEFT JOIN records pt ON pt.kind='providerThreads' AND pt.id=json_extract(t.body,'$.providerThreadId') LEFT JOIN records ps ON ps.kind='providerSessions' AND ps.id=json_extract(pt.body,'$.providerSessionId') WHERE t.kind='providerTurns' AND json_type(t.body,'$.tokenUsage')='object' AND julianday(coalesce(json_extract(t.body,'$.tokenUsage.updatedAt'),json_extract(t.body,'$.completedAt'),json_extract(t.body,'$.startedAt'))) >= julianday(?1) AND julianday(coalesce(json_extract(t.body,'$.tokenUsage.updatedAt'),json_extract(t.body,'$.completedAt'),json_extract(t.body,'$.startedAt'))) < julianday(?2)").map_err(|e|e.to_string())?;
