@@ -387,6 +387,25 @@ real thread was written. Evidence is private: it shows real history.
 | Image attachment | PASS, reply "Blue", attachment present in the projection |
 | Server memory | RSS 16.4 to 18.5 MB across all flows, peak 26.6 MB (snapshot to the phone) |
 | Real Wi-Fi cut and recovery | **NOT DEMONSTRATED.** Mobile data was off, so the phone had no network during the cut, the scheduled send never reached the server, and Android turned wireless debugging off with Wi-Fi, ending the session before recovery could be observed |
+| Wi-Fi to mobile data handover | **NOT DEMONSTRATED.** The test site has no cellular signal |
+
+Server restart with the phone in the scratch thread, same release, no network change:
+
+| Flow | Result |
+|---|---|
+| Server off for hours, then back, app left running | PASS, listed Connected without restarting the app |
+| Idle thread, server stopped | PASS, phone showed Connecting and saved messages 3.1 s after the stop |
+| Draft typed while offline | PASS, kept in the composer; Send disabled, nothing queued |
+| Server restarted, under two minutes offline | PASS, Connected 6.3 s after the restart, offline banner gone at 9.7 s, Send enabled |
+| Send that draft | PASS, one user message in the projection, run completed |
+| Server restarted during a running turn | PASS, the new process continued the turn in the native session: 45 s run, completed, one user message, phone back to Connected at 10.5 s and idle at the end |
+| Next turn in that thread | PASS, `DONE_OK` |
+| Server memory, sampled once after the last turn | RSS 20.5 MB, peak 26.4 MB for that process, provider child excluded |
+
+The continuation is `src/recovery.rs`, on by default. Its prompt warns the model that
+earlier tools may already have run; only a text reply was exercised here, not a turn
+with side effects. A first attempt with a shorter turn finished before the stop and
+proved nothing, so it is not counted.
 
 Client findings, none attributable to the server:
 
@@ -394,7 +413,8 @@ Client findings, none attributable to the server:
   same happens with `o3-server` removed and only T3 environments left, so it predates
   this server. Thread screens stay around 13 %.
 - While Home is starved it does not show a newly added environment or new threads
-  until the app restarts. Cause of this link not proven.
+  until the app restarts. Cause of this link not proven. Scrolling and the project
+  filter also stopped responding, even right after a cold start.
 - Send stays disabled while the keyboard holds composing text; committing it enables
   the button.
 - On the environments page the add button covers the last row's delete button.
