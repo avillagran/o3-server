@@ -1057,7 +1057,8 @@ fn concurrent_scenario(s: &Server, home: &Path, reference: bool) -> Value {
         verify_observers(s, [a, b], &before, reference);
     let a = observe(s);
     let b = observe(s);
-    for mode in ["approval"] {
+    {
+        let mode = "approval";
         std::fs::write(home.join(format!("{mode}-mode")), "").unwrap();
         dispatch_command(
             &c,
