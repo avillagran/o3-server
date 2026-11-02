@@ -28,15 +28,25 @@ pub fn summary(
     };
     let (start, end) = (bound("sinceTime")?, bound("untilTime")?);
     let rates = crate::usage_rates::load(s).unwrap_or(Value::Null);
-    let db = s.reader.lock().unwrap();
+    // A private read-only connection avoids monopolizing the shared RPC reader.
+    let db = rusqlite::Connection::open_with_flags(
+        s.dir.join("o3.sqlite"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .map_err(|e| e.to_string())?;
+    db.execute_batch("PRAGMA cache_size=-512; PRAGMA mmap_size=0; PRAGMA busy_timeout=5000;")
+        .map_err(|e| e.to_string())?;
+    // UTC guard band includes every local date even across DST and extreme offsets.
+    let lower = (lo - chrono::Duration::days(2)).to_string();
+    let upper = (hi + chrono::Duration::days(2)).to_string();
     // Select only accounting and small identity fields, never turn content. The primary
     // key's kind prefix restricts the scan to turns even on large message histories.
-    let mut q = db.prepare("SELECT json_object('usage',json_extract(t.body,'$.tokenUsage'),'at',coalesce(json_extract(t.body,'$.tokenUsage.updatedAt'),json_extract(t.body,'$.completedAt'),json_extract(t.body,'$.startedAt')),'driver',coalesce(json_extract(t.body,'$.driver'),json_extract(pt.body,'$.driver')),'model',coalesce(json_extract(t.body,'$.model'),json_extract(r.body,'$.modelSelection.model'),json_extract(ps.body,'$.model'),'unknown'),'session',coalesce(json_extract(t.body,'$.providerThreadId'),t.thread_id)) FROM records t LEFT JOIN records r ON r.kind='runs' AND r.id=coalesce(json_extract(t.body,'$.runId'),json_extract(t.body,'$.nodeId'),t.id) LEFT JOIN records pt ON pt.kind='providerThreads' AND pt.id=json_extract(t.body,'$.providerThreadId') LEFT JOIN records ps ON ps.kind='providerSessions' AND ps.id=json_extract(pt.body,'$.providerSessionId') WHERE t.kind='providerTurns'").map_err(|e|e.to_string())?;
+    let mut q = db.prepare("SELECT json_object('usage',json_extract(t.body,'$.tokenUsage'),'at',coalesce(json_extract(t.body,'$.tokenUsage.updatedAt'),json_extract(t.body,'$.completedAt'),json_extract(t.body,'$.startedAt')),'driver',coalesce(json_extract(t.body,'$.driver'),json_extract(pt.body,'$.driver')),'model',coalesce(json_extract(t.body,'$.model'),json_extract(r.body,'$.modelSelection.model'),json_extract(ps.body,'$.model'),'unknown'),'session',coalesce(json_extract(t.body,'$.providerThreadId'),t.thread_id)) FROM records t LEFT JOIN records r ON r.kind='runs' AND r.id=coalesce(json_extract(t.body,'$.runId'),json_extract(t.body,'$.nodeId'),t.id) LEFT JOIN records pt ON pt.kind='providerThreads' AND pt.id=json_extract(t.body,'$.providerThreadId') LEFT JOIN records ps ON ps.kind='providerSessions' AND ps.id=json_extract(pt.body,'$.providerSessionId') WHERE t.kind='providerTurns' AND json_type(t.body,'$.tokenUsage')='object' AND julianday(coalesce(json_extract(t.body,'$.tokenUsage.updatedAt'),json_extract(t.body,'$.completedAt'),json_extract(t.body,'$.startedAt'))) >= julianday(?1) AND julianday(coalesce(json_extract(t.body,'$.tokenUsage.updatedAt'),json_extract(t.body,'$.completedAt'),json_extract(t.body,'$.startedAt'))) < julianday(?2)").map_err(|e|e.to_string())?;
     let mut buckets: BTreeMap<(String, String, String), Value> = BTreeMap::new();
     let mut sessions: BTreeSet<(String, String, String, String)> = BTreeSet::new();
     let mut providers = BTreeSet::new();
     for (seen, row) in q
-        .query_map([], |r| r.get::<_, String>(0))
+        .query_map(rusqlite::params![lower, upper], |r| r.get::<_, String>(0))
         .map_err(|e| e.to_string())?
         .enumerate()
     {
@@ -94,6 +104,13 @@ pub fn summary(
         b["records"] = json!(b["records"].as_u64().unwrap() + 1);
         let rate = &rates["document"][&key.2];
         let price = |k: &str| rate[k].as_f64().filter(|n| n.is_finite() && *n >= 0.0);
+        if let (Some(input_price), Some(cached_price)) = (
+            price("input_cost_per_token"),
+            price("cache_read_input_token_cost"),
+        ) {
+            let savings = cached as f64 * (input_price - cached_price).max(0.0);
+            b["cacheSavingsUsd"] = json!(b["cacheSavingsUsd"].as_f64().unwrap() + savings);
+        }
         let estimate = (|| {
             Some(
                 input as f64 * price("input_cost_per_token")?

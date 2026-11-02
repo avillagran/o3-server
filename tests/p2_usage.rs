@@ -61,7 +61,7 @@ fn long_history_scan_has_bounded_aggregation_and_reports_cost() {
 }
 
 #[test]
-fn scan_budget_counts_turns_without_accounting_and_refuses_partial_totals() {
+fn narrow_query_ignores_history_without_dates_or_accounting() {
     let s = support::start(|s| {
         let mut db = s.db.lock().unwrap();
         let tx = db.transaction().unwrap();
@@ -81,10 +81,28 @@ fn scan_budget_counts_turns_without_accounting_and_refuses_partial_totals() {
         ..Default::default()
     };
     let now = std::time::Instant::now();
-    let error = diagnostics::usage_summary(&s.connect(), &q)
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("scan budget"), "{error}");
+    let raw = diagnostics::usage_summary(&s.connect(), &q).unwrap();
+    assert!(raw["buckets"].as_array().unwrap().is_empty());
     assert!(now.elapsed() < std::time::Duration::from_secs(10));
-    eprintln!("100001-turn accounting-free refusal: {:?}", now.elapsed());
+}
+
+#[test]
+fn cached_token_rates_reach_real_reader_savings() {
+    let s = support::start(|s| {
+        std::fs::write(s.dir.join("usage-rates.json"), json!({"document":{"fixture":{"input_cost_per_token":0.01,"output_cost_per_token":0.02,"cache_read_input_token_cost":0.001}}}).to_string()).unwrap();
+        s.db.lock().unwrap().execute("INSERT INTO records VALUES('providerTurns','cached','t',?)", [json!({"driver":"codex","model":"fixture","startedAt":"2026-11-02T00:00:00Z","tokenUsage":{"inputTokens":100,"cachedInputTokens":20,"outputTokens":0}}).to_string()]).unwrap();
+    });
+    let q = diagnostics::UsageQuery {
+        since_day: "2026-11-02".into(),
+        until_day: "2026-11-02".into(),
+        time_zone: "UTC".into(),
+        ..Default::default()
+    };
+    let raw = diagnostics::usage_summary(&s.connect(), &q).unwrap();
+    let day = "2026-11-02".parse().unwrap();
+    let result = usage_summary::aggregate(&raw, day, day);
+    assert!(
+        (result["cacheSavings"].as_f64().unwrap() - 0.18).abs() < 1e-10,
+        "{result}"
+    );
 }
