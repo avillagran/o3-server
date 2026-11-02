@@ -173,7 +173,16 @@ pub(crate) fn start(
                 attachments: if r["recoveryPending"] == true {
                     serde_json::json!([])
                 } else {
-                    m["attachments"].clone()
+                    let mut media = if fresh && !t["nativeForkSource"].is_string() {
+                        t["providerHandoffAttachments"]
+                            .as_array()
+                            .cloned()
+                            .unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    };
+                    media.extend(m["attachments"].as_array().into_iter().flatten().cloned());
+                    serde_json::json!(media)
                 },
                 context: if r["recoveryPending"] == true {
                     None

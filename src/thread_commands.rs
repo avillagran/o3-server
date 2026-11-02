@@ -554,7 +554,7 @@ fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outco
                 checkpoint["ref"].as_str().ok_or("checkpoint ref missing")?,
             )?;
             let ordinal = checkpoint["appRunOrdinal"].as_i64().unwrap_or(0);
-            t["providerHandoff"] = json!(handoff(tx, tid, ordinal)?);
+            capture_handoff(tx, &mut t, tid, ordinal)?;
             tx.execute("UPDATE records SET body=json_set(body,'$.contextDiscarded',json('true')) WHERE kind='runs' AND thread_id=? AND json_extract(body,'$.ordinal')>?", params![tid,ordinal]).map_err(|e| e.to_string())?;
             t["providerGeneration"] = c["commandId"].clone();
             t["activeProviderThreadId"] = Value::Null;
@@ -624,6 +624,40 @@ fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outco
     Ok(Outcome { seq, start, steer })
 }
 
+/// Capture bounded attachment descriptors separately so native transports send actual image bytes.
+pub(crate) fn capture_handoff(
+    db: &Connection,
+    t: &mut Value,
+    tid: &str,
+    ordinal: i64,
+) -> Result<()> {
+    t["providerHandoff"] = json!(handoff(db, tid, ordinal)?);
+    let mut media = t["inheritedProviderAttachments"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let mut q = db.prepare("SELECT m.body FROM records m JOIN records r ON r.kind='runs' AND r.id=json_extract(m.body,'$.runId') WHERE m.kind='messages' AND m.thread_id=? AND json_extract(r.body,'$.ordinal')<=? AND coalesce(json_extract(r.body,'$.contextDiscarded'),0)=0 ORDER BY r.rowid,m.rowid").map_err(|e|e.to_string())?;
+    for row in q
+        .query_map(params![tid, ordinal], |r| r.get::<_, String>(0))
+        .map_err(|e| e.to_string())?
+    {
+        let m: Value =
+            serde_json::from_str(&row.map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+        for a in m["attachments"].as_array().into_iter().flatten() {
+            if !media.iter().any(|old| old["id"] == a["id"]) {
+                media.push(a.clone());
+            }
+            if media.len() > 32
+                || serde_json::to_vec(&media).map_err(|e| e.to_string())?.len() > 65536
+            {
+                return Err("historical attachments exceed handoff budget".into());
+            }
+        }
+    }
+    t["providerHandoffAttachments"] = json!(media);
+    Ok(())
+}
+
 /// Explicit transcript boundary: later messages are never supplied to a fresh session.
 pub(crate) fn handoff(db: &Connection, tid: &str, ordinal: i64) -> Result<String> {
     let mut q = db.prepare("SELECT m.body FROM records m JOIN records r ON r.kind='runs' AND r.id=json_extract(m.body,'$.runId') WHERE m.kind='messages' AND m.thread_id=? AND json_extract(r.body,'$.ordinal')<=? AND coalesce(json_extract(r.body,'$.contextDiscarded'),0)=0 ORDER BY r.rowid,m.rowid").map_err(|e| e.to_string())?;
@@ -644,6 +678,9 @@ pub(crate) fn handoff(db: &Connection, tid: &str, ordinal: i64) -> Result<String
             m["role"].as_str().unwrap_or("unknown"),
             m["text"].as_str().unwrap_or("")
         ));
+        if !m["context"].is_null() {
+            text.push_str(&format!("Historical user context: {}\n", m["context"]));
+        }
         if text.len() > 1024 * 1024 {
             return Err("context handoff exceeds 1 MiB".into());
         }
@@ -745,12 +782,14 @@ fn fork(tx: &Connection, c: &Value) -> Result<i64> {
     target["activeProviderThreadId"] = Value::Null;
     target["codexNativeThreadId"] = Value::Null;
     target["nativeForkSource"] = Value::Null;
-    target["providerHandoff"] = json!(handoff(
+    capture_handoff(
         tx,
+        &mut target,
         source_id,
-        source_run["ordinal"].as_i64().unwrap_or(0)
-    )?);
+        source_run["ordinal"].as_i64().unwrap_or(0),
+    )?;
     target["inheritedProviderContext"] = target["providerHandoff"].clone();
+    target["inheritedProviderAttachments"] = target["providerHandoffAttachments"].clone();
     if runs
         .last()
         .is_some_and(|r| r["id"] == source_run["id"] && r["status"] == "completed")
