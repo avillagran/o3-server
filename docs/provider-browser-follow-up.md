@@ -93,3 +93,14 @@ subset only; the capability advertises that subset, not all upstream tools.
 Pinned binary differentials exercise existing reader contracts and do not prove
 external maintenance or MCP/browser equivalence. Validation and RSS measurements
 are recorded in the dated CONFORMANCE section and accompanying JSON.
+
+
+## Independent audit remediation
+
+The later 2026-11-02 audit-remediation section in CONFORMANCE.md supersedes the
+initial evidence limits above for credential argv exposure, privileged installer
+selection, initial viewport application and dead-browser cleanup. It records
+failing-then-passing regressions, real Chromium loopback JPEG dimensions, full
+suite counts, pinned differentials and measured release RSS. Native MCP
+interoperability and the remaining advanced browser semantics are still unproven;
+compatibility statuses remain reserved for independent audit.

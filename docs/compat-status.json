@@ -244,22 +244,22 @@
     "preview.close": {
       "status": "done",
       "priority": "P2",
-      "note": "Client registry plus lazy system Chromium over private CDP pipes. Shared persistent-profile tabs, scoped ephemeral agent contexts, basic navigation/history reconciliation, appearance/viewport and authenticated ACK-paced JPEG viewer. Fixture CDP and real lib readers cover lifecycle; full events/advanced tools and actual Chromium behavior remain unproven. See provider-browser-follow-up.md. Original classification unchanged for independent audit."
+      "note": "Client registry plus lazy system Chromium over private CDP pipes. Shared persistent-profile tabs, scoped ephemeral agent contexts, basic navigation/history reconciliation, appearance/viewport and authenticated ACK-paced JPEG viewer. Fixture CDP and real lib readers cover lifecycle; full events/advanced tools and actual Chromium behavior remain unproven. See provider-browser-follow-up.md. Original classification unchanged for independent audit. Audit remediation recheck: real Chromium loopback smoke passed initial 640x480 JPEG, resize, close and shutdown with an isolated ephemeral profile; advanced engine semantics remain unproven. Status unchanged."
     },
     "preview.list": {
       "status": "done",
       "priority": "P2",
-      "note": "Client registry plus lazy system Chromium over private CDP pipes. Shared persistent-profile tabs, scoped ephemeral agent contexts, basic navigation/history reconciliation, appearance/viewport and authenticated ACK-paced JPEG viewer. Fixture CDP and real lib readers cover lifecycle; full events/advanced tools and actual Chromium behavior remain unproven. See provider-browser-follow-up.md. Original classification unchanged for independent audit."
+      "note": "Audit remediation: child completion removes preview snapshots and publishes closed events; dead actors are excluded from the eight-tab capacity check. Eight-child crash regression passes through real list/open readers. Independent status retained."
     },
     "preview.navigate": {
       "status": "done",
       "priority": "P2",
-      "note": "Client registry plus lazy system Chromium over private CDP pipes. Shared persistent-profile tabs, scoped ephemeral agent contexts, basic navigation/history reconciliation, appearance/viewport and authenticated ACK-paced JPEG viewer. Fixture CDP and real lib readers cover lifecycle; full events/advanced tools and actual Chromium behavior remain unproven. See provider-browser-follow-up.md. Original classification unchanged for independent audit."
+      "note": "Audit remediation: Page.navigate errorText now returns an RPC failure to the actual lib preview reader; rejected-navigation fixture fails before and passes after the fix. No real-engine failure parity claim. Independent status retained."
     },
     "preview.open": {
       "status": "done",
       "priority": "P2",
-      "note": "Client registry plus lazy system Chromium over private CDP pipes. Shared persistent-profile tabs, scoped ephemeral agent contexts, basic navigation/history reconciliation, appearance/viewport and authenticated ACK-paced JPEG viewer. Fixture CDP and real lib readers cover lifecycle; full events/advanced tools and actual Chromium behavior remain unproven. See provider-browser-follow-up.md. Original classification unchanged for independent audit."
+      "note": "Audit remediation: initial freeform/preset metrics are acknowledged by CDP before returning the requested viewport; fixture regression passes. Fill retains browser sizing. Actual Chromium recheck is recorded in CONFORMANCE.md. Independent status retained."
     },
     "preview.refresh": {
       "status": "done",
@@ -279,7 +279,7 @@
     "preview.resize": {
       "status": "done",
       "priority": "P2",
-      "note": "Client registry plus lazy system Chromium over private CDP pipes. Shared persistent-profile tabs, scoped ephemeral agent contexts, basic navigation/history reconciliation, appearance/viewport and authenticated ACK-paced JPEG viewer. Fixture CDP and real lib readers cover lifecycle; full events/advanced tools and actual Chromium behavior remain unproven. See provider-browser-follow-up.md. Original classification unchanged for independent audit."
+      "note": "Client registry plus lazy system Chromium over private CDP pipes. Shared persistent-profile tabs, scoped ephemeral agent contexts, basic navigation/history reconciliation, appearance/viewport and authenticated ACK-paced JPEG viewer. Fixture CDP and real lib readers cover lifecycle; full events/advanced tools and actual Chromium behavior remain unproven. See provider-browser-follow-up.md. Original classification unchanged for independent audit. Audit remediation recheck: real Chromium loopback smoke passed initial 640x480 JPEG, resize, close and shutdown with an isolated ephemeral profile; advanced engine semantics remain unproven. Status unchanged."
     },
     "projectClone.cancel": {
       "status": "skip",
@@ -689,7 +689,7 @@
     "server.getConfig": {
       "status": "partial",
       "priority": "P0",
-      "note": "Partial: verified user-owned original-prefix npm (including OpenCode/Pi/Grok), Homebrew core formula and native Claude/OpenCode update plans; bounded/cancellable/version-verified execution. Unknown ownership/casks/custom taps/other native layouts remain manual. Scoped loopback MCP browser tools reach native Claude/Codex sessions with global/project gates and ephemeral contexts; fixture-backed core subset only. Full browser contract, real CLI handshake and Chromium confinement/rendering remain unproven. See provider-browser-follow-up.md; statuses unchanged for independent audit."
+      "note": "Partial: verified user-owned original-prefix npm (including OpenCode/Pi/Grok), Homebrew core formula and native Claude/OpenCode update plans; bounded/cancellable/version-verified execution. Unknown ownership/casks/custom taps/other native layouts remain manual. Scoped loopback MCP browser tools reach native Claude/Codex sessions with global/project gates and ephemeral contexts; fixture-backed core subset only. Full browser contract, real CLI handshake and Chromium confinement/rendering remain unproven. See provider-browser-follow-up.md; statuses unchanged for independent audit. Audit remediation adds installer trust/version checks and private Claude MCP config; row status is reserved for independent audit."
     },
     "server.getDatabaseStorage": {
       "status": "skip",
@@ -824,7 +824,7 @@
     "server.updateProvider": {
       "status": "done",
       "priority": "P2",
-      "note": "Explicit original-prefix user-owned npm updates for native drivers plus OpenCode/Pi/Grok; verified core Homebrew formula receipts and native Claude/OpenCode layouts. Unknown/privileged/unrecognized cask or standalone ownership receives manual advice. Fixed argv, bounded/cancellable execution, output suppression and post-update version probe use fixtures and real config/operation readers. Managed path retained. No real updater or registry-latest equivalence tested. See provider-browser-follow-up.md; status unchanged for independent audit."
+      "note": "Audit remediation: canonical installers must be regular executable files with safe ownership, ancestry and mode, confined to expected locations and verified by bounded version probes. Privileged fake npm regression and UID-1000 npm/brew/native fixture readers pass. Install/version commands use a reduced environment and fixed PATH. Real updates, malicious same-user replacement and registry-latest equivalence remain unproven. Independent status retained."
     },
     "server.updateServer": {
       "status": "skip",
@@ -889,7 +889,7 @@
     "subscribePreviewEvents": {
       "status": "done",
       "priority": "P2",
-      "note": "tests/preview.rs: in-memory registry of tabs a client renders (revision/serverEpoch events, ring of 256). The server renders nothing: runtime 'server' is refused and capabilities.serverBrowser stays off. No state until a client opens a tab."
+      "note": "Audit remediation: browser child completion removes snapshots and publishes a closed revision without requiring viewer polling. Crash/list regression uses real readers; exhaustive event races remain unproven. Independent status retained."
     },
     "subscribeProjectClones": {
       "status": "skip",
@@ -904,7 +904,7 @@
     "subscribeServerConfig": {
       "status": "done",
       "priority": "P1",
-      "note": "Real consumers are quota and provider status plus keybinding readers: desktop src/quota_sources.rs:29, src/keybinding_settings.rs:39, Android QuotaReader.kt:26; desktop discards settings events at quota_sources.rs:30-32. Real-reader tests pass and independent audit found no missing event or value for those consumers. Config limits belong to server.getConfig, which stays partial. External updateState is notified through config; no claim of pinned browser/updater parity."
+      "note": "Real consumers are quota and provider status plus keybinding readers: desktop src/quota_sources.rs:29, src/keybinding_settings.rs:39, Android QuotaReader.kt:26; desktop discards settings events at quota_sources.rs:30-32. Real-reader tests pass and independent audit found no missing event or value for those consumers. Config limits belong to server.getConfig, which stays partial. External updateState is notified through config; no claim of pinned browser/updater parity. Audit remediation adds installer trust/version checks and private Claude MCP config; row status is reserved for independent audit."
     },
     "subscribeServerLifecycle": {
       "status": "skip",

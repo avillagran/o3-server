@@ -2586,3 +2586,84 @@ browser tools, selectable saved-login contexts/reveal details, full unsolicited
 load/dialog/download events, takeover races and crash recovery. These are not
 proven infeasible. Unrecognized maintenance ownership stays manual, not guessed.
 This implementation does not justify declaring the entire owner's scope complete.
+
+## 2026-11-02 — Independent audit remediation
+
+This follow-up addresses the audit of 31fe7f1. Compatibility row statuses are
+unchanged; the independent auditor decides whether to promote them. Row notes
+describe the narrower evidence below.
+
+- Claude's browser bearer was present in the fixture child's proc cmdline. The
+  same peer now reads the private MCP JSON file, verifies mode 0600 and parent
+  mode 0700, and asserts the bearer is absent from proc cmdline. The file guard
+  belongs to the session and removes its directory on teardown or spawn failure.
+  Installed Claude CLI help confirms that --mcp-config accepts JSON file paths.
+  Codex receives MCP configuration in its app-server thread/start protocol,
+  covered by the existing native transport peer, rather than command arguments.
+  An actual native MCP handshake is still unproven.
+- A standard-layout package with npm pointing at the privileged su executable
+  was accepted before the fix. The regression now rejects it before execution.
+  Installer selection canonicalizes paths, checks regular executable files,
+  owners, parent-directory permissions and setuid/setgid bits, confines symlink
+  destinations, and performs bounded tool-specific version checks. The same
+  checks apply to brew and native installers. External install/version execution
+  uses a reduced environment and a fixed interpreter PATH. UID-1000 fixture
+  npm/brew/native updates pass; no real CLI update was performed.
+- Initial freeform/preset viewport requests previously produced no metrics
+  command. CDP now acknowledges initial metrics before open returns, and a failed
+  metrics command closes the reserved tab. Fill leaves browser-managed sizing.
+- Eight exited fixture browsers previously remained in list and blocked open.
+  A completion watcher now removes snapshots and publishes closed revisions;
+  completed actors are excluded from capacity accounting. The real lib list/open
+  readers observe cleanup and a successful replacement open.
+- A fixture Page.navigate errorText previously yielded success. It now reaches
+  the actual lib navigate reader as an RPC error without publishing a successful
+  navigation snapshot.
+- Default tests previously included the pilot integration that starts a user
+  unit. It is now ignored and additionally requires O3_TEST_PILOT=1, including
+  when ignored tests are selected. This integration was never invoked during
+  remediation. Differential children now arm Linux parent-death SIGKILL with a
+  parent-race check. A regression that kills the harness reproduced the orphan
+  before the change and observes child termination afterward. Startup removes
+  recognized stale profile directories only when their harness PID is absent.
+
+Subprocess review also covered providers and auth flows, config-source curl,
+updaters and version probes, browser launch, git/gh, file opening and PTYs.
+Config-source authorization and request bodies already use curl stdin; provider
+environment credentials stay in the environment, auth responses use stdin,
+browser URLs use CDP, and PTYs use a separate environment. No other o3-created
+bearer argument was found. User-supplied command/launch arguments, URLs and git
+configuration remain user-controlled inputs, not a general secret-redaction
+boundary. File permissions do not protect against the same UID or root. Installer
+layout/version checks do not authenticate arbitrary same-user executable
+replacement or close filesystem races. Parent-death signaling covers the direct
+harness child, not descendants deliberately detaching themselves.
+
+Final verification: default tests 265 passed, 0 failed, 21 ignored; without
+default features 263 passed, 0 failed, 21 ignored. Both full runs used one test
+thread and loopback-only network namespaces. Installer success paths additionally
+passed three UID-1000 fixture integration tests, and the inherited-stdout probe
+regression passed as UID 1000 (3 seconds before, approximately 10 ms afterward).
+Strict clippy with all targets and warnings denied passed in both configurations;
+format checking and tools/gen-compat passed. All eight pinned nightly-3991
+differentials passed, including concurrent and P1 readers. These comparisons
+retain their documented coverage limits: reference CPU samples were absent,
+so CPU equivalence is not established. No ignored live/pilot test was invoked.
+
+
+The opt-in system Chromium smoke also passed inside a loopback-only namespace
+with an isolated ephemeral profile and a static loopback page. The authenticated
+JPEG immediately after open measured 640 by 480, matching open metadata; resize
+also measured 640 by 480, list observed the page title, and close/shutdown
+completed. This is real-engine rendering evidence, not fixture rendering.
+Real-engine navigation-failure parity and long-duration expiry remain unproven.
+
+The release tools/bench-rss workload passed its decimal 50 MB server limit:
+cold RSS 11,444 KiB, final RSS 17,752 KiB, HWM 18,292 KiB (18.73 MB), and
+startup to authenticated WebSocket 12.63 ms. It seeded 1,000 messages, 20 threads
+and three subscribers without inference. Browser-unused RSS excludes Chromium.
+The separate browser-open sample measured server RSS 16,880 KiB and summed
+Chromium descendant RSS 1,096,020 KiB across 13 processes; that aggregate double
+counts shared pages and is not PSS. These are single samples, not a performance
+regression study. The measured release source was 7907bb1; binary SHA-256:
+fcb41db40d88bb856d61712b4a1aa5d9845a2ecd25c016cb1f709323c75b008e.
