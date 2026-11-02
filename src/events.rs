@@ -1530,6 +1530,13 @@ pub fn mutate_project(s: &State, c: &Value) -> Result<Value> {
 mod internal_run_tests {
     use super::*;
     #[test]
+    fn ordinal_allocation_uses_expression_index() {
+        let db = Connection::open_in_memory().unwrap();
+        initialize(&db).unwrap();
+        let plan: String = db.query_row("EXPLAIN QUERY PLAN SELECT coalesce(max(json_extract(body,'$.ordinal')),-1)+1 FROM records WHERE kind='turnItems' AND thread_id=?", ["t"], |r| r.get(3)).unwrap();
+        assert!(plan.contains("records_turn_ordinal"), "{plan}");
+    }
+    #[test]
     fn sparse_imported_ordinals_leave_room_for_messages_and_interrupts() {
         let db = Connection::open_in_memory().unwrap();
         initialize(&db).unwrap();
