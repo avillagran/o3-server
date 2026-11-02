@@ -42,6 +42,8 @@ pub struct State {
     pub label: String,
     pub dir: PathBuf,
     pub asset_profile_root: PathBuf,
+    /// How long a finished run's live requests stay answerable, like T3's session idle window.
+    pub request_release_ms: std::sync::atomic::AtomicU64,
     pub(crate) settings_cache: Mutex<crate::settings::Cache>,
     pub provider: Mutex<Option<std::sync::Arc<dyn crate::provider::Provider>>>,
     pub active: Mutex<
@@ -152,6 +154,7 @@ impl State {
             label,
             dir: dir.into(),
             asset_profile_root: dir.into(),
+            request_release_ms: std::sync::atomic::AtomicU64::new(30 * 60 * 1000),
             settings_cache: Mutex::new(None),
         })
     }

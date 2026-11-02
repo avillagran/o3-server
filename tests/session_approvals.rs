@@ -155,18 +155,82 @@ fn stop_interrupts_approval_blocked_run_without_inventing_native_request_resolut
     )
     .unwrap();
     let p = wait(&c, |p| p["runs"][0]["status"] == "interrupted");
-    assert_eq!(
-        t3_protocol::approvals::pending(&p)[0]["responseCapability"],
-        "live"
-    );
-    assert!(p["runtimeRequests"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|r| r["status"] == "pending"));
+    let rows = t3_protocol::approvals::pending(&p);
+    assert_eq!(rows[0]["responseCapability"], "live");
+    // Past the provider's idle reap: what the reader still offers must still be accepted.
+    std::thread::sleep(Duration::from_millis(300));
+    let p = wait(&c, |_| true);
+    let mut command = t3_protocol::approvals::command(
+        &json!({"thread":"t","runtimeRequestId":rows[0]["requestId"],"decision":"accept"}),
+        &p,
+    )
+    .unwrap();
+    command["commandId"] = json!("late-answer");
+    c.rpc("orchestration.dispatchCommand", command).unwrap();
+    let p = wait(&c, |p| p["runtimeRequests"][0]["status"] == "resolved");
+    assert_eq!(t3_protocol::approvals::pending(&p), json!([]));
+    assert_eq!(p["thread"]["lastControlDeliveryError"], Value::Null);
     assert!(p["turnItems"]
         .as_array()
         .unwrap()
         .iter()
         .any(|i| i["type"] == "run_interrupt_result"));
+}
+
+#[test]
+fn a_finished_runs_unanswered_request_expires_when_its_channel_is_released() {
+    let binary = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/input/session-approval.py");
+    let provider = Arc::new(
+        o3_server::claude::ClaudeProvider::new(binary).with_idle_timeout(Duration::from_millis(50)),
+    );
+    let s = support::start(|s| {
+        *s.provider.lock().unwrap() = Some(provider);
+        s.request_release_ms
+            .store(100, std::sync::atomic::Ordering::Relaxed);
+    });
+    let c = s.connect();
+    let workspace = s.dir.join("repo");
+    std::fs::create_dir_all(&workspace).unwrap();
+    c.rpc("projects.mutate",json!({"type":"project.create","commandId":"p","projectId":"p","title":"Sessions","workspaceRoot":workspace,"scripts":[]})).unwrap();
+    orchestration::dispatch(
+        &c,
+        &Command::ThreadCreate(ThreadCreate {
+            command_id: "create".into(),
+            thread_id: "t".into(),
+            project_id: "p".into(),
+            title: "Session".into(),
+            model_selection: json!({"instanceId":"claudeAgent","model":"test"}),
+            runtime_mode: "approval-required".into(),
+            interaction_mode: "default".into(),
+            branch: None,
+            worktree_path: None,
+            created_by: "user".into(),
+            creation_source: "web".into(),
+            imported_native_thread: None,
+        }),
+    )
+    .unwrap();
+    orchestration::dispatch(
+        &c,
+        &Command::MessageDispatch(MessageDispatch::new("send", "t", "m", "echo safe", "web")),
+    )
+    .unwrap();
+    wait(&c, |p| p["runs"][0]["status"] == "waiting");
+    c.rpc(
+        "orchestration.dispatchCommand",
+        json!({"type":"thread.stop","commandId":"stop","threadId":"t"}),
+    )
+    .unwrap();
+    let p = wait(&c, |p| {
+        p["runtimeRequests"][0]["responseCapability"]["type"] == "not_resumable"
+    });
+    assert_eq!(p["runtimeRequests"][0]["status"], "expired");
+    assert_eq!(t3_protocol::approvals::pending(&p), json!([]));
+    assert!(p["turnItems"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|i| i["type"] == "approval_request")
+        .all(|i| i["status"] == "cancelled"));
 }

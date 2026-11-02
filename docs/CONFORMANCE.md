@@ -1622,26 +1622,26 @@ Compatibility statuses are unchanged from b05b511; only the requested notes chan
 nice with four Cargo jobs; full suites used four test threads.
 
 
-Release comparison used the same extended tools/bench-rss harness on an archive
-of main (1eb59d74be3e) inside this worktree and branch runtime source
-a8faba9b52eb. The parent checkout and main ref were unchanged. The archive
-was removed after measurement. Both builds used the default release features.
-The workload creates 20 threads, seeds one with 1,000 deferred messages of about
-1 KiB, measures the last 100 message dispatches, then appends 100 thread-metadata
-updates on that long thread; three bounded subscribers and 1,000 settings reads exercise RSS retention.
-Latency is loopback end-to-end RPC wall time including event append, receipt and
-shell projection, rather than a CPU-only append microbenchmark.
+Release comparison with tools/bench-rss on two verified binaries: an archive of main
+(1eb59d7, sha256 `9cff9a34`) and this branch (sha256 `b79707ef`), alternating three
+runs each. An earlier table here compared main with itself: both reports carried the
+main hash, and its reported speedup is withdrawn. The workload creates 20 threads,
+seeds one with 1,000 deferred messages of about 1 KiB, measures the last 100 message
+dispatches, then appends 100 thread-metadata updates on that long thread; three bounded
+subscribers and 1,000 settings reads exercise RSS retention. Latency is loopback
+end-to-end RPC wall time including event append, receipt and shell projection.
 
-| Measurement | main | branch |
+| Measurement, range of three runs | main | branch |
 |---|---:|---:|
-| Message dispatch median / p95 (ms) | 2.506 / 3.109 | 2.322 / 2.967 |
-| Metadata event append median / p95 (ms) | 0.432 / 0.468 | 0.429 / 0.468 |
-| Server peak RSS (KiB) | 17424 | 17564 |
-| Server peak RSS (decimal MB) | 17.842 | 17.986 |
+| Message dispatch median (ms) | 2.432 to 2.540 | 2.561 to 2.611 |
+| Message dispatch p95 (ms) | 2.827 to 3.898 | 2.857 to 3.528 |
+| Metadata append median (ms) | 0.424 to 0.429 | 0.452 to 0.466 |
+| Metadata append p95 (ms) | 0.467 to 0.537 | 0.547 to 0.758 |
+| Peak RSS (KiB) | 16144 to 16336 | 16880 to 17624 |
 
-Both stay below 50,000,000 bytes. These are one sample per build, not latency
-bounds or a statistically significant speedup claim. Provider inference and
-child-process memory are excluded. Raw sanitized measurements and binary hashes:
+The branch costs about 0.15 ms more per message and 0.03 ms per event, with up to
+about 1.3 MB more peak memory, all still far below the 50 MB target. Provider inference and child-process
+memory are excluded. Raw sanitized runs and hashes:
 [rss-control-audit-main.json](rss-control-audit-main.json) and
 [rss-control-audit-branch.json](rss-control-audit-branch.json).
 
@@ -1649,3 +1649,19 @@ Items 1–6 and 8 are addressed. Item 7 adds strict pending approval/decision-re
 convergence and the compaction candidate reader; actionable compaction and a
 reference background-after-result ownership fixture remain unestablished as
 explained above. No compatibility status was promoted.
+
+### Requests after a stop
+
+The final audit reproduced Approve failing with `provider request is no longer live`:
+after a stop the provider channel was gone while the request still advertised `live`.
+Closing the request at run end was tried and rejected: the differential showed 3991
+keeps it pending and live until it releases the session, which sidebar, approvals and
+compaction readers all show, so that would break interchangeability.
+
+O3 now matches that window. A live request of a finished run stays offered for T3's
+30-minute session idle time; an answer inside it is recorded as resolved with nothing
+delivered, because the native turn already ended, and adds no control outbox entry. After
+the window it becomes `expired` with a `not_resumable` capability and its turn items
+`cancelled`, as T3 does for a released session. `tests/session_approvals.rs` drives both
+outcomes through the real approvals reader and command builder. Only the first was
+compared on 3991: waiting out the 30-minute release is not part of the differential.

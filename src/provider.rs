@@ -339,6 +339,19 @@ pub(crate) fn start(
                 );
             }
         }
+        if crate::events::has_live_requests(&s, &tid).unwrap_or(false) {
+            let state = s.clone();
+            let (thread, run) = (tid.clone(), rid.clone());
+            tokio::spawn(async move {
+                let ms = state
+                    .request_release_ms
+                    .load(std::sync::atomic::Ordering::Relaxed);
+                tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
+                if let Err(error) = crate::events::release_requests(&state, &thread, &run) {
+                    eprintln!("runtime request release failed: {error}");
+                }
+            });
+        }
         crate::thread_commands::advance(&s, &tid);
     });
 }

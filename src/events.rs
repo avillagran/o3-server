@@ -826,6 +826,14 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                         .map_err(|_| "provider control busy")?,
                 ),
                 None if kind == "thread.user-input.dismiss" => None,
+                // The native turn already ended: the answer is recorded, with nothing to deliver.
+                None if matches!(
+                    get(&tx, "runs", &rid)?["status"].as_str(),
+                    Some("completed" | "failed" | "interrupted" | "cancelled")
+                ) =>
+                {
+                    None
+                }
                 None => return Err("provider request is no longer live".into()),
             };
             request["status"] = json!(if kind == "thread.user-input.dismiss" {
@@ -876,7 +884,9 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             }
             let seq = append(&tx, tid, "runtime-request.updated", request, &t)?;
             let result = json!({"sequence":seq});
-            crate::outbox::stage(&tx, c)?;
+            if permit.is_some() {
+                crate::outbox::stage(&tx, c)?;
+            }
             tx.execute(
                 "INSERT INTO receipts VALUES(?,?)",
                 params![cid, result.to_string()],
@@ -1052,6 +1062,72 @@ pub(crate) fn prepare_run_ownership(
     let node = json!({"id":run_id,"threadId":tid,"runId":run_id,"parentNodeId":null,"rootNodeId":run_id,"kind":"root_turn","status":"pending","countsForRun":true,"providerThreadId":run["providerThreadId"],"providerTurnId":null,"nativeItemRef":null,"runtimeRequestId":null,"checkpointScopeId":null,"startedAt":null,"completedAt":null});
     put(tx, "nodes", &run_id, tid, &node)?;
     append(tx, tid, "node.updated", node, t)?;
+    Ok(())
+}
+
+/// Whether a finished run left live requests behind for [`release_requests`] to close.
+pub(crate) fn has_live_requests(s: &State, tid: &str) -> Result<bool> {
+    s.db.lock()
+        .unwrap()
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM records WHERE kind='runtimeRequests' AND thread_id=? AND json_extract(body,'$.status')='pending' AND json_extract(body,'$.responseCapability.type')='live')",
+            [tid],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())
+}
+
+/// Closes a finished run's unanswered live requests the way T3 closes those of a released
+/// session, so clients stop offering them.
+pub(crate) fn release_requests(s: &State, tid: &str, rid: &str) -> Result<()> {
+    let mut db = s.db.lock().unwrap();
+    let tx = db.transaction().map_err(|e| e.to_string())?;
+    let t = get(&tx, "thread", tid)?;
+    let bodies = |sql: &str, params: &[&str]| -> Result<Vec<String>> {
+        let mut q = tx.prepare(sql).map_err(|e| e.to_string())?;
+        let rows = q
+            .query_map(rusqlite::params_from_iter(params), |r| r.get(0))
+            .map_err(|e| e.to_string())?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        Ok(rows)
+    };
+    let pending = bodies(
+        "SELECT body FROM records WHERE kind='runtimeRequests' AND thread_id=? AND json_extract(body,'$.status')='pending'",
+        &[tid],
+    )?;
+    let at = iso(now_ms());
+    for body in pending {
+        let mut request: Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+        let node = request["nodeId"].as_str().unwrap_or_default().to_owned();
+        let owned =
+            node == rid || get(&tx, "nodes", &node).is_ok_and(|n| n["runId"].as_str() == Some(rid));
+        if !owned || request["responseCapability"]["type"] != "live" {
+            continue;
+        }
+        request["status"] = json!("expired");
+        request["responseCapability"] = json!({"type":"not_resumable","reason":"Provider session was closed before this runtime request was resolved."});
+        request["resolvedAt"] = json!(at);
+        let id = request["id"]
+            .as_str()
+            .ok_or("request id required")?
+            .to_owned();
+        put(&tx, "runtimeRequests", &id, tid, &request)?;
+        append(&tx, tid, "runtime-request.updated", request, &t)?;
+        for body in bodies(
+            "SELECT body FROM records WHERE kind='turnItems' AND thread_id=? AND json_extract(body,'$.requestId')=?",
+            &[tid, &id],
+        )? {
+            let mut item: Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+            item["status"] = json!("cancelled");
+            item["completedAt"] = json!(at);
+            item["updatedAt"] = json!(at);
+            crate::projection::save_item(&tx, tid, &t, item)?;
+        }
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    drop(db);
+    s.notify();
     Ok(())
 }
 
