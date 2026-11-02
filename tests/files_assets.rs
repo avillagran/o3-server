@@ -460,6 +460,15 @@ fn workspace_assets_are_signed_confined_and_path_traversal_safe() {
     let murl = media["relativeUrl"].as_str().unwrap();
     assert!(media["fileRevision"].is_string());
     assert_eq!(http(&e.base, "GET", murl, &[], b"").0, 200);
+    // Keep the inode and change its content: inode-only grants must not pass.
+    use std::os::unix::fs::MetadataExt;
+    let original_inode = std::fs::metadata(root.join("img/pic.png")).unwrap().ino();
+    write(&root.join("img/pic.png"), b"changed media contents");
+    assert_eq!(
+        std::fs::metadata(root.join("img/pic.png")).unwrap().ino(),
+        original_inode
+    );
+    assert_eq!(http(&e.base, "GET", murl, &[], b"").0, 404);
     std::fs::remove_file(root.join("img/pic.png")).unwrap();
     write(&root.join("img/pic.png"), &pic);
     assert_eq!(http(&e.base, "GET", murl, &[], b"").0, 404);
