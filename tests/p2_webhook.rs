@@ -70,6 +70,26 @@ fn signed_webhook_definition_is_readable_without_leaking_secret() {
     let mut unsigned = p.clone();
     unsigned["schedule"]["signature"] = serde_json::Value::Null;
     assert!(scheduled_tasks::upsert(&c, &TaskUpsert::from_json(&unsigned).unwrap()).is_err());
+    // Valid-sized queued prompts can exhaust bytes well before the 500-job cap.
+    let db = s.state.db.lock().unwrap();
+    for n in 0..130 {
+        db.execute(
+            "INSERT INTO hook_queue VALUES(?,'hook','',?,?,?)",
+            rusqlite::params![
+                format!("budget-{n}"),
+                o3_server::store::now_ms() + 3_600_000,
+                o3_server::store::now_ms() + 7_200_000,
+                "x".repeat(64 * 1024)
+            ],
+        )
+        .unwrap();
+    }
+    drop(db);
+    let overflow = r#"{"id":"overflow","action":"opened"}"#;
+    assert!(
+        post(&s.base, path, overflow, &sign(overflow)).contains("429"),
+        "logical queue byte budget was ignored"
+    );
 }
 
 fn sign(body: &str) -> String {
