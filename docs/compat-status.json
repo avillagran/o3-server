@@ -144,7 +144,7 @@
     "orchestration.getArchivedShellSnapshot": {
       "status": "partial",
       "priority": "P2",
-      "note": "Remaining: sufficiently large unpaginated archives exceed the reader's 8 MiB boundary and fail to load (archive_management.rs:150)."
+      "note": "Real lib archived_shell reader over real Connection: 1000 archived threads with 9000-byte titles previously gave rpc_outcome_unknown; now bounded serialization returns actionable typed error before 7 MiB. Client archive query has no pagination/cursor contract; large complete archives require client/protocol changes. No truncation or incomplete success. Status unchanged."
     },
     "orchestration.getFullThreadDiff": {
       "status": "done",
@@ -759,7 +759,7 @@
     "server.prepareAcpRegistryAgent": {
       "status": "partial",
       "priority": "P2",
-      "note": "Remaining: preparation can report success without an ACP execution driver, so the prepared provider cannot run (acp_registry.rs:16)."
+      "note": "Honest execution_unavailable error for otherwise preparable npx/uvx entries: no ACP driver, so preparation cannot report success. Real lib prepare reader with deterministic registry/runner fixture failed before (prepared:true), passes after. Registry search retained; no agent execution or download claimed. Status unchanged."
     },
     "server.probe": {
       "status": "skip",
