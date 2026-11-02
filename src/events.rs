@@ -687,6 +687,16 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             let native_started = root
                 .as_ref()
                 .is_some_and(|n| n["providerTurnId"].is_string());
+            if !native_started
+                && get(
+                    &tx,
+                    "attempts",
+                    run["activeAttemptId"].as_str().unwrap_or(""),
+                )
+                .is_err()
+            {
+                return Err(format!("Run {rid} has no active attempt to interrupt."));
+            }
             let permit = if native_started {
                 match s.active.lock().unwrap().get(rid).cloned() {
                     Some(sender) => Some(
@@ -965,6 +975,50 @@ fn interrupt_items(
     )
 }
 
+pub(crate) fn prepare_run_ownership(
+    tx: &Connection,
+    tid: &str,
+    t: &mut Value,
+    run: &mut Value,
+    at: &str,
+) -> Result<()> {
+    let run_id = run["id"].as_str().ok_or("run id missing")?.to_owned();
+    let ordinal = run["ordinal"].clone();
+    if t["activeProviderThreadId"]
+        .as_str()
+        .is_none_or(|id| get(tx, "providerThreads", id).is_err())
+    {
+        let native = crate::projection::native_id(tx, t);
+        let id = if let Some(id) = t["activeProviderThreadId"].as_str() {
+            id.to_owned()
+        } else {
+            format!("provider-thread-{}", crate::store::random_id()?)
+        };
+        t["activeProviderThreadId"] = json!(id);
+        let driver = if t["providerInstanceId"] == "codex" {
+            "codex"
+        } else {
+            "claudeAgent"
+        };
+        let p = json!({"id":id,"appThreadId":tid,"driver":driver,"providerInstanceId":t["providerInstanceId"],"providerSessionId":id,"ownerNodeId":null,"nativeThreadRef":native.map(|native|json!({"driver":driver,"nativeId":native,"strength":"strong"})),"nativeConversationHeadRef":null,"status":"not_loaded","firstRunOrdinal":ordinal,"lastRunOrdinal":ordinal,"handoffIds":[],"forkedFrom":null,"contextUsage":null,"goal":null,"nativeMetadata":null,"pendingBackgroundTasks":[],"createdAt":at,"updatedAt":at});
+        put(tx, "providerThreads", &id, tid, &p)?;
+        put(tx, "thread", tid, tid, t)?;
+        append(tx, tid, "provider-thread.updated", p, t)?;
+        append(tx, tid, "thread.metadata-updated", t.clone(), t)?;
+    }
+    let aid = format!("attempt-{run_id}");
+    run["activeAttemptId"] = json!(aid);
+    run["rootNodeId"] = json!(run_id);
+    run["providerThreadId"] = t["activeProviderThreadId"].clone();
+    let attempt = json!({"id":aid,"runId":run_id,"attemptOrdinal":1,"providerInstanceId":t["providerInstanceId"],"providerThreadId":run["providerThreadId"],"reason":"initial","rootNodeId":run_id,"providerTurnId":null,"status":"pending","startedAt":null,"completedAt":null});
+    put(tx, "attempts", &aid, tid, &attempt)?;
+    append(tx, tid, "attempt.updated", attempt, t)?;
+    let node = json!({"id":run_id,"threadId":tid,"runId":run_id,"parentNodeId":null,"rootNodeId":run_id,"kind":"root_turn","status":"pending","countsForRun":true,"providerThreadId":run["providerThreadId"],"providerTurnId":null,"nativeItemRef":null,"runtimeRequestId":null,"checkpointScopeId":null,"startedAt":null,"completedAt":null});
+    put(tx, "nodes", &run_id, tid, &node)?;
+    append(tx, tid, "node.updated", node, t)?;
+    Ok(())
+}
+
 pub(crate) fn message_item(db: &Connection, tid: &str, m: &Value) -> Result<Value> {
     let id = format!("item-{}", m["id"].as_str().ok_or("message id required")?);
     let ordinal: i64 = db
@@ -1101,38 +1155,7 @@ fn stage_message(
         run["queueHeld"] = json!(false);
     }
     if !queued {
-        if t["activeProviderThreadId"]
-            .as_str()
-            .is_none_or(|id| get(tx, "providerThreads", id).is_err())
-        {
-            let native = crate::projection::native_id(tx, t);
-            let id = if let Some(id) = t["activeProviderThreadId"].as_str() {
-                id.to_owned()
-            } else {
-                format!("provider-thread-{}", crate::store::random_id()?)
-            };
-            t["activeProviderThreadId"] = json!(id);
-            let driver = if t["providerInstanceId"] == "codex" {
-                "codex"
-            } else {
-                "claudeAgent"
-            };
-            let p = json!({"id":id,"appThreadId":tid,"driver":driver,"providerInstanceId":t["providerInstanceId"],"providerSessionId":id,"ownerNodeId":null,"nativeThreadRef":native.map(|native|json!({"driver":driver,"nativeId":native,"strength":"strong"})),"nativeConversationHeadRef":null,"status":"not_loaded","firstRunOrdinal":ordinal,"lastRunOrdinal":ordinal,"handoffIds":[],"forkedFrom":null,"contextUsage":null,"goal":null,"nativeMetadata":null,"pendingBackgroundTasks":[],"createdAt":at,"updatedAt":at});
-            put(tx, "providerThreads", &id, tid, &p)?;
-            put(tx, "thread", tid, tid, t)?;
-            append(tx, tid, "provider-thread.updated", p, t)?;
-            append(tx, tid, "thread.metadata-updated", t.clone(), t)?;
-        }
-        let aid = format!("attempt-{run_id}");
-        run["activeAttemptId"] = json!(aid);
-        run["rootNodeId"] = json!(run_id);
-        run["providerThreadId"] = t["activeProviderThreadId"].clone();
-        let attempt = json!({"id":aid,"runId":run_id,"attemptOrdinal":1,"providerInstanceId":t["providerInstanceId"],"providerThreadId":run["providerThreadId"],"reason":"initial","rootNodeId":run_id,"providerTurnId":null,"status":"pending","startedAt":null,"completedAt":null});
-        put(tx, "attempts", &aid, tid, &attempt)?;
-        append(tx, tid, "attempt.updated", attempt, t)?;
-        let node = json!({"id":run_id,"threadId":tid,"runId":run_id,"parentNodeId":null,"rootNodeId":run_id,"kind":"root_turn","status":"pending","countsForRun":true,"providerThreadId":run["providerThreadId"],"providerTurnId":null,"nativeItemRef":null,"runtimeRequestId":null,"checkpointScopeId":null,"startedAt":null,"completedAt":null});
-        put(tx, "nodes", &run_id, tid, &node)?;
-        append(tx, tid, "node.updated", node, t)?;
+        prepare_run_ownership(tx, tid, t, &mut run, at)?;
     }
     let mut item_message = m.clone();
     item_message["providerThreadId"] = run["providerThreadId"].clone();

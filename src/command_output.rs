@@ -374,7 +374,7 @@ pub fn persist(s: &State, tid: &str, rid: &str, event: CommandEvent) -> Result<(
             let at = iso(now_ms());
             let ordinal: i64 = tx
                 .query_row(
-                    "SELECT count(*) FROM records WHERE kind='turnItems' AND thread_id=?",
+                    "SELECT coalesce(max(json_extract(body,'$.ordinal')),-1)+1 FROM records WHERE kind='turnItems' AND thread_id=?",
                     [tid],
                     |r| r.get(0),
                 )

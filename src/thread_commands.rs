@@ -121,6 +121,9 @@ fn promote(db: &Connection, tid: &str, thread: &Value, mut run: Value) -> Result
     run["status"] = json!("preparing");
     run["queuePosition"] = Value::Null;
     run["queueHeld"] = json!(false);
+    let mut thread = thread.clone();
+    crate::events::prepare_run_ownership(db, tid, &mut thread, &mut run, &iso(now_ms()))?;
+    let thread = &thread;
     put(db, "runs", &rid, tid, &run)?;
     append(db, tid, "run.updated", run, thread)?;
     Ok((rid, text))

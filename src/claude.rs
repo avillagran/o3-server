@@ -251,6 +251,7 @@ impl ClaudeProvider {
                         Some(ProviderControl::Interrupt)=>{
                             session.control("interrupt",json!({"subtype":"interrupt"})).await?;
                             interrupt_requested=true;
+                            boundary.terminal=None;
                         },
                         Some(ProviderControl::SteerContent(content))=>session.send(json!({"type":"user","message":{"role":"user","content":content},"parent_tool_use_id":null,"session_id":session.native})).await?,
                         Some(ProviderControl::Steer(text))=>session.prompt(&text).await?,

@@ -343,8 +343,16 @@ pub(crate) fn start(
 }
 /// A native acknowledgement may never arrive. Failure is explicit, never native success.
 pub(crate) fn interrupt_deadline(s: std::sync::Arc<crate::store::State>, tid: String, rid: String) {
+    interrupt_deadline_after(s, tid, rid, std::time::Duration::from_secs(15));
+}
+fn interrupt_deadline_after(
+    s: std::sync::Arc<crate::store::State>,
+    tid: String,
+    rid: String,
+    timeout: std::time::Duration,
+) {
     tokio::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+        tokio::time::sleep(timeout).await;
         let _ = tokio::task::spawn_blocking(move || {
             let _ = persist(
                 &s,
@@ -412,7 +420,7 @@ fn persist(
     let mut run = get(&tx, "runs", rid)?;
     if matches!(
         run["status"].as_str(),
-        Some("interrupted" | "completed" | "failed")
+        Some("interrupted" | "completed" | "failed" | "cancelled")
     ) {
         return Ok(());
     }
@@ -633,6 +641,57 @@ impl Provider for Providers {
 mod tests {
     use super::*;
     use serde_json::{json, Value};
+    #[tokio::test]
+    async fn missing_interrupt_acknowledgement_fails_with_unknown_delivery() {
+        let dir = std::env::temp_dir().join(crate::store::random_id().unwrap());
+        let s = std::sync::Arc::new(crate::store::State::open(&dir).unwrap());
+        {
+            let db = s.db.lock().unwrap();
+            for (kind, id, v) in [
+                (
+                    "thread",
+                    "t",
+                    json!({"id":"t","providerInstanceId":"claude"}),
+                ),
+                (
+                    "runs",
+                    "r",
+                    json!({"id":"r","threadId":"t","status":"running"}),
+                ),
+                (
+                    "controlOutbox",
+                    "stop",
+                    json!({"id":"stop","status":"handed-off","command":{"runId":"r"}}),
+                ),
+            ] {
+                crate::events::put(&db, kind, id, "t", &v).unwrap();
+            }
+        }
+        let mut changed = s.changed.subscribe();
+        interrupt_deadline_after(
+            s.clone(),
+            "t".into(),
+            "r".into(),
+            std::time::Duration::from_millis(5),
+        );
+        tokio::time::timeout(std::time::Duration::from_secs(2), changed.changed())
+            .await
+            .unwrap()
+            .unwrap();
+        let db = s.db.lock().unwrap();
+        assert_eq!(
+            crate::events::get(&db, "runs", "r").unwrap()["status"],
+            "failed"
+        );
+        assert_eq!(
+            crate::events::get(&db, "controlOutbox", "stop").unwrap()["status"],
+            "delivery-unknown"
+        );
+        assert!(crate::events::get(&db, "turnItems", "r-interrupt-result").is_err());
+        drop(db);
+        drop(s);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn native_interruption_finalizes_result_once_with_claude_root_turn() {
         let dir = std::env::temp_dir().join(crate::store::random_id().unwrap());
