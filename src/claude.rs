@@ -20,6 +20,7 @@ pub struct ClaudeProvider {
     sessions: std::sync::Arc<Mutex<HashMap<String, Session>>>,
 }
 struct Session {
+    _mcp_config: Option<PrivateConfig>,
     child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
@@ -29,6 +30,36 @@ struct Session {
     options: Value,
     browser: bool,
     idle_since: tokio::time::Instant,
+}
+// Claude accepts --mcp-config as a JSON file path. Never serialize credentials in argv.
+struct PrivateConfig(PathBuf);
+impl PrivateConfig {
+    fn create(value: &Value) -> Result<Self, String> {
+        use std::{
+            io::Write,
+            os::unix::fs::{DirBuilderExt, OpenOptionsExt},
+        };
+        let dir = std::env::temp_dir().join(format!("o3-mcp-{}", crate::store::random_id()?));
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&dir)
+            .map_err(|e| e.to_string())?;
+        let guard = Self(dir);
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(guard.0.join("config.json"))
+            .map_err(|e| e.to_string())?;
+        file.write_all(value.to_string().as_bytes())
+            .map_err(|e| e.to_string())?;
+        Ok(guard)
+    }
+}
+impl Drop for PrivateConfig {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 impl ClaudeProvider {
     pub fn discover() -> Option<Self> {
@@ -115,11 +146,13 @@ impl ClaudeProvider {
         if let Some(effort) = effort {
             cmd.arg("--effort").arg(effort);
         }
+        let mut mcp_config = None;
         if input.model_selection["o3BrowserMcp"].is_object() {
             let mut config = input.model_selection["o3BrowserMcp"].clone();
             config["type"] = json!("http");
-            cmd.arg("--mcp-config")
-                .arg(json!({"mcpServers":{"t3-code":config}}).to_string());
+            let file = PrivateConfig::create(&json!({"mcpServers":{"t3-code":config}}))?;
+            cmd.arg("--mcp-config").arg(file.0.join("config.json"));
+            mcp_config = Some(file);
         }
         if input.thread_id == "discovery" || input.runtime_mode == "text-only" {
             settings["disableAllHooks"] = json!(true);
@@ -155,6 +188,7 @@ impl ClaudeProvider {
         let stdin = child.stdin.take().ok_or("Claude stdin missing")?;
         let stdout = BufReader::new(child.stdout.take().ok_or("Claude stdout missing")?);
         let mut s = Session {
+            _mcp_config: mcp_config,
             child,
             stdin,
             stdout,
@@ -764,6 +798,7 @@ mod tests {
         let pid = child.id().unwrap();
         let stamp = tokio::time::Instant::now();
         let session = Session {
+            _mcp_config: None,
             stdin: child.stdin.take().unwrap(),
             stdout: BufReader::new(child.stdout.take().unwrap()),
             child,
@@ -805,6 +840,7 @@ mod tests {
             .unwrap();
         let pid = child.id().unwrap();
         let session = Session {
+            _mcp_config: None,
             stdin: child.stdin.take().unwrap(),
             stdout: BufReader::new(child.stdout.take().unwrap()),
             child,
@@ -908,6 +944,7 @@ mod tests {
             .spawn()
             .unwrap();
         let mut s = Session {
+            _mcp_config: None,
             stdin: child.stdin.take().unwrap(),
             stdout: BufReader::new(child.stdout.take().unwrap()),
             child,
@@ -928,6 +965,7 @@ mod tests {
             .spawn()
             .unwrap();
         let mut s = Session {
+            _mcp_config: None,
             stdin: child.stdin.take().unwrap(),
             stdout: BufReader::new(child.stdout.take().unwrap()),
             child,

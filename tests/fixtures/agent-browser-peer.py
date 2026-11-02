@@ -4,7 +4,14 @@ import json,sys,urllib.request,urllib.error
 claude='-p' in sys.argv
 config=None
 if claude and '--mcp-config' in sys.argv:
-    config=json.loads(sys.argv[sys.argv.index('--mcp-config')+1])['mcpServers'].get('t3-code')
+    raw=sys.argv[sys.argv.index('--mcp-config')+1]
+    config=(json.loads(raw) if raw.startswith('{') else json.load(open(raw)))['mcpServers'].get('t3-code')
+    if config:
+        import os,stat
+        secret=config['headers']['Authorization'].encode()
+        assert secret not in open('/proc/self/cmdline','rb').read(), 'MCP credential exposed in argv'
+        assert stat.S_IMODE(os.stat(raw).st_mode)==0o600
+        assert stat.S_IMODE(os.stat(os.path.dirname(raw)).st_mode)==0o700
 def call(method,params=None,headers=None):
     req=urllib.request.Request(config['url'],data=json.dumps({'jsonrpc':'2.0','id':1,'method':method,'params':params or {}}).encode(),headers=headers or config.get('headers',config.get('http_headers')))
     return json.load(urllib.request.urlopen(req,timeout=10))['result']
