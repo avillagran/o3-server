@@ -644,7 +644,7 @@
     "scheduledTasks.upsert": {
       "status": "partial",
       "priority": "P2",
-      "note": "Remaining: desktop T3ScheduledTasks.qml:70 and Android TaskEditor.kt:41 offer Webhook, which saving rejects."
+      "note": "Signed inbound webhook definitions and existing-listener /api/hooks/{id}/{token}: mandatory HMAC-SHA256 verification, 1 MiB body/5 s read budget, filters, persisted replay keys/coalescing queue, queued delivery-age expiration, capped queue/replay counts, no automatic retries or payload logging. Real Connection/lib upsert failed before, passes with HTTP fixtures. Newer source-only contract; pinned webhook differential not driven. secretRef unsupported; relay proof, crash-safe queue dispatch, complete prompt-template parity and delivery logs remain unproven. Outbound HTTPS/private-target restriction does not apply to inbound triggers. Status unchanged."
     },
     "secrets.answerRequest": {
       "status": "done",

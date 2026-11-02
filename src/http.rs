@@ -197,6 +197,19 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
             StatusCode::OK,
             crate::settings::descriptor(&state).to_string(),
         ),
+        (Method::POST, p) if p.starts_with("/api/hooks/") => {
+            let parts: Vec<_> = p.trim_start_matches("/api/hooks/").split('/').collect();
+            if parts.len()!=2 { return Ok(json_reply(StatusCode::NOT_FOUND,"{}".into())); }
+            let (id, token) = (parts[0].to_owned(),parts[1].to_owned());
+            let headers = request.headers().clone();
+            let query = request.uri().query().unwrap_or("").to_owned();
+            let bytes = tokio::time::timeout(std::time::Duration::from_secs(5),Limited::new(request.into_body(),1024*1024).collect()).await;
+            let Ok(Ok(bytes))=bytes else { return Ok(json_reply(StatusCode::PAYLOAD_TOO_LARGE,"{}".into())); };
+            let result=crate::webhook::accept(&state,&id,&token,&headers,&query,&bytes.to_bytes());
+            let mut response=json_reply(StatusCode::from_u16(result.0).unwrap(),json!({"outcome":result.1}).to_string());
+            response.headers_mut().insert("x-t3-hook-outcome",result.1.parse().unwrap());
+            response
+        }
         (Method::POST, "/oauth/token") => token(&state, request).await,
         (Method::POST, p) if p.starts_with(crate::assets::UPLOAD_PREFIX) => {
             let token = p[crate::assets::UPLOAD_PREFIX.len()..].to_owned();
