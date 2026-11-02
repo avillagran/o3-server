@@ -2146,3 +2146,12 @@ is a recognized host without `gh` support (GitLab, Bitbucket, Codeberg, Azure De
 GitCafe). Any unrecognized remote passes, so a self-hosted Forgejo can still fail at the
 pull request step, after commit and push. Status still has no PR metadata for those hosts,
 and the lib-t3-rust action menu has no capability to read; that part is client work.
+
+## P1 promotion (2026-11-02)
+
+`assets.createUrl`, `orchestration.searchThreads`, `orchestration.subscribeCommandOutput`,
+`server.discoverSourceControl` and `thread.fork` are promoted on the last audit's verdicts,
+of head ee795cf. That audit's only blocker, the remote read by the pull request refusal,
+was fixed afterwards with a test; that fix itself was not independently audited. Partial
+for a named reason: `vcs.refreshStatus`, `server.updateSettings`,
+`orchestration.subscribeShell` and `server.getConfig`.
