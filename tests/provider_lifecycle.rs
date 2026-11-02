@@ -114,3 +114,70 @@ async fn live_claude_native_fork() {
     provider.shutdown().await;
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[tokio::test]
+async fn claude_init_guard_emits_no_started_event_after_cancel_or_control() {
+    for cancel_watch in [true, false] {
+        let dir = std::env::temp_dir().join(o3_server::store::random_id().unwrap());
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("gate-init"), "").unwrap();
+        std::fs::write(dir.join("release-interrupt"), "").unwrap();
+        let provider = std::sync::Arc::new(
+            ClaudeProvider::new(
+                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("tests/fixtures/concurrent-claude.py"),
+            )
+            .with_environment(vec![("T3CODE_HOME".into(), dir.to_str().unwrap().into())]),
+        );
+        let (out, mut events) = mpsc::channel(16);
+        let (control, controls) = mpsc::channel(8);
+        let (cancel, cancelled) = watch::channel(false);
+        let input = RunInput {
+            provider_instance_id: "claudeAgent".into(),
+            native_session_id: None,
+            thread_id: "t".into(),
+            run_id: "r".into(),
+            cwd: dir.clone(),
+            text: "fixture".into(),
+            model_selection: json!({"model":"haiku"}),
+            runtime_mode: "full-access".into(),
+            interaction_mode: "default".into(),
+            attachment_root: dir.clone(),
+            attachments: json!([]),
+            context: None,
+        };
+        let p = provider.clone();
+        let task = tokio::spawn(async move { p.execute(input, out, controls, cancelled).await });
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while !dir.join("init-received").exists() {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        if cancel_watch {
+            cancel.send(true).unwrap();
+        } else {
+            control
+                .send(o3_server::provider::ProviderControl::Interrupt)
+                .await
+                .unwrap();
+        }
+        std::fs::write(dir.join("release-init"), "").unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        // Keep the receiver alive: a missing guard deterministically queues Started
+        // even when the child is reaped before it can read the initial user frame.
+        while let Some(event) = events.recv().await {
+            assert!(
+                !matches!(event, ProviderEvent::Started),
+                "cancelled init sent a user message"
+            );
+        }
+        provider.shutdown().await;
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}

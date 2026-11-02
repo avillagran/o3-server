@@ -47,16 +47,25 @@ fn wait(mut f: impl FnMut() -> bool) {
 }
 #[test]
 fn owned_background_work_and_prebinding_identity_through_real_client() {
-    for (instance, interrupt, legacy, single_terminal) in [
+    background_cases(&[
         ("claudeAgent", false, false, false),
         ("codex", false, false, false),
         ("claudeAgent", true, false, false),
         ("codex", true, false, false),
         ("claudeAgent", false, true, false),
         ("codex", false, true, false),
-        ("claudeAgent", true, false, true),
-        ("codex", true, false, true),
-    ] {
+    ]);
+}
+#[test]
+fn claude_interrupt_after_result_needs_no_second_terminal() {
+    background_cases(&[("claudeAgent", true, false, true)]);
+}
+#[test]
+fn codex_interrupt_after_result_needs_no_second_terminal() {
+    background_cases(&[("codex", true, false, true)]);
+}
+fn background_cases(cases: &[(&str, bool, bool, bool)]) {
+    for &(instance, interrupt, legacy, single_terminal) in cases {
         let dir = std::env::temp_dir().join(format!(
             "o3-background-{}",
             o3_server::store::random_id().unwrap()

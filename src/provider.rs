@@ -351,7 +351,7 @@ fn interrupt_deadline_after(
     tid: String,
     rid: String,
     timeout: std::time::Duration,
-) {
+) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut changed = s.changed.subscribe();
         let deadline = tokio::time::sleep(timeout);
@@ -381,7 +381,7 @@ fn interrupt_deadline_after(
             );
         })
         .await;
-    });
+    })
 }
 
 fn persist(
@@ -658,6 +658,32 @@ impl Provider for Providers {
 mod tests {
     use super::*;
     use serde_json::{json, Value};
+    #[tokio::test]
+    async fn interrupt_timer_releases_terminal_run_immediately() {
+        let dir = std::env::temp_dir().join(crate::store::random_id().unwrap());
+        let s = std::sync::Arc::new(crate::store::State::open(&dir).unwrap());
+        crate::events::put(
+            &s.db.lock().unwrap(),
+            "runs",
+            "r",
+            "t",
+            &json!({"id":"r","status":"interrupted"}),
+        )
+        .unwrap();
+        let task = interrupt_deadline_after(
+            s.clone(),
+            "t".into(),
+            "r".into(),
+            std::time::Duration::from_secs(75),
+        );
+        tokio::time::timeout(std::time::Duration::from_secs(1), task)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(std::sync::Arc::strong_count(&s), 1);
+        drop(s);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
     #[tokio::test]
     async fn missing_interrupt_acknowledgement_fails_with_unknown_delivery() {
         let dir = std::env::temp_dir().join(crate::store::random_id().unwrap());
