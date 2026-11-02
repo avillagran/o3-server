@@ -162,25 +162,16 @@ pub fn search_threads(s: &State, p: &Value) -> Reply {
     if p["titlesOnly"] != true {
         let expr = match_expression(query).unwrap_or_else(|| "\"\"".into());
         let needle = fold_search(query);
-        let mut q = db
-            .prepare("SELECT thread_id,message_id,role,created_at,text,rank FROM (SELECT thread_id,message_id,role,created_at,substr(text,1,65536) AS text,bm25(thread_search) AS rank FROM thread_search WHERE thread_search MATCH ?1 ORDER BY rank LIMIT 1000) UNION ALL SELECT thread_id,message_id,role,created_at,substr(text,1,65536),0.0 FROM (SELECT * FROM thread_search ORDER BY rowid DESC LIMIT 4096)")
-            .map_err(|e| fail(&e.to_string()))?;
-        let rows = q
-            .query_map([expr], |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, String>(2)?,
-                    r.get::<_, Option<String>>(3)?,
-                    r.get::<_, String>(4)?,
-                    r.get::<_, f64>(5)?,
-                ))
-            })
-            .map_err(|e| fail(&e.to_string()))?;
-        // Best message per thread; `hits` counts the thread's matching messages.
+        // Independent FTS and substring phases each scan at most 8 MiB.
         let mut seen: std::collections::HashMap<String, usize> = Default::default();
         let mut message_ids = std::collections::HashSet::new();
-        let mut scanned_bytes = 0usize;
+        for sql in [
+            "SELECT thread_id,message_id,role,created_at,text,bm25(thread_search) FROM thread_search WHERE thread_search MATCH ?1 AND length(CAST(text AS BLOB))<=8388608 ORDER BY bm25(thread_search) LIMIT 1000",
+            "SELECT thread_id,message_id,role,created_at,text,0.0 FROM (SELECT * FROM thread_search ORDER BY rowid DESC LIMIT 4096) WHERE ?1 IS NOT NULL AND length(CAST(text AS BLOB))<=8388608",
+        ] {
+            let mut q = db.prepare(sql).map_err(|e|fail(&e.to_string()))?;
+            let rows = q.query_map([&expr], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,Option<String>>(3)?,r.get::<_,String>(4)?,r.get::<_,f64>(5)?))).map_err(|e|fail(&e.to_string()))?;
+            let mut scanned_bytes = 0usize;
         for (tid, mid, role, at, snippet, rank) in rows.flatten() {
             scanned_bytes += snippet.len();
             if scanned_bytes > 8 * 1024 * 1024 {
@@ -215,6 +206,7 @@ pub fn search_threads(s: &State, p: &Value) -> Reply {
                 matches[i] = found;
             }
         }
+    }
     }
     if p["titlesOnly"] == true {
         let needle = fold_search(query);

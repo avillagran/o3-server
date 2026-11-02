@@ -658,3 +658,23 @@ fn default_search_does_not_report_title_only_hits_as_messages() {
         .unwrap();
     assert_eq!(r["matches"][0]["threadId"], "title", "{r}");
 }
+
+#[test]
+fn search_finds_suffix_beyond_old_candidate_window() {
+    let e = setup("long-suffix");
+    e.project("p", &e.dir("p"));
+    e.thread("t", "p");
+    e.message(
+        "t",
+        "long",
+        &format!("{} suffixneedle tail", "x".repeat(70000)),
+    );
+    for query in ["suffixneedle", "uffixneedle"] {
+        let r = t3_protocol::api::orchestration::search_threads(&e.conn, query, None).unwrap();
+        assert_eq!(r["matches"][0]["threadId"], "t", "{r}");
+        assert!(
+            r["matches"][0]["snippet"].as_str().unwrap().contains(query),
+            "{r}"
+        );
+    }
+}
