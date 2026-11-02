@@ -33,7 +33,11 @@ fn unknown_external_install_is_not_updatable() {
 fn npm_updates_only_the_original_user_prefix_and_verifies_version() {
     use std::os::unix::fs::{symlink, PermissionsExt};
     fn script(path: &std::path::Path, body: &str) {
-        std::fs::write(path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::write(
+            path,
+            format!("#!/bin/sh\nif [ \"$1\" = --version ]; then echo 10.1.0; exit; fi\n{body}\n"),
+        )
+        .unwrap();
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
     let root = std::env::temp_dir().join(format!("o3-external-npm-{}", std::process::id()));

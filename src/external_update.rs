@@ -20,6 +20,99 @@ fn writable(path: &Path) -> bool {
     };
     unsafe { libc::access(c.as_ptr(), libc::W_OK) == 0 }
 }
+// A recognized layout alone cannot authorize executing an arbitrary helper.
+fn installer(path: &Path, prefix: &Path, tool: &str) -> Result<PathBuf, &'static str> {
+    use std::{
+        os::unix::fs::MetadataExt,
+        process::Stdio,
+        time::{Duration, Instant},
+    };
+    let real = path
+        .canonicalize()
+        .map_err(|_| "Installer is unavailable; update manually.")?;
+    let m = real
+        .metadata()
+        .map_err(|_| "Installer metadata is unavailable.")?;
+    let uid = unsafe { libc::geteuid() };
+    let system = m.uid() == 0
+        && ((tool == "npm"
+            && (real == Path::new("/usr/bin/npm") || real.starts_with("/usr/share/nodejs/npm/")))
+            || (tool == "brew" && real.starts_with("/opt/homebrew/")));
+    if !m.is_file()
+        || m.mode() & 0o6111 == 0
+        || m.mode() & 0o6022 != 0
+        || !(system
+            || m.uid() == uid
+                && uid != 0
+                && real.starts_with(
+                    prefix
+                        .canonicalize()
+                        .map_err(|_| "Invalid installer prefix")?,
+                ))
+    {
+        return Err(
+            "Installer ownership, privilege bits or resolved location is unsafe; update manually.",
+        );
+    }
+    // Validate all ancestors. Sticky shared scratch roots may contain user-owned
+    // fixture/install prefixes, but never qualify a root-owned system helper.
+    for parent in real.ancestors().skip(1) {
+        let m = parent.metadata().map_err(|_| "Unsafe installer ancestry")?;
+        if (m.uid() != 0 && m.uid() != uid)
+            || (m.mode() & 0o022 != 0 && (system || m.mode() & 0o1000 == 0))
+        {
+            return Err("Installer directory can be replaced by another user; update manually.");
+        }
+    }
+    let mut child = std::process::Command::new(&real)
+        .arg("--version")
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("HOME", prefix)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|_| "Cannot verify installer identity")?;
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("Installer identity probe timed out");
+            }
+        }
+    };
+    let mut bytes = Vec::new();
+    child
+        .stdout
+        .take()
+        .unwrap()
+        .take(1025)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "Invalid installer identity")?;
+    let text = String::from_utf8_lossy(&bytes);
+    let identity = match tool {
+        "npm" => {
+            text.trim().split('.').count() == 3
+                && text.trim().chars().all(|c| c.is_ascii_digit() || c == '.')
+        }
+        "brew" => text.starts_with("Homebrew "),
+        "claude" => text.contains("Claude Code"),
+        "opencode" => {
+            text.trim().split('.').count() == 3
+                && text.trim().chars().all(|c| c.is_ascii_digit() || c == '.')
+        }
+        _ => false,
+    };
+    if !status.success() || bytes.len() > 1024 || !identity {
+        return Err("Installer identity does not match the expected tool; update manually.");
+    }
+    Ok(real)
+}
 pub fn detect(binary: &Path, driver: &str) -> Result<Plan, &'static str> {
     let package = match driver {
         "codex" => "@openai/codex",
@@ -71,8 +164,7 @@ pub fn detect(binary: &Path, driver: &str) -> Result<Plan, &'static str> {
             continue;
         }
         let prefix = modules.parent().and_then(Path::parent).unwrap();
-        let npm = crate::executable::resolve(&prefix.join("bin/npm"))
-            .ok_or("Update it with npm install --global using the npm belonging to this prefix; that npm executable is unavailable.")?;
+        let npm = installer(&prefix.join("bin/npm"), prefix, "npm")?;
         if ![prefix, modules, root, &real].iter().all(|p| writable(p)) {
             return Err("Update it with npm install --global using the original prefix in a privileged terminal; o3 never elevates privileges.");
         }
@@ -130,9 +222,7 @@ pub fn detect(binary: &Path, driver: &str) -> Result<Plan, &'static str> {
                 "Homebrew receipt does not establish the original formula; update manually.",
             );
         }
-        let brew = crate::executable::resolve(&prefix.join("bin/brew")).ok_or(
-            "Use brew upgrade with the original formula; this prefix's brew is unavailable.",
-        )?;
+        let brew = installer(&prefix.join("bin/brew"), prefix, "brew")?;
         if ![prefix, store, rack, keg, &receipt, &real, &brew]
             .iter()
             .all(|p| writable(p))
@@ -154,7 +244,7 @@ pub fn detect(binary: &Path, driver: &str) -> Result<Plan, &'static str> {
             return Err("OpenCode native installation needs its owner's permissions; run opencode upgrade in that owner's terminal.");
         }
         return Ok(Plan {
-            program: real,
+            program: installer(&real, bin.parent().unwrap(), "opencode")?,
             args: vec!["upgrade".into()],
             command: "opencode upgrade (native installer)".into(),
         });
@@ -191,7 +281,7 @@ pub fn detect(binary: &Path, driver: &str) -> Result<Plan, &'static str> {
                     return Err("Claude native installation needs its owner's permissions; run claude update in that owner's terminal. o3 never elevates privileges.");
                 }
                 return Ok(Plan {
-                    program: link,
+                    program: installer(&link, local, "claude")?,
                     args: vec!["update".into()],
                     command: "claude update (native installer)".into(),
                 });
@@ -211,4 +301,28 @@ fn read_json(path: &Path) -> Option<Value> {
         return None;
     }
     serde_json::from_slice(&bytes).ok()
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+    #[test]
+    fn privileged_fake_npm_is_never_offered() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let root = std::env::temp_dir().join(format!("o3-unsafe-installer-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let pkg = root.join("lib/node_modules/@openai/codex");
+        std::fs::create_dir_all(&pkg).unwrap();
+        std::fs::create_dir_all(root.join("bin")).unwrap();
+        std::fs::write(pkg.join("package.json"), r#"{"name":"@openai/codex"}"#).unwrap();
+        let cli = pkg.join("codex");
+        std::fs::write(&cli, "#!/bin/sh\necho codex-cli 1.0.0\n").unwrap();
+        std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+        symlink("/usr/bin/su", root.join("bin/npm")).unwrap();
+        assert!(
+            detect(&cli, "codex").is_err(),
+            "privileged helper advertised as npm"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

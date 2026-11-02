@@ -138,7 +138,37 @@ pub async fn run(
     opts: Opts,
     env: &[(&str, &Path)],
 ) -> Result<Out, RunError> {
+    run_inner(program, cwd, args, opts, env, false).await
+}
+
+/// External installers get a fixed interpreter search path and no ambient runtime injection.
+pub async fn run_installer(
+    program: &str,
+    cwd: &Path,
+    args: &[&str],
+    opts: Opts,
+) -> Result<Out, RunError> {
+    run_inner(program, cwd, args, opts, &[], true).await
+}
+async fn run_inner(
+    program: &str,
+    cwd: &Path,
+    args: &[&str],
+    opts: Opts,
+    env: &[(&str, &Path)],
+    installer: bool,
+) -> Result<Out, RunError> {
     let mut command = base_command(program, cwd, args);
+    if installer {
+        let home = std::env::var_os("HOME");
+        command
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .env("LC_ALL", "C");
+        if let Some(home) = home {
+            command.env("HOME", home);
+        }
+    }
     for (k, v) in env {
         command.env(k, v);
     }

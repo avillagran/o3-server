@@ -826,14 +826,14 @@ async fn update_provider(s: &Arc<State>, p: &Value) -> Reply {
         allow_truncate: false,
     };
     let result = tokio::select! {
-        r=crate::proc::run(plan.program.to_str().ok_or_else(||fail("Invalid installer path"))?,&s.dir,&args,opts,&[])=>r.is_ok_and(|r|r.ok()),
+        r=crate::proc::run_installer(plan.program.to_str().ok_or_else(||fail("Invalid installer path"))?,&s.dir,&args,opts)=>r.is_ok_and(|r|r.ok()),
         _=cancel.notified()=>false,
     };
     // Only a bounded, parseable --version result establishes success. Never publish installer output.
     let verified = if result {
         let binary = crate::executable::resolve(&d.binary);
         if let Some(binary) = binary.and_then(|b| b.to_str().map(str::to_owned)) {
-            crate::proc::run(
+            crate::proc::run_installer(
                 &binary,
                 &s.dir,
                 &["--version"],
@@ -842,7 +842,6 @@ async fn update_provider(s: &Arc<State>, p: &Value) -> Reply {
                     cap: 1024,
                     allow_truncate: false,
                 },
-                &[],
             )
             .await
             .ok()

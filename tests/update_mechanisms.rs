@@ -6,7 +6,7 @@ use std::{
 };
 fn script(path: &Path, text: &str) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(path, format!("#!/bin/sh\n{text}\n")).unwrap();
+    std::fs::write(path, format!("#!/bin/sh\nif [ \"$1\" = --version ]; then case \"$0\" in */brew) echo \"Homebrew 4.0.0\";; */versions/*) echo \"1.0.0 (Claude Code)\";; *) echo 10.1.0;; esac; exit; fi\n{text}\n")).unwrap();
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
 }
 #[test]
