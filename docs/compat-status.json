@@ -229,7 +229,7 @@
     "orchestration.subscribeThread": {
       "status": "partial",
       "priority": "P0",
-      "note": "Version-gated bounded legacy migration preserves internal continuation state without public leakage. Gated Codex vs isolated T3 3991 checks two subscribers, request-before-result reader state, reducer success, unique run creation, terminal-record causality, exact replay order/identity and stable ID relationships. Strict comparison now reports a reference live-vs-replay missing/null discrepancy for lastSnoozeWakeAt; prior zero-difference claim is superseded. Still partial: full reduced-record equality and broader multi-owner native delivery/recovery. See concurrent-reader-report.json and CONFORMANCE.md."
+      "note": "Version-gated bounded legacy migration preserves internal continuation state without public leakage. Gated Codex vs isolated T3 3991 checks two subscribers, request-before-result reader state, reducer success, unique run creation, terminal-record causality, exact replay order/identity and stable ID relationships. Strict comparison passes with one narrowly recorded reference-only null-to-absent lastSnoozeWakeAt replay exception; other replay differences still fail. Still partial: full reduced-record equality and broader multi-owner native delivery/recovery. See concurrent-reader-report.json and CONFORMANCE.md."
     },
     "preview.adjust": {
       "status": "done",
@@ -1046,7 +1046,7 @@
     "message.dispatch": {
       "status": "partial",
       "priority": "P0",
-      "note": "Native uploaded images/files, serialized context and attachment steering (direct and queued promotion) are implemented with deterministic native-peer coverage in tests/orchestration_readers.rs; no real CLI attachment-steering capture. Remaining: complete attempt identity and exact active execution recovery. Receipt-atomic control outbox records uncertain handoffs without blind replay."
+      "note": "Native uploaded images/files, serialized context, attachment steering, attempt identity and active execution recovery have real client and deterministic native-peer coverage. No consumed reader gap remains in this row. Receipt-atomic control outbox records uncertain handoffs without blind replay; this does not prove exactly-once native effects."
     },
     "notification.delivery.accept": {
       "status": "skip",
@@ -1121,7 +1121,7 @@
     "runtime-request.respond": {
       "status": "partial",
       "priority": "P0",
-      "note": "Remaining: broad native approval rules and policy revocation UI; native response acknowledgement/replay after restart. acceptAlways persists exact operation consent scoped to thread/provider/worktree/project; changed operations, questions and mode changes require new consent. Structured questions and Claude plan capture/deny plus later implementation are implemented."
+      "note": "Real approval and structured-question readers cover native responses, scoped persistent operation consent, plan capture/deny and later implementation. No consumed reader gap remains in this row. Native acknowledgement lost across restart remains explicitly uncertain rather than blindly replayed."
     },
     "subagent.stop": {
       "status": "partial",

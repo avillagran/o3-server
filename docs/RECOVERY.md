@@ -96,7 +96,7 @@ record, with legacy imported-thread fallback; forking uses that same resolution.
 
 A live native turn commits an interrupt request while remaining active. Channel
 handoff does not mean native success. A native Interrupted terminal event produces
-the result and terminal projection together. A 15-second acknowledgement deadline
+the result and terminal projection together. A 75-second overall control deadline
 fails execution with an explicit delivery-unknown error; process death also fails
 execution and preserves the control journal as delivery-unknown. The supervisor
 checks terminal state while waiting for adapter output so a silent provider is
@@ -106,16 +106,18 @@ Claude waits for the native result boundary after sending its interrupt control.
 
 Restart recovery never resumes a run with an interrupt request. It closes that run
 as failed and marks uncertain outbox handoffs delivery-unknown. It does not invent
-a successful interrupt result. An interrupted-before-start run has no live native
-turn and closes immediately with that explicit result message.
+a successful interrupt result. A run classified as interrupted-before-start has no durable native-turn
+acknowledgement and closes immediately with that explicit result message. The
+adapter guards prevent an initial send after cancellation observed during init;
+cancellation concurrent with native submission does not prove that no native
+work began.
 
 When restart continuation is disabled, resume records `cancelled` without a
 user interrupt request/result pair or an artificial error. An isolated 3991 restart
 with an acknowledged running Codex turn proves the final status, turn items and
 normalized timeline/queue reader outputs. The newer RestartContinuation.ts setting
-check agrees, but is not the source of this terminal-state choice. Bounded Codex
-init/steer/death/restart windows are now tested; exhaustive scheduling and Claude
-transport coverage are not claimed.
+check agrees, but is not the source of this terminal-state choice. Bounded Codex and Claude init/steer/death/restart windows are tested; exhaustive
+scheduling and native side-effect cancellation are not claimed.
 
 The legacy internal-field migration now has a durable completion marker and
 resumable windows of at most 128 rows and 2 MiB of input per immediate write
@@ -136,9 +138,27 @@ above; the choice is binary-observed, not inferred from newer source.
 The gated peer also covers init before native acknowledgement, steering awaiting
 its acknowledgement, provider death after an interrupt request and restart before
 the terminal event. Init cancellation must prevent a late turn/start after release
-of the native init gate. A queued pre-start interrupt is checked before Codex starts
-the native turn. Death/restart without terminal acknowledgement remain failed in
+of the native init gate. A queued pre-start interrupt is checked before either Claude sends its initial
+user message or Codex starts the native turn. Death/restart without terminal acknowledgement remain failed in
 o3 with delivery-unknown outbox state and no synthetic interrupt result. 3991 instead
 reports interrupted after provider death and cancelled after restart; these observed
 reference states do not establish successful native delivery for o3. This retains
 the documented uncertainty boundary and is not original-process reattachment.
+
+### Interrupt budget and retained terminal boundary
+
+The overall deadline measures wall time from post-receipt control-channel handoff
+(after the outbox handed-off journal commit) through queued native delivery and
+native completion, including owned background work. The timer starts when its
+supervisor task runs; it does not wait for native dispatch.
+Its 75 seconds cover a preceding Codex RPC (30 seconds), the interrupt RPC
+(30 seconds), and 15 seconds for completion notifications. It is an overall upper
+bound, including a backlog of controls; it does not prove native side effects
+stopped. Terminal runs wake the deadline task so it releases its State immediately.
+Quiet supervisors wait on the State change signal instead of polling SQLite.
+
+A terminal result already received remains a known boundary during interrupt.
+Once owned tasks/items finish, the adapter reports interrupted without requiring
+a second native turn result. Pinned 3991 retains an unresolved runtime request after stopping its run while
+the native session stays open. o3 preserves that request too; interruption alone
+does not invent a native request resolution. Channel loss/restart cancels it.

@@ -1517,3 +1517,135 @@ passed in both configurations, as did `cargo fmt --check`, `tools/gen-compat` an
 `git diff --check`. The first Clippy attempt found the new RPC helper after a test
 module; moving the unchanged helper before dispatch resolved that lint. All Cargo
 builds/tests ran sequentially under nice with four jobs. No rows were promoted.
+
+
+### Implementation audit follow-up
+
+`thread.stop` now targets waiting native runs. The pinned 3991 approval probe
+stops the run but retains the unresolved pending/live runtime request while the
+native session stays open, even after serverRequest/resolved; channel loss during
+fixture cleanup cancels it. o3 follows that observed boundary rather than inventing
+a native approval decision. Both subscribers compare the real approval reader
+and decision builder while the request is pending. The compaction candidate reader
+also participates in convergence; the gated peer emits no context/token usage,
+so this does not establish an actionable compaction candidate.
+
+The attempted background-after-result concurrent extension did not establish the
+required reference state: 3991 completed run 6 after turn/completed despite an
+in-progress commandExecution item, and exposed no pendingBackgroundTasks roster.
+The extension's wait for retained ownership failed. Its fixture mode remains for
+further investigation; the stable concurrent scenario includes approval-pending
+stop. Claude and Codex adapter tests separately prove interruption after a known
+terminal with owned tasks/items and no second terminal result. No reference
+background targeting equivalence is claimed.
+
+The terminal reopen test now drains the restarted shell to exit before clear.
+The repository identity test waits for a resolution event with its roots metadata;
+a current snapshot may already contain the new identity but lacks that metadata.
+
+The turn ordinal expression index retains sparse-import correctness and is checked
+with EXPLAIN QUERY PLAN. Stop-request presence uses the deterministic item primary
+key. Quiet provider supervisors use change notifications; deadline tasks exit on
+terminal state changes instead of retaining State until timeout. See RECOVERY.md
+for the overall 75-second control budget and its uncertainty boundary.
+
+
+The enlarged scenario exceeded 3991's replay cap (138 events caused a snapshot
+fallback). The harness now verifies two complete replay ranges separated by a
+checkpoint before the approval scenario, checks event counts, and bounds replay
+waiting. It does not discard the prefix. The approval reader exposed two actual
+Codex projection differences: reason precedes command in the prompt, and a pending
+approval item stays waiting after its run stops. Both now match the pinned binary.
+Server-derived request IDs and timestamp strings are normalized consistently;
+request capability, choices, detail text and status remain strict.
+
+
+Negative controls removed the waiting target fix and each adapter's retained
+terminal boundary: the real Connection stop test timed out, and the two separate
+single-terminal background tests both failed. The initial end-to-end Claude init
+probe could pass without its guard because process reaping won the pipe-read race.
+A direct adapter test now keeps the output receiver alive and gates initialization;
+it deterministically fails on the forbidden Started event with the guard removed.
+It covers both watch cancellation and queued Interrupt before initialization ends.
+The four end-to-end Claude windows remain covered separately.
+
+Concurrent execution ledger for this implementation audit (independent numbering):
+
+| Run | Result |
+|---|---|
+| 1 | Failed: the approval peer omitted required request fields, so 3991 never projected a request. |
+| 2 | Failed: incorrectly expected the pending approval to close immediately with the run. |
+| 3 | Failed: the same expectation after adding serverRequest/resolved. |
+| 4 | Failed: waiting for request closure timed out; SQLite showed closure only during server cleanup. |
+| 5 | Failed: numeric RPC request IDs did not change that reference boundary. |
+| 6 | Failed: reference completed the background fixture's turn without retaining ownership. |
+| 7 | Stopped after replay waited indefinitely for 138 events; the reference had returned a snapshot. The isolated orphan process group was cleaned up. |
+| 8 | Failed: the new bounded replay assertion confirmed one snapshot versus 138 expected events. |
+| 9 | Did not compile: helper extraction compared Value with &Value; corrected by dereferencing. |
+| 10 | Failed: seven new approval reader differences (timestamps/derived IDs, reason text and pending item status). |
+| 11 | Passed: zero reader/replay differences. |
+| 12 | Passed: zero reader/replay differences. |
+| 13 | Passed: zero reader/replay differences. |
+| 14 | Passed: zero reader/replay differences. |
+| 15 | Passed: zero reader/replay differences. |
+
+Runs 11–15 each recorded exactly one narrow reference null-to-absent replay
+exception. These are five consecutive passes against the pinned versioned binary.
+The full control-window matrix also passed all 14 observations (10 Codex across
+both servers, four Claude on o3), including the 20-second steer hold. Its sanitized
+results replace control-window-report.json. An initial full suite had one failing
+approval assertion caused by the incorrect immediate-cancellation expectation;
+that expectation was corrected using pinned binary evidence.
+
+The first no-default-features full suite exposed a test synchronization race in
+the new approval stop test: a request can be visible before its run reaches
+waiting. The fixture now waits for both predicates before dispatching stop;
+production code was unchanged. All three required full suites were repeated.
+
+A later repeat found another pre-existing fixture race: vcs_compat replaced the
+process-wide fake gh executable while the concurrent stacked-action test created
+a PR, returning JSON where a URL was expected. The fake pr-list response is now
+workspace-scoped; no executable replacement occurs. The seven VCS tests passed
+with four test threads before repeating the full required verification.
+
+Final stable concurrent runs **16, 17, 18, 19 and 20 each passed** with zero
+reader differences, zero replay differences and exactly one recorded reference
+replay exception. O3_CONCURRENT_REPORT regenerated concurrent-reader-report.json
+on each run; the committed report is run 20 and describes the expanded readers
+and both complete replay checkpoints.
+
+Final required verification after fixture synchronization fixes: default full
+suite **206 passed / 0 failed / 14 ignored**, twice; no-default-features full
+suite **204 passed / 0 failed / 14 ignored**. Strict all-target Clippy passed in
+both configurations, together with cargo fmt --check and tools/gen-compat.
+Compatibility statuses are unchanged from b05b511; only the requested notes changed. All builds and tests ran sequentially under
+nice with four Cargo jobs; full suites used four test threads.
+
+
+Release comparison used the same extended tools/bench-rss harness on an archive
+of main (1eb59d74be3e) inside this worktree and branch runtime source
+a8faba9b52eb. The parent checkout and main ref were unchanged. The archive
+was removed after measurement. Both builds used the default release features.
+The workload creates 20 threads, seeds one with 1,000 deferred messages of about
+1 KiB, measures the last 100 message dispatches, then appends 100 thread-metadata
+updates on that long thread; three bounded subscribers and 1,000 settings reads exercise RSS retention.
+Latency is loopback end-to-end RPC wall time including event append, receipt and
+shell projection, rather than a CPU-only append microbenchmark.
+
+| Measurement | main | branch |
+|---|---:|---:|
+| Message dispatch median / p95 (ms) | 2.506 / 3.109 | 2.322 / 2.967 |
+| Metadata event append median / p95 (ms) | 0.432 / 0.468 | 0.429 / 0.468 |
+| Server peak RSS (KiB) | 17424 | 17564 |
+| Server peak RSS (decimal MB) | 17.842 | 17.986 |
+
+Both stay below 50,000,000 bytes. These are one sample per build, not latency
+bounds or a statistically significant speedup claim. Provider inference and
+child-process memory are excluded. Raw sanitized measurements and binary hashes:
+[rss-control-audit-main.json](rss-control-audit-main.json) and
+[rss-control-audit-branch.json](rss-control-audit-branch.json).
+
+Items 1–6 and 8 are addressed. Item 7 adds strict pending approval/decision-reader
+convergence and the compaction candidate reader; actionable compaction and a
+reference background-after-result ownership fixture remain unestablished as
+explained above. No compatibility status was promoted.

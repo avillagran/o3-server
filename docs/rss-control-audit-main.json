@@ -1,0 +1,77 @@
+{
+  "measured_at_utc": "2026-11-02T02:28:33Z",
+  "binary_sha256": "9cff9a34291be34dfd7ddf5008378543984819e53a33f6f70a5984b119b521d9",
+  "binary_bytes": 13678008,
+  "seed_messages": 1000,
+  "append_last_100_ms": {
+    "median": 2.5064390065381303,
+    "p95": 3.108605000306852,
+    "max": 128.12764500267804
+  },
+  "metadata_append_100_ms": {
+    "median": 0.4321549931773916,
+    "p95": 0.4683840088546276,
+    "max": 0.48626799252815545
+  },
+  "threads": 20,
+  "subscribers": 3,
+  "unary_calls": 1000,
+  "text_bytes_per_message": 1000,
+  "cold_kib": {
+    "VmHWM": 9880,
+    "VmRSS": 9880,
+    "RssAnon": 1032,
+    "RssFile": 8848,
+    "THP_enabled": 0,
+    "Threads": 4
+  },
+  "seeded_kib": {
+    "VmHWM": 15228,
+    "VmRSS": 15100,
+    "RssAnon": 2504,
+    "RssFile": 12596,
+    "THP_enabled": 0,
+    "Threads": 5
+  },
+  "subscribed_kib": {
+    "VmHWM": 17424,
+    "VmRSS": 15868,
+    "RssAnon": 3272,
+    "RssFile": 12596,
+    "THP_enabled": 0,
+    "Threads": 6
+  },
+  "after_churn_kib": {
+    "VmHWM": 17424,
+    "VmRSS": 15820,
+    "RssAnon": 3224,
+    "RssFile": 12596,
+    "THP_enabled": 0,
+    "Threads": 6
+  },
+  "snapshot_messages": [
+    10,
+    10,
+    10
+  ],
+  "under_50_mib": true,
+  "under_50_mb": true,
+  "providers": [
+    {
+      "instanceId": "claudeAgent",
+      "installed": true,
+      "status": "warning"
+    },
+    {
+      "instanceId": "codex",
+      "installed": true,
+      "status": "error"
+    }
+  ],
+  "bridge_enabled": true,
+  "gateway_hosting": false,
+  "provider_workload": "registered and probed; inference excluded (defer_start)",
+  "measurement": "Linux /proc/PID/status; disk profile under /var/tmp",
+  "allocator_env": {},
+  "source": "1eb59d74be3ed2ae475f86190c02bcd1fa07a663"
+}
