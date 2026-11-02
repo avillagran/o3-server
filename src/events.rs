@@ -57,6 +57,8 @@ fn migrate_windows(
     apply: impl Fn(&Connection, i64, i64) -> Result<()>,
 ) -> Result<()> {
     loop {
+        #[cfg(test)]
+        let started = std::time::Instant::now();
         db.execute_batch("BEGIN IMMEDIATE")
             .map_err(|e| e.to_string())?;
         let step: Result<bool> = (|| {
@@ -66,7 +68,27 @@ fn migrate_windows(
                 return Ok(false);
             }
             let lo: i64 = db.query_row("SELECT coalesce((SELECT position FROM run_internal_migration_cursor WHERE name=?),0)", [table], |r| r.get(0)).map_err(|e| e.to_string())?;
-            let hi: Option<i64> = db.query_row(&format!("SELECT max(rowid) FROM (SELECT rowid FROM {table} WHERE rowid>? ORDER BY rowid LIMIT 128)"), [lo], |r| r.get(0)).map_err(|e| e.to_string())?;
+            // Bound ordinary batches by bytes as well as rows. A single large
+            // receipt is indivisible, so it gets its own transaction.
+            let column = if table == "receipts" {
+                "result"
+            } else {
+                "body"
+            };
+            let mut q = db.prepare(&format!("SELECT rowid,length(CAST({column} AS BLOB)) FROM {table} WHERE rowid>? ORDER BY rowid LIMIT 128")).map_err(|e| e.to_string())?;
+            let mut rows = q.query([lo]).map_err(|e| e.to_string())?;
+            let mut hi = None;
+            let mut bytes = 0i64;
+            while let Some(row) = rows.next().map_err(|e| e.to_string())? {
+                let size: i64 = row.get(1).map_err(|e| e.to_string())?;
+                if hi.is_some() && bytes + size > 2 * 1024 * 1024 {
+                    break;
+                }
+                hi = Some(row.get::<_, i64>(0).map_err(|e| e.to_string())?);
+                bytes += size;
+            }
+            drop(rows);
+            drop(q);
             let Some(hi) = hi else {
                 return Ok(false);
             };
@@ -76,11 +98,15 @@ fn migrate_windows(
         })();
         db.execute_batch(if step.is_ok() { "COMMIT" } else { "ROLLBACK" })
             .map_err(|e| e.to_string())?;
+        #[cfg(test)]
+        MIGRATION_WINDOWS.with(|windows| windows.borrow_mut().push(started.elapsed()));
         if !step? {
             return Ok(());
         }
     }
 }
+#[cfg(test)]
+thread_local! { static MIGRATION_WINDOWS: std::cell::RefCell<Vec<std::time::Duration>> = const { std::cell::RefCell::new(Vec::new()) }; }
 
 pub(crate) fn put(db: &Connection, kind: &str, id: &str, tid: &str, v: &Value) -> Result<()> {
     let public = if kind == "runs" {
@@ -664,9 +690,10 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
         }
         "run.interrupt" => {
             let rid = c["runId"].as_str().ok_or("runId required")?;
-            let mut run = get(&tx, "runs", rid)?;
+            let mut run =
+                get(&tx, "runs", rid).map_err(|_| format!("Run {rid} is not interruptible."))?;
             if run["threadId"] != tid {
-                return Err("run belongs to another thread".into());
+                return Err(format!("Run {rid} is not interruptible."));
             }
             let root = get(&tx, "nodes", run["rootNodeId"].as_str().unwrap_or("")).ok();
             let owner = get(
@@ -1629,5 +1656,72 @@ mod internal_run_tests {
                 assert!(!body.contains(field), "leaked {field}");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod migration_benchmark {
+    use super::*;
+    #[test]
+    #[ignore = "synthetic 400-thread large-profile writer lock measurement"]
+    fn large_profile_writer_windows() {
+        let root = std::path::Path::new("/var/tmp/o3-build/migration-profile");
+        std::fs::create_dir_all(root).unwrap();
+        let path = root.join(format!("{}.sqlite", random_id().unwrap()));
+        let db = Connection::open(&path).unwrap();
+        db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
+            .unwrap();
+        initialize(&db).unwrap();
+        db.execute_batch("DROP TABLE run_internal_migrated_v1; BEGIN IMMEDIATE;")
+            .unwrap();
+        let history = "x".repeat(4096);
+        let cached = "x".repeat(1024 * 1024);
+        for thread in 0..400 {
+            let tid = format!("t-{thread}");
+            db.execute(
+                "INSERT INTO records VALUES('runs',?, ?, ?)",
+                params![
+                    tid,
+                    tid,
+                    json!({"id":tid,"executionRequested":true}).to_string()
+                ],
+            )
+            .unwrap();
+            for _ in 0..100 {
+                db.execute("INSERT INTO events(thread_id,body) VALUES(?,?)",params![tid,json!({"type":"run.updated","payload":{"executionRequested":true,"history":history}}).to_string()]).unwrap();
+            }
+            db.execute(
+                "INSERT INTO receipts VALUES(?,?)",
+                params![
+                    tid,
+                    json!({"projection":{"runs":[{"executionRequested":true}],"history":cached}})
+                        .to_string()
+                ],
+            )
+            .unwrap();
+        }
+        db.execute_batch("COMMIT").unwrap();
+        MIGRATION_WINDOWS.with(|v| v.borrow_mut().clear());
+        let start = std::time::Instant::now();
+        initialize_run_internal(&db).unwrap();
+        let total = start.elapsed();
+        MIGRATION_WINDOWS.with(|v| {
+            let v = v.borrow();
+            eprintln!("migration: threads=400 events=40000 eventPayloadBytes=4096 receipts=400 receiptPayloadBytes=1048576 windows={} maxWriterMs={:.3} totalMs={:.3}",v.len(),v.iter().max().unwrap().as_secs_f64()*1000.,total.as_secs_f64()*1000.);
+        });
+        assert_eq!(
+            db.query_row("SELECT count(*) FROM run_internal", [], |r| r
+                .get::<_, i64>(0))
+                .unwrap(),
+            400
+        );
+        let start = std::time::Instant::now();
+        initialize_run_internal(&db).unwrap();
+        eprintln!(
+            "completed migration reopenMs={:.3}",
+            start.elapsed().as_secs_f64() * 1000.
+        );
+        drop(db);
+        std::fs::remove_file(path).unwrap();
     }
 }

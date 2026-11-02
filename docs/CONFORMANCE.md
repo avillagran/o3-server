@@ -1391,3 +1391,23 @@ complete thread.stop lifecycle behavior, the disabled-continuation terminal-stat
 choice against 3991, dispatch error-tag comparison and exhaustive init/steer/death/
 restart race coverage remain open. Migration bounds rows per lock window rather
 than guaranteeing a maximum duration for arbitrary historical JSON bodies.
+
+## Bounded migration measurement (2026-11-02)
+
+`events::migration_benchmark::large_profile_writer_windows` creates an isolated WAL
+profile under `/var/tmp/o3-build`: 400 threads, 40,000 history events with 4 KiB
+payloads, and 400 cached launch receipts with 1 MiB payloads. Measurements include
+BEGIN IMMEDIATE through COMMIT (including lock acquisition), with synchronous=NORMAL,
+a debug build and four Cargo jobs under nice; no concurrent build or test ran.
+The original 128-row batches took 6,329.021 ms overall, with a worst measured writer
+window of **1,389.677 ms** (324 windows). Adding a **2 MiB input-byte limit** per batch
+reduced the worst measured window to **112.892 ms** (720 windows, 6,525.986 ms total).
+The completed-marker reopen took 0.023 ms (baseline 0.027 ms).
+
+Windows still contain at most 128 rows; a receipt larger than 2 MiB is processed
+alone. Thus worst-case lock duration for arbitrary profiles remains unbounded by
+time: one indivisible JSON record plus SQLite/WAL commit cost. The concrete measured
+worst case above is workload evidence, not a universal latency guarantee. Migration
+cursors and the completion marker retain their existing crash/resume semantics.
+Reproduce with `cargo test --no-default-features --lib large_profile_writer_windows
+-- --ignored --nocapture`, using the documented TMPDIR/CARGO_TARGET_DIR and nice/-j4.
