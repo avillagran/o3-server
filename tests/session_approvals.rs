@@ -102,7 +102,7 @@ fn reader_accept_for_session_survives_actual_idle_reap_and_retains_operation_sco
 }
 
 #[test]
-fn stop_cancels_approval_blocked_native_run_and_request() {
+fn stop_interrupts_approval_blocked_run_without_inventing_native_request_resolution() {
     let binary = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/input/session-approval.py");
     let provider = Arc::new(
@@ -154,12 +154,15 @@ fn stop_cancels_approval_blocked_native_run_and_request() {
     )
     .unwrap();
     let p = wait(&c, |p| p["runs"][0]["status"] == "interrupted");
-    assert_eq!(t3_protocol::approvals::pending(&p), json!([]));
+    assert_eq!(
+        t3_protocol::approvals::pending(&p)[0]["responseCapability"],
+        "live"
+    );
     assert!(p["runtimeRequests"]
         .as_array()
         .unwrap()
         .iter()
-        .all(|r| r["status"] != "pending"));
+        .all(|r| r["status"] == "pending"));
     assert!(p["turnItems"]
         .as_array()
         .unwrap()

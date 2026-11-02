@@ -25,24 +25,6 @@ pub(crate) fn finish(
         crate::events::put(db, "subagents", &id, tid, &v)?;
         crate::events::append(db, tid, "subagent.updated", v, thread)?;
     }
-    // A terminal run no longer owns a live native response channel.
-    let mut q = db.prepare("SELECT r.id,r.body FROM records r JOIN records n ON n.kind='nodes' AND n.id=json_extract(r.body,'$.nodeId') WHERE r.kind='runtimeRequests' AND r.thread_id=? AND json_extract(n.body,'$.runId')=? AND json_extract(r.body,'$.status')='pending'").map_err(|e|e.to_string())?;
-    let requests = q
-        .query_map([tid, rid], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-        })
-        .map_err(|e| e.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
-    drop(q);
-    for (id, body) in requests {
-        let mut request: serde_json::Value =
-            serde_json::from_str(&body).map_err(|e| e.to_string())?;
-        request["status"] = serde_json::json!("cancelled");
-        request["resolvedAt"] = serde_json::json!(at);
-        crate::events::put(db, "runtimeRequests", &id, tid, &request)?;
-        crate::events::append(db, tid, "runtime-request.updated", request, thread)?;
-    }
     crate::background::finish(db, tid, rid, thread, at, status)?;
     if thread["providerInstanceId"] == "codex" {
         crate::codex_projection::finish(db, tid, rid, thread, &serde_json::json!(status), at)
