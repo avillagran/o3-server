@@ -1539,7 +1539,7 @@ fn wait_file(path: &Path) {
 fn upstream_control_windows() {
     let root = PathBuf::from("/var/tmp/o3-build/tmp").join(format!(
         "control-{}",
-        o3_server::store::random_id().unwrap()
+        &o3_server::store::random_id().unwrap()[..16]
     ));
     let mut results = vec![];
     let version = cli_output(
