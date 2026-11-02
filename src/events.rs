@@ -6,7 +6,7 @@ type Result<T> = std::result::Result<T, String>;
 pub fn initialize(db: &Connection) -> Result<()> {
     db.execute_batch("CREATE TABLE IF NOT EXISTS records(kind TEXT NOT NULL,id TEXT NOT NULL,thread_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(kind,id)); CREATE INDEX IF NOT EXISTS records_thread ON records(thread_id,kind); CREATE TABLE IF NOT EXISTS events(sequence INTEGER PRIMARY KEY AUTOINCREMENT,thread_id TEXT NOT NULL,body TEXT NOT NULL,shell TEXT); CREATE TABLE IF NOT EXISTS receipts(command_id TEXT PRIMARY KEY,result TEXT NOT NULL);").map_err(|e|e.to_string())?;
     // The partial index finds the latest user without reading assistant bodies.
-    db.execute_batch("CREATE INDEX IF NOT EXISTS records_user_message ON records(thread_id) WHERE kind='messages' AND json_extract(body,'$.role')='user';").map_err(|e|e.to_string())?;
+    db.execute_batch("CREATE INDEX IF NOT EXISTS records_turn_ordinal ON records(thread_id,json_extract(body,'$.ordinal')) WHERE kind='turnItems'; CREATE INDEX IF NOT EXISTS records_user_message ON records(thread_id) WHERE kind='messages' AND json_extract(body,'$.role')='user';").map_err(|e|e.to_string())?;
     initialize_run_internal(db)?;
     crate::threadq::initialize(db)
 }
@@ -231,7 +231,16 @@ pub(crate) fn shell_thread(db: &Connection, t: &Value) -> Result<Value> {
     t["latestRunStopRequested"] = json!(false);
     if let Some(run) = list(db, "runs", Some(tid), 1)?.pop() {
         t["latestRunId"] = run["id"].clone();
-        t["latestRunStopRequested"] = json!(db.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='turnItems' AND thread_id=? AND json_extract(body,'$.runId')=? AND json_extract(body,'$.type')='run_interrupt_request')",params![tid,run["id"].as_str().unwrap_or("")],|r|r.get::<_,bool>(0)).map_err(|e|e.to_string())?);
+        t["latestRunStopRequested"] = json!(db
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM records WHERE kind='turnItems' AND id=?)",
+                params![format!(
+                    "{}-interrupt-request",
+                    run["id"].as_str().unwrap_or("")
+                )],
+                |r| r.get::<_, bool>(0)
+            )
+            .map_err(|e| e.to_string())?);
         t["latestRunRequestedAt"] = run["requestedAt"].clone();
         t["latestRunStartedAt"] = run["startedAt"].clone();
         t["latestRunCompletedAt"] = run["completedAt"].clone();
@@ -449,7 +458,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                 .find(|r| {
                     matches!(
                         r["status"].as_str(),
-                        Some("preparing" | "starting" | "running")
+                        Some("preparing" | "starting" | "running" | "waiting")
                     )
                 })
         };

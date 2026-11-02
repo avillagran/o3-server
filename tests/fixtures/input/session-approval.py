@@ -7,6 +7,8 @@ for line in sys.stdin:
     f=json.loads(line)
     if f['type']=='control_request':
         send({'type':'control_response','response':{'subtype':'success','request_id':f['request_id']}})
+        if f['request'].get('subtype')=='interrupt':
+            send({'type':'result','subtype':'error_during_execution','is_error':True,'result':'interrupted','session_id':'native-session'})
     elif f['type']=='user':
         send({'type':'system','subtype':'init','session_id':'native-session'})
         send({'type':'control_request','request_id':'permission','request':{'subtype':'can_use_tool','tool_name':'Bash','input':{'command':f['message']['content'][0]['text']}}})
