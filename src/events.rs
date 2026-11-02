@@ -22,16 +22,66 @@ fn take_run_internal(v: &mut Value) -> Value {
     internal
 }
 fn initialize_run_internal(db: &Connection) -> Result<()> {
-    // Idempotent migration also removes fields from old replay and launch receipts.
-    db.execute_batch("SAVEPOINT run_internal_migration;
-        CREATE TABLE IF NOT EXISTS run_internal(id TEXT PRIMARY KEY,body TEXT NOT NULL);
-        INSERT INTO run_internal SELECT id,json_object('executionRequested',json(body -> '$.executionRequested'),'recoveryPending',json(body -> '$.recoveryPending'),'recoveryReason',json(body -> '$.recoveryReason')) FROM records WHERE kind='runs' AND (json_type(body,'$.executionRequested') IS NOT NULL OR json_type(body,'$.recoveryPending') IS NOT NULL OR json_type(body,'$.recoveryReason') IS NOT NULL) ON CONFLICT(id) DO UPDATE SET body=json_patch(run_internal.body,excluded.body);
-        UPDATE records SET body=json_remove(body,'$.executionRequested','$.recoveryPending','$.recoveryReason') WHERE kind='runs' AND (json_type(body,'$.executionRequested') IS NOT NULL OR json_type(body,'$.recoveryPending') IS NOT NULL OR json_type(body,'$.recoveryReason') IS NOT NULL);
-        UPDATE events SET body=json_remove(body,'$.payload.executionRequested','$.payload.recoveryPending','$.payload.recoveryReason') WHERE json_extract(body,'$.type') IN ('run.created','run.updated') AND (json_type(body,'$.payload.executionRequested') IS NOT NULL OR json_type(body,'$.payload.recoveryPending') IS NOT NULL OR json_type(body,'$.payload.recoveryReason') IS NOT NULL);
-        UPDATE receipts SET result=json_set(result,'$.projection.runs',json(coalesce((SELECT json_group_array(json(json_remove(value,'$.executionRequested','$.recoveryPending','$.recoveryReason'))) FROM json_each(result,'$.projection.runs')),'[]'))) WHERE json_type(result,'$.projection.runs')='array';
-        UPDATE events SET body=json_set(body,'$.type','run-attempt.updated') WHERE json_extract(body,'$.type')='attempt.updated';
-        RELEASE run_internal_migration;").map_err(|e| e.to_string())
+    // An immediate transaction must precede every read used to decide a write.
+    // Persist cursors with each bounded window so interrupted upgrades resume safely.
+    let done: bool = db
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='run_internal_migrated_v1')",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if done {
+        return Ok(());
+    }
+    db.execute_batch("BEGIN IMMEDIATE; CREATE TABLE IF NOT EXISTS run_internal(id TEXT PRIMARY KEY,body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS run_internal_migration_cursor(name TEXT PRIMARY KEY,position INTEGER NOT NULL); COMMIT;").map_err(|e| e.to_string())?;
+    migrate_windows(db, "records", |db, lo, hi| {
+        db.execute("INSERT INTO run_internal SELECT id,json_object('executionRequested',json(body -> '$.executionRequested'),'recoveryPending',json(body -> '$.recoveryPending'),'recoveryReason',json(body -> '$.recoveryReason')) FROM records WHERE rowid>?1 AND rowid<=?2 AND kind='runs' AND (json_type(body,'$.executionRequested') IS NOT NULL OR json_type(body,'$.recoveryPending') IS NOT NULL OR json_type(body,'$.recoveryReason') IS NOT NULL) ON CONFLICT(id) DO UPDATE SET body=json_patch(run_internal.body,excluded.body)", params![lo, hi]).map_err(|e| e.to_string())?;
+        db.execute("UPDATE records SET body=json_remove(body,'$.executionRequested','$.recoveryPending','$.recoveryReason') WHERE rowid>?1 AND rowid<=?2 AND kind='runs' AND (json_type(body,'$.executionRequested') IS NOT NULL OR json_type(body,'$.recoveryPending') IS NOT NULL OR json_type(body,'$.recoveryReason') IS NOT NULL)", params![lo, hi]).map_err(|e| e.to_string())?;
+        Ok(())
+    })?;
+    migrate_windows(db, "events", |db, lo, hi| {
+        db.execute("UPDATE events SET body=json_remove(body,'$.payload.executionRequested','$.payload.recoveryPending','$.payload.recoveryReason') WHERE rowid>?1 AND rowid<=?2 AND json_extract(body,'$.type') IN ('run.created','run.updated') AND (json_type(body,'$.payload.executionRequested') IS NOT NULL OR json_type(body,'$.payload.recoveryPending') IS NOT NULL OR json_type(body,'$.payload.recoveryReason') IS NOT NULL)", params![lo, hi]).map_err(|e| e.to_string())?;
+        db.execute("UPDATE events SET body=json_set(body,'$.type','run-attempt.updated') WHERE rowid>?1 AND rowid<=?2 AND json_extract(body,'$.type')='attempt.updated'", params![lo, hi]).map_err(|e| e.to_string())?;
+        Ok(())
+    })?;
+    migrate_windows(db, "receipts", |db, lo, hi| {
+        db.execute("UPDATE receipts SET result=json_set(result,'$.projection.runs',json(coalesce((SELECT json_group_array(json(json_remove(value,'$.executionRequested','$.recoveryPending','$.recoveryReason'))) FROM json_each(result,'$.projection.runs')),'[]'))) WHERE rowid>?1 AND rowid<=?2 AND json_type(result,'$.projection.runs')='array'", params![lo, hi]).map_err(|e| e.to_string())?;
+        Ok(())
+    })?;
+    db.execute_batch("BEGIN IMMEDIATE; CREATE TABLE IF NOT EXISTS run_internal_migrated_v1(done INTEGER); DROP TABLE IF EXISTS run_internal_migration_cursor; COMMIT;").map_err(|e| e.to_string())
 }
+fn migrate_windows(
+    db: &Connection,
+    table: &str,
+    apply: impl Fn(&Connection, i64, i64) -> Result<()>,
+) -> Result<()> {
+    loop {
+        db.execute_batch("BEGIN IMMEDIATE")
+            .map_err(|e| e.to_string())?;
+        let step: Result<bool> = (|| {
+            // Another opener may already have finished the migration.
+            let done: bool = db.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='run_internal_migrated_v1')", [], |r| r.get(0)).map_err(|e| e.to_string())?;
+            if done {
+                return Ok(false);
+            }
+            let lo: i64 = db.query_row("SELECT coalesce((SELECT position FROM run_internal_migration_cursor WHERE name=?),0)", [table], |r| r.get(0)).map_err(|e| e.to_string())?;
+            let hi: Option<i64> = db.query_row(&format!("SELECT max(rowid) FROM (SELECT rowid FROM {table} WHERE rowid>? ORDER BY rowid LIMIT 128)"), [lo], |r| r.get(0)).map_err(|e| e.to_string())?;
+            let Some(hi) = hi else {
+                return Ok(false);
+            };
+            apply(db, lo, hi)?;
+            db.execute("INSERT INTO run_internal_migration_cursor VALUES(?,?) ON CONFLICT(name) DO UPDATE SET position=excluded.position", params![table,hi]).map_err(|e| e.to_string())?;
+            Ok(true)
+        })();
+        db.execute_batch(if step.is_ok() { "COMMIT" } else { "ROLLBACK" })
+            .map_err(|e| e.to_string())?;
+        if !step? {
+            return Ok(());
+        }
+    }
+}
+
 pub(crate) fn put(db: &Connection, kind: &str, id: &str, tid: &str, v: &Value) -> Result<()> {
     let public = if kind == "runs" {
         let mut public = v.clone();
@@ -784,7 +834,7 @@ fn interrupt_items(
     let request_id = format!("{rid}-interrupt-request");
     let ordinal: i64 = db
         .query_row(
-            "SELECT count(*) FROM records WHERE kind='turnItems' AND thread_id=?",
+            "SELECT coalesce(max(json_extract(body,'$.ordinal')),-1)+1 FROM records WHERE kind='turnItems' AND thread_id=?",
             [tid],
             |r| r.get(0),
         )
@@ -833,7 +883,7 @@ pub(crate) fn message_item(db: &Connection, tid: &str, m: &Value) -> Result<Valu
     let id = format!("item-{}", m["id"].as_str().ok_or("message id required")?);
     let ordinal: i64 = db
         .query_row(
-            "SELECT count(*) FROM records WHERE kind='turnItems' AND thread_id=?",
+            "SELECT coalesce(max(json_extract(body,'$.ordinal')),-1)+1 FROM records WHERE kind='turnItems' AND thread_id=?",
             [tid],
             |r| r.get(0),
         )
@@ -1335,6 +1385,70 @@ pub fn mutate_project(s: &State, c: &Value) -> Result<Value> {
 mod internal_run_tests {
     use super::*;
     #[test]
+    fn sparse_imported_ordinals_leave_room_for_messages_and_interrupts() {
+        let db = Connection::open_in_memory().unwrap();
+        initialize(&db).unwrap();
+        put(
+            &db,
+            "turnItems",
+            "imported",
+            "t",
+            &json!({"id":"imported","ordinal":900}),
+        )
+        .unwrap();
+        let m = json!({"id":"m","role":"user"});
+        assert_eq!(message_item(&db, "t", &m).unwrap()["ordinal"], 901);
+        interrupt_items(
+            &db,
+            "t",
+            &json!({"id":"r"}),
+            &json!({"id":"t"}),
+            "now",
+            &json!({}),
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            get(&db, "turnItems", "r-interrupt-request").unwrap()["ordinal"],
+            902
+        );
+        assert_eq!(
+            get(&db, "turnItems", "r-interrupt-result").unwrap()["ordinal"],
+            903
+        );
+    }
+    #[test]
+    fn migration_avoids_deterministic_wal_snapshot_upgrade_and_skips_history() {
+        let dir = std::env::temp_dir().join(random_id().unwrap());
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("test.sqlite");
+        let a = Connection::open(&path).unwrap();
+        a.execute_batch("PRAGMA journal_mode=WAL").unwrap();
+        initialize(&a).unwrap();
+        let b = Connection::open(&path).unwrap();
+        a.execute_batch("SAVEPOINT legacy; CREATE TABLE IF NOT EXISTS run_internal(id TEXT PRIMARY KEY,body TEXT NOT NULL)").unwrap();
+        b.execute("INSERT INTO receipts VALUES('concurrent','{}')", [])
+            .unwrap();
+        let err = a.execute("UPDATE events SET body=body", []).unwrap_err();
+        assert_eq!(
+            err.sqlite_error().unwrap().extended_code,
+            rusqlite::ffi::SQLITE_BUSY_SNAPSHOT
+        );
+        a.execute_batch("ROLLBACK TO legacy; RELEASE legacy")
+            .unwrap();
+        // A migrated opener never touches historical rows, even while another writer owns WAL.
+        b.execute_batch("BEGIN IMMEDIATE").unwrap();
+        initialize_run_internal(&a).unwrap();
+        b.execute_batch("ROLLBACK").unwrap();
+        // Legacy migration takes the write lock before reading: a concurrent commit
+        // cannot invalidate its snapshot. It also preserves active internal state.
+        a.execute_batch("DROP TABLE run_internal_migrated_v1")
+            .unwrap();
+        initialize_run_internal(&a).unwrap();
+        drop((a, b));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
     fn legacy_run_bookkeeping_migrates_without_entering_any_public_record() {
         let mut db = Connection::open_in_memory().unwrap();
         initialize(&db).unwrap();
@@ -1357,6 +1471,8 @@ mod internal_run_tests {
             [json!({"projection":{"runs":[run]}}).to_string()],
         )
         .unwrap();
+        db.execute_batch("DROP TABLE run_internal_migrated_v1")
+            .unwrap();
         for _ in 0..2 {
             initialize(&db).unwrap();
         }

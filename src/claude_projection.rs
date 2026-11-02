@@ -11,7 +11,7 @@ fn item(db: &Connection, tid: &str, rid: &str, id: &str, at: &str) -> Result<Val
     }
     let ordinal: i64 = db
         .query_row(
-            "SELECT count(*) FROM records WHERE kind='turnItems' AND thread_id=?",
+            "SELECT coalesce(max(json_extract(body,'$.ordinal')),-1)+1 FROM records WHERE kind='turnItems' AND thread_id=?",
             [tid],
             |r| r.get(0),
         )

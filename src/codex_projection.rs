@@ -32,7 +32,7 @@ fn item(db: &Connection, tid: &str, thread: &Value, mut v: Value) -> Result<(), 
     } else {
         json!(db
             .query_row(
-                "SELECT count(*) FROM records WHERE kind='turnItems' AND thread_id=?",
+                "SELECT coalesce(max(json_extract(body,'$.ordinal')),-1)+1 FROM records WHERE kind='turnItems' AND thread_id=?",
                 [tid],
                 |r| r.get::<_, i64>(0)
             )
