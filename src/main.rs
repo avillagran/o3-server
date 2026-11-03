@@ -251,33 +251,41 @@ fn main() -> std::io::Result<()> {
                 probe_state.notify();
             });
             let mut serving = tokio::spawn(o3_server::serve(listener, state.clone()));
+            // A standalone OmaBridge can publish this server instead; --no-bridge keeps the
+            // embedded node, its identity and its timers out of this process.
             #[cfg(feature = "bridge")]
-            let bridge = o3_server::bridge::start_hosted(
-                &option(&args, "--bridge-state-dir")
-                    .map(std::path::PathBuf::from)
-                    .unwrap_or_else(|| base.join("omabridge")),
-                state.clone(),
-                {
-                    let mut options = omabridge::NetOptions::loopback();
-                    if let Some(bind) = option(&args, "--bridge-bind") {
-                        options.bind = bind.parse().map_err(std::io::Error::other)?;
-                    }
-                    if let Some(relay) = option(&args, "--bridge-relay") {
-                        options.relay = match relay {
-                            "none" => omabridge::Relay::Disabled,
-                            "public" => omabridge::Relay::Public,
-                            url => omabridge::Relay::Custom(
-                                url.parse().map_err(std::io::Error::other)?,
-                            ),
-                        };
-                    }
-                    options
-                },
-                option(&args, "--bridge-gateway-config").map(Path::new),
-                args.iter().any(|a| a == "--bridge-relay-host"),
-            )
-            .await
-            .map_err(std::io::Error::other)?;
+            let bridge = if args.iter().any(|a| a == "--no-bridge") {
+                None
+            } else {
+                Some(
+                    o3_server::bridge::start_hosted(
+                        &option(&args, "--bridge-state-dir")
+                            .map(std::path::PathBuf::from)
+                            .unwrap_or_else(|| base.join("omabridge")),
+                        state.clone(),
+                        {
+                            let mut options = omabridge::NetOptions::loopback();
+                            if let Some(bind) = option(&args, "--bridge-bind") {
+                                options.bind = bind.parse().map_err(std::io::Error::other)?;
+                            }
+                            if let Some(relay) = option(&args, "--bridge-relay") {
+                                options.relay = match relay {
+                                    "none" => omabridge::Relay::Disabled,
+                                    "public" => omabridge::Relay::Public,
+                                    url => omabridge::Relay::Custom(
+                                        url.parse().map_err(std::io::Error::other)?,
+                                    ),
+                                };
+                            }
+                            options
+                        },
+                        option(&args, "--bridge-gateway-config").map(Path::new),
+                        args.iter().any(|a| a == "--bridge-relay-host"),
+                    )
+                    .await
+                    .map_err(std::io::Error::other)?,
+                )
+            };
             // block_on runs on the main thread, outside the runtime worker park hooks.
             let result = tokio::select! {
                 result=&mut serving=>result.map_err(std::io::Error::other)?,
@@ -289,7 +297,9 @@ fn main() -> std::io::Result<()> {
                 let _ = serving.await;
             }
             #[cfg(feature = "bridge")]
-            bridge.shutdown().await;
+            if let Some(bridge) = bridge {
+                bridge.shutdown().await;
+            }
             probe_task.abort();
             let _ = probe_task.await;
             o3_server::preview::shutdown(&state).await;
