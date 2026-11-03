@@ -100,10 +100,58 @@ CREATE TABLE IF NOT EXISTS auth_pairing_links(
   label TEXT, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, consumed_at INTEGER, revoked_at INTEGER);
 ";
 
+/// `sql-profile` builds: attach a statement profiler to a connection. No-op otherwise.
+#[allow(unused_variables)]
+pub fn profiled(conn: &mut Connection) {
+    #[cfg(feature = "sql-profile")]
+    sql_profile::attach(conn);
+}
+#[cfg(feature = "sql-profile")]
+mod sql_profile {
+    use std::{collections::HashMap, sync::Mutex, time::Duration};
+    static STATS: Mutex<Option<HashMap<String, (u64, Duration)>>> = Mutex::new(None);
+    static STARTED: std::sync::Once = std::sync::Once::new();
+    fn record(sql: &str, took: Duration) {
+        let key: String = sql
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .chars()
+            .take(160)
+            .collect();
+        let mut g = STATS.lock().unwrap();
+        let e = g.get_or_insert_with(HashMap::new).entry(key).or_default();
+        e.0 += 1;
+        e.1 += took;
+    }
+    pub fn attach(conn: &mut rusqlite::Connection) {
+        #[allow(deprecated)]
+        conn.profile(Some(record));
+        STARTED.call_once(|| {
+            std::thread::spawn(|| loop {
+                std::thread::sleep(Duration::from_secs(60));
+                let Some(stats) = STATS.lock().unwrap().take() else {
+                    continue;
+                };
+                let mut rows: Vec<_> = stats.into_iter().collect();
+                rows.sort_by_key(|row| std::cmp::Reverse(row.1 .1));
+                eprintln!("sql-profile: {} statement shapes in 60 s", rows.len());
+                for (sql, (n, took)) in rows.into_iter().take(15) {
+                    eprintln!(
+                        "sql-profile: {n:>7} calls {:>9.1} ms  {sql}",
+                        took.as_secs_f64() * 1000.0
+                    );
+                }
+            });
+        });
+    }
+}
+
 impl State {
     pub fn open(dir: &Path) -> Result<Self, String> {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
         let mut db = Connection::open(dir.join("o3.sqlite")).map_err(|e| e.to_string())?;
+        profiled(&mut db);
         db.execute_batch(SCHEMA).map_err(|e| e.to_string())?;
         // A deferred read-to-write upgrade fails instantly, ignoring busy_timeout, when the
         // checkpointer connection has moved the WAL. Taking the write lock up front waits.
@@ -116,6 +164,8 @@ impl State {
         reader
             .execute_batch("PRAGMA cache_size=-512; PRAGMA mmap_size=0;")
             .map_err(|e| e.to_string())?;
+        let mut reader = reader;
+        profiled(&mut reader);
         let signing_key = auth::load_or_create_key(&dir.join("secrets/server-signing-key.bin"))
             .map_err(|e| e.to_string())?;
         let id_path = dir.join("environment-id");
@@ -183,7 +233,8 @@ impl State {
         let path = self.dir.join("o3.sqlite");
         let wake = self.checkpoint_wake.clone();
         std::thread::Builder::new().name("sqlite-checkpoint".into()).stack_size(256 * 1024).spawn(move || {
-            let Ok(db) = Connection::open(path) else { return };
+            let Ok(mut db) = Connection::open(path) else { return };
+            profiled(&mut db);
             let _ = db.execute_batch("PRAGMA busy_timeout=0; PRAGMA journal_size_limit=33554432; PRAGMA wal_autocheckpoint=0;");
             while weak.strong_count() != 0 {
                 let (dirty,signal)=&*wake;

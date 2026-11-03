@@ -636,11 +636,16 @@ impl Servers {
 async fn scan_loop(shared: Shared, urls: Vec<String>, probing: bool) {
     let mut last: Option<Vec<Value>> = None;
     let mut version = 0;
+    let mut cache = ScanCache::default();
     loop {
         let urls2 = urls.clone();
-        let servers = tokio::task::spawn_blocking(move || scan_servers(&urls2))
-            .await
-            .unwrap_or_default();
+        let (servers, kept) = tokio::task::spawn_blocking(move || {
+            let servers = scan_servers(&urls2, &mut cache, std::time::Instant::now());
+            (servers, cache)
+        })
+        .await
+        .unwrap_or_default();
+        cache = kept;
         if last.as_ref() != Some(&servers) {
             version += 1;
             let mut list = json!({"servers":servers,"scannedAt":iso(now_ms())});
@@ -750,18 +755,65 @@ fn probe(port: u16) -> bool {
     s.read_exact(&mut buf).is_ok() && &buf == b"HTTP/"
 }
 
-fn scan_servers(configured: &[String]) -> Vec<Value> {
-    let listeners = listening();
-    let inodes: Vec<String> = listeners.iter().map(|(_, i)| i.clone()).collect();
-    let owner = owners(&inodes);
+/// What a scan learned about one listening socket. A socket that answered HTTP keeps its
+/// answer while it listens; ownership is looked up once, when the socket first appears.
+struct Known {
+    http: bool,
+    owner: Option<(u32, String)>,
+    first: std::time::Instant,
+    probed: std::time::Instant,
+}
+/// Per-subscription scan state, so a steady machine costs one `/proc/net/tcp` read per scan
+/// instead of a walk of every process's descriptors and an HTTP probe of every port.
+#[derive(Default)]
+struct ScanCache(std::collections::HashMap<(u16, String), Known>);
+const RETRY_WINDOW: Duration = Duration::from_secs(60);
+/// A socket that does not answer yet is retried on every scan for its first minute (a dev
+/// server may bind before it serves), then once a minute.
+fn needs_probe(k: &Known, now: std::time::Instant) -> bool {
+    !k.http
+        && (now.duration_since(k.first) < RETRY_WINDOW
+            || now.duration_since(k.probed) >= RETRY_WINDOW)
+}
+
+fn scan_servers(
+    configured: &[String],
+    cache: &mut ScanCache,
+    now: std::time::Instant,
+) -> Vec<Value> {
+    let listeners: Vec<(u16, String)> = listening().into_iter().take(64).collect();
+    cache
+        .0
+        .retain(|key, _| key.1.starts_with("configured:") || listeners.contains(key));
+    let fresh: Vec<String> = listeners
+        .iter()
+        .filter(|key| !cache.0.contains_key(*key))
+        .map(|(_, inode)| inode.clone())
+        .collect();
+    let owner = if fresh.is_empty() {
+        BTreeMap::new()
+    } else {
+        owners(&fresh)
+    };
     let mut out = Vec::new();
-    for (port, inode) in listeners.into_iter().take(64) {
-        if !probe(port) {
+    for (port, inode) in listeners {
+        let key = (port, inode.clone());
+        let known = cache.0.entry(key).or_insert_with(|| Known {
+            http: false,
+            owner: owner.get(&inode).cloned(),
+            first: now,
+            probed: now,
+        });
+        if needs_probe(known, now) {
+            known.http = probe(port);
+            known.probed = now;
+        }
+        if !known.http {
             continue;
         }
-        let (pid, name) = owner
-            .get(&inode)
-            .cloned()
+        let (pid, name) = known
+            .owner
+            .clone()
             .map(|(p, n)| (Some(p), Some(n)))
             .unwrap_or((None, None));
         out.push(json!({"host":"localhost","port":port,"url":format!("http://localhost:{port}"),"processName":name.filter(|n|!n.is_empty()),"pid":pid,"terminal":null}));
@@ -778,7 +830,22 @@ fn scan_servers(configured: &[String]) -> Vec<Value> {
         let Some(port) = u.port_or_known_default() else {
             continue;
         };
-        if out.iter().any(|s| s["port"] == port) || !probe(port) {
+        if out.iter().any(|s| s["port"] == port) {
+            continue;
+        }
+        let known = cache
+            .0
+            .entry((port, format!("configured:{raw}")))
+            .or_insert_with(|| Known {
+                http: false,
+                owner: None,
+                first: now,
+                probed: now,
+            });
+        // A configured URL can stop answering without its socket changing: always re-probe.
+        known.http = probe(port);
+        known.probed = now;
+        if !known.http {
             continue;
         }
         out.push(json!({"host":host,"port":port,"url":raw,"processName":null,"pid":null,"terminal":null}));
@@ -789,4 +856,66 @@ fn scan_servers(configured: &[String]) -> Vec<Value> {
 
 pub async fn shutdown(s: &State) {
     s.streams.p2.preview.browser.shutdown().await;
+}
+
+#[cfg(test)]
+mod scan_cache_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    /// A loopback listener that counts accepted probes; answers HTTP only when asked to.
+    fn listener(http: bool) -> (u16, Arc<AtomicUsize>) {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let counter = hits.clone();
+        std::thread::spawn(move || {
+            for mut s in l.incoming().flatten() {
+                use std::io::{Read, Write};
+                counter.fetch_add(1, Ordering::SeqCst);
+                let mut b = [0u8; 256];
+                let _ = s.read(&mut b);
+                if http {
+                    let _ = s.write_all(b"HTTP/1.0 200 OK\r\n\r\n");
+                }
+            }
+        });
+        (port, hits)
+    }
+    #[test]
+    fn steady_sockets_are_not_reprobed_and_silent_ones_back_off() {
+        let (silent, silent_hits) = listener(false);
+        let (web, web_hits) = listener(true);
+        let mut cache = ScanCache::default();
+        let t0 = std::time::Instant::now();
+        let ports = |v: &[Value]| {
+            v.iter()
+                .filter_map(|s| s["port"].as_u64())
+                .collect::<Vec<_>>()
+        };
+        let first = scan_servers(&[], &mut cache, t0);
+        assert!(ports(&first).contains(&(web as u64)) && !ports(&first).contains(&(silent as u64)));
+        assert_eq!(
+            (
+                silent_hits.load(Ordering::SeqCst),
+                web_hits.load(Ordering::SeqCst)
+            ),
+            (1, 1)
+        );
+        // Within the retry window a silent socket is retried; an HTTP one is remembered.
+        let again = scan_servers(&[], &mut cache, t0 + Duration::from_secs(3));
+        assert!(ports(&again).contains(&(web as u64)));
+        assert_eq!(
+            (
+                silent_hits.load(Ordering::SeqCst),
+                web_hits.load(Ordering::SeqCst)
+            ),
+            (2, 1)
+        );
+        // After the window: no probe until a minute since the last one.
+        scan_servers(&[], &mut cache, t0 + Duration::from_secs(61));
+        assert_eq!(silent_hits.load(Ordering::SeqCst), 2);
+        scan_servers(&[], &mut cache, t0 + Duration::from_secs(64));
+        assert_eq!(silent_hits.load(Ordering::SeqCst), 3);
+        assert_eq!(web_hits.load(Ordering::SeqCst), 1);
+    }
 }
