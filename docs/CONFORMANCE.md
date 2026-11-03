@@ -2754,3 +2754,18 @@ Migration still imports messages/items without the original runs/attempts/checkp
 Native bindings alone therefore do not preserve execution history or run ordinals. Existing
 long-lived threads and `/mcp` orchestration remain outside validated migration acceptance;
 a short new-thread smoke test is insufficient evidence for that use case.
+
+### Large handoffs and cold Claude compaction
+
+Historical upload descriptors are supplied as file references alongside handoff text, so old
+images remain readable without re-encoding all of them into the next inference request.
+Current user attachments retain their normal image/file handling and limits. Codex outgoing
+RPC frames allow 16 MiB to carry the existing 8 MiB input budget plus its envelope; incoming
+frames retain their independent 1 MiB limit.
+
+For a Claude `/compact` request after a provider change with a pending historical handoff,
+o3 first requests a continuation summary in a persistent session with tools and MCP disabled,
+then sends the literal native `/compact` command. Completion is emitted only after that
+second result. The limited process is closed afterward so subsequent ordinary turns resume
+with their usual tools. A deterministic native fixture verifies both phases and tool policy.
+This does not implement Codex native compaction or change the general migration importer.
