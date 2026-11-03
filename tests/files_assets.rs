@@ -916,7 +916,11 @@ fn open_in_editor_launches_argv_without_a_shell() {
         )
         .is_ok());
     let start = std::time::Instant::now();
-    while !out.exists() && start.elapsed().as_secs() < 5 {
+    // The child creates/truncates the file before printf writes its argument.
+    // Existence alone races that write under concurrent CI tests.
+    while std::fs::read_to_string(&out).ok().as_deref().map(str::trim) != target.to_str()
+        && start.elapsed().as_secs() < 5
+    {
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
     assert_eq!(
