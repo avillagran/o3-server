@@ -194,6 +194,16 @@ impl ClaudeProvider {
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true);
+        if input.model_selection["o3ColdCompact"] == true {
+            // Build the continuation summary without permitting historical tool replay.
+            cmd.args([
+                "--tools",
+                "",
+                "--strict-mcp-config",
+                "--mcp-config",
+                r#"{"mcpServers":{}}"#,
+            ]);
+        }
         if let Some(effort) = effort {
             cmd.arg("--effort").arg(effort);
         }
@@ -338,6 +348,7 @@ impl ClaudeProvider {
             let mut pending: HashMap<String, Value> = HashMap::new();
             let mut boundary=TurnBoundary::default();
             let mut interrupt_requested=false;
+            let mut cold_compact_pending = input.model_selection["o3ColdCompact"] == true;
             loop {
                 tokio::select! {
                     biased;
@@ -420,12 +431,24 @@ impl ClaudeProvider {
                                 if matches!(event,ProviderEvent::Completed|ProviderEvent::Failed(_)) {boundary.terminal=Some(if interrupt_requested {ProviderEvent::Interrupted}else{event});} else {output.send(event).await.map_err(|_|"receiver closed")?;}
                             }
                         }
-                        if boundary.ready() {output.send(boundary.terminal.take().unwrap()).await.map_err(|_|"receiver closed")?;return Ok(true); }
+                        if boundary.ready() {
+                            if cold_compact_pending && matches!(boundary.terminal, Some(ProviderEvent::Completed)) {
+                                cold_compact_pending = false;
+                                boundary = TurnBoundary::default();
+                                session.prompt("/compact").await?;
+                                continue;
+                            }
+                            output.send(boundary.terminal.take().unwrap()).await.map_err(|_|"receiver closed")?;
+                            return Ok(true);
+                        }
                     }
                 }
             }
         }.await;
-        if matches!(result, Ok(true)) && input.runtime_mode != "text-only" {
+        if matches!(result, Ok(true))
+            && input.runtime_mode != "text-only"
+            && input.model_selection["o3ColdCompact"] != true
+        {
             let stamp = tokio::time::Instant::now();
             session.idle_since = stamp;
             let thread_id = input.thread_id.clone();

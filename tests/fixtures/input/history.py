@@ -38,12 +38,11 @@ for line in sys.stdin:
         assert 'tool-output-proof' in text, text
         blocks = f['message']['content'] if claude else f['params']['input']
         images = [b for b in blocks if b['type'] in ('image','localImage')]
-        assert len(images) == 1, blocks
-        if claude:
-            import base64
-            assert base64.b64decode(images[0]['source']['data']) == b'\x89PNG\r\n\x1a\n'
-        else:
-            assert open(images[0]['path'],'rb').read() == b'\x89PNG\r\n\x1a\n'
+        assert not images, 'historical images must not be re-encoded as current uploads'
+        references = [json.loads(line.split(': ', 1)[1]) for line in text.splitlines()
+                      if line.startswith('Historical attachment (read when relevant): ')]
+        assert len(references) == 1 and references[0]['available'] is True
+        assert open(references[0]['path'], 'rb').read() == b'\x89PNG\r\n\x1a\n'
     if claude:
         print(json.dumps({'type':'system','subtype':'init','session_id':'claude-native'}), flush=True)
         print(json.dumps({'type':'stream_event','event':{'type':'content_block_delta','delta':{'type':'text_delta','text':'remembered-proof'}}}), flush=True)

@@ -109,3 +109,44 @@ mod tests {
         assert!(claude.is_err());
     }
 }
+
+/// Historical uploads remain available to native tools without re-encoding every old image.
+pub(crate) fn historical_context(root: &std::path::Path, text: &str, media: &Value) -> String {
+    let mut context = text.to_owned();
+    for a in media.as_array().into_iter().flatten() {
+        let id = a["id"].as_str().unwrap_or("");
+        let path = crate::assets::attachment_path_in(root, id);
+        context.push_str(&format!("\nHistorical attachment (read when relevant): {}\n", json!({"id":id,"name":a["name"],"mimeType":a["mimeType"],"path":path,"available":path.is_some()})));
+    }
+    context
+}
+
+#[cfg(test)]
+mod history_tests {
+    use super::*;
+    #[test]
+    fn old_images_are_referenced_without_reencoding_but_current_images_remain_inline() {
+        let root =
+            std::env::temp_dir().join(format!("o3-history-{}", crate::store::random_id().unwrap()));
+        std::fs::create_dir_all(&root).unwrap();
+        let id = "upload-11111111-1111-4111-8111-111111111111";
+        std::fs::write(root.join(format!("{id}.png")), vec![0; 4 * 1024 * 1024]).unwrap();
+        let media = json!([{"id":id,"name":"old.png","mimeType":"image/png"},{"id":id,"name":"old.png","mimeType":"image/png"}]);
+        assert!(materialize(&root, "context", &media, None, true).is_err());
+        let history = historical_context(&root, "retained text", &media);
+        let frames = materialize(&root, &history, &json!([]), None, true).unwrap();
+        assert!(
+            history.contains("old.png")
+                && history.contains(id)
+                && history.starts_with("retained text")
+        );
+        assert_eq!(frames.len(), 1);
+        assert!(
+            materialize(&root, "new image", &json!([media[0]]), None, true)
+                .unwrap()
+                .iter()
+                .any(|v| v["type"] == "image")
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}

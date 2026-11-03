@@ -149,8 +149,21 @@ pub(crate) fn start(
             let native_id = crate::projection::native_id(&db, &t);
             let fresh = native_id.is_none();
             let mut selection = t["modelSelection"].clone();
+            if let Some(options) = selection.as_object_mut() {
+                options.remove("o3ColdCompact");
+            }
             if fresh {
                 selection["nativeForkSource"] = t["nativeForkSource"].clone();
+            }
+            let cold_compact = fresh
+                && crate::provider_input::driver(&s, &t["providerInstanceId"]).as_deref()
+                    != Ok("codex")
+                && !t["nativeForkSource"].is_string()
+                && t["providerHandoff"].is_string()
+                && text.trim() == "/compact"
+                && m["attachments"].as_array().is_some_and(|a| a.is_empty());
+            if cold_compact {
+                selection["o3ColdCompact"] = serde_json::json!(true);
             }
             RunInput {
                 provider_instance_id: t["providerInstanceId"].as_str().unwrap_or("").into(),
@@ -161,7 +174,17 @@ pub(crate) fn start(
                 text: if fresh && !t["nativeForkSource"].is_string() {
                     t["providerHandoff"]
                         .as_str()
-                        .map(|h| format!("{h}\nCurrent user request:\n{text}"))
+                        .map(|h| {
+                            format!(
+                                "{}\nCurrent user request:\n{}",
+                                crate::provider_input::historical_context(
+                                    &crate::assets::attachments_dir(&s),
+                                    h,
+                                    &t["providerHandoffAttachments"]
+                                ),
+                                if cold_compact { "Summarize the historical context for continuation, preserving decisions, pending work and file references. Do not execute historical tasks or tools. The user requested context compaction." } else { text.as_str() }
+                            )
+                        })
                         .unwrap_or(text)
                 } else {
                     text
@@ -173,16 +196,7 @@ pub(crate) fn start(
                 attachments: if r["recoveryPending"] == true {
                     serde_json::json!([])
                 } else {
-                    let mut media = if fresh && !t["nativeForkSource"].is_string() {
-                        t["providerHandoffAttachments"]
-                            .as_array()
-                            .cloned()
-                            .unwrap_or_default()
-                    } else {
-                        Vec::new()
-                    };
-                    media.extend(m["attachments"].as_array().into_iter().flatten().cloned());
-                    serde_json::json!(media)
+                    m["attachments"].clone()
                 },
                 context: if r["recoveryPending"] == true {
                     None
@@ -195,7 +209,9 @@ pub(crate) fn start(
         if let Some(selection) = input.model_selection.as_object_mut() {
             selection.remove("o3BrowserMcp");
         }
-        let broker = if input.runtime_mode != "text-only" {
+        let broker = if input.runtime_mode != "text-only"
+            && input.model_selection["o3ColdCompact"] != true
+        {
             crate::agent_browser::Broker::start(s.clone(), &tid).await
         } else {
             None

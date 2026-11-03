@@ -9,6 +9,8 @@ use tokio::{
 };
 
 const MAX_FRAME: usize = 1024 * 1024;
+// Provider input admits 8 MiB of serialized content, plus the RPC envelope.
+const MAX_OUTGOING_FRAME: usize = 16 * 1024 * 1024;
 /// Notifications queued for one Codex thread while its turn loop is busy (writing events,
 /// awaiting an RPC). Bounded by bytes, not count: a burst of parallel tool calls emits many
 /// small frames, and dropping any of them would corrupt the turn.
@@ -661,7 +663,7 @@ async fn actor(
                     }
                 };
                 let bytes=serde_json::to_vec(&frame).map_err(|e|e.to_string())?;
-                if bytes.len()>MAX_FRAME{return Err("Codex outgoing frame exceeds limit".into());}
+                if bytes.len()>MAX_OUTGOING_FRAME{return Err("Codex outgoing frame exceeds limit".into());}
                 tokio::time::timeout(std::time::Duration::from_secs(10),async {stdin.write_all(&bytes).await?;stdin.write_all(b"\n").await}).await.map_err(|_|"Codex write timed out")?.map_err(|e|e.to_string())?;
             },
             frame=read_sized_frame(&mut reader,&mut buffer)=>{
@@ -839,6 +841,23 @@ mod tests {
         .unwrap();
         let next = provider.connection().await.unwrap();
         assert!(!next.0.is_closed());
+        provider.shutdown().await;
+    }
+    #[tokio::test]
+    async fn large_outgoing_context_does_not_use_the_incoming_frame_limit() {
+        let provider = CodexProvider::new(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/codex/mock-server.py"),
+            None,
+        );
+        let connection = provider.connection().await.unwrap();
+        let response = connection
+            .call(
+                "model/list",
+                json!({"contextProbe":"x".repeat(2*1024*1024)}),
+            )
+            .await
+            .unwrap();
+        assert!(response.is_object());
         provider.shutdown().await;
     }
     #[tokio::test]
