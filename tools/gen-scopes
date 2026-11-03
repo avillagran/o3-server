@@ -3,7 +3,10 @@
 import json,pathlib
 root=pathlib.Path(__file__).resolve().parent.parent
 methods=json.loads((root/'docs/t3-contract.json').read_text())['methods']
-lines=['//! Generated from docs/t3-contract.json. Regenerate with tools/gen-scopes.',"pub fn required(tag: &str) -> Option<&'static str> {",'    match tag {']
+# Additive upstream RPCs newer than the pinned contract; the pinned entry wins on overlap.
+for tag,meta in json.loads((root/'docs/t3-contract-additions.json').read_text())['methods'].items():
+    methods.setdefault(tag,meta)
+lines=['//! Generated from docs/t3-contract.json + docs/t3-contract-additions.json. Regenerate with tools/gen-scopes.',"pub fn required(tag: &str) -> Option<&'static str> {",'    match tag {']
 for tag,meta in sorted(methods.items()):
     if meta.get('scope'): lines.append(f'        {json.dumps(tag)} => Some({json.dumps(meta["scope"].split(" +")[0])}),')
 lines+=['        _ => None,','    }','}']

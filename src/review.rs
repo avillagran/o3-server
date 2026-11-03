@@ -26,6 +26,8 @@ fn bound(s: &State, op: &str, p: &Value) -> Result<PathBuf, Value> {
     let path = paths::normalize(&paths::expand_home(raw.trim()));
     let what = if op.ends_with("getDiffPreview") {
         "Review diff preview"
+    } else if op.ends_with("getBranchCommits") {
+        "Review branch commits"
     } else {
         "Review diff file contents"
     };
@@ -288,6 +290,91 @@ async fn merge_base(root: &Path, requested: Option<&str>) -> (Option<String>, St
         }
     }
     (None, "HEAD".into())
+}
+
+const BRANCH_COMMIT_LIMIT: usize = 100;
+const BRANCH_SUBJECT_LIMIT: usize = 300;
+const BRANCH_COMMIT_MAX_OUTPUT: usize = 128 * 1024;
+
+/// `review.getBranchCommits` (nightly 4093): commits on HEAD since its merge base, newest first.
+pub async fn branch_commits(s: &State, p: Value) -> Reply {
+    let op = "review.getBranchCommits";
+    let empty = json!({"commits":[],"truncated":false});
+    let cwd = bound(s, op, &p)?;
+    let Some(root) = toplevel(&cwd).await else {
+        return Ok(empty);
+    };
+    let fail = |detail: &str| {
+        let mut e = simple_fail("GitVcsDriver.reviewCommit", &root, detail, None);
+        e["command"] = json!("git cat-file");
+        e
+    };
+    let head = proc::git(
+        &root,
+        &["rev-parse", "--verify", "--quiet", "HEAD"],
+        Opts::READ,
+    )
+    .await
+    .map_err(|e| run_err(op, &root, e))?;
+    if !head.ok() {
+        if head.code == Some(1) && head.stderr.trim().is_empty() {
+            return Ok(empty);
+        }
+        return Err(fail("Could not resolve the current branch commit."));
+    }
+    let (_, base) = merge_base(&root, p["baseRef"].as_str()).await;
+    let range = format!("{base}..HEAD");
+    let max = format!("--max-count={}", BRANCH_COMMIT_LIMIT + 1);
+    let out = proc::git(
+        &root,
+        &[
+            "log",
+            "-z",
+            "--no-notes",
+            "--no-show-signature",
+            "--format=%H%x00%s%x00%cI",
+            &max,
+            &range,
+        ],
+        Opts {
+            cap: BRANCH_COMMIT_MAX_OUTPUT,
+            allow_truncate: true,
+            ..Opts::READ
+        },
+    )
+    .await
+    .map_err(|e| run_err(op, &root, e))?;
+    if !out.ok() && !out.truncated {
+        return Err(fail("Could not read branch commit metadata."));
+    }
+    parse_branch_commits(&out.stdout, out.truncated).map_err(fail)
+}
+
+fn parse_branch_commits(raw: &[u8], truncated: bool) -> Result<Value, &'static str> {
+    if !truncated && !raw.is_empty() && !raw.ends_with(b"\0") {
+        return Err("Could not read branch commit metadata.");
+    }
+    let text = String::from_utf8_lossy(raw);
+    let fields: Vec<&str> = text.split('\0').collect();
+    let complete = fields.len() - 1;
+    let mut commits = Vec::new();
+    let mut i = 0;
+    while i + 2 < complete && commits.len() <= BRANCH_COMMIT_LIMIT {
+        let (sha, subject, at) = (fields[i], fields[i + 1], fields[i + 2]);
+        let hex = |n| sha.len() == n && sha.bytes().all(|b| b.is_ascii_hexdigit());
+        if at.is_empty() || !(hex(40) || hex(64)) {
+            return Err("Could not read branch commit metadata.");
+        }
+        let subject: String = subject.chars().take(BRANCH_SUBJECT_LIMIT).collect();
+        commits.push(json!({"sha":sha,"subject":subject,"committedAt":at}));
+        i += 3;
+    }
+    if truncated && commits.is_empty() {
+        return Err("Branch commit metadata exceeds the response limit.");
+    }
+    let more = commits.len() > BRANCH_COMMIT_LIMIT;
+    commits.truncate(BRANCH_COMMIT_LIMIT);
+    Ok(json!({"commits":commits,"truncated":truncated || more}))
 }
 
 pub async fn diff_preview(s: &State, p: Value) -> Reply {

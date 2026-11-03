@@ -253,6 +253,9 @@ async fn call_inner(s: &State, tag: &str, p: &Value) -> Reply {
         "device.testHost" => Err(
             json!({"_tag":"DeviceHostUnavailableError","hostId":p["id"],"reason":"SSH device hosts are unsupported; no SSH process was started"}),
         ),
+        "device.simlockIdentity" => Err(
+            json!({"_tag":"DeviceSimlockIdentityError","reason":"Simlock device gateways are unsupported by o3-server; no token was sent"}),
+        ),
         "device.easAccount" => Err(
             json!({"_tag":"DeviceEasAccountError","reason":"EAS integration is unsupported; no credentials were stored"}),
         ),

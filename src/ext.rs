@@ -8,6 +8,7 @@ pub const STREAM_ACTION: &str = "git.runStackedAction";
 
 pub fn handles(tag: &str) -> bool {
     crate::p2::handles(tag)
+        || crate::additions::handles(tag)
         || matches!(
             tag,
             "projects.mutate"
@@ -27,6 +28,7 @@ pub fn handles(tag: &str) -> bool {
                 | "vcs.init"
                 | "review.getDiffPreview"
                 | "review.getDiffFileContents"
+                | "review.getBranchCommits"
                 | "orchestration.getTurnDiff"
                 | "orchestration.getFullThreadDiff"
                 | "orchestration.searchThreads"
@@ -59,6 +61,7 @@ pub async fn call(s: &Arc<State>, tag: &str, p: Value) -> Result<Value, Value> {
         "vcs.init" => Box::pin(vcs::init(p)).await,
         "review.getDiffPreview" => Box::pin(review::diff_preview(s, p)).await,
         "review.getDiffFileContents" => Box::pin(review::file_contents(s, p)).await,
+        "review.getBranchCommits" => Box::pin(review::branch_commits(s, p)).await,
         "orchestration.getTurnDiff" => Box::pin(threadq::turn_diff(s, p)).await,
         "orchestration.getFullThreadDiff" => Box::pin(threadq::full_thread_diff(s, p)).await,
         "orchestration.searchThreads" => threadq::search_threads(s, &p),
@@ -67,6 +70,7 @@ pub async fn call(s: &Arc<State>, tag: &str, p: Value) -> Result<Value, Value> {
         "orchestration.getArchivedShellSnapshot" => threadq::archived_shell(s),
         "orchestration.getTurnItem" => threadq::turn_item(s, &p),
         "orchestration.getThreadProjection" => threadq::thread_projection(s, &p),
+        _ if crate::additions::handles(tag) => crate::additions::call(tag, &p),
         _ if crate::p2::handles(tag) => crate::p2::call(s, tag, p).await,
         _ => Err(
             serde_json::json!({"_tag":"RpcNotImplemented","message":format!("o3-server does not implement {tag}")}),
