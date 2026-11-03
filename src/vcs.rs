@@ -838,10 +838,11 @@ pub async fn init(p: Value) -> Reply {
     Ok(Value::Null)
 }
 
-/// Discovery probes are bounded and do not initiate provider login or installation.
+/// Discovery probes are bounded and do not initiate provider login or installation. They run
+/// concurrently: sequential CLI auth checks (gh contacts its host) could exceed a client timeout.
 pub async fn discover() -> Reply {
     let mut systems = Vec::new();
-    for (kind, label, implemented, hint) in [
+    let jobs = [
         (
             "git",
             "Git",
@@ -854,7 +855,9 @@ pub async fn discover() -> Reply {
             false,
             "Install Jujutsu with `brew install jj` or from https://github.com/jj-vcs/jj.",
         ),
-    ] {
+    ]
+    .into_iter()
+    .map(|(kind, label, implemented, hint)| async move {
         let output = proc::run(
             kind,
             Path::new("/"),
@@ -880,8 +883,9 @@ pub async fn discover() -> Reply {
             Some(v) => json!({"_tag":"Some","value":v}),
             None => json!({"_tag":"None"}),
         };
-        systems.push(json!({"kind":kind,"label":label,"executable":kind,"implemented":implemented,"status":status,"version":option(version),"installHint":hint,"detail":option(detail)}));
-    }
+        json!({"kind":kind,"label":label,"executable":kind,"implemented":implemented,"status":status,"version":option(version),"installHint":hint,"detail":option(detail)})
+    });
+    systems.extend(futures_util::future::join_all(jobs).await);
     let option = |v: Option<String>| match v {
         Some(v) if !v.trim().is_empty() => json!({"_tag":"Some","value":v.trim()}),
         _ => json!({"_tag":"None"}),
@@ -893,7 +897,7 @@ pub async fn discover() -> Reply {
     };
     let mut providers = Vec::new();
     // CLI-backed hosts, as upstream: version probe, then a read-only auth status. Never logs in.
-    for (kind, label, exe, auth_args, hint) in [
+    let jobs = [
         (
             "github",
             "GitHub",
@@ -915,7 +919,9 @@ pub async fn discover() -> Reply {
             &["account", "show", "--query", "user.name", "-o", "tsv"][..],
             "Install the Azure command-line tools (`az`), then enable Azure DevOps support with `az extension add --name azure-devops`.",
         ),
-    ] {
+    ]
+    .into_iter()
+    .map(|(kind, label, exe, auth_args, hint)| async move {
         let version = proc::run(exe, Path::new("/"), &["--version"], probe(), &[]).await;
         let (status, version, detail) = match version {
             Ok(o) if o.ok() => ("available", o.text().lines().next().map(str::to_owned), None),
@@ -953,9 +959,10 @@ pub async fn discover() -> Reply {
             // Exit status alone cannot distinguish offline/refused/unparseable auth.
             auth["status"] = json!("unknown");
         }
-        providers.push(json!({"kind":kind,"label":label,"executable":exe,"status":status,"version":option(version),"installHint":hint,"detail":option(detail),"auth":auth}));
-    }
-    for (kind, label, token_env, endpoint) in [
+        json!({"kind":kind,"label":label,"executable":exe,"status":status,"version":option(version),"installHint":hint,"detail":option(detail),"auth":auth})
+    });
+    providers.extend(futures_util::future::join_all(jobs).await);
+    let jobs = [
         (
             "bitbucket",
             "Bitbucket",
@@ -986,7 +993,9 @@ pub async fn discover() -> Reply {
             "CAFE_TOKEN",
             Some("https://git.cafe/api/auth/principal".to_owned()),
         ),
-    ] {
+    ]
+    .into_iter()
+    .map(|(kind, label, token_env, endpoint)| async move {
         let token = std::env::var(token_env)
             .ok()
             .filter(|s| !s.trim().is_empty());
@@ -1048,8 +1057,9 @@ pub async fn discover() -> Reply {
         } else {
             "Environment credentials supported; desktop credential storage is not implemented."
         };
-        providers.push(json!({"kind":kind,"label":label,"status":"available","version":{"_tag":"None"},"installHint":format!("Configure {token_env} on the server."),"detail":option(Some(detail.into())),"auth":auth}));
-    }
+        json!({"kind":kind,"label":label,"status":"available","version":{"_tag":"None"},"installHint":format!("Configure {token_env} on the server."),"detail":option(Some(detail.into())),"auth":auth})
+    });
+    providers.extend(futures_util::future::join_all(jobs).await);
     Ok(json!({"versionControlSystems":systems,"sourceControlProviders":providers}))
 }
 
