@@ -2733,3 +2733,24 @@ unshielded read returns Interrupted, shielded read receives the byte. The masks
 and handler are restored in the dedicated fixture process. No RPC is replayed
 and no production signal policy is changed. Remote CI still must confirm the
 background/VCS failures are resolved on the runner.
+
+### Resumed Claude notification boundary (2026-11-03)
+
+A real migrated session exposed a completed run with no assistant output while the native
+CLI continued generating the answer. Its result usage contained zero new tokens. The
+original result's origin was not retained, so this incident alone does not prove its exact
+wire subtype. The adapter accepted every success result as the submitted prompt's terminal.
+Upstream ClaudeAdapterV2 explicitly excludes zero-turn task-notification results.
+
+The decoder now drops successful `origin.kind=task-notification`, `num_turns=0` results,
+including their unrelated usage; human command results, real notification turns and errors
+remain terminal. Result usage records retain origin, turn count and subtype for diagnosis.
+A red/green replay and the fake native peer in `tests/fixtures/claude/notification-result.py`
+exercise an unrelated result followed by the actual reply through the real provider and
+projection. This is a bounded fix, not full prompt-UUID correlation or proof that the
+already-affected live session is repaired.
+
+Migration still imports messages/items without the original runs/attempts/checkpoints.
+Native bindings alone therefore do not preserve execution history or run ordinals. Existing
+long-lived threads and `/mcp` orchestration remain outside validated migration acceptance;
+a short new-thread smoke test is insufficient evidence for that use case.

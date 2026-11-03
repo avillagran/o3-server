@@ -767,7 +767,18 @@ pub(crate) fn decode(v: &Value) -> Vec<ProviderEvent> {
             }
         }
         "result" => {
-            out.push(ProviderEvent::Native(json!({"type":"usage","usage":v["usage"],"modelUsage":v["modelUsage"],"cost":v["total_cost_usd"],"session_id":v["session_id"]})));
+            // A resumed CLI can flush a zero-turn task-notification result before it
+            // processes our user message. It neither settles that message nor supplies
+            // its usage. Preserve real turns, command results and notification errors.
+            // Upstream ClaudeAdapterV2 has the same zero-turn notification guard.
+            if v["origin"]["kind"] == "task-notification"
+                && v["num_turns"].as_u64() == Some(0)
+                && v["subtype"] == "success"
+                && v["is_error"] != true
+            {
+                return out;
+            }
+            out.push(ProviderEvent::Native(json!({"type":"usage","usage":v["usage"],"modelUsage":v["modelUsage"],"cost":v["total_cost_usd"],"session_id":v["session_id"],"origin":v["origin"],"num_turns":v["num_turns"],"subtype":v["subtype"]})));
             out.push(if v["is_error"] == true || v["subtype"] != "success" {
                 ProviderEvent::Failed(v["result"].as_str().unwrap_or("Claude turn failed").into())
             } else {
@@ -1123,6 +1134,43 @@ mod tests {
             .flat_map(decode)
             .any(|e| matches!(e, ProviderEvent::Failed(_))));
     }
+    #[test]
+    fn empty_task_notification_result_does_not_finish_submitted_prompt() {
+        let mut boundary = TurnBoundary::default();
+        let unrelated = json!({"type":"result","subtype":"success","is_error":false,
+            "origin":{"kind":"task-notification"},"num_turns":0,
+            "result":"","usage":{"input_tokens":0,"output_tokens":0}});
+        for event in decode(&unrelated) {
+            if matches!(event, ProviderEvent::Completed | ProviderEvent::Failed(_)) {
+                boundary.terminal = Some(event);
+            }
+        }
+        assert!(
+            !boundary.ready(),
+            "a notification is not the submitted prompt's result"
+        );
+        let reply = json!({"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"actual reply"}}});
+        assert!(!decode(&reply).is_empty());
+        let own = json!({"type":"result","subtype":"success","num_turns":1,
+            "origin":{"kind":"human"},"usage":{"input_tokens":10,"output_tokens":2}});
+        for event in decode(&own) {
+            if matches!(event, ProviderEvent::Completed | ProviderEvent::Failed(_)) {
+                boundary.terminal = Some(event);
+            }
+        }
+        assert!(boundary.ready());
+        // Do not hide zero-turn human commands, errors or real notification turns.
+        for result in [
+            json!({"type":"result","subtype":"success","num_turns":0,"origin":{"kind":"human"}}),
+            json!({"type":"result","subtype":"error_during_execution","is_error":true,"num_turns":0,"origin":{"kind":"task-notification"}}),
+            json!({"type":"result","subtype":"success","num_turns":1,"origin":{"kind":"task-notification"}}),
+        ] {
+            assert!(decode(&result)
+                .iter()
+                .any(|e| matches!(e, ProviderEvent::Completed | ProviderEvent::Failed(_))));
+        }
+    }
+
     #[test]
     fn background_acknowledgement_does_not_finish_parent() {
         let frames: Vec<Value> = include_str!("../tests/fixtures/claude/subagent.jsonl")
