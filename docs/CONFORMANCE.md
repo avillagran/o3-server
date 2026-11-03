@@ -2696,3 +2696,23 @@ and a withdrawal immediately followed by completion. The new regression fails on
 the previous adapter; it passes after the port. This is native-peer fixture evidence,
 not an observed CLI hook event or live T3 differential. Existing approval/response
 and session-release regressions also pass; full nightly interchangeability is open.
+
+## Nightly 4106 review and upstream references — 2026-11-03
+
+Port071660e0b: the temporary review index excludes staged deletions from files to
+re-add as intent-to-add. The deletion scan uses --no-renames, so a same-content
+staged copy cannot hide the old path. The real index and working file remain
+byte-identical. The real-Connection regression covers plain deletion and rename,
+fails on the previous implementation and passes after the change. Unborn
+repositories use git diff --cached without explicit HEAD, keeping their existing
+review behavior. All existing VCS/review fixtures pass.
+
+Case064cf8f7a is already handled through Git porcelain v2 branch.ab counters; no
+ambiguous short upstream reference is re-resolved for divergence. A real repository
+with both a local origin/release branch and a release tag verifies refName and
++1/-0 relative to the real remote. This is covered behavior, not a new code port.
+
+Checkpoint optimization07a1e799d remains open: o3 uses a fresh private index, so
+real-index flags do not suppress edits, but rehashes the whole workspace. Project
+content search8430db673 and forceStopThread remain open. No M2 migration, live
+provider hook or latest-nightly differential is claimed by these fixtures.

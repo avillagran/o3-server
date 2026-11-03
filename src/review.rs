@@ -127,11 +127,44 @@ async fn untracked_index(
         },
     )
     .await?;
+    // A staged deletion can still exist on disk. It is intentionally untracked,
+    // not a new file to re-add. Disable rename detection when collecting these
+    // paths, otherwise a staged copy can hide the deletion as a rename.
+    let mut deleted_args = vec![
+        "diff",
+        "--cached",
+        "--no-renames",
+        "--name-only",
+        "--diff-filter=D",
+        "-z",
+        "--",
+    ];
+    deleted_args.extend(pathspecs.iter().map(String::as_str));
+    let deleted = out(
+        op,
+        root,
+        &deleted_args,
+        Opts {
+            cap: 8 * 1024 * 1024,
+            ..Opts::READ
+        },
+    )
+    .await?;
+    if !deleted.ok() {
+        return Err(git_fail(op, root, &deleted_args, &deleted));
+    }
+    let removed: std::collections::BTreeSet<_> = deleted
+        .stdout
+        .split(|b| *b == 0)
+        .filter(|f| !f.is_empty())
+        .map(|f| String::from_utf8_lossy(f).into_owned())
+        .collect();
     let files: Vec<String> = listed
         .stdout
         .split(|b| *b == 0)
         .filter(|f| !f.is_empty())
         .map(|f| String::from_utf8_lossy(f).into_owned())
+        .filter(|f| !removed.contains(f))
         .collect();
     if files.len() > UNTRACKED_MAX {
         return Ok(None);
