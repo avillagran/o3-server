@@ -43,7 +43,7 @@ Cambios desde `v0.1.7-nightly.20261102.4093` (triage):
 - [pendiente] e0513631af509202e49aa925d3859cb8d1de7a03 perf(server): shell updates read a burst of threads once (#29101)
 - [sin efecto en servidor] 5eb81547bd200b7463c29cff37cbc93f13af8c39 perf(desktop): keep Linux MIME helpers off the startup path (#29247)
 - [pendiente] a6a921c76335cff0a7869b84d05293ac4a50a048 perf(client): streamed row updates no longer rescan question history (#29105)
-- [pendiente] 35af84977d0ee55c13c3b81c3f8d5427279c6de2 fix(server): diffs keep blank context lines under diff.suppressBlankEmpty (#29579)
+- [portado] 35af84977d0ee55c13c3b81c3f8d5427279c6de2 fix(server): diffs keep blank context lines under diff.suppressBlankEmpty (#29579) — 376b576 diff.suppressBlankEmpty=false en todas las llamadas git, incluidos turn diffs
 - [pendiente] cf48ea8d5c0b7483242e7517532adc4d57d921fc perf(acp): ACP agents skip decoding output twice for unused diagnostics (#29100)
 - [pendiente] ba962f2d2382f0e4cb183451787a8fb3363f69ca fix(codex): restoring a checkpoint works after the Codex session was archived (#29582)
 - [pendiente] 5349ecb06c19340836b0c3ae86ae4808ad88bfb9 fix(gitcafe): PR link previews show a GitHub-merged pull request as merged (#29595)
@@ -61,8 +61,8 @@ Cambios desde `v0.1.7-nightly.20261102.4093` (triage):
 - [pendiente] d1e5044c67515c4bccfe9bdb60e4533f920b32bf fix(shared): context chip labels no longer split an emoji at the 200-character cap (#29158)
 - [pendiente] 5fa0d0be7df7aa810e924b703f7ca036d34c16d4 fix(clients): cancel oversized project icon responses (#29006)
 - [pendiente] 4494faa27053feb67d5469d1e034bfd13da8a389 fix(client-runtime): checking out a pull request refreshes cached branch lists (#29161)
-- [pendiente] 50106efdd9206d2df90c6a04eb63c115b43474e1 fix(server): generated commit and PR text no longer reads colored git output (#29126)
-- [pendiente] 5815442128942acb9f63d8808e9a888b475c6fa7 fix(server): turn diffs keep signed commits' files under log.showSignature (#29124)
+- [portado] 50106efdd9206d2df90c6a04eb63c115b43474e1 fix(server): generated commit and PR text no longer reads colored git output (#29126) — 376b576 color.ui/color.diff=false en todas las llamadas git (texto de commit/PR generado sin color)
+- [portado] 5815442128942acb9f63d8808e9a888b475c6fa7 fix(server): turn diffs keep signed commits' files under log.showSignature (#29124) — 376b576 log.showSignature=false en todas las llamadas git, incluidos turn diffs
 - [pendiente] 064cf8f7ac01aead41b3a6198b7c08a3a66e041a fix(server): an upstream shadowed by a local origin/<branch> branch keeps its real remote (#29180)
 - [pendiente] a4f4741cffebd79b3a38fe1151512a6d66ae9690 fix(gitlab): merge request links keep an HTTP remote's port and scheme (#29170)
 - [pendiente] ab06e2a265db928902daffe33f5fdb3904a67fdc fix(clients): attachment sizes just under 1 MB no longer read "1024 KB" (#29165)
@@ -149,7 +149,7 @@ RPC retirados detectados: orchestration.subscribeArchivedShell, preview.navigate
 Cambios desde `v0.1.7-nightly.20261102.4061` (triage):
 
 - [pendiente] 30654b3e91a51937d1dba18fc83af19d8003f5ca feat: tag threads and hide tagged threads while recording (#29053) — Contrato: thread.tag.set, evento thread.tags-updated, tags en thread/shell y ajustes hiddenThreadTags/hideTaggedThreads
-- [parcial] ab8e488e10d883fa880b0ddcf01917b51839ab07 feat(antigravity): runtime 1.4.5 with real turn failures and subagent work (#28629) — feat/nightly-4093-parity Backlog proveedor Antigravity; orchestration.getNativeChildWork responde {children:[]} como upstream para otros drivers
+- [parcial] ab8e488e10d883fa880b0ddcf01917b51839ab07 feat(antigravity): runtime 1.4.5 with real turn failures and subagent work (#28629) — ffd4f0a Backlog proveedor Antigravity; orchestration.getNativeChildWork responde {children:[]} como upstream para otros drivers
 - [pendiente] c65f8d552baca1b51e15b5fb4737f07e18cce177 feat(chat): threads show when you switch models or effort (#28995) — Contrato: modelSwitch {from,to} en mensaje y user_message al cambiar modelo/esfuerzo
 - [pendiente] 0338e99fe359ea6e4c1b93ef60245597f76cd522 fix(desktop): save and copy any image the app can show (#29079)
 - [no aplica] 5fc5a1d095cf7bb324115aed4f3df08581079dfc fix(server): open clients no longer stay on "Updating" after a provider update (#27992) — o3 recalcula updateState desde el mapa vivo; no hay caché de providers que republique estado viejo
@@ -157,9 +157,9 @@ Cambios desde `v0.1.7-nightly.20261102.4061` (triage):
 - [no aplica] a51164c52b12356bb10ed142a72550003ce8ddb9 fix(server): usage prices bare model names at the maker's rate when a reseller marks them up (#28004) — o3 tarifica por clave exacta, sin alias de revendedor
 - [pendiente] 79f3ee139b99a932178c4bd7c191c4a7f5cf0481 fix(server): idle compaction survives a late update for an earlier run (#28102) — Backlog: o3 no tiene servicio de compactación en reposo
 - [no aplica] da2d6ec2c881aaca225e7219e232e7a07a41b6fd fix(server): remote updates no longer fail when the staged preflight is slow on a loaded host (#28201) — Autoactualización remota de T3
-- [portado] 1973e0a68f45a11b642d521724543431585d5f9e fix(server): a stored boolean settledOverride no longer stops startup (#28314) — feat/nightly-4093-parity settledOverride booleano normalizado al abrir la base y al importar desde T3
+- [portado] 1973e0a68f45a11b642d521724543431585d5f9e fix(server): a stored boolean settledOverride no longer stops startup (#28314) — a4ffef8 settledOverride booleano normalizado al abrir la base y al importar desde T3
 - [pendiente] 83d2b8e3478b85cbe9691b7e4941e06b81856be7 fix(server): a linked retry closes the waiting link card it names (#28387) — Backlog peer links
-- [portado] 5f2c27e706de72c9f4dcb80f9a30db1bdfdc6e51 fix(server): Stop ends a run whose provider turn already finished (#28520) — feat/nightly-4093-parity Stop conserva estado y completedAt de intento/turno ya terminados (Claude; Codex ya lo hacía)
+- [portado] 5f2c27e706de72c9f4dcb80f9a30db1bdfdc6e51 fix(server): Stop ends a run whose provider turn already finished (#28520) — a4ffef8 Stop conserva estado y completedAt de intento/turno ya terminados (Claude; Codex ya lo hacía)
 - [sin efecto en servidor] b12ab30950b7231c50410703befb922464292e8b fix(mobile): files with brackets in their names attach on Android (#28983)
 - [pendiente] 23075af981e40f7c1071871782d489896c3919f6 refactor(server): name Codex's direct-only T3 MCP server t3-code-direct (#29068) — Backlog MCP orquestador (t3-code-direct)
 - [pendiente] 0c4454ca6adc09058f3d311db6744788507d6af5 perf(server): Codex calls t3_thread_wait directly instead of from Code Mode (#29026) — Backlog MCP orquestador (t3_thread_wait)
@@ -191,12 +191,12 @@ Cambios desde `3f9448747bb8848050dc2cacf83affa6f94a66a1` (triage):
 - [pendiente] 1c748ed776843ae6fe61de58948d4dcdfac07612 fix(providers): slow Grok, Pi and fx starts no longer show as unavailable (#28400) — Backlog proveedores Grok/Pi/fx
 - [no aplica] b08d559a1de3f16847943d0bf61323c10c384cd1 fix(server): command projection failures keep their cause (#28389) — Diagnóstico interno de T3
 - [sin efecto en servidor] 1c0cc439ffba9347dd33f5576b23e958fecf02d8 fix(web): deleting a thread clears its saved right-panel, diff-panel and mini-player state (#28386)
-- [portado] 86703780497f0eb727b1879ef19681271f621f61 fix(server): a fork no longer inherits the source thread's pin, auto-settle and delegation state (#28378) — feat/nightly-4093-parity Fork ya no hereda pin/orden/snooze/auto-settle ni delegatedFrom
+- [portado] 86703780497f0eb727b1879ef19681271f621f61 fix(server): a fork no longer inherits the source thread's pin, auto-settle and delegation state (#28378) — a4ffef8 Fork ya no hereda pin/orden/snooze/auto-settle ni delegatedFrom
 - [pendiente] de6830f1daba7c993b97fc356fd045a5f021cabe fix(opencode): OpenCode 1.x text generation gives up after 3 minutes like every other runner (#28372) — Backlog proveedor OpenCode
 - [sin efecto en servidor] cfe2e97ac4264d729cb9261c02051d2582894a07 fix(desktop): bound the Linux xdg-mime registration like its sibling helpers (#28368)
 - [portado] 638947e7db2726373e91956d5563117e22592026 fix(claude): Claude text generation stops saving throwaway transcripts (#28367) — Generación de texto Claude con --no-session-persistence (src/claude.rs); sin reintento para Claude <2.0.63
 - [pendiente] dcbe9a6f890ab3b3335e5250af98095816749b84 fix(server): tracked clones keep an explicit SSH protocol on fallback and Retry (#28365) — Backlog clones rastreados (desactivados en o3)
-- [portado] f2527c2c0046047e31611d30ba4761628b5ae143 fix(server): turn diffs keep the agent's files when git's diff.relative is on (#28361) — feat/nightly-4093-parity git con -c diff.relative=false en proc::git_env
+- [portado] f2527c2c0046047e31611d30ba4761628b5ae143 fix(server): turn diffs keep the agent's files when git's diff.relative is on (#28361) — 376b576 git con -c diff.relative=false en proc::git_env
 - [sin efecto en servidor] 09ace626bb0f920662e6e010aad9698a273f5404 fix(web): device tools keep the typed text when a command fails (#28323)
 - [no aplica] b796da9b7e784b5ddcaed535be5b75553e3e1a5d perf(server): sending a message no longer rereads the thread from the database after settle, snooze or title updates (#28301) — Optimización SQL interna de T3
 - [sin efecto en servidor] 4c3808a1097c5b9f51621af158c6fe237f7b7db0 fix(web): Diagnostics memory no longer reads "1024.0 MB" (#28300)
@@ -220,7 +220,7 @@ Cambios desde `3f9448747bb8848050dc2cacf83affa6f94a66a1` (triage):
 - [sin efecto en servidor] 2a9335680e3f7a369c6e5032f12ba4fb2f2cdaac fix(web): keep saved sensitive variables from losing their value (#23168)
 - [sin efecto en servidor] 435cda96a38e6b38eeb03029f0b0b32efb4d0b02 fix(web): keep theme color alpha when a hex value is typed (#23136)
 - [no aplica] 6a241eaee3ac770b314f9f7c68e9a87cab61ecf7 perf(server): sort the working-tree file list once per status read (#22499) — Optimización interna
-- [portado] 93d110abd111f46431db3b34bd8c94dbd5e673f1 fix(server): treat a repository's only non-origin remote as its primary remote (#22119) — feat/nightly-4093-parity hasPrimaryRemote verdadero con cualquier remoto (refreshStatus y listRefs)
+- [portado] 93d110abd111f46431db3b34bd8c94dbd5e673f1 fix(server): treat a repository's only non-origin remote as its primary remote (#22119) — 376b576 hasPrimaryRemote verdadero con cualquier remoto (refreshStatus y listRefs)
 - [sin efecto en servidor] f3ccba809ba9e3a6a550c65deedfef44d6f95e1d fix(web): finished replies keep their hover timestamp while commands run (#28610)
 - [no aplica] 95d4da5a932a6eb22b4d903fe88531461aa2029e fix(clients): open a delegated child's approval on the environment it runs in (#28592) — Cliente web/móvil
 - [sin efecto en servidor] 46e90bad0d7abc19adb250b4acf53ebdc82c2820 fix(web): many automations no longer hide the thread details Automations section (#28585)
