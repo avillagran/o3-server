@@ -657,6 +657,14 @@ fn allowed_file(s: &State, path: &Path) -> Option<PathBuf> {
     None
 }
 
+/// Host media (`media-file`, absolute draft files): as in T3, anything the chat can reference,
+/// wherever it is, for a `filesystem:read` session — viewing a previewable type or downloading
+/// any file. Only this server's own profile (database, session signing key) stays refused.
+fn media_allowed(s: &State, real: &Path) -> bool {
+    allowed_file(s, real).is_some()
+        || !std::fs::canonicalize(&s.asset_profile_root).is_ok_and(|r| real.starts_with(r))
+}
+
 fn real_dir(root: &Path) -> Option<PathBuf> {
     std::fs::canonicalize(root).ok().filter(|r| r.is_dir())
 }
@@ -1104,7 +1112,7 @@ pub fn create_url(s: &State, p: &Value) -> Reply {
                     .ok()
                     .filter(|r| r.is_file())
                     .ok_or_else(|| asset_err("AssetWorkspaceAssetNotFoundError", resource))?;
-                if allowed_file(s, &real).is_none() {
+                if !media_allowed(s, &real) {
                     return Err(not_found("AssetWorkspacePathValidationError"));
                 }
                 if !download && !previewable(&real.to_string_lossy()) {
@@ -1455,8 +1463,8 @@ fn resolve(s: &State, token: &str, rest: &str) -> Option<Resolved> {
                 if !icon_allowed(&real) || !favicon_ext_ok(&real.to_string_lossy()) {
                     return None;
                 }
-            } else {
-                allowed_file(s, &real)?;
+            } else if !media_allowed(s, &real) {
+                return None;
             }
             let download = c["download"] == true;
             if !download && !previewable(&real.to_string_lossy()) {

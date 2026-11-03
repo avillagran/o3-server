@@ -120,10 +120,19 @@ fn main() -> std::io::Result<()> {
     if args.first().map(String::as_str) == Some("import") {
         let source =
             option(&args, "--from").ok_or_else(|| std::io::Error::other("--from is required"))?;
-        println!(
-            "{}",
-            o3_server::import::from_t3(&state, Path::new(source)).map_err(std::io::Error::other)?
-        );
+        let mut report =
+            o3_server::import::from_t3(&state, Path::new(source)).map_err(std::io::Error::other)?;
+        // T3 keeps attachment files beside its database; a backup copy elsewhere needs the
+        // directory named explicitly.
+        let attachments = option(&args, "--attachments")
+            .map(std::path::PathBuf::from)
+            .or_else(|| Path::new(source).parent().map(|p| p.join("attachments")));
+        if let Some(dir) = attachments.filter(|d| d.is_dir()) {
+            report["attachments"] = serde_json::json!(
+                o3_server::import::attachments(&state, &dir).map_err(std::io::Error::other)?
+            );
+        }
+        println!("{report}");
         return Ok(());
     }
     if is_auth {

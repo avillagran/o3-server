@@ -989,10 +989,18 @@ fn file_asset_grants_require_filesystem_scope_and_registered_boundaries() {
         e.state.join("secrets/server-signing-key.bin"),
         e.state.join("o3.sqlite"),
     ] {
+        let profile = path.starts_with(&e.state);
         for tag in ["media-file", "workspace-file", "draft-workspace-file"] {
             let p = json!({"resource":{"_tag":tag,"threadId":"t","cwd":root,"path":path,"disposition":"attachment"}});
             assert!(ro.rpc("assets.createUrl", p.clone()).is_err(), "{p}");
-            assert!(e.conn.rpc("assets.createUrl", p).is_err(), "{tag} {path:?}");
+            // As in T3, absolute host media works anywhere; workspace files cannot escape their
+            // root, and this server's profile stays refused for every kind.
+            let allowed = !profile && tag != "workspace-file";
+            assert_eq!(
+                e.conn.rpc("assets.createUrl", p).is_ok(),
+                allowed,
+                "{tag} {path:?}"
+            );
         }
         assert!(ro
             .rpc(
@@ -1067,4 +1075,54 @@ fn desktop_workspace_media_extensions_download_through_real_reader() {
             1024
         )
         .is_err());
+}
+
+#[test]
+fn host_media_referenced_in_chat_is_viewable_from_anywhere_except_the_profile() {
+    let e = setup("host-media");
+    let root = e.dir("workspace");
+    e.project("p", &root);
+    e.thread("t", "p");
+    // Agents leave screenshots and notes outside any project, as in /tmp.
+    let elsewhere = e.dir("elsewhere/.hidden");
+    let png = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\0\x01\0\0\0\x01\x08\x02\0\0\0";
+    write(&elsewhere.join("shot.png"), png);
+    write(&elsewhere.join("notes.md"), b"# notes");
+    write(&elsewhere.join("data.bin"), b"\0\x01");
+    let preview = e
+        .conn
+        .asset_bytes(
+            json!({"_tag":"media-file","threadId":"t","path":elsewhere.join("shot.png")}),
+            1024,
+        )
+        .unwrap();
+    assert_eq!(preview.bytes, png);
+    for name in ["notes.md", "data.bin"] {
+        let download = e
+            .conn
+            .asset_bytes(
+                json!({"_tag":"media-file","threadId":"t","path":elsewhere.join(name),"disposition":"attachment"}),
+                1024,
+            )
+            .unwrap();
+        assert_eq!(
+            download.bytes,
+            std::fs::read(elsewhere.join(name)).unwrap(),
+            "{name}"
+        );
+    }
+    // This server's profile stays refused even for a previewable name.
+    write(&e.state.join("leak.png"), png);
+    for path in [
+        e.state.join("leak.png"),
+        e.state.join("secrets/server-signing-key.bin"),
+    ] {
+        assert!(e
+            .conn
+            .rpc(
+                "assets.createUrl",
+                json!({"resource":{"_tag":"media-file","threadId":"t","path":path,"disposition":"attachment"}})
+            )
+            .is_err());
+    }
 }

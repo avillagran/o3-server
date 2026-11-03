@@ -488,3 +488,38 @@ fn restart_finalizes_streaming_transcript_and_provider_nodes() {
     drop(s);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn import_copies_t3_attachment_files_without_following_links_or_overwriting() {
+    let dir = directory();
+    let source = dir.join("attachments");
+    std::fs::create_dir_all(&source).unwrap();
+    let id = "thread-1-00000000-0000-4000-8000-000000000001";
+    std::fs::write(source.join(format!("{id}.png")), b"png bytes").unwrap();
+    std::fs::write(source.join("notes.txt"), b"not an attachment").unwrap();
+    let outside = dir.join("outside.png");
+    std::fs::write(&outside, b"outside").unwrap();
+    let linked = "thread-1-00000000-0000-4000-8000-000000000002";
+    std::os::unix::fs::symlink(&outside, source.join(format!("{linked}.png"))).unwrap();
+    let state = State::open(&dir.join("target")).unwrap();
+    let report = o3_server::import::attachments(&state, &source).unwrap();
+    assert_eq!(report, json!({"copied":1,"alreadyPresent":0,"skipped":2}));
+    let copied = o3_server::assets::attachment_path(&state, id).unwrap();
+    assert_eq!(std::fs::read(&copied).unwrap(), b"png bytes");
+    use std::os::unix::fs::PermissionsExt;
+    assert_eq!(
+        std::fs::metadata(&copied).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    assert!(o3_server::assets::attachment_path(&state, linked).is_none());
+    // A second run never replaces what is already in the profile.
+    std::fs::write(&copied, b"edited").unwrap();
+    let again = o3_server::import::attachments(&state, &source).unwrap();
+    assert_eq!(again, json!({"copied":0,"alreadyPresent":1,"skipped":2}));
+    assert_eq!(std::fs::read(&copied).unwrap(), b"edited");
+    assert_eq!(
+        std::fs::read(source.join(format!("{id}.png"))).unwrap(),
+        b"png bytes"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
