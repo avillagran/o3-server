@@ -310,7 +310,11 @@ pub(crate) fn persist(
         "permission" => {
             let id = f["request_id"].as_str().ok_or("request id missing")?;
             let user = f["request"]["tool_name"] == "AskUserQuestion";
-            let mut req = json!({"id":id,"nodeId":rid,"providerTurnId":rid,"nativeRequestRef":reference(&f["native_id"]),"kind":if user {"user_input"}else{"permission"},"status":"pending","responseCapability":{"type":"live","providerSessionId":t["activeProviderThreadId"],"supportsFeedback":true},"createdAt":at,"resolvedAt":null});
+            let node_id = format!("node-{id}");
+            let node = json!({"id":node_id,"threadId":tid,"runId":rid,"parentNodeId":rid,"rootNodeId":rid,"kind":if user{"user_input_request"}else{"approval_request"},"status":"waiting","countsForRun":false,"providerThreadId":t["activeProviderThreadId"],"providerTurnId":rid,"nativeItemRef":reference(&f["native_id"]),"runtimeRequestId":id,"checkpointScopeId":null,"startedAt":at,"completedAt":null});
+            put(db, "nodes", &node_id, tid, &node)?;
+            append(db, tid, "node.updated", node, t)?;
+            let mut req = json!({"id":id,"nodeId":node_id,"providerTurnId":rid,"nativeRequestRef":reference(&f["native_id"]),"kind":if user {"user_input"}else{"permission"},"status":"pending","responseCapability":{"type":"live","providerSessionId":t["activeProviderThreadId"],"supportsFeedback":true},"createdAt":at,"resolvedAt":null});
             if let Some(key) = crate::approval_policy::key(f, true) {
                 req["approvalPolicyKey"] = key;
             }
@@ -325,6 +329,7 @@ pub(crate) fn persist(
             if user {
                 i["questions"] = questions(&f["request"]["input"]);
             }
+            i["nodeId"] = json!(node_id);
             i["requestId"] = json!(id);
             i["requestKind"] = json!("permission");
             i["prompt"] = json!(format!(
@@ -335,6 +340,42 @@ pub(crate) fn persist(
             i["status"] = json!("pending");
             save_item(db, tid, t, i)?;
             run["status"] = json!("waiting");
+        }
+        "permission_cancelled" => {
+            let id = f["request_id"].as_str().ok_or("request id missing")?;
+            let Some(mut request) = get(db, "runtimeRequests", id)
+                .ok()
+                .filter(|r| r["status"] == "pending" && r["providerTurnId"] == rid)
+            else {
+                return Ok(());
+            };
+            request["status"] = json!("cancelled");
+            request["resolvedAt"] = json!(at);
+            put(db, "runtimeRequests", id, tid, &request)?;
+            append(db, tid, "runtime-request.updated", request.clone(), t)?;
+            if let Some(node_id) = request["nodeId"].as_str() {
+                if let Ok(mut node) = get(db, "nodes", node_id) {
+                    if node["runId"] == rid && node["id"] != rid {
+                        node["status"] = json!("cancelled");
+                        node["completedAt"] = json!(at);
+                        put(db, "nodes", node_id, tid, &node)?;
+                        append(db, tid, "node.updated", node, t)?;
+                    }
+                }
+            }
+            if let Ok(mut card) = get(db, "turnItems", &format!("approval-{id}")) {
+                card["status"] = json!("cancelled");
+                card["completedAt"] = json!(at);
+                card["updatedAt"] = json!(at);
+                save_item(db, tid, t, card)?;
+            }
+            let pending: bool = db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM records WHERE kind='runtimeRequests' AND thread_id=? AND json_extract(body,'$.providerTurnId')=? AND json_extract(body,'$.status')='pending')",
+                [tid, rid], |r| r.get(0),
+            ).map_err(|e| e.to_string())?;
+            if !pending && run["status"] == "waiting" {
+                run["status"] = json!("running");
+            }
         }
         "rate_limit" => {
             let info = &f["info"];

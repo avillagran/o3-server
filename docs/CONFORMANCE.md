@@ -2678,3 +2678,21 @@ defects the recheck demonstrated: initial layout at the wrong width, pinch zoom 
 T3's layout zoom, and refresh without a real-reader test. Four crashed MCP tabs still block
 new tabs at the limit of four. These are defects of a feature main did not have, and agent
 browser access defaults to on as in T3.
+
+## Claude request withdrawal parity — 2026-11-03
+
+Upstream41588d452 closes approval and question artifacts when the SDK aborts its
+permission callback. The direct transport maps control_cancel_request only for a
+known pending request, removes it from the response map, and persists cancelled
+request/node/card artifacts before a following result. Duplicate/unknown withdrawals
+are inert; an already admitted late client answer cannot kill the provider session.
+A dedicated request node replaces the prior reuse of the run root. The run stays
+waiting until its last pending request is gone. No approval is inferred.
+
+`tests/claude_withdrawal.rs` drives a deterministic Python stream-json peer through
+the real Connection, permission/question readers, SQLite projection and event log.
+Two concurrent requests cover duplicate/unknown cancellation, late rejected answers,
+and a withdrawal immediately followed by completion. The new regression fails on
+the previous adapter; it passes after the port. This is native-peer fixture evidence,
+not an observed CLI hook event or live T3 differential. Existing approval/response
+and session-release regressions also pass; full nightly interchangeability is open.
