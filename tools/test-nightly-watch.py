@@ -30,6 +30,12 @@ class WatchTests(unittest.TestCase):
         for expected in ['skip: 2', 'new.rpc', 'old.rpc', '[portado] ' + 'b' * 40 + ' fix native stop — abc1234', 'ninguna nightly está certificada']:
             self.assertIn(expected, text)
 
+    def test_client_and_test_only_commits_are_server_neutral(self):
+        self.assertTrue(watch.server_neutral(['apps/web/a.tsx', 'apps/server/src/x.test.ts']))
+        self.assertFalse(watch.server_neutral(['apps/web/a.tsx', 'apps/server/src/x.ts']))
+        self.assertFalse(watch.server_neutral([]))
+        self.assertTrue(watch.triage('d' * 40 + ' ui', {}, {'d' * 40}).startswith('[sin efecto en servidor]'))
+
     def test_untriaged_commits_are_marked_pending(self):
         self.assertTrue(watch.triage('c' * 40 + ' new', {}).startswith('[pendiente]'))
 
@@ -53,11 +59,14 @@ class WatchTests(unittest.TestCase):
                 return args[1].split('^')[0]
             if args[0] == 'show':
                 return 'Rpc.make("baseline", {})' if args[1].startswith(watch.PIN) else 'Rpc.make("added", {})'
+            if args[0] == 'log' and '--name-only' in args:
+                return '\x01sha\napps/web/a.tsx'
             if args[0] == 'diff':
                 return 'M\tapps/server/test.ts\nM\tpackages/source-control-github/a.ts\nA\tapps/mobile/b.ts'
             return 'sha fix'
         with tempfile.TemporaryDirectory(dir='/var/tmp') as directory, patch.object(watch, 'git', side_effect=fake_git), patch.object(watch.subprocess, 'run'):
             result = watch.collect(pathlib.Path(directory), rows)
+        self.assertEqual(result[0]['serverNeutral'], ['sha'])
         self.assertEqual(result[0]['previous'], 'old')
         self.assertEqual(result[1]['previous'], watch.PIN)
         self.assertEqual(result[0]['rpcAddedSincePinned'], ['added'])
