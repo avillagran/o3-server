@@ -2716,3 +2716,11 @@ Checkpoint optimization07a1e799d remains open: o3 uses a fresh private index, so
 real-index flags do not suppress edits, but rehashes the whole workspace. Project
 content search8430db673 and forceStopThread remain open. No M2 migration, live
 provider hook or latest-nightly differential is claimed by these fixtures.
+
+Request-node expiry follow-up: release of an unanswered request now cancels its
+owned approval node as well as its card. The session-release regression asserts
+this and fails before the fix. Run roots are never cancelled by that cleanup.
+
+Nightly monitoring was refreshed to4119/cefb544af3c98224874419198c0359b652ca3c94.
+New sourceControl.star and the4119 session/import/subagent changes remain pending
+triage/implementation; the monitor report is not a compatibility certificate.

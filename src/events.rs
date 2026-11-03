@@ -1178,6 +1178,17 @@ pub(crate) fn release_requests(s: &State, tid: &str, rid: &str) -> Result<()> {
             .ok_or("request id required")?
             .to_owned();
         put(&tx, "runtimeRequests", &id, tid, &request)?;
+        if let Some(node_id) = request["nodeId"].as_str() {
+            if let Some(mut node) = get(&tx, "nodes", node_id)
+                .ok()
+                .filter(|n| n["runtimeRequestId"] == id && n["runId"] == rid)
+            {
+                node["status"] = json!("cancelled");
+                node["completedAt"] = json!(at);
+                put(&tx, "nodes", node_id, tid, &node)?;
+                append(&tx, tid, "node.updated", node, &t)?;
+            }
+        }
         append(&tx, tid, "runtime-request.updated", request, &t)?;
         let items = {
             let mut q = tx
