@@ -103,6 +103,27 @@ fn base_command(program: &str, cwd: &Path, args: &[&str]) -> tokio::process::Com
     c
 }
 
+/// Prepended to every git invocation. Repository-local config must not run programs during
+/// read-only inspection, and user config must not change parsed output: diff.relative drops
+/// changes outside a subdirectory workspace, suppressBlankEmpty strips blank context lines,
+/// showSignature and colour inject text (upstream f2527c2c0, 35af84977, 581544212, 50106efdd).
+pub(crate) const SAFE_CONFIG: [&str; 14] = [
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "core.quotepath=false",
+    "-c",
+    "diff.relative=false",
+    "-c",
+    "diff.suppressBlankEmpty=false",
+    "-c",
+    "log.showSignature=false",
+    "-c",
+    "color.ui=false",
+    "-c",
+    "color.diff=false",
+];
+
 /// Runs `git <args>` in `cwd`. `args` are passed as argv, never through a shell.
 pub async fn git(cwd: &Path, args: &[&str], opts: Opts) -> Result<Out, RunError> {
     Box::pin(git_env(cwd, args, opts, &[])).await
@@ -115,8 +136,7 @@ pub async fn git_env(
     opts: Opts,
     env: &[(&str, &Path)],
 ) -> Result<Out, RunError> {
-    // Repository-local config must not be able to run programs for read-only inspection.
-    let mut full = vec!["-c", "core.fsmonitor=false", "-c", "core.quotepath=false"];
+    let mut full = SAFE_CONFIG.to_vec();
     full.extend_from_slice(args);
     Box::pin(run("git", cwd, &full, opts, env)).await
 }
@@ -245,4 +265,49 @@ pub(crate) fn try_lock_common_dir(key: PathBuf) -> Option<OwnedMutexGuard<()>> {
         map.entry(key).or_default().clone()
     };
     mutex.try_lock_owned().ok()
+}
+
+#[cfg(test)]
+mod diff_relative_tests {
+    #[tokio::test]
+    async fn user_git_config_does_not_change_parsed_output() {
+        let root = std::env::temp_dir().join(format!(
+            "o3-relative-{}",
+            crate::store::random_id().unwrap()
+        ));
+        let sub = root.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        let sh = |dir: &std::path::Path, args: &[&str]| {
+            assert!(std::process::Command::new("git")
+                .args(args)
+                .current_dir(dir)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .status()
+                .unwrap()
+                .success());
+        };
+        sh(&root, &["init", "-q"]);
+        std::fs::write(root.join("out.txt"), "a\n").unwrap();
+        std::fs::write(sub.join("in.txt"), "a\n").unwrap();
+        sh(&root, &["add", "."]);
+        sh(
+            &root,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-qm",
+                "i",
+            ],
+        );
+        sh(&root, &["config", "diff.relative", "true"]);
+        std::fs::write(root.join("out.txt"), "b\n").unwrap();
+        let out = super::git(&sub, &["diff", "--name-only", "HEAD"], super::Opts::READ)
+            .await
+            .unwrap();
+        std::fs::remove_dir_all(&root).unwrap();
+        assert!(out.text().contains("out.txt"), "{}", out.text());
+    }
 }

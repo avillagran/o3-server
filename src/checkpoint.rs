@@ -13,6 +13,7 @@ fn git(cwd: &Path, index: &Path, args: &[&str]) -> Result<String, String> {
         .env("GIT_AUTHOR_EMAIL", "checkpoint@localhost")
         .env("GIT_COMMITTER_NAME", "o3 checkpoint")
         .env("GIT_COMMITTER_EMAIL", "checkpoint@localhost")
+        .args(crate::proc::SAFE_CONFIG)
         .args(args)
         .output()
         .map_err(|e| e.to_string())?;
