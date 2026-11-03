@@ -1,6 +1,9 @@
 //! Shared fixtures: a real server on loopback, the real `t3-protocol` client, scratch dirs on disk
 //! (`/var/tmp`, never tmpfs) and fake `code`/`gh` executables on PATH.
 #![allow(dead_code)]
+// Both harnesses can be used independently in the same test crate. Include
+// this stateless helper here without loading its module twice.
+include!("../support/signals.rs");
 use serde_json::{json, Value};
 use std::{
     io::{Read, Write},
@@ -101,6 +104,7 @@ pub fn setup(name: &str) -> Env {
                 .unwrap();
             })
     });
+    shield_client_thread_from_sigchld();
     let paired = pair_bearer(
         &base,
         &pairing,

@@ -1071,3 +1071,66 @@ fn only_non_origin_remote_is_primary() {
     let refs = e.conn.rpc("vcs.listRefs", json!({"cwd":s(&r)})).unwrap();
     assert_eq!(refs["hasPrimaryRemote"], true);
 }
+
+#[test]
+fn uncommitted_review_preserves_staged_deletions_even_when_paired_as_renames() {
+    for staged_copy in [false, true] {
+        let e = setup("staged-delete-review");
+        let r = seeded(&e, "repo");
+        e.project("p1", &r);
+        write(&r.join("removed.txt"), "remove me\n");
+        commit_all(&r, "tracked removable file");
+        git(&r, &["rm", "--cached", "removed.txt"]);
+        if staged_copy {
+            write(&r.join("copy.txt"), "remove me\n");
+            git(&r, &["add", "copy.txt"]);
+        }
+        let before = std::fs::read(r.join(".git/index")).unwrap();
+        let preview = e
+            .conn
+            .rpc("review.getDiffPreview", json!({"cwd":s(&r)}))
+            .unwrap();
+        let diff = preview["sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| v["kind"] == "working-tree")
+            .unwrap()["diff"]
+            .as_str()
+            .unwrap();
+        for expected in if staged_copy {
+            vec!["rename from removed.txt", "rename to copy.txt"]
+        } else {
+            vec!["deleted file mode", "-remove me"]
+        } {
+            assert!(diff.contains(expected), "missing {expected}: {diff}");
+        }
+        assert!(!diff.contains("new file mode"), "{diff}");
+        assert_eq!(std::fs::read(r.join(".git/index")).unwrap(), before);
+        assert_eq!(
+            std::fs::read_to_string(r.join("removed.txt")).unwrap(),
+            "remove me\n"
+        );
+    }
+}
+
+#[test]
+fn upstream_divergence_ignores_a_shadowing_local_remote_name() {
+    let e = setup("shadow-upstream");
+    let r = seeded(&e, "repo");
+    with_origin(&e, &r);
+    git(&r, &["switch", "-q", "-c", "release"]);
+    git(&r, &["push", "-q", "-u", "origin", "release"]);
+    write(&r.join("a.txt"), "ahead of the real remote\n");
+    commit_all(&r, "one ahead");
+    git(&r, &["branch", "origin/release"]);
+    git(&r, &["tag", "release"]);
+    let st = e
+        .conn
+        .rpc("vcs.refreshStatus", json!({"cwd":s(&r)}))
+        .unwrap();
+    assert_eq!(st["refName"], "release");
+    assert_eq!(st["hasUpstream"], true);
+    assert_eq!(st["aheadCount"], 1);
+    assert_eq!(st["behindCount"], 0);
+}

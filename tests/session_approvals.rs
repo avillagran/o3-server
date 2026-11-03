@@ -234,6 +234,18 @@ fn a_finished_runs_unanswered_request_expires_when_its_channel_is_released() {
         p["runtimeRequests"][0]["responseCapability"]["type"] == "not_resumable"
     });
     assert_eq!(p["runtimeRequests"][0]["status"], "expired");
+    let request_node = &p["runtimeRequests"][0]["nodeId"];
+    let node = p["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| &n["id"] == request_node)
+        .unwrap();
+    assert_eq!(
+        node["status"], "cancelled",
+        "expired requests must not leave waiting nodes"
+    );
+
     assert_eq!(t3_protocol::approvals::pending(&p), json!([]));
     assert!(p["turnItems"]
         .as_array()

@@ -1,3 +1,5 @@
+#[path = "support/signals.rs"]
+mod signals;
 use serde_json::{json, Value};
 use t3_protocol::{pair_bearer, ConnectionOptions, PairingClient};
 fn first(c: &t3_protocol::Connection, tag: &str, p: Value) -> Value {
@@ -101,6 +103,7 @@ fn background_cases(cases: &[(&str, bool, bool, bool)]) {
             claude.shutdown().await;codex.shutdown().await;
         });
         });
+        signals::shield_client_thread_from_sigchld();
         let c = pair_bearer(
             &base,
             &secret,

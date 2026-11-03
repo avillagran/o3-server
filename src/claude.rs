@@ -353,7 +353,8 @@ impl ClaudeProvider {
                         Some(ProviderControl::Steer(text))=>session.prompt(&text).await?,
                         Some(ProviderControl::Respond{request_id,decision,feedback,answers})=>{
                             let native=request_id.strip_prefix(&format!("{}:",input.run_id)).ok_or("foreign Claude request")?;
-                            let updated=pending.remove(native).ok_or("unknown Claude request")?;
+                            // A provider withdrawal can race an already admitted client answer.
+                            let Some(updated)=pending.remove(native) else {continue;};
                             let mut tool_input=updated["input"].clone();
                             let mut decision=decision;
                             if updated["tool_name"]=="AskUserQuestion" {
@@ -390,6 +391,14 @@ impl ClaudeProvider {
                         }
                         if let Some(id)=v["session_id"].as_str() { session.native=id.into(); }
                         if v["type"]=="control_response" && v["response"]["subtype"]=="error" { return Err(format!("Claude control rejected: {}",v["response"]["error"])); }
+                        if v["type"]=="control_cancel_request" {
+                            if let Some(native)=v["request_id"].as_str() {
+                                if pending.remove(native).is_some() {
+                                    output.send(ProviderEvent::Native(json!({"type":"permission_cancelled","request_id":format!("{}:{native}",input.run_id)}))).await.map_err(|_|"receiver closed")?;
+                                }
+                            }
+                            continue;
+                        }
                         if v["type"]=="control_request" {
                             let native=v["request_id"].as_str().ok_or("missing request id")?;
                             if v["request"]["subtype"]!="can_use_tool" { return Err("unsupported Claude control request".into()); }
