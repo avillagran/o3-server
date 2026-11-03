@@ -29,11 +29,12 @@ pub fn summary(
     let (start, end) = (bound("sinceTime")?, bound("untilTime")?);
     let rates = crate::usage_rates::load(s).unwrap_or(Value::Null);
     // A private read-only connection avoids monopolizing the shared RPC reader.
-    let db = rusqlite::Connection::open_with_flags(
+    let mut db = rusqlite::Connection::open_with_flags(
         s.dir.join("o3.sqlite"),
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
     )
     .map_err(|e| e.to_string())?;
+    crate::store::profiled(&mut db);
     db.execute_batch("PRAGMA cache_size=-512; PRAGMA mmap_size=0; PRAGMA busy_timeout=5000;")
         .map_err(|e| e.to_string())?;
     // Resolve the exact local-day boundaries, including zones whose midnight is

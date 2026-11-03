@@ -50,8 +50,10 @@ pub fn start(
     opts: Options,
     rpc: Option<Value>,
 ) -> Result<(i64, Receiver), String> {
-    let db = Connection::open_with_flags(s.dir.join("o3.sqlite"), OpenFlags::SQLITE_OPEN_READ_ONLY)
-        .map_err(|e| e.to_string())?;
+    let mut db =
+        Connection::open_with_flags(s.dir.join("o3.sqlite"), OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|e| e.to_string())?;
+    crate::store::profiled(&mut db);
     db.execute_batch("PRAGMA cache_size=-512; PRAGMA mmap_size=0; BEGIN")
         .map_err(|e| e.to_string())?;
     let seq = events::sequence(&db)?;
