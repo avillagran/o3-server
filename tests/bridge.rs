@@ -200,3 +200,45 @@ fn real_client_pairs_and_runs_rpc_through_embedded_bridge() {
         .unwrap();
     });
 }
+
+#[test]
+fn no_bridge_flag_serves_without_an_embedded_node() {
+    let base = std::env::temp_dir().join(format!(
+        "o3-no-bridge-{}",
+        o3_server::store::random_id().unwrap()
+    ));
+    std::fs::create_dir_all(&base).unwrap();
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_o3-server"))
+        .args([
+            "serve",
+            "--base-dir",
+            base.to_str().unwrap(),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "0",
+            "--no-bridge",
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    use std::io::BufRead;
+    let mut line = String::new();
+    std::io::BufReader::new(child.stderr.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    let listening = line
+        .trim()
+        .strip_prefix("o3-server listening on ")
+        .map(str::to_owned);
+    let bridge_dir = base.join("omabridge").exists();
+    let _ = child.kill();
+    let _ = child.wait();
+    std::fs::remove_dir_all(&base).unwrap();
+    assert!(listening.is_some(), "{line}");
+    assert!(
+        !bridge_dir,
+        "--no-bridge must not create an embedded identity"
+    );
+}
