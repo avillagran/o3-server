@@ -9,15 +9,53 @@ use tokio::{
 };
 
 const MAX_FRAME: usize = 1024 * 1024;
+/// Notifications queued for one Codex thread while its turn loop is busy (writing events,
+/// awaiting an RPC). Bounded by bytes, not count: a burst of parallel tool calls emits many
+/// small frames, and dropping any of them would corrupt the turn.
+const ROUTE_BACKLOG_BYTES: usize = 8 * 1024 * 1024;
+type Frames = mpsc::UnboundedReceiver<(Value, usize)>;
+struct Route {
+    tx: mpsc::UnboundedSender<(Value, usize)>,
+    queued: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+impl Route {
+    /// Never blocks the shared reader; false when the consumer is gone or over budget.
+    fn push(&self, frame: Value, size: usize) -> bool {
+        use std::sync::atomic::Ordering;
+        if self.queued.fetch_add(size, Ordering::AcqRel) + size > ROUTE_BACKLOG_BYTES {
+            return false;
+        }
+        self.tx.send((frame, size)).is_ok()
+    }
+}
+struct Inbox {
+    rx: Frames,
+    queued: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+impl Inbox {
+    fn pair() -> (Route, Inbox) {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let queued = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        (
+            Route {
+                tx,
+                queued: queued.clone(),
+            },
+            Inbox { rx, queued },
+        )
+    }
+    async fn recv(&mut self) -> Option<Value> {
+        let (frame, size) = self.rx.recv().await?;
+        self.queued
+            .fetch_sub(size, std::sync::atomic::Ordering::AcqRel);
+        Some(frame)
+    }
+}
 type Reply = oneshot::Sender<Result<Value, String>>;
 enum Op {
     Call(String, Value, Reply),
     Reply(Value),
-    Subscribe(
-        String,
-        mpsc::Sender<Value>,
-        oneshot::Sender<Result<(), String>>,
-    ),
+    Subscribe(String, Route, oneshot::Sender<Result<(), String>>),
     Unsubscribe(String),
     Shutdown(oneshot::Sender<()>),
 }
@@ -313,7 +351,7 @@ impl CodexProvider {
             .as_str()
             .ok_or("Codex thread id missing")?
             .to_owned();
-        let (tx, mut frames) = mpsc::channel(16);
+        let (tx, mut frames) = Inbox::pair();
         let (ack, ready) = oneshot::channel();
         c.0.send(Op::Subscribe(tid.clone(), tx, ack))
             .await
@@ -548,10 +586,18 @@ fn native_response(
 }
 // read_until would allocate without bound before checking the size. Read from the
 // fixed-capacity BufReader, checking each slice before extending the frame.
+#[cfg(test)]
 async fn read_frame<R: tokio::io::AsyncBufRead + Unpin>(
     reader: &mut R,
     frame: &mut Vec<u8>,
 ) -> Result<Option<Value>, String> {
+    Ok(read_sized_frame(reader, frame).await?.map(|(v, _)| v))
+}
+/// Cancellation-safe: a partial line stays in `frame` for the next call.
+async fn read_sized_frame<R: tokio::io::AsyncBufRead + Unpin>(
+    reader: &mut R,
+    frame: &mut Vec<u8>,
+) -> Result<Option<(Value, usize)>, String> {
     loop {
         let buf = reader.fill_buf().await.map_err(|e| e.to_string())?;
         if buf.is_empty() {
@@ -572,8 +618,9 @@ async fn read_frame<R: tokio::io::AsyncBufRead + Unpin>(
         frame.extend_from_slice(&buf[..n]);
         reader.consume(n);
         if frame.last() == Some(&b'\n') {
+            let size = frame.len();
             let result = serde_json::from_slice(frame)
-                .map(Some)
+                .map(|v| Some((v, size)))
                 .map_err(|e| e.to_string());
             frame.clear();
             return result;
@@ -589,7 +636,7 @@ async fn actor(
     let mut stdin = child.stdin.take().unwrap();
     let mut reader = BufReader::with_capacity(8192, child.stdout.take().unwrap());
     let mut calls = HashMap::<u64, Reply>::new();
-    let mut routes = HashMap::<String, mpsc::Sender<Value>>::new();
+    let mut routes = HashMap::<String, Route>::new();
     let mut next = 0u64;
     let mut buffer = Vec::new();
     let mut shutdown = None;
@@ -617,16 +664,16 @@ async fn actor(
                 if bytes.len()>MAX_FRAME{return Err("Codex outgoing frame exceeds limit".into());}
                 tokio::time::timeout(std::time::Duration::from_secs(10),async {stdin.write_all(&bytes).await?;stdin.write_all(b"\n").await}).await.map_err(|_|"Codex write timed out")?.map_err(|e|e.to_string())?;
             },
-            frame=read_frame(&mut reader,&mut buffer)=>{
-                let frame=frame?.ok_or("Codex stdout closed")?;
+            frame=read_sized_frame(&mut reader,&mut buffer)=>{
+                let (frame,size)=frame?.ok_or("Codex stdout closed")?;
                 if frame.get("method").is_none(){if let Some(id)=frame["id"].as_u64(){if let Some(reply)=calls.remove(&id){let _=reply.send(if frame.get("error").is_some(){Err(frame["error"].to_string())}else{Ok(frame["result"].clone())});}}continue;}
                 if frame["method"]=="account/rateLimits/updated" {descriptor.lock().unwrap()["usageLimits"]=usage_limits(&frame["params"]["rateLimits"]);}
                 let tid=frame["params"]["threadId"].as_str();
                 if let Some(tid)=tid {
-                    if let Some(tx)=routes.get(tid){if tx.try_send(frame.clone()).is_err(){routes.remove(tid);}}
+                    if let Some(route)=routes.get(tid){if !route.push(frame.clone(),size){routes.remove(tid);}}
                     else if let Some(id)=frame.get("id"){let bytes=serde_json::to_vec(&json!({"id":id,"error":{"code":-32601,"message":"No active thread"}})).unwrap();stdin.write_all(&bytes).await.map_err(|e|e.to_string())?;stdin.write_all(b"\n").await.map_err(|e|e.to_string())?;}
                 }else if frame["method"]=="account/rateLimits/updated"{
-                    routes.retain(|_,tx|tx.try_send(frame.clone()).is_ok());
+                    routes.retain(|_,route|route.push(frame.clone(),size));
                 }
             }
         }}
@@ -873,6 +920,37 @@ mod tests {
             }
         }
         third.await.unwrap().unwrap();
+        provider.shutdown().await;
+    }
+    #[tokio::test]
+    async fn notification_burst_with_a_slow_consumer_keeps_every_frame() {
+        let provider = std::sync::Arc::new(CodexProvider::new(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/codex/mock-server.py"),
+            None,
+        ));
+        let (out, mut events) = mpsc::channel(1);
+        let (_tx, rx) = mpsc::channel(8);
+        let (_cancel, cancel) = watch::channel(false);
+        let mut run = input("burst", None);
+        run.text = "burst".into();
+        let a = provider.clone();
+        let task = tokio::spawn(async move { a.run(run, out, rx, cancel).await });
+        // Hold the consumer while the whole burst is produced, as a busy writer would.
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        let mut text = String::new();
+        let mut completed = false;
+        while let Some(e) = events.recv().await {
+            match e {
+                ProviderEvent::TextDelta(t) => text.push_str(&t),
+                ProviderEvent::Completed => completed = true,
+                ProviderEvent::Failed(m) => panic!("turn failed: {m}"),
+                _ => {}
+            }
+        }
+        task.await.unwrap().unwrap();
+        assert!(completed);
+        let expected: String = (0..600).map(|n| format!("{n},")).collect();
+        assert_eq!(text, expected);
         provider.shutdown().await;
     }
     #[tokio::test]

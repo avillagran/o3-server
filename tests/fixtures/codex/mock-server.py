@@ -23,6 +23,14 @@ for line in sys.stdin:
     elif m=='thread/resume':
         assert p['excludeTurns'] is True
         result={'thread':{'id':p['threadId']}}
+    elif m=='turn/start' and 'burst' in json.dumps(p.get('input')):
+        # A burst of notifications far larger than any per-thread frame count.
+        tid=p['threadId']; send(dict(id=i,result={'turn':{'id':'turn-'+tid}}))
+        notify('turn/started',tid,turn={'id':'turn-'+tid,'status':'inProgress'})
+        for n in range(600):
+            notify('item/agentMessage/delta',tid,itemId='message',delta=f'{n},')
+        notify('turn/completed',tid,turn={'id':'turn-'+tid,'status':'completed'})
+        continue
     elif m=='turn/start':
         tid=p['threadId']; result={'turn':{'id':'turn-'+tid}}
         send(dict(id=i,result=result))
