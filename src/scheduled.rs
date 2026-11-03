@@ -16,6 +16,7 @@ const KIND: &str = "scheduledTasks";
 const MIN_INTERVAL_MS: u64 = 60_000;
 const MAX_TASKS: i64 = 500;
 const DAY_MS: i64 = 86_400_000;
+const SETTLE_INTERVAL_MS: i64 = 60_000;
 
 fn failure(message: &str, task: Option<&str>) -> Value {
     let mut e = json!({"_tag":"ScheduledTaskError","message":message});
@@ -428,9 +429,21 @@ pub fn ensure_started(s: &Arc<State>) {
     tokio::spawn(async move {
         let mut changes = s.changed.subscribe();
         let mut activity = s.activity.subscribe();
+        // Auto-settle thresholds are in days; every client connection wakes this loop, so a
+        // sweep of every thread runs at most once a minute (or when settings change).
+        let mut settled_at = 0i64;
+        let mut settled_settings = Value::Null;
         loop {
             if s.background_needed() {
-                let _ = crate::settlement::tick(&s, now_ms());
+                let now = now_ms();
+                let settings = crate::settings::read(&s).unwrap_or(Value::Null);
+                if now.saturating_sub(settled_at) >= SETTLE_INTERVAL_MS
+                    || settings != settled_settings
+                {
+                    let _ = crate::settlement::tick(&s, now);
+                    settled_at = now;
+                    settled_settings = settings;
+                }
             }
             let (ready, soonest) = due(&s, now_ms());
             if soonest.is_some_and(|at| at <= now_ms()) {

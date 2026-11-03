@@ -7,6 +7,8 @@ description = "Lean Rust server, wire-compatible with T3 Code clients, with OmaB
 
 [features]
 memory-diagnostics = []
+# Diagnostic builds only: counts SQL statements per text and logs the top ones every 60 s.
+sql-profile = ["rusqlite/trace"]
 default = ["bridge"]
 bridge = ["dep:omabridge", "dep:anyhow", "dep:t3-protocol"]
 
