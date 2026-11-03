@@ -124,6 +124,21 @@ fn write_snapshot(
         emit(out, &thread)?;
         raw(out, ",\"updatedAt\":")?;
         emit(out, &thread["updatedAt"])?;
+        // Local turn items already present as visible items, read once per snapshot instead of
+        // one EXISTS per item.
+        let visible_ids: std::collections::HashSet<String> = if opts.compact_items {
+            let mut q = db
+                .prepare("SELECT json_extract(body,'$.item.id') FROM records WHERE kind='visibleTurnItems' AND thread_id=? AND rowid>=?")
+                .map_err(|e| e.to_string())?;
+            let ids = q
+                .query_map(params![tid, anchor], |r| r.get::<_, Option<String>>(0))
+                .map_err(|e| e.to_string())?
+                .filter_map(|r| r.ok().flatten())
+                .collect();
+            ids
+        } else {
+            Default::default()
+        };
         for kind in KINDS {
             raw(out, &format!(",\"{kind}\":["))?;
             let transcript = matches!(*kind, "messages" | "turnItems" | "visibleTurnItems");
@@ -144,11 +159,11 @@ fn write_snapshot(
             while let Some(row) = rows.next().map_err(|e| e.to_string())? {
                 let body: String = row.get(0).map_err(|e| e.to_string())?;
                 let mut v: Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
-                if opts.compact_items && *kind == "turnItems" {
-                    let present=db.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='visibleTurnItems' AND thread_id=? AND rowid>=? AND json_extract(body,'$.item.id')=?)",params![tid,anchor,v["id"].as_str()],|r|r.get::<_,bool>(0)).map_err(|e|e.to_string())?;
-                    if present {
-                        continue;
-                    }
+                if opts.compact_items
+                    && *kind == "turnItems"
+                    && v["id"].as_str().is_some_and(|id| visible_ids.contains(id))
+                {
+                    continue;
                 }
                 if opts.dedupe
                     && (*kind != "visibleTurnItems"
