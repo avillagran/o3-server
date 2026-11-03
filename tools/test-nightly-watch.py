@@ -26,9 +26,20 @@ class WatchTests(unittest.TestCase):
 
     def test_report_preserves_backlog_and_commit_evidence(self):
         data = {'portStatus': {'done': 1, 'skip': 2}, 'releases': [{'tag': 'nightly-test', 'sha': 'a' * 40, 'publishedAt': '2026-11-02', 'url': 'https://github.com/pingdotgg/t3code/releases/test', 'previous': 'old', 'changedFilesSincePinned': ['M\tapps/server/a.ts'], 'rpcAddedSincePinned': ['new.rpc'], 'rpcRemovedSincePinned': ['old.rpc'], 'changesSincePrevious': ['b' * 40 + ' fix native stop']}]}
-        text = watch.render(data)
-        for expected in ['skip: 2', 'new.rpc', 'old.rpc', 'fix native stop', 'ninguna nightly está certificada']:
+        text = watch.render(data, {'b' * 40: {'status': 'ported', 'o3': 'abc1234'}})
+        for expected in ['skip: 2', 'new.rpc', 'old.rpc', '[portado] ' + 'b' * 40 + ' fix native stop — abc1234', 'ninguna nightly está certificada']:
             self.assertIn(expected, text)
+
+    def test_untriaged_commits_are_marked_pending(self):
+        self.assertTrue(watch.triage('c' * 40 + ' new', {}).startswith('[pendiente]'))
+
+    def test_surfaces_cover_mobile_and_every_package(self):
+        self.assertIn('apps', watch.SURFACES)
+        self.assertIn('packages', watch.SURFACES)
+        self.assertIn(':(exclude)apps/marketing', watch.SURFACES)
+
+    def test_committed_ledger_is_valid(self):
+        self.assertTrue(watch.ledger())
 
     def test_network_errors_propagate(self):
         with patch.object(watch.urllib.request, 'urlopen', side_effect=OSError('offline')):
@@ -43,7 +54,7 @@ class WatchTests(unittest.TestCase):
             if args[0] == 'show':
                 return 'Rpc.make("baseline", {})' if args[1].startswith(watch.PIN) else 'Rpc.make("added", {})'
             if args[0] == 'diff':
-                return 'M\tapps/server/test.ts'
+                return 'M\tapps/server/test.ts\nM\tpackages/source-control-github/a.ts\nA\tapps/mobile/b.ts'
             return 'sha fix'
         with tempfile.TemporaryDirectory(dir='/var/tmp') as directory, patch.object(watch, 'git', side_effect=fake_git), patch.object(watch.subprocess, 'run'):
             result = watch.collect(pathlib.Path(directory), rows)
@@ -51,6 +62,7 @@ class WatchTests(unittest.TestCase):
         self.assertEqual(result[1]['previous'], watch.PIN)
         self.assertEqual(result[0]['rpcAddedSincePinned'], ['added'])
         self.assertEqual(result[0]['rpcRemovedSincePinned'], ['baseline'])
+        self.assertEqual(result[0]['areasSincePinned'], {'apps/mobile': 1, 'apps/server': 1, 'packages/source-control-github': 1})
 
 
 if __name__ == '__main__':

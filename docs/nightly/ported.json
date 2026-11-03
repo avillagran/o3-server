@@ -1,0 +1,6 @@
+{
+  "note": "Triage of upstream commits listed by tools/nightly-watch. status: ported | partial | not-applicable | pending. o3 = commit on dev/feature branch that ports it.",
+  "commits": {
+    "47f2c8d29e981c7723467efe137ee19e91df924e": {"status": "ported", "o3": "4acf171", "note": "Claude children drop the 12 inherited host-session variables; CLAUDE_CODE_ENTRYPOINT=t3-code unless settings env overrides"}
+  }
+}
