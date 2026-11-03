@@ -1,4 +1,4 @@
-//! In-process fixtures share Tokio's child signals with blocking protocol clients.
+// In-process fixtures share Tokio's child signals with blocking protocol clients.
 pub fn shield_client_thread_from_sigchld() {
     unsafe {
         let mut set: libc::sigset_t = std::mem::zeroed();
