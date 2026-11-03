@@ -664,7 +664,7 @@ fn queued_dispatch_waits_for_completion_and_steering_reuses_active_run() {
     create(&c, "t1");
     c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"send","messageId":"first","threadId":"t1","text":"first","attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
     let first = wait_status(&c, "waiting")["projection"]["runs"][0]["id"].clone();
-    c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"queue","messageId":"second","threadId":"t1","text":"second","attachments":[],"dispatchMode":{"type":"queue_after_active"}})).unwrap();
+    c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"queue","messageId":"second","threadId":"t1","text":"second","attachments":[],"dispatchMode":{"type":"start_immediately"},"deliveryIntent":"auto"})).unwrap();
     let queued = snap(&c, "t1");
     assert_eq!(queued["projection"]["runs"][1]["status"], "queued");
     let steer = json!({"type":"message.dispatch","commandId":"steer","messageId":"steer","threadId":"t1","text":"STEERING","attachments":[],"dispatchMode":{"type":"steer_active","targetRunId":first}});
