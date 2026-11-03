@@ -689,6 +689,9 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             }
         }
         "message.dispatch" => {
+            let mut resolved = c.clone();
+            resolved["dispatchMode"] = delivery_mode(s, &tx, &t, c)?;
+            let c = &resolved;
             if let Some(selection) = c.get("modelSelection") {
                 change_selection(&tx, &mut t, c, selection)?;
             }
@@ -1261,6 +1264,71 @@ pub(crate) fn message_item(db: &Connection, tid: &str, m: &Value) -> Result<Valu
         &json!({"position":item["ordinal"],"visibility":"local","sourceThreadId":tid,"sourceItemId":id,"item":item}),
     )?;
     Ok(item)
+}
+
+// Resolve the modern composer intent against live server state, not a client's snapshot.
+fn delivery_mode(s: &State, db: &Connection, t: &Value, c: &Value) -> Result<Value> {
+    let Some(intent) = c.get("deliveryIntent") else {
+        return Ok(c["dispatchMode"].clone());
+    };
+    if !matches!(intent.as_str(), Some("auto" | "steer" | "restart")) {
+        return Err("invalid delivery intent".into());
+    }
+    let tid = t["id"].as_str().ok_or("thread id missing")?;
+    let mut active: Option<String> = db.query_row(
+        "SELECT body FROM records WHERE kind='runs' AND thread_id=? AND json_extract(body,'$.status') IN ('preparing','starting','running','waiting') ORDER BY rowid DESC LIMIT 1",
+        [tid], |r| r.get(0)).optional().map_err(|e|e.to_string())?;
+    if active.is_none() {
+        // Completion is durable before the worker releases its live control entry.
+        // A send in that gap must wait for the worker to release the thread.
+        active = s.active.lock().unwrap().keys().find_map(|rid| {
+            get(db, "runs", rid)
+                .ok()
+                .filter(|r| r["threadId"] == tid)
+                .map(|r| r.to_string())
+        });
+    }
+    let Some(active) = active else {
+        return Ok(json!({"type":"start_immediately"}));
+    };
+    let run: Value = serde_json::from_str(&active).map_err(|e| e.to_string())?;
+    if intent == "restart" {
+        return Err("restart delivery is not implemented".into());
+    }
+    let rid = run["id"].as_str().ok_or("run id missing")?;
+    let original =
+        get(db, "messages", run["userMessageId"].as_str().unwrap_or("")).unwrap_or(Value::Null);
+    let maintenance = matches!(
+        original["text"].as_str().map(str::trim),
+        Some("/compact" | "/logout")
+    ) && original["attachments"]
+        .as_array()
+        .is_some_and(|a| a.is_empty());
+    let live_turn: bool = db.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='providerTurns' AND thread_id=?1 AND json_extract(body,'$.runAttemptId')=?2 AND json_extract(body,'$.status')='running')", params![tid,run["activeAttemptId"].as_str()], |r|r.get(0)).map_err(|e|e.to_string())?;
+    let thread = get(
+        db,
+        "providerThreads",
+        run["providerThreadId"].as_str().unwrap_or(""),
+    )
+    .unwrap_or(Value::Null);
+    let session = get(
+        db,
+        "providerSessions",
+        thread["providerSessionId"].as_str().unwrap_or(""),
+    )
+    .unwrap_or(Value::Null);
+    let can_steer =
+        intent == "steer" || session["capabilities"]["turns"]["supportsActiveSteering"] == true;
+    if !maintenance
+        && live_turn
+        && can_steer
+        && matches!(run["status"].as_str(), Some("running" | "waiting"))
+        && s.active.lock().unwrap().contains_key(rid)
+    {
+        Ok(json!({"type":"steer_active","targetRunId":rid}))
+    } else {
+        Ok(json!({"type":"queue_after_active"}))
+    }
 }
 
 fn stage_message(

@@ -65,7 +65,12 @@ fn reused_launch_import_title_and_native_attachment_steering() {
                     std::io::Cursor::new(b"file-proof"),
                 )
                 .unwrap();
-            c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"steer","threadId":"t","messageId":"steered","text":"input-proof","context":{"text":"context-proof"},"attachments":[image,file],"dispatchMode":if queued {json!({"type":"queue_after_active"})} else {json!({"type":"steer_active","targetRunId":rid})}})).unwrap();
+            let mut command = json!({"type":"message.dispatch","commandId":"steer","threadId":"t","messageId":"steered","text":"input-proof","context":{"text":"context-proof"},"attachments":[image,file],"dispatchMode":if queued {json!({"type":"queue_after_active"})} else {json!({"type":"steer_active","targetRunId":rid})}});
+            if !queued {
+                command["dispatchMode"] = json!({"type":"start_immediately"});
+                command["deliveryIntent"] = json!("auto");
+            }
+            c.rpc("orchestration.dispatchCommand", command).unwrap();
             if queued {
                 let p = wait(&c, |p| {
                     p["runs"]
