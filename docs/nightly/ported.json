@@ -338,8 +338,9 @@
       "note": "o3 declara supportsConversationRollback=false para Claude"
     },
     "41588d4520b345ce42b5824035c1f498d8de2d3a": {
-      "status": "pending",
-      "note": "Claude control_cancel_request: cerrar solicitud de permiso como cancelled (hoy queda pending)"
+      "status": "ported",
+      "o3": "47c19a7",
+      "note": "control_cancel_request cierra request/nodo/tarjeta antes del resultado; regresión con dos permisos/preguntas, cancelación desconocida/duplicada y respuesta tardía. Peer determinista y lector real; sin hook CLI live."
     },
     "febd3777c9c39ea871c41837ea92f5e0f7856dbb": {
       "status": "pending",
@@ -367,6 +368,16 @@
       "status": "ported",
       "o3": "376b576",
       "note": "color.ui/color.diff=false en todas las llamadas git (texto de commit/PR generado sin color)"
+    },
+    "071660e0bab80af5453b66ac7c335059ce10193a": {
+      "status": "ported",
+      "o3": "7899b36",
+      "note": "Review no re-agrega como untracked los paths borrados staged; --no-renames preserva borrados emparejados en renombre. Regresión roja/verde; índice y workspace intactos."
+    },
+    "064cf8f7ac01aead41b3a6198b7c08a3a66e041a": {
+      "status": "not-applicable",
+      "o3": "7899b36",
+      "note": "Algoritmo upstream distinto: o3 usa branch.ab de porcelain v2, sin resolver nombre corto de upstream. Fixture con rama local origin/release y tag release verifica +1/-0 contra remoto real; comportamiento ya cubierto, no un nuevo port."
     }
   }
 }

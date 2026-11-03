@@ -15,6 +15,54 @@ Detección de cambios; ninguna nightly está certificada por este informe.
 `skip` es backlog para paridad completa, aunque hoy no tenga consumidor.
 RPC no cubre por sí solo HTTP, CLI, comandos, streams, UI ni comportamiento nativo.
 
+## v0.1.7-nightly.20261103.4119
+
+Fuente: https://github.com/pingdotgg/t3code/releases/tag/v0.1.7-nightly.20261103.4119
+Commit: `cefb544af3c98224874419198c0359b652ca3c94`; publicada: 2026-11-03T08:49:52Z.
+Archivos de superficies vigiladas cambiados desde 3726: 3306.
+Áreas: apps/desktop 114, apps/mobile 686, apps/server 791, apps/web 1043, packages/client-runtime 203, packages/contracts 55, packages/effect-acp 5, packages/effect-codex-app-server 12, packages/provider-acp 13, packages/provider-acp-registry 11, packages/provider-core 33, packages/provider-cursor 34, packages/provider-fx 14, packages/provider-grok 8, packages/provider-kiro 11, packages/provider-muse 5, packages/provider-opencode 23, packages/provider-pi 13, packages/provider-testing 1, packages/secret-provider-core 6, packages/secret-provider-definitions 3, packages/secret-provider-onepassword 6, packages/shared 111, packages/source-control-azure-devops 6, packages/source-control-bitbucket 11, packages/source-control-core 10, packages/source-control-definitions 1, packages/source-control-forgejo 9, packages/source-control-gitcafe 6, packages/source-control-github 40, packages/source-control-gitlab 11, packages/source-control-testing 1, packages/ssh 8, packages/tailscale 2.
+RPC nuevos detectados: device.simlockIdentity, orchestration.forceStopThread, orchestration.getNativeChildWork, peerLinks.answerRequest, peerLinks.link, peerLinks.list, peerLinks.unlink, preview.stopLocalServer, projects.createFromThread, review.getBranchCommits, server.getNpmRelease, server.prepareTriage, sourceControl.appAccess, sourceControl.signInCancel, sourceControl.signInStart, sourceControl.signInWait, sourceControl.star, sourceControl.starred.
+RPC retirados detectados: orchestration.subscribeArchivedShell, preview.navigate, preview.refresh, projects.add, projects.list, projects.remove, provider.codex.auth-callback.subscribe, scheduledTasks.list, server.getBackgroundPolicy, server.getSettings, server.reportHostPowerState, subscribeBackgroundPolicy, subscribeTerminalEvents, terminal.restart.
+
+Cambios desde `v0.1.7-nightly.20261103.4106` (triage):
+
+- [sin efecto en servidor] cefb544af3c98224874419198c0359b652ca3c94 feat(web): celebrate a GitHub star with confetti (#29987)
+- [pendiente] e2bb9e63e129001aa37fa1f9f51cb334d1a3db42 fix(server): subagent questions reach a busy parent agent (#29909)
+- [pendiente] 5d3d78ab932bc71535d3155dad7f68fef39c5c16 feat(web): ask for a GitHub star when idle, and star in one click (#29922)
+- [pendiente] 61c3794c32b0eeebfac09add43e403618c65d2d7 fix(server): imported Claude sessions resume on their first turn (#23219)
+- [pendiente] 3e1e776af3f69f95ef180535c128a0c5127ab2c3 fix(server): import valid conversations within each transcript record limit (#23192)
+- [pendiente] 53e168fef5efa6141c89c1775e0630d6dc488f49 fix(opencode): decode compaction history from OpenCode 2.1 (#22661)
+- [pendiente] c3e1e0a4e9c38af7383b3b85406daab31e695fa7 fix(opencode): publish ordered pending-work snapshots (#21460)
+- [pendiente] bb221f0e1f50001e296fa3269bb75e2ea88e573a fix(server): preserve nested Claude subagent completion across turns (#23561)
+- [sin efecto en servidor] 689bdb82e95e6ebc2c23ae5222422a1941cdcf9f fix(web): usage-limit retry notice shows the timezone (#23029)
+- [pendiente] 30767c22b5df71f05c573c77620243b9b934e6dd fix(cursor): supporting files no longer hide sibling skills (#23326)
+- [pendiente] 10f365703af1c2755745a1ebf986826f4948f4b8 fix(server): preview click timeouts identify the target (#23489)
+- [pendiente] fd63914c77c844df1e011eef26c1f12bb61ed944 fix(server): show why Claude refuses full access as root (#23804)
+- [pendiente] 18ac394ee4a93eea06ff17d053be1ad474de3eff fix(pi): hold messages until compaction ends (#24388)
+- [pendiente] acd2db9c5e16417218458bf088e929c05cfaf27c fix(server): git hooks keep the user's locale (#27778)
+- [pendiente] 6f4bc77abf0b92b095cc7640261af30ddd61093c fix(provider-core): npm-installed Claude in ~/.local gets npm updates (#27957)
+- [pendiente] d5afb1a0dd948660b75f1a9245d821cf8b394c53 fix(server): slow forge CLI calls no longer delay checkpoints and turn starts (#28431)
+- [pendiente] b492e28c7bad91874f5efdea09c8b4f03faff7e3 fix(server): coalesced webhook runs use the prompt saved before dispatch (#29476)
+- [pendiente] 78aee8a6706e14eeebde743e2a452fdec3a0493f fix(server): OpenCode no longer drops a $skill read before its directory scan ends (#29535)
+- [pendiente] 692dd9ce6f91ce0f16f8189d681d3599e6d4d7aa fix(claude): a background-task wake run no longer hangs after a user turn absorbed its wake (#28010)
+- [pendiente] c0ec87a55bbffa437673f037d7b4ca68c6a300f1 fix(server): release the previous session when sending to another instance (#23198)
+- [pendiente] 93a3e8fbd3323e40c8d1fc8e60f9e5b40d5f2279 fix(server): stop maintaining the unused event correlation index (#23211)
+- [sin efecto en servidor] 296b089ab67949ba792b761cdf8bda2dec822568 fix(web): terminal controls no longer cover the first line (#23373)
+- [pendiente] 6e58094f740e5366dce4333a3a6320c43a278931 fix(preview): explain invalid URLs and locators (#23396)
+- [pendiente] 0ad3dc18644da1701e3932c59b0e3607d45b8629 fix(server): delegated children keep replies after their parent settles (#23456)
+- [pendiente] 71a7bf9516e3c96358b231c4ef30ba42b2dd6ff0 fix(server): agent session scans no longer hang the server on an unreadable .git/config (#23690)
+- [pendiente] d3d7f03e65cfddf6f034033d03ecde964d4eb158 fix(server): stop PR lookups in emptied worktree folders (#24803)
+- [sin efecto en servidor] 16fd1a440e48f0bfe981cee317ef62c1cd345eda fix(web): match new-thread hero to selected checkout (#25064)
+- [pendiente] 371e9451ef2704271652c46490ca813d2bc41927 fix(server): anchor Claude wake cooldowns to result arrival (#25061)
+- [pendiente] 607e373e50a7a03fa7d37b6b313225eec5660f4b fix(server): T3 Connect not-linked fix no longer tells Desktop users to run t3 service restart (#27660)
+- [pendiente] 503488d7a3926537d1d13f763f69b8e12458d7b3 fix(opencode): sessions open through OpenCode 2 after an in-place upgrade from 1.x (#27779)
+- [pendiente] 997e3f37f7c695782d94c2abfe875a3dc272e73a fix(server): Codex turns that fail with an unlisted error code no longer stay running (#28040)
+- [pendiente] f80be8e0374d75dc74f0e4c5011d93a6e2e170f8 fix(server): streamed Browser clicks no longer wait behind queued wheel bursts (#28236)
+- [pendiente] 8c9945d44d4bd27fe6d6768e64aeec6d95a11bb7 fix(provider-acp): Kiro's html_render pages show in the thread (#28253)
+- [pendiente] 48c8cf787e7595625c757434e5e3458ff19db411 fix(server): a failed worktree add no longer leaves its new branch behind (#28373)
+- [pendiente] 1436c4571fa0030ec114cbfa3ad7d62f07b642a3 fix(client-runtime): connect to the primary environment while the browser reports offline (#29347)
+- [pendiente] 84547b988de6a591d3514cc38ee649b046bc9fe8 fix(server): Codex usage keeps requests from interrupted turns (#29415)
+
 ## v0.1.7-nightly.20261103.4106
 
 Fuente: https://github.com/pingdotgg/t3code/releases/tag/v0.1.7-nightly.20261103.4106
@@ -55,7 +103,7 @@ Cambios desde `v0.1.7-nightly.20261102.4093` (triage):
 - [pendiente] b1913b99c8c77e5b8096f84f02e90505033db8b5 fix(server): honor relocated systemd user configuration (#29244)
 - [pendiente] 89c2a5c4dd8cc6d9b994d95da5d87ef9f863f798 perf(client-runtime): expanding deferred work skips an unused timeline rebuild (#29114)
 - [pendiente] a565d8953ed9c435c1602bde2952a665258f3a5c fix(cli): t3 thread start titles no longer end in a broken character (#29563)
-- [pendiente] 071660e0bab80af5453b66ac7c335059ce10193a fix(server): Uncommitted review keeps a staged deletion that git pairs into a rename (#29571)
+- [portado] 071660e0bab80af5453b66ac7c335059ce10193a fix(server): Uncommitted review keeps a staged deletion that git pairs into a rename (#29571) — 7899b36 Review no re-agrega como untracked los paths borrados staged; --no-renames preserva borrados emparejados en renombre. Regresión roja/verde; índice y workspace intactos.
 - [pendiente] 6739dd729431d4e009e4795eeb2b26186348dcc3 perf(server): thread snapshots skip serializing a row past the row limit (#29103)
 - [pendiente] 448c1ac390e12d91d4b3ec104479a699136570ab fix(server): create_threads titles no longer end in a broken character (#29163)
 - [pendiente] d1e5044c67515c4bccfe9bdb60e4533f920b32bf fix(shared): context chip labels no longer split an emoji at the 200-character cap (#29158)
@@ -63,7 +111,7 @@ Cambios desde `v0.1.7-nightly.20261102.4093` (triage):
 - [pendiente] 4494faa27053feb67d5469d1e034bfd13da8a389 fix(client-runtime): checking out a pull request refreshes cached branch lists (#29161)
 - [portado] 50106efdd9206d2df90c6a04eb63c115b43474e1 fix(server): generated commit and PR text no longer reads colored git output (#29126) — 376b576 color.ui/color.diff=false en todas las llamadas git (texto de commit/PR generado sin color)
 - [portado] 5815442128942acb9f63d8808e9a888b475c6fa7 fix(server): turn diffs keep signed commits' files under log.showSignature (#29124) — 376b576 log.showSignature=false en todas las llamadas git, incluidos turn diffs
-- [pendiente] 064cf8f7ac01aead41b3a6198b7c08a3a66e041a fix(server): an upstream shadowed by a local origin/<branch> branch keeps its real remote (#29180)
+- [no aplica] 064cf8f7ac01aead41b3a6198b7c08a3a66e041a fix(server): an upstream shadowed by a local origin/<branch> branch keeps its real remote (#29180) — 7899b36 Algoritmo upstream distinto: o3 usa branch.ab de porcelain v2, sin resolver nombre corto de upstream. Fixture con rama local origin/release y tag release verifica +1/-0 contra remoto real; comportamiento ya cubierto, no un nuevo port.
 - [pendiente] a4f4741cffebd79b3a38fe1151512a6d66ae9690 fix(gitlab): merge request links keep an HTTP remote's port and scheme (#29170)
 - [pendiente] ab06e2a265db928902daffe33f5fdb3904a67fdc fix(clients): attachment sizes just under 1 MB no longer read "1024 KB" (#29165)
 - [pendiente] 8430db67328c15f92bdccc9fe56586e989402760 fix(server): project content search finds matches past a line's first 512 characters (#29167)
@@ -146,7 +194,7 @@ Archivos de superficies vigiladas cambiados desde 3726: 3118.
 RPC nuevos detectados: device.simlockIdentity, orchestration.forceStopThread, orchestration.getNativeChildWork, peerLinks.answerRequest, peerLinks.link, peerLinks.list, peerLinks.unlink, preview.stopLocalServer, projects.createFromThread, review.getBranchCommits, server.getNpmRelease, server.prepareTriage, sourceControl.appAccess, sourceControl.signInCancel, sourceControl.signInStart, sourceControl.signInWait, sourceControl.starred.
 RPC retirados detectados: orchestration.subscribeArchivedShell, preview.navigate, preview.refresh, projects.add, projects.list, projects.remove, provider.codex.auth-callback.subscribe, scheduledTasks.list, server.getBackgroundPolicy, server.getSettings, server.reportHostPowerState, subscribeBackgroundPolicy, subscribeTerminalEvents, terminal.restart.
 
-Cambios desde `v0.1.7-nightly.20261102.4061` (triage):
+Cambios desde `3f9448747bb8848050dc2cacf83affa6f94a66a1` (triage):
 
 - [pendiente] 30654b3e91a51937d1dba18fc83af19d8003f5ca feat: tag threads and hide tagged threads while recording (#29053) — Contrato: thread.tag.set, evento thread.tags-updated, tags en thread/shell y ajustes hiddenThreadTags/hideTaggedThreads
 - [parcial] ab8e488e10d883fa880b0ddcf01917b51839ab07 feat(antigravity): runtime 1.4.5 with real turn failures and subagent work (#28629) — ffd4f0a Backlog proveedor Antigravity; orchestration.getNativeChildWork responde {children:[]} como upstream para otros drivers
@@ -163,18 +211,6 @@ Cambios desde `v0.1.7-nightly.20261102.4061` (triage):
 - [sin efecto en servidor] b12ab30950b7231c50410703befb922464292e8b fix(mobile): files with brackets in their names attach on Android (#28983)
 - [pendiente] 23075af981e40f7c1071871782d489896c3919f6 refactor(server): name Codex's direct-only T3 MCP server t3-code-direct (#29068) — Backlog MCP orquestador (t3-code-direct)
 - [pendiente] 0c4454ca6adc09058f3d311db6744788507d6af5 perf(server): Codex calls t3_thread_wait directly instead of from Code Mode (#29026) — Backlog MCP orquestador (t3_thread_wait)
-
-## v0.1.7-nightly.20261102.4061
-
-Fuente: https://github.com/pingdotgg/t3code/releases/tag/v0.1.7-nightly.20261102.4061
-Commit: `d890e5c40120769badcf18bff6d1ac983c8f40c7`; publicada: 2026-11-02T04:26:01Z.
-Archivos de superficies vigiladas cambiados desde 3726: 3086.
-Áreas: apps/desktop 108, apps/mobile 674, apps/server 664, apps/web 1021, packages/client-runtime 192, packages/contracts 53, packages/effect-acp 5, packages/effect-codex-app-server 11, packages/provider-acp 13, packages/provider-acp-registry 6, packages/provider-core 30, packages/provider-cursor 25, packages/provider-fx 14, packages/provider-grok 5, packages/provider-muse 5, packages/provider-opencode 17, packages/provider-pi 13, packages/provider-testing 1, packages/secret-provider-core 6, packages/secret-provider-definitions 3, packages/secret-provider-onepassword 6, packages/shared 110, packages/source-control-azure-devops 6, packages/source-control-bitbucket 11, packages/source-control-core 10, packages/source-control-definitions 1, packages/source-control-forgejo 8, packages/source-control-gitcafe 6, packages/source-control-github 40, packages/source-control-gitlab 11, packages/source-control-testing 1, packages/ssh 8, packages/tailscale 2.
-RPC nuevos detectados: device.simlockIdentity, orchestration.forceStopThread, peerLinks.answerRequest, peerLinks.link, peerLinks.list, peerLinks.unlink, preview.stopLocalServer, projects.createFromThread, review.getBranchCommits, server.getNpmRelease, server.prepareTriage, sourceControl.appAccess, sourceControl.signInCancel, sourceControl.signInStart, sourceControl.signInWait, sourceControl.starred.
-RPC retirados detectados: orchestration.subscribeArchivedShell, preview.navigate, preview.refresh, projects.add, projects.list, projects.remove, provider.codex.auth-callback.subscribe, scheduledTasks.list, server.getBackgroundPolicy, server.getSettings, server.reportHostPowerState, subscribeBackgroundPolicy, subscribeTerminalEvents, terminal.restart.
-
-Cambios desde `3f9448747bb8848050dc2cacf83affa6f94a66a1` (triage):
-
 - [sin efecto en servidor] d890e5c40120769badcf18bff6d1ac983c8f40c7 fix(mobile): explain why voice input is unavailable (#28698)
 - [sin efecto en servidor] 91f66f88de342b0485e7f5a20296b4073725b984 fix(web): settings search no longer jumps or clears on an IME Enter or Escape (#28298)
 - [sin efecto en servidor] 7a760a9a88662274f29b20ae812b3ae05fca9078 fix(desktop): load the renderer while the backend starts (#28715)
@@ -268,7 +304,7 @@ Cambios desde `3f9448747bb8848050dc2cacf83affa6f94a66a1` (triage):
 - [no aplica] bd907328f38a22615b7b019b73f5f30a3d4948f2 fix(client): a resume no longer re-renders every home row five times (#27404) — Lógica de cliente
 - [pendiente] 9b7208832eedaf9d3a8ab9002bbe3adcb313a921 fix(server): show why Codex hooks stopped a turn (#27399) — Motivo de interrupción cuando un hook de Codex detiene el turno
 - [no aplica] 0c6c721aea4ab66062da54d340dad20201dc8df2 fix(server): Claude threads revert to the message after a /compact (#27381) — o3 declara supportsConversationRollback=false para Claude
-- [pendiente] 41588d4520b345ce42b5824035c1f498d8de2d3a fix(claude): approval cards close when Claude withdraws the request (#27320) — Claude control_cancel_request: cerrar solicitud de permiso como cancelled (hoy queda pending)
+- [portado] 41588d4520b345ce42b5824035c1f498d8de2d3a fix(claude): approval cards close when Claude withdraws the request (#27320) — 47c19a7 control_cancel_request cierra request/nodo/tarjeta antes del resultado; regresión con dos permisos/preguntas, cancelación desconocida/duplicada y respuesta tardía. Peer determinista y lector real; sin hook CLI live.
 - [sin efecto en servidor] 0bccd293cfbb09ef7b9e23184df7e756c4411b58 fix(desktop): disable blocked t3 CLI installation (#27286)
 - [pendiente] febd3777c9c39ea871c41837ea92f5e0f7856dbb fix(server): t3_thread_read pages no longer split an emoji in half (#27273) — Backlog MCP orquestador
 - [pendiente] e2ad07abad1ddfe3a763d373e4bde21c140045eb fix(web): settled shelf no longer crashes with several projects filtered (#27231)
