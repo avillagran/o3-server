@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Isolated release RSS probe, using a real authenticated WebSocket and 1000 durable messages."""
-import base64,json,os,pathlib,socket,struct,subprocess,sys,tempfile,time
+import base64,datetime,hashlib,json,os,pathlib,socket,struct,subprocess,sys,tempfile,time
 binary=pathlib.Path(sys.argv[1] if len(sys.argv)>1 else '/var/tmp/o3-build/main/release/o3-server').resolve()
 class WS:
  def __init__(self,port,token):
@@ -21,16 +21,19 @@ class WS:
    b+=part
   return b
  def recv(self):
-  a,b=self.read(2);n=b&127
-  if n==126:n=struct.unpack('!H',self.read(2))[0]
-  if n==127:n=struct.unpack('!Q',self.read(8))[0]
-  return json.loads(self.read(n))
+  parts=[]
+  while True:
+   a,b=self.read(2);n=b&127
+   if n==126:n=struct.unpack('!H',self.read(2))[0]
+   if n==127:n=struct.unpack('!Q',self.read(8))[0]
+   parts.append(self.read(n))
+   if a&128:return json.loads(b''.join(parts))
  def rpc(self,tag,payload):
   self.send({'_tag':'Request','id':'1','tag':tag,'payload':payload,'headers':[]});v=self.recv();assert v['exit']['_tag']=='Success',v;return v['exit']['value']
 def rss(pid):
  for line in pathlib.Path(f'/proc/{pid}/smaps_rollup').read_text().splitlines():
   if line.startswith('Rss:'):return int(line.split()[1])
-with tempfile.TemporaryDirectory(prefix='o3-rss-') as temp:
+with tempfile.TemporaryDirectory(prefix='o3-rss-',dir=os.environ.get('TMPDIR','/var/tmp')) as temp:
  env={**os.environ,'T3CODE_HOME':temp,'HOME':temp}
  token=subprocess.check_output([str(binary),'auth','session','issue','--scope','orchestration:read','--scope','orchestration:operate','--token-only'],env=env,text=True).strip()
  process=subprocess.Popen([str(binary),'serve','--port','0','--host','127.0.0.1'],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
@@ -45,7 +48,7 @@ with tempfile.TemporaryDirectory(prefix='o3-rss-') as temp:
   for i in range(1000):ws.rpc('orchestration.dispatchCommand',{'type':'message.dispatch','commandId':f'c{i}','messageId':f'm{i}','threadId':'rss-thread','text':f'message {i}: '+('x'*1000),'attachments':[],'dispatchMode':{'type':'defer_start'}})
   ws.s.close();time.sleep(.1);idle=rss(process.pid)
   ws=WS(port,token);ws.send({'_tag':'Request','id':'1','tag':'orchestration.subscribeThread','payload':{'threadId':'rss-thread','acceptBoundedSnapshot':True},'headers':[]});snapshot=ws.recv();assert snapshot['_tag']=='Chunk';ws.send({'_tag':'Ack','requestId':'1'});time.sleep(.1)
-  result={'binary':str(binary),'binary_bytes':binary.stat().st_size,'seed_messages':1000,'text_bytes_per_message':1000,'cold_idle_rss_kib':cold,'seeded_idle_rss_kib':idle,'seeded_one_subscribed_client_rss_kib':rss(process.pid),'snapshot_messages':len(snapshot['values'][0]['projection']['messages']),'provider':'none (defer_start)','measurement':'Linux /proc/PID/smaps_rollup Rss'}
+  result={'measured_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source_sha':os.environ.get('O3_BENCH_SOURCE_SHA'),'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'binary':str(binary),'binary_bytes':binary.stat().st_size,'seed_messages':1000,'text_bytes_per_message':1000,'cold_idle_rss_kib':cold,'seeded_idle_rss_kib':idle,'seeded_one_subscribed_client_rss_kib':rss(process.pid),'snapshot_messages':len(snapshot['values'][0]['projection']['messages']),'provider':'none (defer_start)','measurement':'Linux /proc/PID/smaps_rollup Rss'}
   print(json.dumps(result,indent=2));ws.s.close()
  finally:
   process.terminate();process.wait(timeout=5)

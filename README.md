@@ -7,7 +7,8 @@ and O3 Android can talk to it like T3, with OmaBridge built in. Claude runs thro
 
 ## Status
 
-Not a finished replacement and not installed anywhere. T3 stays the daily server.
+Not a finished replacement. M2 runs a reversible service trial using an isolated profile;
+daily-use acceptance is tracked separately from protocol coverage.
 
 - Compatibility is tracked per RPC and command in [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md),
   with evidence and limits in [docs/CONFORMANCE.md](docs/CONFORMANCE.md).
@@ -15,12 +16,59 @@ Not a finished replacement and not installed anywhere. T3 stays the daily server
 - Development integrates on `dev`; `main` receives explicitly validated promotions.
   [Nightly maintenance](docs/UPSTREAM.md) documents the automated source monitor,
   port ledger and stability gates. Detection never promotes a nightly automatically.
-- Memory: about 17 MB idle and 21 MB peak with a real 374-thread history ([docs/RSS.md](docs/RSS.md)),
-  against 579 MB for T3 headless.
+- Memory depends on workload and platform: see the controlled M2/NODE measurements below
+  and the separate real-history workloads in [docs/RSS.md](docs/RSS.md).
 - Verified against the real lib-t3-rust client, real Claude and Codex turns, the O3 desktop backend
   and QML UI, and O3 Android on an emulator: pairing, new threads, chat, approval, reconnect, an image
   attachment and terminal commands ([docs/E2E.md](docs/E2E.md)). Not verified: daily use and Android through an
   OmaBridge gateway, which needs the real gateway deployment.
+
+## M2 and NODE comparison
+
+Measured on 2026-11-03. Both release binaries use source `7c9223e` (the same tree promoted
+into `main` as `c9c667b`). These are Linux hosts; M2 runs Asahi Linux, not macOS.
+
+| Host | Processor | Architecture | Logical CPUs | RAM available to Linux |
+|---|---|---|---:|---:|
+| M2 | Apple M2 Pro (8 performance + 4 efficiency cores) | aarch64 | 12 | 15,379 MiB |
+| NODE | AMD Ryzen 9 5900X | x86_64 | 24 | 31,979 MiB |
+
+The same isolated synthetic workload seeds 1,000 deferred messages of approximately 1 KB in
+one thread, then attaches one authenticated WebSocket client. Its bounded snapshot contains
+10 messages. No provider inference, desktop UI, browser or Android process is included.
+Bridge support is enabled; no public relay traffic is generated.
+
+| o3-server metric | M2 | NODE |
+|---|---:|---:|
+| Release binary, decimal MB | 14.44 | 16.10 |
+| Startup RSS, decimal MB | 15.01 | 11.79 |
+| Seeded RSS, no subscribed client, decimal MB | 17.04 | 17.95 |
+| Seeded RSS, one bounded subscription, decimal MB | 16.97 | 17.95 |
+| Durable messages seeded | 1,000 | 1,000 |
+| Messages in the bounded snapshot | 10 | 10 |
+
+One run per host, sampled from Linux `/proc/PID/smaps_rollup`; these are observations,
+not peak-memory limits or CPU speed rankings. Hosts also ran other services. The startup
+sample is taken immediately after runtime discovery. See the [raw aggregate evidence](docs/platform-measurements.json)
+for timestamps, KiB values and binary hashes. Reproduce with a release build:
+
+```sh
+TMPDIR=/var/tmp O3_BENCH_SOURCE_SHA=$(git rev-parse HEAD) tools/measure-rss /path/to/release/o3-server
+```
+
+For context, the live T3 serving process was also observed on each host. Those profiles,
+versions and activity differ from each other and from the synthetic workload above, so
+these figures do **not** establish a controlled T3-to-o3 memory reduction:
+
+| Live T3 observation | M2 | NODE |
+|---|---:|---:|
+| T3 nightly | 3904 | 3991 |
+| Serving-process RSS, decimal MB | 287.20 | 625.53 |
+
+These live samples use `/proc/PID/status` (`VmRSS`) and exclude launchers, provider children
+and clients. Full compatibility remains pending: o3 does not serve T3's `/mcp` upstream,
+OpenCode/ACP providers or DPoP/browser-session authentication. Existing bearer sessions
+and native Claude/Codex support do not imply those capabilities are available.
 
 ## Build and test
 
