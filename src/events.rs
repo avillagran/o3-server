@@ -35,6 +35,8 @@ fn change_selection(db: &Connection, t: &mut Value, c: &Value, value: &Value) ->
 
 pub fn initialize(db: &Connection) -> Result<()> {
     db.execute_batch("CREATE TABLE IF NOT EXISTS records(kind TEXT NOT NULL,id TEXT NOT NULL,thread_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(kind,id)); CREATE INDEX IF NOT EXISTS records_thread ON records(thread_id,kind); CREATE TABLE IF NOT EXISTS events(sequence INTEGER PRIMARY KEY AUTOINCREMENT,thread_id TEXT NOT NULL,body TEXT NOT NULL,shell TEXT); CREATE TABLE IF NOT EXISTS receipts(command_id TEXT PRIMARY KEY,result TEXT NOT NULL);").map_err(|e|e.to_string())?;
+    // Subscription cursors: per-thread and shell event seeks (see `next`).
+    db.execute_batch("CREATE INDEX IF NOT EXISTS events_thread_sequence ON events(thread_id,sequence); CREATE INDEX IF NOT EXISTS events_shell_sequence ON events(sequence) WHERE shell IS NOT NULL;").map_err(|e|e.to_string())?;
     // The partial index finds the latest user without reading assistant bodies.
     db.execute_batch("CREATE INDEX IF NOT EXISTS records_turn_ordinal ON records(thread_id,json_extract(body,'$.ordinal')) WHERE kind='turnItems'; CREATE INDEX IF NOT EXISTS records_user_message ON records(thread_id) WHERE kind='messages' AND json_extract(body,'$.role')='user';").map_err(|e|e.to_string())?;
     repair_boolean_settled_override(db)?;
@@ -422,14 +424,27 @@ pub fn history(s: &State, tid: &str, cursor: &str) -> Result<Value> {
     )
 }
 
+/// Every subscription polls this on each connection wake, so each shape must stay an index
+/// seek: an `(? IS NULL OR thread_id=?)` filter or testing `shell` (stored after the large
+/// `body`) without an index walks every later event of every thread.
+fn cursor_row(
+    db: &Connection,
+    after: i64,
+    tid: Option<&str>,
+    shell: bool,
+) -> Result<Option<(i64, String)>> {
+    let map = |r: &rusqlite::Row| Ok((r.get(0)?, r.get(1)?));
+    match (tid, shell) {
+        (Some(tid), false) => db.query_row("SELECT sequence,body FROM events INDEXED BY events_thread_sequence WHERE thread_id=?2 AND sequence>?1 ORDER BY sequence LIMIT 1", params![after, tid], map),
+        (Some(tid), true) => db.query_row("SELECT sequence,shell FROM events INDEXED BY events_thread_sequence WHERE thread_id=?2 AND sequence>?1 AND shell IS NOT NULL ORDER BY sequence LIMIT 1", params![after, tid], map),
+        (None, false) => db.query_row("SELECT sequence,body FROM events WHERE sequence>?1 ORDER BY sequence LIMIT 1", params![after], map),
+        (None, true) => db.query_row("SELECT sequence,shell FROM events INDEXED BY events_shell_sequence WHERE shell IS NOT NULL AND sequence>?1 ORDER BY sequence LIMIT 1", params![after], map),
+    }
+    .optional()
+    .map_err(|e| e.to_string())
+}
 pub fn next(s: &State, after: i64, tid: Option<&str>, shell: bool) -> Result<Option<(i64, Value)>> {
-    let db = s.reader.lock().unwrap();
-    let column = if shell { "shell" } else { "body" };
-    let sql=format!("SELECT sequence,{column} FROM events WHERE sequence>? AND (?2 IS NULL OR thread_id=?2) AND {column} IS NOT NULL ORDER BY sequence LIMIT 1");
-    let row: Option<(i64, String)> = db
-        .query_row(&sql, params![after, tid], |r| Ok((r.get(0)?, r.get(1)?)))
-        .optional()
-        .map_err(|e| e.to_string())?;
+    let row = cursor_row(&s.reader.lock().unwrap(), after, tid, shell)?;
     row.map(|(n, b)| {
         serde_json::from_str(&b)
             .map(|v| (n, v))
@@ -1904,6 +1919,54 @@ mod migration_benchmark {
         );
         drop(db);
         std::fs::remove_file(path).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod cursor_index_tests {
+    use super::*;
+    #[test]
+    fn subscription_cursor_queries_are_index_seeks() {
+        let db = Connection::open_in_memory().unwrap();
+        initialize(&db).unwrap();
+        for (sql, index) in [
+            ("SELECT sequence,body FROM events INDEXED BY events_thread_sequence WHERE thread_id=?2 AND sequence>?1 ORDER BY sequence LIMIT 1", "events_thread_sequence"),
+            ("SELECT sequence,shell FROM events INDEXED BY events_shell_sequence WHERE shell IS NOT NULL AND sequence>?1 ORDER BY sequence LIMIT 1", "events_shell_sequence"),
+        ] {
+            let plan: String = if sql.contains("?2") {
+                db.query_row(&format!("EXPLAIN QUERY PLAN {sql}"), params![0, "t"], |r| r.get(3))
+            } else {
+                db.query_row(&format!("EXPLAIN QUERY PLAN {sql}"), params![0], |r| r.get(3))
+            }
+            .unwrap();
+            assert!(plan.contains(index) && plan.contains("SEARCH"), "{plan}");
+        }
+    }
+    #[test]
+    fn cursors_skip_other_threads_and_shell_less_events() {
+        let db = Connection::open_in_memory().unwrap();
+        initialize(&db).unwrap();
+        for (tid, shell) in [
+            ("a", None),
+            ("b", Some("{}")),
+            ("a", Some("{\"x\":1}")),
+            ("b", None),
+        ] {
+            db.execute(
+                "INSERT INTO events(thread_id,body,shell) VALUES(?,?,?)",
+                params![tid, "{\"t\":1}", shell],
+            )
+            .unwrap();
+        }
+        let q = |tid: Option<&str>, shell: bool, after: i64| -> Option<i64> {
+            cursor_row(&db, after, tid, shell).unwrap().map(|(n, _)| n)
+        };
+        assert_eq!(q(Some("a"), false, 1), Some(3));
+        assert_eq!(q(Some("b"), false, 2), Some(4));
+        assert_eq!(q(None, true, 0), Some(2));
+        assert_eq!(q(None, true, 2), Some(3));
+        assert_eq!(q(Some("b"), true, 2), None);
+        assert_eq!(q(None, false, 3), Some(4));
     }
 }
 
