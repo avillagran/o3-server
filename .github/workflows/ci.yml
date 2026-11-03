@@ -1,0 +1,29 @@
+name: Validation
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+permissions:
+  contents: read
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features: ['', '--no-default-features']
+    env:
+      CARGO_TARGET_DIR: /var/tmp/o3-build/ci
+      TMPDIR: /var/tmp/o3-build/tmp
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install video decoder required by device stream regression
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: mkdir -p "$TMPDIR"
+      - run: rustup component add rustfmt clippy
+      - run: cargo fmt --check
+      - run: cargo test --locked -j 4 ${{ matrix.features }}
+      - run: cargo clippy --locked --all-targets -j 4 ${{ matrix.features }} -- -D warnings
+      - run: python3 tools/gen-compat && git diff --exit-code -- docs/COMPATIBILITY.md
+      - run: python3 tools/test-nightly-watch.py

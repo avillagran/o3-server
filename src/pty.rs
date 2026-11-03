@@ -145,3 +145,34 @@ pub fn signal_group(pgid: i32, signal: libc::c_int) {
         }
     }
 }
+
+/// Signals all process groups still owned by this PTY session, including shell jobs.
+/// Linux keeps the session id stable while any member remains alive.
+pub fn signal_session(sid: i32, signal: libc::c_int) {
+    if sid <= 1 {
+        return;
+    }
+    let mut groups = std::collections::BTreeSet::from([sid]);
+    if let Ok(entries) = std::fs::read_dir("/proc") {
+        for entry in entries.flatten() {
+            if entry.file_name().to_string_lossy().parse::<u32>().is_err() {
+                continue;
+            }
+            let Ok(stat) = std::fs::read_to_string(entry.path().join("stat")) else {
+                continue;
+            };
+            let Some((_, rest)) = stat.rsplit_once(')') else {
+                continue;
+            };
+            let fields: Vec<_> = rest.split_whitespace().take(4).collect();
+            if fields.len() == 4 && fields[3].parse::<i32>() == Ok(sid) {
+                if let Ok(group) = fields[2].parse::<i32>() {
+                    groups.insert(group);
+                }
+            }
+        }
+    }
+    for group in groups {
+        signal_group(group, signal);
+    }
+}

@@ -1,0 +1,46 @@
+name: T3 nightly watch
+on:
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: nightly-watch
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+      - name: Inspect published nightly source without executing it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/nightly-watch --cache /var/tmp/o3-nightly.git
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nightly-evidence
+          path: docs/nightly/
+      - name: Keep one actionable tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, subprocess
+          title = 'T3 nightly: parity intake'
+          rows = json.loads(subprocess.check_output(['gh', 'issue', 'list', '--state', 'open', '--search', title + ' in:title', '--json', 'number,title']))
+          matches = [r for r in rows if r['title'] == title]
+          report = pathlib.Path('docs/nightly/REPORT.md').read_text()
+          # Full report stays in the artifact if GitHub's issue body limit is exceeded.
+          body = report if len(report) < 55000 else report[:50000] + '\n\nInforme abreviado; evidencia completa en el artefacto nightly-evidence de esta ejecución.\n'
+          pathlib.Path('docs/nightly/issue.md').write_text(body)
+          if matches:
+              cmd = ['gh', 'issue', 'edit', str(matches[0]['number'])]
+          else:
+              cmd = ['gh', 'issue', 'create', '--title', title]
+          subprocess.run(cmd + ['--body-file', 'docs/nightly/issue.md'], check=True)
+          PY

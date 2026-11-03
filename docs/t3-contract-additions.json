@@ -1,0 +1,91 @@
+{
+  "_doc": "RPCs added upstream after the pinned 3726 contract. Scopes from apps/server/src/auth/RpcAuthorization.ts and packages/contracts/src/clientRpcPermissions.ts at the commit below. The 3726 contract stays the validated reference; these are additive.",
+  "contract": "t3code@84537c4dd (nightly 4093)",
+  "methods": {
+    "device.simlockIdentity": {
+      "dynamic": false,
+      "scope": "settings:write",
+      "stream": false
+    },
+    "orchestration.forceStopThread": {
+      "dynamic": false,
+      "scope": "orchestration:operate",
+      "stream": false
+    },
+    "orchestration.getNativeChildWork": {
+      "dynamic": false,
+      "scope": "orchestration:read",
+      "stream": false
+    },
+    "peerLinks.answerRequest": {
+      "dynamic": false,
+      "scope": "access:write",
+      "stream": false
+    },
+    "peerLinks.link": {
+      "dynamic": false,
+      "scope": "access:write",
+      "stream": false
+    },
+    "peerLinks.list": {
+      "dynamic": false,
+      "scope": "access:read",
+      "stream": false
+    },
+    "peerLinks.unlink": {
+      "dynamic": false,
+      "scope": "access:write",
+      "stream": false
+    },
+    "preview.stopLocalServer": {
+      "dynamic": false,
+      "scope": "terminal:operate",
+      "stream": false
+    },
+    "projects.createFromThread": {
+      "dynamic": false,
+      "scope": "orchestration:operate",
+      "stream": false
+    },
+    "review.getBranchCommits": {
+      "dynamic": false,
+      "scope": "filesystem:read",
+      "stream": false
+    },
+    "server.getNpmRelease": {
+      "dynamic": false,
+      "scope": "orchestration:read",
+      "stream": false
+    },
+    "server.prepareTriage": {
+      "dynamic": false,
+      "scope": "orchestration:operate",
+      "stream": false
+    },
+    "sourceControl.appAccess": {
+      "dynamic": false,
+      "scope": "orchestration:read",
+      "stream": false
+    },
+    "sourceControl.signInCancel": {
+      "dynamic": false,
+      "scope": "settings:write",
+      "stream": false
+    },
+    "sourceControl.signInStart": {
+      "dynamic": false,
+      "scope": "settings:write",
+      "stream": false
+    },
+    "sourceControl.signInWait": {
+      "dynamic": false,
+      "scope": "settings:write",
+      "stream": false
+    },
+    "sourceControl.starred": {
+      "dynamic": false,
+      "scope": "orchestration:read",
+      "stream": false
+    }
+  }
+}

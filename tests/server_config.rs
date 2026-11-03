@@ -71,6 +71,13 @@ fn custom_instances_route_native_binary_environment_and_home_and_reconfigure() {
             .iter()
             .find(|p| p["instanceId"] == id)
             .unwrap();
+        if driver == "claudeAgent" {
+            assert_eq!(provider["auth"]["status"], "authenticated", "{provider}");
+            assert_eq!(
+                provider["auth"]["email"], "fixture@example.invalid",
+                "{provider}"
+            );
+        }
         assert!(t3_protocol::models::catalog(&config)["models"]
             .as_array()
             .unwrap()

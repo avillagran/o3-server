@@ -9,10 +9,12 @@ and O3 Android can talk to it like T3, with OmaBridge built in. Claude runs thro
 
 Not a finished replacement and not installed anywhere. T3 stays the daily server.
 
-- Compatibility: 79 of 203 RPCs done, 41 partial, 83 out of scope (77 no client uses, 6 answer T3's typed unavailable error).
-  P0 is 1 of 5 done; P1 is 23 of 31.
-  Full table and per-RPC limits: [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md); evidence and
-  accepted differences: [docs/CONFORMANCE.md](docs/CONFORMANCE.md).
+- Compatibility is tracked per RPC and command in [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md),
+  with evidence and limits in [docs/CONFORMANCE.md](docs/CONFORMANCE.md).
+  The goal is full T3 Code parity; previously skipped surfaces remain backlog.
+- Development integrates on `dev`; `main` receives explicitly validated promotions.
+  [Nightly maintenance](docs/UPSTREAM.md) documents the automated source monitor,
+  port ledger and stability gates. Detection never promotes a nightly automatically.
 - Memory: about 17 MB idle and 21 MB peak with a real 374-thread history ([docs/RSS.md](docs/RSS.md)),
   against 579 MB for T3 headless.
 - Verified against the real lib-t3-rust client, real Claude and Codex turns, the O3 desktop backend

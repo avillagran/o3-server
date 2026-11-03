@@ -106,6 +106,10 @@ pub fn from_t3(s: &State, path: &Path) -> Result<Value, String> {
             if v["id"] != id {
                 return Err(format!("payload id mismatch in {table}"));
             }
+            let mut v = v;
+            if kind == "thread" {
+                events::normalize_settled_override(&mut v);
+            }
             // Existing local records win: reimport cannot roll back later local edits.
             if events::get(&tx, kind, &id).is_err() {
                 events::put(&tx, kind, &id, &tid, &v)?;

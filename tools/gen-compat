@@ -12,7 +12,7 @@ for tag, meta in sorted(contract["methods"].items()):
 counts = collections.Counter(status.get(t, {}).get("status", "todo") for t in contract["methods"])
 out = ["# Compatibilidad o3-server ↔ T3", "",
        f"Contrato: `{contract['contract']}`. Generado por `tools/gen-compat`; editar `docs/compat-status.json`.", "",
-       "Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 fuera de alcance (ningún cliente lo usa)", "",
+       "Leyenda: ✅ hecho · 🟡 parcial · ⬜ pendiente · 🚫 backlog de paridad completa (sin consumidor actual o no disponible)", "",
        f"**Resumen:** {counts['done']} ✅ · {counts['partial']} 🟡 · {counts['todo']} ⬜ · {counts['skip']} 🚫 de {len(contract['methods'])} RPC", ""]
 out += ["## P0/P1 RPC status", "", "| Priority | Done | Partial | Todo |", "|---|---:|---:|---:|"]
 for priority in ("P0", "P1"):
@@ -26,6 +26,16 @@ for group in sorted(groups):
         kind = "stream" if meta.get("stream") else "unary"
         out.append(f"| {MARK[s.get('status', 'todo')]} | `{tag}` | {s.get('priority', '?')} | {kind} | `{meta.get('scope')}` | {s.get('note', '')} |")
     out.append("")
+additions = json.loads((root / "t3-contract-additions.json").read_text())
+added = collections.Counter(status.get(t, {}).get("status", "todo") for t in additions["methods"])
+out += [f"## Nightly additions ({additions['contract']})", "",
+        "RPC posteriores al contrato fijado. Aditivos: los RPC retirados upstream se conservan para los clientes fijados.", "",
+        f"**Resumen:** {added['done']} ✅ · {added['partial']} 🟡 · {added['todo']} ⬜ · {added['skip']} 🚫 de {len(additions['methods'])} RPC", "",
+        "| Estado | RPC | Prioridad | Scope | Nota |", "|---|---|---|---|---|"]
+for tag, meta in sorted(additions["methods"].items()):
+    s = status.get(tag, {})
+    out.append(f"| {MARK[s.get('status', 'todo')]} | `{tag}` | {s.get('priority', '?')} | `{meta.get('scope')}` | {s.get('note', '')} |")
+out.append("")
 out += ["## Commands", "", "| Estado | Command | Prioridad | Nota |", "|---|---|---|---|"]
 for tag in contract["commandTypes"]:
     item=document.get("commands",{}).get(tag,{})

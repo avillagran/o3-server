@@ -2678,3 +2678,58 @@ defects the recheck demonstrated: initial layout at the wrong width, pinch zoom 
 T3's layout zoom, and refresh without a real-reader test. Four crashed MCP tabs still block
 new tabs at the limit of four. These are defects of a feature main did not have, and agent
 browser access defaults to on as in T3.
+
+## Claude request withdrawal parity — 2026-11-03
+
+Upstream41588d452 closes approval and question artifacts when the SDK aborts its
+permission callback. The direct transport maps control_cancel_request only for a
+known pending request, removes it from the response map, and persists cancelled
+request/node/card artifacts before a following result. Duplicate/unknown withdrawals
+are inert; an already admitted late client answer cannot kill the provider session.
+A dedicated request node replaces the prior reuse of the run root. The run stays
+waiting until its last pending request is gone. No approval is inferred.
+
+`tests/claude_withdrawal.rs` drives a deterministic Python stream-json peer through
+the real Connection, permission/question readers, SQLite projection and event log.
+Two concurrent requests cover duplicate/unknown cancellation, late rejected answers,
+and a withdrawal immediately followed by completion. The new regression fails on
+the previous adapter; it passes after the port. This is native-peer fixture evidence,
+not an observed CLI hook event or live T3 differential. Existing approval/response
+and session-release regressions also pass; full nightly interchangeability is open.
+
+## Nightly 4106 review and upstream references — 2026-11-03
+
+Port071660e0b: the temporary review index excludes staged deletions from files to
+re-add as intent-to-add. The deletion scan uses --no-renames, so a same-content
+staged copy cannot hide the old path. The real index and working file remain
+byte-identical. The real-Connection regression covers plain deletion and rename,
+fails on the previous implementation and passes after the change. Unborn
+repositories use git diff --cached without explicit HEAD, keeping their existing
+review behavior. All existing VCS/review fixtures pass.
+
+Case064cf8f7a is already handled through Git porcelain v2 branch.ab counters; no
+ambiguous short upstream reference is re-resolved for divergence. A real repository
+with both a local origin/release branch and a release tag verifies refName and
++1/-0 relative to the real remote. This is covered behavior, not a new code port.
+
+Checkpoint optimization07a1e799d remains open: o3 uses a fresh private index, so
+real-index flags do not suppress edits, but rehashes the whole workspace. Project
+content search8430db673 and forceStopThread remain open. No M2 migration, live
+provider hook or latest-nightly differential is claimed by these fixtures.
+
+Request-node expiry follow-up: release of an unanswered request now cancels its
+owned approval node as well as its card. The session-release regression asserts
+this and fails before the fix. Run roots are never cancelled by that cleanup.
+
+Nightly monitoring was refreshed to4119/cefb544af3c98224874419198c0359b652ca3c94.
+New sourceControl.star and the4119 session/import/subagent changes remain pending
+triage/implementation; the monitor report is not a compatibility certificate.
+
+CI fixture isolation: background/common now use the same per-client-thread
+SIGCHLD shield as support. In-process Tokio subprocess handling can otherwise
+interrupt the blocking native client's socket read, reported as rpc_outcome_unknown.
+A Linux regression targets that thread with a non-restarting SIGCHLD handler:
+unshielded read returns Interrupted, shielded read receives the byte. The masks
+and handler are restored in the dedicated fixture process. No RPC is replayed
+and no production signal policy is changed. Remote CI still must confirm the
+background/VCS failures are resolved on the runner.

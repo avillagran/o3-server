@@ -669,6 +669,19 @@ fn workspace_file(root: &Path, relative: &str) -> Option<(PathBuf, String)> {
     (paths::within(&real_root, &real) && real != real_root && real.is_file()).then_some((real, rel))
 }
 
+fn media_revision(m: &std::fs::Metadata) -> String {
+    format!(
+        "{}:{}:{}:{}:{}:{}:{}",
+        m.dev(),
+        m.ino(),
+        m.size(),
+        m.mtime(),
+        m.mtime_nsec(),
+        m.ctime(),
+        m.ctime_nsec()
+    )
+}
+
 fn media_claims(real: &Path, download: bool, expires: i64) -> Option<(Value, String, String)> {
     let f = std::fs::OpenOptions::new()
         .read(true)
@@ -677,15 +690,8 @@ fn media_claims(real: &Path, download: bool, expires: i64) -> Option<(Value, Str
         .ok()?;
     let m = f.metadata().ok().filter(|m| m.is_file())?;
     let name = real.file_name()?.to_string_lossy().into_owned();
-    let revision = format!(
-        "{}:{}:{}:{}:{}",
-        m.dev(),
-        m.ino(),
-        m.size(),
-        m.mtime_nsec(),
-        m.ctime_nsec()
-    );
-    let mut c = json!({"version":1,"kind":"media-file-exact","filePath":real.to_string_lossy(),"device":m.dev().to_string(),"inode":m.ino().to_string(),"expiresAt":expires});
+    let revision = media_revision(&m);
+    let mut c = json!({"version":1,"kind":"media-file-exact","filePath":real.to_string_lossy(),"device":m.dev().to_string(),"inode":m.ino().to_string(),"fileRevision":revision,"expiresAt":expires});
     if download {
         c["download"] = json!(true);
     }
@@ -1373,7 +1379,7 @@ enum Resolved {
         download: bool,
         file_name: Option<String>,
         mime: Option<String>,
-        identity: Option<(u64, u64)>,
+        identity: Option<(u64, u64, Option<String>)>,
         root: Option<PathBuf>,
     },
     Bytes {
@@ -1459,6 +1465,7 @@ fn resolve(s: &State, token: &str, rest: &str) -> Option<Resolved> {
             let identity = Some((
                 c["device"].as_str()?.parse().ok()?,
                 c["inode"].as_str()?.parse().ok()?,
+                c["fileRevision"].as_str().map(str::to_owned),
             ));
             Some(Resolved::File {
                 path: real.clone(),
@@ -1658,7 +1665,12 @@ pub async fn serve(s: &State, request: &Request<Incoming>) -> Response<Body> {
     let Ok(meta) = file.metadata() else {
         return text(StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error");
     };
-    if !meta.is_file() || identity.is_some_and(|(d, i)| (meta.dev(), meta.ino()) != (d, i)) {
+    if !meta.is_file()
+        || identity.is_some_and(|(d, i, revision)| {
+            (meta.dev(), meta.ino()) != (d, i)
+                || revision.is_some_and(|expected| media_revision(&meta) != expected)
+        })
+    {
         return text(StatusCode::NOT_FOUND, "Not Found");
     }
     if let Some(root) = root {

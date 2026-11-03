@@ -828,6 +828,7 @@ fn fork(tx: &Connection, c: &Value) -> Result<i64> {
             "snoozedAt",
             "lastSnoozeWakeAt",
             "autoSettleDisabledAt",
+            "delegatedFrom",
             "rollbackRequestId",
             "rollbackFailure",
             "titleRegeneration",

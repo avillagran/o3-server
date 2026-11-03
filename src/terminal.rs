@@ -619,13 +619,15 @@ impl Session {
 // ---------------------------------------------------------------- pump (one task per live process)
 
 async fn kill_group(child: &mut tokio::process::Child, pid: i32) {
-    pty::signal_group(pid, libc::SIGHUP);
-    pty::signal_group(pid, libc::SIGTERM);
-    if tokio::time::timeout(KILL_GRACE, child.wait())
+    pty::signal_session(pid, libc::SIGHUP);
+    pty::signal_session(pid, libc::SIGTERM);
+    let timed_out = tokio::time::timeout(KILL_GRACE, child.wait())
         .await
-        .is_err()
-    {
-        pty::signal_group(pid, libc::SIGKILL);
+        .is_err();
+    // A shell can exit before its job-control groups do. Always finish those
+    // session members, even when waiting for the leader already succeeded.
+    pty::signal_session(pid, libc::SIGKILL);
+    if timed_out {
         let _ = child.wait().await;
     }
 }

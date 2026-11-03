@@ -179,7 +179,7 @@ pub async fn default_branch(cwd: &Path) -> Option<String> {
 async fn has_remote(cwd: &Path) -> bool {
     proc::git(cwd, &["remote"], Opts::READ)
         .await
-        .is_ok_and(|o| o.ok() && o.text().lines().any(|l| l.trim() == "origin"))
+        .is_ok_and(|o| o.ok() && o.text().lines().any(|l| !l.trim().is_empty()))
 }
 
 // ------------------------------------------------------------------ vcs.refreshStatus
@@ -697,7 +697,7 @@ pub async fn list_refs(p: Value) -> Reply {
     let limit = p["limit"].as_u64().unwrap_or(100).clamp(1, 200) as usize;
     let page: Vec<Value> = all.into_iter().skip(cursor).take(limit).collect();
     let next = (cursor + page.len() < total).then_some(cursor + page.len());
-    let mut v = json!({"refs":page,"isRepo":true,"hasPrimaryRemote":remotes.iter().any(|r| r == "origin"),"nextCursor":next,"totalCount":total});
+    let mut v = json!({"refs":page,"isRepo":true,"hasPrimaryRemote":!remotes.is_empty(),"nextCursor":next,"totalCount":total});
     v["isAtRepositoryRoot"] =
         json!(std::fs::canonicalize(&cwd).ok() == std::fs::canonicalize(&root).ok());
     Ok(v)
