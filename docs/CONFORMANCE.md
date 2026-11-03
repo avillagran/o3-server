@@ -2724,3 +2724,12 @@ this and fails before the fix. Run roots are never cancelled by that cleanup.
 Nightly monitoring was refreshed to4119/cefb544af3c98224874419198c0359b652ca3c94.
 New sourceControl.star and the4119 session/import/subagent changes remain pending
 triage/implementation; the monitor report is not a compatibility certificate.
+
+CI fixture isolation: background/common now use the same per-client-thread
+SIGCHLD shield as support. In-process Tokio subprocess handling can otherwise
+interrupt the blocking native client's socket read, reported as rpc_outcome_unknown.
+A Linux regression targets that thread with a non-restarting SIGCHLD handler:
+unshielded read returns Interrupted, shielded read receives the byte. The masks
+and handler are restored in the dedicated fixture process. No RPC is replayed
+and no production signal policy is changed. Remote CI still must confirm the
+background/VCS failures are resolved on the runner.
