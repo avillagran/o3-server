@@ -13,7 +13,12 @@ import urllib.request
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 REPO = 'https://github.com/pingdotgg/t3code.git'
 PIN = '3f9448747bb8848050dc2cacf83affa6f94a66a1'
-SURFACES = ['packages/contracts', 'apps/server', 'apps/web', 'apps/desktop', 'packages/shared']
+# Whole product tree: server, clients (web/desktop/mobile) and every package (providers,
+# source-control, secrets, ssh...). Only the marketing site is excluded.
+SURFACES = ['apps', 'packages', ':(exclude)apps/marketing']
+LEDGER = ROOT / 'docs/nightly/ported.json'
+CLIENT_ONLY = ('apps/web/', 'apps/desktop/', 'apps/mobile/')
+TRIAGE = {'client-only': 'sin efecto en servidor', 'ported': 'portado', 'not-applicable': 'no aplica', 'partial': 'parcial', 'pending': 'pendiente'}
 
 
 def git(cache, *args):
@@ -61,16 +66,56 @@ def collect(cache, selected):
         files = git(cache, 'diff', '--name-status', PIN, sha, '--', *SURFACES).splitlines()
         previous = selected[selected.index(r) + 1]['tag_name'] if selected.index(r) + 1 < len(selected) else PIN
         commits = git(cache, 'log', '--format=%H %s', previous + '..' + sha, '--', *SURFACES).splitlines()
-        rows.append({'tag': r['tag_name'], 'sha': sha, 'publishedAt': r['published_at'], 'url': r['html_url'], 'previous': previous, 'changesSincePrevious': commits, 'changedFilesSincePinned': files, 'rpcAddedSincePinned': sorted(names - baseline), 'rpcRemovedSincePinned': sorted(baseline - names)})
+        neutral = sorted(k for k, v in touched(cache, previous + '..' + sha).items() if server_neutral(v))
+        areas = collections.Counter('/'.join(line.split('\t')[-1].split('/')[:2]) for line in files)
+        rows.append({'areasSincePinned': dict(sorted(areas.items())), 'tag': r['tag_name'], 'sha': sha, 'publishedAt': r['published_at'], 'url': r['html_url'], 'previous': previous, 'changesSincePrevious': commits, 'serverNeutral': neutral, 'changedFilesSincePinned': files, 'rpcAddedSincePinned': sorted(names - baseline), 'rpcRemovedSincePinned': sorted(baseline - names)})
     return rows
 
 
-def render(report):
+def server_neutral(paths):
+    """True when a commit only touches upstream clients or tests; o3 clients are separate."""
+    return bool(paths) and all(x.startswith(CLIENT_ONLY) or '.test.' in x or '/test/' in x or '/__tests__/' in x for x in paths)
+
+
+def touched(cache, interval):
+    paths, sha = {}, None
+    for line in git(cache, 'log', '--format=%x01%H', '--name-only', interval, '--', *SURFACES).splitlines():
+        if line.startswith('\x01'):
+            sha = line[1:]
+            paths[sha] = []
+        elif line and sha:
+            paths[sha].append(line)
+    return paths
+
+
+def ledger():
+    if not LEDGER.exists():
+        return {}
+    data = json.loads(LEDGER.read_text())['commits']
+    for sha, entry in data.items():
+        if len(sha) != 40 or entry.get('status') not in TRIAGE:
+            raise ValueError(f'invalid ported ledger entry {sha}')
+    return data
+
+
+def triage(line, entries, neutral=()):
+    entry = entries.get(line.split(' ', 1)[0])
+    if not entry and line.split(' ', 1)[0] in neutral:
+        return f'[{TRIAGE["client-only"]}] {line}'
+    if not entry:
+        return f'[{TRIAGE["pending"]}] {line}'
+    detail = ' '.join(x for x in (entry.get('o3', ''), entry.get('note', '')) if x)
+    return f"[{TRIAGE[entry['status']]}] {line}" + (f' — {detail}' if detail else '')
+
+
+def render(report, entries=None):
+    entries = ledger() if entries is None else entries
     counts = report['portStatus']
     lines = ['# Seguimiento nightly de T3 Code', '', f"Referencia validada del inventario: `{PIN}`.", '', 'Detección de cambios; ninguna nightly está certificada por este informe.', '', '## Registro de portabilidad', '', *[f'- {k}: {v}' for k, v in sorted(counts.items())], '', '`done` conserva su evidencia y sus límites del inventario; no demuestra paridad completa.', '`skip` es backlog para paridad completa, aunque hoy no tenga consumidor.', 'RPC no cubre por sí solo HTTP, CLI, comandos, streams, UI ni comportamiento nativo.', '']
     for r in report['releases']:
-        lines += [f"## {r['tag']}", '', f"Fuente: {r['url']}", f"Commit: `{r['sha']}`; publicada: {r['publishedAt']}.", f"Archivos de superficies vigiladas cambiados desde 3726: {len(r['changedFilesSincePinned'])}.", f"RPC nuevos detectados: {', '.join(r['rpcAddedSincePinned']) or 'ninguno'}.", f"RPC retirados detectados: {', '.join(r['rpcRemovedSincePinned']) or 'ninguno'}.", '', f"Cambios desde `{r['previous']}` (triage pendiente):", '']
-        lines += ['- ' + c for c in r['changesSincePrevious']]
+        lines += [f"## {r['tag']}", '', f"Fuente: {r['url']}", f"Commit: `{r['sha']}`; publicada: {r['publishedAt']}.", f"Archivos de superficies vigiladas cambiados desde 3726: {len(r['changedFilesSincePinned'])}.", 'Áreas: ' + (', '.join(f'{k} {v}' for k, v in r.get('areasSincePinned', {}).items()) or 'ninguna') + '.', f"RPC nuevos detectados: {', '.join(r['rpcAddedSincePinned']) or 'ninguno'}.", f"RPC retirados detectados: {', '.join(r['rpcRemovedSincePinned']) or 'ninguno'}.", '', f"Cambios desde `{r['previous']}` (triage):", '']
+        neutral = set(r.get('serverNeutral', []))
+        lines += ['- ' + triage(c, entries, neutral) for c in r['changesSincePrevious']]
         lines += ['']
     return '\n'.join(lines)
 

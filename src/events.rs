@@ -37,8 +37,24 @@ pub fn initialize(db: &Connection) -> Result<()> {
     db.execute_batch("CREATE TABLE IF NOT EXISTS records(kind TEXT NOT NULL,id TEXT NOT NULL,thread_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(kind,id)); CREATE INDEX IF NOT EXISTS records_thread ON records(thread_id,kind); CREATE TABLE IF NOT EXISTS events(sequence INTEGER PRIMARY KEY AUTOINCREMENT,thread_id TEXT NOT NULL,body TEXT NOT NULL,shell TEXT); CREATE TABLE IF NOT EXISTS receipts(command_id TEXT PRIMARY KEY,result TEXT NOT NULL);").map_err(|e|e.to_string())?;
     // The partial index finds the latest user without reading assistant bodies.
     db.execute_batch("CREATE INDEX IF NOT EXISTS records_turn_ordinal ON records(thread_id,json_extract(body,'$.ordinal')) WHERE kind='turnItems'; CREATE INDEX IF NOT EXISTS records_user_message ON records(thread_id) WHERE kind='messages' AND json_extract(body,'$.role')='user';").map_err(|e|e.to_string())?;
+    repair_boolean_settled_override(db)?;
     initialize_run_internal(db)?;
     crate::threadq::initialize(db)
+}
+/// Upstream 077 (1973e0a68): a boolean `settledOverride` breaks the thread schema; true means
+/// settled, false means none. Idempotent; walks only thread records through the primary key.
+fn repair_boolean_settled_override(db: &Connection) -> Result<()> {
+    db.execute(
+        "UPDATE records SET body=json_set(body,'$.settledOverride',IIF(json_type(body,'$.settledOverride')='true','settled',NULL)) WHERE kind='thread' AND json_valid(body) AND json_type(body,'$.settledOverride') IN ('true','false')",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+pub(crate) fn normalize_settled_override(v: &mut Value) {
+    if let Some(b) = v.get("settledOverride").and_then(Value::as_bool) {
+        v["settledOverride"] = if b { json!("settled") } else { Value::Null };
+    }
 }
 // Durable execution bookkeeping is deliberately separate from wire records.
 const INTERNAL_RUN_FIELDS: [&str; 3] = ["executionRequested", "recoveryPending", "recoveryReason"];
@@ -1877,5 +1893,90 @@ mod migration_benchmark {
         );
         drop(db);
         std::fs::remove_file(path).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod upstream_4093_tests {
+    use super::*;
+    #[test]
+    fn boolean_settled_override_is_repaired_on_open() {
+        let db = Connection::open_in_memory().unwrap();
+        initialize(&db).unwrap();
+        for (id, value) in [
+            ("a", json!(true)),
+            ("b", json!(false)),
+            ("c", json!("settled")),
+            ("d", Value::Null),
+        ] {
+            put(
+                &db,
+                "thread",
+                id,
+                id,
+                &json!({"id":id,"settledOverride":value}),
+            )
+            .unwrap();
+        }
+        initialize(&db).unwrap();
+        let got: Vec<Value> = ["a", "b", "c", "d"]
+            .iter()
+            .map(|id| get(&db, "thread", id).unwrap()["settledOverride"].clone())
+            .collect();
+        assert_eq!(
+            got,
+            [json!("settled"), Value::Null, json!("settled"), Value::Null]
+        );
+    }
+    #[test]
+    fn stop_keeps_the_status_of_an_attempt_that_already_ended() {
+        let db = Connection::open_in_memory().unwrap();
+        initialize(&db).unwrap();
+        let t = json!({"id":"t","providerInstanceId":"claude"});
+        put(&db, "thread", "t", "t", &t).unwrap();
+        let done = "2026-11-01T00:00:00.000Z";
+        put(
+            &db,
+            "attempts",
+            "attempt-r",
+            "t",
+            &json!({"id":"attempt-r","runId":"r","status":"completed","completedAt":done}),
+        )
+        .unwrap();
+        put(
+            &db,
+            "providerTurns",
+            "r",
+            "t",
+            &json!({"id":"r","status":"completed","completedAt":done}),
+        )
+        .unwrap();
+        put(
+            &db,
+            "nodes",
+            "r",
+            "t",
+            &json!({"id":"r","status":"running"}),
+        )
+        .unwrap();
+        crate::claude_projection::finish(
+            &db,
+            "t",
+            "r",
+            &t,
+            "2026-11-02T00:00:00.000Z",
+            "interrupted",
+        )
+        .unwrap();
+        let attempt = get(&db, "attempts", "attempt-r").unwrap();
+        assert_eq!(
+            (attempt["status"].as_str(), attempt["completedAt"].as_str()),
+            (Some("completed"), Some(done))
+        );
+        assert_eq!(
+            get(&db, "providerTurns", "r").unwrap()["status"],
+            "completed"
+        );
+        assert_eq!(get(&db, "nodes", "r").unwrap()["status"], "interrupted");
     }
 }

@@ -1015,6 +1015,91 @@
       "status": "partial",
       "priority": "P2",
       "note": "Remaining: Cancel is hidden without running setup, so synchronous preparation cannot be cancelled (write.rs:406). The unmerged attempt at fa5ab7f could not kill every escaped descendant of setup; main keeps synchronous setup."
+    },
+    "review.getBranchCommits": {
+      "status": "done",
+      "priority": "P2",
+      "note": "Port 4093: commits HEAD desde merge-base (baseRef o rama por defecto), máx. 100, asunto 300 chars, 128 KiB, truncated; repo sin HEAD o fuera de git → vacío; cwd en workspace conocido. tests/vcs_compat.rs."
+    },
+    "orchestration.getNativeChildWork": {
+      "status": "done",
+      "priority": "P2",
+      "note": "Upstream sólo lee hijos nativos de Antigravity y responde {children:[]} para otros drivers; o3 sólo tiene Claude/Codex: misma respuesta. src/additions.rs."
+    },
+    "sourceControl.starred": {
+      "status": "partial",
+      "priority": "P2",
+      "note": "false = la forja no puede responder (sin token de app). Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
+    },
+    "sourceControl.appAccess": {
+      "status": "partial",
+      "priority": "P2",
+      "note": "signed-out: sin driver de sign-in de app, como upstream sin T3CODE_GITHUB_APP_CLIENT_ID. Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
+    },
+    "sourceControl.signInStart": {
+      "status": "partial",
+      "priority": "P2",
+      "note": "SourceControlSignInError reason=unsupported (texto upstream). Device flow GitHub App pendiente. Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
+    },
+    "sourceControl.signInWait": {
+      "status": "partial",
+      "priority": "P2",
+      "note": "SourceControlSignInError reason=unsupported. Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
+    },
+    "sourceControl.signInCancel": {
+      "status": "partial",
+      "priority": "P2",
+      "note": "SourceControlSignInError reason=unsupported. Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
+    },
+    "peerLinks.list": {
+      "status": "partial",
+      "priority": "P2",
+      "note": "{links:[]}; peer links (OAuth MCP entre entornos) no implementado; capacidad peerLinks no anunciada."
+    },
+    "peerLinks.link": {
+      "status": "partial",
+      "priority": "P2",
+      "note": "PeerLinkError reason=disabled (texto upstream). Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
+    },
+    "peerLinks.unlink": {
+      "status": "partial",
+      "priority": "P2",
+      "note": "PeerLinkError reason=disabled. Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
+    },
+    "peerLinks.answerRequest": {
+      "status": "partial",
+      "priority": "P2",
+      "note": "PeerLinkRequestError reason=not_found: o3 no crea tarjetas link_request. Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
+    },
+    "preview.stopLocalServer": {
+      "status": "partial",
+      "priority": "P2",
+      "note": "PreviewStopLocalServerError reason=unsupported; falta mapa pid↔puerto y verificación de grupo. Capacidad localServerStop no anunciada."
+    },
+    "server.getNpmRelease": {
+      "status": "partial",
+      "priority": "P2",
+      "note": "ServerNpmReleaseError: o3 no se distribuye por npm ni se autoactualiza. Capacidad npmReleaseLookup no anunciada."
+    },
+    "server.prepareTriage": {
+      "status": "partial",
+      "priority": "P2",
+      "note": "ServerPrepareTriageError: el playbook de triage es interno de T3. Capacidad triage no anunciada."
+    },
+    "projects.createFromThread": {
+      "status": "partial",
+      "priority": "P2",
+      "note": "OrchestrationDispatchCommandError: o3 no tiene hilos sin proyecto (scratch). Capacidad threadProjectFromScratch no anunciada."
+    },
+    "orchestration.forceStopThread": {
+      "status": "todo",
+      "priority": "P2",
+      "note": "Pendiente: matar grupo del agente, superseded por runId, settle del run. Capacidad threadForceStop no anunciada; hoy RpcNotImplemented."
+    },
+    "device.simlockIdentity": {
+      "status": "partial",
+      "priority": "P2",
+      "note": "DeviceSimlockIdentityError: gateways Simlock no soportados; no se envía token. Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
     }
   },
   "commands": {

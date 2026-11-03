@@ -368,9 +368,18 @@ mod probe_tests {
         let npm = root.join("npm");
         std::fs::write(&npm, "#!/bin/sh\n/bin/sleep 3 &\necho 10.1.0\n").unwrap();
         std::fs::set_permissions(&npm, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let start = std::time::Instant::now();
-        assert!(installer(&npm, &root, "npm").is_ok());
-        let elapsed = start.elapsed();
+        // A fork in a concurrent test can briefly hold the just-written script open for
+        // writing (ETXTBSY); retry that transient failure and time the successful probe.
+        let mut elapsed = None;
+        for _ in 0..20 {
+            let start = std::time::Instant::now();
+            if installer(&npm, &root, "npm").is_ok() {
+                elapsed = Some(start.elapsed());
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        let elapsed = elapsed.expect("probe never succeeded");
         std::fs::remove_dir_all(root).unwrap();
         assert!(
             elapsed < std::time::Duration::from_secs(2),

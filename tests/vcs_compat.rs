@@ -992,3 +992,82 @@ fn unsupported_pull_request_host_fails_before_changing_anything() {
     );
     assert!(!git(&["status", "--porcelain"]).is_empty());
 }
+
+#[test]
+fn review_branch_commits_list_head_since_merge_base_with_limits() {
+    let e = setup("branch-commits");
+    let r = seeded(&e, "repo");
+    e.project("p1", &r);
+    let none = e
+        .conn
+        .rpc("review.getBranchCommits", json!({"cwd":s(&r)}))
+        .unwrap();
+    assert_eq!(none, json!({"commits":[],"truncated":false}));
+    git(&r, &["switch", "-q", "-c", "work"]);
+    write(&r.join("a.txt"), "first\n");
+    commit_all(&r, "first on work");
+    write(&r.join("a.txt"), "second\n");
+    commit_all(&r, &format!("second {}", "x".repeat(400)));
+    let got = e
+        .conn
+        .rpc(
+            "review.getBranchCommits",
+            json!({"cwd":s(&r),"baseRef":"main"}),
+        )
+        .unwrap();
+    let commits = got["commits"].as_array().unwrap();
+    assert_eq!(got["truncated"], false);
+    assert_eq!(commits.len(), 2);
+    assert_eq!(commits[1]["subject"], "first on work");
+    assert_eq!(commits[0]["subject"].as_str().unwrap().chars().count(), 300);
+    assert_eq!(commits[0]["sha"].as_str().unwrap().len(), 40);
+    assert!(commits[0]["committedAt"].as_str().unwrap().contains('T'));
+    for i in 0..101 {
+        write(&r.join("a.txt"), format!("{i}\n"));
+        commit_all(&r, &format!("c{i}"));
+    }
+    let many = e
+        .conn
+        .rpc(
+            "review.getBranchCommits",
+            json!({"cwd":s(&r),"baseRef":"main"}),
+        )
+        .unwrap();
+    assert_eq!(many["commits"].as_array().unwrap().len(), 100);
+    assert_eq!(many["truncated"], true);
+    assert_eq!(many["commits"][0]["subject"], "c100");
+    let outside = e.dir("outside");
+    repo(&outside);
+    assert!(e
+        .conn
+        .rpc("review.getBranchCommits", json!({"cwd":s(&outside)}))
+        .is_err());
+    let empty = e.dir("empty");
+    repo(&empty);
+    e.project("p2", &empty);
+    let unborn = e
+        .conn
+        .rpc("review.getBranchCommits", json!({"cwd":s(&empty)}))
+        .unwrap();
+    assert_eq!(unborn, json!({"commits":[],"truncated":false}));
+}
+
+#[test]
+fn only_non_origin_remote_is_primary() {
+    let e = setup("primary-remote");
+    let r = seeded(&e, "repo");
+    e.project("p1", &r);
+    let bare = e.scratch.join("upstream.git");
+    git(
+        &e.scratch,
+        &["init", "-q", "--bare", "-b", "main", s(&bare)],
+    );
+    git(&r, &["remote", "add", "upstream", s(&bare)]);
+    let status = e
+        .conn
+        .rpc("vcs.refreshStatus", json!({"cwd":s(&r)}))
+        .unwrap();
+    assert_eq!(status["hasPrimaryRemote"], true, "{status}");
+    let refs = e.conn.rpc("vcs.listRefs", json!({"cwd":s(&r)})).unwrap();
+    assert_eq!(refs["hasPrimaryRemote"], true);
+}

@@ -11,6 +11,57 @@ use tokio::{
 };
 const MAX_FRAME: usize = 1024 * 1024;
 const MAX_SESSIONS: usize = 16;
+/// A Claude Code session that launched this server exports these. A child spawned with them
+/// joins that session (id, messaging socket/token, effort). Upstream 47f2c8d29.
+const HOST_SESSION_VARIABLES: [&str; 12] = [
+    "CLAUDECODE",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_HOST_SESSION_ID",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_SESSION_ATTENDED",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+    "CLAUDE_CODE_EXECPATH",
+    "CLAUDE_CODE_DESKTOP_APP_VERSION",
+    "CLAUDE_EFFORT",
+    "CLAUDE_PID",
+    "CLAUDE_AGENT_SDK_VERSION",
+];
+/// Strips inherited host-session variables, then applies the entrypoint and the explicit
+/// instance overrides, which win. A `CLAUDE_CODE_ENTRYPOINT` in Claude's settings `env` is
+/// honoured because Claude reads the entrypoint from the process env only.
+fn apply_environment(cmd: &mut Command, instance: &[(String, String)]) {
+    for name in HOST_SESSION_VARIABLES {
+        cmd.env_remove(name);
+    }
+    cmd.env("CLAUDE_CODE_ENTRYPOINT", "t3-code");
+    if let Some(entrypoint) = settings_entrypoint(instance) {
+        cmd.env("CLAUDE_CODE_ENTRYPOINT", entrypoint);
+    }
+    cmd.envs(instance.iter().cloned());
+}
+fn settings_entrypoint(instance: &[(String, String)]) -> Option<String> {
+    let lookup = |key: &str| {
+        instance
+            .iter()
+            .rev()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| std::ffi::OsString::from(v))
+            .or_else(|| std::env::var_os(key))
+    };
+    let dir = lookup("CLAUDE_CONFIG_DIR")
+        .map(PathBuf::from)
+        .or_else(|| lookup("HOME").map(|h| PathBuf::from(h).join(".claude")))?;
+    let file = std::fs::File::open(dir.join("settings.json")).ok()?;
+    if file.metadata().ok()?.len() > 1024 * 1024 {
+        return None;
+    }
+    let settings: Value = serde_json::from_reader(file).ok()?;
+    settings["env"]["CLAUDE_CODE_ENTRYPOINT"]
+        .as_str()
+        .filter(|v| !v.is_empty())
+        .map(str::to_owned)
+}
 pub struct ClaudeProvider {
     binary: PathBuf,
     idle_timeout: std::time::Duration,
@@ -119,7 +170,7 @@ impl ClaudeProvider {
         let (model, effort, mut settings, _) =
             crate::claude_models::compile(&input.model_selection)?;
         let mut cmd = Command::new(&self.binary);
-        cmd.envs(self.environment.iter().cloned());
+        apply_environment(&mut cmd, &self.environment);
         cmd.args(&self.launch_args);
         cmd.args([
             "-p",
@@ -764,6 +815,68 @@ fn usage_limits(info: &Value) -> Value {
 
 #[cfg(test)]
 mod tests {
+    fn env_of(cmd: &Command) -> std::collections::HashMap<String, Option<String>> {
+        cmd.as_std()
+            .get_envs()
+            .map(|(k, v)| {
+                (
+                    k.to_string_lossy().into_owned(),
+                    v.map(|v| v.to_string_lossy().into_owned()),
+                )
+            })
+            .collect()
+    }
+    fn scratch() -> std::path::PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("o3-env-{}", crate::store::random_id().unwrap()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+    #[test]
+    fn host_session_variables_are_removed_but_instance_overrides_win() {
+        let home = scratch();
+        let instance = vec![
+            ("CLAUDE_CONFIG_DIR".to_owned(), home.display().to_string()),
+            ("CLAUDE_EFFORT".to_owned(), "high".to_owned()),
+        ];
+        let mut cmd = Command::new("true");
+        super::apply_environment(&mut cmd, &instance);
+        let env = env_of(&cmd);
+        for name in super::HOST_SESSION_VARIABLES {
+            if name != "CLAUDE_EFFORT" {
+                assert_eq!(env.get(name), Some(&None), "{name} must be removed");
+            }
+        }
+        assert_eq!(env["CLAUDE_EFFORT"].as_deref(), Some("high"));
+        assert_eq!(env["CLAUDE_CODE_ENTRYPOINT"].as_deref(), Some("t3-code"));
+        std::fs::write(
+            home.join("settings.json"),
+            r#"{"env":{"CLAUDE_CODE_ENTRYPOINT":"custom"}}"#,
+        )
+        .unwrap();
+        let mut cmd = Command::new("true");
+        super::apply_environment(&mut cmd, &instance);
+        assert_eq!(
+            env_of(&cmd)["CLAUDE_CODE_ENTRYPOINT"].as_deref(),
+            Some("custom")
+        );
+        std::fs::remove_dir_all(home).unwrap();
+    }
+    #[tokio::test]
+    async fn spawned_child_does_not_join_the_launching_session() {
+        let dir = scratch();
+        let out = dir.join("env");
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg(format!("env > {}", out.display()));
+        cmd.env("CLAUDECODE", "1")
+            .env("CLAUDE_CODE_SESSION_ID", "parent");
+        super::apply_environment(&mut cmd, &[]);
+        assert!(cmd.status().await.unwrap().success());
+        let text = std::fs::read_to_string(out).unwrap();
+        assert!(!text.contains("CLAUDECODE=") && !text.contains("CLAUDE_CODE_SESSION_ID="));
+        assert!(text.contains("CLAUDE_CODE_ENTRYPOINT=t3-code"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn text_only_mcp_config_literal_has_the_required_schema() {
         // The CLI rejects `{}`: its schema requires the mcpServers record.

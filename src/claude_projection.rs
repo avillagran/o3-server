@@ -402,7 +402,13 @@ pub(crate) fn finish(
     status: &str,
 ) -> Result<(), String> {
     let aid = format!("attempt-{rid}");
-    if let Ok(mut a) = get(db, "attempts", &aid) {
+    let ended = |v: &Value| {
+        matches!(
+            v["status"].as_str(),
+            Some("completed" | "failed" | "interrupted" | "cancelled")
+        )
+    };
+    if let Some(mut a) = get(db, "attempts", &aid).ok().filter(|a| !ended(a)) {
         a["status"] = json!(status);
         a["completedAt"] = json!(at);
         put(db, "attempts", &aid, tid, &a)?;
@@ -412,7 +418,7 @@ pub(crate) fn finish(
         ("nodes", "node.updated"),
         ("providerTurns", "provider-turn.updated"),
     ] {
-        if let Ok(mut v) = get(db, kind, rid) {
+        if let Some(mut v) = get(db, kind, rid).ok().filter(|v| !ended(v)) {
             v["status"] = json!(status);
             v["completedAt"] = json!(at);
             put(db, kind, rid, tid, &v)?;
