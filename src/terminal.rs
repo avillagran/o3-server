@@ -1469,6 +1469,93 @@ pub async fn call(s: &Arc<State>, tag: &str, p: &Value) -> Result<Value, Value> 
 
 // ---------------------------------------------------------------- streams
 
+/// Start a project script in a visible terminal, after its interactive shell is ready.
+/// A generation check prevents delayed input reaching a restarted/rebound terminal.
+pub(crate) async fn project_script(
+    s: &Arc<State>,
+    p: &Value,
+    command: String,
+) -> Result<(), Value> {
+    let mut changed = s.streams.terminals.notify.subscribe();
+    call(s, "terminal.open", p).await?;
+    let session = s.streams.terminals.require(&key_of(p)?)?;
+    let generation = session.st.lock().unwrap().gen;
+    let weak = Arc::downgrade(s);
+    let cwd = p["cwd"].clone();
+    tokio::spawn(async move {
+        let mut sequence = 0;
+        let mut carry = String::new();
+        let mut paste = false;
+        let mut quiet = tokio::time::Instant::now() + Duration::from_secs(3);
+        loop {
+            if weak.strong_count() == 0 {
+                return;
+            }
+            {
+                let st = session.st.lock().unwrap();
+                if st.gen != generation || st.status != "running" {
+                    return;
+                }
+                for item in st.log.iter().filter(|item| item.seq > sequence) {
+                    if let Some(data) = item.event["data"]
+                        .as_str()
+                        .filter(|_| item.event["type"] == "output")
+                    {
+                        quiet = tokio::time::Instant::now() + Duration::from_secs(3);
+                        let text = format!("{carry}{data}");
+                        if let Some(on) = text.rfind("\x1b[?2004h") {
+                            paste = text.rfind("\x1b[?2004l").is_none_or(|off| on > off);
+                        } else if text.contains("\x1b[?2004l") {
+                            paste = false;
+                        }
+                        carry = text
+                            .chars()
+                            .rev()
+                            .take(16)
+                            .collect::<String>()
+                            .chars()
+                            .rev()
+                            .collect();
+                    }
+                }
+                sequence = st.seq;
+            }
+            if paste || tokio::time::Instant::now() >= quiet {
+                break;
+            }
+            tokio::select! {r=changed.changed()=>if r.is_err(){return;},_=tokio::time::sleep_until(quiet)=>{}}
+        }
+        let Some(s) = weak.upgrade() else {
+            return;
+        };
+        if !crate::events::get(&s.db.lock().unwrap(), "thread", &session.thread_id)
+            .is_ok_and(|t| t["deletedAt"].is_null() && t["worktreePath"] == cwd)
+        {
+            return;
+        }
+        let master = {
+            let mut st = session.st.lock().unwrap();
+            if st.gen != generation || st.status != "running" {
+                return;
+            }
+            st.input_count += 1;
+            st.proc.as_ref().map(|p| p.master.clone())
+        };
+        if let Some(master) = master {
+            if let Err(error) = pty::write_all(
+                &master,
+                format!(" {command}\r").as_bytes(),
+                Duration::from_secs(2),
+            )
+            .await
+            {
+                eprintln!("Project script input failed: {error}");
+            }
+        }
+    });
+    Ok(())
+}
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum Kind {
     Attach,

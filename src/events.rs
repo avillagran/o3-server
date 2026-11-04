@@ -1416,7 +1416,7 @@ fn delivery_mode(s: &State, db: &Connection, t: &Value, c: &Value) -> Result<Val
     }
 }
 
-fn stage_message(
+pub(crate) fn stage_message(
     s: &std::sync::Arc<State>,
     tx: &Connection,
     c: &Value,

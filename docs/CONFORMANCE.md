@@ -2931,3 +2931,33 @@ Validation for this block: full suites pass with 333 default / 330 no-default te
 deletion, queue/thread-command and HTTP MCP regressions pass per configuration.
 Strict Clippy passes in both modes; fmt, generated compatibility and all nine
 nightly-monitor tests pass. No service deployment occurred.
+
+
+### MCP worktree handoff (2026-11-04)
+
+The handoff-pending audit entries above are superseded: t3_worktree_handoff now creates
+and binds a managed checkout, preserves remote/local base metadata, launches the effective
+setup terminal by default and durably stages its optional continuation with the binding.
+The shared workspace-transition lifecycle handles native detach and queue release.
+Authority is rechecked after checkout; concurrent calls are serialized per thread and
+binding failures roll back only owned Git resources. Transport disconnect does not lose
+the admitted operation. Setup/continuation failures remain explicit fields on a successful
+binding result; setup started does not imply command exit success.
+
+Seven integration tests inspect actual HTTP MCP, real Git repositories/remotes and
+subprocess native-protocol peers, including both Claude/Codex conversation identity,
+setup environment/files/terminal, remote aliases/stale refs, atomic receipt rollback,
+partial follow-up failures, UI races, authority loss and disconnected callers.
+Source: nightly4151, 322f6544dfad0a3c8a0c8cbecf2c7f7874b14268, checked 06:36 UTC;
+WorktreeMcpService, GitVcsDriverCore/GitManager, ProjectSetupScriptRunner/projectScripts
+and worktree contracts. See [MCP.md](MCP.md). Full-nightly differential and compatible
+client acceptance are still pending; no service deployment occurred.
+
+Validation: full suites pass with 340 default / 337 no-default tests, with 21 opt-ins
+ignored each. Final workspace/deletion/MCP-project regressions and strict Clippy pass
+in both configurations; fmt, generated compatibility and nine monitor tests pass.
+The opt-in live_worktree_handoff example also passed with installed Claude Haiku and
+Codex gpt-6.1-sol: each called the actual MCP handoff, ran setup and wrote a code remembered
+from before the move in its queued continuation. Event history contains one distinct
+native conversation ID per proof; both have interrupted then completed runs. This is
+an isolated server/native-CLI acceptance proof, not full compatible-desktop acceptance.

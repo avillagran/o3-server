@@ -63,6 +63,7 @@ pub mod threadq;
 pub mod vcs;
 pub mod workspace;
 mod workspace_transition;
+mod worktree_handoff;
 
 pub mod checkpoint;
 mod projection;
