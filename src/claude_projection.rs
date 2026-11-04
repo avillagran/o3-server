@@ -63,6 +63,7 @@ pub(crate) fn persist(
     match f["type"].as_str().unwrap_or("") {
         "session" => {
             let native = f["session_id"].as_str().ok_or("session id missing")?;
+            crate::native_recovery::bound(db, run, native)?;
             let owned = t["activeProviderThreadId"]
                 .as_str()
                 .unwrap_or(native)
@@ -73,7 +74,7 @@ pub(crate) fn persist(
             run["rootNodeId"] = json!(rid);
             let aid = format!("attempt-{rid}");
             run["activeAttemptId"] = json!(aid);
-            let attempt = json!({"id":aid,"runId":rid,"attemptOrdinal":1,"providerInstanceId":t["providerInstanceId"],"providerThreadId":id,"reason":"initial","rootNodeId":rid,"providerTurnId":rid,"status":"running","startedAt":at,"completedAt":null});
+            let attempt = json!({"id":aid,"runId":rid,"attemptOrdinal":1,"providerInstanceId":t["providerInstanceId"],"providerThreadId":id,"reason":"initial","rootNodeId":rid,"nativeThreadId":native,"providerTurnId":rid,"status":"running","startedAt":at,"completedAt":null});
             put(db, "attempts", &aid, tid, &attempt)?;
             append(db, tid, "attempt.updated", attempt, t)?;
             put(db, "thread", tid, tid, t)?;
@@ -86,7 +87,7 @@ pub(crate) fn persist(
             put(db, "providerSessions", id, tid, &session)?;
             append(db, tid, "provider-session.updated", session, t)?;
             let previous = get(db, "providerThreads", id).unwrap_or(Value::Null);
-            let p = json!({"id":id,"driver":"claudeAgent","providerInstanceId":t["providerInstanceId"],"providerSessionId":id,"appThreadId":tid,"ownerNodeId":rid,"nativeThreadRef":reference(&json!(native)),"nativeConversationHeadRef":null,"contextUsage":null,"goal":null,"nativeMetadata":null,"pendingBackgroundTasks":[],"status":"active","firstRunOrdinal":previous.get("firstRunOrdinal").unwrap_or(&run["ordinal"]),"lastRunOrdinal":run["ordinal"],"handoffIds":previous.get("handoffIds").cloned().unwrap_or(json!([])),"forkedFrom":previous["forkedFrom"],"createdAt":previous.get("createdAt").unwrap_or(&json!(at)),"updatedAt":at});
+            let p = json!({"id":id,"driver":"claudeAgent","providerInstanceId":t["providerInstanceId"],"providerSessionId":id,"appThreadId":tid,"ownerNodeId":rid,"nativeThreadRef":reference(&json!(native)),"nativeConversationHeadRef":null,"contextUsage":if previous["nativeThreadRef"]["nativeId"]==native{previous["contextUsage"].clone()}else{Value::Null},"goal":if previous["nativeThreadRef"]["nativeId"]==native{previous["goal"].clone()}else{Value::Null},"nativeMetadata":if previous["nativeThreadRef"]["nativeId"]==native{previous["nativeMetadata"].clone()}else{Value::Null},"pendingBackgroundTasks":if previous["nativeThreadRef"]["nativeId"]==native{previous.get("pendingBackgroundTasks").cloned().unwrap_or(json!([]))}else{json!([])},"status":"active","firstRunOrdinal":previous.get("firstRunOrdinal").filter(|ordinal|ordinal.is_number()).unwrap_or(&run["ordinal"]),"lastRunOrdinal":run["ordinal"],"handoffIds":previous.get("handoffIds").cloned().unwrap_or(json!([])),"forkedFrom":previous["forkedFrom"],"createdAt":previous.get("createdAt").unwrap_or(&json!(at)),"updatedAt":at});
             put(db, "providerThreads", id, tid, &p)?;
             append(db, tid, "provider-thread.updated", p, t)?;
             let turn = json!({"id":rid,"providerThreadId":id,"nodeId":rid,"runAttemptId":aid,"nativeTurnRef":null,"ordinal":run["ordinal"],"status":"running","startedAt":at,"completedAt":null});

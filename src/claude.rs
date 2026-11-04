@@ -298,7 +298,7 @@ impl ClaudeProvider {
                 let v = s.frame().await?;
                 if v["type"] == "control_response" && v["response"]["request_id"] == "initialize" {
                     if v["response"]["subtype"] != "success" {
-                        return Err("Claude initialize rejected".into());
+                        return Err(format!("Claude initialize rejected: {}",v["response"]["error"].as_str().unwrap_or("native initialization failed").chars().take(500).collect::<String>()));
                     }
                     let response = &v["response"]["response"];
                     let mut metadata = self.metadata.lock().unwrap();
@@ -354,6 +354,23 @@ impl ClaudeProvider {
         }
         Ok(s)
     }
+    async fn recover_input(
+        &self,
+        input: &mut RunInput,
+        output: &mpsc::Sender<ProviderEvent>,
+        reason: crate::provider::NativeRecoveryReason,
+        current: &[Value],
+    ) -> Result<(), String> {
+        let id = crate::native_recovery::request(input, output, reason, current).await?;
+        let previous = self.sessions.lock().unwrap().remove(&input.thread_id);
+        if let Some(mut previous) = previous {
+            previous.stop().await;
+        }
+        if let Some(context) = &input.native_mcp {
+            context.revoke();
+        }
+        crate::native_recovery::released(output, id).await
+    }
     async fn run(
         &self,
         mut input: RunInput,
@@ -365,8 +382,22 @@ impl ClaudeProvider {
             return Ok(());
         }
         let mut content = crate::provider_input::content(&input, true)?;
-        let manual = crate::handoff_delivery::manual(&input, &mut content)?;
-        let mut deliveries = crate::handoff_delivery::prepare(&input, &content)?;
+        if let Some(reason) = crate::handoff_delivery::recovery_reason(&input, &content) {
+            self.recover_input(&mut input, &output, reason, &content)
+                .await?;
+            content = crate::provider_input::content(&input, true)?;
+        }
+        let maintenance = crate::handoff_delivery::maintenance_input(&input);
+        let manual = if maintenance {
+            vec![]
+        } else {
+            crate::handoff_delivery::manual(&input, &mut content)?
+        };
+        let mut deliveries = if maintenance {
+            vec![]
+        } else {
+            crate::handoff_delivery::prepare(&input, &content)?
+        };
         if (!deliveries.is_empty() || !manual.is_empty()) && input.native_session_id.is_none() {
             input.model_selection["o3NewSessionId"] = json!(crate::store::random_id()?);
         }
@@ -380,53 +411,101 @@ impl ClaudeProvider {
             content[0]["text"] = json!(format!("{context}\n\nUser message:\n{current}"));
         }
         deliveries.extend(manual);
-        if crate::claude_models::compile(&input.model_selection)?.3 {
-            let text = content[0]["text"].as_str().unwrap().to_owned();
-            content[0]["text"] = json!(format!("{text}\n\nultrathink"));
-        }
-        let existing = if input.runtime_mode == "text-only" {
+        let existing = if input.runtime_mode == "text-only"
+            || input.model_selection["o3ForceNewNativeThread"] == true
+        {
             None
         } else {
             self.sessions.lock().unwrap().remove(&input.thread_id)
         };
-        let mut session = if let Some(mut s) = existing {
-            if input.native_session_id.is_none() && !s.native.is_empty() {
-                input.native_session_id = Some(s.native.clone());
-            }
-            let same_mcp = match (&s.native_mcp, &input.native_mcp) {
-                (Some(old), Some(new)) => old.id() == new.id(),
-                (None, None) => {
-                    !s.browser
-                        && !input.model_selection["o3BrowserMcp"].is_object()
-                        && !input.model_selection["o3NativeMcp"].is_object()
+        let loaded: Result<Session, String> = async {
+            let session = if let Some(mut s) = existing {
+                if input.native_session_id.is_none() && !s.native.is_empty() {
+                    input.native_session_id = Some(s.native.clone());
                 }
-                _ => false,
-            };
-            if same_mcp
-                && s.cwd == input.cwd
-                && s.options == input.model_selection["options"]
-                && s.child.try_wait().map_err(|e| e.to_string())?.is_none()
-            {
-                s.control(
-                    "model",
-                    json!({"subtype":"set_model","model":crate::claude_models::compile(&input.model_selection)?.0}),
-                )
-                .await?;
-                s.control(
-                    "mode",
-                    json!({"subtype":"set_permission_mode","mode":mode(&input)}),
-                )
-                .await?;
-                s
+                let same_mcp = match (&s.native_mcp, &input.native_mcp) {
+                    (Some(old), Some(new)) => old.id() == new.id(),
+                    (None, None) => {
+                        !s.browser
+                            && !input.model_selection["o3BrowserMcp"].is_object()
+                            && !input.model_selection["o3NativeMcp"].is_object()
+                    }
+                    _ => false,
+                };
+                if same_mcp
+                    && s.cwd == input.cwd
+                    && s.options == input.model_selection["options"]
+                    && s.child.try_wait().map_err(|e| e.to_string())?.is_none()
+                {
+                    s.control(
+                        "model",
+                        json!({"subtype":"set_model","model":crate::claude_models::compile(&input.model_selection)?.0}),
+                    )
+                    .await?;
+                    s.control(
+                        "mode",
+                        json!({"subtype":"set_permission_mode","mode":mode(&input)}),
+                    )
+                    .await?;
+                    s
+                } else {
+                    s.stop().await;
+                    refresh_mcp(&mut input).await?;
+                    self.spawn(&input).await?
+                }
             } else {
-                s.stop().await;
+                refresh_mcp(&mut input).await?;
+                self.spawn(&input).await?
+            };
+            Ok(session)
+        }
+        .await;
+        let mut session = match loaded {
+            Ok(session) => session,
+            Err(error)
+                if input.model_selection["nativeForkSource"].is_string()
+                    || (input.native_session_id.is_some()
+                        && !crate::native_recovery::thread_in_use(&error)) =>
+            {
+                let base = crate::provider_input::content(&input, true)?;
+                let reason = if input.model_selection["nativeForkSource"].is_string() {
+                    crate::provider::NativeRecoveryReason::ForkFailed
+                } else {
+                    crate::provider::NativeRecoveryReason::ResumeFailed
+                };
+                self.recover_input(&mut input, &output, reason, &base)
+                    .await?;
+                content = crate::provider_input::content(&input, true)?;
+                let manual = if maintenance {
+                    vec![]
+                } else {
+                    crate::handoff_delivery::manual(&input, &mut content)?
+                };
+                deliveries = if maintenance {
+                    vec![]
+                } else {
+                    crate::handoff_delivery::prepare(&input, &content)?
+                };
+                if !deliveries.is_empty() {
+                    let history = deliveries
+                        .iter()
+                        .map(|d| d.inline())
+                        .collect::<Vec<_>>()
+                        .join("\n\n");
+                    let current = content[0]["text"].as_str().unwrap_or("");
+                    content[0]["text"] = json!(format!("{history}\n\nUser message:\n{current}"));
+                }
+                deliveries.extend(manual);
+                input.model_selection["o3NewSessionId"] = json!(crate::store::random_id()?);
                 refresh_mcp(&mut input).await?;
                 self.spawn(&input).await?
             }
-        } else {
-            refresh_mcp(&mut input).await?;
-            self.spawn(&input).await?
+            Err(error) => return Err(error),
         };
+        if crate::claude_models::compile(&input.model_selection)?.3 {
+            let text = content[0]["text"].as_str().unwrap().to_owned();
+            content[0]["text"] = json!(format!("{text}\n\nultrathink"));
+        }
         let result = async {
             if *cancel.borrow() || output.is_closed() || matches!(control.try_recv(), Ok(ProviderControl::Interrupt)) { return Ok(false); }
             for delivery in &deliveries {delivery.acknowledge(&output,&session.native,"pending").await?;}

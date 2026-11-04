@@ -95,6 +95,7 @@ pub(crate) fn persist(
     let mut base = json!({"id":id,"threadId":tid,"runId":rid,"nodeId":root,"providerThreadId":pt,"providerTurnId":pv,"nativeItemRef":{"driver":"codex","nativeId":native_item,"strength":"strong"},"parentItemId":null,"ordinal":db.query_row("SELECT coalesce(max(json_extract(body,'$.ordinal')),-1)+1 FROM records WHERE kind='turnItems' AND thread_id=?",[tid],|r|r.get::<_,i64>(0)).map_err(|e|e.to_string())?,"status":"running","title":null,"startedAt":at,"completedAt":null,"updatedAt":at});
     match method {
         "o3/binding" => {
+            crate::native_recovery::bound(db, run, native_thread)?;
             let mut t = thread.clone();
             t["codexNativeThreadId"] = json!(native_thread);
             t["activeProviderThreadId"] = json!(pt);
@@ -107,7 +108,7 @@ pub(crate) fn persist(
                 &t,
                 "providerThreads",
                 "provider-thread.updated",
-                json!({"id":pt,"appThreadId":tid,"driver":"codex","ownerNodeId":null,"nativeConversationHeadRef":null,"firstRunOrdinal":previous.get("firstRunOrdinal").unwrap_or(&run["ordinal"]),"lastRunOrdinal":run["ordinal"],"handoffIds":previous.get("handoffIds").cloned().unwrap_or(json!([])),"forkedFrom":previous["forkedFrom"],"providerInstanceId":thread["providerInstanceId"],"providerSessionId":session_id,"nativeThreadRef":{"driver":"codex","nativeId":native_thread,"strength":"strong"},"status":"active","createdAt":previous.get("createdAt").unwrap_or(&json!(at)),"updatedAt":at,"contextUsage":null,"goal":null,"nativeMetadata":null,"pendingBackgroundTasks":[]}),
+                json!({"id":pt,"appThreadId":tid,"driver":"codex","ownerNodeId":null,"nativeConversationHeadRef":null,"firstRunOrdinal":previous.get("firstRunOrdinal").filter(|ordinal|ordinal.is_number()).unwrap_or(&run["ordinal"]),"lastRunOrdinal":run["ordinal"],"handoffIds":previous.get("handoffIds").cloned().unwrap_or(json!([])),"forkedFrom":previous["forkedFrom"],"providerInstanceId":thread["providerInstanceId"],"providerSessionId":session_id,"nativeThreadRef":{"driver":"codex","nativeId":native_thread,"strength":"strong"},"status":"active","createdAt":previous.get("createdAt").unwrap_or(&json!(at)),"updatedAt":at,"contextUsage":if previous["nativeThreadRef"]["nativeId"]==native_thread{previous["contextUsage"].clone()}else{Value::Null},"goal":if previous["nativeThreadRef"]["nativeId"]==native_thread{previous["goal"].clone()}else{Value::Null},"nativeMetadata":if previous["nativeThreadRef"]["nativeId"]==native_thread{previous["nativeMetadata"].clone()}else{Value::Null},"pendingBackgroundTasks":if previous["nativeThreadRef"]["nativeId"]==native_thread{previous.get("pendingBackgroundTasks").cloned().unwrap_or(json!([]))}else{json!([])}}),
             )?;
             record(
                 db,
@@ -151,7 +152,7 @@ pub(crate) fn persist(
                 (
                     "attempts",
                     "attempt.updated",
-                    json!({"id":aid,"runId":rid,"attemptOrdinal":ordinal,"providerInstanceId":thread["providerInstanceId"],"providerThreadId":pt,"reason":reason,"rootNodeId":root,"providerTurnId":pv,"status":"running","startedAt":at,"completedAt":null}),
+                    json!({"id":aid,"runId":rid,"attemptOrdinal":ordinal,"providerInstanceId":thread["providerInstanceId"],"providerThreadId":pt,"reason":reason,"rootNodeId":root,"nativeThreadId":native_thread,"providerTurnId":pv,"status":"running","startedAt":at,"completedAt":null}),
                 ),
             ] {
                 record(db, tid, thread, kind, event, v)?;

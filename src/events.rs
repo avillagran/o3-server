@@ -45,6 +45,7 @@ pub fn initialize(db: &Connection) -> Result<()> {
     crate::run_restart::initialize(db)?;
     crate::thread_launch::initialize(db)?;
     crate::workspace_transition::initialize(db)?;
+    crate::native_recovery::initialize(db)?;
     crate::context_transfer::initialize(db)?;
     crate::threadq::initialize(db)
 }
@@ -1713,7 +1714,7 @@ pub(crate) fn import_native(
             return Err("import requires matching strong native ref".into());
         }
         let id = format!("imported-{tid}");
-        let record = json!({"id":id,"appThreadId":tid,"driver":driver,"providerInstanceId":thread["providerInstanceId"],"nativeThreadRef":imported["ref"],"status":"not_loaded","nativeMetadata":imported["metadata"],"pendingBackgroundTasks":[],"createdAt":at,"updatedAt":at});
+        let record = json!({"id":id,"appThreadId":tid,"driver":driver,"providerInstanceId":thread["providerInstanceId"],"providerSessionId":null,"ownerNodeId":null,"nativeThreadRef":imported["ref"],"nativeConversationHeadRef":null,"status":"not_loaded","firstRunOrdinal":null,"lastRunOrdinal":null,"handoffIds":[],"forkedFrom":null,"contextUsage":null,"goal":null,"nativeMetadata":imported["metadata"],"pendingBackgroundTasks":[],"createdAt":at,"updatedAt":at});
         thread["activeProviderThreadId"] = json!(id);
         if driver == "codex" {
             thread["codexNativeThreadId"] = json!(native);

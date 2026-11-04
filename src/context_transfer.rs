@@ -8,7 +8,7 @@ use crate::{
 use rusqlite::{params, Connection};
 use serde_json::{json, Value};
 type Result<T> = std::result::Result<T, String>;
-fn list(db: &Connection, kind: &str, tid: &str) -> Result<Vec<Value>> {
+pub(crate) fn list(db: &Connection, kind: &str, tid: &str) -> Result<Vec<Value>> {
     let mut q = db
         .prepare("SELECT body FROM records WHERE kind=?1 AND thread_id=?2 ORDER BY rowid")
         .map_err(|e| e.to_string())?;
@@ -21,6 +21,8 @@ fn list(db: &Connection, kind: &str, tid: &str) -> Result<Vec<Value>> {
 /// Legacy o3 fork plans stored a request tag instead of the canonical source ref.
 /// Missing native anchors stay missing, forcing safe portable resolution on admission.
 pub(crate) fn initialize(db: &Connection) -> Result<()> {
+    // Older native imports predate the handoff list. Preserve malformed lists for validation.
+    db.execute("UPDATE records SET body=json_set(body,'$.handoffIds',json('[]')) WHERE kind='providerThreads' AND (json_type(body,'$.handoffIds') IS NULL OR json_type(body,'$.handoffIds')='null')",[]).map_err(|e|e.to_string())?;
     db.execute("UPDATE records SET body=json_set(body,'$.sourcePoint',json_remove(json_set(json_extract(body,'$.sourcePoint'),'$.threadId',json_extract(body,'$.sourceThreadId')),'$.type')) WHERE kind='contextTransfers' AND json_type(body,'$.sourcePoint.type')='text'",[]).map_err(|e|e.to_string())?;
     Ok(())
 }
@@ -222,7 +224,7 @@ fn save_transfer(db: &Connection, thread: &Value, transfer: Value) -> Result<i64
     put(db, "contextTransfers", id, &tid, &transfer)?;
     append(db, &tid, "context-transfer.updated", transfer, thread)
 }
-fn own_items(db: &Connection, tid: &str, through: i64) -> Result<Vec<Value>> {
+pub(crate) fn own_items(db: &Connection, tid: &str, through: i64) -> Result<Vec<Value>> {
     let mut q=db.prepare("SELECT i.body FROM records i LEFT JOIN records r ON r.kind='runs' AND r.id=json_extract(i.body,'$.runId') WHERE i.kind='turnItems' AND i.thread_id=?1 AND (json_extract(i.body,'$.runId') IS NULL OR (json_extract(r.body,'$.ordinal')<=?2 AND coalesce(json_extract(r.body,'$.contextDiscarded'),0)=0 AND json_extract(r.body,'$.status')!='rolled_back' AND NOT(json_extract(r.body,'$.status')='cancelled' AND json_extract(i.body,'$.type')='user_message' AND coalesce(json_extract(i.body,'$.inputIntent'),'')='queued_turn'))) ORDER BY r.rowid,json_extract(i.body,'$.ordinal'),i.rowid").map_err(|e|e.to_string())?;
     let rows = q
         .query_map(params![tid, through], |r| r.get::<_, String>(0))
@@ -250,7 +252,7 @@ fn own_items(db: &Connection, tid: &str, through: i64) -> Result<Vec<Value>> {
     });
     Ok(out)
 }
-fn fork_items(db: &Connection, tid: &str, through: i64) -> Result<Vec<Value>> {
+pub(crate) fn fork_items(db: &Connection, tid: &str, through: i64) -> Result<Vec<Value>> {
     let mut segments = vec![own_items(db, tid, through)?];
     let mut thread = get(db, "thread", tid)?;
     let mut seen = std::collections::HashSet::from([tid.to_owned()]);
@@ -276,7 +278,7 @@ fn fork_items(db: &Connection, tid: &str, through: i64) -> Result<Vec<Value>> {
     }
     Ok(segments.into_iter().flatten().collect())
 }
-fn range(items: &[Value], runs: &[Value]) -> Value {
+pub(crate) fn range(items: &[Value], runs: &[Value]) -> Value {
     let mut from = i64::MAX;
     let mut to = 1;
     for item in items {
@@ -296,6 +298,44 @@ pub(crate) fn admit(
     run: &mut Value,
     queued: bool,
     at: &str,
+) -> Result<()> {
+    admit_inner(state, db, thread, run, queued, at, false)
+}
+pub(crate) fn portable_fork_fallback(
+    state: &crate::store::State,
+    db: &Connection,
+    thread: &mut Value,
+    run: &mut Value,
+    at: &str,
+) -> Result<String> {
+    admit_inner(state, db, thread, run, false, at, true)?;
+    put(
+        db,
+        "runs",
+        run["id"].as_str().unwrap_or(""),
+        thread["id"].as_str().unwrap_or(""),
+        run,
+    )?;
+    append(
+        db,
+        thread["id"].as_str().unwrap_or(""),
+        "run.updated",
+        run.clone(),
+        thread,
+    )?;
+    run["contextHandoffId"]
+        .as_str()
+        .map(str::to_owned)
+        .ok_or("Portable fork did not prepare context".into())
+}
+fn admit_inner(
+    state: &crate::store::State,
+    db: &Connection,
+    thread: &mut Value,
+    run: &mut Value,
+    queued: bool,
+    at: &str,
+    force_portable: bool,
 ) -> Result<()> {
     let tid = thread["id"]
         .as_str()
@@ -382,7 +422,8 @@ pub(crate) fn admit(
         let anchored = point["providerThreadRef"]["driver"] == "codex"
             && point["providerTurnRef"]["strength"] == "strong";
         let target_driver = crate::provider_input::driver(state, &run["providerInstanceId"])?;
-        let native = point["providerThreadRef"]["driver"] == target_driver
+        let native = !force_portable
+            && point["providerThreadRef"]["driver"] == target_driver
             && !is_merge
             && source_run.as_ref().is_some_and(|r| {
                 r["providerInstanceId"] == run["providerInstanceId"]
@@ -404,8 +445,10 @@ pub(crate) fn admit(
             }
             continue;
         }
-        thread["nativeForkSource"] = Value::Null;
-        thread["nativeForkLastTurnId"] = Value::Null;
+        if !is_merge {
+            thread["nativeForkSource"] = Value::Null;
+            thread["nativeForkLastTurnId"] = Value::Null;
+        }
         if is_merge && thread["providerHandoff"].is_string() {
             parent_handoff(db, thread, run, at)?;
         }
@@ -505,6 +548,19 @@ fn side_chat_handoff(
     source_run: Option<&Value>,
     at: &str,
 ) -> Result<String> {
+    if let Some(existing) = list(db, "contextHandoffs", thread["id"].as_str().unwrap_or(""))?
+        .into_iter()
+        .find(|h| {
+            h["targetRunId"] == run["id"]
+                && h["strategy"] == "manual_context"
+                && h["transferId"] == transfer["id"]
+        })
+    {
+        return Ok(existing["id"]
+            .as_str()
+            .ok_or("Side chat context id missing")?
+            .to_owned());
+    }
     let tid = thread["id"].as_str().ok_or("thread id missing")?;
     let sid = transfer["sourceThreadId"]
         .as_str()
@@ -601,31 +657,140 @@ fn parent_handoff(db: &Connection, thread: &Value, run: &Value, at: &str) -> Res
 }
 /// Only persisted handoffs enter adapter input; callers cannot supply this field.
 pub(crate) fn input(db: &Connection, thread: &Value, run: &Value) -> Result<Value> {
-    let all = list(db, "contextHandoffs", thread["id"].as_str().unwrap_or(""))?;
-    let handoffs = all
+    let tid = thread["id"].as_str().unwrap_or("");
+    let mut all = list(db, "contextHandoffs", tid)?;
+    let runs = list(db, "runs", tid)?;
+    let Some(ptid) = run["providerThreadId"].as_str() else {
+        // Legacy active-recovery runs predate app-owned provider rows.
+        return Ok(json!({"handoffs":[],"deliveredItemIds":[]}));
+    };
+    let native = get(db, "providerThreads", ptid)?["nativeThreadRef"]["nativeId"].clone();
+    let recovery = crate::native_recovery::handoff_id(db, run)?;
+    if recovery.is_none() {
+        if let Some(retry) = retry_handoff(db, thread, run, &all, &native)? {
+            all.push(retry);
+        }
+    }
+    let mut handoffs = all
         .iter()
         .filter(|h| {
+            let manual = thread["lineage"]["sideChat"] == true
+                && h["strategy"] == "manual_context"
+                && h["transferId"].is_string();
+            let prior = runs.iter().find(|r| r["id"] == h["targetRunId"]);
+            let eligible = h["targetRunId"] == run["id"]
+                || ((manual || h["toProviderThreadId"] == run["providerThreadId"])
+                    && prior.is_some_and(|r| {
+                        matches!(
+                            r["status"].as_str(),
+                            Some("failed" | "interrupted" | "cancelled")
+                        ) || (r["status"] == "completed"
+                            && h.get("delivery").is_none()
+                            && get(db, "messages", r["userMessageId"].as_str().unwrap_or(""))
+                                .is_ok_and(|m| crate::handoff_delivery::maintenance(&m["text"])))
+                    }));
             h["status"] == "ready"
-                && (h["targetRunId"] == run["id"]
-                    || h["toProviderThreadId"] == run["providerThreadId"])
-                && !matches!(
-                    h["delivery"]["status"].as_str(),
-                    Some("injected" | "inline")
-                )
+                && eligible
+                && (!native.is_string()
+                    || h["delivery"]["nativeThreadId"] != native
+                    || !matches!(
+                        h["delivery"]["status"].as_str(),
+                        Some("inline" | "injected")
+                    ))
         })
         .collect::<Vec<_>>();
+    handoffs.sort_by_key(|h| {
+        if h["targetRunId"] != run["id"] {
+            0
+        } else if recovery.as_ref().is_some_and(|id| h["id"] == id.as_str()) {
+            1
+        } else {
+            2
+        }
+    });
     let delivered = all
         .iter()
         .filter(|h| {
             h["toProviderThreadId"] == run["providerThreadId"]
+                && h["delivery"]["nativeThreadId"] == native
+                && native.is_string()
                 && matches!(
                     h["delivery"]["status"].as_str(),
-                    Some("injected" | "inline")
+                    Some("inline" | "injected")
                 )
         })
         .flat_map(|h| h["delivery"]["itemIds"].as_array().into_iter().flatten())
         .collect::<Vec<_>>();
     Ok(json!({"handoffs":handoffs,"deliveredItemIds":delivered}))
+}
+fn retry_handoff(
+    db: &Connection,
+    thread: &Value,
+    run: &Value,
+    handoffs: &[Value],
+    native: &Value,
+) -> Result<Option<Value>> {
+    let tid = thread["id"].as_str().unwrap_or("");
+    let turns = list(db, "providerTurns", tid)?;
+    let runs = list(db, "runs", tid)?;
+    let missed = runs
+        .iter()
+        .filter(|r| {
+            r["providerThreadId"] == run["providerThreadId"]
+                && r["ordinal"].as_i64() < run["ordinal"].as_i64()
+                && matches!(r["status"].as_str(), Some("failed" | "interrupted"))
+                && !turns
+                    .iter()
+                    .any(|t| t["runAttemptId"] == r["activeAttemptId"])
+        })
+        .collect::<Vec<_>>();
+    if missed.is_empty() {
+        return Ok(None);
+    }
+    let covered = handoffs
+        .iter()
+        .filter(|h| {
+            h["toProviderThreadId"] == run["providerThreadId"]
+                && h["delivery"]["nativeThreadId"] == *native
+                && matches!(
+                    h["delivery"]["status"].as_str(),
+                    Some("inline" | "injected")
+                )
+        })
+        .flat_map(|h| [&h["delivery"]["itemIds"], &h["delivery"]["omittedItemIds"]])
+        .flat_map(|a| a.as_array().into_iter().flatten())
+        .collect::<std::collections::HashSet<_>>();
+    let items = own_items(db, tid, run["ordinal"].as_i64().unwrap_or(1) - 1)?
+        .into_iter()
+        .filter(|i| {
+            missed.iter().any(|r| r["id"] == i["runId"])
+                && !covered.contains(&i["id"])
+                && history::message(i).is_some()
+        })
+        .collect::<Vec<_>>();
+    if items.is_empty() {
+        return Ok(None);
+    }
+    let from = missed
+        .iter()
+        .filter_map(|r| r["ordinal"].as_i64())
+        .min()
+        .unwrap_or(1);
+    let to = missed
+        .iter()
+        .filter_map(|r| r["ordinal"].as_i64())
+        .max()
+        .unwrap_or(1);
+    let coverage = history::coverage(tid, from, to, &items);
+    let messages = items
+        .iter()
+        .filter_map(history::message)
+        .collect::<Vec<_>>();
+    let selected = history::select(&messages, &coverage, 0, history::cap());
+    let at = iso(now_ms());
+    Ok(Some(
+        json!({"id":random_id()?,"transferId":null,"threadId":tid,"targetRunId":run["id"],"fromProviderThreadIds":[run["providerThreadId"]],"toProviderThreadId":run["providerThreadId"],"coveredRunOrdinals":{"from":from,"to":to},"strategy":"delta_since_target_last_seen","status":"ready","summaryMessageId":null,"summaryText":history::render(selected["messages"].as_array().unwrap(),selected["context"].as_str().unwrap()),"history":{"messages":selected["messages"],"coverage":coverage,"omittedItems":selected["omittedItems"],"omittedItemIds":selected["omittedItemIds"]},"createdByProviderInstanceId":null,"createdAt":at,"updatedAt":at,"_o3Ephemeral":true}),
+    ))
 }
 /// Called after the adapter's actual native binding, in the output transaction.
 pub(crate) fn bound(db: &Connection, thread: &mut Value, run: &Value, at: &str) -> Result<()> {
@@ -711,7 +876,28 @@ pub(crate) fn delivery(
         return Err("Handoff delivery run is no longer active".into());
     }
     let id = data["handoffId"].as_str().ok_or("handoff id missing")?;
-    let mut h = get(&tx, "contextHandoffs", id)?;
+    use rusqlite::OptionalExtension;
+    let body: Option<String> = tx
+        .query_row(
+            "SELECT body FROM records WHERE kind='contextHandoffs' AND id=?",
+            [id],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let mut h = match body {
+        Some(body) => serde_json::from_str(&body).map_err(|e| e.to_string())?,
+        None => data
+            .get("handoff")
+            .cloned()
+            .filter(|h| {
+                h["id"] == id
+                    && h["targetRunId"] == rid
+                    && h["status"] == "ready"
+                    && h["transferId"].is_null()
+            })
+            .ok_or("Retry handoff snapshot missing")?,
+    };
     if h["threadId"] != tid || h["toProviderThreadId"] != run["providerThreadId"] {
         return Err("Handoff delivery owner mismatch".into());
     }
@@ -721,10 +907,11 @@ pub(crate) fn delivery(
         .ok_or("native delivery binding missing")?;
     let status = data["status"].as_str().ok_or("delivery status missing")?;
     match status {
-        "pending" if h["delivery"]["status"]=="pending"=>return Err("Context handoff delivery is uncertain; create a fresh conversation before replaying history.".into()),
-        "pending" if matches!(h["delivery"]["status"].as_str(),Some("injected"|"inline"))=>return Err("Context handoff was already delivered".into()),
+        "pending" if h["delivery"]["status"]=="pending" && h["delivery"]["nativeThreadId"]==native=>return Err("Context handoff delivery is uncertain; create a fresh conversation before replaying history.".into()),
+        "pending" if h["delivery"]["nativeThreadId"]==native && matches!(h["delivery"]["status"].as_str(),Some("injected"|"inline"))=>return Err("Context handoff was already delivered".into()),
         "pending"=>{},
         "injected"|"inline" if h["delivery"]["status"]=="pending" && h["delivery"]["nativeThreadId"]==native=>{},
+        "unsent" if h["delivery"]["status"]=="pending" && h["delivery"]["nativeThreadId"]==native=>{},
         _=>return Err("Invalid context delivery transition".into()),
     }
     let at = iso(now_ms());
