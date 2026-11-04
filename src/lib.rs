@@ -4,6 +4,8 @@ extern crate self as o3_server;
 pub mod additions;
 pub mod auth;
 pub mod http;
+mod mcp;
+mod mcp_tools;
 pub mod rpc;
 pub mod store;
 

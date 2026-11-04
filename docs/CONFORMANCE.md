@@ -2812,3 +2812,11 @@ late whole-word matches, ignored/binary/external symlink content, per-file/globa
 limits, fresh edits, fallback and oversized content. Unit tests check typed errors
 and schema bounds. No live nightly differential or desktop/Android UI acceptance
 has been run for this port; the compatibility row remains partial.
+
+### MCP transport and readers (2026-11-04)
+
+See [MCP.md](MCP.md) for the separate MCP credential audience, transport contract,
+published reader tools, protocol regressions and explicit gaps. `/mcp` now exists;
+it does not yet implement all upstream toolkits or fix existing external integrations
+automatically. The older browser-only per-run broker is independent. Full nightly
+MCP parity remains unproven.
