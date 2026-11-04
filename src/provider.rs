@@ -2,6 +2,7 @@
 use std::{future::Future, pin::Pin};
 use tokio::sync::{mpsc, watch};
 pub struct RunInput {
+    pub native_mcp: Option<std::sync::Arc<crate::native_mcp::Context>>,
     pub provider_instance_id: String,
     pub native_session_id: Option<String>,
     pub thread_id: String,
@@ -183,6 +184,7 @@ pub(crate) fn start(
                 }
             }
             RunInput {
+                native_mcp: None,
                 provider_instance_id: t["providerInstanceId"].as_str().unwrap_or("").into(),
                 // An empty thread whose initial input was rejected may have no durable
                 // rollout to resume after restart. Replace only that known-empty binding.
@@ -214,16 +216,37 @@ pub(crate) fn start(
         // Internal config is issued here, never accepted from persisted model options.
         if let Some(selection) = input.model_selection.as_object_mut() {
             selection.remove("o3BrowserMcp");
+            selection.remove("o3NativeMcp");
         }
-        let broker = if input.runtime_mode != "text-only"
+        let native_context = if input.runtime_mode != "text-only"
             && input.model_selection["o3ColdCompact"] != true
+            && s.native_mcp.configured()
         {
-            crate::agent_browser::Broker::start(s.clone(), &tid).await
+            match s
+                .native_mcp
+                .obtain(
+                    &s,
+                    &tid,
+                    &input.provider_instance_id,
+                    &input.cwd,
+                    &input.model_selection["options"],
+                )
+                .await
+            {
+                Ok(context) => Some(context),
+                Err(message) => {
+                    let _ = persist(&s, &tid, &rid, ProviderEvent::Failed(message));
+                    s.active.lock().unwrap().remove(&rid);
+                    s.notify();
+                    return;
+                }
+            }
         } else {
             None
         };
-        if let Some(broker) = &broker {
-            input.model_selection["o3BrowserMcp"] = broker.config.clone();
+        if let Some(context) = &native_context {
+            input.model_selection["o3NativeMcp"] = context.config();
+            input.native_mcp = Some(context.clone());
         }
         let checkpoint_cwd = input.cwd.clone();
         let checkpoint_state = s.clone();
@@ -350,9 +373,7 @@ pub(crate) fn start(
         }
         let _ = cancel.send(true);
         tokio::select! {r=&mut task=>{match r {Ok(Ok(()))=>finished=true,Ok(Err(e))=>failure=Some(e),Err(e)=>failure=Some(e.to_string())}},_=tokio::time::sleep(std::time::Duration::from_secs(2))=>{task.abort();let _=task.await;}}
-        if let Some(broker) = &broker {
-            broker.close().await;
-        }
+        s.native_mcp.finish_turn(&tid).await;
         if !checkpoint_finished {
             let cs = s.clone();
             let ct = tid.clone();
@@ -449,6 +470,7 @@ fn persist(
     rid: &str,
     event: ProviderEvent,
 ) -> Result<(), String> {
+    s.native_mcp.touch(tid);
     use crate::{
         events::{append, get, message_item, put},
         store::{iso, now_ms},

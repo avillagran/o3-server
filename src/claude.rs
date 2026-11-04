@@ -71,6 +71,7 @@ pub struct ClaudeProvider {
     sessions: std::sync::Arc<Mutex<HashMap<String, Session>>>,
 }
 struct Session {
+    native_mcp: Option<std::sync::Arc<crate::native_mcp::Context>>,
     _mcp_config: Option<PrivateConfig>,
     child: Child,
     stdin: ChildStdin,
@@ -139,7 +140,15 @@ impl ClaudeProvider {
         self
     }
     pub async fn shutdown(&self) {
-        let sessions = std::mem::take(&mut *self.sessions.lock().unwrap());
+        let sessions = {
+            let mut sessions = self.sessions.lock().unwrap();
+            for s in sessions.values() {
+                if let Some(c) = &s.native_mcp {
+                    c.revoke();
+                }
+            }
+            std::mem::take(&mut *sessions)
+        };
         for (_, mut session) in sessions {
             session.stop().await;
         }
@@ -156,7 +165,11 @@ impl ClaudeProvider {
             let expired = {
                 let mut map = sessions.lock().unwrap();
                 if map.get(&thread_id).is_some_and(|s| s.idle_since == stamp) {
-                    map.remove(&thread_id)
+                    let expired = map.remove(&thread_id);
+                    if let Some(context) = expired.as_ref().and_then(|s| s.native_mcp.as_ref()) {
+                        context.revoke();
+                    }
+                    expired
                 } else {
                     None
                 }
@@ -208,8 +221,13 @@ impl ClaudeProvider {
             cmd.arg("--effort").arg(effort);
         }
         let mut mcp_config = None;
-        if input.model_selection["o3BrowserMcp"].is_object() {
-            let mut config = input.model_selection["o3BrowserMcp"].clone();
+        let injected = if input.model_selection["o3NativeMcp"].is_object() {
+            &input.model_selection["o3NativeMcp"]
+        } else {
+            &input.model_selection["o3BrowserMcp"]
+        };
+        if injected.is_object() {
+            let mut config = injected.clone();
             config["type"] = json!("http");
             let file = PrivateConfig::create(&json!({"mcpServers":{"t3-code":config}}))?;
             cmd.arg("--mcp-config").arg(file.0.join("config.json"));
@@ -249,6 +267,7 @@ impl ClaudeProvider {
         let stdin = child.stdin.take().ok_or("Claude stdin missing")?;
         let stdout = BufReader::new(child.stdout.take().ok_or("Claude stdout missing")?);
         let mut s = Session {
+            native_mcp: input.native_mcp.clone(),
             _mcp_config: mcp_config,
             child,
             stdin,
@@ -257,7 +276,7 @@ impl ClaudeProvider {
             native: input.native_session_id.clone().unwrap_or_default(),
             cwd: input.cwd.clone(),
             options: input.model_selection["options"].clone(),
-            browser: input.model_selection["o3BrowserMcp"].is_object(),
+            browser: injected.is_object(),
             idle_since: tokio::time::Instant::now(),
         };
         s.send(json!({"type":"control_request","request_id":"initialize","request":{"subtype":"initialize"}})).await?;
@@ -291,6 +310,21 @@ impl ClaudeProvider {
         })
         .await
         .map_err(|_| "Claude initialize timeout")??;
+        if let Some(context) = &input.native_mcp {
+            let sessions = std::sync::Arc::downgrade(&self.sessions);
+            let key = input.thread_id.clone();
+            let id = context.id().to_owned();
+            context.set_process_check(std::sync::Arc::new(move || {
+                let Some(sessions) = sessions.upgrade() else {
+                    return false;
+                };
+                let mut sessions = sessions.lock().unwrap();
+                sessions
+                    .get_mut(&key)
+                    .filter(|s| s.native_mcp.as_ref().is_some_and(|c| c.id() == id))
+                    .is_none_or(|s| matches!(s.child.try_wait(), Ok(None)))
+            }));
+        }
         Ok(s)
     }
     async fn run(
@@ -317,8 +351,16 @@ impl ClaudeProvider {
             if input.native_session_id.is_none() && !s.native.is_empty() {
                 input.native_session_id = Some(s.native.clone());
             }
-            if !s.browser
-                && !input.model_selection["o3BrowserMcp"].is_object()
+            let same_mcp = match (&s.native_mcp, &input.native_mcp) {
+                (Some(old), Some(new)) => old.id() == new.id(),
+                (None, None) => {
+                    !s.browser
+                        && !input.model_selection["o3BrowserMcp"].is_object()
+                        && !input.model_selection["o3NativeMcp"].is_object()
+                }
+                _ => false,
+            };
+            if same_mcp
                 && s.cwd == input.cwd
                 && s.options == input.model_selection["options"]
                 && s.child.try_wait().map_err(|e| e.to_string())?.is_none()
@@ -336,9 +378,11 @@ impl ClaudeProvider {
                 s
             } else {
                 s.stop().await;
+                refresh_mcp(&mut input).await?;
                 self.spawn(&input).await?
             }
         } else {
+            refresh_mcp(&mut input).await?;
             self.spawn(&input).await?
         };
         let result = async {
@@ -456,7 +500,11 @@ impl ClaudeProvider {
                 let mut sessions = self.sessions.lock().unwrap();
                 let evicted = if sessions.len() >= MAX_SESSIONS {
                     let key = sessions.keys().next().cloned().unwrap();
-                    sessions.remove(&key)
+                    let removed = sessions.remove(&key);
+                    if let Some(c) = removed.as_ref().and_then(|s| s.native_mcp.as_ref()) {
+                        c.revoke();
+                    }
+                    removed
                 } else {
                     None
                 };
@@ -473,6 +521,17 @@ impl ClaudeProvider {
         result.map(|_| ())
     }
 }
+async fn refresh_mcp(input: &mut RunInput) -> Result<(), String> {
+    if let Some(context) = &input.native_mcp {
+        let context = context
+            .refresh(&input.cwd, &input.model_selection["options"])
+            .await?;
+        input.model_selection["o3NativeMcp"] = context.config();
+        input.native_mcp = Some(context);
+    }
+    Ok(())
+}
+
 #[derive(Default)]
 struct TurnBoundary {
     tasks: std::collections::HashSet<String>,
@@ -531,6 +590,9 @@ fn mode(input: &RunInput) -> &str {
 }
 impl Drop for Session {
     fn drop(&mut self) {
+        if let Some(context) = &self.native_mcp {
+            context.revoke();
+        }
         if let Some(pid) = self.child.id() {
             // Each CLI owns an isolated process group. Never leave tool grandchildren behind.
             // SAFETY: kill takes integer arguments and no pointers; pid is our live child's ID.
@@ -542,6 +604,9 @@ impl Drop for Session {
 }
 impl Session {
     async fn stop(&mut self) {
+        if let Some(context) = self.native_mcp.take() {
+            context.revoke();
+        }
         if let Some(pid) = self.child.id() {
             // SAFETY: the isolated group is owned by this Session, with no borrowed pointers.
             unsafe {
@@ -602,6 +667,7 @@ impl Provider for ClaudeProvider {
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(async move {
             let input = RunInput {
+                native_mcp: None,
                 provider_instance_id: "claudeAgent".into(),
                 native_session_id: None,
                 thread_id: "discovery".into(),
@@ -954,6 +1020,7 @@ mod tests {
         let pid = child.id().unwrap();
         let stamp = tokio::time::Instant::now();
         let session = Session {
+            native_mcp: None,
             _mcp_config: None,
             stdin: child.stdin.take().unwrap(),
             stdout: BufReader::new(child.stdout.take().unwrap()),
@@ -996,6 +1063,7 @@ mod tests {
             .unwrap();
         let pid = child.id().unwrap();
         let session = Session {
+            native_mcp: None,
             _mcp_config: None,
             stdin: child.stdin.take().unwrap(),
             stdout: BufReader::new(child.stdout.take().unwrap()),
@@ -1013,6 +1081,7 @@ mod tests {
             .unwrap()
             .insert("collision".into(), session);
         let input = RunInput {
+            native_mcp: None,
             provider_instance_id: "claudeAgent".into(),
             native_session_id: None,
             thread_id: "collision".into(),
@@ -1100,6 +1169,7 @@ mod tests {
             .spawn()
             .unwrap();
         let mut s = Session {
+            native_mcp: None,
             _mcp_config: None,
             stdin: child.stdin.take().unwrap(),
             stdout: BufReader::new(child.stdout.take().unwrap()),
@@ -1121,6 +1191,7 @@ mod tests {
             .spawn()
             .unwrap();
         let mut s = Session {
+            native_mcp: None,
             _mcp_config: None,
             stdin: child.stdin.take().unwrap(),
             stdout: BufReader::new(child.stdout.take().unwrap()),
@@ -1232,6 +1303,7 @@ mod tests {
             resume: Option<String>,
         ) -> Vec<ProviderEvent> {
             let input = RunInput {
+                native_mcp: None,
                 provider_instance_id: "claude".into(),
                 native_session_id: resume,
                 thread_id: "live".into(),

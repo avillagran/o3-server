@@ -60,6 +60,11 @@ enum Op {
     Subscribe(String, Route, oneshot::Sender<Result<(), String>>),
     Unsubscribe(String),
     Shutdown(oneshot::Sender<()>),
+    RetainMcp(
+        String,
+        std::sync::Arc<crate::native_mcp::Context>,
+        oneshot::Sender<Result<(), String>>,
+    ),
 }
 #[derive(Clone)]
 struct Client(mpsc::Sender<Op>);
@@ -318,7 +323,7 @@ impl CodexProvider {
     }
     async fn run(
         &self,
-        input: RunInput,
+        mut input: RunInput,
         output: mpsc::Sender<ProviderEvent>,
         mut control: mpsc::Receiver<ProviderControl>,
         mut cancel: watch::Receiver<bool>,
@@ -334,11 +339,23 @@ impl CodexProvider {
         }
         let content = crate::provider_input::content(&input, false)?;
         let c = self.connection().await?;
+        if let Some(context) = &input.native_mcp {
+            let context = context
+                .refresh(&input.cwd, &input.model_selection["options"])
+                .await?;
+            input.model_selection["o3NativeMcp"] = context.config();
+            input.native_mcp = Some(context);
+        }
         let mut params = json!({"cwd":input.cwd,"model":input.model_selection["model"],"approvalPolicy":if input.runtime_mode=="full-access"{"never"}else{"on-request"},"sandbox":if input.runtime_mode=="full-access"{"danger-full-access"}else{"workspace-write"}});
-        // Explicitly clear the per-run server when browser access was withheld.
-        params["config"] = json!({"mcp_servers.t3-code":if input.model_selection["o3BrowserMcp"].is_object() {
-            json!({"url":input.model_selection["o3BrowserMcp"]["url"],"http_headers":input.model_selection["o3BrowserMcp"]["headers"]})
-        } else { json!({"enabled":false}) }});
+        // Supervised turns receive orchestration even when browser access is disabled.
+        let injected = if input.model_selection["o3NativeMcp"].is_object() {
+            &input.model_selection["o3NativeMcp"]
+        } else {
+            &input.model_selection["o3BrowserMcp"]
+        };
+        params["config"] = json!({"mcp_servers.t3-code":if injected.is_object() {
+            json!({"url":injected["url"],"http_headers":injected["headers"]})
+        }else{json!({"enabled":false})}});
         let response = if let Some(id) = input.model_selection["nativeForkSource"].as_str() {
             params["threadId"] = json!(id);
             c.call("thread/fork", params).await?
@@ -353,6 +370,13 @@ impl CodexProvider {
             .as_str()
             .ok_or("Codex thread id missing")?
             .to_owned();
+        if let Some(context) = &input.native_mcp {
+            let (ack, ready) = oneshot::channel();
+            c.0.send(Op::RetainMcp(tid.clone(), context.clone(), ack))
+                .await
+                .map_err(|_| "Codex closed")?;
+            ready.await.map_err(|_| "Codex closed")??;
+        }
         let (tx, mut frames) = Inbox::pair();
         let (ack, ready) = oneshot::channel();
         c.0.send(Op::Subscribe(tid.clone(), tx, ack))
@@ -638,6 +662,7 @@ async fn actor(
     let mut stdin = child.stdin.take().unwrap();
     let mut reader = BufReader::with_capacity(8192, child.stdout.take().unwrap());
     let mut calls = HashMap::<u64, Reply>::new();
+    let mut native_contexts = HashMap::<String, std::sync::Arc<crate::native_mcp::Context>>::new();
     let mut routes = HashMap::<String, Route>::new();
     let mut next = 0u64;
     let mut buffer = Vec::new();
@@ -656,6 +681,7 @@ async fn actor(
                     Some(Op::Subscribe(id,tx,ack))=>{let result=if routes.len()>=32||routes.contains_key(&id){Err("Codex thread already active or capacity reached".into())}else{routes.insert(id,tx);Ok(())};let _=ack.send(result);continue;},
                     Some(Op::Shutdown(ack))=>{shutdown=Some(ack);return Ok(());},
                     Some(Op::Unsubscribe(id))=>{routes.remove(&id);continue;},
+                    Some(Op::RetainMcp(id,context,ack))=>{let result=if native_contexts.len()>=256 && !native_contexts.contains_key(&id){Err("Codex MCP session capacity reached".into())}else{if let Some(old)=native_contexts.insert(id,context.clone()){if old.id()!=context.id(){old.revoke();}}Ok(())};let _=ack.send(result);continue;},
                     Some(Op::Reply(frame))=>frame,
                     Some(Op::Call(method,params,reply))=>{
                         if calls.len()>=32 {let _=reply.send(Err("Codex RPC capacity reached".into()));continue;}
@@ -696,6 +722,10 @@ async fn actor(
     }
     let _ = child.kill().await;
     let _ = child.wait().await;
+    for context in native_contexts.values() {
+        context.revoke();
+    }
+    drop(native_contexts);
     if let Some(ack) = shutdown {
         let _ = ack.send(());
     }
@@ -759,6 +789,7 @@ mod tests {
     use super::*;
     fn input(thread: &str, resume: Option<String>) -> RunInput {
         RunInput {
+            native_mcp: None,
             provider_instance_id: "codex".into(),
             thread_id: thread.into(),
             run_id: format!("run-{thread}"),

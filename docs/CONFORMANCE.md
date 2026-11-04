@@ -2831,3 +2831,27 @@ deduplication, queue edits/order/cancel, steering/promotion, question-only respo
 interrupt/wait and mode refusals. The stale-authority unit test covers both dispatch
 paths. See MCP.md for exact tools and remaining restart/launch/provider-registry gaps.
 This is still partial MCP parity; no daily profile or service deployment occurred.
+
+
+### Provider-owned MCP injection (2026-11-04)
+
+Normal supervised Claude/Codex turns now receive the shared MCP endpoint, with
+process/session-owned in-memory credentials and current calling-thread authority.
+Browser disable retains orchestration; foreground completion cleans scoped browser
+tabs without expiring a cached CLI's credential. Explicit shutdown and observed
+process exit revoke credentials and transport sessions, even with request references
+remaining. Claude configuration stays in a private temporary file; Codex configuration
+travels over app-server stdin. Native tokens cannot authorize ordinary HTTP/WS routes.
+
+Three registry/policy regressions and real subprocess peers exercise credential reuse,
+current modes, background-provider ownership, default targets, browser disable, abrupt
+exit/replacement and shutdown. This supersedes the earlier private browser listener's
+per-turn lifecycle and the provider-registry gap above. Source reference: nightly4151
+322f6544dfad0a3c8a0c8cbecf2c7f7874b14268, McpSessionRegistry/McpInvocationContext/threadAccess.
+See [MCP.md](MCP.md) for exact behavior and limits. The full preview/project/task/PR/device/
+HTML toolkits, OAuth/DPoP/SSE, linked environments, remaining providers and live client
+acceptance remain incomplete; this does not establish complete nightly parity.
+
+Validation for this block: 319 default / 316 no-default pass; 21 opt-ins ignored each.
+Strict Clippy in both modes, fmt, generated compatibility and nine nightly-monitor
+tests pass. No service deployment occurred.

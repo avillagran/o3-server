@@ -67,9 +67,9 @@ these figures do **not** establish a controlled T3-to-o3 memory reduction:
 
 These live samples use `/proc/PID/status` (`VmRSS`) and exclude launchers, provider children
 and clients. Full compatibility remains pending: `/mcp` now provides authenticated
-readers and thread control with dedicated credentials ([contract and gaps](docs/MCP.md));
-project/task toolkits, provider token injection, OpenCode/ACP and DPoP/browser authentication remain
-pending. Native Claude/Codex support does not imply those capabilities are available.
+readers and thread control with dedicated credentials and automatic Claude/Codex injection
+([contract and gaps](docs/MCP.md)); project/task toolkits, OpenCode/ACP and DPoP/browser
+authentication remain pending. Native Claude/Codex support does not imply those capabilities are available.
 
 ## Build and test
 

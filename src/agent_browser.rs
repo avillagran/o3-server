@@ -1,28 +1,43 @@
-//! Per-run, bearer-authenticated loopback MCP endpoint. Never persisted in settings.
+//! Provider-owned browser scope exposed through the shared native MCP transport.
 use crate::{preview, store::State};
-use http_body_util::{BodyExt, Full, Limited};
-use hyper::{
-    body::{Bytes, Incoming},
-    Request, Response, StatusCode,
-};
 use serde_json::{json, Value};
-use std::{
-    convert::Infallible,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-    time::Duration,
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
 };
 use tokio::sync::Mutex;
 
+#[derive(Clone)]
+pub(crate) struct Access(std::sync::Weak<Scope>);
+impl Access {
+    pub(crate) fn available(&self) -> bool {
+        self.0.upgrade().is_some_and(|scope| {
+            !scope.revoked.load(Ordering::SeqCst)
+                && scope
+                    .state
+                    .upgrade()
+                    .is_some_and(|s| enabled(&s, &scope.project))
+        })
+    }
+    pub(crate) async fn call(
+        &self,
+        name: &str,
+        p: &Value,
+        authority: &crate::mcp_access::Authority,
+    ) -> Result<Value, Value> {
+        let scope = self
+            .0
+            .upgrade()
+            .ok_or_else(|| json!({"message":"Browser session closed"}))?;
+        scope.call(name, p, authority).await
+    }
+}
 pub struct Broker {
-    task: tokio::task::JoinHandle<()>,
-    pub config: Value,
     scope: Arc<Scope>,
+    runtime: tokio::runtime::Handle,
 }
 struct Scope {
-    state: Arc<State>,
+    state: std::sync::Weak<State>,
     thread: String,
     project: String,
     profile: String,
@@ -32,9 +47,8 @@ struct Scope {
 impl Drop for Broker {
     fn drop(&mut self) {
         self.scope.revoked.store(true, Ordering::SeqCst);
-        self.task.abort();
         let scope = self.scope.clone();
-        tokio::spawn(async move {
+        self.runtime.spawn(async move {
             scope.cleanup().await;
         });
     }
@@ -46,6 +60,12 @@ pub fn enabled(s: &State, project: &str) -> bool {
     }) && crate::server_browser::executable().is_some()
 }
 impl Broker {
+    pub(crate) fn access(&self) -> Access {
+        Access(Arc::downgrade(&self.scope))
+    }
+    pub(crate) async fn finish_turn(&self) {
+        self.scope.cleanup().await;
+    }
     pub async fn start(state: Arc<State>, thread: &str) -> Option<Self> {
         let project = {
             let db = state.db.lock().unwrap();
@@ -56,131 +76,22 @@ impl Broker {
         if !enabled(&state, &project) {
             return None;
         }
-        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
-            .await
-            .ok()?;
-        let endpoint = format!("http://{}/mcp", listener.local_addr().ok()?);
-        let token = crate::store::random_id().ok()?;
         let scope = Arc::new(Scope {
-            state,
+            state: Arc::downgrade(&state),
             thread: thread.into(),
             project,
             profile: format!("agent:{}", crate::store::random_id().ok()?),
             revoked: AtomicBool::new(false),
             tabs: Mutex::new(Vec::new()),
         });
-        let auth = format!("Bearer {token}");
-        let task_scope = scope.clone();
-        let task = tokio::spawn(async move {
-            let mut connections = tokio::task::JoinSet::new();
-            let lifetime = tokio::time::sleep(Duration::from_secs(1800));
-            tokio::pin!(lifetime);
-            loop {
-                tokio::select! {
-                    _=&mut lifetime=>break,
-                    Some(_)=connections.join_next()=>{},
-                    next=listener.accept()=>{
-                        let Ok((socket,peer))=next else {break};
-                        if !peer.ip().is_loopback() || connections.len()>=8 {continue;}
-                        let scope=task_scope.clone();let auth=auth.clone();
-                        connections.spawn(async move {
-                            let service=hyper::service::service_fn(move |req| handle(req,scope.clone(),auth.clone()));
-                            let connection=hyper::server::conn::http1::Builder::new().serve_connection(hyper_util::rt::TokioIo::new(socket),service);
-                            let _=tokio::time::timeout(Duration::from_secs(60),connection).await;
-                        });
-                    }
-                }
-            }
-        });
         Some(Self {
-            task,
-            config: json!({"url":endpoint,"headers":{"Authorization":format!("Bearer {token}")}}),
             scope,
+            runtime: tokio::runtime::Handle::current(),
         })
     }
-    pub async fn close(&self) {
-        self.scope.revoked.store(true, Ordering::SeqCst);
-        self.task.abort();
-        // Abort the listener and all in-flight operations before draining ownership.
-        // A single scope mutex serializes calls with cleanup.
-        self.scope.cleanup().await;
-    }
 }
-fn response(status: StatusCode, value: Value) -> Response<Full<Bytes>> {
-    Response::builder()
-        .status(status)
-        .header("content-type", "application/json")
-        .body(Full::new(Bytes::from(value.to_string())))
-        .unwrap()
-}
-async fn handle(
-    req: Request<Incoming>,
-    scope: Arc<Scope>,
-    auth: String,
-) -> Result<Response<Full<Bytes>>, Infallible> {
-    if req.uri().path() != "/mcp"
-        || req
-            .headers()
-            .get("authorization")
-            .and_then(|v| v.to_str().ok())
-            != Some(auth.as_str())
-        || req.headers().contains_key("origin")
-        || !enabled(&scope.state, &scope.project)
-    {
-        return Ok(response(StatusCode::NOT_FOUND, json!({})));
-    }
-    if req.method() != hyper::Method::POST {
-        return Ok(response(StatusCode::METHOD_NOT_ALLOWED, json!({})));
-    }
-    let bytes = match tokio::time::timeout(
-        Duration::from_secs(5),
-        Limited::new(req.into_body(), 65536).collect(),
-    )
-    .await
-    {
-        Ok(Ok(b)) => b.to_bytes(),
-        _ => return Ok(response(StatusCode::BAD_REQUEST, json!({}))),
-    };
-    let Ok(v) = serde_json::from_slice::<Value>(&bytes) else {
-        return Ok(response(StatusCode::BAD_REQUEST, json!({})));
-    };
-    let id = v["id"].clone();
-    if v["method"] == "notifications/initialized" {
-        return Ok(response(StatusCode::ACCEPTED, Value::Null));
-    }
-    let result = match v["method"].as_str() {
-        Some("initialize") => Ok(
-            json!({"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"t3-code","version":env!("CARGO_PKG_VERSION")}}),
-        ),
-        Some("ping") => Ok(json!({})),
-        Some("tools/list") => Ok(json!({"tools":tools()})),
-        Some("tools/call") => {
-            let result = tokio::time::timeout(
-                Duration::from_secs(20),
-                scope.call(
-                    v["params"]["name"].as_str().unwrap_or(""),
-                    &v["params"]["arguments"],
-                ),
-            )
-            .await;
-            let (value, error) = match result {
-                Ok(Ok(v)) => (v, false),
-                Ok(Err(e)) => (e, true),
-                Err(_) => (json!({"message":"Browser operation timed out"}), true),
-            };
-            Ok(json!({"content":[{"type":"text","text":value.to_string()}],"isError":error}))
-        }
-        _ => Err(json!({"code":-32601,"message":"Unknown method"})),
-    };
-    Ok(response(
-        StatusCode::OK,
-        match result {
-            Ok(r) => json!({"jsonrpc":"2.0","id":id,"result":r}),
-            Err(e) => json!({"jsonrpc":"2.0","id":id,"error":e}),
-        },
-    ))
-}
-fn tools() -> Vec<Value> {
+
+pub(crate) fn tools() -> Vec<Value> {
     [
         ("preview_status","List this session's browser tabs and their state"),
         ("preview_open","Open a private server browser tab; HTTP(S) only"),
@@ -196,28 +107,42 @@ fn tools() -> Vec<Value> {
 }
 impl Scope {
     async fn cleanup(&self) {
+        let Some(state) = self.state.upgrade() else {
+            return;
+        };
         let mut tabs = self.tabs.lock().await;
         for tab in tabs.drain(..) {
             let _ = preview::call(
-                &self.state,
+                &state,
                 "preview.close",
                 &json!({"threadId":self.thread,"tabId":tab}),
             )
             .await;
         }
     }
-    async fn call(&self, name: &str, p: &Value) -> Result<Value, Value> {
+    async fn call(
+        &self,
+        name: &str,
+        p: &Value,
+        authority: &crate::mcp_access::Authority,
+    ) -> Result<Value, Value> {
+        let state = self
+            .state
+            .upgrade()
+            .ok_or_else(|| json!({"message":"Browser owner closed"}))?;
         let mut tabs = self.tabs.lock().await;
-        if self.revoked.load(Ordering::SeqCst) || !enabled(&self.state, &self.project) {
+        // Check after waiting for tab ownership, so terminal-turn cleanup cannot be
+        // followed by a queued operation admitted while the parent was still active.
+        authority.browser_admission(
+            &state,
+            !matches!(name, "preview_status" | "preview_snapshot"),
+        )?;
+        if self.revoked.load(Ordering::SeqCst) || !enabled(&state, &self.project) {
             return Err(json!({"message":"Agent browser access disabled"}));
         }
         if name == "preview_status" {
-            let list = preview::call(
-                &self.state,
-                "preview.list",
-                &json!({"threadId":self.thread}),
-            )
-            .await?;
+            let list =
+                preview::call(&state, "preview.list", &json!({"threadId":self.thread})).await?;
             return Ok(
                 json!({"available":true,"tabs":list["sessions"].as_array().into_iter().flatten().filter(|s|s["tabId"].as_str().is_some_and(|id|tabs.iter().any(|t|t==id))).cloned().collect::<Vec<_>>() }),
             );
@@ -226,7 +151,7 @@ impl Scope {
             if tabs.len() >= 4 {
                 return Err(json!({"message":"Close a tab before opening another (limit 4)"}));
             }
-            let result=preview::call(&self.state,"preview.open",&json!({"threadId":self.thread,"runtime":"server","profileId":format!("{}:{}",self.profile,crate::store::random_id().map_err(|_|json!({"message":"Cannot allocate context"}))?),"url":p["url"]})).await?;
+            let result=preview::call(&state,"preview.open",&json!({"threadId":self.thread,"runtime":"server","profileId":format!("{}:{}",self.profile,crate::store::random_id().map_err(|_|json!({"message":"Cannot allocate context"}))?),"url":p["url"]})).await?;
             tabs.push(result["tabId"].as_str().unwrap().into());
             return Ok(result);
         }
@@ -239,8 +164,7 @@ impl Scope {
             return Err(json!({"message":"Tab does not belong to this agent session"}));
         }
         if name != "preview_snapshot"
-            && self
-                .state
+            && state
                 .streams
                 .p2
                 .preview
@@ -257,19 +181,19 @@ impl Scope {
         args["tabId"] = json!(tab);
         match name {
             "preview_close" => {
-                let result = preview::call(&self.state, "preview.close", &args).await?;
+                let result = preview::call(&state, "preview.close", &args).await?;
                 tabs.retain(|t| t != &tab);
                 Ok(result)
             }
-            "preview_navigate" => preview::call(&self.state, "preview.navigate", &args).await,
+            "preview_navigate" => preview::call(&state, "preview.navigate", &args).await,
             "preview_resize" => {
                 args["viewport"] = json!({"_tag":"freeform","width":p["width"].as_u64().unwrap_or(1280).clamp(240,3840),"height":p["height"].as_u64().unwrap_or(800).clamp(240,2160)});
-                preview::call(&self.state, "preview.resize", &args).await
+                preview::call(&state, "preview.resize", &args).await
             }
             "preview_press" => {
                 let key = p["key"].as_str().unwrap_or("Enter");
                 for event in ["keyDown", "keyUp"] {
-                    self.state
+                    state
                         .streams
                         .p2
                         .preview
@@ -293,8 +217,7 @@ impl Scope {
                     "preview_type"=>format!("(()=>{{const e=document.querySelector({locator});if(!e)throw Error('No matching element');e.focus();e.value={text};e.dispatchEvent(new Event('input',{{bubbles:true}}));e.dispatchEvent(new Event('change',{{bubbles:true}}));return true}})()"),
                     _=>p["expression"].as_str().unwrap_or("").into(),
                 };
-                let result = self
-                    .state
+                let result = state
                     .streams
                     .p2
                     .preview

@@ -42,6 +42,41 @@ admission. Authority travels separately from wire commands: callers cannot injec
 it or raise their ceiling through arguments. Thread configure changes only the model
 selection, with legacy provider/options normalization; it does not change modes.
 
+## Native Claude/Codex credentials
+
+Supervised normal turns receive a provider-owned credential for the same `/mcp`
+endpoint, including when agent browser access is disabled. Text-only generation,
+provider discovery and the tools-disabled cold summary stage receive none. Internal
+injection keys from persisted model selections are removed before issuing credentials.
+Claude receives a private temporary configuration file (0600, parent 0700); Codex
+receives configuration over app-server stdin on thread start/resume/fork. Bearer
+secrets are absent from argv, durable settings, auth-session rows and projections.
+
+The in-memory registry indexes SHA-256 token hashes and weak process/session owners.
+It holds at most 256 native contexts. A cached Claude session retains its context;
+Codex's process actor retains up to 256 native-thread contexts. Unchanged sessions
+reuse their credential across turns. Shutdown, eviction, idle reap or observed process exit revoke it and remove its transport sessions. Claude checks
+cached child liveness when a credential is used; Codex revokes on actor exit. An HTTP
+request retains only the authorization scope, and cannot prolong its process owner.
+Inactivity expires credentials after 24 hours; unexpired HTTP requests renew them,
+while trusted provider activity can refresh idle credentials. Revocation is permanent.
+
+Native authority is the calling thread's current modes, reloaded under the mutation
+transaction. Native callers ignore T3-Mode-Limit, so a header cannot replace those
+limits. Writes require an unarchived caller owned by the same provider instance and
+generation, with a current run or a pending subagent from that provider. Commands
+and foreign-provider background work grant no authority. Canonical completed tasks
+mask stale compatibility records. Reads may continue after foreground completion;
+identity changes and deleted callers are refused. Missing optional thread targets
+resolve to the caller; missing project targets in list/search resolve to its project.
+Thread list reports currentThreadId.
+
+The existing ten scoped browser tools share this transport when enabled. Each scope
+owns only its tabs; browser settings are checked on use. Foreground completion closes
+its tabs and profiles while the native orchestration credential can remain alive.
+The separate per-run browser HTTP listener has been removed. Full current-nightly
+preview toolkit equivalence remains pending.
+
 ## Transport
 
 Send a JSON-RPC `initialize` request with clientInfo, capabilities and protocolVersion
@@ -58,13 +93,13 @@ results contain both text JSON and matching structuredContent, with isError for 
 
 There is no standalone GET SSE stream or resumable event delivery yet: GET returns
 405, and an SSE-only Accept header returns 406. Requests with Origin are rejected.
-There is no OAuth metadata, browser approval or dynamic registration yet. Provider
-registry tokens and automatic native CLI injection still need their own lifecycle;
-the older private browser broker remains separate.
+There is no OAuth metadata, browser approval or dynamic registration yet. Native
+process-owned credentials use the lifecycle described above; external OAuth and
+linked-environment credentials remain pending.
 
 Limits: 1 MiB incoming JSON, 10-second body read, eight simultaneous requests, eight
 transport sessions per credential and 128 total. Inactive transport sessions expire
-after 30 minutes, and all transport sessions disappear on restart. MCP bearer sessions
+after 30 minutes, and all transport sessions disappear on restart. External MCP bearer sessions
 remain persisted and revocable across restarts. Readers run on blocking workers rather
 than on async I/O workers.
 
@@ -122,7 +157,7 @@ zero remains invalid. Configure without modelSelection reads the current configu
   Restart-continuation following remains pending with restart support.
 - t3_thread_organize: pin, unpin, snooze, unsnooze, settle, unsettle, archive, unarchive,
   or mark unread through the normal lifecycle. Caller-thread deferred settlement
-  requires the still-pending provider registry/native injection.
+  remains unimplemented.
 - t3_thread_configure: read configuration, or change provider/model selection without changing permission modes.
 - t3_queue_list / t3_queue_read / t3_queue_edit / t3_queue_cancel / t3_queue_reorder /
   t3_queue_promote_to_steer: operate on the real queue using its existing ordering,
@@ -150,8 +185,8 @@ invalid JSON/schema/envelopes, unsupported methods/tools, Origin and ordinary se
 rejection. These are deterministic protocol tests, not a live nightly differential or
 acceptance of the existing ChatGPT/OmaBridge integration.
 
-Pending: provider registry tokens and native injection, OAuth/DPoP, full SSE semantics,
-project mutations, thread launch/restart, task delegation,
+Pending: OAuth/DPoP, full SSE semantics,
+project mutations, thread launch/restart/transfer, deferred caller settlement, task delegation,
 worktree/attachment/PR/device/preview/HTML/scheduler toolkits and linked environments.
 Inherited-task acknowledgement and exact activity-text rendering also need upstream
 parity. No daily profile, external MCP integration or running service was changed.
@@ -171,11 +206,29 @@ grouped tools, configure read overload, list item projectId/allProjects, empty s
 read-limit clamping and explicit foreign-environment refusal above. See
 [nightly/mcp-thread-control-intake.json](nightly/mcp-thread-control-intake.json) for the
 release references and remaining changes; this does not update the validated 3726
-RPC baseline or certify complete 4151 equivalence. Hosted links, linked routing and provider-native caller policy remain pending with
-their enabling features. The per-request T3-Mode-Limit narrowing itself is implemented.
+RPC baseline or certify complete 4151 equivalence. Hosted links and linked routing remain pending with their enabling features. Native
+caller policy and automatic Claude/Codex injection are implemented as described above. The per-request T3-Mode-Limit narrowing itself is implemented.
 
 Final validation after the 4151 alignment: 316 default / 313 no-default tests pass,
 with 21 opt-ins ignored each; 16 HTTP MCP cases and the transaction-authority unit
 regression are included. Strict Clippy passes in both modes; fmt, generated
 compatibility and all nine nightly-monitor tests pass. No live deployment, provider
 inference or complete-nightly conformance is asserted.
+
+## Native credential validation (2026-11-04)
+
+The native credential work uses nightly 4151's McpSessionRegistry, McpInvocationContext
+and threadAccess at `322f6544dfad0a3c8a0c8cbecf2c7f7874b14268`
+([intake](nightly/native-mcp-intake.json)). Three registry/policy
+unit regressions cover expiry, trusted refresh, request references surviving owner
+closure, current mode changes, background ownership and generation replacement.
+Subprocess Claude/Codex peers perform real HTTP MCP initialization and calls; four
+turns exercise reuse, browser disable, abrupt process death, fresh credentials and
+shutdown. They assert configuration file permissions, argv isolation, missing-target
+defaults, lower-mode rejection, inactive-parent rejection and ordinary HTTP/WS denial.
+These deterministic peers are not a live inference or compatible desktop acceptance test.
+
+Final native-credential validation: 319 default / 316 no-default tests pass, with
+21 opt-ins ignored in each mode. Strict Clippy passes in both modes; fmt, generated
+compatibility and all nine nightly-monitor tests pass. No running-service deployment
+or complete-nightly conformance is asserted.

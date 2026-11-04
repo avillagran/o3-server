@@ -26,6 +26,14 @@ impl Default for Sessions {
         }
     }
 }
+impl Sessions {
+    pub(crate) fn close_owner(&self, owner: &str) {
+        self.sessions
+            .lock()
+            .unwrap()
+            .retain(|_, s| s.owner != owner);
+    }
+}
 struct Session {
     owner: String,
     touched: i64,
@@ -58,7 +66,16 @@ pub(crate) async fn handle(state: Arc<State>, req: Request<Incoming>) -> Respons
         .and_then(|s| s.strip_prefix("Bearer "))
         .unwrap_or("")
         .trim();
-    let Some(claims) = state.mcp_session(token) else {
+    let authority = state
+        .native_mcp
+        .resolve(token)
+        .map(crate::mcp_access::Authority::from_native)
+        .or_else(|| {
+            state
+                .mcp_session(token)
+                .and_then(|claims| crate::mcp_access::Authority::from_claims(&claims).ok())
+        });
+    let Some(mut authority) = authority else {
         let mut r = response(
             StatusCode::UNAUTHORIZED,
             json!({"error":"invalid_mcp_credential","message":"A valid T3 Code MCP credential is required."}),
@@ -75,13 +92,7 @@ pub(crate) async fn handle(state: Arc<State>, req: Request<Incoming>) -> Respons
         );
         return r;
     };
-    let Ok(mut authority) = crate::mcp_access::Authority::from_claims(&claims) else {
-        return response(
-            StatusCode::UNAUTHORIZED,
-            json!({"error":"invalid_mcp_credential"}),
-        );
-    };
-    if req.headers().contains_key("t3-mode-limit") {
+    if !authority.is_native() && req.headers().contains_key("t3-mode-limit") {
         let value = header(&req, "t3-mode-limit").unwrap_or("");
         let parts = value.trim().split('/').collect::<Vec<_>>();
         if parts.len() != 2
@@ -109,7 +120,7 @@ pub(crate) async fn handle(state: Arc<State>, req: Request<Incoming>) -> Respons
             "Unsupported MCP protocol version",
         );
     }
-    let owner = claims["sid"].as_str().unwrap_or("");
+    let owner = authority.session_id.as_str();
     let session_id = header(&req, "mcp-session-id").map(str::to_owned);
     if let Some(id) = &session_id {
         let mut sessions = state.mcp.sessions.lock().unwrap();
@@ -225,6 +236,14 @@ pub(crate) async fn handle(state: Arc<State>, req: Request<Incoming>) -> Respons
         };
         {
             let mut sessions = state.mcp.sessions.lock().unwrap();
+            // Serialize registration with close_owner after provider revocation. A request
+            // authenticated before exit must not leave a transport session behind it.
+            if authority.native_revoked() {
+                return response(
+                    StatusCode::UNAUTHORIZED,
+                    json!({"error":"invalid_mcp_credential"}),
+                );
+            }
             sessions.retain(|_, v| now_ms().saturating_sub(v.touched) < IDLE_MS);
             if sessions.len() >= 128 || sessions.values().filter(|v| v.owner == owner).count() >= 8
             {
@@ -267,7 +286,13 @@ pub(crate) async fn handle(state: Arc<State>, req: Request<Incoming>) -> Respons
             if value["params"].get("cursor").is_some() {
                 return rpc_error(StatusCode::OK, id, -32602, "Invalid tool cursor");
             }
-            json!({"tools":crate::mcp_tools::catalog()})
+            {
+                let mut tools = crate::mcp_tools::catalog();
+                if authority.browser().is_some() {
+                    tools.extend(crate::agent_browser::tools());
+                }
+                json!({"tools":tools})
+            }
         }
         "tools/call" => {
             let Some(name) = value["params"]["name"].as_str() else {
@@ -278,8 +303,22 @@ pub(crate) async fn handle(state: Arc<State>, req: Request<Incoming>) -> Respons
                 .cloned()
                 .unwrap_or(json!({}));
             let args = crate::mcp_tools::prepare_arguments(name, args);
-            if let Err(message) = crate::mcp_tools::validate(name, &args) {
-                return rpc_error(StatusCode::OK, id, -32602, &message);
+            let browser = authority.browser().filter(|_| {
+                crate::agent_browser::tools()
+                    .iter()
+                    .any(|t| t["name"] == name)
+            });
+            if browser.is_none() {
+                if let Err(message) = crate::mcp_tools::validate(name, &args) {
+                    return rpc_error(StatusCode::OK, id, -32602, &message);
+                }
+            } else if !args.is_object() {
+                return rpc_error(
+                    StatusCode::OK,
+                    id,
+                    -32602,
+                    "Tool arguments must be an object",
+                );
             }
             if args["environmentId"]
                 .as_str()
@@ -298,17 +337,40 @@ pub(crate) async fn handle(state: Arc<State>, req: Request<Incoming>) -> Respons
             let s = state.clone();
             let name = name.to_owned();
             let authority = authority.clone();
-            let result = if name == "t3_thread_wait" {
+            let result = if let Some(browser) = browser {
                 let _permit = permit;
-                crate::mcp_mutations::wait(s, authority, args).await
+                tokio::time::timeout(
+                    Duration::from_secs(20),
+                    browser.call(&name, &args, &authority),
+                )
+                .await
+                .unwrap_or_else(|_| {
+                    Err(crate::mcp_tools::failure(
+                        "orchestration_error",
+                        "Browser operation timed out.",
+                    ))
+                })
+            } else if name == "t3_thread_wait" {
+                let _permit = permit;
+                match authority.arguments(&s, &name, args) {
+                    Ok(args) => crate::mcp_mutations::wait(s, authority, args).await,
+                    Err(e) => Err(e),
+                }
             } else {
                 tokio::task::spawn_blocking(move || {
                     let _permit = permit;
-                    if crate::mcp_mutations::handles(&name) {
+                    let args = authority.arguments(&s, &name, args)?;
+                    let mut result = if crate::mcp_mutations::handles(&name) {
                         crate::mcp_mutations::call(&s, &authority, &name, &args)
                     } else {
                         crate::mcp_tools::call(&s, &name, &args)
+                    }?;
+                    if name == "t3_thread_list" {
+                        if let Some(thread) = authority.native_thread() {
+                            result["currentThreadId"] = json!(thread);
+                        }
                     }
+                    Ok(result)
                 })
                 .await
                 .unwrap_or_else(|_| {
