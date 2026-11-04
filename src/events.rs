@@ -41,6 +41,7 @@ pub fn initialize(db: &Connection) -> Result<()> {
     db.execute_batch("CREATE INDEX IF NOT EXISTS records_turn_ordinal ON records(thread_id,json_extract(body,'$.ordinal')) WHERE kind='turnItems'; CREATE INDEX IF NOT EXISTS records_user_message ON records(thread_id) WHERE kind='messages' AND json_extract(body,'$.role')='user';").map_err(|e|e.to_string())?;
     repair_boolean_settled_override(db)?;
     initialize_run_internal(db)?;
+    crate::deletion::initialize(db)?;
     crate::threadq::initialize(db)
 }
 /// Upstream 077 (1973e0a68): a boolean `settledOverride` breaks the thread schema; true means
@@ -605,6 +606,9 @@ pub(crate) fn dispatch_scoped(
     } else {
         get(&tx, "thread", tid)?
     };
+    if kind != "thread.delete" && !t["deletedAt"].is_null() {
+        return Err("The thread was deleted".into());
+    }
     let event = match kind {
         "thread.create" => {
             import_native(s, &tx, c, tid, &at, &mut t)?;
@@ -619,8 +623,18 @@ pub(crate) fn dispatch_scoped(
             "thread.unarchived"
         }
         "thread.delete" => {
-            t["deletedAt"] = json!(at);
-            "thread.deleted"
+            crate::deletion::plan(&tx, &mut t, cid, &at)?;
+            let result = json!({"sequence":sequence(&tx)?});
+            tx.execute(
+                "INSERT INTO receipts VALUES(?,?)",
+                params![cid, result.to_string()],
+            )
+            .map_err(|e| e.to_string())?;
+            tx.commit().map_err(|e| e.to_string())?;
+            drop(db);
+            crate::deletion::signal(s, tid);
+            s.notify();
+            return Ok(result);
         }
         "thread.pin" => {
             t["pinnedAt"] = json!(at);
@@ -1592,6 +1606,11 @@ fn new_thread(db: &Connection, c: &Value, tid: &str, at: &str) -> Result<Value> 
         if get(db, "thread", tid).is_ok() {
             return Err("thread already exists".into());
         }
+        if get(db, "project", c["projectId"].as_str().unwrap_or(""))
+            .is_ok_and(|p| !p["deletedAt"].is_null())
+        {
+            return Err("Project was deleted".into());
+        }
         json!({"id":tid,"projectId":c["projectId"],"title":c["title"],"providerInstanceId":c["modelSelection"]["instanceId"],"modelSelection":c["modelSelection"],"runtimeMode":c["runtimeMode"],"interactionMode":c["interactionMode"],"branch":c["branch"],"worktreePath":c["worktreePath"],"createdBy":"user","creationSource":c.get("creationSource").cloned().unwrap_or(json!("web")),"lineage":{"parentThreadId":null,"relationshipToParent":null,"rootThreadId":tid},"forkedFrom":null,"activeProviderThreadId":null,"createdAt":at,"updatedAt":at,"archivedAt":null,"settledOverride":null,"settledAt":null,"lastVisitedAt":null,"snoozedAt":null,"snoozedUntil":null,"pullRequests":[],"deletedAt":null})
     })
 }
@@ -1740,10 +1759,20 @@ pub fn launch(s: &std::sync::Arc<State>, p: &Value) -> Result<Value> {
 }
 
 pub fn mutate_project(s: &State, c: &Value) -> Result<Value> {
+    mutate_project_scoped(s, c, None)
+}
+pub(crate) fn mutate_project_scoped(
+    s: &State,
+    c: &Value,
+    authority: Option<&crate::mcp_access::Authority>,
+) -> Result<Value> {
     let cid = c["commandId"].as_str().ok_or("commandId required")?;
     let id = c["projectId"].as_str().ok_or("projectId required")?;
     let mut db = s.db.lock().unwrap();
     let tx = db.transaction().map_err(|e| e.to_string())?;
+    if let Some(authority) = authority {
+        authority.check(&tx, c)?;
+    }
     if let Some(r) = tx
         .query_row(
             "SELECT result FROM receipts WHERE command_id=?",
@@ -1754,6 +1783,18 @@ pub fn mutate_project(s: &State, c: &Value) -> Result<Value> {
         .map_err(|e| e.to_string())?
     {
         return serde_json::from_str(&r).map_err(|e| e.to_string());
+    }
+    if let Some(root) = c["workspaceRoot"].as_str() {
+        let duplicate:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='project' AND id!=?1 AND json_extract(body,'$.deletedAt') IS NULL AND json_extract(body,'$.workspaceRoot')=?2)",params![id,root],|r|r.get(0)).map_err(|e|e.to_string())?;
+        if duplicate {
+            return Err("A project already uses this workspace root".into());
+        }
+    }
+    if c["type"] == "project.delete" && c["force"] != true {
+        let nonempty:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='thread' AND json_extract(body,'$.projectId')=?1 AND json_extract(body,'$.deletedAt') IS NULL)",[id],|r|r.get(0)).map_err(|e|e.to_string())?;
+        if nonempty {
+            return Err("Project still has threads; delete them or pass force".into());
+        }
     }
     let at = iso(now_ms());
     let mut p = match c["type"].as_str() {
@@ -1768,9 +1809,43 @@ pub fn mutate_project(s: &State, c: &Value) -> Result<Value> {
             }
             json!({"id":id,"title":c["title"],"workspaceRoot":c["workspaceRoot"],"defaultModelSelection":null,"defaultThreadEnvMode":null,"autoPull":false,"faviconPath":null,"projectIcon":null,"repositoryIdentity":null,"archivedAt":null,"pinnedAt":null,"scripts":[],"createdAt":at,"updatedAt":at,"deletedAt":null})
         }
-        Some("project.update" | "project.delete") => get(&tx, "project", id)?,
+        Some("project.update" | "project.delete") => {
+            let p = get(&tx, "project", id)?;
+            if !p["deletedAt"].is_null() {
+                return Err("Project was deleted".into());
+            }
+            p
+        }
         _ => return Err("invalid project mutation".into()),
     };
+    if c["type"] == "project.update" {
+        if c["projectIcon"]["kind"] == "monogram"
+            && c["projectIcon"]["text"].as_str().is_some_and(|v| {
+                unicode_segmentation::UnicodeSegmentation::graphemes(v, true)
+                    .take(3)
+                    .count()
+                    > 2
+            })
+        {
+            return Err("Project monograms must contain at most two characters".into());
+        }
+        if let Some(scripts) = c["scripts"].as_array() {
+            for script in scripts {
+                let id = script["id"].as_str().ok_or("Script id required")?;
+                let existing = p["scripts"]
+                    .as_array()
+                    .is_some_and(|a| a.iter().any(|s| s["id"] == id));
+                let valid = id.len() <= 24
+                    && id.as_bytes().first().is_some_and(u8::is_ascii_alphanumeric)
+                    && id
+                        .bytes()
+                        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+                if !existing && !valid {
+                    return Err("Script IDs must be 1-24 lowercase letters, digits or hyphens, starting with a letter or digit".into());
+                }
+            }
+        }
+    }
     for key in [
         "title",
         "workspaceRoot",
@@ -1786,19 +1861,27 @@ pub fn mutate_project(s: &State, c: &Value) -> Result<Value> {
             p[key] = v.clone();
         }
     }
+    for (input, field) in [("pinned", "pinnedAt"), ("archived", "archivedAt")] {
+        if let Some(flag) = c[input].as_bool() {
+            p[field] = if flag { json!(at) } else { Value::Null };
+        }
+    }
     p["updatedAt"] = json!(at);
     if c["type"] == "project.delete" {
         p["deletedAt"] = json!(at);
     }
+    let mut deleted = Vec::new();
     if c["type"] == "project.delete" && c["force"] == true {
-        for mut t in list(&tx, "thread", None, i64::MAX as usize)? {
-            if t["projectId"] == id && t["deletedAt"].is_null() {
-                t["deletedAt"] = json!(at);
-                t["updatedAt"] = json!(at);
-                let tid = t["id"].as_str().ok_or("thread id missing")?.to_owned();
-                put(&tx, "thread", &tid, &tid, &t)?;
-                append(&tx, &tid, "thread.deleted", t.clone(), &t)?;
-            }
+        let mut cursor = 0i64;
+        loop {
+            let row=tx.query_row("SELECT rowid,id,body FROM records WHERE kind='thread' AND json_extract(body,'$.projectId')=?1 AND json_extract(body,'$.deletedAt') IS NULL AND rowid>?2 ORDER BY rowid LIMIT 1",params![id,cursor],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).optional().map_err(|e|e.to_string())?;
+            let Some((row, tid, body)) = row else {
+                break;
+            };
+            cursor = row;
+            let mut thread = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+            crate::deletion::plan(&tx, &mut thread, &format!("{cid}:delete-thread:{tid}"), &at)?;
+            deleted.push(tid);
         }
     }
     put(&tx, "project", id, "", &p)?;
@@ -1827,6 +1910,9 @@ pub fn mutate_project(s: &State, c: &Value) -> Result<Value> {
     .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
     drop(db);
+    for tid in deleted {
+        crate::deletion::signal(s, &tid);
+    }
     s.notify();
     Ok(p)
 }

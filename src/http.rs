@@ -604,6 +604,7 @@ pub async fn serve(listener: TcpListener, state: Arc<State>) -> std::io::Result<
         .unwrap()
         .execute_batch("PRAGMA shrink_memory")
         .map_err(std::io::Error::other)?;
+    crate::deletion::start(&state);
     crate::recovery::resume(&state).map_err(std::io::Error::other)?;
     crate::heap::collect();
     state.start_checkpointer();

@@ -63,6 +63,16 @@ fn normalize_root(raw: &str, create: bool) -> Result<PathBuf> {
 }
 
 pub fn mutate(s: &State, c: &Value) -> Result<Value> {
+    mutate_scoped(s, c, None)
+}
+pub(crate) fn mutate_scoped(
+    s: &State,
+    c: &Value,
+    authority: Option<&crate::mcp_access::Authority>,
+) -> Result<Value> {
+    if let Some(authority) = authority {
+        authority.check(&s.reader.lock().unwrap(), c)?;
+    }
     let _worktree = s
         .worktree_gate
         .try_read()
@@ -78,7 +88,7 @@ pub fn mutate(s: &State, c: &Value) -> Result<Value> {
             .map_err(|e| e.to_string())?
             .is_some();
     if replay {
-        return events::mutate_project(s, c);
+        return events::mutate_project_scoped(s, c, authority);
     }
     let mut c = c.clone();
     let id = c["projectId"]
@@ -119,7 +129,7 @@ pub fn mutate(s: &State, c: &Value) -> Result<Value> {
         }
         _ => {}
     }
-    events::mutate_project(s, &c)
+    events::mutate_project_scoped(s, &c, authority)
 }
 
 /// Resolve repository metadata without credentials or network I/O.
@@ -192,6 +202,16 @@ pub async fn repository_identity(root: &str) -> Value {
 }
 
 pub async fn mutate_resolved(s: &State, c: &Value) -> Result<Value> {
+    mutate_resolved_scoped(s, c, None).await
+}
+pub(crate) async fn mutate_resolved_scoped(
+    s: &State,
+    c: &Value,
+    authority: Option<&crate::mcp_access::Authority>,
+) -> Result<Value> {
+    if let Some(authority) = authority {
+        authority.check(&s.reader.lock().unwrap(), c)?;
+    }
     let mut c = c.clone();
     let root = c["workspaceRoot"].as_str().map(str::to_owned).or_else(|| {
         let id = c["projectId"].as_str()?;
@@ -201,7 +221,7 @@ pub async fn mutate_resolved(s: &State, c: &Value) -> Result<Value> {
     if let Some(root) = root {
         c["repositoryIdentity"] = repository_identity(&root).await;
     }
-    mutate(s, &c)
+    mutate_scoped(s, &c, authority)
 }
 
 /// One replacement snapshot publishes the resolved roots and current shell together.

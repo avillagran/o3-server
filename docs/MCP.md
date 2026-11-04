@@ -131,7 +131,7 @@ MIT notice is retained in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ## Thread control
 
-The catalog includes 23 tools, retaining the earlier granular queue/question names
+The thread-control port introduced 23 core tools, retaining the earlier granular queue/question names
 alongside nightly 4151's grouped t3_queue and t3_pending_request. Their action selects
 the same read or write path: read-only credentials can list/read, and cannot edit,
 cancel, promote or respond. External clients pass threadId explicitly.
@@ -186,8 +186,8 @@ rejection. These are deterministic protocol tests, not a live nightly differenti
 acceptance of the existing ChatGPT/OmaBridge integration.
 
 Pending: OAuth/DPoP, full SSE semantics,
-project mutations, thread launch/restart/transfer, deferred caller settlement, task delegation,
-worktree/attachment/PR/device/preview/HTML/scheduler toolkits and linked environments.
+thread launch/restart/transfer, worktree handoff, deferred caller settlement, task delegation,
+remaining worktree/attachment/PR/device/preview/HTML/scheduler toolkits and linked environments.
 Inherited-task acknowledgement and exact activity-text rendering also need upstream
 parity. No daily profile, external MCP integration or running service was changed.
 
@@ -232,3 +232,98 @@ Final native-credential validation: 319 default / 316 no-default tests pass, wit
 21 opt-ins ignored in each mode. Strict Clippy passes in both modes; fmt, generated
 compatibility and all nine nightly-monitor tests pass. No running-service deployment
 or complete-nightly conformance is asserted.
+
+## Project mutations and worktree readers (2026-11-04)
+
+Six tools extend the core catalog to 29 (plus the ten existing native browser tools
+when enabled). `t3_project_create`, `t3_project_update`, `t3_project_delete` and
+`t3_project_clone` require a live full-access/default caller or a full-access client.
+Mode-limit narrowing remains authoritative. Project record mutations recheck the
+credential and caller under the same transaction, before receipt replay. Workspace
+uniqueness and nonempty deletion are checked there too.
+
+Create registers an existing folder, or creates it with createWorkspaceRootIfMissing.
+Omitting workspaceRoot uses the shared named-project scaffold (git, README, icon and
+initial commit). A commit failure is returned as commitError while keeping the project.
+A title-only creation rejects scripts/defaults; set them afterwards. As in the source
+ProjectService, creation does not record defaultModelSelection; update does. Update
+preserves omitted fields, supports nullable defaults/icon/favicon, scripts, pin/archive
+and autoPull. Monograms allow at most two grapheme clusters. New script IDs must follow
+the source's 1–24 lowercase letter/digit/hyphen rule; existing invalid IDs may be edited.
+Delete refuses a nonempty project without force and retains its folder. Forced project
+deletion uses the same receipt-atomic thread-deletion plan as ordinary thread.delete:
+child tombstones, cancelled work and cleanup jobs commit together. The durable resource
+lifecycle is described below.
+
+Clone creates an independent checkout: it does not register or adopt an existing project.
+The same implementation now handles ordinary sourceControl.cloneRepository. It accepts
+raw clone URLs/local paths and GitHub repository lookup through gh. Auto selects SSH for
+lookup and retries authentication/host-key rejection over HTTPS; explicit ssh never
+falls back. Git arguments use argv and --; destinations are serialized and must be new
+or empty. Failed calls never delete occupied destinations. Returned URLs redact URL
+credentials, and errors do not expose Git stderr. Other hosts can use remoteUrl; their
+repository lookup adapters remain pending.
+
+`t3_worktree_list` reads the selected thread's project/worktree with the existing ref
+pagination and filters, including read-only clients. Native callers may omit threadId.
+If cleanup removed an attached path, listing falls back to the project checkout.
+`t3_worktree_status` needs a native thread credential and returns attached/path/branch,
+project root and the effective per-project startFromOrigin default. Source reference:
+nightly4151 project/worktree toolkits, ProjectService/ProjectCommands, ManagedProjectFolders,
+SourceControlRepositoryService and WorktreeMcpService
+([intake](nightly/mcp-projects-intake.json)). This port does not yet implement
+handoff: expected-path comparison, provider detachment, setup and queued continuation
+must be ported together. Thread launch remains pending too.
+
+Tests use actual MCP HTTP and the ordinary client to inspect durable CRUD and settings,
+real Git checkouts/clones, rejected permissions with no filesystem effects, malformed
+schemas, native defaults and cleanup fallback. A separate subprocess fixture exercises
+gh lookup, SSH/HTTPS selection and fallback, redacted errors and initial-commit failure.
+A stale-authority unit regression bypasses preflight to verify transaction admission and
+receipt replay. These checks do not establish live host/network or desktop acceptance.
+
+Validation: full suites pass with 326 default / 323 no-default tests (21 opt-ins
+ignored each). Final MCP/project/clone/native regressions and strict Clippy pass in
+both configurations; fmt, generated compatibility and nine nightly-monitor tests pass.
+The existing compatible desktop and live hosted-network flows were not exercised.
+
+
+## Durable thread and project deletion (2026-11-04)
+
+Ordinary thread deletion and forced project deletion now share a transaction-scoped
+planner, adapted from nightly4151 ThreadDeletion, ResourceCleanupService and EffectWorker.
+It cancels active runs, attempts, nodes, provider turns, background tasks and pending
+requests; detaches provider-session projections and disposes app-owned completion
+cohorts without reopening terminal runs. Thread tombstones, child events, cleanup jobs,
+attachment references and the command receipt commit atomically. Project authority is
+still checked before receipt replay. Startup plans missing cleanup for legacy tombstones
+before ordinary recovery can resume their orphaned work.
+
+After commit, native credentials are revoked and supervised executions are cancelled.
+A persistent outbox retries disposal after failure or restart. It stops cached Claude
+sessions and unloads only the affected Codex native threads with thread/unsubscribe,
+including sessions in retired provider pools and late native binding replies. Other
+threads sharing a Codex app-server keep their process, credentials and pending work.
+A transient unsubscribe failure remains retryable until the provider acknowledges it.
+
+Disposal closes terminals and removes their stored history, closes previews, deletes
+thread-owned scheduled tasks, finishes command-output tails and removes attachment files
+plus text sidecars. Shared attachments survive while another live thread references them.
+Retries also remove a sidecar left behind after its main file was removed. Project folders
+and worktrees are retained. Deleted threads reject terminal/preview reopening and late
+provider/command-output persistence.
+
+Four deletion tests use real HTTP MCP and subprocess Claude/Codex protocol peers. They
+cover self-project deletion during a pending approval, unaffected shared-process siblings,
+provider switches, transient native unload errors, a delayed native binding reply,
+transaction rollback/replay, restart recovery, legacy tombstones, shared assets and a
+filesystem cleanup failure. Terminal processes, persisted history, preview groups, task
+records and files are inspected. The peers do not establish installed-provider inference
+or compatible desktop acceptance.
+
+Validation for the combined project/deletion block: full suites pass with 330 default /
+327 no-default tests (21 opt-ins ignored each); final Codex and deletion/provider/MCP/
+background/browser regressions and strict Clippy pass in both configurations. fmt,
+generated compatibility and nine nightly-monitor tests pass. Latest source rechecked at
+06:06 UTC: nightly4151, 322f6544dfad0a3c8a0c8cbecf2c7f7874b14268.
+Worktree handoff, launch and the remaining protocol backlog stay open.

@@ -350,6 +350,12 @@ pub(crate) async fn handle(state: Arc<State>, req: Request<Incoming>) -> Respons
                         "Browser operation timed out.",
                     ))
                 })
+            } else if crate::mcp_projects::handles(&name) {
+                let _permit = permit;
+                match authority.arguments(&s, &name, args) {
+                    Ok(args) => crate::mcp_projects::call(s, authority, &name, args).await,
+                    Err(e) => Err(e),
+                }
             } else if name == "t3_thread_wait" {
                 let _permit = permit;
                 match authority.arguments(&s, &name, args) {

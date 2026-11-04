@@ -49,6 +49,12 @@ def check(text):
     assert listed['structuredContent']['currentThreadId']=='t',listed
     assert listed['structuredContent']['projectId']=='p',listed
     assert not tool('t3_thread_organize',{'action':'pin'})['isError']
+    status=tool('t3_worktree_status',{})
+    assert not status['isError'],status
+    assert status['structuredContent']['attached'] is False,status
+    assert status['structuredContent']['defaultStartFromOrigin'] is True,status
+    assert tool('t3_project_create',{'title':'forbidden'})['structuredContent']['code']=='capability_denied'
+
     # Parent limits override a forged mode-limit header and wire arguments.
     denied=tool('t3_thread_organize',{'threadId':'higher','action':'pin'})
     assert denied['isError'],denied

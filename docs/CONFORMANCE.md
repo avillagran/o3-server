@@ -2855,3 +2855,55 @@ acceptance remain incomplete; this does not establish complete nightly parity.
 Validation for this block: 319 default / 316 no-default pass; 21 opt-ins ignored each.
 Strict Clippy in both modes, fmt, generated compatibility and nine nightly-monitor
 tests pass. No service deployment occurred.
+
+
+### MCP projects and workspace inspection (2026-11-04)
+
+Four project mutations and two worktree readers now use the shared MCP transport.
+Project writes require full-access/default and recheck authority under the SQLite
+transaction, before replay. The ordinary project path also enforces atomic workspace
+uniqueness, nonempty deletion, pin/archive fields, monogram graphemes and script-ID rules.
+Cloning is shared with sourceControl.cloneRepository, stays separate from registration,
+and supports raw remotes plus GitHub gh lookup/protocol fallback. Native and external
+worktree readers share existing ref pagination and the missing-worktree fallback.
+
+The existing readers/thread-control tests remain; new MCP/Git tests exercise actual
+settings, files, checkouts, native defaults and rejected authority. A subprocess host
+fixture verifies protocol selection and failure retention; a transaction regression
+covers stale authority and receipt replay. See [MCP.md](MCP.md) for behavior and limits.
+Worktree handoff and thread launch remain pending with provider detach/setup/continuation;
+other-host repository lookup and full project enrichment still need source parity.
+No service deployment or full-nightly conformance is asserted.
+
+Validation: full suites pass with 326 default / 323 no-default tests (21 opt-ins
+ignored each). Final MCP/project/clone/native regressions and strict Clippy pass in
+both configurations; fmt, generated compatibility and nine nightly-monitor tests pass.
+The existing compatible desktop and live hosted-network flows were not exercised.
+
+Source audit also found a required integration follow-up: force deletion currently
+marks child records deleted, whereas ProjectService.deleteChildThread plans durable
+thread-deletion effects. Native/session/run cancellation and resource cleanup must
+be aligned before integrating the draft project port. This gap is preserved explicitly
+rather than treating CRUD persistence tests as proof of the whole deletion lifecycle.
+
+
+### Durable deletion integration follow-up resolved (2026-11-04)
+
+This supersedes the force-deletion gap recorded above. Ordinary thread.delete and
+forced project deletion now share receipt-atomic cancellation and a durable resource
+outbox, following nightly4151 ThreadDeletion/ResourceCleanupService/EffectWorker.
+Native MCP is revoked, active work stops, cached Claude sessions are reaped and affected
+Codex native threads are unsubscribed without stopping shared-process siblings. The
+outbox retries failures/restarts and legacy tombstones are planned before run recovery.
+Terminal history, previews, scheduled tasks and attachment sidecars are cleaned;
+attachments shared by live threads and checkout folders are retained.
+
+Four new integration tests exercise actual HTTP MCP and native-protocol subprocesses,
+including active self-deletion, retired pools, failed unsubscribe, late binding replies,
+atomic receipt rollback/replay, startup recovery and partial filesystem failures.
+Full suites: 330 default / 327 no-default pass, 21 opt-ins ignored in each. Final
+Codex/deletion/provider/MCP/background/browser regressions and strict Clippy pass in both
+modes; fmt, generated compatibility and nine monitor tests pass. Source rechecked at
+06:06 UTC remains nightly4151 (322f6544dfad0a3c8a0c8cbecf2c7f7874b14268).
+Installed-provider inference, compatible desktop acceptance and the broader nightly
+protocol remain unverified/incomplete; no service deployment occurred. See [MCP.md](MCP.md).

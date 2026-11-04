@@ -25,11 +25,17 @@ struct Entries {
     tokens: HashMap<[u8; 32], Weak<Context>>,
     threads: HashMap<String, Weak<Context>>,
 }
+type Dispose = Arc<
+    dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>>
+        + Send
+        + Sync,
+>;
 /// Opaque lifetime owner held by the actual CLI process/session, not by HTTP requests.
 pub struct Context {
     scope: Arc<Scope>,
     config: Value,
     browser: Option<agent_browser::Broker>,
+    dispose: Mutex<Option<Dispose>>,
 }
 pub(crate) struct Scope {
     pub id: String,
@@ -48,6 +54,9 @@ impl Drop for Context {
     }
 }
 impl Context {
+    pub(crate) fn set_disposer(&self, dispose: Dispose) {
+        *self.dispose.lock().unwrap() = Some(dispose);
+    }
     pub(crate) fn revoke(&self) {
         self.scope.revoke();
     }
@@ -74,6 +83,9 @@ impl Context {
 
     pub(crate) fn config(&self) -> Value {
         self.config.clone()
+    }
+    pub(crate) fn thread_key(&self) -> String {
+        format!("{}:{}", self.scope.thread, self.scope.generation)
     }
     pub(crate) fn id(&self) -> &str {
         &self.scope.id
@@ -114,6 +126,40 @@ impl Registry {
         }
         context.scope.touched.store(now_ms(), Ordering::Relaxed);
         Some(context.scope.clone())
+    }
+    pub(crate) async fn dispose_thread(&self, thread: &str) -> Result<bool, String> {
+        let contexts: Vec<_> = self
+            .entries
+            .lock()
+            .unwrap()
+            .tokens
+            .values()
+            .filter_map(Weak::upgrade)
+            .filter(|c| c.scope.thread == thread)
+            .collect();
+        let mut handled = false;
+        for context in contexts {
+            let dispose = context.dispose.lock().unwrap().clone();
+            if let Some(dispose) = dispose {
+                handled = true;
+                dispose().await?;
+            }
+        }
+        Ok(handled)
+    }
+    pub(crate) fn revoke_thread(&self, thread: &str) {
+        let contexts: Vec<_> = self
+            .entries
+            .lock()
+            .unwrap()
+            .tokens
+            .values()
+            .filter_map(Weak::upgrade)
+            .filter(|c| c.scope.thread == thread)
+            .collect();
+        for c in contexts {
+            c.revoke();
+        }
     }
     pub(crate) fn touch(&self, thread: &str) {
         let entries = self.entries.lock().unwrap();
@@ -214,6 +260,7 @@ impl Registry {
         });
         let context = Arc::new(Context {
             scope,
+            dispose: Mutex::new(None),
             config: json!({"url":endpoint,"headers":{"Authorization":format!("Bearer {token}")}}),
             browser,
         });

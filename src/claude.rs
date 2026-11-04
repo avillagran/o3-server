@@ -314,6 +314,21 @@ impl ClaudeProvider {
             let sessions = std::sync::Arc::downgrade(&self.sessions);
             let key = input.thread_id.clone();
             let id = context.id().to_owned();
+            let dispose_sessions = sessions.clone();
+            let dispose_key = key.clone();
+            context.set_disposer(std::sync::Arc::new(move || {
+                let sessions = dispose_sessions.clone();
+                let key = dispose_key.clone();
+                Box::pin(async move {
+                    let session = sessions
+                        .upgrade()
+                        .and_then(|sessions| sessions.lock().unwrap().remove(&key));
+                    if let Some(mut session) = session {
+                        session.stop().await;
+                    }
+                    Ok(())
+                })
+            }));
             context.set_process_check(std::sync::Arc::new(move || {
                 let Some(sessions) = sessions.upgrade() else {
                     return false;
@@ -661,6 +676,21 @@ impl Session {
     }
 }
 impl Provider for ClaudeProvider {
+    fn detach<'a>(
+        &'a self,
+        _instance: &'a str,
+        key: &'a str,
+        _native: Option<&'a str>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            let session = self.sessions.lock().unwrap().remove(key);
+            if let Some(mut session) = session {
+                session.stop().await;
+            }
+            Ok(())
+        })
+    }
+
     fn discover<'a>(
         &'a self,
         cwd: PathBuf,

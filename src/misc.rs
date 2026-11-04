@@ -371,6 +371,16 @@ fn dispatch_error(message: &str) -> Value {
 }
 
 async fn create_new(s: &State, p: &Value) -> Reply {
+    create_new_scoped(s, p, None).await
+}
+pub(crate) async fn create_new_scoped(
+    s: &State,
+    p: &Value,
+    authority: Option<&crate::mcp_access::Authority>,
+) -> Reply {
+    if let Some(a) = authority {
+        a.environment(s)?;
+    }
     let name = str_field(p, "name")?.trim().to_owned();
     if name.chars().count() > 200 {
         return Err(invalid("name is too long"));
@@ -412,6 +422,12 @@ async fn create_new(s: &State, p: &Value) -> Reply {
     if !matches!(init, Ok(ref o) if o.ok()) {
         return Err(cleanup("git init failed".into()));
     }
+    if let Some(a) = authority {
+        if let Err(e) = a.environment(s) {
+            let _ = std::fs::remove_dir_all(&folder);
+            return Err(e);
+        }
+    }
     let readme = format!("<img src=\"assets/icon.svg\" width=\"64\" height=\"64\" alt=\"\">\n\n# {name}\n\nCreated in o3-server.\n");
     std::fs::create_dir_all(folder.join("assets"))
         .and_then(|_| std::fs::write(folder.join("README.md"), readme))
@@ -439,7 +455,7 @@ async fn create_new(s: &State, p: &Value) -> Reply {
         Err(_) => Some("Git could not make the first commit.".into()),
     };
     let id = crate::store::random_id().map_err(cleanup)?;
-    let created = crate::projects::mutate_resolved(s, &json!({"type":"project.create","commandId":format!("named-project:{id}"),"projectId":id,"title":name,"workspaceRoot":folder,"scripts":[]})).await;
+    let created = crate::projects::mutate_resolved_scoped(s, &json!({"type":"project.create","commandId":format!("named-project:{id}"),"projectId":id,"title":name,"workspaceRoot":folder,"scripts":[]}),authority).await;
     if let Err(e) = created {
         return Err(cleanup(e));
     }

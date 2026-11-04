@@ -352,7 +352,7 @@ fn mcp_checks_session_ownership_revocation_and_invalid_arguments() {
         &s,
         &token,
         Some(&id),
-        json!({"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"t3_project_delete","arguments":{"projectId":"p"}}}),
+        json!({"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"t3_project_unknown","arguments":{"projectId":"p"}}}),
     );
     assert_eq!(unknown["error"]["code"], -32602);
     let claims = s.state.mcp_session(&token).unwrap();

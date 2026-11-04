@@ -242,6 +242,20 @@ impl Hub {
         bump(&self.notify);
     }
     /// Keeps the tail briefly for settlements that carry no output of their own.
+    pub(crate) fn finish_thread(&self, thread: &str) {
+        let keys: Vec<_> = self
+            .tails
+            .lock()
+            .unwrap()
+            .live
+            .keys()
+            .filter(|(t, _)| t == thread)
+            .cloned()
+            .collect();
+        for (thread, item) in keys {
+            self.finish(&thread, &item);
+        }
+    }
     pub fn finish(&self, thread: &str, item: &str) {
         let key = (thread.to_owned(), item.to_owned());
         let tail = self.tails.lock().unwrap().live.get(&key).cloned();
@@ -390,6 +404,9 @@ pub fn open_stream(s: &State, p: &Value) -> Result<Cursor, Value> {
 
 /// Applies a provider's command event; called by the run supervisor for each one.
 pub fn persist(s: &State, tid: &str, rid: &str, event: CommandEvent) -> Result<(), String> {
+    if get(&s.db.lock().unwrap(), "thread", tid).is_ok_and(|t| !t["deletedAt"].is_null()) {
+        return Ok(());
+    }
     match event {
         CommandEvent::Output { item_id, chunk } => {
             s.streams.commands.append(tid, &item_id, &chunk);
@@ -399,6 +416,9 @@ pub fn persist(s: &State, tid: &str, rid: &str, event: CommandEvent) -> Result<(
             let mut db = s.db.lock().unwrap();
             let tx = db.transaction().map_err(|e| e.to_string())?;
             let thread = get(&tx, "thread", tid)?;
+            if !thread["deletedAt"].is_null() {
+                return Ok(());
+            }
             let at = iso(now_ms());
             let ordinal: i64 = tx
                 .query_row(
@@ -430,6 +450,9 @@ pub fn persist(s: &State, tid: &str, rid: &str, event: CommandEvent) -> Result<(
                 let mut db = s.db.lock().unwrap();
                 let tx = db.transaction().map_err(|e| e.to_string())?;
                 let thread = get(&tx, "thread", tid)?;
+                if !thread["deletedAt"].is_null() {
+                    return Ok(());
+                }
                 let mut item = get(&tx, "turnItems", &item_id)?;
                 let at = iso(now_ms());
                 item["status"] = json!(if exit_code.unwrap_or(0) == 0 {

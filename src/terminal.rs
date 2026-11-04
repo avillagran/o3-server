@@ -1170,6 +1170,15 @@ impl Manager {
         resume: bool,
     ) -> Result<Option<Arc<Session>>, Value> {
         let l = launch_of(s, p, false)?;
+        if crate::events::get(&s.db.lock().unwrap(), "thread", &l.thread)
+            .is_ok_and(|t| !t["deletedAt"].is_null())
+        {
+            return if resume {
+                Ok(None)
+            } else {
+                Err(invalid("The thread was deleted."))
+            };
+        }
         let key = (l.thread.clone(), l.terminal.clone());
         let restart_if_stopped = p["restartIfNotRunning"] == true;
         let Some(session) = self.get(&key) else {
@@ -1199,6 +1208,44 @@ impl Manager {
         Ok(Some(session))
     }
 
+    pub(crate) async fn cleanup(&self, thread: &str) -> Result<(), String> {
+        let _gate = self.lifecycle.lock().await;
+        let keys: Vec<_> = self
+            .sessions
+            .lock()
+            .unwrap()
+            .keys()
+            .filter(|(t, _)| t == thread)
+            .cloned()
+            .collect();
+        for key in keys {
+            if let Some(session) = self.get(&key) {
+                session.persistence.lock().unwrap().take();
+            }
+            self.close_session(&key);
+        }
+        let dir = self.history_dir.lock().unwrap().clone();
+        if let Some(dir) = dir {
+            for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())? {
+                let entry = entry.map_err(|e| e.to_string())?;
+                if !entry.file_type().map_err(|e| e.to_string())?.is_file()
+                    || entry.path().extension().is_none_or(|e| e != "json")
+                    || entry.metadata().map_err(|e| e.to_string())?.len()
+                        > 6 * HISTORY_BYTES as u64 + 65536
+                {
+                    continue;
+                }
+                let bytes = std::fs::read(entry.path()).map_err(|e| e.to_string())?;
+                if serde_json::from_slice::<Value>(&bytes)
+                    .ok()
+                    .is_some_and(|v| v["threadId"] == thread)
+                {
+                    std::fs::remove_file(entry.path()).map_err(|e| e.to_string())?;
+                }
+            }
+        }
+        Ok(())
+    }
     fn close_session(&self, key: &(String, String)) {
         let removed = self.sessions.lock().unwrap().remove(key);
         self.closed.lock().unwrap().insert(key.clone());
@@ -1285,6 +1332,11 @@ pub async fn call(s: &Arc<State>, tag: &str, p: &Value) -> Result<Value, Value> 
         "terminal.open" => {
             let l = launch_of(s, p, true)?;
             let _guard = m.lifecycle.lock().await;
+            if crate::events::get(&s.db.lock().unwrap(), "thread", &l.thread)
+                .is_ok_and(|t| !t["deletedAt"].is_null())
+            {
+                return Err(invalid("The thread was deleted."));
+            }
             let sess = m.open_locked(&l)?;
             Ok(sess.snapshot())
         }
@@ -1352,6 +1404,11 @@ pub async fn call(s: &Arc<State>, tag: &str, p: &Value) -> Result<Value, Value> 
                 return Err(invalid("cols and rows required"));
             }
             let _guard = m.lifecycle.lock().await;
+            if crate::events::get(&s.db.lock().unwrap(), "thread", &l.thread)
+                .is_ok_and(|t| !t["deletedAt"].is_null())
+            {
+                return Err(invalid("The thread was deleted."));
+            }
             check_cwd(&l.cwd)?;
             let key = (l.thread.clone(), l.terminal.clone());
             let sess = match m.get(&key) {
