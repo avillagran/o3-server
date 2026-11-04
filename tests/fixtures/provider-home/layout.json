@@ -1,0 +1,433 @@
+{
+  "reference": "9e85538535c8553901351112ab02dd1dd62db5ee",
+  "sourceFiles": [
+    "apps/server/src/provider/Drivers/CodexHomeLayout.ts",
+    "apps/server/src/provider/Drivers/CodexDriver.ts",
+    "apps/server/src/provider/Drivers/ClaudeHome.ts",
+    "packages/provider-core/src/server/pathExpansion.ts"
+  ],
+  "cases": [
+    {
+      "entry": {
+        "driver": "codex",
+        "config": {
+          "homePath": "",
+          "shadowHomePath": ""
+        },
+        "environment": []
+      },
+      "inherited": {},
+      "host": "/fixture-home",
+      "cwd": "/fixture-cwd",
+      "expected": {
+        "mode": "direct",
+        "sharedHomePath": "/fixture-home/.codex",
+        "continuationKey": "codex:home:/fixture-home/.codex"
+      }
+    },
+    {
+      "entry": {
+        "driver": "codex",
+        "config": {
+          "homePath": "~/.codex-work",
+          "shadowHomePath": ""
+        },
+        "environment": []
+      },
+      "inherited": {},
+      "host": "/fixture-home",
+      "cwd": "/fixture-cwd",
+      "expected": {
+        "mode": "direct",
+        "sharedHomePath": "/fixture-home/.codex-work",
+        "effectiveHomePath": "/fixture-home/.codex-work",
+        "continuationKey": "codex:home:/fixture-home/.codex-work"
+      }
+    },
+    {
+      "entry": {
+        "driver": "codex",
+        "config": {
+          "homePath": "profiles/../codex",
+          "shadowHomePath": ""
+        },
+        "environment": []
+      },
+      "inherited": {},
+      "host": "/fixture-home",
+      "cwd": "/fixture-cwd",
+      "expected": {
+        "mode": "direct",
+        "sharedHomePath": "/fixture-cwd/codex",
+        "effectiveHomePath": "/fixture-cwd/codex",
+        "continuationKey": "codex:home:/fixture-cwd/codex"
+      }
+    },
+    {
+      "entry": {
+        "driver": "codex",
+        "config": {
+          "homePath": "/srv/shared",
+          "shadowHomePath": "accounts/a"
+        },
+        "environment": []
+      },
+      "inherited": {},
+      "host": "/fixture-home",
+      "cwd": "/fixture-cwd",
+      "expected": {
+        "mode": "authOverlay",
+        "sharedHomePath": "/srv/shared",
+        "effectiveHomePath": "/fixture-cwd/accounts/a",
+        "continuationKey": "codex:home:/srv/shared"
+      }
+    },
+    {
+      "entry": {
+        "driver": "codex",
+        "config": {
+          "homePath": "",
+          "shadowHomePath": "~/account-a"
+        },
+        "environment": []
+      },
+      "inherited": {
+        "CODEX_HOME": "/ignored"
+      },
+      "host": "/fixture-home",
+      "cwd": "/fixture-cwd",
+      "expected": {
+        "mode": "authOverlay",
+        "sharedHomePath": "/fixture-home/.codex",
+        "effectiveHomePath": "/fixture-home/account-a",
+        "continuationKey": "codex:home:/fixture-home/.codex"
+      }
+    },
+    {
+      "entry": {
+        "driver": "codex",
+        "config": {
+          "homePath": "",
+          "shadowHomePath": ""
+        },
+        "environment": []
+      },
+      "inherited": {
+        "CODEX_HOME": "/env/codex"
+      },
+      "host": "/fixture-home",
+      "cwd": "/fixture-cwd",
+      "expected": {
+        "mode": "direct",
+        "sharedHomePath": "/env/codex",
+        "effectiveHomePath": "/env/codex",
+        "continuationKey": "codex:home:/env/codex"
+      }
+    },
+    {
+      "entry": {
+        "driver": "codex",
+        "config": {
+          "homePath": "",
+          "shadowHomePath": ""
+        },
+        "environment": []
+      },
+      "inherited": {
+        "CODEX_HOME": "~/inherited-codex"
+      },
+      "host": "/fixture-home",
+      "cwd": "/fixture-cwd",
+      "expected": {
+        "mode": "direct",
+        "sharedHomePath": "/fixture-home/inherited-codex",
+        "effectiveHomePath": "/fixture-home/inherited-codex",
+        "continuationKey": "codex:home:/fixture-home/inherited-codex"
+      }
+    },
+    {
+      "entry": {
+        "driver": "codex",
+        "config": {
+          "homePath": "~",
+          "shadowHomePath": ""
+        },
+        "environment": []
+      },
+      "inherited": {},
+      "host": "/fixture-home",
+      "cwd": "/fixture-cwd",
+      "expected": {
+        "mode": "direct",
+        "sharedHomePath": "/fixture-home",
+        "effectiveHomePath": "/fixture-home",
+        "continuationKey": "codex:home:/fixture-home"
+      }
+    },
+    {
+      "entry": {
+        "driver": "codex",
+        "config": {
+          "homePath": " /explicit/with-space ",
+          "shadowHomePath": ""
+        },
+        "environment": []
+      },
+      "inherited": {},
+      "host": "/fixture-home",
+      "cwd": "/fixture-cwd",
+      "expected": {
+        "mode": "direct",
+        "sharedHomePath": "/fixture-cwd/ /explicit/with-space ",
+        "effectiveHomePath": "/fixture-cwd/ /explicit/with-space ",
+        "continuationKey": "codex:home:/fixture-cwd/ /explicit/with-space "
+      }
+    },
+    {
+      "entry": {
+        "driver": "codex",
+        "config": {
+          "homePath": "~//nested",
+          "shadowHomePath": ""
+        },
+        "environment": []
+      },
+      "inherited": {},
+      "host": "/fixture-home",
+      "cwd": "/fixture-cwd",
+      "expected": {
+        "mode": "direct",
+        "sharedHomePath": "/fixture-home/nested",
+        "effectiveHomePath": "/fixture-home/nested",
+        "continuationKey": "codex:home:/fixture-home/nested"
+      }
+    },
+    {
+      "entry": {
+        "driver": "codex",
+        "config": {
+          "homePath": "~\\/nested",
+          "shadowHomePath": ""
+        },
+        "environment": []
+      },
+      "inherited": {},
+      "host": "/fixture-home",
+      "cwd": "/fixture-cwd",
+      "expected": {
+        "mode": "direct",
+        "sharedHomePath": "/fixture-home/nested",
+        "effectiveHomePath": "/fixture-home/nested",
+        "continuationKey": "codex:home:/fixture-home/nested"
+      }
+    },
+    {
+      "entry": {
+        "driver": "codex",
+        "config": {
+          "homePath": "",
+          "shadowHomePath": ""
+        },
+        "environment": []
+      },
+      "inherited": {
+        "CODEX_HOME": " /env/with-space "
+      },
+      "host": "/fixture-home",
+      "cwd": "/fixture-cwd",
+      "expected": {
+        "mode": "direct",
+        "sharedHomePath": "/fixture-cwd/ /env/with-space ",
+        "effectiveHomePath": "/fixture-cwd/ /env/with-space ",
+        "continuationKey": "codex:home:/fixture-cwd/ /env/with-space "
+      }
+    },
+    {
+      "entry": {
+        "driver": "codex",
+        "config": {
+          "homePath": " ",
+          "shadowHomePath": " "
+        },
+        "environment": []
+      },
+      "inherited": {},
+      "host": "/fixture-home",
+      "cwd": "/fixture-cwd",
+      "expected": {
+        "mode": "direct",
+        "sharedHomePath": "/fixture-home/.codex",
+        "continuationKey": "codex:home:/fixture-home/.codex"
+      }
+    },
+    {
+      "entry": {
+        "driver": "codex",
+        "config": {
+          "homePath": "/explicit",
+          "shadowHomePath": ""
+        },
+        "environment": [
+          {
+            "name": "CODEX_HOME",
+            "value": "/instance"
+          }
+        ]
+      },
+      "inherited": {
+        "CODEX_HOME": "/ignored"
+      },
+      "host": "/fixture-home",
+      "cwd": "/fixture-cwd",
+      "expected": {
+        "mode": "direct",
+        "sharedHomePath": "/explicit",
+        "effectiveHomePath": "/explicit",
+        "continuationKey": "codex:home:/explicit"
+      }
+    },
+    {
+      "entry": {
+        "driver": "claudeAgent",
+        "config": {
+          "homePath": "",
+          "shadowHomePath": ""
+        },
+        "environment": []
+      },
+      "inherited": {},
+      "host": "/fixture-home",
+      "cwd": "/fixture-cwd",
+      "expected": {
+        "sharedHomePath": "/fixture-home/.claude",
+        "environment": {}
+      }
+    },
+    {
+      "entry": {
+        "driver": "claudeAgent",
+        "config": {
+          "homePath": "~/.claude-work",
+          "shadowHomePath": ""
+        },
+        "environment": []
+      },
+      "inherited": {
+        "CLAUDE_CONFIG_DIR": "/ignored",
+        "KEEP": "value"
+      },
+      "host": "/fixture-home",
+      "cwd": "/fixture-cwd",
+      "expected": {
+        "sharedHomePath": "/fixture-home/.claude-work",
+        "environment": {
+          "CLAUDE_CONFIG_DIR": "/fixture-home/.claude-work",
+          "KEEP": "value"
+        }
+      }
+    },
+    {
+      "entry": {
+        "driver": "claudeAgent",
+        "config": {
+          "homePath": "profiles/../claude",
+          "shadowHomePath": "/ignored"
+        },
+        "environment": []
+      },
+      "inherited": {},
+      "host": "/fixture-home",
+      "cwd": "/fixture-cwd",
+      "expected": {
+        "sharedHomePath": "/fixture-cwd/claude",
+        "environment": {
+          "CLAUDE_CONFIG_DIR": "/fixture-cwd/claude"
+        }
+      }
+    },
+    {
+      "entry": {
+        "driver": "claudeAgent",
+        "config": {
+          "homePath": "",
+          "shadowHomePath": ""
+        },
+        "environment": []
+      },
+      "inherited": {
+        "CLAUDE_CONFIG_DIR": "/env/claude"
+      },
+      "host": "/fixture-home",
+      "cwd": "/fixture-cwd",
+      "expected": {
+        "sharedHomePath": "/env/claude",
+        "environment": {
+          "CLAUDE_CONFIG_DIR": "/env/claude"
+        }
+      }
+    },
+    {
+      "entry": {
+        "driver": "claudeAgent",
+        "config": {
+          "homePath": "",
+          "shadowHomePath": ""
+        },
+        "environment": []
+      },
+      "inherited": {
+        "CLAUDE_CONFIG_DIR": "~/literal"
+      },
+      "host": "/fixture-home",
+      "cwd": "/fixture-cwd",
+      "expected": {
+        "sharedHomePath": "/fixture-cwd/~/literal",
+        "environment": {
+          "CLAUDE_CONFIG_DIR": "~/literal"
+        }
+      }
+    },
+    {
+      "entry": {
+        "driver": "claudeAgent",
+        "config": {
+          "homePath": "",
+          "shadowHomePath": ""
+        },
+        "environment": []
+      },
+      "inherited": {
+        "CLAUDE_CONFIG_DIR": " /env/literal ",
+        "KEEP": "value"
+      },
+      "host": "/fixture-home",
+      "cwd": "/fixture-cwd",
+      "expected": {
+        "sharedHomePath": "/env/literal",
+        "environment": {
+          "CLAUDE_CONFIG_DIR": " /env/literal ",
+          "KEEP": "value"
+        }
+      }
+    },
+    {
+      "entry": {
+        "driver": "claudeAgent",
+        "config": {
+          "homePath": "~\\work",
+          "shadowHomePath": ""
+        },
+        "environment": []
+      },
+      "inherited": {},
+      "host": "/fixture-home",
+      "cwd": "/fixture-cwd",
+      "expected": {
+        "sharedHomePath": "/fixture-home/work",
+        "environment": {
+          "CLAUDE_CONFIG_DIR": "/fixture-home/work"
+        }
+      }
+    }
+  ]
+}

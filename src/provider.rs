@@ -1462,6 +1462,8 @@ struct Instance {
     discovered: bool,
     provider: Option<std::sync::Arc<dyn Provider>>,
     binary: std::path::PathBuf,
+    preparation_error: Option<String>,
+    continuation_key: Option<String>,
 }
 impl ConfiguredProviders {
     pub fn new(defaults: std::sync::Arc<dyn Provider>, directory: std::path::PathBuf) -> Self {
@@ -1504,31 +1506,37 @@ impl ConfiguredProviders {
                 driver
             };
             let binary = instance_binary(entry, name);
-            let env = instance_environment(entry);
-            let home = env
-                .iter()
-                .find(|(k, _)| {
-                    k == if driver == "codex" {
-                        "CODEX_HOME"
-                    } else {
-                        "CLAUDE_CONFIG_DIR"
-                    }
-                })
-                .map(|(_, v)| std::path::PathBuf::from(v));
+            let resolved = crate::provider_home::resolve(entry);
+            let preparation_error = resolved.as_ref().err().cloned();
+            let layout = resolved.ok().flatten();
+            let continuation_key = layout.as_ref().map(|home| home.continuation_key());
+            let env = layout
+                .as_ref()
+                .map(|home| home.environment.clone())
+                .unwrap_or_else(|| crate::provider_home::raw_environment(entry));
+            let home = layout.as_ref().and_then(|home| home.runtime.clone());
+            let setup = layout
+                .filter(|home| home.driver == "codex")
+                .map(crate::provider_home::Setup::new);
             let args = launch_args(entry["config"]["launchArgs"].as_str().unwrap_or(""))
                 .unwrap_or_default();
-            let provider: Option<std::sync::Arc<dyn Provider>> = match driver {
-                "codex" => Some(std::sync::Arc::new(
-                    crate::codex::CodexProvider::new(binary.clone(), home)
-                        .with_environment(env)
-                        .with_launch_args(args.clone()),
-                )),
-                "claudeAgent" => Some(std::sync::Arc::new(
-                    crate::claude::ClaudeProvider::new(binary.clone())
-                        .with_environment(env)
-                        .with_launch_args(args.clone()),
-                )),
-                _ => None,
+            let provider: Option<std::sync::Arc<dyn Provider>> = if preparation_error.is_some() {
+                None
+            } else {
+                match driver {
+                    "codex" => Some(std::sync::Arc::new(
+                        crate::codex::CodexProvider::new(binary.clone(), home)
+                            .with_environment(env)
+                            .with_home_setup(setup)
+                            .with_launch_args(args.clone()),
+                    )),
+                    "claudeAgent" => Some(std::sync::Arc::new(
+                        crate::claude::ClaudeProvider::new(binary.clone())
+                            .with_environment(env)
+                            .with_launch_args(args.clone()),
+                    )),
+                    _ => None,
+                }
             };
             cache.insert(
                 id.clone(),
@@ -1537,6 +1545,8 @@ impl ConfiguredProviders {
                     discovered: false,
                     provider,
                     binary,
+                    preparation_error,
+                    continuation_key,
                 },
             );
         }
@@ -1551,16 +1561,19 @@ impl Provider for ConfiguredProviders {
         native: Option<&'a str>,
         revoke: bool,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
-        let selected = self
-            .instances
-            .lock()
-            .unwrap()
-            .get(if matches!(instance, "claude" | "claude-code") {
-                "claudeAgent"
-            } else {
-                instance
-            })
-            .and_then(|i| i.provider.clone());
+        let selected = {
+            let instances = self.instances.lock().unwrap();
+            instances
+                .get(instance)
+                .or_else(|| {
+                    if matches!(instance, "claude" | "claude-code") {
+                        instances.get("claudeAgent")
+                    } else {
+                        None
+                    }
+                })
+                .and_then(|instance| instance.provider.clone())
+        };
         Box::pin(async move {
             match selected {
                 Some(p) => p.detach(instance, key, native, revoke).await,
@@ -1659,6 +1672,9 @@ impl Provider for ConfiguredProviders {
             }
             descriptor["instanceId"] = json!(id);
             descriptor["driver"] = instance.settings["driver"].clone();
+            if let Some(key) = &instance.continuation_key {
+                descriptor["continuation"] = json!({"groupKey":key});
+            }
             if let Some(color) = instance.settings.get("accentColor") {
                 descriptor["accentColor"] = color.clone();
             }
@@ -1670,10 +1686,16 @@ impl Provider for ConfiguredProviders {
             descriptor["enabled"] =
                 json!(crate::provider_policy::instance_enabled(&instance.settings));
             if instance.provider.is_none() {
-                let reason = format!(
-                    "Driver '{}' is not registered in this build.",
-                    instance.settings["driver"].as_str().unwrap_or("")
-                );
+                let reason = instance
+                    .preparation_error
+                    .as_deref()
+                    .map(crate::provider_home::display_error)
+                    .unwrap_or_else(|| {
+                        format!(
+                            "Driver '{}' is not registered in this build.",
+                            instance.settings["driver"].as_str().unwrap_or("")
+                        )
+                    });
                 descriptor["enabled"] = json!(false);
                 descriptor["installed"] = json!(false);
                 descriptor["status"] = json!("error");
@@ -1688,6 +1710,19 @@ impl Provider for ConfiguredProviders {
                 descriptor["status"] = json!("disabled");
             }
             result.push(descriptor);
+        }
+        for provider in &mut result {
+            if provider["instanceId"]
+                .as_str()
+                .is_some_and(|id| !instances.contains_key(id))
+                && matches!(provider["driver"].as_str(), Some("codex" | "claudeAgent"))
+            {
+                if let Ok(Some(home)) =
+                    crate::provider_home::resolve(&json!({"driver":provider["driver"]}))
+                {
+                    provider["continuation"] = json!({"groupKey":home.continuation_key()});
+                }
+            }
         }
         result
     }
@@ -1721,25 +1756,28 @@ impl Provider for ConfiguredProviders {
         let selected = {
             let instances = self.instances.lock().unwrap();
             instances
-                .get(
+                .get(&input.provider_instance_id)
+                .or_else(|| {
                     if matches!(
                         input.provider_instance_id.as_str(),
                         "claude" | "claude-code"
                     ) {
-                        "claudeAgent"
+                        instances.get("claudeAgent")
                     } else {
-                        &input.provider_instance_id
-                    },
-                )
+                        None
+                    }
+                })
                 .map(|i| {
                     if !crate::provider_policy::instance_enabled(&i.settings) {
                         Err("provider instance is disabled".to_owned())
                     } else if crate::executable::resolve(&i.binary).is_none() {
                         Err("provider binary is unavailable".to_owned())
                     } else {
-                        i.provider
-                            .clone()
-                            .ok_or_else(|| "unsupported provider driver".to_owned())
+                        i.provider.clone().ok_or_else(|| {
+                            i.preparation_error
+                                .clone()
+                                .unwrap_or_else(|| "unsupported provider driver".to_owned())
+                        })
                     }
                 })
         };
@@ -1807,28 +1845,11 @@ pub(crate) fn launch_args(text: &str) -> Result<Vec<String>, String> {
 }
 
 pub(crate) fn instance_environment(entry: &serde_json::Value) -> Vec<(String, String)> {
-    let mut env: Vec<(String, String)> = entry["environment"]
-        .as_array()
-        .into_iter()
+    crate::provider_home::resolve(entry)
+        .ok()
         .flatten()
-        .filter_map(|v| Some((v["name"].as_str()?.into(), v["value"].as_str()?.into())))
-        .collect();
-    let key = if entry["driver"] == "codex" {
-        "CODEX_HOME"
-    } else {
-        "CLAUDE_CONFIG_DIR"
-    };
-    if let Some(home) = entry["config"]
-        .get("shadowHomePath")
-        .filter(|v| v.as_str().is_some_and(|s| !s.is_empty()))
-        .unwrap_or(&entry["config"]["homePath"])
-        .as_str()
-        .filter(|s| !s.is_empty())
-    {
-        env.retain(|(k, _)| k != key);
-        env.push((key.into(), expand_home(home).to_string_lossy().into_owned()));
-    }
-    env
+        .map(|home| home.environment)
+        .unwrap_or_else(|| crate::provider_home::raw_environment(entry))
 }
 pub(crate) fn expand_home(path: &str) -> std::path::PathBuf {
     if let Some(rest) = path.strip_prefix("~/") {

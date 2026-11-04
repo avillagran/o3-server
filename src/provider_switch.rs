@@ -8,78 +8,27 @@ use crate::{
 };
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
-use std::{
-    path::{Component, Path, PathBuf},
-    sync::Arc,
-};
+use std::{path::PathBuf, sync::Arc};
 type Result<T> = std::result::Result<T, String>;
 pub(crate) fn initialize(db: &Connection) -> Result<()> {
     db.execute_batch("CREATE TABLE IF NOT EXISTS provider_switches(id TEXT PRIMARY KEY,thread_id TEXT NOT NULL,payload TEXT NOT NULL,released_at TEXT,last_error TEXT); CREATE INDEX IF NOT EXISTS provider_switches_pending ON provider_switches(thread_id) WHERE released_at IS NULL;").map_err(|e|e.to_string())?;
     db.execute("UPDATE records AS p SET body=json_set(body,'$.ownerNodeId',NULL) WHERE kind='providerThreads' AND json_extract(body,'$.driver')='claudeAgent' AND json_extract(body,'$.appThreadId')=thread_id AND EXISTS(SELECT 1 FROM records n WHERE n.kind='nodes' AND n.thread_id=p.thread_id AND n.id=json_extract(p.body,'$.ownerNodeId') AND json_extract(n.body,'$.kind')='root_turn')",[]).map_err(|e|e.to_string())?;
     Ok(())
 }
-fn absolute(path: &Path) -> Result<PathBuf> {
-    let path = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        std::env::current_dir()
-            .map_err(|e| e.to_string())?
-            .join(path)
-    };
-    let mut result = PathBuf::new();
-    for part in path.components() {
-        match part {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                result.pop();
-            }
-            part => result.push(part.as_os_str()),
-        }
-    }
-    Ok(result)
-}
 fn identity(s: &State, id: &str) -> Result<(String, PathBuf)> {
     let settings = crate::settings::read(s)?;
     let driver = crate::provider_input::driver(s, &json!(id))?;
-    let entry = &settings["providerInstances"][id];
+    let mut entry = settings["providerInstances"][id].clone();
     if !matches!(id, "codex" | "claudeAgent" | "claude" | "claude-code")
         && !entry["driver"].is_string()
     {
         return Ok((format!("unavailable:{id}"), PathBuf::new()));
     }
-    if !matches!(driver.as_str(), "codex" | "claudeAgent") {
-        return Ok((driver, PathBuf::from(format!("instance:{id}"))));
+    entry["driver"] = json!(driver);
+    match crate::provider_home::resolve(&entry)? {
+        Some(home) => Ok((home.driver, home.shared)),
+        None => Ok((driver, PathBuf::from(format!("instance:{id}")))),
     }
-    let configured = entry["config"]["homePath"]
-        .as_str()
-        .filter(|v| !v.trim().is_empty());
-    let inherited = if driver == "claudeAgent" {
-        entry["environment"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .rev()
-            .find(|e| e["name"] == "CLAUDE_CONFIG_DIR")
-            .and_then(|e| e["value"].as_str())
-            .map(str::to_owned)
-            .or_else(|| std::env::var("CLAUDE_CONFIG_DIR").ok())
-            .filter(|v| !v.trim().is_empty())
-    } else {
-        None
-    };
-    let path = if let Some(configured) = configured {
-        crate::provider::expand_home(configured)
-    } else if let Some(inherited) = inherited {
-        PathBuf::from(inherited.trim())
-    } else {
-        PathBuf::from(std::env::var_os("HOME").ok_or("Provider home directory is unavailable")?)
-            .join(if driver == "codex" {
-                ".codex"
-            } else {
-                ".claude"
-            })
-    };
-    Ok((driver, absolute(&path)?))
 }
 fn current(db: &Connection, thread: &Value) -> Result<Option<Value>> {
     let Some(id) = thread["activeProviderThreadId"].as_str() else {

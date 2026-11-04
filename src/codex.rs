@@ -66,6 +66,7 @@ enum Op {
     Subscribe(String, Route, oneshot::Sender<Result<(), String>>),
     Unsubscribe(String),
     Shutdown(oneshot::Sender<()>),
+    WaitForClose(String, oneshot::Sender<Result<(), String>>),
     ReleaseMcp(
         String,
         Option<String>,
@@ -97,6 +98,7 @@ impl Client {
 pub struct CodexProvider {
     executable: PathBuf,
     home: Option<PathBuf>,
+    home_setup: Option<std::sync::Arc<crate::provider_home::Setup>>,
     environment: Vec<(String, String)>,
     launch_args: Vec<String>,
     idle_timeout: std::time::Duration,
@@ -197,6 +199,7 @@ impl CodexProvider {
         Self {
             executable: crate::executable::resolve(&executable).unwrap_or(executable),
             home,
+            home_setup: None,
             environment: Vec::new(),
             launch_args: Vec::new(),
             idle_timeout: std::time::Duration::from_secs(60),
@@ -214,6 +217,13 @@ impl CodexProvider {
         self.launch_args = args;
         self
     }
+    pub(crate) fn with_home_setup(
+        mut self,
+        setup: Option<std::sync::Arc<crate::provider_home::Setup>>,
+    ) -> Self {
+        self.home_setup = setup;
+        self
+    }
     pub fn with_environment(mut self, environment: Vec<(String, String)>) -> Self {
         self.environment = environment;
         self
@@ -228,9 +238,21 @@ impl CodexProvider {
         {
             return Ok(());
         }
+        if let Some(setup) = &self.home_setup {
+            setup.prepare().await?;
+        }
         self.probe_cached()
     }
     pub fn probe_cached(&self) -> Result<(), String> {
+        if let Some(setup) = &self.home_setup {
+            if let Err(error) = setup.check_private() {
+                let mut d = self.descriptor.lock().unwrap();
+                d["status"] = json!("error");
+                d["message"] = json!(crate::provider_home::display_error(&error));
+                d["models"] = json!([]);
+                return Err(error);
+            }
+        }
         let installed = crate::executable::resolve(&self.executable).is_some();
         let mut d = self.descriptor.lock().unwrap();
         d["installed"] = json!(installed);
@@ -248,7 +270,9 @@ impl CodexProvider {
             "Codex binary not found"
         });
         d["checkedAt"] = json!(crate::store::iso(crate::store::now_ms()));
-        if d["models"].as_array().is_none_or(|m| m.is_empty()) {
+        if self.home_setup.as_ref().is_none_or(|setup| setup.ready())
+            && d["models"].as_array().is_none_or(|m| m.is_empty())
+        {
             d["models"] = cached_models(self.home.as_deref());
         }
         if installed {
@@ -284,6 +308,9 @@ impl CodexProvider {
         result
     }
     async fn launch(&self) -> Result<Client, String> {
+        if let Some(setup) = &self.home_setup {
+            setup.prepare().await?;
+        }
         let mut cmd = Command::new(&self.executable);
         cmd.envs(self.environment.iter().cloned());
         cmd.arg("app-server")
@@ -391,7 +418,9 @@ impl CodexProvider {
             } else {
                 &input.model_selection["o3BrowserMcp"]
             };
-            params["config"] = json!({"mcp_servers.t3-code":if injected.is_object(){json!({"url":injected["url"],"http_headers":injected["headers"]})}else{json!({"enabled":false})}});
+            // Native subscriptions keep sessions alive between turns. Once unsubscribed,
+            // release the idle writer rather than retaining it in the old account process.
+            params["config"] = json!({"thread_unload_delay_secs":0,"mcp_servers.t3-code":if injected.is_object(){json!({"url":injected["url"],"http_headers":injected["headers"]})}else{json!({"enabled":false})}});
             let result = if let Some(id) = input.model_selection["nativeForkSource"].as_str() {
                 params["threadId"] = json!(id);
                 if input.model_selection["nativeForkLastTurnId"].is_string() {
@@ -604,10 +633,19 @@ async fn unload(
     }
     let ids = rx.await.map_err(|_| "Codex closed during thread unload")?;
     for id in ids {
-        if let Err(error) = client
-            .call("thread/unsubscribe", json!({"threadId":id}))
+        let (closed, finished) = oneshot::channel();
+        if client
+            .0
+            .send(Op::WaitForClose(id.clone(), closed))
             .await
+            .is_err()
         {
+            return Ok(());
+        }
+        let response = client
+            .call("thread/unsubscribe", json!({"threadId":id}))
+            .await;
+        if let Err(error) = &response {
             let lower = error.to_lowercase();
             if ![
                 "not found",
@@ -618,7 +656,19 @@ async fn unload(
             .iter()
             .any(|s| lower.contains(s))
             {
-                return Err(error);
+                return Err(error.clone());
+            }
+        } else if response
+            .as_ref()
+            .ok()
+            .is_some_and(|r| matches!(r["status"].as_str(), Some("unsubscribed" | "notSubscribed")))
+        {
+            // The RPC acknowledges removal of a subscription. The native writer is
+            // released asynchronously; wait for its close notification before resuming elsewhere.
+            match tokio::time::timeout(std::time::Duration::from_secs(30), finished).await {
+                Ok(Ok(result)) => result?,
+                Ok(Err(_)) => {} // The actor reaped its process before dropping the waiter.
+                Err(_) => return Err("Codex native thread close timed out".into()),
             }
         }
     }
@@ -668,6 +718,7 @@ impl Provider for CodexProvider {
         Box::pin(async move {
             let discovery = Self::new(self.executable.clone(), self.home.clone())
                 .with_environment(self.environment.clone())
+                .with_home_setup(self.home_setup.clone())
                 .with_launch_args(self.launch_args.clone());
             let result = async {
                 let c = discovery.connection().await?;
@@ -744,6 +795,7 @@ impl Provider for CodexProvider {
             // Quota readers do not keep the inference actor alive between refreshes.
             let probe = Self::new(self.executable.clone(), self.home.clone())
                 .with_environment(self.environment.clone())
+                .with_home_setup(self.home_setup.clone())
                 .with_launch_args(self.launch_args.clone());
             let result = async {
                 let c = probe.connection().await?;
@@ -855,6 +907,7 @@ async fn actor(
     let mut reader = BufReader::with_capacity(8192, child.stdout.take().unwrap());
     let mut calls = HashMap::<u64, (String, Option<String>, Reply)>::new();
     let mut unloaded = std::collections::HashSet::<String>::new();
+    let mut closing = HashMap::<String, Vec<oneshot::Sender<Result<(), String>>>>::new();
     let mut native_contexts = HashMap::<String, std::sync::Arc<crate::native_mcp::Context>>::new();
     let mut routes = HashMap::<String, Route>::new();
     let mut next = 0u64;
@@ -873,6 +926,12 @@ async fn actor(
                     None=>return Ok(()),
                     Some(Op::Subscribe(id,tx,ack))=>{let result=if routes.len()>=32||routes.contains_key(&id){Err("Codex thread already active or capacity reached".into())}else{routes.insert(id,tx);Ok(())};let _=ack.send(result);continue;},
                     Some(Op::Shutdown(ack))=>{shutdown=Some(ack);return Ok(());},
+                    Some(Op::WaitForClose(id,ack))=>{
+                        closing.retain(|_, waiters| {waiters.retain(|w| !w.is_closed()); !waiters.is_empty()});
+                        if closing.values().map(Vec::len).sum::<usize>() >= 256 {let _=ack.send(Err("Codex thread close waiter capacity reached".into()));}
+                        else {closing.entry(id).or_default().push(ack);}
+                        continue;
+                    },
                     Some(Op::Unsubscribe(id))=>{routes.remove(&id);continue;},
                     Some(Op::ReleaseMcp(key,native,release,ack))=>{
                         let mut ids:Vec<_>=native_contexts.iter().filter(|(_,c)|c.thread_key()==key).map(|(id,_)|id.clone()).collect();
@@ -916,6 +975,11 @@ async fn actor(
                         }
                     }
                     continue;
+                }
+                if frame["method"]=="thread/closed" {
+                    if let Some(id)=frame["params"]["threadId"].as_str(){
+                        if let Some(waiters)=closing.remove(id){for waiter in waiters{let _=waiter.send(Ok(()));}}
+                    }
                 }
                 if frame["method"]=="account/rateLimits/updated" {descriptor.lock().unwrap()["usageLimits"]=usage_limits(&frame["params"]["rateLimits"]);}
                 let tid=frame["params"]["threadId"].as_str();

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Eight short installed Claude/Codex turns: forks, uncertain-context recovery and merge-back."""
-import json, os, pathlib, shutil, signal, subprocess, tempfile, time, sys
+"""Run an installed Claude/Codex continuation proof with isolated credentials and process cleanup."""
+import argparse, json, os, pathlib, shutil, signal, subprocess, tempfile, time, sys
 
 def cleanup_owned(home):
     markers={('HOME='+str(home)).encode(),('CLAUDE_CONFIG_DIR='+str(home/'.claude')).encode(),('CODEX_HOME='+str(home/'.codex')).encode()}
@@ -20,10 +20,14 @@ def cleanup_owned(home):
         except ProcessLookupError:pass
 
 def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('test',nargs='?',default='live_native_fork_and_merge_back_with_private_codewords')
+    parser.add_argument('--target',choices=['context_transfer','provider_home'],default='context_transfer')
+    args=parser.parse_args()
     root=pathlib.Path(__file__).resolve().parent.parent
     env={**os.environ,'TMPDIR':'/var/tmp/o3-build/tmp','CARGO_TARGET_DIR':'/var/tmp/o3-build/target-recheck'}
-    build=subprocess.run(['cargo','test','--locked','-j4','--test','context_transfer','--no-run','--message-format=json'],cwd=root,env=env,check=True,capture_output=True,text=True)
-    binary=next(v['executable'] for line in build.stdout.splitlines() if (v:=json.loads(line)).get('executable') and v.get('target',{}).get('name')=='context_transfer')
+    build=subprocess.run(['cargo','test','--locked','-j4','--test',args.target,'--no-run','--message-format=json'],cwd=root,env=env,check=True,capture_output=True,text=True)
+    binary=next(v['executable'] for line in build.stdout.splitlines() if (v:=json.loads(line)).get('executable') and v.get('target',{}).get('name')==args.target)
     original=pathlib.Path.home()
     with tempfile.TemporaryDirectory(prefix='transfer-live-',dir='/var/tmp/o3-build') as temp:
         home=pathlib.Path(temp)
@@ -31,7 +35,7 @@ def main():
             destination=home/folder/name;destination.parent.mkdir(mode=0o700)
             shutil.copyfile(original/folder/name,destination);destination.chmod(0o600)
         env.update(HOME=temp,CLAUDE_CONFIG_DIR=str(home/'.claude'),CODEX_HOME=str(home/'.codex'),T3CODE_HOME=str(home/'t3'),XDG_CONFIG_HOME=str(home/'config'),XDG_DATA_HOME=str(home/'data'),XDG_STATE_HOME=str(home/'state'))
-        try:subprocess.run([binary,sys.argv[1] if len(sys.argv)>1 else 'live_native_fork_and_merge_back_with_private_codewords','--ignored','--nocapture'],cwd=root,env=env,check=True)
+        try:subprocess.run([binary,args.test,'--ignored','--nocapture'],cwd=root,env=env,check=True)
         finally:cleanup_owned(home)
 
 if __name__=='__main__':main()
