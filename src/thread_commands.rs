@@ -167,6 +167,13 @@ struct Outcome {
 }
 
 pub fn dispatch(s: &Arc<State>, c: &Value) -> Result<Value> {
+    dispatch_scoped(s, c, None)
+}
+pub(crate) fn dispatch_scoped(
+    s: &Arc<State>,
+    c: &Value,
+    authority: Option<&crate::mcp_access::Authority>,
+) -> Result<Value> {
     let cid = c["commandId"]
         .as_str()
         .filter(|s| !s.is_empty())
@@ -179,6 +186,9 @@ pub fn dispatch(s: &Arc<State>, c: &Value) -> Result<Value> {
         return Err("rollback recovery required".into());
     }
     let tx = db.transaction().map_err(|e| e.to_string())?;
+    if let Some(authority) = authority {
+        authority.check(&tx, c)?;
+    }
     if let Some(r) = tx
         .query_row(
             "SELECT result FROM receipts WHERE command_id=?",

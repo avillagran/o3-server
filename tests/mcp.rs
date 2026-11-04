@@ -334,7 +334,7 @@ fn mcp_checks_session_ownership_revocation_and_invalid_arguments() {
         &s,
         &token,
         Some(&id),
-        json!({"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"t3_thread_read","arguments":{"threadId":"a","limit":101}}}),
+        json!({"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"t3_thread_read","arguments":{"threadId":"a","limit":0}}}),
     );
     assert_eq!(bad["error"]["code"], -32602);
     let (_, _, missing) = request(
@@ -591,4 +591,849 @@ fn mcp_payload_budget_pages_dense_activity_without_losing_items() {
         args["afterPosition"] = result["nextPosition"].clone();
     }
     assert_eq!(seen.len(), 50);
+}
+
+fn control_fixture() -> (support::Server, t3_protocol::Connection) {
+    let s = support::start(|s| {
+        *s.provider.lock().unwrap() =
+            Some(std::sync::Arc::new(o3_server::provider::ScriptedProvider))
+    });
+    let c = s.connect();
+    let root = s.dir.join("workspace");
+    std::fs::create_dir_all(&root).unwrap();
+    c.rpc("projects.mutate",json!({"type":"project.create","commandId":"pc","projectId":"p","title":"Control","workspaceRoot":root,"scripts":[]})).unwrap();
+    for (tid, mode) in [("low", "approval-required"), ("high", "full-access")] {
+        c.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":format!("create-{tid}"),"threadId":tid,"projectId":"p","title":tid,"modelSelection":{"instanceId":"scripted","model":"test","options":[]},"runtimeMode":mode,"interactionMode":"default"})).unwrap();
+    }
+    (s, c)
+}
+fn tool_error(s: &support::Server, token: &str, id: &str, name: &str, args: Value) -> Value {
+    let (_, _, v) = request(
+        s,
+        token,
+        Some(id),
+        json!({"jsonrpc":"2.0","id":23,"method":"tools/call","params":{"name":name,"arguments":args}}),
+    );
+    assert_eq!(v["result"]["isError"], true, "{v}");
+    v["result"]["structuredContent"].clone()
+}
+#[test]
+fn mcp_writes_enforce_current_credential_and_target_runtime_ceiling() {
+    let (s, c) = control_fixture();
+    let readonly = s
+        .state
+        .issue_mcp_session("read-only", 60_000, "reader")
+        .unwrap();
+    let reader_id = init(&s, &readonly);
+    let limited = s
+        .state
+        .issue_mcp_session("approval-required", 60_000, "limited")
+        .unwrap();
+    let id = init(&s, &limited);
+    assert_eq!(
+        tool_error(
+            &s,
+            &readonly,
+            &reader_id,
+            "t3_thread_organize",
+            json!({"threadId":"low","action":"pin"})
+        )["code"],
+        "capability_denied"
+    );
+    assert_eq!(
+        tool_error(
+            &s,
+            &limited,
+            &id,
+            "t3_thread_organize",
+            json!({"threadId":"high","action":"pin"})
+        )["code"],
+        "runtime_mode_escalation_denied"
+    );
+    call(
+        &s,
+        &limited,
+        &id,
+        "t3_thread_organize",
+        json!({"threadId":"low","action":"pin"}),
+    );
+    assert!(call(
+        &s,
+        &limited,
+        &id,
+        "t3_thread_list",
+        json!({"projectId":"p"})
+    )["threads"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|t| t["threadId"] == "low"));
+    c.rpc("orchestration.dispatchCommand",json!({"type":"thread.runtime-mode.set","commandId":"raise-mode","threadId":"low","runtimeMode":"full-access"})).unwrap();
+    assert_eq!(
+        tool_error(
+            &s,
+            &limited,
+            &id,
+            "t3_thread_configure",
+            json!({"threadId":"low","modelSelection":{"instanceId":"scripted","model":"changed"}})
+        )["code"],
+        "runtime_mode_escalation_denied"
+    );
+    let full = s
+        .state
+        .issue_mcp_session("full-access", 60_000, "full")
+        .unwrap();
+    let full_id = init(&s, &full);
+    let claims = s.state.mcp_session(&full).unwrap();
+    s.state.db.lock().unwrap().execute("UPDATE auth_sessions SET client=json_set(client,'$.runtimeModeCeiling','approval-required') WHERE session_id=?",[claims["sid"].as_str().unwrap()]).unwrap();
+    assert_eq!(
+        tool_error(
+            &s,
+            &full,
+            &full_id,
+            "t3_thread_organize",
+            json!({"threadId":"high","action":"archive"})
+        )["code"],
+        "runtime_mode_escalation_denied"
+    );
+    assert_eq!(
+        call(
+            &s,
+            &full,
+            &full_id,
+            "t3_thread_read",
+            json!({"threadId":"high"})
+        )["thread"]["archived"],
+        false
+    );
+}
+#[test]
+fn mcp_send_is_idempotent_has_agent_provenance_and_cannot_approve_permissions() {
+    let (s, _) = control_fixture();
+    let token = s
+        .state
+        .issue_mcp_session("full-access", 60_000, "control")
+        .unwrap();
+    let id = init(&s, &token);
+    let args = json!({"threadId":"high","message":"test MCP input","clientRequestId":"once"});
+    let first = call(&s, &token, &id, "t3_thread_send", args.clone());
+    assert_eq!(first["delivery"], "started");
+    let replay = call(&s, &token, &id, "t3_thread_send", args);
+    assert_eq!(replay["runId"], first["runId"]);
+    assert_eq!(replay["messageId"], first["messageId"]);
+    assert!(support::wait_for(std::time::Duration::from_secs(5), || {
+        s.state.db.lock().unwrap().query_row("SELECT count(*) FROM records WHERE kind='runtimeRequests' AND json_extract(body,'$.status')='pending'",[],|r|r.get::<_,i64>(0)).unwrap()==1
+    }));
+    let user_count:i64=s.state.db.lock().unwrap().query_row("SELECT count(*) FROM records WHERE kind='messages' AND thread_id='high' AND json_extract(body,'$.role')='user'",[],|r|r.get(0)).unwrap();
+    assert_eq!(user_count, 1);
+    let provenance:String=s.state.db.lock().unwrap().query_row("SELECT json_extract(body,'$.createdBy')||'/'||json_extract(body,'$.creationSource') FROM records WHERE kind='messages' AND id=?",[first["messageId"].as_str().unwrap()],|r|r.get(0)).unwrap();
+    assert_eq!(provenance, "agent/mcp");
+    assert_eq!(
+        call(
+            &s,
+            &token,
+            &id,
+            "t3_pending_request_list",
+            json!({"threadId":"high"})
+        )["requestIds"],
+        json!([])
+    );
+    assert_eq!(
+        tool_error(
+            &s,
+            &token,
+            &id,
+            "t3_pending_request_respond",
+            json!({"threadId":"high","requestId":"approval-1","answers":{"decision":"allow"}})
+        )["code"],
+        "capability_denied"
+    );
+    let waiting = call(
+        &s,
+        &token,
+        &id,
+        "t3_thread_wait",
+        json!({"threadId":"high","runId":first["runId"],"timeoutMs":5}),
+    );
+    assert_eq!(waiting["timedOut"], true);
+    call(
+        &s,
+        &token,
+        &id,
+        "t3_thread_interrupt",
+        json!({"threadId":"high","runId":first["runId"],"clientRequestId":"stop-once"}),
+    );
+    let done = call(
+        &s,
+        &token,
+        &id,
+        "t3_thread_wait",
+        json!({"threadId":"high","runId":first["runId"],"timeoutMs":5000}),
+    );
+    assert_eq!(done["status"], "interrupted");
+    let replay = call(
+        &s,
+        &token,
+        &id,
+        "t3_thread_send",
+        json!({"threadId":"high","message":"test MCP input","clientRequestId":"once"}),
+    );
+    assert_eq!(replay["runId"], first["runId"]);
+    assert_eq!(replay["status"], "interrupted");
+}
+#[test]
+fn mcp_queue_operations_keep_order_and_reject_started_runs() {
+    let (s, _) = control_fixture();
+    let token = s
+        .state
+        .issue_mcp_session("full-access", 60_000, "control")
+        .unwrap();
+    let id = init(&s, &token);
+    let first = call(
+        &s,
+        &token,
+        &id,
+        "t3_thread_send",
+        json!({"threadId":"high","message":"running","clientRequestId":"running"}),
+    );
+    let a = call(
+        &s,
+        &token,
+        &id,
+        "t3_thread_send",
+        json!({"threadId":"high","message":"queued a","mode":"queue"}),
+    );
+    let b = call(
+        &s,
+        &token,
+        &id,
+        "t3_thread_send",
+        json!({"threadId":"high","message":"queued b","mode":"queue"}),
+    );
+    assert_eq!(a["delivery"], "queued");
+    assert_eq!(b["delivery"], "queued");
+    call(
+        &s,
+        &token,
+        &id,
+        "t3_queue_edit",
+        json!({"threadId":"high","queuedRunId":a["runId"],"text":"edited a"}),
+    );
+    assert_eq!(
+        call(
+            &s,
+            &token,
+            &id,
+            "t3_queue_read",
+            json!({"threadId":"high","queuedRunId":a["runId"]})
+        )["text"],
+        "edited a"
+    );
+    call(
+        &s,
+        &token,
+        &id,
+        "t3_queue_reorder",
+        json!({"threadId":"high","queuedRunId":b["runId"],"beforeRunId":a["runId"]}),
+    );
+    let list = call(&s, &token, &id, "t3_queue_list", json!({"threadId":"high"}));
+    assert_eq!(list["items"][0]["queuedRunId"], b["runId"]);
+    assert!(tool_error(
+        &s,
+        &token,
+        &id,
+        "t3_queue_edit",
+        json!({"threadId":"high","queuedRunId":first["runId"],"text":"bad"})
+    )["code"]
+        .is_string());
+    for run in [&a, &b] {
+        call(
+            &s,
+            &token,
+            &id,
+            "t3_queue_cancel",
+            json!({"threadId":"high","queuedRunId":run["runId"]}),
+        );
+    }
+    assert_eq!(
+        call(&s, &token, &id, "t3_queue_list", json!({"threadId":"high"}))["items"],
+        json!([])
+    );
+    call(
+        &s,
+        &token,
+        &id,
+        "t3_thread_interrupt",
+        json!({"threadId":"high"}),
+    );
+}
+#[test]
+fn mcp_organize_configure_and_no_active_interrupt_follow_existing_commands() {
+    let (s, _) = control_fixture();
+    let token = s
+        .state
+        .issue_mcp_session("full-access", 60_000, "control")
+        .unwrap();
+    let id = init(&s, &token);
+    call(
+        &s,
+        &token,
+        &id,
+        "t3_thread_configure",
+        json!({"threadId":"high","modelSelection":{"provider":"scripted","model":"other","options":[{"id":" effort ","value":" high "}]}}),
+    );
+    let config = call(
+        &s,
+        &token,
+        &id,
+        "t3_thread_configuration",
+        json!({"threadId":"high"}),
+    );
+    assert_eq!(config["modelSelection"]["instanceId"], "scripted");
+    assert_eq!(config["modelSelection"]["model"], "other");
+    assert_eq!(
+        config["modelSelection"]["options"],
+        json!([{"id":"effort","value":"high"}])
+    );
+    assert_eq!(config["runtimeMode"], "full-access");
+    call(
+        &s,
+        &token,
+        &id,
+        "t3_thread_organize",
+        json!({"threadId":"high","action":"settle"}),
+    );
+    assert_eq!(
+        call(
+            &s,
+            &token,
+            &id,
+            "t3_thread_read",
+            json!({"threadId":"high"})
+        )["thread"]["settled"],
+        true
+    );
+    call(
+        &s,
+        &token,
+        &id,
+        "t3_thread_organize",
+        json!({"threadId":"high","action":"unsettle"}),
+    );
+    assert_eq!(
+        call(
+            &s,
+            &token,
+            &id,
+            "t3_thread_interrupt",
+            json!({"threadId":"high"})
+        )["status"],
+        "no_active_run"
+    );
+    assert_eq!(
+        call(
+            &s,
+            &token,
+            &id,
+            "t3_thread_wait",
+            json!({"threadId":"high"})
+        )["status"],
+        "idle"
+    );
+    call(
+        &s,
+        &token,
+        &id,
+        "t3_thread_organize",
+        json!({"threadId":"high","action":"archive"}),
+    );
+    assert_eq!(
+        tool_error(
+            &s,
+            &token,
+            &id,
+            "t3_thread_send",
+            json!({"threadId":"high","message":"refused"})
+        )["code"],
+        "invalid_request"
+    );
+    call(
+        &s,
+        &token,
+        &id,
+        "t3_thread_organize",
+        json!({"threadId":"high","action":"unarchive"}),
+    );
+}
+
+#[test]
+fn mcp_user_questions_round_trip_through_native_projection_without_permission_approval() {
+    use o3_server::provider::{Provider, ProviderControl, ProviderEvent, RunInput};
+    use std::{
+        future::Future,
+        pin::Pin,
+        sync::{Arc, Mutex},
+    };
+    struct QuestionPeer(Arc<Mutex<Vec<Value>>>);
+    impl Provider for QuestionPeer {
+        fn execute<'a>(
+            &'a self,
+            input: RunInput,
+            output: tokio::sync::mpsc::Sender<ProviderEvent>,
+            mut controls: tokio::sync::mpsc::Receiver<ProviderControl>,
+            mut cancel: tokio::sync::watch::Receiver<bool>,
+        ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+            Box::pin(async move {
+                output
+                    .send(ProviderEvent::Started)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                output.send(ProviderEvent::Native(json!({"type":"permission","request_id":format!("{}:question",input.run_id),"native_id":"question","request":{"tool_name":"AskUserQuestion","input":{"questions":[{"question":"Which color?","header":"Color","options":[{"label":"Blue","description":"Blue"},{"label":"Green","description":"Green"}]}]}}}))).await.map_err(|e|e.to_string())?;
+                tokio::select! {
+                    c=controls.recv()=>match c {
+                        Some(ProviderControl::Respond{answers,..})=>{self.0.lock().unwrap().push(answers.unwrap_or(Value::Null));output.send(ProviderEvent::Completed).await.map_err(|e|e.to_string())?;},
+                        _=>{output.send(ProviderEvent::Interrupted).await.map_err(|e|e.to_string())?;},
+                    },
+                    _=cancel.changed()=>{},
+                }
+                Ok(())
+            })
+        }
+    }
+    let (s, _) = control_fixture();
+    let answers = Arc::new(Mutex::new(Vec::new()));
+    *s.state.provider.lock().unwrap() = Some(Arc::new(QuestionPeer(answers.clone())));
+    let token = s
+        .state
+        .issue_mcp_session("full-access", 60_000, "questions")
+        .unwrap();
+    let id = init(&s, &token);
+    let sent = call(
+        &s,
+        &token,
+        &id,
+        "t3_thread_send",
+        json!({"threadId":"high","message":"Ask a question"}),
+    );
+    assert!(support::wait_for(std::time::Duration::from_secs(5), || {
+        s.state.db.lock().unwrap().query_row("SELECT count(*) FROM records WHERE kind='runtimeRequests' AND json_extract(body,'$.kind')='user_input'",[],|r|r.get::<_,i64>(0)).unwrap()==1
+    }));
+    let list = call(
+        &s,
+        &token,
+        &id,
+        "t3_pending_request",
+        json!({"threadId":"high","action":"list"}),
+    );
+    let question = list["requestIds"][0].clone();
+    assert!(question.is_string(), "{list}");
+    let read = call(
+        &s,
+        &token,
+        &id,
+        "t3_pending_request",
+        json!({"threadId":"high","requestId":question,"action":"read"}),
+    );
+    assert_eq!(read["questions"][0]["question"], "Which color?");
+    call(
+        &s,
+        &token,
+        &id,
+        "t3_pending_request",
+        json!({"threadId":"high","requestId":question,"answers":{"Which color?":"Blue"},"action":"respond"}),
+    );
+    assert_eq!(
+        call(
+            &s,
+            &token,
+            &id,
+            "t3_thread_wait",
+            json!({"threadId":"high","runId":sent["runId"],"timeoutMs":5000})
+        )["status"],
+        "completed"
+    );
+    assert_eq!(
+        *answers.lock().unwrap(),
+        vec![json!({"Which color?":"Blue"})]
+    );
+    assert_eq!(
+        call(
+            &s,
+            &token,
+            &id,
+            "t3_pending_request_list",
+            json!({"threadId":"high"})
+        )["requestIds"],
+        json!([])
+    );
+}
+
+#[test]
+fn mcp_steers_native_turn_and_promotes_queued_message_without_replay() {
+    use o3_server::provider::{Provider, ProviderControl, ProviderEvent, RunInput};
+    use std::{
+        future::Future,
+        pin::Pin,
+        sync::{Arc, Mutex},
+    };
+    struct Peer(Arc<Mutex<Vec<String>>>);
+    impl Provider for Peer {
+        fn execute<'a>(
+            &'a self,
+            input: RunInput,
+            output: tokio::sync::mpsc::Sender<ProviderEvent>,
+            mut controls: tokio::sync::mpsc::Receiver<ProviderControl>,
+            mut cancel: tokio::sync::watch::Receiver<bool>,
+        ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+            Box::pin(async move {
+                output
+                    .send(ProviderEvent::Native(
+                        json!({"type":"session","session_id":format!("native-{}",input.run_id)}),
+                    ))
+                    .await
+                    .map_err(|e| e.to_string())?;
+                output
+                    .send(ProviderEvent::Started)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                loop {
+                    tokio::select! {
+                        c=controls.recv()=>match c {
+                            Some(ProviderControl::SteerContent(content))=>self.0.lock().unwrap().push(content[0]["text"].as_str().unwrap().to_owned()),
+                            Some(ProviderControl::Interrupt)|None=>{output.send(ProviderEvent::Interrupted).await.map_err(|e|e.to_string())?;break;},
+                            _=>{},
+                        },
+                        _=cancel.changed()=>break,
+                    }
+                }
+                Ok(())
+            })
+        }
+    }
+    let (s, _) = control_fixture();
+    let received = Arc::new(Mutex::new(Vec::new()));
+    *s.state.provider.lock().unwrap() = Some(Arc::new(Peer(received.clone())));
+    let token = s
+        .state
+        .issue_mcp_session("full-access", 60_000, "steer")
+        .unwrap();
+    let id = init(&s, &token);
+    assert_eq!(
+        tool_error(
+            &s,
+            &token,
+            &id,
+            "t3_thread_send",
+            json!({"threadId":"high","message":"not queued","mode":"steer"})
+        )["code"],
+        "invalid_request"
+    );
+    let sent = call(
+        &s,
+        &token,
+        &id,
+        "t3_thread_send",
+        json!({"threadId":"high","message":"start"}),
+    );
+    assert!(support::wait_for(std::time::Duration::from_secs(5), || {
+        s.state.db.lock().unwrap().query_row("SELECT count(*) FROM records WHERE kind='providerTurns' AND json_extract(body,'$.status')='running'",[],|r|r.get::<_,i64>(0)).unwrap()==1
+    }));
+    let args = json!({"threadId":"high","message":"auto steering","clientRequestId":"steer-once"});
+    let steered = call(&s, &token, &id, "t3_thread_send", args.clone());
+    assert_eq!(steered["delivery"], "steered");
+    assert_eq!(steered["runId"], sent["runId"]);
+    assert_eq!(steered, call(&s, &token, &id, "t3_thread_send", args));
+    let queued = call(
+        &s,
+        &token,
+        &id,
+        "t3_thread_send",
+        json!({"threadId":"high","message":"queued steering","mode":"queue"}),
+    );
+    call(
+        &s,
+        &token,
+        &id,
+        "t3_queue_promote_to_steer",
+        json!({"threadId":"high","queuedRunId":queued["runId"],"targetRunId":sent["runId"]}),
+    );
+    assert!(support::wait_for(
+        std::time::Duration::from_secs(5),
+        || received.lock().unwrap().len() == 2
+    ));
+    assert_eq!(
+        *received.lock().unwrap(),
+        vec!["auto steering".to_owned(), "queued steering".to_owned()]
+    );
+    let stop = json!({"threadId":"high","runId":sent["runId"],"clientRequestId":"interrupt-once"});
+    let requested = call(&s, &token, &id, "t3_thread_interrupt", stop.clone());
+    assert_eq!(requested["status"], "interrupt_requested");
+    assert_eq!(
+        call(
+            &s,
+            &token,
+            &id,
+            "t3_thread_wait",
+            json!({"threadId":"high","runId":sent["runId"],"timeoutMs":5000})
+        )["status"],
+        "interrupted"
+    );
+    let replay = call(&s, &token, &id, "t3_thread_interrupt", stop);
+    assert_eq!(replay["runId"], requested["runId"]);
+    assert_eq!(replay["status"], "interrupted");
+}
+
+#[test]
+fn mcp_current_nightly_groups_and_remote_targets_keep_their_authority() {
+    let (s, c) = control_fixture();
+    let qroot = s.dir.join("second");
+    std::fs::create_dir_all(&qroot).unwrap();
+    c.rpc("projects.mutate",json!({"type":"project.create","commandId":"pq","projectId":"q","title":"Other","workspaceRoot":qroot,"scripts":[]})).unwrap();
+    c.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"q-thread","threadId":"q-thread","projectId":"q","title":"Other","modelSelection":{"instanceId":"scripted","model":"test"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
+    let readonly = s
+        .state
+        .issue_mcp_session("read-only", 60_000, "reader")
+        .unwrap();
+    let rid = init(&s, &readonly);
+    let token = s
+        .state
+        .issue_mcp_session("full-access", 60_000, "writer")
+        .unwrap();
+    let id = init(&s, &token);
+    assert_eq!(
+        call(
+            &s,
+            &readonly,
+            &rid,
+            "t3_thread_configure",
+            json!({"threadId":"high"})
+        )["runtimeMode"],
+        "full-access"
+    );
+    let all = call(
+        &s,
+        &readonly,
+        &rid,
+        "t3_thread_list",
+        json!({"allProjects":true,"statuses":[]}),
+    );
+    assert_eq!(all["projectId"], Value::Null);
+    assert_eq!(all["total"], 3);
+    assert!(all["threads"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|t| t["projectId"] == "q"));
+    assert_eq!(
+        call(
+            &s,
+            &readonly,
+            &rid,
+            "t3_thread_read",
+            json!({"threadId":"high","limit":101,"runLimit":999,"maxCharsPerItem":999999})
+        )["thread"]["threadId"],
+        "high"
+    );
+    assert_eq!(
+        tool_error(
+            &s,
+            &token,
+            &id,
+            "t3_thread_organize",
+            json!({"environmentId":"another-environment","threadId":"high","action":"pin"})
+        )["code"],
+        "capability_denied"
+    );
+    let pinned:bool=s.state.db.lock().unwrap().query_row("SELECT json_extract(body,'$.pinnedAt') IS NOT NULL FROM records WHERE kind='thread' AND id='high'",[],|r|r.get(0)).unwrap();
+    assert!(!pinned);
+    assert_eq!(
+        call(
+            &s,
+            &readonly,
+            &rid,
+            "t3_environment_read",
+            json!({"environmentId":s.state.environment_id})
+        )["environmentId"],
+        s.state.environment_id
+    );
+    let sent = call(
+        &s,
+        &token,
+        &id,
+        "t3_thread_send",
+        json!({"threadId":"high","message":"start"}),
+    );
+    let queued = call(
+        &s,
+        &token,
+        &id,
+        "t3_thread_send",
+        json!({"threadId":"high","message":"queued","mode":"queue"}),
+    );
+    assert_eq!(
+        call(
+            &s,
+            &readonly,
+            &rid,
+            "t3_queue",
+            json!({"action":"list","threadId":"high"})
+        )["items"][0]["queuedRunId"],
+        queued["runId"]
+    );
+    assert_eq!(
+        tool_error(
+            &s,
+            &readonly,
+            &rid,
+            "t3_queue",
+            json!({"action":"edit","threadId":"high","queuedRunId":queued["runId"],"text":"denied"})
+        )["code"],
+        "capability_denied"
+    );
+    call(
+        &s,
+        &token,
+        &id,
+        "t3_queue",
+        json!({"action":"edit","threadId":"high","queuedRunId":queued["runId"],"text":"edited"}),
+    );
+    assert_eq!(
+        call(
+            &s,
+            &readonly,
+            &rid,
+            "t3_queue",
+            json!({"action":"read","threadId":"high","queuedRunId":queued["runId"]})
+        )["text"],
+        "edited"
+    );
+    call(
+        &s,
+        &token,
+        &id,
+        "t3_queue",
+        json!({"action":"cancel","threadId":"high","queuedRunId":queued["runId"]}),
+    );
+    assert_eq!(
+        call(
+            &s,
+            &readonly,
+            &rid,
+            "t3_pending_request",
+            json!({"action":"list","threadId":"high"})
+        )["requestIds"],
+        json!([])
+    );
+    call(
+        &s,
+        &token,
+        &id,
+        "t3_thread_interrupt",
+        json!({"threadId":"high","runId":sent["runId"]}),
+    );
+}
+
+#[test]
+fn mcp_mode_limit_header_only_narrows_runtime_and_interaction_authority() {
+    let (s, c) = control_fixture();
+    let token = s
+        .state
+        .issue_mcp_session("full-access", 60_000, "writer")
+        .unwrap();
+    let id = init(&s, &token);
+    let limited = s
+        .state
+        .issue_mcp_session("approval-required", 60_000, "limited")
+        .unwrap();
+    let lid = init(&s, &limited);
+    let invoke = |token: &str, id: &str, mode: &str, name: &str, args: Value| {
+        let auth = format!("Bearer {token}");
+        let body = json!({"jsonrpc":"2.0","id":25,"method":"tools/call","params":{"name":name,"arguments":args}});
+        let (status, _, bytes) = http(
+            &s.base,
+            "POST",
+            "/mcp",
+            &[
+                ("authorization", &auth),
+                ("mcp-session-id", id),
+                ("content-type", "application/json"),
+                ("t3-mode-limit", mode),
+            ],
+            body.to_string().as_bytes(),
+        );
+        (status, serde_json::from_slice::<Value>(&bytes).unwrap())
+    };
+    let pin = json!({"threadId":"high","action":"pin"});
+    let (status, v) = invoke(
+        &token,
+        &id,
+        "approval-required/default",
+        "t3_thread_organize",
+        pin.clone(),
+    );
+    assert_eq!(status, 200);
+    assert_eq!(
+        v["result"]["structuredContent"]["code"],
+        "runtime_mode_escalation_denied"
+    );
+    let (_, v) = invoke(
+        &limited,
+        &lid,
+        "full-access/default",
+        "t3_thread_organize",
+        pin.clone(),
+    );
+    assert_eq!(
+        v["result"]["structuredContent"]["code"],
+        "runtime_mode_escalation_denied"
+    );
+    let (_, v) = invoke(&token, &id, "full-access/plan", "t3_thread_organize", pin);
+    assert_eq!(
+        v["result"]["structuredContent"]["code"],
+        "interaction_mode_escalation_denied"
+    );
+    let (_, v) = invoke(
+        &token,
+        &id,
+        "approval-required/default",
+        "t3_thread_organize",
+        json!({"threadId":"low","action":"pin"}),
+    );
+    assert_eq!(v["result"]["isError"], false);
+    c.rpc("orchestration.dispatchCommand",json!({"type":"thread.interaction-mode.set","commandId":"plan-low","threadId":"low","interactionMode":"plan"})).unwrap();
+    let (_, v) = invoke(
+        &token,
+        &id,
+        "approval-required/plan",
+        "t3_thread_organize",
+        json!({"threadId":"low","action":"unpin"}),
+    );
+    assert_eq!(v["result"]["isError"], false);
+    let (_, v) = invoke(
+        &token,
+        &id,
+        "approval-required/plan",
+        "t3_thread_configure",
+        json!({"threadId":"high"}),
+    );
+    assert_eq!(v["result"]["isError"], false);
+    assert_eq!(
+        v["result"]["structuredContent"]["runtimeMode"],
+        "full-access"
+    );
+    for mode in [
+        "full-access",
+        "unknown/default",
+        "full-access/default/extra",
+    ] {
+        let (status, v) = invoke(
+            &token,
+            &id,
+            mode,
+            "t3_thread_organize",
+            json!({"threadId":"low","action":"pin"}),
+        );
+        assert_eq!(status, 400);
+        assert_eq!(v["error"], "invalid_mode_limit");
+    }
 }

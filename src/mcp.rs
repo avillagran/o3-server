@@ -75,6 +75,29 @@ pub(crate) async fn handle(state: Arc<State>, req: Request<Incoming>) -> Respons
         );
         return r;
     };
+    let Ok(mut authority) = crate::mcp_access::Authority::from_claims(&claims) else {
+        return response(
+            StatusCode::UNAUTHORIZED,
+            json!({"error":"invalid_mcp_credential"}),
+        );
+    };
+    if req.headers().contains_key("t3-mode-limit") {
+        let value = header(&req, "t3-mode-limit").unwrap_or("");
+        let parts = value.trim().split('/').collect::<Vec<_>>();
+        if parts.len() != 2
+            || !matches!(
+                parts[0],
+                "approval-required" | "auto-accept-edits" | "auto" | "full-access"
+            )
+            || !matches!(parts[1], "default" | "plan")
+        {
+            return response(
+                StatusCode::BAD_REQUEST,
+                json!({"error":"invalid_mode_limit","message":"T3-Mode-Limit must be <runtimeMode>/<interactionMode>, e.g. auto/default."}),
+            );
+        }
+        authority = authority.narrowed(parts[0], parts[1]);
+    }
     if req.headers().contains_key("origin") {
         return response(StatusCode::FORBIDDEN, json!({"error":"origin_not_allowed"}));
     }
@@ -254,23 +277,47 @@ pub(crate) async fn handle(state: Arc<State>, req: Request<Incoming>) -> Respons
                 .get("arguments")
                 .cloned()
                 .unwrap_or(json!({}));
+            let args = crate::mcp_tools::prepare_arguments(name, args);
             if let Err(message) = crate::mcp_tools::validate(name, &args) {
                 return rpc_error(StatusCode::OK, id, -32602, &message);
+            }
+            if args["environmentId"]
+                .as_str()
+                .is_some_and(|id| id.trim() != state.environment_id)
+            {
+                let content = crate::mcp_tools::failure(
+                    "capability_denied",
+                    "Linked-environment routing is not available on this server.",
+                );
+                return response(
+                    StatusCode::OK,
+                    json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text":content.to_string()}],"structuredContent":content,"isError":true}}),
+                );
             }
             // Database and settings reads stay off Tokio I/O workers.
             let s = state.clone();
             let name = name.to_owned();
-            let result = tokio::task::spawn_blocking(move || {
+            let authority = authority.clone();
+            let result = if name == "t3_thread_wait" {
                 let _permit = permit;
-                crate::mcp_tools::call(&s, &name, &args)
-            })
-            .await;
-            let result = result.unwrap_or_else(|_| {
-                Err(crate::mcp_tools::failure(
-                    "orchestration_error",
-                    "Unable to read server state.",
-                ))
-            });
+                crate::mcp_mutations::wait(s, authority, args).await
+            } else {
+                tokio::task::spawn_blocking(move || {
+                    let _permit = permit;
+                    if crate::mcp_mutations::handles(&name) {
+                        crate::mcp_mutations::call(&s, &authority, &name, &args)
+                    } else {
+                        crate::mcp_tools::call(&s, &name, &args)
+                    }
+                })
+                .await
+                .unwrap_or_else(|_| {
+                    Err(crate::mcp_tools::failure(
+                        "orchestration_error",
+                        "Unable to complete the operation.",
+                    ))
+                })
+            };
             let (content, is_error) = match result {
                 Ok(v) => (v, false),
                 Err(v) => (v, true),

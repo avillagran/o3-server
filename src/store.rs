@@ -372,7 +372,7 @@ impl State {
     pub fn issue_mcp_session(&self, access: &str, ttl: i64, label: &str) -> Result<String, String> {
         let scopes: &[&str] = match access {
             "read-only" => &["orchestration:read"],
-            "approval-required" | "auto-accept-edits" => {
+            "approval-required" | "auto-accept-edits" | "auto" => {
                 &["orchestration:read", "orchestration:operate"]
             }
             "full-access" => &[
