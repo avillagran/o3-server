@@ -456,3 +456,31 @@ and the replacement wrote a code remembered from before interruption. No service
 Validation for this restart block: full suites pass with 346 default / 343 no-default
 tests, 21 opt-ins ignored in each configuration. Strict Clippy passes in both modes;
 fmt, generated compatibility and all nine nightly-monitor tests pass.
+
+
+## Linux setup process ownership prerequisite (2026-11-04)
+
+Setup terminals opened by worktree handoff now have a dedicated Linux subreaper.
+It owns the shell's descendants across double-fork, setsid and environment clearing.
+An owner pipe with close-on-exec descriptors ends the scope on normal cancellation,
+server exit or SIGKILL; the supervisor has its own session so a signal to the server's
+process group cannot bypass cleanup. It waits for owner EOF or child-exit notifications
+without idle polling. Terminal close and durable thread cleanup await descendant reaping.
+Independent setup scopes remain independent. Ordinary interactive terminals retain their
+existing process lifecycle, and other targets retain their current PTY implementation.
+
+This resolves a cancellation prerequisite for staged thread launch, not the launch flow.
+subscribeWorktreeSetup still returns null and worktreeSetup.cancel remains unimplemented;
+source tracking, completion observation, sync/async release, retry and recovery remain
+pending. See [thread-launch-intake.json](nightly/thread-launch-intake.json).
+
+The monitor confirmed nightly4165 (`8b44f42b14c8e273156474a924ccf29680dd7857`)
+at 08:04 UTC. ThreadLaunchService, ProjectSetupScriptRunner, WorktreeSetupTracker and
+its contract are unchanged from4151. Native recovery/projection changes are recorded
+for follow-up; no full-nightly conformance claim is made.
+
+Validation: full suites pass with 349 default / 346 no-default tests, 21 opt-ins
+ignored each. After the final signal/event handling change, all library and handoff
+tests pass again in both configurations (102 passed, 5 opt-ins ignored per mode).
+Strict Clippy passes in both modes; fmt, generated compatibility and nine monitor
+tests pass. No service deployment occurred.

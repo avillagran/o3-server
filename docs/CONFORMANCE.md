@@ -2992,3 +2992,33 @@ this does not establish full protocol parity.
 Validation for this restart block: full suites pass with 346 default / 343 no-default
 tests, 21 opt-ins ignored in each configuration. Strict Clippy passes in both modes;
 fmt, generated compatibility and all nine nightly-monitor tests pass.
+
+
+### Linux setup descendants and launch prerequisite (2026-11-04)
+
+The failed setup-cancellation attempt recorded above is superseded for Linux process
+ownership: worktree-handoff setup terminals now use an isolated subreaper, with an
+owner pipe rather than environment tokens or shared process-group assumptions. It
+reaps descendants that double-fork, setsid and clear their environment. Its separate
+session survives a group signal to the server; owner EOF triggers cleanup. It blocks
+on owner/child events rather than polling. Setup terminal close and thread cleanup
+await reaping; ordinary terminal process semantics and other targets are unchanged.
+
+Two module tests cover admission failures and daemon cleanup on cancel, owner drop,
+normal shell exit, SIGKILL owner and SIGKILL owner group. The subprocess owner test
+kills an actual Rust owning process. An HTTP integration uses real Connection, native
+Codex protocol peers and two worktree setups: closing one returns only after its daemon
+is absent from /proc, while the other's daemon remains alive, then is closed separately.
+
+This is a prerequisite for the full ThreadLaunchService port. Staged preparation,
+subscribeWorktreeSetup/cancel, completion, retry, durable preparation recovery and MCP
+thread launch remain pending. The source intake is nightly4165, SHA
+8b44f42b14c8e273156474a924ccf29680dd7857 (08:04 UTC). The launch/setup service and
+tracker/contract are unchanged from4151; native runtime recovery and awareness projection
+changes require follow-up. See [thread-launch-intake.json](nightly/thread-launch-intake.json).
+
+Validation: full suites pass with 349 default / 346 no-default tests, 21 opt-ins
+ignored each. After the final signal/event handling change, all library and handoff
+tests pass again in both configurations (102 passed, 5 opt-ins ignored per mode).
+Strict Clippy passes in both modes; fmt, generated compatibility and nine monitor
+tests pass. No service deployment occurred.
