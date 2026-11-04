@@ -1251,7 +1251,7 @@
     "thread.fork": {
       "status": "partial",
       "priority": "P1",
-      "note": "Nightly4165 canonical transfer plans, checkpoint-qualified latest_stable, explicit boundaries, private-state reset and unwatched PR inheritance. Shared first-turn admission resolves portable history or a native fork; Codex uses lastTurnId even after the source advances. Side chats preserve the stable base plus a separate post-boundary digest, including an empty parent. Compatible-client/native-peer coverage and installed Claude/Codex private-codeword proofs. Historical Claude native anchors still use the portable path; native-window budget and uncertain conversation replacement remain open. See context-transfer-intake.json."
+      "note": "Nightly4165 canonical transfer plans, checkpoint-qualified latest_stable, explicit boundaries, private-state reset and unwatched PR inheritance. Shared first-turn admission resolves portable history or a native fork; Codex uses lastTurnId even after the source advances. Side chats preserve the stable base plus a separate post-boundary digest, including an empty parent. Compatible-client/native-peer coverage and installed Claude/Codex private-codeword proofs. Historical Claude native anchors still use the portable path. Native-window allowance and uncertain/missing-native replacement now reconstruct app history with durable cleanup; failed native forks fall back at the selected app boundary. Fork-plus-merge composition and legacy imports are covered. See native-recovery-intake.json for remaining fidelity limits."
     },
     "thread.guest-message.dismiss": {
       "status": "todo",
@@ -1276,7 +1276,7 @@
     "thread.merge_back": {
       "status": "partial",
       "priority": "P1",
-      "note": "Shared RPC/MCP fork-to-direct-parent lifecycle: idle/queue/source/relationship guards, supersession, receipt replay, own-run delta, consumption, handoff projections and durable provider delivery. Changing the target provider carries its full history together with the fork delta under one deduplicated budget. Current MCP authority checks cover both threads. Real compatible-client/native-peer and installed Claude/Codex proofs pass. Native replacement after uncertain delivery and full source-wide handoff/continuation parity remain pending."
+      "note": "Shared RPC/MCP fork-to-direct-parent lifecycle: idle/queue/source/relationship guards, supersession, receipt replay, own-run delta, consumption, handoff projections and durable provider delivery. Changing the target provider carries its full history together with the fork delta under one deduplicated budget. Current MCP authority checks cover both threads. Real compatible-client/native-peer and installed Claude/Codex proofs pass. Uncertain-delivery replacement now reconstructs the target history before consuming the merge delta. Full source-wide handoff/continuation parity remains pending; see native-recovery-intake.json."
     },
     "thread.metadata.update": {
       "status": "done",

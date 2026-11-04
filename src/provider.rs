@@ -84,7 +84,34 @@ pub struct RunInput {
     pub attachments: serde_json::Value,
     pub context: Option<serde_json::Value>,
 }
+#[derive(Clone, Copy)]
+pub enum NativeRecoveryReason {
+    UncertainHistory,
+    ResumeFailed,
+    ForkFailed,
+    HandoffBudget,
+}
+impl NativeRecoveryReason {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::UncertainHistory => "uncertain_history_delivery",
+            Self::ResumeFailed => "resume_failed",
+            Self::ForkFailed => "native_fork_failed",
+            Self::HandoffBudget => "handoff_budget_exhausted",
+        }
+    }
+}
 pub enum ProviderEvent {
+    RecoverNative {
+        current_text: String,
+        previous_native: Option<String>,
+        reason: NativeRecoveryReason,
+        reply: tokio::sync::oneshot::Sender<Result<serde_json::Value, String>>,
+    },
+    NativeRecoveryReleased {
+        id: String,
+        reply: tokio::sync::oneshot::Sender<Result<(), String>>,
+    },
     ContextDelivery {
         data: serde_json::Value,
         reply: tokio::sync::oneshot::Sender<Result<(), String>>,
@@ -274,6 +301,8 @@ pub(crate) fn start(
                     "o3NewSessionId",
                     "o3HandoffError",
                     "o3DeliveredHistoryItemIds",
+                    "o3HandoffBudget",
+                    "o3ForceNewNativeThread",
                 ] {
                     options.remove(key);
                 }
@@ -315,6 +344,10 @@ pub(crate) fn start(
                 }
                 Err(error) => selection["o3HandoffError"] = serde_json::json!(error),
             }
+            match crate::handoff_budget::context(&db, &t, &r) {
+                Ok(meta) => selection["o3HandoffBudget"] = meta,
+                Err(error) => selection["o3HandoffError"] = serde_json::json!(error),
+            }
             let input = RunInput {
                 native_mcp: None,
                 provider_instance_id: t["providerInstanceId"].as_str().unwrap_or("").into(),
@@ -346,6 +379,24 @@ pub(crate) fn start(
             };
             (input, r["activeAttemptId"].as_str().map(str::to_owned))
         };
+        if let Err(error) = crate::native_recovery::release_pending(
+            &s,
+            provider.as_ref(),
+            &tid,
+            &rid,
+            attempt.as_deref(),
+        )
+        .await
+        {
+            let _ = persist_attempt(
+                &s,
+                &tid,
+                &rid,
+                attempt.as_deref(),
+                ProviderEvent::Failed(error),
+            );
+            return;
+        }
         if input
             .attachments
             .as_array()
@@ -705,6 +756,31 @@ fn persist_attempt(
     expected: Option<&str>,
     event: ProviderEvent,
 ) -> Result<(), String> {
+    if let ProviderEvent::NativeRecoveryReleased { id, reply } = event {
+        let result = crate::native_recovery::release(s, tid, rid, expected, &id);
+        let _ = reply.send(result.clone());
+        return result;
+    }
+    if let ProviderEvent::RecoverNative {
+        current_text,
+        previous_native,
+        reason,
+        reply,
+    } = event
+    {
+        let result = crate::native_recovery::prepare(
+            s,
+            tid,
+            rid,
+            expected,
+            previous_native,
+            reason,
+            current_text,
+        );
+        let outcome = result.as_ref().map(|_| ()).map_err(Clone::clone);
+        let _ = reply.send(result);
+        return outcome;
+    }
     if let ProviderEvent::ContextDelivery { data, reply } = event {
         let result = crate::context_transfer::delivery(s, tid, rid, expected, data);
         let _ = reply.send(result.clone());
@@ -790,7 +866,11 @@ fn persist_attempt(
     }
     let at = iso(now_ms());
     match event {
-        ProviderEvent::ContextDelivery { .. } => unreachable!(),
+        ProviderEvent::ContextDelivery { .. }
+        | ProviderEvent::RecoverNative { .. }
+        | ProviderEvent::NativeRecoveryReleased { .. } => {
+            unreachable!()
+        }
         ProviderEvent::Codex(frame) => {
             crate::codex_projection::persist(&tx, tid, rid, &thread, &mut run, &at, frame)?;
             thread = get(&tx, "thread", tid)?;

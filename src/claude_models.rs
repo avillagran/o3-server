@@ -77,6 +77,28 @@ pub(crate) fn compile(selection: &Value) -> Result<(String, Option<String>, Valu
     Ok((model, effort, settings, prompt_effort))
 }
 
+pub(crate) fn context_window(selection: &Value) -> Option<u64> {
+    let m = manifest();
+    let name = selection["model"].as_str()?;
+    let entry = m["models"].as_array()?.iter().find(|e| {
+        e["slug"] == name
+            || e["aliases"]
+                .as_array()
+                .is_some_and(|a| a.iter().any(|a| a == name))
+    })?;
+    let adapter = &m["profiles"][entry["profile"].as_str()?]["adapter"]["claudeCode"];
+    adapter["fixedContextWindowTokens"].as_u64().or_else(|| {
+        let option = selection["options"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|o| o["id"] == "contextWindow")
+            .and_then(|o| o["value"].as_str())
+            .unwrap_or("200k");
+        adapter["contextWindowTokens"][option].as_u64()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

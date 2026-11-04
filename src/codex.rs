@@ -333,6 +333,27 @@ impl CodexProvider {
         d["models"]=json!(models["data"].as_array().unwrap_or(&vec![]).iter().map(|m|json!({"slug":m["model"],"name":m["displayName"],"isCustom":false,"isDefault":m["isDefault"],"capabilities":model_capabilities(m)})).collect::<Vec<_>>());
         Ok(c)
     }
+    async fn recover_input(
+        &self,
+        input: &mut RunInput,
+        output: &mpsc::Sender<ProviderEvent>,
+        reason: crate::provider::NativeRecoveryReason,
+        current: &[Value],
+    ) -> Result<(), String> {
+        let previous = input.native_session_id.clone();
+        let id = crate::native_recovery::request(input, output, reason, current).await?;
+        self.detach(
+            &input.provider_instance_id,
+            &input.thread_id,
+            previous.as_deref(),
+            true,
+        )
+        .await?;
+        if let Some(context) = &input.native_mcp {
+            context.revoke();
+        }
+        crate::native_recovery::released(output, id).await
+    }
     async fn run(
         &self,
         mut input: RunInput,
@@ -350,39 +371,77 @@ impl CodexProvider {
             return Err("Codex runtime mode is not implemented".into());
         }
         let mut content = crate::provider_input::content(&input, false)?;
-        let manual = crate::handoff_delivery::manual(&input, &mut content)?;
-        let deliveries = crate::handoff_delivery::prepare(&input, &content)?;
-        let c = self.connection().await?;
-        if let Some(context) = &input.native_mcp {
-            let context = context
-                .refresh(&input.cwd, &input.model_selection["options"])
+        if let Some(reason) = crate::handoff_delivery::recovery_reason(&input, &content) {
+            self.recover_input(&mut input, &output, reason, &content)
                 .await?;
-            input.model_selection["o3NativeMcp"] = context.config();
-            input.native_mcp = Some(context);
+            content = crate::provider_input::content(&input, false)?;
         }
-        let mut params = json!({"cwd":input.cwd,"model":input.model_selection["model"],"approvalPolicy":if input.runtime_mode=="full-access"{"never"}else{"on-request"},"sandbox":if input.runtime_mode=="full-access"{"danger-full-access"}else{"workspace-write"}});
-        // Supervised turns receive orchestration even when browser access is disabled.
-        let injected = if input.model_selection["o3NativeMcp"].is_object() {
-            &input.model_selection["o3NativeMcp"]
-        } else {
-            &input.model_selection["o3BrowserMcp"]
-        };
-        params["config"] = json!({"mcp_servers.t3-code":if injected.is_object() {
-            json!({"url":injected["url"],"http_headers":injected["headers"]})
-        }else{json!({"enabled":false})}});
-        let response = if let Some(id) = input.model_selection["nativeForkSource"].as_str() {
-            params["threadId"] = json!(id);
-            if input.model_selection["nativeForkLastTurnId"].is_string() {
-                params["lastTurnId"] = input.model_selection["nativeForkLastTurnId"].clone();
+        let mut c = self.connection().await?;
+        let response = loop {
+            if let Some(context) = &input.native_mcp {
+                let context = context
+                    .refresh(&input.cwd, &input.model_selection["options"])
+                    .await?;
+                input.model_selection["o3NativeMcp"] = context.config();
+                input.native_mcp = Some(context);
             }
-            c.call("thread/fork", params).await?
-        } else if let Some(id) = input.native_session_id.as_ref() {
-            params["threadId"] = json!(id);
-            params["excludeTurns"] = json!(true);
-            c.call("thread/resume", params).await?
-        } else {
-            c.call("thread/start", params).await?
+            let mut params = json!({"cwd":input.cwd,"model":input.model_selection["model"],"approvalPolicy":if input.runtime_mode=="full-access"{"never"}else{"on-request"},"sandbox":if input.runtime_mode=="full-access"{"danger-full-access"}else{"workspace-write"}});
+            let injected = if input.model_selection["o3NativeMcp"].is_object() {
+                &input.model_selection["o3NativeMcp"]
+            } else {
+                &input.model_selection["o3BrowserMcp"]
+            };
+            params["config"] = json!({"mcp_servers.t3-code":if injected.is_object(){json!({"url":injected["url"],"http_headers":injected["headers"]})}else{json!({"enabled":false})}});
+            let result = if let Some(id) = input.model_selection["nativeForkSource"].as_str() {
+                params["threadId"] = json!(id);
+                if input.model_selection["nativeForkLastTurnId"].is_string() {
+                    params["lastTurnId"] = input.model_selection["nativeForkLastTurnId"].clone();
+                }
+                c.call("thread/fork", params).await
+            } else if let Some(id) = input.native_session_id.as_ref() {
+                params["threadId"] = json!(id);
+                params["excludeTurns"] = json!(true);
+                c.call("thread/resume", params).await
+            } else {
+                c.call("thread/start", params).await
+            };
+            match result {
+                Ok(response) => break response,
+                Err(_error) if input.model_selection["nativeForkSource"].is_string() => {
+                    self.recover_input(
+                        &mut input,
+                        &output,
+                        crate::provider::NativeRecoveryReason::ForkFailed,
+                        &content,
+                    )
+                    .await?;
+                    content = crate::provider_input::content(&input, false)?;
+                    c = self.connection().await?;
+                }
+                Err(error)
+                    if input.native_session_id.is_some()
+                        && !crate::native_recovery::thread_in_use(&error) =>
+                {
+                    self.recover_input(
+                        &mut input,
+                        &output,
+                        crate::provider::NativeRecoveryReason::ResumeFailed,
+                        &content,
+                    )
+                    .await?;
+                    content = crate::provider_input::content(&input, false)?;
+                    c = self.connection().await?;
+                }
+                Err(error) => return Err(error),
+            }
         };
+        let maintenance = crate::handoff_delivery::maintenance_input(&input);
+        let manual = if maintenance {
+            vec![]
+        } else {
+            crate::handoff_delivery::manual(&input, &mut content)?
+        };
+        let deliveries = crate::handoff_delivery::prepare(&input, &content)?;
         let tid = response["thread"]["id"]
             .as_str()
             .ok_or("Codex thread id missing")?
@@ -425,7 +484,7 @@ impl CodexProvider {
                 delivery.acknowledge(&output,&tid,"pending").await?;
                 match c.call("thread/inject_items",json!({"threadId":tid,"items":delivery.items()})).await {
                     Ok(_)=>delivery.acknowledge(&output,&tid,"injected").await?,
-                    Err(error) if serde_json::from_str::<Value>(&error).is_ok_and(|e|e["code"]==-32601)=>inline.push(delivery),
+                    Err(error) if serde_json::from_str::<Value>(&error).is_ok_and(|e|e["code"]==-32601)=>if maintenance{delivery.acknowledge(&output,&tid,"unsent").await?;}else{inline.push(delivery)},
                     Err(error)=>return Err(error),
                 }
             }

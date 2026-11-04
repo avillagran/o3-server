@@ -223,5 +223,32 @@ mark it delivered; acknowledgement commits first. Stale attempts and terminal ru
 cannot mutate the delivery journal. Successful history and per-native-thread item ids
 are not injected on later ordinary turns. Only a definite unknown-method response
 allows inline fallback. A definitely unsent cancelled inline prompt can clear pending.
-An ambiguous outcome retains pending and fails later replay, including after State
-reopen. Automatic fresh-native replacement/reconstruction remains outside this block.
+An ambiguous outcome retains pending and forbids replay into that same native identity,
+including after State reopen. Fresh-native reconstruction is described below.
+
+
+## Native history reconstruction (2026-11-04)
+
+Turn start replaces an uncertain or unavailable native conversation while retaining
+its app provider-thread row. It reconstructs prior visible app history, places older
+pending handoffs before the recovery summary and current handoffs after it, and
+refreshes the MCP credential after releasing the exact old query. An active native
+writer fails explicitly. Failed native forks use portable history at the selected
+boundary; merge admission preserves an unconsumed native fork base.
+
+A SQLite journal gates the fresh binding on acknowledged cleanup. Failed cleanup
+retries before a later input; stale attempts and already accepted input cannot
+request replacement. The journal does not promise original-process reattachment
+or exactly-once external tools. It never replays the uncertain current native turn.
+
+Handoff allowance follows native usage/window, model changes, attachment estimates,
+current input and the output reserve. When history cannot fit the old window, the
+service previews fresh history first. A fresh-window failure rolls back identity
+changes; active native background work blocks budget replacement. Unaccepted prior
+failed inputs receive a delta; compact/goal defer inline history until ordinary input.
+Legacy import handoff lists normalize only when missing or null, and old active
+restart runs without app provider rows retain their prior continuation path.
+
+See `nightly/native-recovery-intake.json` for the exact source, native CLI proofs,
+validation and remaining gaps. The implementation services are unchanged in4179;
+its new secret-request behavior is recorded separately as pending.

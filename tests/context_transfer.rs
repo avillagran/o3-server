@@ -31,18 +31,27 @@ fn send(c: &Connection, id: &str, message: &str, status: &str) -> Value {
         .unwrap()
         .clone()
 }
-fn server() -> support::Server {
-    support::start(|s| {
-        let peer = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/transfer/native.py");
+fn server_adapters() -> (
+    support::Server,
+    Arc<o3_server::claude::ClaudeProvider>,
+    Arc<o3_server::codex::CodexProvider>,
+) {
+    let peer = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/transfer/native.py");
+    let claude = Arc::new(o3_server::claude::ClaudeProvider::new(peer.clone()));
+    let codex = Arc::new(o3_server::codex::CodexProvider::new(peer, None));
+    let s = support::start(|s| {
         *s.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::Providers {
-            claude: Some(Arc::new(o3_server::claude::ClaudeProvider::new(
-                peer.clone(),
-            ))),
-            codex: Arc::new(o3_server::codex::CodexProvider::new(peer, None)),
+            claude: Some(claude.clone()),
+            codex: codex.clone(),
         }));
-    })
+    });
+    (s, claude, codex)
 }
+fn server() -> support::Server {
+    server_adapters().0
+}
+
 fn fork(c: &Connection, source: &str, target: &str, run: &Value) -> Value {
     cmd(c,json!({"type":"thread.fork","commandId":format!("fork-{target}"),"sourceThreadId":source,"targetThreadId":target,"sourcePoint":{"type":"run","runId":run["id"]}})).unwrap()
 }
@@ -190,13 +199,49 @@ fn injection_falls_back_only_on_method_absence_and_uncertain_delivery_is_not_rep
             "{p}"
         );
         if model == "inject-ambiguous" {
-            send(&c, "parent", "RETRY", "failed");
+            send(&c, "parent", "RETRY", "completed");
             let logs = trace(&s);
             assert_eq!(
                 logs.iter()
                     .filter(|f| f["method"] == "thread/inject_items")
                     .count(),
-                1
+                2
+            );
+            let injections = logs
+                .iter()
+                .filter(|f| f["method"] == "thread/inject_items")
+                .collect::<Vec<_>>();
+            assert_ne!(
+                injections[0]["params"]["threadId"],
+                injections[1]["params"]["threadId"]
+            );
+            assert!(injections[1]["params"]["items"]
+                .to_string()
+                .contains("PARENT-SEED"));
+            assert!(injections[1]["params"]["items"]
+                .to_string()
+                .contains("FORK-ONLY"));
+            assert!(logs
+                .iter()
+                .any(|f| f["method"] == "retired-credential-probe" && f["status"] == 401));
+            let old_digest =
+                logs.iter().find(|f| f["method"] == "thread/start").unwrap()["_mcpDigest"].clone();
+            let fresh_digest = logs
+                .iter()
+                .rfind(|f| f["method"] == "thread/start")
+                .unwrap()["_mcpDigest"]
+                .clone();
+            assert_ne!(old_digest, fresh_digest);
+            let child_digest =
+                logs.iter().find(|f| f["method"] == "thread/fork").unwrap()["_mcpDigest"].clone();
+            send(&c, "fork", "FORK-NEXT", "completed");
+            let after = trace(&s);
+            assert_eq!(
+                after
+                    .iter()
+                    .rfind(|f| f["method"] == "thread/resume")
+                    .unwrap()["_mcpDigest"],
+                child_digest
             );
             assert!(!logs
                 .iter()
@@ -283,7 +328,7 @@ fn live_native_fork_and_merge_back_with_private_codewords() {
                             .as_array()
                             .unwrap()
                             .iter()
-                            .any(|r| r["status"] == "failed"),
+                            .any(|r| r["userMessageId"] == id && r["status"] == "failed"),
                         "{instance}: {p}"
                     );
                     p["runs"]
@@ -325,6 +370,21 @@ fn live_native_fork_and_merge_back_with_private_codewords() {
             "native_fork"
         );
         merge(&c, "fork", "parent", &child, "merge").unwrap();
+        let before = projection(&c, "parent");
+        let ptid = before["thread"]["activeProviderThreadId"].clone();
+        let native = before["providerThreads"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|pt| pt["id"] == ptid)
+            .unwrap()["nativeThreadRef"]["nativeId"]
+            .clone();
+        cmd(&c,json!({"type":"message.dispatch","commandId":"abandoned","threadId":"parent","messageId":"abandoned","text":"This turn was interrupted before provider admission.","attachments":[],"dispatchMode":{"type":"defer_start"}})).unwrap();
+        {
+            let db = s.state.db.lock().unwrap();
+            db.execute("UPDATE records SET body=json_set(body,'$.delivery',json(?)) WHERE kind='contextHandoffs' AND thread_id='parent'",[json!({"nativeThreadId":native,"status":"pending","itemIds":[],"omittedItemIds":[]}).to_string()]).unwrap();
+            db.execute("UPDATE records SET body=json_set(body,'$.status','failed') WHERE kind='runs' AND thread_id='parent' AND json_extract(body,'$.userMessageId')='abandoned'",[]).unwrap();
+        }
         turn(
             "parent",
             "consume",
@@ -340,6 +400,21 @@ fn live_native_fork_and_merge_back_with_private_codewords() {
                     && m["text"].as_str().is_some_and(|s| s.contains(&second))),
             "{instance}: merge delta not read: {p}"
         );
+        let after_native = p["providerThreads"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|pt| pt["id"] == ptid)
+            .unwrap()["nativeThreadRef"]["nativeId"]
+            .clone();
+        assert_ne!(native, after_native);
+        assert_eq!(p["thread"]["activeProviderThreadId"], ptid);
+        assert!(p["contextHandoffs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|h| h["strategy"] == "full_thread_summary"
+                && h["targetRunId"] == p["runs"].as_array().unwrap().last().unwrap()["id"]));
         assert!(matches!(
             p["contextHandoffs"][0]["delivery"]["status"].as_str(),
             Some("injected" | "inline")
@@ -409,14 +484,24 @@ fn uncertain_delivery_journal_survives_reopened_state() {
         serde_json::from_str::<Value>(&body).unwrap()["delivery"],
         h["delivery"]
     );
-    send(&c, "parent", "AFTER-REOPEN", "failed");
+    send(&c, "parent", "AFTER-REOPEN", "completed");
     assert_eq!(
         trace(&s)
             .iter()
             .filter(|f| f["method"] == "thread/inject_items")
             .count(),
-        1
+        2
     );
+    let p = projection(&c, "parent");
+    assert_eq!(
+        p["thread"]["activeProviderThreadId"],
+        h["toProviderThreadId"]
+    );
+    assert_ne!(
+        p["contextHandoffs"][0]["delivery"]["nativeThreadId"],
+        h["delivery"]["nativeThreadId"]
+    );
+    assert_eq!(p["contextHandoffs"][0]["delivery"]["status"], "injected");
 }
 
 #[test]
@@ -651,4 +736,488 @@ fn side_chats_keep_stable_context_and_send_later_digest_only_as_current_input() 
         json!({"threadId":"empty"})
     );
     assert_eq!(p["contextTransfers"][0]["status"], "consumed");
+}
+
+#[test]
+fn missing_native_resume_reconstructs_and_busy_native_is_preserved_in_both_adapters() {
+    for instance in ["codex", "claudeAgent"] {
+        for model in ["resume-missing", "resume-in-use"] {
+            let (s, claude, codex) = server_adapters();
+            let c = s.connect();
+            create(&c, "parent", instance, "test");
+            let seed = send(&c, "parent", "PARENT-SEED", "completed");
+            let p = projection(&c, "parent");
+            let before = p["providerThreads"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|pt| pt["id"] == seed["providerThreadId"])
+                .unwrap()["nativeThreadRef"]
+                .clone();
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(async {
+                    if instance == "codex" {
+                        codex.shutdown().await
+                    } else {
+                        claude.shutdown().await
+                    }
+                });
+            // Imported records from older o3 versions can lack the handoff list.
+            {
+                let db = s.state.db.lock().unwrap();
+                db.execute("UPDATE records SET body=json_remove(body,'$.handoffIds') WHERE kind='providerThreads' AND id=?", [seed["providerThreadId"].as_str().unwrap()]).unwrap();
+            }
+            cmd(&c,json!({"type":"thread.model-selection.set","commandId":"model","threadId":"parent","modelSelection":{"instanceId":instance,"model":model}})).unwrap();
+            send(
+                &c,
+                "parent",
+                "CURRENT",
+                if model == "resume-missing" {
+                    "completed"
+                } else {
+                    "failed"
+                },
+            );
+            let p = projection(&c, "parent");
+            assert_eq!(
+                p["thread"]["activeProviderThreadId"],
+                seed["providerThreadId"]
+            );
+            let pt = p["providerThreads"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|pt| pt["id"] == seed["providerThreadId"])
+                .unwrap();
+            if model == "resume-in-use" {
+                assert_eq!(pt["nativeThreadRef"], before);
+                assert!(p["contextHandoffs"].as_array().unwrap().is_empty());
+            } else {
+                assert_ne!(pt["nativeThreadRef"], before);
+                let recovery = p["contextHandoffs"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|h| h["strategy"] == "full_thread_summary")
+                    .unwrap();
+                assert!(recovery["history"]["messages"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|m| m["text"] == "PARENT-SEED"));
+                assert_eq!(recovery["toProviderThreadId"], seed["providerThreadId"]);
+                assert_eq!(p["contextTransfers"][0]["createdBy"], "system");
+                assert_eq!(p["contextTransfers"][0]["status"], "consumed");
+            }
+        }
+    }
+}
+
+#[test]
+fn native_budget_rotation_reconstructs_but_does_not_interrupt_background_work() {
+    for background in [false, true] {
+        let s = server();
+        let c = s.connect();
+        create(&c, "parent", "codex", "test");
+        let seed = send(&c, "parent", "PARENT-SEED", "completed");
+        fork(&c, "parent", "fork", &seed);
+        let child = send(&c, "fork", "FORK-ONLY", "completed");
+        merge(&c, "fork", "parent", &child, "merge").unwrap();
+        {
+            let db = s.state.db.lock().unwrap();
+            db.execute("UPDATE records SET body=json_set(body,'$.contextUsage',json('{\"usedTokens\":128000,\"maxTokens\":128000,\"autoCompactThreshold\":120000}')) WHERE kind='providerThreads' AND id=?",[seed["providerThreadId"].as_str().unwrap()]).unwrap();
+            if background {
+                db.execute("UPDATE records SET body=json_set(body,'$.pendingBackgroundTasks',json('[{\"id\":\"native-background\"}]')) WHERE kind='providerThreads' AND id=?",[seed["providerThreadId"].as_str().unwrap()]).unwrap();
+            }
+        }
+        let result = send(
+            &c,
+            "parent",
+            "BUDGET-CURRENT",
+            if background { "failed" } else { "completed" },
+        );
+        let logs = trace(&s);
+        let starts = logs
+            .iter()
+            .filter(|f| f["method"] == "thread/start")
+            .count();
+        assert_eq!(starts, if background { 1 } else { 2 });
+        let p = projection(&c, "parent");
+        assert_eq!(result["providerThreadId"], seed["providerThreadId"]);
+        if background {
+            assert!(result["error"]
+                .as_str()
+                .unwrap()
+                .contains("background work"));
+            assert_eq!(p["contextHandoffs"].as_array().unwrap().len(), 1);
+        } else {
+            assert_eq!(p["contextHandoffs"].as_array().unwrap().len(), 2);
+            assert!(p["contextHandoffs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|h| h["delivery"]["status"] == "injected"));
+            let injection = logs
+                .iter()
+                .find(|f| f["method"] == "thread/inject_items")
+                .unwrap()["params"]["items"]
+                .to_string();
+            assert!(injection.contains("PARENT-SEED"));
+            assert!(injection.contains("FORK-ONLY"));
+        }
+    }
+}
+
+#[test]
+fn rejected_unaccepted_input_is_added_as_retry_history_without_rotating_native() {
+    let s = server();
+    let c = s.connect();
+    create(&c, "parent", "codex", "test");
+    let seed = send(&c, "parent", "PARENT-SEED", "completed");
+    send(&c, "parent", "REJECT-ME", "failed");
+    send(&c, "parent", "CONTINUE", "completed");
+    let p = projection(&c, "parent");
+    assert_eq!(
+        p["contextHandoffs"][0]["strategy"],
+        "delta_since_target_last_seen"
+    );
+    assert_eq!(p["contextHandoffs"][0]["transferId"], Value::Null);
+    assert!(p["contextHandoffs"][0]["history"]["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|m| m["text"] == "REJECT-ME"));
+    assert_eq!(
+        p["contextHandoffs"][0]["toProviderThreadId"],
+        seed["providerThreadId"]
+    );
+    let logs = trace(&s);
+    assert_eq!(
+        logs.iter()
+            .filter(|f| f["method"] == "thread/start")
+            .count(),
+        1
+    );
+    assert!(logs.iter().any(|f| f["method"] == "thread/inject_items"
+        && f["params"]["items"].to_string().contains("REJECT-ME")));
+    assert_eq!(
+        logs.iter().rfind(|f| f["method"] == "turn/start").unwrap()["params"]["input"][0]["text"],
+        "CONTINUE"
+    );
+}
+
+#[test]
+fn maintenance_defers_inline_history_and_the_next_turn_consumes_it() {
+    for instance in ["codex", "claudeAgent"] {
+        let s = server();
+        let c = s.connect();
+        create(&c, "parent", instance, "inject-inline");
+        let seed = send(&c, "parent", "PARENT-SEED", "completed");
+        fork(&c, "parent", "fork", &seed);
+        let child = send(&c, "fork", "FORK-ONLY", "completed");
+        merge(&c, "fork", "parent", &child, "merge").unwrap();
+        send(&c, "parent", "/compact", "completed");
+        let p = projection(&c, "parent");
+        assert!(p["contextHandoffs"][0].get("delivery").is_none(), "{p}");
+        let logs = trace(&s);
+        let received = if instance == "codex" {
+            &logs.iter().rfind(|f| f["method"] == "turn/start").unwrap()["params"]["input"]
+        } else {
+            &logs.iter().rfind(|f| f["method"] == "claude/user").unwrap()["input"]
+        };
+        assert_eq!(received[0]["text"], "/compact");
+        send(&c, "parent", "NEXT", "completed");
+        let p = projection(&c, "parent");
+        assert_eq!(p["contextHandoffs"][0]["delivery"]["status"], "inline");
+        let logs = trace(&s);
+        let current = if instance == "codex" {
+            &logs.iter().rfind(|f| f["method"] == "turn/start").unwrap()["params"]["input"]
+        } else {
+            &logs.iter().rfind(|f| f["method"] == "claude/user").unwrap()["input"]
+        };
+        assert!(current[0]["text"].as_str().unwrap().contains("FORK-ONLY"));
+    }
+}
+
+#[test]
+fn failed_native_cleanup_is_journaled_and_retried_before_fresh_admission() {
+    let s = server();
+    let c = s.connect();
+    create(&c, "parent", "codex", "inject-ambiguous-unload-error");
+    let seed = send(&c, "parent", "PARENT-SEED", "completed");
+    fork(&c, "parent", "fork", &seed);
+    let child = send(&c, "fork", "FORK-ONLY", "completed");
+    merge(&c, "fork", "parent", &child, "merge").unwrap();
+    send(&c, "parent", "UNKNOWN", "failed");
+    let first = send(&c, "parent", "FIRST-RECOVERY", "failed");
+    assert!(first["error"]
+        .as_str()
+        .unwrap()
+        .contains("unload temporarily failed"));
+    assert_eq!(
+        trace(&s)
+            .iter()
+            .filter(|f| f["method"] == "thread/start")
+            .count(),
+        1
+    );
+    {
+        let db = s.state.db.lock().unwrap();
+        assert_eq!(
+            db.query_row(
+                "SELECT count(*) FROM native_recoveries WHERE released_at IS NULL",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+            1
+        );
+    }
+    send(&c, "parent", "NEXT-RECOVERY", "completed");
+    let logs = trace(&s);
+    assert_eq!(
+        logs.iter()
+            .filter(|f| f["method"] == "thread/start")
+            .count(),
+        2
+    );
+    let injected = logs
+        .iter()
+        .rfind(|f| f["method"] == "thread/inject_items")
+        .unwrap()["params"]["items"]
+        .to_string();
+    assert!(injected.contains("FIRST-RECOVERY"));
+    assert!(injected.contains("PARENT-SEED"));
+    assert!(injected.contains("FORK-ONLY"));
+    let db = s.state.db.lock().unwrap();
+    assert_eq!(db.query_row("SELECT count(*) FROM native_recoveries WHERE released_at IS NULL OR new_native IS NULL",[],|r|r.get::<_,i64>(0)).unwrap(),0);
+}
+
+#[test]
+fn recovery_does_not_rotate_when_current_message_cannot_fit_a_fresh_window() {
+    let s = server();
+    let c = s.connect();
+    create(&c, "parent", "codex", "test");
+    let seed = send(&c, "parent", "PARENT-SEED", "completed");
+    fork(&c, "parent", "fork", &seed);
+    let child = send(&c, "fork", "FORK-ONLY", "completed");
+    merge(&c, "fork", "parent", &child, "merge").unwrap();
+    {
+        let db = s.state.db.lock().unwrap();
+        db.execute("UPDATE records SET body=json_set(body,'$.contextUsage',json('{\"usedTokens\":128000,\"maxTokens\":128000}')) WHERE kind='providerThreads' AND id=?",[seed["providerThreadId"].as_str().unwrap()]).unwrap();
+    }
+    {
+        let db = s.state.db.lock().unwrap();
+        db.execute("UPDATE records SET body=json_set(body,'$.pendingBackgroundTasks',json('[{\"id\":\"background\"}]')) WHERE kind='providerThreads' AND id=?",[seed["providerThreadId"].as_str().unwrap()]).unwrap();
+    }
+    let text = "x".repeat(110000);
+    cmd(&c,json!({"type":"message.dispatch","commandId":"large","threadId":"parent","messageId":"large","text":text,"attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
+    assert!(support::wait_for(Duration::from_secs(10), || projection(
+        &c, "parent"
+    )["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(
+            |r| r["userMessageId"] == "large" && r["status"] == "failed"
+        )));
+    let p = projection(&c, "parent");
+    assert!(p["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["userMessageId"] == "large")
+        .unwrap()["error"]
+        .as_str()
+        .unwrap()
+        .contains("Current input leaves no room"));
+    assert_eq!(
+        p["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["id"] == "large")
+            .unwrap()["text"]
+            .as_str()
+            .unwrap()
+            .len(),
+        text.len()
+    );
+    assert_eq!(p["contextHandoffs"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        trace(&s)
+            .iter()
+            .filter(|f| f["method"] == "thread/start")
+            .count(),
+        1
+    );
+    assert_eq!(
+        s.state
+            .db
+            .lock()
+            .unwrap()
+            .query_row("SELECT count(*) FROM native_recoveries", [], |r| r
+                .get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
+#[ignore = "four short installed Claude Haiku/Codex turns; missing-native resume recovery"]
+fn live_missing_native_resume_preserves_app_history() {
+    for (instance, model) in [("claudeAgent", "haiku"), ("codex", "gpt-6.1-sol")] {
+        let claude = o3_server::claude::ClaudeProvider::discover().map(Arc::new);
+        let codex = Arc::new(o3_server::codex::CodexProvider::default());
+        let s = support::start(|s| {
+            *s.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::Providers {
+                claude: claude.clone(),
+                codex: codex.clone(),
+            }));
+        });
+        let c = s.connect();
+        let cwd = s.dir.join("workspace");
+        std::fs::create_dir(&cwd).unwrap();
+        c.rpc("projects.mutate",json!({"type":"project.create","commandId":"project","projectId":"p","title":"Resume live","workspaceRoot":cwd,"scripts":[]})).unwrap();
+        create(&c, "parent", instance, model);
+        let word = format!(
+            "RESTORE{}",
+            o3_server::store::random_id().unwrap().replace('-', "")
+        );
+        for (id, text) in [
+            (
+                "seed",
+                format!("Remember codeword {word}. Reply READY only. Do not use tools."),
+            ),
+            (
+                "continue",
+                "Reply with only the codeword from earlier. Do not use tools.".into(),
+            ),
+        ] {
+            if id == "continue" {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap()
+                    .block_on(async {
+                        if let Some(claude) = &claude {
+                            claude.shutdown().await;
+                        }
+                        codex.shutdown().await;
+                    });
+                let fake = o3_server::store::random_id().unwrap();
+                let db = s.state.db.lock().unwrap();
+                db.execute("UPDATE records SET body=json_set(body,'$.nativeThreadRef.nativeId',?) WHERE kind='providerThreads' AND thread_id='parent'",[&fake]).unwrap();
+                if instance == "codex" {
+                    db.execute("UPDATE records SET body=json_set(body,'$.codexNativeThreadId',?) WHERE kind='thread' AND id='parent'",[&fake]).unwrap();
+                }
+            }
+            cmd(&c,json!({"type":"message.dispatch","commandId":id,"threadId":"parent","messageId":id,"text":text,"attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
+            assert!(
+                support::wait_for(Duration::from_secs(90), || {
+                    let p = projection(&c, "parent");
+                    let r = p["runs"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .find(|r| r["userMessageId"] == id)
+                        .unwrap();
+                    assert_ne!(r["status"], "failed", "{instance}: {}", r["error"]);
+                    r["status"] == "completed"
+                }),
+                "{instance}: native resume did not settle"
+            );
+        }
+        let p = projection(&c, "parent");
+        assert!(
+            p["messages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|m| m["role"] == "assistant"
+                    && m["text"].as_str().is_some_and(|s| s.contains(&word))),
+            "{instance}: restored app history was not consumed"
+        );
+        assert!(p["contextHandoffs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|h| h["strategy"] == "full_thread_summary"));
+        println!("{instance}: unavailable native reference recovers a private codeword in a fresh conversation");
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                if let Some(claude) = &claude {
+                    claude.shutdown().await;
+                }
+                codex.shutdown().await;
+            });
+    }
+}
+
+#[test]
+fn failed_native_forks_fall_back_at_the_selected_app_boundary() {
+    for instance in ["codex", "claudeAgent"] {
+        let s = server();
+        let c = s.connect();
+        create(&c, "parent", instance, "test");
+        let seed = send(&c, "parent", "PARENT-SEED", "completed");
+        cmd(&c,json!({"type":"thread.model-selection.set","commandId":"change","threadId":"parent","modelSelection":{"instanceId":instance,"model":"resume-missing"}})).unwrap();
+        if instance == "codex" {
+            send(&c, "parent", "AFTER-RECOVERY", "completed");
+        }
+        fork(&c, "parent", "fork", &seed);
+        send(&c, "fork", "FORK-ONLY", "completed");
+        let p = projection(&c, "fork");
+        assert_eq!(
+            p["contextTransfers"][0]["resolution"]["strategy"],
+            "portable_context"
+        );
+        assert_eq!(p["contextTransfers"][0]["status"], "consumed");
+        let messages = p["contextHandoffs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|h| h["strategy"] == "full_thread_summary")
+            .unwrap()["history"]["messages"]
+            .as_array()
+            .unwrap();
+        assert!(messages.iter().any(|m| m["text"] == "PARENT-SEED"));
+        assert!(!messages.iter().any(|m| m["text"] == "AFTER-RECOVERY"));
+    }
+}
+
+#[test]
+fn pending_native_fork_base_and_merge_delta_are_both_retained() {
+    let s = server();
+    let c = s.connect();
+    create(&c, "parent", "codex", "test");
+    let seed = send(&c, "parent", "PARENT-SEED", "completed");
+    fork(&c, "parent", "middle", &seed);
+    cmd(&c,json!({"type":"thread.fork","commandId":"side","sourceThreadId":"middle","targetThreadId":"side","sideChat":true,"sourcePoint":{"type":"latest_stable"}})).unwrap();
+    let side = send(&c, "side", "FORK-DELTA", "completed");
+    merge(&c, "side", "middle", &side, "merge").unwrap();
+    send(&c, "middle", "START-MIDDLE", "completed");
+    let p = projection(&c, "middle");
+    assert_eq!(
+        p["contextTransfers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["type"] == "fork")
+            .unwrap()["resolution"]["strategy"],
+        "native_fork"
+    );
+    assert_eq!(p["contextHandoffs"][0]["strategy"], "fork_delta_summary");
+    assert!(p["contextHandoffs"][0]["history"]["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|m| m["text"] == "FORK-DELTA"));
+    assert_eq!(p["contextHandoffs"][0]["delivery"]["status"], "injected");
 }

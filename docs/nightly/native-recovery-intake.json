@@ -1,0 +1,64 @@
+{
+  "checkedAt": "2026-11-04T15:08:40.233430+00:00",
+  "tag": "v0.1.8-nightly.20261104.4179",
+  "reference": "9e85538535c8553901351112ab02dd1dd62db5ee",
+  "url": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.8-nightly.20261104.4179",
+  "implementationReference": "8b44f42b14c8e273156474a924ccf29680dd7857",
+  "scope": "Native turn-start recovery and handoff allowance. Complete protocol goal remains active; no deployment or main promotion.",
+  "sourceFiles": [
+    "apps/server/src/orchestration-v2/ProviderTurnStartService.ts",
+    "apps/server/src/orchestration-v2/ProjectionStore.ts",
+    "apps/server/src/orchestration-v2/ContextHandoffDelivery.ts",
+    "apps/server/src/orchestration-v2/ContextHandoffService.ts",
+    "apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts",
+    "apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts",
+    "packages/provider-core/src/server/handoffBudget.ts",
+    "packages/shared/src/model.ts"
+  ],
+  "latestIntake": [
+    "Compared published4179 with4165 using both full commit objects. Orchestration-v2, handoffBudget.ts and orchestrationV2.ts are byte-identical.",
+    "4179 changes request_secret pasted-value file delivery, retry namespaces, unsaved-status notes, alwaysLoad metadata and provider instructions/context-byte estimates. These remain backlog; no claim of complete4179 parity."
+  ],
+  "implemented": [
+    "Uncertain prior native history delivery and rejected native resume reconstruct earlier app history in a fresh conversation while retaining the provider-thread row. An active native writer fails without splitting its conversation.",
+    "Native occupancy uses matching native identity, attempt root and latest usage; selection changes discard stale windows/compaction thresholds as in source. Claude windows come from the shipped profile manifest. Current request bytes, attachment allowances, native occupancy, output reserve and shared cap bound injected history.",
+    "Budget rotation previews a fresh conversation before mutating persistent identity; inputs that cannot fit fresh roll back. Native background work blocks budget rotation. Fork failure falls back at the selected app boundary, and a merge cannot erase a still-pending native fork base.",
+    "Failed/interrupted prior inputs without a provider acceptance receive a delta handoff. Pending older handoffs precede recovery summary and current handoffs; delivered ids and uncertain status are scoped to the native identity. Goal/compact retain their literal input when inline history must wait.",
+    "Replacement and exact old native cleanup are journaled before a fresh binding; failed cleanup retries before admission, survives reopening, and does not detach a sibling. Retired MCP credentials are revoked and the new native query receives refreshed credentials. Stale attempt and already-accepted-turn fences prevent replay.",
+    "Legacy imports initialize complete provider-thread fields and normalize only absent/null handoff lists. Legacy active restart rows without an app provider-thread retain their existing recovery path."
+  ],
+  "evidence": [
+    "Compatible Rust Connection exercises both adapters against real subprocess native-protocol peers. Regressions cover uncertainty/reopen, missing resume vs active writer, budget/background/no-fresh-fit, retry inputs, maintenance deferral, failed cleanup, stale binding, fork epoch changes, fork-plus-merge composition and legacy import/restart.",
+    "Golden fixtures execute the pinned upstream TypeScript functions: seven history selections, six usage transitions and eight budget cases; Rust matches exactly.",
+    "Installed Claude Haiku and Codex gpt-6.1-sol: eight inference turns demonstrate native fork, historical Codex boundary, merge-back after uncertain-delivery replacement and latest Claude side chat. Four additional inference turns demonstrate genuine missing-native resume failure and reconstruction of private prior codewords. Stable app provider-thread identity retained; isolated credential-copy homes and child processes cleaned.",
+    "Native-peer HTTP assertions prove retired token401, a refreshed replacement credential and an unchanged sibling credential. No credentials are retained in trace fixtures."
+  ],
+  "validation": {
+    "status": "passed",
+    "fullDefault": 415,
+    "fullNoDefault": 412,
+    "ignoredEach": 23,
+    "finalAffectedNoDefault": 170,
+    "finalAffectedIgnoredNoDefault": 7,
+    "finalImportAfterAcceptanceWaitFix": "2 passed per feature mode (in final full default and targeted minimal)",
+    "strictClippy": "all targets, both feature modes",
+    "other": [
+      "rustfmt",
+      "generated compatibility table",
+      "nightly monitor9",
+      "git diff --check",
+      "Python syntax and changed JSON",
+      "21 authoritative TypeScript golden cases",
+      "12 installed native inference turns"
+    ],
+    "scopeNotes": [
+      "The full minimal suite is followed by 170 affected checks after final import-field changes; the final import acceptance-wait adjustment is checked again. Final default full suite includes every change.",
+      "The installed native proofs precede final legacy-row/first-ordinal and test-wait adjustments; their native recovery behavior is unchanged."
+    ]
+  },
+  "pending": [
+    "Complete native Claude historical/SDK fork anchors, legacy native boundary/archive handling, native-fork occupancy inheritance, subagent/source-busy and staged-workspace side-chat guards, and all secondary/timeline projection fidelity.",
+    "Full non-merge provider-handoff/delta and previous-row reuse, active cross-instance restart/continuation/settlement; other MCP/auth/environment/provider/importer/forceStop surfaces.",
+    "4179 request_secret changes and full source-wide differential, latest desktop/Android acceptance and runtime resource measurements. No deployment/main/M2 changes."
+  ]
+}
