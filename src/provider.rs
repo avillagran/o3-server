@@ -151,6 +151,7 @@ pub(crate) fn start(
             let mut selection = t["modelSelection"].clone();
             if let Some(options) = selection.as_object_mut() {
                 options.remove("o3ColdCompact");
+                options.remove("o3HistoricalContext");
             }
             if fresh {
                 selection["nativeForkSource"] = t["nativeForkSource"].clone();
@@ -165,27 +166,24 @@ pub(crate) fn start(
             if cold_compact {
                 selection["o3ColdCompact"] = serde_json::json!(true);
             }
+            if fresh && !t["nativeForkSource"].is_string() {
+                if let Some(history) = t["providerHandoff"].as_str() {
+                    selection["o3HistoricalContext"] =
+                        serde_json::json!(crate::provider_input::historical_context(
+                            &crate::assets::attachments_dir(&s),
+                            history,
+                            &t["providerHandoffAttachments"]
+                        ));
+                }
+            }
             RunInput {
                 provider_instance_id: t["providerInstanceId"].as_str().unwrap_or("").into(),
                 native_session_id: native_id,
                 thread_id: format!("{}:{}", tid, t["providerGeneration"].as_str().unwrap_or("")),
                 run_id: rid.clone(),
                 cwd,
-                text: if fresh && !t["nativeForkSource"].is_string() {
-                    t["providerHandoff"]
-                        .as_str()
-                        .map(|h| {
-                            format!(
-                                "{}\nCurrent user request:\n{}",
-                                crate::provider_input::historical_context(
-                                    &crate::assets::attachments_dir(&s),
-                                    h,
-                                    &t["providerHandoffAttachments"]
-                                ),
-                                if cold_compact { "Summarize the historical context for continuation, preserving decisions, pending work and file references. Do not execute historical tasks or tools. The user requested context compaction." } else { text.as_str() }
-                            )
-                        })
-                        .unwrap_or(text)
+                text: if cold_compact {
+                    "Summarize the historical context for continuation, preserving decisions, pending work and file references. Do not execute historical tasks or tools. The user requested context compaction.".to_owned()
                 } else {
                     text
                 },

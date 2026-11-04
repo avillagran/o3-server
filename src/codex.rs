@@ -844,6 +844,40 @@ mod tests {
         provider.shutdown().await;
     }
     #[tokio::test]
+    async fn handoff_continuation_fits_native_text_limit_not_only_transport_limit() {
+        let provider = CodexProvider::new(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/codex/mock-server.py"),
+            None,
+        );
+        let mut input = input("budget-proof", None);
+        input.text = "burst followup proof".into();
+        input.model_selection["o3HistoricalContext"] = json!("h".repeat(1_057_107));
+        let dir = std::env::temp_dir().join(format!(
+            "o3-native-budget-{}",
+            crate::store::random_id().unwrap()
+        ));
+        input.attachment_root = dir.clone();
+        let (tx, mut rx) = mpsc::channel(1024);
+        let (_control, crx) = mpsc::channel(8);
+        let (_cancel, cancel) = watch::channel(false);
+        let read = async {
+            let mut completed = false;
+            while let Some(e) = rx.recv().await {
+                completed |= matches!(e, ProviderEvent::Completed);
+            }
+            completed
+        };
+        let (result, completed) = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            tokio::join!(provider.run(input, tx, crx, cancel), read)
+        })
+        .await
+        .unwrap();
+        result.unwrap();
+        assert!(completed);
+        provider.shutdown().await;
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[tokio::test]
     async fn large_outgoing_context_does_not_use_the_incoming_frame_limit() {
         let provider = CodexProvider::new(
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/codex/mock-server.py"),

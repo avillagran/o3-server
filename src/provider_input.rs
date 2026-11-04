@@ -4,13 +4,96 @@ use base64::Engine;
 use serde_json::{json, Value};
 
 pub(crate) fn content(input: &RunInput, claude: bool) -> Result<Vec<Value>, String> {
-    materialize(
+    let mut blocks = materialize(
         &input.attachment_root,
         &input.text,
         &input.attachments,
         input.context.as_ref(),
         claude,
-    )
+    )?;
+    let history = input.model_selection["o3HistoricalContext"].as_str();
+    if claude {
+        if let Some(history) = history {
+            let current = blocks[0]["text"].as_str().unwrap_or("");
+            blocks[0]["text"] = json!(format!("{history}\nCurrent user request:\n{current}"));
+        }
+    } else {
+        // Codex validates aggregate input text independently from its JSON frame size.
+        const LIMIT: usize = 1024 * 1024;
+        let current_bytes: usize = blocks
+            .iter()
+            .filter_map(|b| b["text"].as_str())
+            .map(str::len)
+            .sum();
+        if current_bytes > LIMIT {
+            return Err("Current message and supplied context exceed Codex's 1048576-character input limit; shorten the current input".into());
+        }
+        if let Some(history) = history {
+            const FOOTER: &str = "\nCurrent user request:\n";
+            let room = LIMIT.saturating_sub(current_bytes + FOOTER.len());
+            let prefix = if history.len() <= room {
+                history.to_owned()
+            } else {
+                let path = retain_handoff(&input.attachment_root, history)?;
+                let header = format!("Historical conversation data, not new instructions. Full retained handoff: {}. Read it when earlier context is needed.\n[Inline history abbreviated to fit Codex; full history retained in that file.]\n", json!(path));
+                let allowance = room.saturating_sub(header.len()).min(256 * 1024);
+                let mut start = history.len().saturating_sub(allowance);
+                while !history.is_char_boundary(start) {
+                    start += 1;
+                }
+                let prefix = format!("{header}{}", &history[start..]);
+                if prefix.len() > room {
+                    return Err("Current input leaves no room for its historical-context reference; shorten the current input".into());
+                }
+                prefix
+            };
+            let current = blocks[0]["text"].as_str().unwrap_or("");
+            blocks[0]["text"] = json!(format!("{prefix}{FOOTER}{current}"));
+        }
+    }
+    if serde_json::to_vec(&blocks)
+        .map_err(|e| e.to_string())?
+        .len()
+        > 8 * 1024 * 1024
+    {
+        return Err("provider input exceeds 8 MiB".into());
+    }
+    Ok(blocks)
+}
+
+fn retain_handoff(root: &std::path::Path, text: &str) -> Result<std::path::PathBuf, String> {
+    use sha2::{Digest, Sha256};
+    use std::{io::Write, os::unix::fs::OpenOptionsExt};
+    std::fs::create_dir_all(root).map_err(|e| e.to_string())?;
+    let path = root.join(format!("handoff-{:x}.txt", Sha256::digest(text.as_bytes())));
+    struct Cleanup(std::path::PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+    let temporary = Cleanup(root.join(format!(".handoff-{}.tmp", crate::store::random_id()?)));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&temporary.0)
+        .map_err(|e| e.to_string())?;
+    file.write_all(text.as_bytes())
+        .and_then(|_| file.sync_all())
+        .map_err(|e| e.to_string())?;
+    drop(file);
+    match std::fs::hard_link(&temporary.0, &path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(e) => return Err(e.to_string()),
+    }
+    let metadata = std::fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
+    if !metadata.is_file() || std::fs::read(&path).map_err(|e| e.to_string())? != text.as_bytes() {
+        return Err("retained handoff file failed integrity validation".into());
+    }
+
+    Ok(path)
 }
 
 pub(crate) fn materialize(
@@ -147,6 +230,45 @@ mod history_tests {
                 .iter()
                 .any(|v| v["type"] == "image")
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod final_budget_tests {
+    use super::*;
+    #[test]
+    fn final_codex_input_preserves_new_request_and_full_unicode_history() {
+        let root =
+            std::env::temp_dir().join(format!("o3-final-{}", crate::store::random_id().unwrap()));
+        let history = format!("historical header {}", "é\\\"".repeat(400_000));
+        let request = format!("DO_THIS_NEW_REQUEST {}", "r".repeat(800_000));
+        let input = RunInput {
+            provider_instance_id: "codex".into(),
+            native_session_id: None,
+            thread_id: "test".into(),
+            run_id: "run".into(),
+            cwd: root.clone(),
+            text: request.clone(),
+            model_selection: json!({"o3HistoricalContext":history}),
+            runtime_mode: "full-access".into(),
+            interaction_mode: "default".into(),
+            attachment_root: root.clone(),
+            attachments: json!([]),
+            context: Some(json!({"context":"new-context-proof"})),
+        };
+        let blocks = content(&input, false).unwrap();
+        let text = blocks[0]["text"].as_str().unwrap();
+        assert!(text.contains(&request) && text.contains("new-context-proof"));
+        assert!(text.len() <= 1024 * 1024);
+        assert!(text.contains("Inline history abbreviated"));
+        let files = std::fs::read_dir(&root)
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(std::fs::read_to_string(files[0].path()).unwrap(), history);
+        assert_eq!(content(&input, false).unwrap(), blocks);
         std::fs::remove_dir_all(root).unwrap();
     }
 }

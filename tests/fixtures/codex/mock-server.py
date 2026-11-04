@@ -23,6 +23,8 @@ for line in sys.stdin:
     elif m=='thread/resume':
         assert p['excludeTurns'] is True
         result={'thread':{'id':p['threadId']}}
+    elif m=='turn/start' and sum(len(x.get('text','')) for x in p.get('input',[])) > 1048576:
+        send(dict(id=i,error={'code':-32602,'message':'Input exceeds the maximum length of 1048576 characters.'}));continue
     elif m=='turn/start' and 'burst' in json.dumps(p.get('input')):
         # A burst of notifications far larger than any per-thread frame count.
         tid=p['threadId']; send(dict(id=i,result={'turn':{'id':'turn-'+tid}}))
