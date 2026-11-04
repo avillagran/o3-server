@@ -22,8 +22,9 @@ pub(crate) fn content(input: &RunInput, claude: bool) -> Result<Vec<Value>, Stri
         const LIMIT: usize = 1024 * 1024;
         let current_bytes: usize = blocks
             .iter()
-            .filter_map(|b| b["text"].as_str())
-            .map(str::len)
+            .map(|b| {
+                b["text"].as_str().map_or(0, str::len) + b["path"].as_str().map_or(0, str::len)
+            })
             .sum();
         if current_bytes > LIMIT {
             return Err("Current message and supplied context exceed Codex's 1048576-character input limit; shorten the current input".into());
