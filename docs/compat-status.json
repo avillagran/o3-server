@@ -327,9 +327,9 @@
       "note": "Real-client test: relative paths rooted lexically and by realpath (symlink escapes refused), 1 MiB cap with truncated flag, binary refused, allowMissing, absolute host paths read in place as T3 does, filesystem:read scope."
     },
     "projects.searchContents": {
-      "status": "skip",
+      "status": "partial",
       "priority": "unused",
-      "note": "No client call site in inventory."
+      "note": "Implemented from nightly source with real Connection regressions in tests/content_search.rs: literal/regex, invalid-regex fallback, case/whole-word, Unicode UTF-16 ranges, gitignore, binary/symlink exclusion, fresh edits and result limits. Bounded scan (250 ms, 1 MiB/file, 64 KiB/line, 2 MiB result), reports truncated on resource omissions. Uses ignore/regex rather than upstream fff index; ranking, full regex dialect and live nightly differential remain unverified."
     },
     "projects.searchEntries": {
       "status": "done",

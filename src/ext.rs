@@ -17,6 +17,7 @@ pub fn handles(tag: &str) -> bool {
                 | "assets.createUrl"
                 | "projects.readFile"
                 | "projects.searchEntries"
+                | "projects.searchContents"
                 | "filesystem.browse"
                 | "filesystem.getMetadata"
                 | "shell.openInEditor"
@@ -50,6 +51,7 @@ pub async fn call(s: &Arc<State>, tag: &str, p: Value) -> Result<Value, Value> {
         "assets.createUrl" => assets::create_url_async(s, &p).await,
         "projects.readFile" => Box::pin(files::read_file(p)).await,
         "projects.searchEntries" => Box::pin(files::search_entries(p)).await,
+        "projects.searchContents" => crate::content_search::search(p).await,
         "filesystem.browse" => Box::pin(files::browse(p)).await,
         "filesystem.getMetadata" => Box::pin(files::get_metadata(p)).await,
         "shell.openInEditor" => Box::pin(files::open_in_editor(p)).await,

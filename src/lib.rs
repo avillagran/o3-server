@@ -30,6 +30,7 @@ pub mod claude;
 mod claude_projection;
 pub mod codex;
 mod codex_projection;
+mod content_search;
 pub mod ext;
 pub mod files;
 pub mod import;

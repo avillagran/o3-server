@@ -2785,3 +2785,30 @@ transcript is not changed. Current user input which alone exceeds the native lim
 rejected explicitly rather than silently shortened. Tests enforce the native text limit in
 the Codex peer, exercise a completed continuation turn with an oversized handoff, and verify
 that Unicode history remains byte-for-byte readable from the retained file.
+
+### Nightly workspace content search (2026-11-04)
+
+`projects.searchContents` is now routed with its existing `filesystem:read` scope.
+The implementation follows the contract and fixtures in nightly 4119 source
+`cefb544af3c98224874419198c0359b652ca3c94`, notably `packages/contracts/src/project.ts`
+and `apps/server/src/workspace/WorkspaceEntries.test.ts`. It searches file contents
+with literal/regex, case-sensitive and whole-word options; whitespace in the query
+is significant. Match offsets are UTF-16 code units, including after astral letters.
+Invalid or unsupported regex falls back to a literal query and returns
+`regexFallbackError`. Zero-width matches are omitted.
+
+At most two blocking workers scan fresh files using the Rust ignore/regex libraries. It honors
+ignore files, includes hidden files, excludes `.git`, does not follow symlinks and
+skips binary/non-UTF-8 content. Search results are bounded to 500 lines overall and
+100 lines per file. Additional o3 budgets are 250 ms of scan time, 1 MiB per file,
+64 KiB per line and 2 MiB serialized items; skipped oversized content or an exhausted
+budget sets `truncated`. The deadline is cooperative between filesystem operations
+and lines, not a hard deadline for slow filesystem calls. This is not upstream's
+persistent fff index, ranking, or a guarantee of full regex dialect equivalence.
+
+The real Connection regressions failed before implementation with RpcNotImplemented.
+They cover Unicode and punctuation word boundaries, case/regex escapes, whitespace,
+late whole-word matches, ignored/binary/external symlink content, per-file/global
+limits, fresh edits, fallback and oversized content. Unit tests check typed errors
+and schema bounds. No live nightly differential or desktop/Android UI acceptance
+has been run for this port; the compatibility row remains partial.
