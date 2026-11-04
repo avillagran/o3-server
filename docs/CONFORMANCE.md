@@ -2855,3 +2855,27 @@ acceptance remain incomplete; this does not establish complete nightly parity.
 Validation for this block: 319 default / 316 no-default pass; 21 opt-ins ignored each.
 Strict Clippy in both modes, fmt, generated compatibility and nine nightly-monitor
 tests pass. No service deployment occurred.
+
+
+### MCP projects and workspace inspection (2026-11-04)
+
+Four project mutations and two worktree readers now use the shared MCP transport.
+Project writes require full-access/default and recheck authority under the SQLite
+transaction, before replay. The ordinary project path also enforces atomic workspace
+uniqueness, nonempty deletion, pin/archive fields, monogram graphemes and script-ID rules.
+Cloning is shared with sourceControl.cloneRepository, stays separate from registration,
+and supports raw remotes plus GitHub gh lookup/protocol fallback. Native and external
+worktree readers share existing ref pagination and the missing-worktree fallback.
+
+The existing readers/thread-control tests remain; new MCP/Git tests exercise actual
+settings, files, checkouts, native defaults and rejected authority. A subprocess host
+fixture verifies protocol selection and failure retention; a transaction regression
+covers stale authority and receipt replay. See [MCP.md](MCP.md) for behavior and limits.
+Worktree handoff and thread launch remain pending with provider detach/setup/continuation;
+other-host repository lookup and full project enrichment still need source parity.
+No service deployment or full-nightly conformance is asserted.
+
+Validation: full suites pass with 326 default / 323 no-default tests (21 opt-ins
+ignored each). Final MCP/project/clone/native regressions and strict Clippy pass in
+both configurations; fmt, generated compatibility and nine nightly-monitor tests pass.
+The existing compatible desktop and live hosted-network flows were not exercised.

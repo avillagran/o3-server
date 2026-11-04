@@ -1,0 +1,22 @@
+{
+  "checkedAt": "2026-11-04T05:21:17.676084+00:00",
+  "reference": "322f6544dfad0a3c8a0c8cbecf2c7f7874b14268",
+  "tag": "v0.1.7-nightly.20261104.4151",
+  "url": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.7-nightly.20261104.4151",
+  "scope": "Project mutations, shared clone RPC and worktree readers only; full protocol goal remains active.",
+  "implemented": [
+    "t3_project_create/update/delete/clone with environment authority",
+    "Transaction-time project admission before receipt replay, atomic workspace uniqueness and nonempty-delete checks",
+    "Named scaffold/commitError, pin/archive, script-ID and grapheme rules",
+    "Shared sourceControl.cloneRepository with raw URLs, GitHub lookup and SSH/HTTPS fallback",
+    "t3_worktree_list/status, native default target and removed-worktree fallback"
+  ],
+  "pending": [
+    "Worktree handoff: compare expected path, detach current provider, prepare setup and durable continuation together",
+    "Thread launch/restart/transfer and deferred caller settlement",
+    "Other-host repository lookup adapters and complete project enrichment",
+    "Remaining task/attachment/PR/device/preview/HTML/scheduler toolkits and subagent-specific scopes",
+    "OAuth/DPoP/SSE/linked environments/hosted links, ACP/OpenCode, forceStopThread, execution-history importer",
+    "Live latest-source differential and compatible-client acceptance"
+  ]
+}

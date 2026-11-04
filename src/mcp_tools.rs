@@ -39,6 +39,7 @@ pub(crate) fn catalog() -> Vec<Value> {
         definition("t3_thread_read","Read durable thread state and paginated messages or activity. Use itemId and textOffset to read more of a truncated item.",json!({"threadId":string(),"itemId":string(),"textOffset":integer(0,usize::MAX),"view":{"type":"string","enum":["messages","activity"]},"afterPosition":integer(0,usize::MAX),"limit":integer(1,100),"runLimit":integer(1,50),"maxCharsPerItem":integer(1,50000)}),&["threadId"]),
     ];
     tools.extend(crate::mcp_mutations::catalog());
+    tools.extend(crate::mcp_projects::catalog());
     tools
 }
 pub(crate) fn prepare_arguments(name: &str, mut args: Value) -> Value {
@@ -62,7 +63,7 @@ pub(crate) fn validate(name: &str, p: &Value) -> Result<(), String> {
         .ok_or("Unknown tool")?;
     validate_schema(&tool["inputSchema"], p).map_err(|e| format!("Invalid tool arguments: {e}"))
 }
-fn validate_schema(schema: &Value, p: &Value) -> Result<(), String> {
+pub(crate) fn validate_schema(schema: &Value, p: &Value) -> Result<(), String> {
     let fail = || Err("value does not match input schema".to_owned());
     if let Some(choices) = schema["anyOf"].as_array() {
         return if choices.iter().any(|s| validate_schema(s, p).is_ok()) {
@@ -97,6 +98,14 @@ fn validate_schema(schema: &Value, p: &Value) -> Result<(), String> {
             let Some(text) = p.as_str() else {
                 return fail();
             };
+            if let Some(pattern) = schema["pattern"].as_str() {
+                if !regex::Regex::new(pattern)
+                    .map_err(|_| "Invalid schema pattern".to_owned())?
+                    .is_match(text)
+                {
+                    return fail();
+                }
+            }
             let n = text.encode_utf16().count() as u64;
             if schema["minLength"]
                 .as_u64()

@@ -45,6 +45,7 @@ fn native_sessions_reuse_mcp_credentials_enforce_modes_and_revoke_on_exit() {
             }))
         });
         let c = s.connect();
+        c.rpc("projects.mutate",json!({"type":"project.create","commandId":"project","projectId":"p","title":"Native","workspaceRoot":s.dir})).unwrap();
         c.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"c","threadId":"t","projectId":"p","title":"Browser","modelSelection":{"instanceId":instance,"model":"test"},"runtimeMode":"approval-required","interactionMode":"default"})).unwrap();
         c.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"higher","threadId":"higher","projectId":"p","title":"Higher","modelSelection":{"instanceId":instance,"model":"test"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
         let capture = s.dir.join("peer-observation.json");
@@ -102,6 +103,24 @@ fn native_sessions_reuse_mcp_credentials_enforce_modes_and_revoke_on_exit() {
                 reply["result"]["structuredContent"]["code"], "parent_not_active",
                 "{reply}"
             );
+            if index == 0 {
+                s.state.db.lock().unwrap().execute("UPDATE records SET body=json_set(body,'$.deletedAt','2026-11-04T00:00:00Z') WHERE kind='project' AND id='p'",[]).unwrap();
+                let (_, missing) = native_request(
+                    &s,
+                    &observed,
+                    "tools/call",
+                    json!({"name":"t3_worktree_status","arguments":{}}),
+                );
+                assert_eq!(
+                    missing["result"]["structuredContent"]["_tag"],
+                    "WorktreeMcpFailure"
+                );
+                assert_eq!(
+                    missing["result"]["structuredContent"]["code"],
+                    "project_not_found"
+                );
+                s.state.db.lock().unwrap().execute("UPDATE records SET body=json_set(body,'$.deletedAt',NULL) WHERE kind='project' AND id='p'",[]).unwrap();
+            }
             let auth = native_auth(&observed);
             for (method, path) in [
                 ("GET", "/api/projects"),

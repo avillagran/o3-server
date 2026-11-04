@@ -87,6 +87,13 @@ impl Authority {
         scope.caller(&state.reader.lock().unwrap(), write)?;
         Ok(())
     }
+    pub(crate) fn environment(&self, state: &State) -> Result<(), Value> {
+        self.check(
+            &state.reader.lock().unwrap(),
+            &json!({"type":"project.create"}),
+        )
+        .map_err(command_error)
+    }
     pub fn narrowed(mut self, runtime: &str, interaction: &str) -> Self {
         self.requested_runtime = Some(runtime.to_owned());
         self.interaction_ceiling = interaction.to_owned();

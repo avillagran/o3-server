@@ -12,6 +12,7 @@ pub fn handles(tag: &str) -> bool {
         || matches!(
             tag,
             "projects.mutate"
+                | "sourceControl.cloneRepository"
                 | "attachments.createUploadUrl"
                 | "attachments.delete"
                 | "assets.createUrl"
@@ -46,6 +47,7 @@ pub async fn call(s: &Arc<State>, tag: &str, p: Value) -> Result<Value, Value> {
         "projects.mutate" => crate::projects::mutate_resolved(s, &p).await.map_err(
             |message| serde_json::json!({"_tag":"ProjectMutationError","message":message}),
         ),
+        "sourceControl.cloneRepository" => crate::repositories::clone(s, &p, None).await,
         "attachments.createUploadUrl" => assets::create_upload_url(s, &p),
         "attachments.delete" => assets::delete_attachment(s, &p),
         "assets.createUrl" => assets::create_url_async(s, &p).await,

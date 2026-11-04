@@ -7,8 +7,10 @@ pub mod http;
 mod mcp;
 mod mcp_access;
 mod mcp_mutations;
+mod mcp_projects;
 mod mcp_tools;
 pub mod native_mcp;
+mod repositories;
 pub mod rpc;
 pub mod store;
 
