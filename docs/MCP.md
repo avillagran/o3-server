@@ -327,3 +327,37 @@ background/browser regressions and strict Clippy pass in both configurations. fm
 generated compatibility and nine nightly-monitor tests pass. Latest source rechecked at
 06:06 UTC: nightly4151, 322f6544dfad0a3c8a0c8cbecf2c7f7874b14268.
 Worktree handoff, launch and the remaining protocol backlog stay open.
+
+
+## Workspace transition prerequisite (2026-11-04)
+
+The ordinary thread.metadata.update command now checks expectedWorktreePath,
+expectedBranch and expectedEmpty inside its receipt transaction. Explicit null is a
+comparison value. Title-only edits and unchanged worktree paths leave native sessions
+attached. A real path change interrupts live work, cancels pending native requests and
+records provider-session detachment with a persistent effect, while preserving queued
+messages, native conversation IDs, files and terminal resources.
+
+The effect waits for supervised runs to stop, unloads cached native sessions and then
+releases queued work in the new directory. Failures retry; startup continues pending
+jobs. Native-detach acknowledgement and queue release have separate durable markers,
+so a restart can release the queue without unloading a successor's session. Immediate
+starts and steering cannot cross a pending detach barrier. Cached Claude processes are
+replaced with --resume; Codex unloads only the affected native thread, then resumes its
+identity with the new cwd. A live shared Codex process retains the same MCP credential
+across this ordinary detach, as in ProviderSessionManager; deletion still revokes it.
+Late binding replies are unloaded unless a live successor owns or is resuming that ID.
+
+This supplies the shared transition needed by t3_worktree_handoff. That MCP tool still
+requires branch/base selection, fetch/create/rollback, setup and durable continuation
+orchestration; it is not advertised yet. Thread launch and the wider protocol backlog
+remain pending. Deterministic native peers verify directory/identity, credentials,
+sibling isolation, retry and delayed resume; module tests cover transaction rollback,
+comparison races, no-ops and two restart boundaries. Installed-provider inference and
+compatible desktop acceptance were not exercised.
+
+Validation for this block: full suites pass with 333 default / 330 no-default tests,
+21 opt-ins ignored each. Final transaction/recovery module tests plus 32 workspace,
+deletion, queue/thread-command and HTTP MCP regressions pass per configuration.
+Strict Clippy passes in both modes; fmt, generated compatibility and all nine
+nightly-monitor tests pass. No service deployment occurred.

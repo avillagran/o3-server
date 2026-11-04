@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-11-04T06:06:06.961726+00:00",
+  "checkedAt": "2026-11-04T06:15:05.726795+00:00",
   "reference": "322f6544dfad0a3c8a0c8cbecf2c7f7874b14268",
   "tag": "v0.1.7-nightly.20261104.4151",
   "url": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.7-nightly.20261104.4151",
@@ -12,10 +12,11 @@
     "t3_worktree_list/status, native default target and removed-worktree fallback",
     "Receipt-atomic ordinary/forced-project thread deletion with cancellation and persistent cleanup outbox",
     "Native credential revocation, cached Claude disposal and per-thread Codex unsubscribe across retired pools, retries and late bindings",
-    "Restart/legacy tombstone recovery, terminal history, preview, schedule and attachment-sidecar cleanup with shared-file retention"
+    "Restart/legacy tombstone recovery, terminal history, preview, schedule and attachment-sidecar cleanup with shared-file retention",
+    "Ordinary thread.metadata.update expected-path/branch/empty comparisons, durable workspace detach barrier and native conversation/queue resumption; shared Codex credential retained"
   ],
   "pending": [
-    "Worktree handoff: compare expected path, detach current provider, prepare setup and durable continuation together",
+    "MCP worktree handoff orchestration: branch/base selection and fetch, worktree creation/rollback, setup and durable continuation together, using the shared workspace-detach path",
     "Thread launch/restart/transfer and deferred caller settlement",
     "Other-host repository lookup adapters and complete project enrichment",
     "Remaining task/attachment/PR/device/preview/HTML/scheduler toolkits and subagent-specific scopes",

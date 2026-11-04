@@ -129,6 +129,7 @@ pub trait Provider: Send + Sync + 'static {
         _instance: &'a str,
         _key: &'a str,
         _native: Option<&'a str>,
+        _revoke: bool,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(async { Ok(()) })
     }
@@ -215,6 +216,7 @@ pub(crate) fn start(
             let t = crate::events::get(&db, "thread", &tid).unwrap_or_default();
             let r = crate::events::get(&db, "runs", &rid).unwrap_or_default();
             if !t["deletedAt"].is_null()
+                || crate::workspace_transition::pending(&db, &tid).unwrap_or(true)
                 || matches!(
                     r["status"].as_str(),
                     Some("cancelled" | "completed" | "failed" | "interrupted" | "rolled_back")
@@ -467,6 +469,7 @@ pub(crate) fn start(
         tokio::select! {r=&mut task=>{match r {Ok(Ok(()))=>finished=true,Ok(Err(e))=>failure=Some(e),Err(e)=>failure=Some(e.to_string())}},_=tokio::time::sleep(std::time::Duration::from_secs(2))=>{task.abort();let _=task.await;}}
         s.native_mcp.finish_turn(&tid).await;
         if !checkpoint_finished
+            && !crate::workspace_transition::pending(&s.db.lock().unwrap(), &tid).unwrap_or(true)
             && crate::events::get(&s.db.lock().unwrap(), "thread", &tid)
                 .is_ok_and(|t| t["deletedAt"].is_null())
         {
@@ -748,11 +751,12 @@ impl Provider for Providers {
         instance: &'a str,
         key: &'a str,
         native: Option<&'a str>,
+        revoke: bool,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         match instance {
-            "codex" => self.codex.detach(instance, key, native),
+            "codex" => self.codex.detach(instance, key, native, revoke),
             "claudeAgent" | "claude" | "claude-code" => match &self.claude {
-                Some(p) => p.detach(instance, key, native),
+                Some(p) => p.detach(instance, key, native, revoke),
                 None => Box::pin(async { Ok(()) }),
             },
             _ => Box::pin(async { Ok(()) }),
@@ -1251,6 +1255,7 @@ impl Provider for ConfiguredProviders {
         instance: &'a str,
         key: &'a str,
         native: Option<&'a str>,
+        revoke: bool,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         let selected = self
             .instances
@@ -1264,8 +1269,8 @@ impl Provider for ConfiguredProviders {
             .and_then(|i| i.provider.clone());
         Box::pin(async move {
             match selected {
-                Some(p) => p.detach(instance, key, native).await,
-                None => self.defaults.detach(instance, key, native).await,
+                Some(p) => p.detach(instance, key, native, revoke).await,
+                None => self.defaults.detach(instance, key, native, revoke).await,
             }
         })
     }
