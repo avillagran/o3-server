@@ -3375,3 +3375,29 @@ schemas are unchanged from4179; inspected Codex adapter changes replace an
 undefined-valued Effect with Effect.undefined. This checkpoint remains applicable
 to those unchanged lifecycle sources. Broader4192 crypto/auth/PayloadSigner/DPoP
 and stream-defect recovery changes require their own intake and verification.
+
+## Nightly 4192 signature decoding checkpoint (2026-11-04)
+
+PR35 passed both checks on fb8c09b672add3f4c3bfad9f8e18fee742cbf894 and merged
+into dev 0070bf3. Nightly 4192 (7f6f47b27b44456f1c8214d3b566b375c09f629e) moves
+server HMAC, key and random work from node:crypto/jose to effect/crypto behind
+PayloadSigner and AssetSigner. Token layouts, claims, HMAC inputs and signing-key
+names are byte-identical, so tokens issued by either server keep verifying.
+
+The observable change is decoding. PayloadSigner and token payloads use Effect's
+Base64Url: padded or unpadded input, CR/LF stripped, non-zero trailing bits
+ignored. Tokens split as `const [payload, signature] = token.split(".")`, so later
+segments are ignored. Webhook tags use Effect's Hex (ASCII hex digits only) and
+Base64 (canonical padding, trailing bits ignored) before HMAC verification. o3's
+session/websocket, asset/upload and webhook verifiers now follow those rules. The
+decoder table is checked against effect@4.1.2 output, and the webhook regression
+failed on the previous source because `"+f"` was accepted as a hex byte.
+
+Desktop bootstrap, relay JWT/environment signing, DPoP and MCP OAuth refactors keep
+their semantics; o3 does not serve those surfaces. The client-runtime stream-defect
+fix changes no server wire. Evidence:
+[signature-decoding-intake.json](nightly/signature-decoding-intake.json).
+
+Validation: full suites 463 default / 460 without default features, 28 opt-ins
+ignored each; strict all-target Clippy both modes, fmt, generated compatibility
+and diff checks pass.

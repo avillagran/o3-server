@@ -57,15 +57,11 @@ fn sign(s: &State, claims: &Value) -> std::io::Result<String> {
 }
 /// Claims of an unexpired token carrying a valid signature.
 fn verify(s: &State, token: &str, kind_ok: impl Fn(&str) -> bool) -> Option<Value> {
-    let mut parts = token.split('.');
-    let (payload, sig) = (parts.next()?, parts.next()?);
-    if payload.is_empty() || sig.is_empty() || parts.next().is_some() {
-        return None;
-    }
+    let (payload, sig) = auth::token_parts(token)?;
     let mut m = mac(&signing_key(s).ok()?);
     m.update(payload.as_bytes());
-    m.verify_slice(&B64.decode(sig).ok()?).ok()?;
-    let claims: Value = serde_json::from_slice(&B64.decode(payload).ok()?).ok()?;
+    m.verify_slice(&auth::decode_b64url(sig)?).ok()?;
+    let claims: Value = serde_json::from_slice(&auth::decode_b64url(payload)?).ok()?;
     if let Some(sid) = claims["sessionId"].as_str() {
         let valid: bool = s.db.lock().ok()?.query_row("SELECT EXISTS(SELECT 1 FROM auth_sessions WHERE session_id=? AND revoked_at IS NULL AND expires_at>?)", rusqlite::params![sid,now_ms()], |r| r.get(0)).ok()?;
         if !valid {

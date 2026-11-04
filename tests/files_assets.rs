@@ -392,17 +392,22 @@ fn workspace_assets_are_signed_confined_and_path_traversal_safe() {
         .0,
         404
     );
-    assert_eq!(
-        http(
-            &e.base,
-            "GET",
-            &format!("/api/assets/{good}.extra/a.png"),
-            &[],
-            b""
-        )
-        .0,
-        404
-    );
+    // T3 destructures `token.split(".")` and decodes with Effect's Base64Url: later segments
+    // and canonical padding are accepted; the MAC still covers the whole payload.
+    for variant in [format!("{good}.extra"), format!("{good}=")] {
+        assert_eq!(
+            http(
+                &e.base,
+                "GET",
+                &format!("/api/assets/{variant}/a.png"),
+                &[],
+                b""
+            )
+            .0,
+            200,
+            "{variant}"
+        );
+    }
     let expired = sign(
         &e,
         json!({"version":1,"kind":"workspace-file","workspaceRoot":root.to_str().unwrap(),"baseRelativePath":"page","expiresAt":1}),

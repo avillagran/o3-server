@@ -41,6 +41,72 @@ pub fn load_or_create_key(path: &Path) -> io::Result<Vec<u8>> {
     }
 }
 
+const TRAILING_BITS_OK: base64::engine::GeneralPurposeConfig =
+    base64::engine::GeneralPurposeConfig::new()
+        .with_encode_padding(false)
+        .with_decode_allow_trailing_bits(true);
+const URL_LENIENT: base64::engine::GeneralPurpose = base64::engine::GeneralPurpose::new(
+    &base64::alphabet::URL_SAFE,
+    TRAILING_BITS_OK.with_decode_padding_mode(base64::engine::DecodePaddingMode::RequireNone),
+);
+const STANDARD_LENIENT: base64::engine::GeneralPurpose = base64::engine::GeneralPurpose::new(
+    &base64::alphabet::STANDARD,
+    TRAILING_BITS_OK.with_decode_padding_mode(base64::engine::DecodePaddingMode::RequireCanonical),
+);
+
+fn strip_crlf(s: &str) -> std::borrow::Cow<'_, str> {
+    if s.contains(['\r', '\n']) {
+        s.replace(['\r', '\n'], "").into()
+    } else {
+        s.into()
+    }
+}
+
+/// Effect's `Base64Url.decode`, which T3's PayloadSigner and token payloads use: padded or
+/// unpadded, CR/LF stripped, non-zero trailing bits ignored.
+pub fn decode_b64url(s: &str) -> Option<Vec<u8>> {
+    let s = strip_crlf(s);
+    let data = s.trim_end_matches('=');
+    let pad = s.len() - data.len();
+    let shape_ok = if pad > 0 {
+        pad <= 2 && s.len().is_multiple_of(4)
+    } else {
+        s.len() % 4 != 1
+    };
+    let alphabet_ok = |b: u8| b.is_ascii_alphanumeric() || b == b'-' || b == b'_';
+    if !shape_ok || !data.bytes().all(alphabet_ok) {
+        return None;
+    }
+    URL_LENIENT.decode(data).ok()
+}
+
+/// Effect's `Base64.decode` (webhook signatures): canonical padding, CR/LF stripped, non-zero
+/// trailing bits ignored.
+pub fn decode_b64(s: &str) -> Option<Vec<u8>> {
+    STANDARD_LENIENT.decode(strip_crlf(s).as_bytes()).ok()
+}
+
+/// Effect's `Hex.decode`: even length, ASCII hex digits of either case only.
+pub fn decode_hex(s: &str) -> Option<Vec<u8>> {
+    let b = s.as_bytes();
+    if !b.len().is_multiple_of(2) || !b.iter().all(u8::is_ascii_hexdigit) {
+        return None;
+    }
+    let digit = |c: u8| (c as char).to_digit(16).unwrap() as u8;
+    Some(
+        b.chunks(2)
+            .map(|p| digit(p[0]) << 4 | digit(p[1]))
+            .collect(),
+    )
+}
+
+/// T3's `const [payload, signature] = token.split(".")`: both non-empty, later parts ignored.
+pub fn token_parts(token: &str) -> Option<(&str, &str)> {
+    let mut parts = token.split('.');
+    let (payload, signature) = (parts.next()?, parts.next()?);
+    (!payload.is_empty() && !signature.is_empty()).then_some((payload, signature))
+}
+
 pub fn sign(claims: &Value, secret: &[u8]) -> String {
     let payload = B64.encode(claims.to_string());
     let mut hmac = mac(secret);
@@ -50,11 +116,11 @@ pub fn sign(claims: &Value, secret: &[u8]) -> String {
 
 /// Claims of a token signed with `secret`, of this `kind`, not expired at `now_ms`.
 pub fn verify(token: &str, kind: &str, secret: &[u8], now_ms: i64) -> Option<Value> {
-    let (payload, signature) = token.split_once('.')?;
+    let (payload, signature) = token_parts(token)?;
     let mut hmac = mac(secret);
     hmac.update(payload.as_bytes());
-    hmac.verify_slice(&B64.decode(signature).ok()?).ok()?;
-    let claims: Value = serde_json::from_slice(&B64.decode(payload).ok()?).ok()?;
+    hmac.verify_slice(&decode_b64url(signature)?).ok()?;
+    let claims: Value = serde_json::from_slice(&decode_b64url(payload)?).ok()?;
     (claims["kind"] == kind && claims["exp"].as_i64()? > now_ms).then_some(claims)
 }
 
@@ -99,6 +165,78 @@ mod tests {
         assert!(verify(&token, "session", &[8; 32], 9).is_none());
         let (payload, signature) = token.split_once('.').unwrap();
         assert!(verify(&format!("{payload}x.{signature}"), "session", KEY, 9).is_none());
+    }
+
+    fn hex_of(bytes: Option<Vec<u8>>) -> Option<String> {
+        bytes.map(|b| b.iter().map(|x| format!("{x:02x}")).collect())
+    }
+
+    #[test]
+    fn decoders_match_effect_4_1_2() {
+        // Oracle: effect@4.1.2 dist Base64Url/Base64/Hex.decode, which T3 nightly 4192 uses.
+        let url = [
+            ("AAAA", Some("000000")),
+            ("AQ", Some("01")),
+            ("AQ==", Some("01")),
+            ("AQ=", None),
+            ("AR", Some("01")),
+            ("AQI", Some("0102")),
+            ("AQI=", Some("0102")),
+            ("A", None),
+            ("AQ===", None),
+            ("A=Q", None),
+            ("+/", None),
+            ("-_", Some("fb")),
+            ("AQ\r\n", Some("01")),
+            ("", Some("")),
+            ("AQ.", None),
+            ("AAAAAA==", Some("00000000")),
+        ];
+        for (input, want) in url {
+            assert_eq!(
+                hex_of(decode_b64url(input)).as_deref(),
+                want,
+                "url {input:?}"
+            );
+        }
+        let std = [
+            ("AQ==", Some("01")),
+            ("AR==", Some("01")),
+            ("AQI=", Some("0102")),
+            ("AQ", None),
+            ("AQ=", None),
+            ("A===", None),
+            ("-_8=", None),
+            ("+/8=", Some("fbff")),
+            ("AA=A", None),
+            ("", Some("")),
+            ("AQ==\n", Some("01")),
+        ];
+        for (input, want) in std {
+            assert_eq!(hex_of(decode_b64(input)).as_deref(), want, "std {input:?}");
+        }
+        let hex = [
+            ("0aFF", Some("0aff")),
+            ("+f", None),
+            ("0", None),
+            ("zz", None),
+            ("", Some("")),
+            ("ÿÿ", None),
+        ];
+        for (input, want) in hex {
+            assert_eq!(hex_of(decode_hex(input)).as_deref(), want, "hex {input:?}");
+        }
+    }
+
+    #[test]
+    fn verify_accepts_what_t3_payload_signer_accepts() {
+        let token = sign(&json!({ "kind": "session", "exp": 10 }), KEY);
+        let (payload, signature) = token.split_once('.').unwrap();
+        // 32-byte tag: 43 chars unpadded, so one '=' completes it. Trailing segments are ignored.
+        assert!(verify(&format!("{payload}.{signature}="), "session", KEY, 9).is_some());
+        assert!(verify(&format!("{token}.ignored"), "session", KEY, 9).is_some());
+        assert!(verify(&format!("{payload}."), "session", KEY, 9).is_none());
+        assert!(verify(&format!(".{signature}"), "session", KEY, 9).is_none());
     }
 
     #[test]

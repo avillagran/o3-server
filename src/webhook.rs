@@ -3,7 +3,6 @@ use crate::{
     events::{get, put},
     store::{now_ms, random_id, State},
 };
-use base64::Engine;
 use hmac::{Hmac, Mac};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
@@ -241,20 +240,11 @@ pub fn accept(
         return (401, "rejected_signature");
     }
     let value = &value[prefix.len()..];
+    // Same decoders as T3's effect/encoding; a wrong-length tag fails the MAC check below.
     let bytes = if sig["encoding"] == "hex" {
-        if value.len() != 64 {
-            return (401, "rejected_signature");
-        }
-        (0..value.len())
-            .step_by(2)
-            .map(|i| {
-                value
-                    .get(i..i + 2)
-                    .and_then(|v| u8::from_str_radix(v, 16).ok())
-            })
-            .collect::<Option<Vec<_>>>()
+        crate::auth::decode_hex(value)
     } else {
-        base64::engine::general_purpose::STANDARD.decode(value).ok()
+        crate::auth::decode_b64(value)
     };
     let Some(bytes) = bytes else {
         return (401, "rejected_signature");
