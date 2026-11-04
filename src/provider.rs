@@ -170,6 +170,8 @@ pub(crate) fn start(
             // first input leaves a native ID but has not consumed the handoff.
             let codex_unseeded = crate::provider_input::driver(&s, &t["providerInstanceId"]).as_deref() == Ok("codex")
                 && !db.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='runs' AND thread_id=?1 AND json_extract(body,'$.providerThreadId')=?2 AND json_type(body,'$.codexProviderTurnId')='text')", rusqlite::params![tid,r["providerThreadId"].as_str()], |row|row.get::<_,bool>(0)).unwrap_or(false);
+            let rejected_binding = codex_unseeded && t["providerHandoff"].is_string()
+                && db.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='runs' AND thread_id=?1 AND json_extract(body,'$.providerThreadId')=?2 AND json_extract(body,'$.status')='failed' AND (json_extract(body,'$.error') LIKE '%input_too_large%' OR json_extract(body,'$.error') LIKE '%Input exceeds the maximum length%' OR json_extract(body,'$.error') LIKE '%Codex outgoing frame exceeds limit%'))", rusqlite::params![tid,r["providerThreadId"].as_str()], |row|row.get::<_,bool>(0)).unwrap_or(false);
             if (fresh || codex_unseeded) && !t["nativeForkSource"].is_string() {
                 if let Some(history) = t["providerHandoff"].as_str() {
                     selection["o3HistoricalContext"] =
@@ -182,7 +184,9 @@ pub(crate) fn start(
             }
             RunInput {
                 provider_instance_id: t["providerInstanceId"].as_str().unwrap_or("").into(),
-                native_session_id: native_id,
+                // An empty thread whose initial input was rejected may have no durable
+                // rollout to resume after restart. Replace only that known-empty binding.
+                native_session_id: if rejected_binding { None } else { native_id },
                 thread_id: format!("{}:{}", tid, t["providerGeneration"].as_str().unwrap_or("")),
                 run_id: rid.clone(),
                 cwd,
