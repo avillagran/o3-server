@@ -59,6 +59,7 @@ pub async fn call(s: &Arc<State>, tag: &str, p: Value) -> Reply {
 pub enum Stream {
     Device(crate::device::Cursor),
     Setup(crate::setup::Cursor),
+    Worktree(crate::worktree_setup::Cursor),
     Preview(crate::preview::Cursor),
     Servers(crate::preview::Servers),
     Once(Once),
@@ -85,14 +86,7 @@ pub fn is_stream(tag: &str) -> bool {
 pub fn open(s: &Arc<State>, tag: &str, p: &Value) -> Result<Stream, Value> {
     Ok(match tag {
         "subscribePreviewEvents" => Stream::Preview(crate::preview::open_events(s)),
-        // Worktree preparation is not staged: no setup is ever running, which the stream says with null.
-        "subscribeWorktreeSetup" => {
-            str_field(p, "threadId")?;
-            Stream::Once(Once {
-                value: Some(Value::Null),
-                waiting: false,
-            })
-        }
+        "subscribeWorktreeSetup" => Stream::Worktree(crate::worktree_setup::open(p)?),
         "subscribeDeviceState" => Stream::Device(crate::device::subscribe(s)),
         "subscribeDiscoveredLocalServers" => {
             Stream::Servers(crate::preview::Servers::new(&p["configuredUrls"]))
@@ -106,6 +100,7 @@ impl Stream {
         match self {
             Stream::Device(c) => c.poll(),
             Stream::Setup(c) => c.next(s),
+            Stream::Worktree(c) => c.next(s),
             Stream::Preview(c) => c.next(s),
             Stream::Servers(c) => c.next(s),
             Stream::Once(o) => match o.value.take() {
@@ -121,6 +116,7 @@ impl Stream {
         match self {
             Stream::Device(c) => c.ack(),
             Stream::Setup(c) => c.ack(),
+            Stream::Worktree(c) => c.ack(),
             Stream::Preview(c) => c.ack(),
             Stream::Servers(c) => c.ack(),
             Stream::Once(o) => o.waiting = false,
@@ -130,6 +126,7 @@ impl Stream {
         match self {
             Stream::Device(c) => c.is_full(),
             Stream::Setup(c) => c.is_full(),
+            Stream::Worktree(c) => c.is_full(),
             Stream::Preview(c) => c.is_full(),
             Stream::Servers(c) => c.is_full(),
             Stream::Once(o) => o.waiting,

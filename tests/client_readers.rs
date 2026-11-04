@@ -34,8 +34,10 @@ fn real_builders_and_readers_consume_server_output() {
     reused.command_id = "reuse-reader".into();
     reused.reuse_existing_thread = Some(true);
     let result = orchestration::launch_thread(&c, &reused).unwrap();
-    assert_eq!(result["resumed"], true);
-    assert_eq!(orchestration::launch_thread(&c, &reused).unwrap(), result);
+    assert_eq!(result["resumed"], false);
+    let replay = orchestration::launch_thread(&c, &reused).unwrap();
+    assert_eq!(replay["resumed"], true);
+    assert_eq!(replay["threadId"], result["threadId"]);
 
     let pin = Command::sidebar("settle", "settle", "t", None).unwrap();
     orchestration::dispatch(&c, &pin).unwrap();

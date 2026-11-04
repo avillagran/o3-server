@@ -386,6 +386,7 @@ struct Proc {
 
 struct SessionState {
     scoped: bool,
+    shell_program: String,
     cwd: String,
     worktree_path: Option<String>,
     env: Option<BTreeMap<String, String>>,
@@ -503,6 +504,7 @@ impl Session {
             persistence: Mutex::new(None),
             st: Mutex::new(SessionState {
                 scoped: false,
+                shell_program: String::new(),
                 cwd: cwd.into(),
                 worktree_path: worktree,
                 env,
@@ -1071,6 +1073,7 @@ impl Manager {
         for shell in &candidates {
             match pty::spawn_with_scope(shell, Path::new(&st.cwd), &env, cols, rows, st.scoped) {
                 Ok(p) => {
+                    st.shell_program = shell.clone();
                     spawned = Some(p);
                     break;
                 }
@@ -1509,12 +1512,27 @@ pub(crate) async fn project_script(
     p: &Value,
     command: String,
 ) -> Result<(), Value> {
+    begin_project_script(s, p, command, false).await.map(|_| ())
+}
+pub(crate) async fn observed_project_script(
+    s: &Arc<State>,
+    p: &Value,
+    command: String,
+) -> Result<ScriptObserver, Value> {
+    begin_project_script(s, p, command, true).await
+}
+async fn begin_project_script(
+    s: &Arc<State>,
+    p: &Value,
+    mut command: String,
+    observe: bool,
+) -> Result<ScriptObserver, Value> {
     let mut changed = s.streams.terminals.notify.subscribe();
     let mut launch = launch_of(s, p, true)?;
     // Project setup owns its descendants even when they daemonize. Ordinary
     // interactive terminals retain their existing lifecycle.
     launch.scoped = cfg!(target_os = "linux");
-    let session = {
+    let (session, readiness_sequence) = {
         let manager = &s.streams.terminals;
         let _guard = manager.lifecycle.lock().await;
         if crate::events::get(&s.db.lock().unwrap(), "thread", &launch.thread)
@@ -1522,21 +1540,58 @@ pub(crate) async fn project_script(
         {
             return Err(invalid("The thread was deleted."));
         }
-        manager.open_locked(&launch)?
+        // Restored history and a previous shell's line editor state must not
+        // make this shell ready. Capture the live event cursor before opening.
+        let sequence = manager
+            .get(&(launch.thread.clone(), launch.terminal.clone()))
+            .map_or(0, |session| session.st.lock().unwrap().seq);
+        (manager.open_locked(&launch)?, sequence)
     };
     let generation = session.st.lock().unwrap().gen;
+    let token = if observe {
+        format!(
+            "__T3_SETUP_DONE___{}:",
+            crate::store::random_id().map_err(|e| invalid(&e))?
+        )
+    } else {
+        String::new()
+    };
+    if observe {
+        let program = session.st.lock().unwrap().shell_program.clone();
+        let name = Path::new(&program)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+        let body = command.replace("\r\n", "\n").replace('\n', "\r");
+        command=match name {
+            "fish"=>format!("begin\r{body}\rend; printf '\\n{token}%s\\n' $status"),
+            "pwsh"|"powershell"=>format!("$global:LASTEXITCODE = $null; & {{\r{body}\r}}; if ($null -ne $LASTEXITCODE) {{ $__t3c = $LASTEXITCODE }} elseif ($?) {{ $__t3c = 0 }} else {{ $__t3c = 1 }}; Write-Host \"{token}$__t3c\""),
+            _=>format!("( {body}\r); printf '\\n{token}%s\\n' \"$?\""),
+        };
+    }
+    let input_error = Arc::new(Mutex::new(None));
+    let observer = ScriptObserver {
+        session: session.clone(),
+        generation,
+        sequence: session.st.lock().unwrap().seq,
+        partial: String::new(),
+        token,
+        input_error: input_error.clone(),
+    };
     let weak = Arc::downgrade(s);
     let cwd = p["cwd"].clone();
+    let tracking = p["_setupTrackingId"].as_str().map(str::to_owned);
     tokio::spawn(async move {
-        let mut sequence = 0;
+        let mut sequence = readiness_sequence;
         let mut carry = String::new();
         let mut paste = false;
         let mut quiet = tokio::time::Instant::now() + Duration::from_secs(3);
+        let mut prompted = false;
         loop {
             if weak.strong_count() == 0 {
                 return;
             }
-            {
+            let busy = {
                 let st = session.st.lock().unwrap();
                 if st.gen != generation || st.status != "running" {
                     return;
@@ -1564,9 +1619,28 @@ pub(crate) async fn project_script(
                     }
                 }
                 sequence = st.seq;
-            }
-            if paste || tokio::time::Instant::now() >= quiet {
+                st.has_subprocess
+            };
+            if paste {
                 break;
+            }
+            if tokio::time::Instant::now() >= quiet {
+                if !busy {
+                    break;
+                }
+                if !prompted {
+                    if let (Some(s), Some(id)) = (weak.upgrade(), tracking.as_deref()) {
+                        let _ = crate::worktree_setup::stage(
+                            &s,
+                            id,
+                            "setup-script",
+                            "running",
+                            Some("Waiting for shell startup prompt"),
+                        );
+                    }
+                    prompted = true;
+                }
+                quiet = tokio::time::Instant::now() + Duration::from_secs(3);
             }
             tokio::select! {r=changed.changed()=>if r.is_err(){return;},_=tokio::time::sleep_until(quiet)=>{}}
         }
@@ -1595,10 +1669,96 @@ pub(crate) async fn project_script(
             .await
             {
                 eprintln!("Project script input failed: {error}");
+                *input_error.lock().unwrap() =
+                    Some(format!("Project script input failed: {error}"));
+                bump(&session.notify);
             }
+        } else {
+            *input_error.lock().unwrap() = Some("Setup terminal is unavailable".into());
+            bump(&session.notify);
         }
     });
-    Ok(())
+    Ok(observer)
+}
+
+pub(crate) struct ScriptObserver {
+    session: Arc<Session>,
+    generation: u64,
+    sequence: u64,
+    partial: String,
+    token: String,
+    input_error: Arc<Mutex<Option<String>>>,
+}
+impl ScriptObserver {
+    pub(crate) async fn wait(
+        &mut self,
+        mut line: impl FnMut(String),
+    ) -> Result<Option<i32>, String> {
+        let mut changes = self.session.notify.subscribe();
+        static ANSI: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        let ansi = ANSI.get_or_init(|| {
+            regex::Regex::new(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)").unwrap()
+        });
+        loop {
+            if let Some(error) = self.input_error.lock().unwrap().clone() {
+                return Err(error);
+            }
+            let (chunks, ended) = {
+                let st = self.session.st.lock().unwrap();
+                let chunks = st
+                    .log
+                    .iter()
+                    .filter(|e| e.seq > self.sequence)
+                    .filter_map(|e| {
+                        e.event["data"]
+                            .as_str()
+                            .filter(|_| e.event["type"] == "output")
+                            .map(str::to_owned)
+                    })
+                    .collect::<Vec<_>>();
+                self.sequence = st.seq;
+                (chunks, st.gen != self.generation || st.status != "running")
+            };
+            for chunk in chunks {
+                self.partial.push_str(&chunk);
+                while let Some(end) = self.partial.find('\n') {
+                    let text = self.partial[..end].to_owned();
+                    self.partial.drain(..=end);
+                    let clean = ansi.replace_all(&text, "");
+                    let clean = clean
+                        .chars()
+                        .filter(|c| !c.is_control() || *c == '\t')
+                        .collect::<String>();
+                    if let Some(value) = clean
+                        .trim()
+                        .strip_prefix(&self.token)
+                        .filter(|_| !self.token.is_empty())
+                    {
+                        if let Ok(code) = value.trim().parse::<i32>() {
+                            return Ok(Some(code));
+                        }
+                    }
+                    if !clean.contains(&self.token) && !clean.is_empty() {
+                        line(clean);
+                    }
+                }
+                if self.partial.len() > 16384 {
+                    let mut cut = self.partial.len() - 16384;
+                    while !self.partial.is_char_boundary(cut) {
+                        cut += 1;
+                    }
+                    self.partial.drain(..cut);
+                }
+            }
+            if ended {
+                return Ok(None);
+            }
+            changes
+                .changed()
+                .await
+                .map_err(|_| "Setup terminal notifications ended".to_owned())?;
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]

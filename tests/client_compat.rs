@@ -348,8 +348,13 @@ fn bounded_history_pages_do_not_lose_messages() {
 fn launch_empty_thread_is_idempotent() {
     let (_, c) = connected(false);
     let p = json!({"commandId":"launch","projectId":"p1","title":"Launch","modelSelection":{"instanceId":"scripted","model":"test","options":[]},"runtimeMode":"full-access","interactionMode":"default","workspaceStrategy":{"type":"root"}});
+    assert!(c.rpc("orchestration.launchThread", p.clone()).is_err());
+    c.rpc("projects.mutate",json!({"type":"project.create","commandId":"project","projectId":"p1","title":"Launch","workspaceRoot":std::env::temp_dir()})).unwrap();
     let a = c.rpc("orchestration.launchThread", p.clone()).unwrap();
-    assert_eq!(a, c.rpc("orchestration.launchThread", p).unwrap());
+    let replay = c.rpc("orchestration.launchThread", p).unwrap();
+    assert_eq!(a["threadId"], replay["threadId"]);
+    assert_eq!(a["resumed"], false);
+    assert_eq!(replay["resumed"], true);
     assert_eq!(a["projection"]["thread"]["title"], "Launch");
 }
 fn wait_status(c: &Connection, status: &str) -> serde_json::Value {

@@ -9,6 +9,7 @@ pub fn recover(db: &mut Connection) -> Result<(), String> {
     let tx = db.transaction().map_err(|e| e.to_string())?;
     crate::deletion::recover(&tx)?;
     crate::run_restart::recover(&tx)?;
+    crate::thread_launch::recover(&tx)?;
     use rusqlite::OptionalExtension;
     let mut cursor = 0i64;
     loop {
@@ -22,7 +23,9 @@ pub fn recover(db: &mut Connection) -> Result<(), String> {
         } else {
             serde_json::from_str(&body).map_err(|e| e.to_string())?
         };
-        if kind == "runs" && crate::run_restart::pending(&tx, &id)? {
+        if kind == "runs"
+            && (crate::run_restart::pending(&tx, &id)? || crate::thread_launch::pending(&tx, &id)?)
+        {
             continue;
         }
         let event = match kind.as_str() {

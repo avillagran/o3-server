@@ -469,10 +469,9 @@ without idle polling. Terminal close and durable thread cleanup await descendant
 Independent setup scopes remain independent. Ordinary interactive terminals retain their
 existing process lifecycle, and other targets retain their current PTY implementation.
 
-This resolves a cancellation prerequisite for staged thread launch, not the launch flow.
-subscribeWorktreeSetup still returns null and worktreeSetup.cancel remains unimplemented;
-source tracking, completion observation, sync/async release, retry and recovery remain
-pending. See [thread-launch-intake.json](nightly/thread-launch-intake.json).
+At the PR24 prerequisite checkpoint, staged launch/tracking/cancel and completion,
+retry/recovery remained pending. The next checkpoint below implements the shared
+RPC service. See [thread-launch-intake.json](nightly/thread-launch-intake.json).
 
 The monitor confirmed nightly4165 (`8b44f42b14c8e273156474a924ccf29680dd7857`)
 at 08:04 UTC. ThreadLaunchService, ProjectSetupScriptRunner, WorktreeSetupTracker and
@@ -484,3 +483,49 @@ ignored each. After the final signal/event handling change, all library and hand
 tests pass again in both configurations (102 passed, 5 opt-ins ignored per mode).
 Strict Clippy passes in both modes; fmt, generated compatibility and nine monitor
 tests pass. No service deployment occurred.
+
+## Shared staged thread launch (2026-11-04)
+
+RPC `orchestration.launchThread` now accepts a durable `preparing` run before
+fetch/checkout/submodules and setup. The thread claim commits before the initial
+message admission, matching ThreadLaunchService: failed message admission keeps
+the empty claim, and replay recovers the same identity without duplicate work.
+Empty-thread reuse preserves its existing title/runtime/interaction settings; an
+initial message applies the requested model. Existing native-import validation and
+automatic title fallback remain covered.
+
+`subscribeWorktreeSetup` publishes current bounded stage snapshots, and
+`worktreeSetup.cancel` cancels before release, drains the owned setup scope and rolls
+back owned checkout/ref resources. After provider release it returns false. Git
+cleanup failures remain in a durable outbox and gate retry; shared/external
+workspaces are retained. Temporary branch generation uses the launch message and
+project settings, applies naming/collision rules, and journals rename intent so
+cancellation can recover a Git rename whose metadata update failed.
+
+Setup runs in its visible project terminal. A completion marker records exit status;
+synchronous failure keeps the checkout/terminal for inspection and retry, while
+asynchronous setup releases the provider before script completion. Startup child
+prompts defer input until the user responds. Scratch launches atomically claim a
+managed non-Git folder and replay without allocating a second one.
+`prepared-run.retry` preserves the run/attempt and releases held queued input only
+when appropriate. Restart resumes unstarted preparation, fails uncertain effects
+explicitly and permits an explicit retry after cleanup.
+
+Ten HTTP/client-builder/native-peer tests cover both provider transports, escaped
+setup descendants, sync/async release, prompt readiness, failure/inspection/retry,
+Scratch, branch policy/project overrides, rename failure and locked checkout cleanup.
+Two module regressions cover restart and malformed durable JSON, including valid JSON
+of the wrong type. `examples/live_staged_launch.rs` passed with installed Claude
+Haiku and Codex gpt-6.1-sol: no provider before synchronous setup, a real file copied
+from the prepared checkout, replay retaining one run, and finished tracking.
+
+The monitor still reports nightly4165, SHA
+`8b44f42b14c8e273156474a924ccf29680dd7857`, at 09:51 UTC.
+MCP `t3_thread_launch` is still unadvertised. Numeric checkout percentages,
+`projects.ensureScratch`, first-message naming outside launch, full project/provider
+enable precedence, latest live reference differential and compatible desktop/Android
+UI acceptance remain open. Transfer/cross-instance handoff/continuation settlement,
+newer native recovery and the wider toolkit/auth/environment/provider backlog remain
+part of the active complete-protocol goal. No deployment or main promotion occurred.
+
+Validation: full suites pass with 361 default / 358 no-default tests, 21 opt-ins ignored each. Final library, staged launch, storage, import/reader and handoff regressions are also checked after the last recovery/readiness changes. Strict Clippy runs in both configurations; fmt, generated compatibility and nine monitor tests pass.

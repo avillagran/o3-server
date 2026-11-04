@@ -189,7 +189,7 @@
     "orchestration.launchThread": {
       "status": "done",
       "priority": "P0",
-      "note": "Automatic generateTitle launches preserve fallback titles even with unsupported saved Codex text generation; no provider substitution. Real Connection/title readers cover this and explicit regeneration errors. Pinned 3991 accepts saved selection and empty automatic launch; full initial-message generation on reference is unproven. Broader parity remains subject to independent audit."
+      "note": "Automatic generateTitle launches preserve fallback titles even with unsupported saved Codex text generation; no provider substitution. Real Connection/title readers cover this and explicit regeneration errors. Pinned 3991 accepts saved selection and empty automatic launch; full initial-message generation on reference is unproven. Broader parity remains subject to independent audit. 2026-11-04: staged launch accepts a preparing run before Git/setup, preserves a durable thread claim when initial-message admission fails, and replays without duplicate runs. Shared service supports sync/async setup, same-run retry, interruption recovery, branch naming and Scratch allocation. Installed Claude Haiku and Codex gpt-6.1-sol pass gated-setup proofs. MCP launch/transfer, provider-catalog enable precedence, numeric checkout progress and latest live differential remain open; see MCP.md."
     },
     "orchestration.searchThread": {
       "status": "skip",
@@ -929,7 +929,7 @@
     "subscribeWorktreeSetup": {
       "status": "partial",
       "priority": "P2",
-      "note": "Remaining: null output suppresses setup stages, progress and Cancel (worktree_setup.rs:22, T3Composer.qml:302-306). Attempted on branch t3/implement-client-visible-flows (kept unmerged at fa5ab7f): staged setup with progress. Not merged because a setup daemon that clears its environment survives cancellation and restart recovery, and corrupt persisted setup state blocked startup."
+      "note": "2026-11-04: durable staged launches now stream running/done/failed/cancelled snapshots, ordered fetch/checkout/setup-script/agent stages, bounded details/tails, monotonic sequence and 30-second finished retention through the real Connection/stream builder. tests/staged_launch.rs covers sync/async setup, startup prompts, cancellation, rename and retry. Remaining: numeric checkout percentages and compatible desktop/Android UI acceptance; latest live reference differential is pending."
     },
     "terminal.attach": {
       "status": "done",
@@ -1014,7 +1014,7 @@
     "worktreeSetup.cancel": {
       "status": "partial",
       "priority": "P2",
-      "note": "Remaining: Cancel is hidden without running setup, so synchronous preparation cannot be cancelled (write.rs:406). The unmerged attempt at fa5ab7f could not kill every escaped descendant of setup; main keeps synchronous setup."
+      "note": "2026-11-04: actual client cancel builder stops tracked preparation before agent admission, awaits Linux scope reaping and rolls back only owned checkout/ref resources. Late/repeated cancellation returns false; locked-checkout cleanup remains durable and gates retry. Tests cover an escaped double-fork/setsid/env-cleared daemon and branch rename/metadata failure. Remaining: compatible desktop/Android UI acceptance and non-Linux descendant ownership."
     },
     "review.getBranchCommits": {
       "status": "done",
@@ -1156,7 +1156,7 @@
     "prepared-run.retry": {
       "status": "skip",
       "priority": "unused",
-      "note": "No client call site in inventory."
+      "note": "Implemented for failed staged preparation with a failure item: same run/attempt, current workspace checks, receipt replay and queue release; cleanup must finish first. Real Connection regression in staged_launch.rs. Classified unused because the pinned client has no builder call site."
     },
     "provider-session.detach": {
       "status": "skip",

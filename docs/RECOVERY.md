@@ -31,11 +31,22 @@ The native protocols do not expose an idempotent command acknowledgement across
 restarts. Records are retained in SQLite; retention/GC and frontend presentation of
 the new error metadata remain future work. Never claim full native chat parity.
 
-Launch checkpoint: the thread, initial message/context/run, event rows and launch
-receipt now share one transaction. Native execution starts after commit. A failed
-run insert leaves none of those records; retrying the same launch creates one run.
-This improves database atomicity, not crash replay of committed native starts or
-filesystem rollback of a newly prepared worktree.
+Staged launch checkpoint (2026-11-04, supersedes the earlier single-transaction
+launch): the thread claim/receipt commits first, as upstream does. Initial
+message/context/run/events and the preparation job then commit together. A rejected
+message admission leaves the empty claimed thread; retry recovers its identity and
+admits one message/run without workspace effects from the rejected admission.
+The accepted run reads `preparing` while Git and setup execute in the background.
+Only release records execution intent and admits the provider.
+
+On restart, an unstarted preparation job can resume its exact durable request.
+Potentially started preparation is failed explicitly and cleaned without replaying
+an uncertain setup script. A failed bound synchronous setup keeps its checkout and
+terminal history for inspection; explicit `prepared-run.retry` reuses that workspace
+and the same run/attempt. Pre-release cancellation stops/reaps the setup scope and
+removes only owned resources. Failed checkout/ref cleanup stays durable and blocks
+retry until it succeeds. The scope ownership guarantee is Linux-specific. This does
+not certify native runtime reattachment or cross-instance handoff.
 
 Restart now also finalizes orphan provider nodes/attempts/subagents and tool items,
 stops assistant message streaming, and emits ordinary projection update events.

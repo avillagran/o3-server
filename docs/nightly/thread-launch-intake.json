@@ -1,34 +1,47 @@
 {
-  "checkedAt": "2026-11-04T08:04:02.058962+00:00",
+  "checkedAt": "2026-11-04T09:51:19.162587+00:00",
   "tag": "v0.1.8-nightly.20261104.4165",
   "reference": "8b44f42b14c8e273156474a924ccf29680dd7857",
   "url": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.8-nightly.20261104.4165",
-  "scope": "Thread launch/source intake and Linux setup process ownership prerequisite; complete protocol goal remains active.",
+  "scope": "Shared staged thread launch service, setup lifecycle and durable recovery; complete protocol goal remains active.",
   "sourceFiles": [
     "apps/server/src/orchestration-v2/ThreadLaunchService.ts",
     "apps/server/src/project/ProjectSetupScriptRunner.ts",
     "apps/server/src/project/WorktreeSetupTracker.ts",
-    "packages/contracts/src/worktreeSetup.ts"
+    "packages/contracts/src/worktreeSetup.ts",
+    "apps/server/src/orchestration-v2/ThreadManagementService.ts",
+    "apps/server/src/project/ManagedProjectFolders.ts",
+    "packages/shared/src/projectScripts.ts",
+    "packages/shared/src/git.ts"
   ],
   "comparison": "ThreadLaunchService, ProjectSetupScriptRunner, WorktreeSetupTracker and worktreeSetup contract are unchanged from nightly4151 to4165.",
   "implemented": [
     "Same-run Codex restart integrated via PR23 after both exact-head CI checks passed (dev e3a52b3).",
-    "Linux setup terminals use an isolated subreaper whose owner-pipe lifetime survives daemonization, environment clearing and server process-group death. Closing a setup terminal awaits scope cleanup; independent scopes are preserved."
+    "Linux setup terminals use an isolated subreaper whose owner-pipe lifetime survives daemonization, environment clearing and server process-group death. Closing a setup terminal awaits scope cleanup; independent scopes are preserved.",
+    "PR24 Linux setup ownership prerequisite merged to dev e0fe928 after both exact-head CI checks passed.",
+    "Durable thread claim and separately atomic deferred-message/run/preparation admission; accepted launches return preparing before workspace effects and retry only unaccepted admissions.",
+    "Background base fetch, managed checkout/submodule setup, workspace binding and tracked setup lifecycle; sync scripts gate provider admission, async scripts settle tracking after release.",
+    "Live bounded setup snapshots, pre-release cancellation with reaping, owned-resource cleanup outbox, same-run retry and explicit interruption recovery without blind setup replay.",
+    "Temporary-branch generation/format/collision/rename with project overrides and rename-intent cleanup, managed non-Git Scratch folders and replay-safe allocation."
   ],
   "pending": [
-    "ThreadLaunchService deferred admission, background fetch/checkout/submodules/setup/agent tracking, prepared-run progress/release/fail/retry and durable recovery.",
-    "Setup completion observation, sync/async script release, branch naming/rename, managed Scratch allocation, MCP thread launch and mode-limited replay.",
+    "MCP t3_thread_launch and mode-limited launch replay; projects.ensureScratch bootstrap.",
+    "Numeric checkout percentages, first-message naming outside launch, complete provider/project catalog override precedence and live reference/client UI acceptance.",
     "Native active cross-instance handoff, transfer/cross-thread continuation and deferred caller settlement.",
     "Nightly4165 native recovery changes: requeue interrupted startup effects without colliding effect IDs, native runtime reattachment and bounded awareness projection.",
     "Remaining protocol toolkits/auth/environment/providers and latest differential/compatible-client acceptance."
   ],
   "evidence": [
     "process_scope module tests: cancel, owner drop, normal shell exit, SIGKILL owner, process-group death and admission errors.",
-    "HTTP/native-peer worktree_handoff test: close reaps a double-fork/setsid/env-cleared setup daemon and preserves an independent setup scope."
+    "HTTP/native-peer worktree_handoff test: close reaps a double-fork/setsid/env-cleared setup daemon and preserves an independent setup scope.",
+    "Ten staged-launch HTTP/client-builder/native-peer integration tests; two restart/corruption module regressions.",
+    "Installed Claude Haiku and Codex gpt-6.1-sol each: synchronous setup gate, no provider before setup, real file copied from prepared checkout, receipt replay same single run and tracker done.",
+    "Full suites: 361 default / 358 no-default passed, 21 opt-ins ignored each. Final affected library/native/reader/storage regressions and strict Clippy in both modes; fmt, generated table and nine nightly monitor tests."
   ],
   "limits": [
     "Process ownership enhancement is Linux-specific; other supported targets retain existing PTY behavior.",
-    "No staged-launch or subscribeWorktreeSetup capability is promoted by this prerequisite.",
+    "RPC launch uses the shared staged service; MCP launch is not advertised by this checkpoint.",
+    "Checkout percent remains nullable rather than parsed live Git progress.",
     "No service deployment or main promotion."
   ]
 }

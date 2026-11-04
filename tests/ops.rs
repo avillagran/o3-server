@@ -146,10 +146,16 @@ fn shell_threads(c: &Connection) -> Vec<Value> {
         .unwrap()
         .clone()
 }
+fn launch_project(s: &Server, c: &Connection) {
+    let root = s.dir.join("workspace");
+    std::fs::create_dir_all(&root).unwrap();
+    c.rpc("projects.mutate",json!({"type":"project.create","commandId":"project","projectId":"p1","title":"Scheduled","workspaceRoot":root})).unwrap();
+}
 
 #[test]
 fn scheduled_tasks_are_stored_validated_and_launch_threads() {
     let (s, c) = with_provider();
+    launch_project(&s, &c);
     let created = c
         .rpc(
             "scheduledTasks.upsert",
@@ -295,7 +301,8 @@ fn scheduled_tasks_are_stored_validated_and_launch_threads() {
 
 #[test]
 fn a_task_that_cannot_launch_records_the_failure() {
-    let (_s, c) = plain();
+    let (s, c) = plain();
+    launch_project(&s, &c);
     let id = c
         .rpc(
             "scheduledTasks.upsert",
