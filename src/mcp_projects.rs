@@ -16,7 +16,7 @@ fn nullable(schema: Value) -> Value {
 }
 fn write(name: &str, description: &str, properties: Value, required: &[&str]) -> Value {
     let mut tool = definition(name, description, properties, required);
-    tool["annotations"] = json!({"readOnlyHint":false,"destructiveHint":true,"idempotentHint":false,"openWorldHint":name=="t3_project_clone"});
+    tool["annotations"] = json!({"readOnlyHint":false,"destructiveHint":true,"idempotentHint":false,"openWorldHint":matches!(name,"t3_project_clone"|"t3_worktree_handoff")});
     tool
 }
 pub(crate) fn catalog() -> Vec<Value> {
@@ -30,6 +30,7 @@ pub(crate) fn catalog() -> Vec<Value> {
         write("t3_project_delete","Delete a project; nonempty projects require force=true. Its folder remains on disk.",json!({"projectId":string(),"force":{"type":"boolean"}}),&["projectId"]),
         write("t3_project_clone","Clone into a new or empty folder. Register afterwards with t3_project_create.",json!({"provider":string(),"repository":string(),"remoteUrl":string(),"destinationPath":string(),"protocol":{"type":"string","enum":["auto","ssh","https"]}}),&["destinationPath"]),
         definition("t3_worktree_list","List refs and checkout paths for a thread's workspace; omit threadId for the calling thread. Detached worktrees are omitted.",json!({"threadId":string(),"query":{"type":"string","minLength":1,"maxLength":256},"cursor":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":200},"refKind":{"type":"string","enum":["local","remote","all"]},"includeMatchingRemoteRefs":{"type":"boolean"}}),&[]),
+        write("t3_worktree_handoff","Move this calling thread into a new managed git worktree on a new branch; setup runs by default. Call last: the move ends the live session. continuationPrompt resumes work there next turn; omit to wait. The worktree remains after thread deletion.",json!({"branch":string(),"baseRef":string(),"startFromOrigin":{"type":"boolean"},"runSetupScript":{"type":"boolean"},"continuationPrompt":{"type":"string","minLength":1,"maxLength":120000}}),&["branch"]),
         definition("t3_worktree_status","Read the calling thread's worktree path, branch, project root and startFromOrigin default.",json!({}),&[]),
     ]
 }
@@ -42,6 +43,7 @@ pub(crate) fn handles(name: &str) -> bool {
             | "t3_project_clone"
             | "t3_worktree_list"
             | "t3_worktree_status"
+            | "t3_worktree_handoff"
     )
 }
 fn error(e: Value) -> Value {
@@ -88,6 +90,9 @@ pub(crate) async fn call(s: Arc<State>, authority: Authority, name: &str, p: Val
         .find(|t| t["name"] == name)
         .ok_or_else(|| failure("invalid_request", "Unknown project tool."))?;
     let p = normalize(&schema["inputSchema"], p);
+    if name == "t3_worktree_handoff" {
+        return crate::worktree_handoff::call(s, authority, p).await;
+    }
     if name.starts_with("t3_worktree_") {
         return worktree(&s, &authority, name, &p).await;
     }

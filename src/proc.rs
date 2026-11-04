@@ -42,6 +42,7 @@ pub enum RunError {
 
 #[derive(Clone, Copy)]
 pub struct Opts {
+    /// Zero has no deadline; cancellation still stops the child process group.
     pub timeout: Duration,
     pub cap: usize,
     /// When true a capped stdout is an `Out { truncated: true }`, otherwise a failure.
@@ -210,7 +211,14 @@ async fn run_inner(
         let status = child.wait().await.ok();
         (out, cut, err, status)
     });
-    match tokio::time::timeout(opts.timeout, work).await {
+    // Checkout and submodule preparation follow upstream's cancellable, unbounded
+    // lifetime. Zero opts out of a deadline while retaining process-group cleanup.
+    let outcome = if opts.timeout.is_zero() {
+        Ok(work.await)
+    } else {
+        tokio::time::timeout(opts.timeout, work).await
+    };
+    match outcome {
         Ok((stdout, cut, err, status)) => Ok(Out {
             code: if cut {
                 if opts.allow_truncate {

@@ -186,7 +186,7 @@ rejection. These are deterministic protocol tests, not a live nightly differenti
 acceptance of the existing ChatGPT/OmaBridge integration.
 
 Pending: OAuth/DPoP, full SSE semantics,
-thread launch/restart/transfer, worktree handoff, deferred caller settlement, task delegation,
+thread launch/restart/transfer, deferred caller settlement, task delegation,
 remaining worktree/attachment/PR/device/preview/HTML/scheduler toolkits and linked environments.
 Inherited-task acknowledgement and exact activity-text rendering also need upstream
 parity. No daily profile, external MCP integration or running service was changed.
@@ -361,3 +361,57 @@ Validation for this block: full suites pass with 333 default / 330 no-default te
 deletion, queue/thread-command and HTTP MCP regressions pass per configuration.
 Strict Clippy passes in both modes; fmt, generated compatibility and all nine
 nightly-monitor tests pass. No service deployment occurred.
+
+
+## Calling-thread worktree handoff (2026-11-04)
+
+`t3_worktree_handoff` extends the core catalog to 30 tools. It requires a live native
+thread credential and acts only on that caller. Pass a new branch, with optional
+baseRef, startFromOrigin, runSetupScript and continuationPrompt. The new worktree lives
+under the managed directory, grouped by project folder and branch; unadvertised path
+arguments are discarded. Long branch folder names use a Unicode-safe prefix and hash.
+Call it last in the turn: workspace detachment ends the current native execution.
+
+The default base is the checked-out project branch; detached HEAD needs an explicit
+baseRef. Existing branches are refused with their checkout path when known. The effective
+per-project startFromOrigin setting controls fetching by default. A local alias uses its
+tracked remote/branch, including remote names containing slashes. Missing remote branches
+fall back to the local base without using stale tracking refs. Fetched commits and branch
+comparison metadata retain the resolved remote base. Git uses argv and repository locks;
+checkout/submodule preparation has no fixed deadline and retains process-group cleanup.
+Submodule mode follows project settings/t3.json; failed submodule initialization is logged
+without undoing a successful checkout, following the source.
+
+After Git preparation, a write transaction rechecks current caller authority, project,
+archive state and expected null worktree path. It binds the created checkout through the
+shared native-detach planner and stages the optional agent continuation in the same
+transaction, including its message/run and receipt. A savepoint lets continuation failure
+be reported without undoing the binding. Competing handoffs for the same thread are
+refused; a UI binding race rolls back only the checkout and branch created by this call.
+A caller's transport disconnect does not interrupt the operation after admission.
+
+Setup runs by default using the first effective runOnWorktreeCreate script. Script
+resolution follows per-project overrides, folded defaults and legacy project overrides.
+It opens a visible setup-<scriptId> terminal in the new cwd, with T3CODE_PROJECT_ROOT and
+T3CODE_WORKTREE_PATH, and sends the command when the shell signals readiness or becomes
+quiet. Terminal generation checks prevent delayed input reaching a replacement shell.
+The result reports started, no-script, skipped or failed; started describes terminal
+launch, not script exit success. The source's link-origin setup fence is retained.
+Setup and continuation failures are separate result fields. Worktree folders survive
+thread deletion.
+
+This supersedes the earlier handoff-pending entries above. Seven new HTTP MCP/Git/native
+peer tests cover Claude and Codex continuation, setup files and terminal snapshots,
+fetched upstream aliases and missing remote refs, schema/access errors, receipt rollback,
+partial follow-up failures, concurrent handoff/UI races, loss of native authority during
+checkout and caller disconnect. Compatible desktop acceptance and the remaining launch/auth/environment/toolkit backlog
+stay open.
+
+Validation: full suites pass with 340 default / 337 no-default tests, with 21 opt-ins
+ignored each. Final workspace/deletion/MCP-project regressions and strict Clippy pass
+in both configurations; fmt, generated compatibility and nine monitor tests pass.
+The opt-in live_worktree_handoff example also passed with installed Claude Haiku and
+Codex gpt-6.1-sol: each called the actual MCP handoff, ran setup and wrote a code remembered
+from before the move in its queued continuation. Event history contains one distinct
+native conversation ID per proof; both have interrupted then completed runs. This is
+an isolated server/native-CLI acceptance proof, not full compatible-desktop acceptance.
