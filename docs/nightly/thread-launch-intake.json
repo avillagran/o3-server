@@ -41,8 +41,7 @@
     "Numeric checkout percentages, first-message naming outside launch, complete provider/project catalog override precedence and live reference/client UI acceptance.",
     "Native active cross-instance handoff, transfer/cross-thread continuation and deferred caller settlement.",
     "Nightly4165 native recovery changes: requeue interrupted startup effects without colliding effect IDs, native runtime reattachment and bounded awareness projection.",
-    "Remaining protocol toolkits/auth/environment/providers and latest differential/compatible-client acceptance.",
-    "Shared non-MCP ThreadMessageIntake/attachment-claim parity and document extraction remain follow-up; this claim layer covers MCP launch."
+    "Remaining protocol toolkits/auth/environment/providers and latest differential/compatible-client acceptance."
   ],
   "evidence": [
     "process_scope module tests: cancel, owner drop, normal shell exit, SIGKILL owner, process-group death and admission errors.",
@@ -52,7 +51,8 @@
     "Full suites: 361 default / 358 no-default passed, 21 opt-ins ignored each. Final affected library/native/reader/storage regressions and strict Clippy in both modes; fmt, generated table and nine nightly monitor tests.",
     "Ten MCP launch HTTP/native-peer integration tests, including authority narrowing/revocation between claim and message commit, attachment deletion before gated setup and native caller context for both providers.",
     "Installed Claude Haiku and Codex gpt-6.1-sol each invoked t3_thread_launch from their native MCP session; exactly two top-level threads, inherited model/modes/project, no child provider before synchronous setup and a real file proof in the new checkout.",
-    "MCP launch validation: full suites371 default /368 no-default passed,21 opt-ins ignored each; final affected MCP/staged/handoff28/28, strict Clippy both modes, fmt/generated compatibility/nightly monitor9 pass."
+    "MCP launch validation: full suites371 default /368 no-default passed,21 opt-ins ignored each; final affected MCP/staged/handoff28/28, strict Clippy both modes, fmt/generated compatibility/nightly monitor9 pass.",
+    "Shared message/queue/question/MCP attachment intake and nine-format document worker are covered by attachment-intake.json; guest-share mediation remains pending."
   ],
   "limits": [
     "Process ownership enhancement is Linux-specific; other supported targets retain existing PTY behavior.",

@@ -187,3 +187,18 @@ message. Rejected admissions remove this attempt's unused copies and preserve pe
 retry sources. Accepted copies are independent from pending deletion/sweeping, and
 receipt replay does not create a new set. This does not assert crash-atomic filesystem/
 SQLite commits or complete shared non-MCP attachment-intake parity.
+
+Shared attachment intake (2026-11-04): the MCP-launch claim layer now also handles
+ordinary message dispatch, queued edits and runtime question responses. File copies,
+fsync and optional extraction precede SQLite admission without retaining its write
+lock. Accepted message/request records determine which copies survive; uncertain
+post-admission reads keep the files. Known rejected attempts release their copies,
+leaving pending retry sources. Receipt replay skips copy/extraction and rechecks
+current authority. No provider input is resent as a consequence of extraction.
+
+Extracted `.txt` sidecars survive with accepted attachments. Parse failure preserves
+the original path. A single isolated worker per State bounds parsing work and writes
+a private sidecar atomically; invalid-input and transient-failure caches are in-memory.
+The MCP pending-upload ownership map also resets on restart. A lost process between
+filesystem copy and SQLite commit can leave an unused copy; cross-resource crash
+atomicity and guest-share mediation are outside this checkpoint's claim.

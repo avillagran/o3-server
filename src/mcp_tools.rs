@@ -40,9 +40,13 @@ pub(crate) fn catalog() -> Vec<Value> {
     ];
     tools.extend(crate::mcp_mutations::catalog());
     tools.extend(crate::mcp_projects::catalog());
+    tools.extend(crate::mcp_attachments::catalog());
     tools
 }
 pub(crate) fn prepare_arguments(name: &str, mut args: Value) -> Value {
+    if crate::mcp_attachments::handles(name) {
+        return crate::mcp_attachments::normalize(args);
+    }
     if name == "t3_thread_launch" {
         return crate::mcp_launch::normalize(args);
     }
@@ -143,6 +147,12 @@ pub(crate) fn validate_schema(schema: &Value, p: &Value) -> Result<(), String> {
         }
         Some("array") => {
             let Some(a) = p.as_array() else { return fail() };
+            if schema["minItems"]
+                .as_u64()
+                .is_some_and(|n| (a.len() as u64) < n)
+            {
+                return fail();
+            }
             if schema["maxItems"]
                 .as_u64()
                 .is_some_and(|n| a.len() as u64 > n)

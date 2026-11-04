@@ -105,19 +105,7 @@ pub(crate) fn normalize(mut p: Value) -> Value {
     p
 }
 pub(crate) fn catalog() -> Value {
-    let mut attachment = json!({"type":"object","properties":{"type":{"type":"string","enum":["image","file"]},"id":string(),"name":{"type":"string","minLength":1,"maxLength":255},"mimeType":{"type":"string","minLength":1,"maxLength":100},"sizeBytes":{"type":"integer","minimum":0,"maximum":52428800},"source":{"type":"object","properties":{"_tag":{"type":"string","enum":["pasted-text"]}},"required":["_tag"]}},"required":["type","id","name","mimeType","sizeBytes"]});
-    attachment["properties"]["id"]["maxLength"] = json!(128);
-    let mut image = attachment.clone();
-    image["properties"]["type"]["enum"] = json!(["image"]);
-    image["properties"]["mimeType"]["pattern"] = json!("(?i)^image/");
-    image["properties"]["sizeBytes"]["maximum"] = json!(10 * 1024 * 1024);
-    image["properties"]
-        .as_object_mut()
-        .unwrap()
-        .remove("source");
-    attachment["properties"]["type"]["enum"] = json!(["file"]);
-    attachment["properties"]["sizeBytes"]["minimum"] = json!(1);
-    let attachment = json!({"anyOf":[image,attachment]});
+    let attachment = crate::mcp_attachments::input_schema();
     let mut tool=definition("t3_thread_launch","Create one new top-level thread, bound to its workspace before its agent starts. Not delegation. Task in message. Omit projectId, model and modes to inherit the caller (outside a thread pass projectId or scratch). Modes cannot exceed the caller. After an error or lost reply retry the same clientRequestId; mention the result with its link. Default workspace is project root, not the caller's worktree.",json!({"projectId":string(),"scratch":{"type":"boolean"},"title":{"type":"string","minLength":1},"modelSelection":{"type":"object","properties":{"instanceId":string(),"model":string(),"options":{"type":"array","items":{"type":"object","properties":{"id":string(),"value":{"anyOf":[{"type":"string","minLength":1},{"type":"boolean"}]}},"required":["id","value"]}}},"required":["instanceId","model"]},"runtimeMode":{"type":"string","enum":["approval-required","auto-accept-edits","auto","full-access"]},"interactionMode":{"type":"string","enum":["default","plan"]},"workspaceStrategy":{"anyOf":[{"type":"object","properties":{"type":{"type":"string","enum":["root"]},"branch":string()},"required":["type"]},{"type":"object","properties":{"type":{"type":"string","enum":["worktree"]},"baseRef":string(),"branch":string(),"startFromOrigin":{"type":"boolean"}},"required":["type","baseRef"]},{"type":"object","properties":{"type":{"type":"string","enum":["existing_worktree"]},"worktreePath":string(),"branch":string()},"required":["type","worktreePath"]}]},"message":{"type":"string","maxLength":120000},"attachments":{"type":"array","maxItems":8,"items":attachment},"clientRequestId":{"type":"string","minLength":1,"maxLength":256},"delegatedFrom":{"type":"object","properties":{"environmentId":string(),"threadId":string(),"title":{"type":"string"}},"required":["environmentId","threadId","title"]}}),&["title"]);
     tool["annotations"] = json!({"readOnlyHint":false,"destructiveHint":true,"idempotentHint":false,"openWorldHint":true});
     tool

@@ -36,6 +36,8 @@ pub struct State {
     pub(crate) workspace_detach_started: std::sync::atomic::AtomicBool,
     pub(crate) restart_started: std::sync::atomic::AtomicBool,
     pub(crate) launches: crate::thread_launch::Registry,
+    pub(crate) document_text: crate::document_text::Registry,
+    pub(crate) attachment_uploads: crate::mcp_attachments::Registry,
     pub(crate) deletion_started: std::sync::atomic::AtomicBool,
     #[cfg(feature = "bridge")]
     pub bridge_endpoints: Mutex<Vec<Value>>,
@@ -156,6 +158,11 @@ mod sql_profile {
 }
 
 impl State {
+    /// Embedded hosts select the o3-server binary used by the isolated document parser.
+    pub fn set_document_worker(&self, path: PathBuf) {
+        self.document_text.set_worker(path);
+    }
+
     pub fn open(dir: &Path) -> Result<Self, String> {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
         let mut db = Connection::open(dir.join("o3.sqlite")).map_err(|e| e.to_string())?;
@@ -199,6 +206,8 @@ impl State {
             deletion_started: Default::default(),
             restart_started: Default::default(),
             launches: Default::default(),
+            document_text: Default::default(),
+            attachment_uploads: Default::default(),
             workspace_detach_started: Default::default(),
             worktree_handoffs: Default::default(),
             #[cfg(feature = "bridge")]

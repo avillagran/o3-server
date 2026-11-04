@@ -583,3 +583,67 @@ The complete-protocol goal remains active. Linked routing/OAuth/DPoP/SSE/hosted 
 complete project/provider catalog enable precedence, transfer/cross-instance handoff,
 continuation settlement, broader toolkits, newer native recovery and current
 reference/UI acceptance remain open. No deployment or main promotion occurred.
+
+## Shared attachments and document text (nightly4165)
+
+This supersedes the earlier non-MCP attachment-intake follow-up. The core catalog
+has 34 tools. `t3_attachment_prepare_upload` issues a ten-minute signed URL for an
+image (up to 10 MiB) or file (up to 50 MiB). POST exactly the declared bytes to the
+relative URL on the MCP origin. Native callers can use it without an ordinary
+HTTP login. `t3_attachment_discard` accepts only pending uploads prepared by that
+caller: native thread identity, or the external credential's request namespace.
+Ownership survives HTTP-session reinitialization; this ephemeral registry resets
+on server restart. Accepted copies survive discard.
+
+`t3_thread_send_attachments` accepts one to eight pending uploads or canonical
+attachments already present in the target thread. The target defaults to the
+native caller. Canonical metadata comes from the stored message, preventing name,
+MIME or size forgery and reuse from an unrelated thread. Each call creates a new
+message; there is no retry key. Current credential/caller/target authority is
+checked before file work and again at command commit. Auto delivery uses the
+existing active-steering/queue path. Messages and user-message items preserve
+agent/MCP provenance and native sender, including active steering.
+
+Web/compatible-client message dispatch, queued edits, question answers, staged
+launch and MCP sends now share upload claims. Copies and document extraction occur
+outside SQLite's write lock. Limits apply before copying: 100 attachments, 80 MiB
+aggregate image bytes, individual image/file limits and duplicate-id rejection.
+Unknown future attachment descriptors retain their contract semantics. Context
+remapping changes only image/file attachment-reference records. Failed admission
+removes proven-unused copies; accepted receipts reuse their original copies even
+when the pending source has gone. Question answers retain their answer type and
+append quoted original/extracted paths; questionAnswer records preserve the
+attachments and question-text mapping.
+
+Optional document extraction supports DOCX, XLSX, PPTX, ODT, ODS, ODP, RTF, EPUB
+and IPYNB. The isolated Rust worker has 15-second wall/CPU limits, a 256 MiB address
+space, 16 MiB input and bounded ZIP expansion/XML structure/output. Text is limited
+to one million UTF-16 units with the source truncation marker. It preserves table
+cells, sheet/slide/chapter order, formatting metadata, speaker notes, notebook
+outputs and RTF code-page/Unicode text, without running macros or fetching URLs.
+Readable text sidecars are written atomically with mode 0600. Invalid documents,
+PDFs and unknown formats remain available as their original files. Failures cache
+permanently only for invalid immutable input; transient worker failures retry after
+one second. Extraction serializes per State while cached sidecars stay immediately
+available. Embedded hosts set `State::set_document_worker` to the o3-server binary;
+the server executable selects itself automatically.
+
+Attachment-only messages receive the nightly bootstrap prompt at the provider
+boundary; persisted user text stays unchanged. Both native transports receive the
+original file and optional extracted-text path. `examples/live_attachment_intake.rs`
+passed with installed Claude Haiku and Codex gpt-6.1-sol: each read an uploaded DOCX,
+then wrote its exact hidden token after pending-source deletion. Six HTTP/client/
+native-peer regressions cover ownership, canonical references, rollback/replay,
+queue edits, question projection, SQLite responsiveness and both native transports.
+Three document integration tests include 64 upstream structure fixtures and archive,
+RTF, notebook, Unicode and raw-output limits; two worker tests cover failure caches,
+permissions and input/output caps. See [attachment-intake.json](nightly/attachment-intake.json).
+
+Guest-share attachment mediation, linked environments, remaining toolkits and the
+broader protocol backlog still require work. Filesystem and SQLite admission are
+separate operations; this does not claim a crash-atomic cross-resource transaction.
+
+Validation for this checkpoint: full suites 382 default / 379 no-default passed,
+21 opt-ins ignored each. Final affected regressions passed 151 default (6 ignored)
+and 53 no-default (1 ignored). Strict all-target Clippy passed in both modes; fmt,
+generated compatibility and nine nightly-monitor tests passed.

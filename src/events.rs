@@ -512,6 +512,13 @@ pub(crate) fn dispatch_scoped(
     c: &Value,
     authority: Option<&crate::mcp_access::Authority>,
 ) -> Result<Value> {
+    crate::attachment_intake::dispatch(s, c, authority)
+}
+pub(crate) fn dispatch_prepared(
+    s: &std::sync::Arc<State>,
+    c: &Value,
+    authority: Option<&crate::mcp_access::Authority>,
+) -> Result<Value> {
     if s.rollback_pending
         .load(std::sync::atomic::Ordering::Acquire)
     {
@@ -818,6 +825,12 @@ pub(crate) fn dispatch_scoped(
                     .map_err(|_| "provider control busy")?;
                 let mid = c["messageId"].as_str().ok_or("messageId required")?;
                 let m = json!({"id":mid,"threadId":tid,"runId":rid,"nodeId":rid,"role":"user","text":text,"attachments":c["attachments"],"context":c["context"],"streaming":false,"createdBy":if authority.is_some(){"agent"}else{"user"},"creationSource":if authority.is_some(){"mcp"}else{"web"},"createdAt":at,"updatedAt":at});
+                let mut m = m;
+                if authority.is_some() {
+                    if let Some(sender) = c.get("senderThreadId") {
+                        m["senderThreadId"] = sender.clone();
+                    }
+                }
                 put(&tx, "messages", mid, tid, &m)?;
                 append(&tx, tid, "message.updated", m.clone(), &t)?;
                 let mut item = message_item(&tx, tid, &m)?;
@@ -1041,7 +1054,7 @@ pub(crate) fn dispatch_scoped(
                 "resolved"
             });
             request["resolvedAt"] = json!(at);
-            for k in ["decision", "feedback", "answers"] {
+            for k in ["decision", "feedback", "answers", "attachmentsByQuestionId"] {
                 if let Some(v) = c.get(k) {
                     request[k] = v.clone()
                 }
@@ -1054,6 +1067,9 @@ pub(crate) fn dispatch_scoped(
                 let item_id = format!("item-{id}");
                 if let Ok(mut item) = get(&tx, "turnItems", &item_id) {
                     item["status"] = json!("completed");
+                    if kind == "runtime-request.respond" {
+                        crate::projection::question_answer(&mut item, c);
+                    }
                     item["completedAt"] = json!(at);
                     item["updatedAt"] = json!(at);
                     put(&tx, "turnItems", &item_id, tid, &item)?;
@@ -1070,6 +1086,9 @@ pub(crate) fn dispatch_scoped(
             put(&tx, "runtimeRequests", id, tid, &request)?;
             if let Ok(mut item) = get(&tx, "turnItems", &format!("approval-{id}")) {
                 item["status"] = json!("completed");
+                if kind == "runtime-request.respond" {
+                    crate::projection::question_answer(&mut item, c);
+                }
                 item["completedAt"] = json!(at);
                 item["updatedAt"] = json!(at);
                 crate::projection::save_item(&tx, tid, &t, item)?;
@@ -1361,8 +1380,11 @@ pub(crate) fn message_item(db: &Connection, tid: &str, m: &Value) -> Result<Valu
     let mut item = json!({"id":id,"threadId":tid,"runId":m["runId"],"nodeId":m["nodeId"],"providerThreadId":m["providerThreadId"],"providerTurnId":m["providerTurnId"],"nativeItemRef":null,"parentItemId":null,"ordinal":ordinal,"status":"completed","title":null,"startedAt":m["createdAt"],"completedAt":m["updatedAt"],"updatedAt":m["updatedAt"],"type":if m["role"]=="user"{"user_message"}else{"assistant_message"},"messageId":m["id"],"text":m["text"],"streaming":m["streaming"],"attachments":m["attachments"]});
     if m["role"] == "user" {
         item.as_object_mut().unwrap().remove("streaming");
-        item["createdBy"] = json!("user");
-        item["creationSource"] = json!("web");
+        item["createdBy"] = m.get("createdBy").cloned().unwrap_or(json!("user"));
+        item["creationSource"] = m.get("creationSource").cloned().unwrap_or(json!("web"));
+        if let Some(sender) = m.get("senderThreadId") {
+            item["senderThreadId"] = sender.clone();
+        }
         item["inputIntent"] = m.get("inputIntent").cloned().unwrap_or(json!("turn_start"));
     }
     if let Ok(old) = get(db, "turnItems", &id) {

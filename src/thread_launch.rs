@@ -91,6 +91,13 @@ pub(crate) fn launch_scoped(
     incoming: &Value,
     authority: Option<&crate::mcp_access::Authority>,
 ) -> Result<Value> {
+    crate::attachment_intake::launch(s, incoming, authority)
+}
+pub(crate) fn launch_prepared(
+    s: &Arc<State>,
+    incoming: &Value,
+    authority: Option<&crate::mcp_access::Authority>,
+) -> Result<Value> {
     if let Some(a) = authority {
         a.check_launch(&s.db.lock().unwrap(), incoming)?;
     }
@@ -187,20 +194,6 @@ pub(crate) fn launch_scoped(
             return Err("no provider adapter configured".into());
         }
     }
-    // Validate/copy uploads before creating a thread, as ThreadMessageIntake does.
-    // An accepted receipt already owns its message's immutable copies.
-    let mut claims = if authority.is_some()
-        && p.get("initialMessage").is_some()
-        && claim.as_ref().is_none_or(|c| c.2.is_none())
-    {
-        Some(crate::launch_attachments::claim(
-            s,
-            &tid,
-            &p["initialMessage"]["attachments"],
-        )?)
-    } else {
-        None
-    };
     let at = iso(now_ms());
     let thread = if was_claimed {
         let t = get(&tx, "thread", &tid)?;
@@ -318,10 +311,7 @@ pub(crate) fn launch_scoped(
     } else {
         strategy.clone()
     };
-    let attachments = claims
-        .as_ref()
-        .map(|c| &c.attachments)
-        .unwrap_or(&m["attachments"]);
+    let attachments = &m["attachments"];
     let mut message = json!({"type":"message.dispatch","commandId":format!("{cid}:initial-message"),"threadId":tid,"messageId":m["messageId"].as_str().map(str::to_owned).unwrap_or(format!("message-{cid}")),"text":m["text"],"attachments":attachments,"dispatchMode":{"type":"defer_start","workspaceStrategy":preparation}});
     if let Some(sender) = m.get("senderThreadId") {
         message["senderThreadId"] = sender.clone();
@@ -341,9 +331,6 @@ pub(crate) fn launch_scoped(
     .map_err(|e| e.to_string())?;
     result = json!({"threadId":tid,"projection":events::projection_db(&tx,&tid)?,"resumed":false,"sequence":accepted["sequence"]});
     tx.commit().map_err(|e| e.to_string())?;
-    if let Some(claims) = claims.as_mut() {
-        claims.keep();
-    }
     drop(db);
     s.notify();
     if p["generateTitle"] == true {
