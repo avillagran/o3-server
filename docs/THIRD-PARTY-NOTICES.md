@@ -20,7 +20,8 @@ selection/session transition adaptations reference nightly4179,
 `9e85538535c8553901351112ab02dd1dd62db5ee`; see
 [provider-session-intake.json](nightly/provider-session-intake.json) and
 [provider-home-intake.json](nightly/provider-home-intake.json) and
-[selection-transition-intake.json](nightly/selection-transition-intake.json).
+[selection-transition-intake.json](nightly/selection-transition-intake.json) and
+[active-provider-handoff-intake.json](nightly/active-provider-handoff-intake.json).
 
 MIT License
 

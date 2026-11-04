@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Held native turns expose selection changes without real inference or credentials."""
-import ctypes,json,os,signal,sys,uuid
+import ctypes,json,os,signal,sys,time,uuid
 ctypes.CDLL(None).prctl(1,signal.SIGTERM)
 from pathlib import Path
 claude='-p' in sys.argv
@@ -23,7 +23,7 @@ for line in sys.stdin:
   if f['type']!='user':continue
   text=f['message']['content'][0]['text'];log('claude/user',{'text':text,'model':model})
   emit({'type':'system','subtype':'init','session_id':native})
-  emit({'type':'stream_event','event':{'type':'content_block_delta','delta':{'type':'text_delta','text':'native:'+text}}})
+  emit({'type':'stream_event','event':{'type':'content_block_delta','delta':{'type':'text_delta','text':'native:'+text+'\n\n'}}})
   if not text.startswith('HOLD'):emit({'type':'result','subtype':'success','session_id':native})
   continue
  m,i,p=f.get('method'),f.get('id'),f.get('params',{})
@@ -37,14 +37,24 @@ for line in sys.stdin:
  elif m=='skills/list':r={'data':[]}
  elif m in ('thread/start','thread/resume'):
   native=p.get('threadId') or str(uuid.uuid4());r={'thread':{'id':native}}
+ elif m=='thread/backgroundTerminals/terminate':
+  r={'terminated':not (root/'.selection-terminal-remains').exists()}
+ elif m=='thread/backgroundTerminals/list':r={'data':[{'processId':'fixture-command'}], 'nextCursor':None}
+ elif m=='turn/interrupt':
+  while (root/'.selection-hold-interrupt').exists():time.sleep(.01)
+  emit({'method':'item/agentMessage/delta','params':{'threadId':p['threadId'],'turnId':p['turnId'],'delta':'STALE-OLD-ATTEMPT\n\n'}})
+  r={}
  elif m=='thread/unsubscribe':
+  if (root/'.selection-release-fails').exists():
+   emit({'id':i,'error':{'code':-32000,'message':'fixture release failed'}});continue
   emit({'id':i,'result':{'status':'unsubscribed'}});emit({'method':'thread/closed','params':{'threadId':p['threadId']}});continue
  elif m=='turn/start':
   native=p['threadId'];turn=str(uuid.uuid4());turns[native]=turn;r={'turn':{'id':turn}}
  else:r={}
  emit({'id':i,'result':r})
  if m=='turn/start':
-  text=p['input'][0]['text'];emit({'method':'item/agentMessage/delta','params':{'threadId':native,'turnId':turn,'delta':'native:'+text}})
+  if (root/'.selection-owned-command').exists():emit({'method':'item/started','params':{'threadId':native,'turnId':turn,'item':{'id':'fixture-command','type':'commandExecution','command':'fixture command','processId':'fixture-command','status':'inProgress'}}})
+  text=p['input'][0]['text'];emit({'method':'item/agentMessage/delta','params':{'threadId':native,'turnId':turn,'delta':'native:'+text+'\n\n'}})
   if not text.startswith('HOLD'):emit({'method':'turn/completed','params':{'threadId':native,'turn':{'id':turn,'status':'completed'}}})
  elif m in ('turn/steer','turn/interrupt'):
   native=p['threadId'];turn=turns[native]

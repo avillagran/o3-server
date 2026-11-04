@@ -184,7 +184,7 @@ fn stage(db: &Connection, thread: &Value, pt: &Value) -> Result<()> {
         .filter(|r| r["providerThreadId"] == pt["id"])
         .map(|r| r["id"].clone())
         .collect::<Vec<_>>();
-    let payload = json!({"providerInstanceId":pt["providerInstanceId"],"key":key,"nativeId":pt["nativeThreadRef"]["nativeId"],"providerSessionId":pt["providerSessionId"],"driver":pt["driver"],"runIds":run_ids});
+    let payload = json!({"providerInstanceId":pt["providerInstanceId"],"key":key,"nativeId":pt["nativeThreadRef"]["nativeId"],"providerSessionId":pt["providerSessionId"],"providerThreadId":pt["id"],"driver":pt["driver"],"runIds":run_ids});
     db.execute(
         "INSERT OR IGNORE INTO provider_switches(id,thread_id,payload) VALUES(?,?,?)",
         params![id, tid, payload.to_string()],
@@ -310,6 +310,125 @@ pub(crate) fn admit(
     let Some(active) = active else {
         return Ok(());
     };
+    let generation = run["id"].clone();
+    move_binding(
+        s,
+        db,
+        thread,
+        run,
+        BindingMove {
+            active: &active,
+            transition,
+            source: None,
+            generation,
+            actor: None,
+            at,
+        },
+    )
+}
+struct BindingMove<'a> {
+    active: &'a Value,
+    transition: Option<crate::selection_transition::Transition>,
+    source: Option<&'a Value>,
+    generation: Value,
+    actor: Option<&'a str>,
+    at: &'a str,
+}
+pub(crate) fn active_plan(
+    s: &State,
+    db: &Connection,
+    thread: &Value,
+    source: &Value,
+    target: &Value,
+) -> Result<Plan> {
+    let mut owner = thread.clone();
+    owner["providerInstanceId"] = source["providerInstanceId"].clone();
+    owner["modelSelection"] = source["modelSelection"].clone();
+    owner["activeProviderThreadId"] = source["providerThreadId"].clone();
+    plan(s, db, &owner, target)
+}
+pub(crate) struct RestartBinding<'a> {
+    pub source: &'a Value,
+    pub transition: crate::selection_transition::Transition,
+    pub generation: &'a str,
+    pub actor: &'a str,
+    pub at: &'a str,
+}
+pub(crate) fn restart_binding(
+    s: &State,
+    db: &Connection,
+    thread: &mut Value,
+    run: &mut Value,
+    context: RestartBinding<'_>,
+) -> Result<()> {
+    use crate::selection_transition::Transition;
+    if !matches!(
+        context.transition,
+        Transition::RestartAndResume | Transition::CreateWithHandoff
+    ) {
+        return Ok(());
+    }
+    if context.transition == Transition::CreateWithHandoff {
+        let provider = s
+            .provider
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or("Target provider unavailable")?;
+        let caps = provider
+            .capabilities(run["providerInstanceId"].as_str().unwrap_or(""))
+            .ok_or("Target provider unavailable")?;
+        for (field, reason) in [
+            (
+                "canConsumeHandoffSummaries",
+                "cannot consume handoff summaries",
+            ),
+            (
+                "acceptsSyntheticUserContext",
+                "cannot receive synthetic user context",
+            ),
+            (
+                "supportsFullThreadHandoff",
+                "does not support full-thread handoff",
+            ),
+        ] {
+            if caps["context"][field] != true {
+                return Err(format!("Target provider {reason}"));
+            }
+        }
+    }
+    let active = get(
+        db,
+        "providerThreads",
+        context.source["providerThreadId"]
+            .as_str()
+            .ok_or("Source provider thread missing")?,
+    )?;
+    move_binding(
+        s,
+        db,
+        thread,
+        run,
+        BindingMove {
+            active: &active,
+            transition: Some(context.transition),
+            source: Some(context.source),
+            generation: json!(context.generation),
+            actor: Some(context.actor),
+            at: context.at,
+        },
+    )
+}
+fn move_binding(
+    s: &State,
+    db: &Connection,
+    thread: &mut Value,
+    run: &mut Value,
+    context: BindingMove<'_>,
+) -> Result<()> {
+    let active = context.active;
+    let transition = context.transition;
+    let at = context.at;
     let target = run["providerInstanceId"]
         .as_str()
         .ok_or("run provider missing")?
@@ -326,7 +445,9 @@ pub(crate) fn admit(
         return Ok(());
     }
     let tid = thread["id"].as_str().ok_or("thread id missing")?.to_owned();
-    guard(db, thread, &json!({"instanceId":target}))?;
+    if context.source.is_none() {
+        guard(db, thread, &json!({"instanceId":target}))?;
+    }
     let source = active["providerInstanceId"]
         .as_str()
         .ok_or("source provider missing")?;
@@ -336,7 +457,7 @@ pub(crate) fn admit(
         && active["nativeThreadRef"].is_object()
         && active["driver"] == target_identity.0
         && source_identity == target_identity;
-    stage(db, thread, &active)?;
+    stage(db, thread, active)?;
     let all = list(db, "providerThreads", &tid)?;
     let mut candidates = all
         .iter()
@@ -365,7 +486,11 @@ pub(crate) fn admit(
         let id = format!("provider-thread-{}", random_id()?);
         json!({"id":id,"appThreadId":tid,"driver":crate::provider_input::driver(s,&json!(target))?,"providerInstanceId":target,"providerSessionId":null,"ownerNodeId":null,"nativeThreadRef":null,"nativeConversationHeadRef":null,"status":"not_loaded","firstRunOrdinal":run["ordinal"],"lastRunOrdinal":run["ordinal"],"handoffIds":[],"forkedFrom":null,"contextUsage":null,"goal":null,"nativeMetadata":null,"pendingBackgroundTasks":[],"createdAt":at,"updatedAt":at})
     };
-    pt["status"] = json!("active");
+    pt["status"] = json!(if context.source.is_some() {
+        "not_loaded"
+    } else {
+        "active"
+    });
     if !pt["firstRunOrdinal"].is_number() {
         pt["firstRunOrdinal"] = run["ordinal"].clone();
     }
@@ -381,7 +506,8 @@ pub(crate) fn admit(
     let last_delivered = runs
         .iter()
         .filter(|run| {
-            source_run(run)
+            context.source.is_none()
+                && source_run(run)
                 && run["providerThreadId"] == pt["id"]
                 && (run["status"] == "completed"
                     || turns
@@ -400,21 +526,31 @@ pub(crate) fn admit(
         .iter()
         .filter(|r| {
             !compatible
-                && source_run(r)
+                && (source_run(r) || context.source.is_some_and(|source| source["id"] == r["id"]))
                 && r["ordinal"].as_i64().is_some_and(|ordinal| {
-                    ordinal > since && ordinal < run["ordinal"].as_i64().unwrap_or(i64::MAX)
+                    ordinal > since
+                        && if context.source.is_some() {
+                            ordinal <= run["ordinal"].as_i64().unwrap_or(i64::MAX)
+                        } else {
+                            ordinal < run["ordinal"].as_i64().unwrap_or(i64::MAX)
+                        }
                 })
         })
         .collect::<Vec<_>>();
     covered.sort_by_key(|run| run["ordinal"].as_i64().unwrap_or(0));
     if !covered.is_empty() {
-        let items = own_items(db, &tid, run["ordinal"].as_i64().unwrap_or(1) - 1)?
-            .into_iter()
-            .filter(|i| {
-                covered.iter().any(|r| r["id"] == i["runId"])
-                    || (i["runId"].is_null() && (existing.is_none() || merge))
-            })
-            .collect::<Vec<_>>();
+        let items = own_items(
+            db,
+            &tid,
+            run["ordinal"].as_i64().unwrap_or(1) - if context.source.is_some() { 0 } else { 1 },
+        )?
+        .into_iter()
+        .filter(|i| {
+            covered.iter().any(|r| r["id"] == i["runId"])
+                || (i["runId"].is_null()
+                    && (existing.is_none() || merge || context.source.is_some()))
+        })
+        .collect::<Vec<_>>();
         let from = covered
             .iter()
             .filter_map(|r| r["ordinal"].as_i64())
@@ -433,7 +569,7 @@ pub(crate) fn admit(
         let selected = history::select(&messages, &coverage, 0, history::cap());
         let id = random_id()?;
         let transfer_id = random_id()?;
-        let strategy = if existing.is_none() || merge {
+        let strategy = if existing.is_none() || merge || context.source.is_some() {
             "full_thread_summary"
         } else {
             "delta_since_target_last_seen"
@@ -447,6 +583,11 @@ pub(crate) fn admit(
                 from_ids.push(id);
             }
         }
+        if context.source.is_some() {
+            from_ids = vec![active["id"]
+                .as_str()
+                .ok_or("Source provider thread id missing")?];
+        }
         let handoff = json!({"id":id,"transferId":transfer_id,"threadId":tid,"targetRunId":run["id"],"fromProviderThreadIds":from_ids,"toProviderThreadId":pt["id"],"coveredRunOrdinals":{"from":from,"to":to},"strategy":strategy,"status":"ready","summaryMessageId":null,"summaryText":history::render(selected["messages"].as_array().unwrap(),selected["context"].as_str().unwrap()),"history":{"messages":selected["messages"],"coverage":coverage,"omittedItems":selected["omittedItems"],"omittedItemIds":selected["omittedItemIds"]},"createdByProviderInstanceId":null,"createdAt":at,"updatedAt":at});
         let latest = covered
             .iter()
@@ -459,10 +600,14 @@ pub(crate) fn admit(
                 .map(|run| crate::context_transfer::canonical(db, &tid, run))
                 .unwrap_or(Value::Null)
         };
-        let actor = get(db, "messages", run["userMessageId"].as_str().unwrap_or(""))?["createdBy"]
-            .as_str()
-            .unwrap_or("user")
-            .to_owned();
+        let actor = if let Some(actor) = context.actor {
+            actor.to_owned()
+        } else {
+            get(db, "messages", run["userMessageId"].as_str().unwrap_or(""))?["createdBy"]
+                .as_str()
+                .unwrap_or("user")
+                .to_owned()
+        };
         // Admission consumes a transfer; the delivery ACK independently records native acceptance.
         let transfer = json!({"id":transfer_id,"type":"provider_handoff","sourceThreadId":tid,"targetThreadId":tid,"sourcePoint":crate::context_transfer::canonical(db,&tid,latest),"basePoint":base,"sourceProviderInstanceId":latest["providerInstanceId"],"targetProviderInstanceId":target,"targetRunId":run["id"],"status":"consumed","resolution":{"strategy":if strategy=="full_thread_summary"{"portable_context"}else{"delta_context"},"contextHandoffId":id},"createdBy":actor,"error":null,"createdAt":at,"updatedAt":at,"consumedAt":at});
         put(db, "contextHandoffs", &id, &tid, &handoff)?;
@@ -480,7 +625,8 @@ pub(crate) fn admit(
         .ok_or("target provider row missing")?
         .to_owned();
     thread["activeProviderThreadId"] = json!(ptid);
-    thread["providerGeneration"] = run["id"].clone();
+    thread["providerGeneration"] = context.generation;
+    run["providerThreadId"] = json!(ptid);
     thread["providerInstanceId"] = json!(target);
     thread["modelSelection"] = run["modelSelection"].clone();
     thread["codexNativeThreadId"] = if pt["driver"] == "codex" {
@@ -561,6 +707,21 @@ pub(crate) async fn release_pending(
         let mut db = s.db.lock().unwrap();
         let tx = db.transaction().map_err(|e| e.to_string())?;
         let at = iso(now_ms());
+        if let Some(ptid) = p["providerThreadId"].as_str() {
+            if let Ok(mut pt) = get(&tx, "providerThreads", ptid) {
+                if pt["nativeThreadRef"]["nativeId"] == p["nativeId"] {
+                    pt["status"] = json!("not_loaded");
+                    pt["pendingBackgroundTasks"] = json!([]);
+                    if pt["providerSessionId"] == p["providerSessionId"] {
+                        pt["providerSessionId"] = Value::Null;
+                    }
+                    pt["updatedAt"] = json!(at);
+                    put(&tx, "providerThreads", ptid, tid, &pt)?;
+                    let thread = get(&tx, "thread", tid)?;
+                    append(&tx, tid, "provider-thread.updated", pt, &thread)?;
+                }
+            }
+        }
         tx.execute(
             "UPDATE provider_switches SET released_at=?,last_error=NULL WHERE id=?",
             params![at, id],
