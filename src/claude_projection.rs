@@ -83,7 +83,7 @@ pub(crate) fn persist(
                 serde_json::from_str(include_str!("claude-capabilities.json"))
                     .map_err(|e| e.to_string())?;
             let cwd = t["worktreePath"].as_str().unwrap_or(".");
-            let session = json!({"id":id,"driver":"claudeAgent","providerInstanceId":t["providerInstanceId"],"status":"running","cwd":cwd,"model":t["modelSelection"]["model"],"capabilities":capabilities,"createdAt":at,"updatedAt":at,"lastError":null});
+            let session = json!({"id":id,"driver":"claudeAgent","providerInstanceId":t["providerInstanceId"],"status":"running","cwd":cwd,"model":run["modelSelection"]["model"],"capabilities":capabilities,"createdAt":at,"updatedAt":at,"lastError":null});
             put(db, "providerSessions", id, tid, &session)?;
             append(db, tid, "provider-session.updated", session, t)?;
             let previous = get(db, "providerThreads", id).unwrap_or(Value::Null);

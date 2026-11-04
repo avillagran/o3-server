@@ -217,14 +217,17 @@ impl Registry {
                     // A shared Codex process keeps its credential across workspace
                     // detach/resume. Exclusive CLI contexts still include cwd.
                     if instance == "codex"
-                        || settings["providerInstances"][instance]["driver"] == "codex"
+                        || settings["providerInstances"]
+                            [crate::provider_policy::configured_id(&settings, instance)]["driver"]
+                            == "codex"
                     {
                         Value::Null
                     } else {
                         json!(cwd)
                     },
-                    options,
-                    settings["providerInstances"][instance]
+                    crate::selection_transition::option_key(options),
+                    settings["providerInstances"]
+                        [crate::provider_policy::configured_id(&settings, instance)]
                 ]))
                 .map_err(|e| e.to_string())?
             )

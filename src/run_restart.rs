@@ -94,7 +94,11 @@ pub(crate) fn stage(
     }
     let selection = c
         .get("modelSelection")
-        .unwrap_or(&run["modelSelection"])
+        .unwrap_or_else(|| {
+            t.get("modelSelection")
+                .filter(|v| v.is_object())
+                .unwrap_or(&run["modelSelection"])
+        })
         .clone();
     if selection["instanceId"] != run["providerInstanceId"] {
         return Err("Active cross-instance selection handoff is not implemented yet.".into());
@@ -177,9 +181,11 @@ pub(crate) fn stage(
     run["completedAt"] = Value::Null;
     run["error"] = Value::Null;
     run["modelSelection"] = selection.clone();
+    crate::selection_transition::freeze_policy(t, &mut run);
     run["executionRequested"] = json!(true);
     run["recoveryPending"] = json!(false);
-    let changed_selection = t["modelSelection"] != selection;
+    let changed_selection =
+        !crate::selection_transition::model_selections_equal(&t["modelSelection"], &selection);
     t["modelSelection"] = selection;
     t["updatedAt"] = json!(at);
     put(db, "thread", tid, tid, t)?;

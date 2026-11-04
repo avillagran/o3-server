@@ -1,0 +1,3641 @@
+{
+  "reference": "9e85538535c8553901351112ab02dd1dd62db5ee",
+  "sourceFiles": [
+    "apps/server/src/orchestration-v2/ProviderSessionTransitionPolicy.ts",
+    "packages/provider-core/src/server/selectionTransition.ts",
+    "packages/shared/src/model.ts"
+  ],
+  "cases": [
+    {
+      "name": "same/missing",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        }
+      },
+      "expected": {
+        "type": "reuse"
+      }
+    },
+    {
+      "name": "same/apply_on_next_turn",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "apply_on_next_turn"
+        }
+      },
+      "expected": {
+        "type": "reuse"
+      }
+    },
+    {
+      "name": "same/restart_session",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "restart_session"
+        }
+      },
+      "expected": {
+        "type": "reuse"
+      }
+    },
+    {
+      "name": "same/create_with_handoff",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "create_with_handoff"
+        }
+      },
+      "expected": {
+        "type": "reuse"
+      }
+    },
+    {
+      "name": "same/reject",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "reject",
+          "reason": "adapter refused"
+        }
+      },
+      "expected": {
+        "type": "reuse"
+      }
+    },
+    {
+      "name": "interaction/missing",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "plan",
+          "workspace": "/repo",
+          "available": true
+        }
+      },
+      "expected": {
+        "type": "reuse"
+      }
+    },
+    {
+      "name": "interaction/apply_on_next_turn",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "plan",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "apply_on_next_turn"
+        }
+      },
+      "expected": {
+        "type": "reuse"
+      }
+    },
+    {
+      "name": "interaction/restart_session",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "plan",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "restart_session"
+        }
+      },
+      "expected": {
+        "type": "reuse"
+      }
+    },
+    {
+      "name": "interaction/create_with_handoff",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "plan",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "create_with_handoff"
+        }
+      },
+      "expected": {
+        "type": "reuse"
+      }
+    },
+    {
+      "name": "interaction/reject",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "plan",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "reject",
+          "reason": "adapter refused"
+        }
+      },
+      "expected": {
+        "type": "reuse"
+      }
+    },
+    {
+      "name": "runtime/missing",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "approval-required",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        }
+      },
+      "expected": {
+        "type": "restart_and_resume"
+      }
+    },
+    {
+      "name": "runtime/apply_on_next_turn",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "approval-required",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "apply_on_next_turn"
+        }
+      },
+      "expected": {
+        "type": "restart_and_resume"
+      }
+    },
+    {
+      "name": "runtime/restart_session",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "approval-required",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "restart_session"
+        }
+      },
+      "expected": {
+        "type": "restart_and_resume"
+      }
+    },
+    {
+      "name": "runtime/create_with_handoff",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "approval-required",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "create_with_handoff"
+        }
+      },
+      "expected": {
+        "type": "restart_and_resume"
+      }
+    },
+    {
+      "name": "runtime/reject",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "approval-required",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "reject",
+          "reason": "adapter refused"
+        }
+      },
+      "expected": {
+        "type": "restart_and_resume"
+      }
+    },
+    {
+      "name": "workspace/missing",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/other",
+          "available": true
+        }
+      },
+      "expected": {
+        "type": "restart_and_resume"
+      }
+    },
+    {
+      "name": "workspace/apply_on_next_turn",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/other",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "apply_on_next_turn"
+        }
+      },
+      "expected": {
+        "type": "restart_and_resume"
+      }
+    },
+    {
+      "name": "workspace/restart_session",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/other",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "restart_session"
+        }
+      },
+      "expected": {
+        "type": "restart_and_resume"
+      }
+    },
+    {
+      "name": "workspace/create_with_handoff",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/other",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "create_with_handoff"
+        }
+      },
+      "expected": {
+        "type": "restart_and_resume"
+      }
+    },
+    {
+      "name": "workspace/reject",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/other",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "reject",
+          "reason": "adapter refused"
+        }
+      },
+      "expected": {
+        "type": "restart_and_resume"
+      }
+    },
+    {
+      "name": "model/missing",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "two"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        }
+      },
+      "expected": {
+        "type": "reject",
+        "reason": "The provider adapter did not classify the selection change."
+      }
+    },
+    {
+      "name": "model/apply_on_next_turn",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "two"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "apply_on_next_turn"
+        }
+      },
+      "expected": {
+        "type": "switch_model_in_session"
+      }
+    },
+    {
+      "name": "model/restart_session",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "two"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "restart_session"
+        }
+      },
+      "expected": {
+        "type": "restart_and_resume"
+      }
+    },
+    {
+      "name": "model/create_with_handoff",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "two"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "create_with_handoff"
+        }
+      },
+      "expected": {
+        "type": "create_with_handoff"
+      }
+    },
+    {
+      "name": "model/reject",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "two"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "reject",
+          "reason": "adapter refused"
+        }
+      },
+      "expected": {
+        "type": "reject",
+        "reason": "adapter refused"
+      }
+    },
+    {
+      "name": "options/missing",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one",
+            "options": [
+              {
+                "id": "effort",
+                "value": "high"
+              }
+            ]
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        }
+      },
+      "expected": {
+        "type": "reject",
+        "reason": "The provider adapter did not classify the selection change."
+      }
+    },
+    {
+      "name": "options/apply_on_next_turn",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one",
+            "options": [
+              {
+                "id": "effort",
+                "value": "high"
+              }
+            ]
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "apply_on_next_turn"
+        }
+      },
+      "expected": {
+        "type": "switch_model_in_session"
+      }
+    },
+    {
+      "name": "options/restart_session",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one",
+            "options": [
+              {
+                "id": "effort",
+                "value": "high"
+              }
+            ]
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "restart_session"
+        }
+      },
+      "expected": {
+        "type": "restart_and_resume"
+      }
+    },
+    {
+      "name": "options/create_with_handoff",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one",
+            "options": [
+              {
+                "id": "effort",
+                "value": "high"
+              }
+            ]
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "create_with_handoff"
+        }
+      },
+      "expected": {
+        "type": "create_with_handoff"
+      }
+    },
+    {
+      "name": "options/reject",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one",
+            "options": [
+              {
+                "id": "effort",
+                "value": "high"
+              }
+            ]
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "reject",
+          "reason": "adapter refused"
+        }
+      },
+      "expected": {
+        "type": "reject",
+        "reason": "adapter refused"
+      }
+    },
+    {
+      "name": "false-is-explicit/missing",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one",
+            "options": [
+              {
+                "id": "fastMode",
+                "value": false
+              }
+            ]
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        }
+      },
+      "expected": {
+        "type": "reject",
+        "reason": "The provider adapter did not classify the selection change."
+      }
+    },
+    {
+      "name": "false-is-explicit/apply_on_next_turn",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one",
+            "options": [
+              {
+                "id": "fastMode",
+                "value": false
+              }
+            ]
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "apply_on_next_turn"
+        }
+      },
+      "expected": {
+        "type": "switch_model_in_session"
+      }
+    },
+    {
+      "name": "false-is-explicit/restart_session",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one",
+            "options": [
+              {
+                "id": "fastMode",
+                "value": false
+              }
+            ]
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "restart_session"
+        }
+      },
+      "expected": {
+        "type": "restart_and_resume"
+      }
+    },
+    {
+      "name": "false-is-explicit/create_with_handoff",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one",
+            "options": [
+              {
+                "id": "fastMode",
+                "value": false
+              }
+            ]
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "create_with_handoff"
+        }
+      },
+      "expected": {
+        "type": "create_with_handoff"
+      }
+    },
+    {
+      "name": "false-is-explicit/reject",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one",
+            "options": [
+              {
+                "id": "fastMode",
+                "value": false
+              }
+            ]
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "reject",
+          "reason": "adapter refused"
+        }
+      },
+      "expected": {
+        "type": "reject",
+        "reason": "adapter refused"
+      }
+    },
+    {
+      "name": "empty-options/missing",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one",
+            "options": []
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        }
+      },
+      "expected": {
+        "type": "reuse"
+      }
+    },
+    {
+      "name": "empty-options/apply_on_next_turn",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one",
+            "options": []
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "apply_on_next_turn"
+        }
+      },
+      "expected": {
+        "type": "reuse"
+      }
+    },
+    {
+      "name": "empty-options/restart_session",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one",
+            "options": []
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "restart_session"
+        }
+      },
+      "expected": {
+        "type": "reuse"
+      }
+    },
+    {
+      "name": "empty-options/create_with_handoff",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one",
+            "options": []
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "create_with_handoff"
+        }
+      },
+      "expected": {
+        "type": "reuse"
+      }
+    },
+    {
+      "name": "empty-options/reject",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one",
+            "options": []
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "reject",
+          "reason": "adapter refused"
+        }
+      },
+      "expected": {
+        "type": "reuse"
+      }
+    },
+    {
+      "name": "driver/missing",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "claudeAgent",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        }
+      },
+      "expected": {
+        "type": "create_with_handoff"
+      }
+    },
+    {
+      "name": "driver/apply_on_next_turn",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "claudeAgent",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "apply_on_next_turn"
+        }
+      },
+      "expected": {
+        "type": "create_with_handoff"
+      }
+    },
+    {
+      "name": "driver/restart_session",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "claudeAgent",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "restart_session"
+        }
+      },
+      "expected": {
+        "type": "create_with_handoff"
+      }
+    },
+    {
+      "name": "driver/create_with_handoff",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "claudeAgent",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "create_with_handoff"
+        }
+      },
+      "expected": {
+        "type": "create_with_handoff"
+      }
+    },
+    {
+      "name": "driver/reject",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "claudeAgent",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "reject",
+          "reason": "adapter refused"
+        }
+      },
+      "expected": {
+        "type": "create_with_handoff"
+      }
+    },
+    {
+      "name": "continuation-driver/missing",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "claudeAgent",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        }
+      },
+      "expected": {
+        "type": "create_with_handoff"
+      }
+    },
+    {
+      "name": "continuation-driver/apply_on_next_turn",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "claudeAgent",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "apply_on_next_turn"
+        }
+      },
+      "expected": {
+        "type": "create_with_handoff"
+      }
+    },
+    {
+      "name": "continuation-driver/restart_session",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "claudeAgent",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "restart_session"
+        }
+      },
+      "expected": {
+        "type": "create_with_handoff"
+      }
+    },
+    {
+      "name": "continuation-driver/create_with_handoff",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "claudeAgent",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "create_with_handoff"
+        }
+      },
+      "expected": {
+        "type": "create_with_handoff"
+      }
+    },
+    {
+      "name": "continuation-driver/reject",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "claudeAgent",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "reject",
+          "reason": "adapter refused"
+        }
+      },
+      "expected": {
+        "type": "create_with_handoff"
+      }
+    },
+    {
+      "name": "continuation-key/missing",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/other"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        }
+      },
+      "expected": {
+        "type": "create_with_handoff"
+      }
+    },
+    {
+      "name": "continuation-key/apply_on_next_turn",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/other"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "apply_on_next_turn"
+        }
+      },
+      "expected": {
+        "type": "create_with_handoff"
+      }
+    },
+    {
+      "name": "continuation-key/restart_session",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/other"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "restart_session"
+        }
+      },
+      "expected": {
+        "type": "create_with_handoff"
+      }
+    },
+    {
+      "name": "continuation-key/create_with_handoff",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/other"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "create_with_handoff"
+        }
+      },
+      "expected": {
+        "type": "create_with_handoff"
+      }
+    },
+    {
+      "name": "continuation-key/reject",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/other"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "reject",
+          "reason": "adapter refused"
+        }
+      },
+      "expected": {
+        "type": "create_with_handoff"
+      }
+    },
+    {
+      "name": "instance/missing",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex-alt",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        }
+      },
+      "expected": {
+        "type": "restart_and_resume"
+      }
+    },
+    {
+      "name": "instance/apply_on_next_turn",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex-alt",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "apply_on_next_turn"
+        }
+      },
+      "expected": {
+        "type": "restart_and_resume"
+      }
+    },
+    {
+      "name": "instance/restart_session",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex-alt",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "restart_session"
+        }
+      },
+      "expected": {
+        "type": "restart_and_resume"
+      }
+    },
+    {
+      "name": "instance/create_with_handoff",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex-alt",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "create_with_handoff"
+        }
+      },
+      "expected": {
+        "type": "restart_and_resume"
+      }
+    },
+    {
+      "name": "instance/reject",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex-alt",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "reject",
+          "reason": "adapter refused"
+        }
+      },
+      "expected": {
+        "type": "restart_and_resume"
+      }
+    },
+    {
+      "name": "model-workspace/missing",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "two"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/other",
+          "available": true
+        }
+      },
+      "expected": {
+        "type": "reject",
+        "reason": "The provider adapter did not classify the selection change."
+      }
+    },
+    {
+      "name": "model-workspace/apply_on_next_turn",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "two"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/other",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "apply_on_next_turn"
+        }
+      },
+      "expected": {
+        "type": "restart_and_resume"
+      }
+    },
+    {
+      "name": "model-workspace/restart_session",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "two"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/other",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "restart_session"
+        }
+      },
+      "expected": {
+        "type": "restart_and_resume"
+      }
+    },
+    {
+      "name": "model-workspace/create_with_handoff",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "two"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/other",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "create_with_handoff"
+        }
+      },
+      "expected": {
+        "type": "create_with_handoff"
+      }
+    },
+    {
+      "name": "model-workspace/reject",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "two"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/other",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "reject",
+          "reason": "adapter refused"
+        }
+      },
+      "expected": {
+        "type": "reject",
+        "reason": "adapter refused"
+      }
+    },
+    {
+      "name": "model-runtime/missing",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "two"
+          },
+          "runtimeMode": "approval-required",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        }
+      },
+      "expected": {
+        "type": "reject",
+        "reason": "The provider adapter did not classify the selection change."
+      }
+    },
+    {
+      "name": "model-runtime/apply_on_next_turn",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "two"
+          },
+          "runtimeMode": "approval-required",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "apply_on_next_turn"
+        }
+      },
+      "expected": {
+        "type": "restart_and_resume"
+      }
+    },
+    {
+      "name": "model-runtime/restart_session",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "two"
+          },
+          "runtimeMode": "approval-required",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "restart_session"
+        }
+      },
+      "expected": {
+        "type": "restart_and_resume"
+      }
+    },
+    {
+      "name": "model-runtime/create_with_handoff",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "two"
+          },
+          "runtimeMode": "approval-required",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "create_with_handoff"
+        }
+      },
+      "expected": {
+        "type": "create_with_handoff"
+      }
+    },
+    {
+      "name": "model-runtime/reject",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "two"
+          },
+          "runtimeMode": "approval-required",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "reject",
+          "reason": "adapter refused"
+        }
+      },
+      "expected": {
+        "type": "reject",
+        "reason": "adapter refused"
+      }
+    },
+    {
+      "name": "unavailable/missing",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": false
+        }
+      },
+      "expected": {
+        "type": "reject",
+        "reason": "The target provider instance is unavailable."
+      }
+    },
+    {
+      "name": "unavailable/apply_on_next_turn",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": false
+        },
+        "selectionTransition": {
+          "type": "apply_on_next_turn"
+        }
+      },
+      "expected": {
+        "type": "reject",
+        "reason": "The target provider instance is unavailable."
+      }
+    },
+    {
+      "name": "unavailable/restart_session",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": false
+        },
+        "selectionTransition": {
+          "type": "restart_session"
+        }
+      },
+      "expected": {
+        "type": "reject",
+        "reason": "The target provider instance is unavailable."
+      }
+    },
+    {
+      "name": "unavailable/create_with_handoff",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": false
+        },
+        "selectionTransition": {
+          "type": "create_with_handoff"
+        }
+      },
+      "expected": {
+        "type": "reject",
+        "reason": "The target provider instance is unavailable."
+      }
+    },
+    {
+      "name": "unavailable/reject",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": false
+        },
+        "selectionTransition": {
+          "type": "reject",
+          "reason": "adapter refused"
+        }
+      },
+      "expected": {
+        "type": "reject",
+        "reason": "The target provider instance is unavailable."
+      }
+    },
+    {
+      "name": "extra-identity-field/missing",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared",
+            "extra": "ignored"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        }
+      },
+      "expected": {
+        "type": "reuse"
+      }
+    },
+    {
+      "name": "extra-identity-field/apply_on_next_turn",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared",
+            "extra": "ignored"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "apply_on_next_turn"
+        }
+      },
+      "expected": {
+        "type": "reuse"
+      }
+    },
+    {
+      "name": "extra-identity-field/restart_session",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared",
+            "extra": "ignored"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "restart_session"
+        }
+      },
+      "expected": {
+        "type": "reuse"
+      }
+    },
+    {
+      "name": "extra-identity-field/create_with_handoff",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared",
+            "extra": "ignored"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "create_with_handoff"
+        }
+      },
+      "expected": {
+        "type": "reuse"
+      }
+    },
+    {
+      "name": "extra-identity-field/reject",
+      "input": {
+        "current": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo"
+        },
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared",
+            "extra": "ignored"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        },
+        "selectionTransition": {
+          "type": "reject",
+          "reason": "adapter refused"
+        }
+      },
+      "expected": {
+        "type": "reuse"
+      }
+    },
+    {
+      "name": "fresh/true",
+      "input": {
+        "current": null,
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": true
+        }
+      },
+      "expected": {
+        "type": "create_with_handoff"
+      }
+    },
+    {
+      "name": "fresh/false",
+      "input": {
+        "current": null,
+        "target": {
+          "driver": "codex",
+          "continuationIdentity": {
+            "driverKind": "codex",
+            "continuationKey": "codex:home:/shared"
+          },
+          "modelSelection": {
+            "instanceId": "codex",
+            "model": "one"
+          },
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "workspace": "/repo",
+          "available": false
+        }
+      },
+      "expected": {
+        "type": "reject",
+        "reason": "The target provider instance is unavailable."
+      }
+    }
+  ],
+  "equality": [
+    {
+      "left": {
+        "instanceId": "codex",
+        "model": "one"
+      },
+      "right": {
+        "instanceId": "codex",
+        "model": "one",
+        "options": []
+      },
+      "expected": true
+    },
+    {
+      "left": {
+        "instanceId": "codex",
+        "model": "one",
+        "options": [
+          {
+            "id": "reasoningEffort",
+            "value": "high"
+          },
+          {
+            "id": "fastMode",
+            "value": false
+          }
+        ]
+      },
+      "right": {
+        "instanceId": "codex",
+        "model": "one",
+        "options": [
+          {
+            "id": "fastMode",
+            "value": false
+          },
+          {
+            "id": "reasoningEffort",
+            "value": "high"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "left": {
+        "instanceId": "codex",
+        "model": "one"
+      },
+      "right": {
+        "instanceId": "codex",
+        "model": "one",
+        "options": [
+          {
+            "id": "fastMode",
+            "value": false
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "left": {
+        "instanceId": "codex",
+        "model": "one",
+        "options": [
+          {
+            "id": "x",
+            "value": true
+          }
+        ]
+      },
+      "right": {
+        "instanceId": "codex",
+        "model": "one",
+        "options": [
+          {
+            "id": "x",
+            "value": "true"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "left": {
+        "instanceId": "codex",
+        "model": "one",
+        "options": [
+          {
+            "id": "x",
+            "value": true
+          },
+          {
+            "id": "x",
+            "value": "true"
+          }
+        ]
+      },
+      "right": {
+        "instanceId": "codex",
+        "model": "one",
+        "options": [
+          {
+            "id": "x",
+            "value": "true"
+          },
+          {
+            "id": "x",
+            "value": true
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "left": {
+        "instanceId": "codex",
+        "model": "one",
+        "options": [
+          {
+            "id": "effort",
+            "value": "高"
+          },
+          {
+            "id": "effort",
+            "value": "básico"
+          }
+        ]
+      },
+      "right": {
+        "instanceId": "codex",
+        "model": "one",
+        "options": [
+          {
+            "id": "effort",
+            "value": "básico"
+          },
+          {
+            "id": "effort",
+            "value": "高"
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "left": {
+        "instanceId": "codex",
+        "model": "one"
+      },
+      "right": {
+        "instanceId": "codex",
+        "model": "one",
+        "unrelated": "ignored"
+      },
+      "expected": true
+    },
+    {
+      "left": {
+        "instanceId": "codex",
+        "model": "one",
+        "options": [
+          {
+            "id": "x",
+            "value": false
+          },
+          {
+            "id": "x",
+            "value": false
+          }
+        ]
+      },
+      "right": {
+        "instanceId": "codex",
+        "model": "one",
+        "options": [
+          {
+            "id": "x",
+            "value": false
+          }
+        ]
+      },
+      "expected": false
+    }
+  ],
+  "acp": [
+    {
+      "input": {
+        "current": {
+          "instanceId": "codex",
+          "model": "one"
+        },
+        "target": {
+          "instanceId": "codex",
+          "model": "one"
+        },
+        "sessionCapabilities": {
+          "sessions": {
+            "supportsModelSwitchInSession": false
+          }
+        }
+      },
+      "expected": {
+        "type": "apply_on_next_turn"
+      }
+    },
+    {
+      "input": {
+        "current": {
+          "instanceId": "codex",
+          "model": "one"
+        },
+        "target": {
+          "instanceId": "codex",
+          "model": "two"
+        },
+        "sessionCapabilities": {
+          "sessions": {
+            "supportsModelSwitchInSession": false
+          }
+        }
+      },
+      "expected": {
+        "type": "reject",
+        "reason": "The active ACP session does not expose a model-switch capability."
+      }
+    },
+    {
+      "input": {
+        "current": {
+          "instanceId": "codex",
+          "model": "one"
+        },
+        "target": {
+          "instanceId": "codex",
+          "model": "one",
+          "options": [
+            {
+              "id": "reasoningEffort",
+              "value": "high"
+            },
+            {
+              "id": "fastMode",
+              "value": false
+            }
+          ]
+        },
+        "sessionCapabilities": {
+          "sessions": {
+            "supportsModelSwitchInSession": false
+          }
+        }
+      },
+      "expected": {
+        "type": "apply_on_next_turn"
+      }
+    },
+    {
+      "input": {
+        "current": {
+          "instanceId": "codex",
+          "model": "one"
+        },
+        "target": {
+          "instanceId": "codex",
+          "model": "one"
+        },
+        "sessionCapabilities": {
+          "sessions": {
+            "supportsModelSwitchInSession": true
+          }
+        }
+      },
+      "expected": {
+        "type": "apply_on_next_turn"
+      }
+    },
+    {
+      "input": {
+        "current": {
+          "instanceId": "codex",
+          "model": "one"
+        },
+        "target": {
+          "instanceId": "codex",
+          "model": "two"
+        },
+        "sessionCapabilities": {
+          "sessions": {
+            "supportsModelSwitchInSession": true
+          }
+        }
+      },
+      "expected": {
+        "type": "apply_on_next_turn"
+      }
+    },
+    {
+      "input": {
+        "current": {
+          "instanceId": "codex",
+          "model": "one"
+        },
+        "target": {
+          "instanceId": "codex",
+          "model": "one",
+          "options": [
+            {
+              "id": "reasoningEffort",
+              "value": "high"
+            },
+            {
+              "id": "fastMode",
+              "value": false
+            }
+          ]
+        },
+        "sessionCapabilities": {
+          "sessions": {
+            "supportsModelSwitchInSession": true
+          }
+        }
+      },
+      "expected": {
+        "type": "apply_on_next_turn"
+      }
+    }
+  ]
+}

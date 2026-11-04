@@ -537,7 +537,11 @@ fn cancellation_finishes_with_a_locked_checkout_and_cleanup_retries_before_admit
         )
         .is_err());
     git(&f.root, &["worktree", "unlock", work.to_str().unwrap()]);
-    assert!(support::wait_for(WAIT, || !work.exists()));
+    // The filesystem disappears before cleanup_pending is acknowledged. Retry
+    // must wait for the same durable predicate used by prepared-run.retry.
+    assert!(support::wait_for(WAIT, || {
+        !work.exists() && f.s.state.db.lock().unwrap().query_row("SELECT NOT EXISTS(SELECT 1 FROM thread_launches WHERE thread_id='t' AND ((completed=0 AND released=0) OR cleanup_pending=1))",[],|r|r.get::<_,bool>(0)).unwrap()
+    }));
     std::fs::write(f.root.join("release-setup"), "").unwrap();
     f.c.rpc(
         "orchestration.dispatchCommand",

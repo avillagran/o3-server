@@ -3239,3 +3239,44 @@ Validation: full suites 432 default / 429 no-default, 25 opt-ins ignored each;
 strict all-target Clippy both modes, fmt, generated compatibility, monitor (9),
 fixture reproduction and diff checks pass. The final default home integration
 also passes with the sibling native process assertion.
+
+## Selection transition checkpoint (2026-11-04)
+
+PR32 passed both checks on 2cec3bd and merged into dev
+0d6a6280380d139046a563e63aa116bc13dfd6d0 after the webhook fixture and
+bounded parallel discovery repairs.
+
+The next port follows nightly4179 source policy and its native adapter classifiers.
+It distinguishes reuse, next-turn switching, restart/resume, portable handoff and
+refusal; runtime/workspace changes do not override an adapter refusal or explicit
+handoff. The planner selects the newest live session and retains negotiated
+capabilities from dead records when native history remains. Metadata decisions
+persist privately until native-owner admission, including same-instance classified
+restart/handoff and queued restoration after unexecuted composer preferences.
+
+Both native adapters accept same-instance preference changes while a turn is active.
+Steering preserves that run/attempt and its original model/runtime policy; the next
+turn captures the new preferences. Equivalent option reordering retains the native
+process, MCP owner and approval policies. provider.switch uses the shared receipt
+path. Legacy aliases use canonical driver/home/enable settings when no exact alias
+exists, including a differently configured native driver under the canonical name.
+
+The generator executes pinned TypeScript: 82 policy cases, 8 equality cases and 6 ACP
+classifications. Service/compatible-client tests cover live/dead capability fallback,
+corrupt-plan rollback, restart/handoff/refusal, State reopen, unavailable targets,
+delete and native-owner queue restoration. Four installed Claude Haiku/Codex app
+turns plus two active steering deliveries preserve a running shell command, one
+original attempt and a private codeword in the same native conversation. Temporary
+credential-copy homes and owned processes are cleaned on success/failure.
+
+Full active cross-instance lifecycle, registry/pool cleanup, SDK options and source
+background guards, exact exotic ICU collation ties, event/timeline fidelity and the
+broader protocol/UI/resource backlog remain open. Evidence and validation inventory:
+[selection-transition-intake.json](nightly/selection-transition-intake.json).
+
+Validation: complete suites 441 default / 438 without default features, 26 opt-ins ignored each.
+A final implicit restart preference regression was red, then fixed to use current
+thread preferences; final restart/selection/compatible-client suites 28 per mode
+(1 opt-in ignored), strict all-target Clippy both modes, fmt, generated compatibility,
+9 monitor tests, 96-case fixture reproduction and diff checks pass. Four installed app
+turns plus steering pass explicitly.

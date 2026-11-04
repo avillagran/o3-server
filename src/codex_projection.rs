@@ -116,7 +116,7 @@ pub(crate) fn persist(
                 &t,
                 "providerSessions",
                 "provider-session.updated",
-                json!({"id":session_id,"driver":"codex","providerInstanceId":thread["providerInstanceId"],"cwd":p["cwd"],"model":thread["modelSelection"]["model"],"capabilities":serde_json::from_str::<Value>(include_str!("codex-capabilities.json")).unwrap(),"lastError":null,"status":"ready","createdAt":at,"updatedAt":at}),
+                json!({"id":session_id,"driver":"codex","providerInstanceId":thread["providerInstanceId"],"cwd":p["cwd"],"model":run["modelSelection"]["model"],"capabilities":serde_json::from_str::<Value>(include_str!("codex-capabilities.json")).unwrap(),"lastError":null,"status":"ready","createdAt":at,"updatedAt":at}),
             )?;
         }
         // A native turn result can precede item completion. The supervisor owns
