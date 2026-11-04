@@ -626,7 +626,8 @@ fn release(s: &Arc<State>, id: &str, job: &Job) -> Result<()> {
             s,
             t["projectId"].as_str().unwrap_or(""),
             &run["providerInstanceId"],
-        )?;
+        )
+        .map_err(crate::provider_policy::display_error)?;
         if s.provider.lock().unwrap().is_none() {
             return Err("No provider adapter configured for prepared run".into());
         }

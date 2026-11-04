@@ -1437,3 +1437,84 @@ fn mcp_mode_limit_header_only_narrows_runtime_and_interaction_authority() {
         assert_eq!(v["error"], "invalid_mode_limit");
     }
 }
+
+#[test]
+fn disabled_provider_errors_are_invalid_request_for_launch_and_attachment_or_plain_send() {
+    use o3_server::provider::{Provider, ProviderControl, ProviderEvent, RunInput};
+    use std::{future::Future, pin::Pin, sync::Arc};
+    struct Catalog;
+    impl Provider for Catalog {
+        fn config(&self) -> Vec<Value> {
+            vec![
+                json!({"instanceId":"codex","driver":"codex","enabled":true,"installed":true,"supportedRuntimeModes":["full-access","approval-required"]}),
+            ]
+        }
+        fn execute<'a>(
+            &'a self,
+            input: RunInput,
+            output: tokio::sync::mpsc::Sender<ProviderEvent>,
+            control: tokio::sync::mpsc::Receiver<ProviderControl>,
+            cancel: tokio::sync::watch::Receiver<bool>,
+        ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+            o3_server::provider::ScriptedProvider.execute(input, output, control, cancel)
+        }
+    }
+    let s = support::start(|s| *s.provider.lock().unwrap() = Some(Arc::new(Catalog)));
+    let c = s.connect();
+    let root = s.dir.join("repo");
+    std::fs::create_dir_all(&root).unwrap();
+    c.rpc("projects.mutate",json!({"type":"project.create","commandId":"p","projectId":"p","title":"Policy","workspaceRoot":root})).unwrap();
+    c.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"t","threadId":"t","projectId":"p","title":"Policy","modelSelection":{"instanceId":"codex","model":"test"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
+    c.rpc(
+        "server.updateSettings",
+        json!({"patch":{"providerInstances":{"codex":{"driver":"codex","enabled":false}}}}),
+    )
+    .unwrap();
+    let file = c
+        .upload_attachment("proof.txt", "text/plain", 5, std::io::Cursor::new(b"proof"))
+        .unwrap();
+    let token = s
+        .state
+        .issue_mcp_session("full-access", 120_000, "policy test")
+        .unwrap();
+    let sid = init(&s, &token);
+    for (name, args) in [
+        (
+            "t3_thread_launch",
+            json!({"title":"Disabled","projectId":"p","modelSelection":{"instanceId":"codex","model":"test"}}),
+        ),
+        (
+            "t3_thread_send",
+            json!({"threadId":"t","message":"denied","clientRequestId":"policy-send"}),
+        ),
+        (
+            "t3_thread_send_attachments",
+            json!({"threadId":"t","attachments":[file]}),
+        ),
+    ] {
+        let (_, _, value) = request(
+            &s,
+            &token,
+            Some(&sid),
+            json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":name,"arguments":args}}),
+        );
+        assert_eq!(value["result"]["isError"], true, "{name}: {value}");
+        assert_eq!(
+            value["result"]["structuredContent"]["code"], "invalid_request",
+            "{name}: {value}"
+        );
+        assert!(
+            value["result"]["structuredContent"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("Provider instance \"codex\" is disabled for project p."),
+            "{value}"
+        );
+    }
+    assert!(c
+        .rpc("orchestration.getThreadProjection", json!({"threadId":"t"}))
+        .unwrap()["messages"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+}

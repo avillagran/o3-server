@@ -202,3 +202,12 @@ a private sidecar atomically; invalid-input and transient-failure caches are in-
 The MCP pending-upload ownership map also resets on restart. A lost process between
 filesystem copy and SQLite commit can leave an unused copy; cross-resource crash
 atomicity and guest-share mediation are outside this checkpoint's claim.
+
+Provider registry policy (2026-11-04): read/parse failure leaves its last valid
+configuration in memory; it does not remove native pools or discover a different
+set of defaults. A later valid settings change reconciles again. Union hydration
+keeps a globally disabled configured instance routable for explicitly enabled
+projects; removing the last enabling project stops new use. Accepted message
+receipts still replay after disable, while new message/launch/prepared admissions
+check the applicable project policy. Registry availability alone is not project
+authorization. Unknown project references do not restore removed configurations.

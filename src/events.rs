@@ -619,6 +619,16 @@ pub(crate) fn dispatch_prepared(
     } else {
         get(&tx, "thread", tid)?
     };
+    if kind == "message.dispatch" {
+        crate::thread_launch::enabled(
+            s,
+            t["projectId"].as_str().unwrap_or(""),
+            c.get("modelSelection")
+                .unwrap_or(&t["modelSelection"])
+                .get("instanceId")
+                .unwrap_or(&Value::Null),
+        )?;
+    }
     if kind != "thread.delete" && !t["deletedAt"].is_null() {
         return Err("The thread was deleted".into());
     }

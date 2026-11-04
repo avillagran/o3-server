@@ -114,8 +114,15 @@ pub fn authorize(session: &Value, tag: &str, p: &Value) -> Result<(), Value> {
     Ok(())
 }
 fn dispatch_command_error(s: &Arc<State>, p: &Value, message: String) -> Value {
+    let disabled = crate::provider_policy::disabled_error(&message);
+    let message = crate::provider_policy::display_error(message);
     let mut detail = message.clone();
-    let mut cause = json!({"name":"Error","message":message});
+    let mut cause = disabled
+        .map(|mut e| {
+            e["name"] = e["_tag"].clone();
+            e
+        })
+        .unwrap_or_else(|| json!({"name":"Error","message":message}));
     if matches!(p["type"].as_str(), Some("run.interrupt" | "thread.stop")) {
         let tid = p["threadId"].as_str().unwrap_or("");
         if events::get(&s.db.lock().unwrap(), "thread", tid).is_err() {
@@ -143,7 +150,7 @@ fn dispatch(s: &Arc<State>, tag: &str, p: &Value) -> Result<Value, Value> {
         "server.getSettings"=>return settings::get(s).map_err(|message|json!({"_tag":"ServerSettingsError","settingsPath":s.dir.join("settings.json"),"operation":"read","message":message})),
         "server.updateSettings"=>return settings::update(s,p).map_err(|message|json!({"_tag":"ServerSettingsError","settingsPath":s.dir.join("settings.json"),"operation":"write","message":message})),
         "projects.mutate"=>return crate::projects::mutate(s,p).map_err(|message|json!({"_tag":"ProjectMutationError","message":message})),
-        "orchestration.launchThread"=>return events::launch(s,p).map_err(|message|json!({"_tag":"OrchestrationV2ThreadLaunchError","commandId":p["commandId"],"projectId":p["projectId"],"message":message})),
+        "orchestration.launchThread"=>return events::launch(s,p).map_err(|message|json!({"_tag":"OrchestrationV2ThreadLaunchError","commandId":p["commandId"],"projectId":p["projectId"],"message":crate::provider_policy::display_error(message)})),
         "orchestration.dispatchCommand"=>return events::dispatch(s,p).map_err(|m|dispatch_command_error(s,p,m)),
         _=>Err(format!("o3-server does not implement {tag}")),
     }.map_err(error)

@@ -279,6 +279,14 @@ pub(crate) fn rank(mode: &str) -> Option<u8> {
 }
 /// Typed errors cross the existing command API without being confused with wire metadata.
 pub(crate) fn command_error(message: String) -> Value {
+    if let Some(disabled) = crate::provider_policy::disabled_error(&message) {
+        return failure(
+            "invalid_request",
+            disabled["message"]
+                .as_str()
+                .unwrap_or("Provider instance disabled."),
+        );
+    }
     serde_json::from_str::<Value>(&message)
         .ok()
         .filter(|e| e["_tag"] == "OrchestratorMcpFailure")

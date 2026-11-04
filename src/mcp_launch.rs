@@ -166,14 +166,11 @@ fn default_model(settings: &Value, providers: &[Value], pid: &str) -> Option<Val
     let candidate = providers
         .iter()
         .find(|p| p["instanceId"] == fallback["instanceId"]);
-    let enabled = settings["projectSettingsOverrides"][pid]["providerInstances"]
-        [fallback["instanceId"].as_str().unwrap_or("")]["enabled"]
-        .as_bool()
-        .or(
-            settings["providerInstances"][fallback["instanceId"].as_str().unwrap_or("")]["enabled"]
-                .as_bool(),
-        )
-        .unwrap_or(true);
+    let enabled = crate::provider_policy::project_enabled(
+        settings,
+        Some(pid),
+        fallback["instanceId"].as_str().unwrap_or(""),
+    );
     if primary.is_some_and(|p| exhausted(p, default["model"].as_str().unwrap_or("")))
         && candidate.is_some_and(|p| {
             p["enabled"] == true
@@ -408,10 +405,7 @@ pub(crate) async fn call(s: Arc<State>, a: Authority, p: Value) -> Reply {
     });
     if let Some(model) = project_model {
         let instance = model["instanceId"].as_str().unwrap_or("");
-        let enabled = stored["providerInstances"][instance]["enabled"]
-            .as_bool()
-            .or(settings["providerInstances"][instance]["enabled"].as_bool())
-            .unwrap_or(true);
+        let enabled = crate::provider_policy::project_enabled(&settings, Some(&pid), instance);
         if model.is_null() || enabled {
             settings["defaultModelSelection"] = model.clone();
         }

@@ -30,6 +30,11 @@ fn spawn_with_provider(fake: bool) -> (String, String) {
     ));
     let _ = std::fs::remove_dir_all(&dir);
     let state = o3_server::store::State::open(&dir).unwrap();
+    std::fs::write(
+        state.dir.join("settings.json"),
+        json!({"providerInstances":{"scripted":{"driver":"scripted","enabled":true}}}).to_string(),
+    )
+    .unwrap();
     let pairing = state.issue_pairing(Some("test"), 60_000).unwrap()["credential"]
         .as_str()
         .unwrap()
