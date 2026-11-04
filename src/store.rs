@@ -34,6 +34,8 @@ pub struct State {
     pub(crate) executions: crate::provider::Executions,
     pub(crate) worktree_handoffs: Mutex<std::collections::HashSet<String>>,
     pub(crate) workspace_detach_started: std::sync::atomic::AtomicBool,
+    pub(crate) provider_switch_gates:
+        Mutex<std::collections::BTreeMap<String, std::sync::Weak<tokio::sync::Mutex<()>>>>,
     pub(crate) restart_started: std::sync::atomic::AtomicBool,
     pub(crate) launches: crate::thread_launch::Registry,
     pub(crate) document_text: crate::document_text::Registry,
@@ -209,6 +211,7 @@ impl State {
             document_text: Default::default(),
             attachment_uploads: Default::default(),
             workspace_detach_started: Default::default(),
+            provider_switch_gates: Default::default(),
             worktree_handoffs: Default::default(),
             #[cfg(feature = "bridge")]
             bridge_endpoints: Mutex::new(Vec::new()),

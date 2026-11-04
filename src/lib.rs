@@ -132,3 +132,5 @@ mod handoff_delivery;
 
 mod handoff_budget;
 mod native_recovery;
+
+mod provider_switch;

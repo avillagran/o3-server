@@ -3,6 +3,7 @@
 import json,sys,os,pathlib,threading,time
 output_lock=threading.Lock()
 claude='-p' in sys.argv
+claude_native=sys.argv[sys.argv.index('--session-id')+1] if '--session-id' in sys.argv else 'native'
 root=pathlib.Path.cwd()
 config=None
 if claude:
@@ -27,11 +28,11 @@ for line in sys.stdin:
     if claude:
         if v['type']=='control_request':
             send({'type':'control_response','response':{'request_id':v['request_id'],'subtype':'success'}})
-        elif v['type']=='control_response':terminal('native')
+        elif v['type']=='control_response':terminal(claude_native)
         elif v['type']=='user':
-            text=label(v['message']['content'][0]['text']);capture(root,text,config,'native')
-            send({'type':'system','subtype':'init','session_id':'native'})
-            if text.startswith('idle'):terminal('native')
+            text=label(v['message']['content'][0]['text']);capture(root,text,config,claude_native)
+            send({'type':'system','subtype':'init','session_id':claude_native})
+            if text.startswith('idle'):terminal(claude_native)
             else:send({'type':'control_request','request_id':'approval','request':{'subtype':'can_use_tool','tool_name':'Bash','input':{'command':'fixture-only'}}})
     elif m in ('thread/start','thread/resume'):
         next_thread+=1;native='native-'+str(next_thread)

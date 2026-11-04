@@ -3,7 +3,13 @@ use crate::store::{iso, now_ms, random_id, State};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 type Result<T> = std::result::Result<T, String>;
-fn change_selection(db: &Connection, t: &mut Value, c: &Value, value: &Value) -> Result<()> {
+fn change_selection(
+    s: &State,
+    db: &Connection,
+    t: &mut Value,
+    c: &Value,
+    value: &Value,
+) -> Result<()> {
     if !value["instanceId"].is_string() || !value["model"].as_str().is_some_and(|m| !m.is_empty()) {
         return Err("invalid model selection".into());
     }
@@ -15,14 +21,7 @@ fn change_selection(db: &Connection, t: &mut Value, c: &Value, value: &Value) ->
     if active {
         return Err("change model after the active run finishes".into());
     }
-    if t["providerInstanceId"] != value["instanceId"] {
-        let ordinal = db.query_row("SELECT coalesce(max(json_extract(body,'$.ordinal')),0) FROM records WHERE kind='runs' AND thread_id=?", [&tid], |r|r.get::<_,i64>(0)).map_err(|e|e.to_string())?;
-        crate::thread_commands::capture_handoff(db, t, &tid, ordinal)?;
-        t["providerGeneration"] = c["commandId"].clone();
-        t["activeProviderThreadId"] = Value::Null;
-        t["codexNativeThreadId"] = Value::Null;
-        t["nativeForkSource"] = Value::Null;
-    }
+    crate::provider_switch::selection(s, db, t, value, &c["commandId"])?;
     db.execute(
         "DELETE FROM records WHERE kind='approvalPolicies' AND thread_id=?",
         [&tid],
@@ -46,6 +45,7 @@ pub fn initialize(db: &Connection) -> Result<()> {
     crate::thread_launch::initialize(db)?;
     crate::workspace_transition::initialize(db)?;
     crate::native_recovery::initialize(db)?;
+    crate::provider_switch::initialize(db)?;
     crate::context_transfer::initialize(db)?;
     crate::threadq::initialize(db)
 }
@@ -727,7 +727,7 @@ pub(crate) fn dispatch_prepared(
             };
             let value = c.get(key).ok_or("mode or model selection required")?;
             if key == "modelSelection" {
-                change_selection(&tx, &mut t, c, value)?;
+                change_selection(s, &tx, &mut t, c, value)?;
             } else if key == "runtimeMode"
                 && !matches!(
                     value.as_str(),
@@ -802,7 +802,7 @@ pub(crate) fn dispatch_prepared(
                 return Ok(result);
             }
             if let Some(selection) = c.get("modelSelection") {
-                change_selection(&tx, &mut t, c, selection)?;
+                change_selection(s, &tx, &mut t, c, selection)?;
             }
             if c["dispatchMode"]["type"] == "steer_active" {
                 let rid = c["dispatchMode"]["targetRunId"]
@@ -1160,6 +1160,9 @@ pub(crate) fn dispatch_prepared(
             s.executions.cancel(tid);
         }
     }
+    if kind == "thread.model-selection.set" {
+        crate::provider_switch::start_release(s.clone(), tid.into());
+    }
     s.notify();
     if c["regenerateTitle"] == true {
         let text = {
@@ -1265,6 +1268,7 @@ pub(crate) fn prepare_run_ownership(
     run: &mut Value,
     at: &str,
 ) -> Result<()> {
+    crate::provider_switch::admit(state, tx, t, run, at)?;
     let run_id = run["id"].as_str().ok_or("run id missing")?.to_owned();
     let ordinal = run["ordinal"].clone();
     if t["activeProviderThreadId"]

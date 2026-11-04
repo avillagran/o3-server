@@ -40,7 +40,7 @@ target's modes under the same SQLite write transaction as the mutation, before
 receipt replay. A mode change or credential downgrade while waiting cannot bypass
 admission. Authority travels separately from wire commands: callers cannot inject
 it or raise their ceiling through arguments. Thread configure changes only the model
-selection, with legacy provider/options normalization; it does not change modes.
+selection, with legacy provider/options normalization; it does not change modes. Ordinary selection stages exact old native cleanup; the next run continues a compatible conversation or reuses a previous provider row with the missing history delta. Native background work rejects the switch before mutation. See `nightly/provider-session-intake.json` for scope and remaining policy gaps.
 
 ## Native Claude/Codex credentials
 

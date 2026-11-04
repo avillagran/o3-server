@@ -34,7 +34,7 @@ fn reply(db: &Connection, thread: &Value, run: &Value, mut budget: Value) -> Res
         json!({"handoffs":context["handoffs"],"deliveredItemIds":context["deliveredItemIds"],"budget":budget}),
     )
 }
-fn background_work(db: &Connection, tid: &str, pt: &Value) -> Result<bool> {
+pub(crate) fn background_work(db: &Connection, tid: &str, pt: &Value) -> Result<bool> {
     if pt["pendingBackgroundTasks"]
         .as_array()
         .is_some_and(|a| !a.is_empty())

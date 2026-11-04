@@ -1,0 +1,53 @@
+{
+  "checkedAt": "2026-11-04T16:01:48.427207+00:00",
+  "tag": "v0.1.8-nightly.20261104.4179",
+  "reference": "9e85538535c8553901351112ab02dd1dd62db5ee",
+  "url": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.8-nightly.20261104.4179",
+  "scope": "Shared ordinary provider selection and returning-provider handoff; complete protocol goal remains active.",
+  "sourceFiles": [
+    "apps/server/src/orchestration-v2/Orchestrator.ts",
+    "apps/server/src/orchestration-v2/ProviderSwitchService.ts",
+    "apps/server/src/orchestration-v2/ProviderSessionTransitionPolicy.ts",
+    "apps/server/src/orchestration-v2/ContextHandoffService.ts",
+    "apps/server/src/orchestration-v2/ProviderSessionManager.ts",
+    "apps/server/src/provider/Drivers/ClaudeHome.ts",
+    "apps/server/src/provider/Drivers/CodexHomeLayout.ts",
+    "packages/contracts/src/orchestrationV2.ts"
+  ],
+  "implemented": [
+    "Explicit selection and per-message selection preserve native row ownership until run admission. Shared admission resumes a compatible native conversation across instances, reuses a previous root provider-thread for an incompatible return, or creates a new root with portable history. Roots sort by lastRunOrdinal and updatedAt.",
+    "Portable switches use completed/failed/interrupted visible history. A previous target uses only history after its last completed/accepted run; provider-changing merge-back requests full target context plus the existing merge delta. Canonical source/base points, actor, portable_context/delta_context and consumed-at-admission transfer records match source; independent history delivery still requires its native ACK.",
+    "Claude home keys honor configured home, literal instance/host CLAUDE_CONFIG_DIR, lexical path resolution and literal inherited tilde. Codex keys use the configured shared home and ignore account-overlay home for continuation identity. Other drivers retain separate instance identities. Actual shadow-home filesystem/auth preparation remains pending.",
+    "Selection stages an exact old instance/key/native/session cleanup job with the receipt. Native background work blocks the mutation. Cleanup serializes per app thread, waits for outgoing execution completion under one 45-second deadline, revokes only its credential/session, and is durably acknowledged before acquiring the new native MCP/input. Failure persists and retries before later input, including after State reopen.",
+    "Queued promotion reselects the model recorded on that message before acquiring provider ownership, even after a later idle metadata selection. Legacy pre-row imports retain their portable migration path. Legacy Claude app root ownership normalizes idempotently without claiming native subagent rows; malformed JSON is an error rather than a missing row."
+  ],
+  "evidence": [
+    "First regression was red: returning to a prior provider produced a new provider-thread/native conversation. Compatible Rust Connection and real subprocess native peers now cover both return directions, delta-only content, native identity retention, canonical source/base/actor/resolution, same-home continuation, background rollback and receipt retry, failed cleanup/reopen/retry and queued snapshot selection.",
+    "Five installed Claude Haiku/Codex gpt-6.1-sol inference turns pass in credential-copy private homes: Claude first private word, Codex second word and recall of first, original Claude third word and recall of second, compatible Claude instance recall of third with no handoff, and original Codex recall of third from the missing delta. Original provider-thread/native ids are retained on both returns. Providers stop before home/process cleanup.",
+    "Existing fork/merge/side-chat, uncertain-native replacement, native budget, imported steering, active recovery, provider isolation and deletion coverage remain in the complete suites. Older protocol peers now honor the preassigned Claude UUID and definite unknown-method injection fallback instead of relying on old transcript framing."
+  ],
+  "validation": {
+    "status": "passed",
+    "fullDefault": 422,
+    "fullNoDefault": 419,
+    "ignoredEach": 24,
+    "strictClippy": "all targets, both feature modes",
+    "other": [
+      "rustfmt",
+      "generated compatibility table",
+      "nightly monitor9",
+      "git diff --check",
+      "changed native-peer Python syntax",
+      "five installed Claude/Codex inference turns"
+    ],
+    "scopeNotes": [
+      "An EOF exposed a workspace-peer observer race in the first default run; atomic private-file publication fixes it. The final full default suite and targeted minimal workspace transition pass after that fixture change.",
+      "Installed inference proofs precede final queue/generic-key/transfer-envelope adjustments; native history/context behavior is unchanged and complete local suites cover those changes."
+    ]
+  },
+  "pending": [
+    "Complete same-instance selection transition classification, all provider metadata/capabilities/availability and exact auth-overlay/home filesystem preparation across drivers.",
+    "Active cross-instance restart/continuation/settlement, all historical SDK anchors/source-busy/subagent/setup-side-chat guards and secondary/timeline/event-order fidelity.",
+    "Legacy imports beyond the retained migration path, broader MCP/auth/environment/providers/forceStop and request_secret4179, complete source-wide differential, current desktop/Android acceptance and resource measurements. No deployment or main promotion."
+  ]
+}

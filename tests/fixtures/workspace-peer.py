@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 """Workspace transition peer: native identity persists, each resume observes its new cwd."""
-import json,sys,os,pathlib,threading,time
+import json,sys,os,pathlib,threading,time,tempfile
 output_lock=threading.Lock()
 claude='-p' in sys.argv
 root=pathlib.Path.cwd()
@@ -14,8 +14,10 @@ def label(text):
     labels=('idle-continuation','idle-return','wait-target','wait-survivor')
     return max(labels,key=lambda name:text.rfind(name))
 def capture(root,text,config,native):
-    with os.fdopen(os.open(root/('observe-'+text+'.json'),os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600),'w') as f:
+    with tempfile.NamedTemporaryFile(mode='w',prefix='observe-',suffix='.partial',dir=root,delete=False) as f:
         json.dump({'config':config,'native':native,'pid':os.getpid(),'cwd':str(root),'argv':sys.argv},f)
+        temporary=f.name
+    os.replace(temporary,root/('observe-'+text+'.json'))
 def bind_later(root,reply):
     while not (root/'release-binding').exists():time.sleep(.01)
     send(reply)

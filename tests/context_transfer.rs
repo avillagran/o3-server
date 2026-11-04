@@ -1221,3 +1221,378 @@ fn pending_native_fork_base_and_merge_delta_are_both_retained() {
         .any(|m| m["text"] == "FORK-DELTA"));
     assert_eq!(p["contextHandoffs"][0]["delivery"]["status"], "injected");
 }
+
+#[test]
+fn returning_to_an_existing_provider_resumes_its_native_history_with_only_the_missing_delta() {
+    for (first, other) in [("codex", "claudeAgent"), ("claudeAgent", "codex")] {
+        let s = server();
+        let c = s.connect();
+        create(&c, "parent", first, "test");
+        let seed = send(&c, "parent", "FIRST-PROVIDER-ONLY", "completed");
+        let first_pt = projection(&c, "parent")["providerThreads"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|pt| pt["id"] == seed["providerThreadId"])
+            .unwrap()
+            .clone();
+        cmd(&c,json!({"type":"thread.model-selection.set","commandId":"other-provider","threadId":"parent","modelSelection":{"instanceId":other,"model":"test"}})).unwrap();
+        send(&c, "parent", "SECOND-PROVIDER-ONLY", "completed");
+        cmd(&c,json!({"type":"thread.model-selection.set","commandId":"return-provider","threadId":"parent","modelSelection":{"instanceId":first,"model":"test"}})).unwrap();
+        let returned = send(&c, "parent", "RETURN-CURRENT", "completed");
+        let p = projection(&c, "parent");
+        assert_eq!(
+            returned["providerThreadId"], seed["providerThreadId"],
+            "returning provider must retain its app/native conversation"
+        );
+        let pt = p["providerThreads"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|pt| pt["id"] == returned["providerThreadId"])
+            .unwrap();
+        assert_eq!(pt["nativeThreadRef"], first_pt["nativeThreadRef"]);
+        assert!(pt["ownerNodeId"].is_null());
+        let h = p["contextHandoffs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|h| {
+                h["targetRunId"] == returned["id"]
+                    && h["strategy"] == "delta_since_target_last_seen"
+            })
+            .expect("returning provider needs a delta handoff");
+        let messages = h["history"]["messages"].as_array().unwrap();
+        assert!(messages.iter().any(|m| m["text"] == "SECOND-PROVIDER-ONLY"));
+        assert!(!messages.iter().any(|m| m["text"] == "FIRST-PROVIDER-ONLY"));
+        assert!(matches!(
+            h["delivery"]["status"].as_str(),
+            Some("injected" | "inline")
+        ));
+        assert_eq!(
+            p["contextTransfers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|t| t["type"] == "provider_handoff" && t["status"] == "consumed")
+                .count(),
+            2
+        );
+        let transfer = p["contextTransfers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|transfer| transfer["targetRunId"] == returned["id"])
+            .unwrap();
+        assert_eq!(transfer["basePoint"]["runId"], seed["id"]);
+        assert_eq!(transfer["resolution"]["strategy"], "delta_context");
+        assert_eq!(transfer["createdBy"], "user");
+    }
+}
+
+#[test]
+fn compatible_claude_instances_resume_the_same_native_conversation_without_a_history_copy() {
+    let s = server();
+    let c = s.connect();
+    c.rpc(
+        "server.updateSettings",
+        json!({"patch":{"providerInstances":{"claude":{"driver":"claudeAgent","enabled":true}}}}),
+    )
+    .unwrap();
+    create(&c, "parent", "claudeAgent", "test");
+    let seed = send(&c, "parent", "SAME-HOME-SEED", "completed");
+    let before = projection(&c, "parent")["providerThreads"][0]["nativeThreadRef"].clone();
+    cmd(&c,json!({"type":"thread.model-selection.set","commandId":"alias-provider","threadId":"parent","modelSelection":{"instanceId":"claude","model":"test"}})).unwrap();
+    let next = send(&c, "parent", "SAME-HOME-NEXT", "completed");
+    let p = projection(&c, "parent");
+    assert_eq!(next["providerThreadId"], seed["providerThreadId"]);
+    assert_eq!(p["providerThreads"][0]["nativeThreadRef"], before);
+    assert_eq!(p["providerThreads"][0]["providerInstanceId"], "claude");
+    assert!(p["contextHandoffs"].as_array().unwrap().is_empty());
+    assert!(trace(&s)
+        .iter()
+        .rfind(|f| f["method"] == "claude/user")
+        .unwrap()["argv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|v| v == "--resume"));
+}
+
+#[test]
+fn a_provider_switch_with_live_native_background_work_rolls_back_without_releasing_it() {
+    for explicit in [true, false] {
+        let s = server();
+        let c = s.connect();
+        create(&c, "parent", "codex", "test");
+        let seed = send(&c, "parent", "BACKGROUND-SEED", "completed");
+        {
+            let db = s.state.db.lock().unwrap();
+            db.execute("UPDATE records SET body=json_set(body,'$.pendingBackgroundTasks',json('[{\"id\":\"still-running\"}]')) WHERE kind='providerThreads' AND id=?",[seed["providerThreadId"].as_str().unwrap()]).unwrap();
+        }
+        let command = if explicit {
+            json!({"type":"thread.model-selection.set","commandId":"blocked-switch","threadId":"parent","modelSelection":{"instanceId":"claudeAgent","model":"test"}})
+        } else {
+            json!({"type":"message.dispatch","commandId":"blocked-switch","threadId":"parent","messageId":"blocked","text":"BLOCKED","attachments":[],"dispatchMode":{"type":"start_immediately"},"modelSelection":{"instanceId":"claudeAgent","model":"test"}})
+        };
+        assert!(cmd(&c, command.clone())
+            .unwrap_err()
+            .to_string()
+            .contains("background"));
+        let p = projection(&c, "parent");
+        assert_eq!(p["thread"]["providerInstanceId"], "codex");
+        assert_eq!(p["runs"].as_array().unwrap().len(), 1);
+        assert!(!trace(&s)
+            .iter()
+            .any(|f| f["method"] == "thread/unsubscribe"));
+        {
+            let db = s.state.db.lock().unwrap();
+            assert_eq!(
+                db.query_row("SELECT count(*) FROM provider_switches", [], |r| r
+                    .get::<_, i64>(0))
+                    .unwrap(),
+                0
+            );
+            db.execute("UPDATE records SET body=json_set(body,'$.pendingBackgroundTasks',json('[]')) WHERE kind='providerThreads'",[]).unwrap();
+        }
+        cmd(&c, command).unwrap();
+        if explicit {
+            send(&c, "parent", "AFTER-BACKGROUND", "completed");
+        }
+    }
+}
+
+#[test]
+fn failed_provider_release_survives_reopen_and_blocks_native_input_until_retry() {
+    let s = server();
+    let c = s.connect();
+    create(&c, "parent", "codex", "inject-ambiguous-unload-error");
+    send(&c, "parent", "RELEASE-SEED", "completed");
+    cmd(&c,json!({"type":"message.dispatch","commandId":"release-fails","threadId":"parent","messageId":"release-fails","text":"UNSENT-TARGET","attachments":[],"dispatchMode":{"type":"start_immediately"},"modelSelection":{"instanceId":"claudeAgent","model":"test"}})).unwrap();
+    assert!(support::wait_for(Duration::from_secs(10), || projection(
+        &c, "parent"
+    )["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(
+            |r| r["userMessageId"] == "release-fails" && r["status"] == "failed"
+        )));
+    assert!(!trace(&s).iter().any(|f| f["method"] == "claude/user"));
+    {
+        let reopened = o3_server::store::State::open(&s.dir).unwrap();
+        let db = reopened.db.lock().unwrap();
+        assert_eq!(db.query_row("SELECT count(*) FROM provider_switches WHERE released_at IS NULL AND last_error IS NOT NULL",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+    }
+    send(&c, "parent", "RETRY-TARGET", "completed");
+    let frames = trace(&s);
+    let input = frames
+        .iter()
+        .find(|f| f["method"] == "claude/user")
+        .unwrap()["input"]
+        .to_string();
+    assert!(input.contains("RELEASE-SEED"));
+    assert!(input.contains("UNSENT-TARGET"));
+    assert_eq!(
+        s.state
+            .db
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT count(*) FROM provider_switches WHERE released_at IS NULL",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
+#[ignore = "five installed Claude Haiku/Codex turns; provider reuse, delta and compatible native continuation"]
+fn live_provider_switch_reuses_native_conversations_and_only_delivers_the_missing_history() {
+    let claude = o3_server::claude::ClaudeProvider::discover().map(Arc::new);
+    let codex = Arc::new(o3_server::codex::CodexProvider::default());
+    let s = support::start(|s| {
+        *s.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::Providers {
+            claude: claude.clone(),
+            codex: codex.clone(),
+        }));
+    });
+    let c = s.connect();
+    let cwd = s.dir.join("workspace");
+    std::fs::create_dir(&cwd).unwrap();
+    c.rpc("projects.mutate",json!({"type":"project.create","commandId":"project","projectId":"p","title":"Provider switch live","workspaceRoot":cwd,"scripts":[]})).unwrap();
+    c.rpc(
+        "server.updateSettings",
+        json!({"patch":{"providerInstances":{"claude":{"driver":"claudeAgent","enabled":true}}}}),
+    )
+    .unwrap();
+    create(&c, "parent", "claudeAgent", "haiku");
+    let words = (0..3)
+        .map(|_| {
+            format!(
+                "WORD{}",
+                o3_server::store::random_id().unwrap().replace('-', "")
+            )
+        })
+        .collect::<Vec<_>>();
+    let stages=[
+        ("claudeAgent","haiku",format!("Remember first codeword {}. Reply READY only. Do not use any tools.",words[0]),None),
+        ("codex","gpt-6.1-sol",format!("Remember second codeword {}. Reply only with the first codeword from earlier. Do not use any tools.",words[1]),Some(0)),
+        ("claudeAgent","haiku",format!("Remember third codeword {}. Reply only with the second codeword from the other provider. Do not use any tools.",words[2]),Some(1)),
+        ("claude","haiku","Reply only with the third codeword from earlier. Do not use any tools.".into(),Some(2)),
+        ("codex","gpt-6.1-sol","Reply only with the third codeword from the other provider. Do not use any tools.".into(),Some(2)),
+    ];
+    let mut bindings = vec![];
+    for (index, (instance, model, text, expected)) in stages.into_iter().enumerate() {
+        let mid = format!("live-switch-{index}");
+        cmd(&c,json!({"type":"message.dispatch","commandId":mid,"messageId":mid,"threadId":"parent","modelSelection":{"instanceId":instance,"model":model,"options":[]},"text":text,"attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
+        assert!(support::wait_for(Duration::from_secs(90), || {
+            let p = projection(&c, "parent");
+            let run = p["runs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|r| r["userMessageId"] == mid)
+                .cloned()
+                .unwrap_or(Value::Null);
+            assert_ne!(run["status"], "failed", "{instance}: {}", run["error"]);
+            run["status"] == "completed"
+        }));
+        let p = projection(&c, "parent");
+        let run = p["runs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["userMessageId"] == mid)
+            .unwrap();
+        if let Some(word) = expected {
+            assert!(
+                p["messages"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|m| m["role"] == "assistant"
+                        && m["runId"] == run["id"]
+                        && m["text"]
+                            .as_str()
+                            .is_some_and(|text| text.contains(&words[word]))),
+                "{instance}: private codeword missing in answer"
+            );
+        }
+        let pt = p["providerThreads"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|pt| pt["id"] == run["providerThreadId"])
+            .unwrap();
+        bindings.push((pt["id"].clone(), pt["nativeThreadRef"].clone()));
+        if index == 3 {
+            assert!(p["contextHandoffs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|h| h["targetRunId"] != run["id"]));
+        }
+    }
+    assert_eq!(bindings[0], bindings[2]);
+    assert_eq!(bindings[2], bindings[3]);
+    assert_eq!(bindings[1], bindings[4]);
+    println!("Installed Claude/Codex: full switch, both native returns with missing deltas, and same-home Claude continuation preserve private codewords");
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            if let Some(claude) = claude {
+                claude.shutdown().await;
+            }
+            codex.shutdown().await;
+        });
+}
+
+#[test]
+fn a_queued_run_restores_its_recorded_provider_after_an_idle_selection_change() {
+    for (source, target) in [("codex", "claudeAgent"), ("claudeAgent", "codex")] {
+        let s = server();
+        let c = s.connect();
+        create(&c, "parent", source, "test");
+        let seed = send(&c, "parent", "QUEUE-SEED", "completed");
+        // A queued message persisted before restart still owns its recorded model.
+        let mut queued = seed.clone();
+        queued["id"] = json!("queued-snapshot");
+        queued["ordinal"] = json!(2);
+        queued["status"] = json!("queued");
+        queued["userMessageId"] = json!("queued-message");
+        queued["providerThreadId"] = Value::Null;
+        queued["activeAttemptId"] = Value::Null;
+        queued["rootNodeId"] = Value::Null;
+        queued["queuePosition"] = json!(1);
+        queued["queueHeld"] = json!(true);
+        queued["startedAt"] = Value::Null;
+        queued["completedAt"] = Value::Null;
+        let prior = projection(&c, "parent");
+        let mut message = prior["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|message| message["id"] == seed["userMessageId"])
+            .unwrap()
+            .clone();
+        message["id"] = json!("queued-message");
+        message["runId"] = json!("queued-snapshot");
+        message["nodeId"] = json!("queued-snapshot");
+        message["text"] = json!("QUEUED-SNAPSHOT");
+        let mut item = prior["turnItems"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["messageId"] == seed["userMessageId"])
+            .unwrap()
+            .clone();
+        item["id"] = json!("queued-item");
+        item["messageId"] = json!("queued-message");
+        item["runId"] = json!("queued-snapshot");
+        item["nodeId"] = json!("queued-snapshot");
+        item["text"] = json!("QUEUED-SNAPSHOT");
+        item["ordinal"] = json!(2);
+        item["inputIntent"] = json!("queued_turn");
+        item["providerThreadId"] = Value::Null;
+        {
+            let db = s.state.db.lock().unwrap();
+            for (kind, id, value) in [
+                ("runs", "queued-snapshot", queued),
+                ("messages", "queued-message", message),
+                ("turnItems", "queued-item", item),
+            ] {
+                db.execute(
+                    "INSERT INTO records(kind,id,thread_id,body) VALUES(?,?,'parent',?)",
+                    rusqlite::params![kind, id, value.to_string()],
+                )
+                .unwrap();
+            }
+        }
+        cmd(&c,json!({"type":"thread.model-selection.set","commandId":"idle-selection","threadId":"parent","modelSelection":{"instanceId":target,"model":"test"}})).unwrap();
+        cmd(&c,json!({"type":"queued-run.start","commandId":"start-queued","threadId":"parent","runId":"queued-snapshot"})).unwrap();
+        assert!(support::wait_for(Duration::from_secs(10), || projection(
+            &c, "parent"
+        )["runs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(
+                |r| r["id"] == "queued-snapshot" && r["status"] == "completed"
+            )));
+        let p = projection(&c, "parent");
+        let run = p["runs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["id"] == "queued-snapshot")
+            .unwrap();
+        assert_eq!(run["providerInstanceId"], source);
+        assert_eq!(p["thread"]["providerInstanceId"], source);
+        assert_eq!(run["providerThreadId"], seed["providerThreadId"]);
+    }
+}
