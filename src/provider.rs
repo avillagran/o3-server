@@ -166,7 +166,11 @@ pub(crate) fn start(
             if cold_compact {
                 selection["o3ColdCompact"] = serde_json::json!(true);
             }
-            if fresh && !t["nativeForkSource"].is_string() {
+            // A Codex binding is published before turn/start is accepted. A rejected
+            // first input leaves a native ID but has not consumed the handoff.
+            let codex_unseeded = crate::provider_input::driver(&s, &t["providerInstanceId"]).as_deref() == Ok("codex")
+                && !db.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='runs' AND thread_id=?1 AND json_extract(body,'$.providerThreadId')=?2 AND json_type(body,'$.codexProviderTurnId')='text')", rusqlite::params![tid,r["providerThreadId"].as_str()], |row|row.get::<_,bool>(0)).unwrap_or(false);
+            if (fresh || codex_unseeded) && !t["nativeForkSource"].is_string() {
                 if let Some(history) = t["providerHandoff"].as_str() {
                     selection["o3HistoricalContext"] =
                         serde_json::json!(crate::provider_input::historical_context(
