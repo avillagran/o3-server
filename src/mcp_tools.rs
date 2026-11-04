@@ -76,7 +76,7 @@ fn validate_schema(schema: &Value, p: &Value) -> Result<(), String> {
             }
         }
         Some("integer") => {
-            let Some(n) = p.as_u64() else { return fail() };
+            let Some(n) = uint(p) else { return fail() };
             if schema["minimum"].as_u64().is_some_and(|m| n < m)
                 || schema["maximum"].as_u64().is_some_and(|m| n > m)
             {
@@ -107,9 +107,17 @@ fn validate_schema(schema: &Value, p: &Value) -> Result<(), String> {
     }
     Ok(())
 }
-fn number(p: &Value, key: &str, default: usize) -> usize {
-    p[key].as_u64().map(|n| n as usize).unwrap_or(default)
+fn uint(v: &Value) -> Option<u64> {
+    v.as_u64().or_else(|| {
+        v.as_f64()
+            .filter(|n| n.is_finite() && *n >= 0.0 && n.fract() == 0.0 && *n < (u64::MAX as f64))
+            .map(|n| n as u64)
+    })
 }
+fn number(p: &Value, key: &str, default: usize) -> usize {
+    uint(&p[key]).map(|n| n as usize).unwrap_or(default)
+}
+
 fn target<'a>(p: &'a Value, key: &str) -> Result<&'a str, Value> {
     p[key]
         .as_str()
@@ -313,9 +321,11 @@ fn thread_read(s: &State, p: &Value) -> Reply {
     let mut page = query
         .query(params![
             tid,
-            p["afterPosition"].as_i64().unwrap_or(-1),
+            uint(&p["afterPosition"])
+                .map(|n| n.min(i64::MAX as u64) as i64)
+                .unwrap_or(-1),
             p["view"] == "activity",
-            p["itemId"].as_str(),
+            p["itemId"].as_str().map(str::trim),
             limit + 1
         ])
         .map_err(unavailable)?;
@@ -342,14 +352,15 @@ fn thread_read(s: &State, p: &Value) -> Reply {
             0
         };
         let max = number(p, "maxCharsPerItem", 20_000);
-        let total = text.as_ref().map_or(0, |s| s.encode_utf16().count());
-        let truncated = total > offset.saturating_add(max);
+        let sliced = text.as_deref().map(|t| text_page(t, offset, max));
+        let truncated = sliced.as_ref().is_some_and(|(_, next)| next.is_some());
+        let next_offset = sliced.as_ref().and_then(|(_, next)| *next);
         let message = if let Some(mid) = item["messageId"].as_str() {
             events::get(&db, "messages", mid).unwrap_or(Value::Null)
         } else {
             Value::Null
         };
-        let mut entry = json!({"position":row["position"],"visibility":row["visibility"],"sourceThreadId":row["sourceThreadId"],"itemId":row["sourceItemId"],"runId":item["runId"],"messageId":item["messageId"],"createdBy":message["createdBy"],"creationSource":message["creationSource"],"type":item["type"],"status":item["status"],"title":item["title"],"text":text.map(|text|String::from_utf16_lossy(&text.encode_utf16().skip(offset).take(max).collect::<Vec<_>>())).map(Value::String).unwrap_or(Value::Null),"textTruncated":truncated,"nextTextOffset":if truncated{json!(offset.saturating_add(max))}else{Value::Null},"updatedAt":item["updatedAt"]});
+        let mut entry = json!({"position":row["position"],"visibility":row["visibility"],"sourceThreadId":row["sourceThreadId"],"itemId":row["sourceItemId"],"runId":item["runId"],"messageId":item["messageId"],"createdBy":message["createdBy"],"creationSource":message["creationSource"],"type":item["type"],"status":item["status"],"title":item["title"],"text":sliced.map(|(text,_)|Value::String(text)).unwrap_or(Value::Null),"textTruncated":truncated,"nextTextOffset":json!(next_offset),"updatedAt":item["updatedAt"]});
         if item["type"] == "subagent" {
             entry["subagentId"] = item["subagentId"].clone();
         }
@@ -368,6 +379,32 @@ fn thread_read(s: &State, p: &Value) -> Reply {
         json!({"thread":detail,"recentRuns":runs,"nextPosition":items.last().map(|i|i["position"].clone()),"items":items,"hasMore":has_more}),
     )
 }
+// Return complete Unicode scalar values, including when a UTF-16 page boundary hits
+// a surrogate pair. The next cursor always points past the complete returned text.
+fn text_page(text: &str, offset: usize, max: usize) -> (String, Option<usize>) {
+    let mut units = 0;
+    let mut start = None;
+    let end = offset.saturating_add(max);
+    for (byte, ch) in text.char_indices() {
+        let after = units + ch.len_utf16();
+        if start.is_none() && after > offset {
+            start = Some(byte);
+        }
+        if let Some(start_byte) = start.filter(|_| after >= end) {
+            let end_byte = byte + ch.len_utf8();
+            return (
+                text[start_byte..end_byte].to_owned(),
+                (end_byte < text.len()).then_some(after),
+            );
+        }
+        units = after;
+    }
+    (
+        start.map(|s| text[s..].to_owned()).unwrap_or_default(),
+        None,
+    )
+}
+
 fn item_text(i: &Value) -> Option<String> {
     let string = |k: &str| i[k].as_str().map(str::to_owned);
     let join = |keys: &[&str]| {

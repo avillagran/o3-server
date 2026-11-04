@@ -250,7 +250,7 @@ fn mcp_reads_real_rpc_projects_threads_and_paginated_unicode_transcript() {
         &token,
         &id,
         "t3_thread_read",
-        json!({"threadId":"a","limit":1,"maxCharsPerItem":3}),
+        json!({"threadId":"a","limit":1,"maxCharsPerItem":2}),
     );
     assert_eq!(r["thread"]["itemCount"], 5);
     let activity = call(

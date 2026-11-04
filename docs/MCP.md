@@ -64,7 +64,10 @@ than on async I/O workers.
   lineage, modes and PR links; an external client passes projectId.
 - t3_thread_search: existing bounded title/content search with optional project filters.
 - t3_thread_read: durable detail, recent runs, message/activity timeline pages and text
-  continuation using itemId/textOffset. Offsets count UTF-16 code units. At most 100 items,
+  continuation using itemId/textOffset. Offsets count UTF-16 code units. A page boundary
+  inside an astral character returns the complete character and advances past it,
+  avoiding lost text; this may exceed the requested text limit by one UTF-16 unit
+  and differs from upstream JavaScript slicing of lone surrogates. At most 100 items,
   50 recent runs, 50,000 text units per item and roughly 2 MiB of timeline items per page;
   the first item is retained even if it alone exceeds the page budget. A shortened page
   reports hasMore and resumes after nextPosition. Item bodies are read one at a time.
@@ -73,7 +76,8 @@ References: T3 Code's MIT source at `680152e27b2a961686389ca69a1557cbb2c55f08`,
 `apps/server/src/mcp/McpHttpServer.ts`, toolkit tools/handlers, McpInvocationContext,
 McpToolAccess, OrchestratorMcpService, auth/EnvironmentAuth and packages/contracts.
 The monitored 4119 source has the same transport protocol and credential separation;
-full behavioral equivalence to that nightly has not been established.
+full behavioral equivalence to that nightly has not been established. The upstream
+MIT notice is retained in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ## Evidence and remaining work
 
@@ -91,3 +95,7 @@ write access/mode enforcement, thread send/wait/interrupt/launch, task delegatio
 worktree/attachment/PR/device/preview/HTML/scheduler toolkits and linked environments.
 Inherited-task acknowledgement and exact activity-text rendering also need upstream
 parity. No daily profile, external MCP integration or running service was changed.
+
+Validation for this port: full suites 307 default / 304 no-default pass, with 21
+opt-ins ignored in each; the final eight MCP regressions pass in both modes. Strict
+Clippy in both modes, fmt, generated compatibility and nine monitor tests pass.
