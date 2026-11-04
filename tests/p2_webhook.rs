@@ -206,6 +206,18 @@ fn failed_dispatch_keeps_accepted_work_durable() {
         1,
         "failed dispatch lost accepted job"
     );
+    // runCount commits before the failed claim is requeued. Wait for that final
+    // transition so the worker cannot overwrite our simulated restart with its backoff.
+    assert!(support::wait_for(std::time::Duration::from_secs(2), || {
+        let due: i64 = s
+            .state
+            .db
+            .lock()
+            .unwrap()
+            .query_row("SELECT due FROM hook_queue", [], |r| r.get(0))
+            .unwrap();
+        due != i64::MAX && due > o3_server::store::now_ms()
+    }));
     // Simulate a crash after the dispatch receipt commit but before queue deletion.
     let db = s.state.db.lock().unwrap();
     let job: String = db

@@ -46,7 +46,8 @@
       "three installed Codex inference turns with native-close barrier"
     ],
     "scopeNotes": [
-      "The final default home integration was repeated after adding the sibling process/identity proof. Complete no-default suite and both Clippy modes cover that final test. Native production code is unchanged after the three-turn installed proof."
+      "The final default home integration was repeated after adding the sibling process/identity proof. Complete no-default suite and both Clippy modes cover that final test. Native production code is unchanged after the three-turn installed proof.",
+      "Remote default CI on14151a6 exposed a webhook fixture race: runCount commits before the failed claim is requeued. The fixture now waits for its future due time before simulating a crash/receipt replay. Both webhook suites (4 each), 12 targeted repetitions per mode and strict Clippy both modes pass; production webhook code is unchanged."
     ]
   },
   "pending": [
