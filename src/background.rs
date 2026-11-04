@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 pub(crate) fn update(
     db: &Connection,
     tid: &str,
-    rid: &str,
+    run: &Value,
     t: &Value,
     at: &str,
     task: &str,
@@ -18,8 +18,13 @@ pub(crate) fn update(
     if task.is_empty() || task.len() > 1024 {
         return Err("native background task id missing".into());
     }
+    let rid = run["id"]
+        .as_str()
+        .ok_or("native background run id missing")?;
     let id = format!("background-{rid}-{task}");
-    let mut v=get(db,"backgroundTasks",&id).unwrap_or_else(|_|json!({"id":id,"taskId":task,"threadId":tid,"runId":rid,"providerThreadId":t["activeProviderThreadId"],"kind":kind,"awaited":kind=="subagent","startedAt":at,"completedAt":null}));
+    // Late native frames belong to the run's original provider, even after a handoff.
+    let instance = &run["providerInstanceId"];
+    let mut v=get(db,"backgroundTasks",&id).unwrap_or_else(|_|json!({"id":id,"taskId":task,"threadId":tid,"runId":rid,"providerThreadId":t["activeProviderThreadId"],"providerInstanceId":instance,"kind":kind,"awaited":kind=="subagent","startedAt":at,"completedAt":null}));
     // Duplicate start/roster events cannot resurrect a terminal task.
     if v["completedAt"].is_string() && !done {
         return Ok(());

@@ -272,7 +272,7 @@ async fn live_claude_background_shell() {
     let (tx, mut rx) = tokio::sync::mpsc::channel(16);
     let (_control, controls) = tokio::sync::mpsc::channel(8);
     let (_cancel, cancel) = tokio::sync::watch::channel(false);
-    let input=RunInput{provider_instance_id:"claudeAgent".into(),native_session_id:None,thread_id:"background-live".into(),run_id:"live".into(),cwd:dir.clone(),text:"Use Bash with run_in_background=true to execute: sleep 2; printf BACKGROUND_OK. Reply STARTED immediately after launching, without waiting or calling another tool.".into(),model_selection:json!({"instanceId":"claudeAgent","model":"haiku"}),runtime_mode:"full-access".into(),interaction_mode:"default".into(),attachment_root:dir.clone(),attachments:json!([]),context:None};
+    let input=RunInput{native_mcp:None,provider_instance_id:"claudeAgent".into(),native_session_id:None,thread_id:"background-live".into(),run_id:"live".into(),cwd:dir.clone(),text:"Use Bash with run_in_background=true to execute: sleep 2; printf BACKGROUND_OK. Reply STARTED immediately after launching, without waiting or calling another tool.".into(),model_selection:json!({"instanceId":"claudeAgent","model":"haiku"}),runtime_mode:"full-access".into(),interaction_mode:"default".into(),attachment_root:dir.clone(),attachments:json!([]),context:None};
     let read = async {
         let mut task = false;
         let mut done = false;

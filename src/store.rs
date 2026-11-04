@@ -30,6 +30,7 @@ pub struct State {
     pub(crate) rollback_pending: std::sync::atomic::AtomicBool,
     pub(crate) http: crate::http::Limits,
     pub(crate) mcp: crate::mcp::Sessions,
+    pub(crate) native_mcp: crate::native_mcp::Registry,
     #[cfg(feature = "bridge")]
     pub bridge_endpoints: Mutex<Vec<Value>>,
     pub db: Mutex<Connection>,
@@ -187,6 +188,7 @@ impl State {
             rollback_pending: std::sync::atomic::AtomicBool::new(false),
             http: crate::http::Limits::default(),
             mcp: crate::mcp::Sessions::default(),
+            native_mcp: crate::native_mcp::Registry::default(),
             #[cfg(feature = "bridge")]
             bridge_endpoints: Mutex::new(Vec::new()),
             settings_lock: Mutex::new(()),

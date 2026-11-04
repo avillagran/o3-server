@@ -158,7 +158,7 @@ pub(crate) fn persist(
                 crate::background::update(
                     db,
                     tid,
-                    rid,
+                    run,
                     thread,
                     at,
                     n["id"].as_str().ok_or("item id missing")?,

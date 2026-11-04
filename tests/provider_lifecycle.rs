@@ -17,6 +17,7 @@ async fn turn(
     let (_control, controls) = mpsc::channel(8);
     let (_cancel, cancel) = watch::channel(false);
     let input = RunInput {
+        native_mcp: None,
         provider_instance_id: instance.into(),
         native_session_id: resume.clone(),
         thread_id: if fork.is_some() { "fork" } else { "source" }.into(),
@@ -133,6 +134,7 @@ async fn claude_init_guard_emits_no_started_event_after_cancel_or_control() {
         let (control, controls) = mpsc::channel(8);
         let (cancel, cancelled) = watch::channel(false);
         let input = RunInput {
+            native_mcp: None,
             provider_instance_id: "claudeAgent".into(),
             native_session_id: None,
             thread_id: "t".into(),

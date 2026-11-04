@@ -198,7 +198,7 @@ pub(crate) fn persist(
                 i["completedAt"] = Value::Null;
             }
             if i["type"] == "subagent" {
-                let sub = json!({"id":id,"threadId":tid,"runId":rid,"parentNodeId":rid,"origin":"provider_native","createdBy":"agent","driver":"claudeAgent","providerInstanceId":t["providerInstanceId"],"providerThreadId":t["activeProviderThreadId"],"childThreadId":null,"nativeTaskRef":reference(native),"prompt":i["prompt"],"title":i["title"],"model":null,"status":i["status"],"result":i["result"],"startedAt":i["startedAt"],"completedAt":i["completedAt"],"updatedAt":at});
+                let sub = json!({"id":id,"threadId":tid,"runId":rid,"parentNodeId":rid,"origin":"provider_native","createdBy":"agent","driver":"claudeAgent","providerInstanceId":run["providerInstanceId"],"providerThreadId":t["activeProviderThreadId"],"childThreadId":null,"nativeTaskRef":reference(native),"prompt":i["prompt"],"title":i["title"],"model":null,"status":i["status"],"result":i["result"],"startedAt":i["startedAt"],"completedAt":i["completedAt"],"updatedAt":at});
                 put(db, "subagents", &id, tid, &sub)?;
                 append(db, tid, "subagent.updated", sub, t)?;
             }
@@ -232,7 +232,7 @@ pub(crate) fn persist(
                     crate::background::update(
                         db,
                         tid,
-                        rid,
+                        run,
                         t,
                         at,
                         task["task_id"].as_str().ok_or("task id missing")?,
@@ -261,7 +261,7 @@ pub(crate) fn persist(
                 crate::background::update(
                     db,
                     tid,
-                    rid,
+                    run,
                     t,
                     at,
                     task_id,

@@ -1,5 +1,9 @@
 //! Trusted MCP authority is passed separately from wire commands, and checked under the write lock.
-use crate::{events, mcp_tools::failure, store::now_ms};
+use crate::{
+    events,
+    mcp_tools::failure,
+    store::{now_ms, State},
+};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 #[derive(Clone)]
@@ -8,6 +12,7 @@ pub(crate) struct Authority {
     expires_at: i64,
     requested_runtime: Option<String>,
     interaction_ceiling: String,
+    native: Option<std::sync::Arc<crate::native_mcp::Scope>>,
 }
 impl Authority {
     pub fn from_claims(claims: &Value) -> Result<Self, Value> {
@@ -19,7 +24,68 @@ impl Authority {
             expires_at: claims["exp"].as_i64().unwrap_or(0),
             requested_runtime: None,
             interaction_ceiling: "default".into(),
+            native: None,
         })
+    }
+    pub(crate) fn from_native(scope: std::sync::Arc<crate::native_mcp::Scope>) -> Self {
+        Self {
+            session_id: scope.id.clone(),
+            expires_at: i64::MAX,
+            requested_runtime: None,
+            interaction_ceiling: "default".into(),
+            native: Some(scope),
+        }
+    }
+    pub(crate) fn is_native(&self) -> bool {
+        self.native.is_some()
+    }
+    pub(crate) fn native_revoked(&self) -> bool {
+        self.native.as_ref().is_some_and(|s| s.revoked())
+    }
+    pub(crate) fn native_thread(&self) -> Option<&str> {
+        self.native.as_ref().map(|s| s.thread.as_str())
+    }
+    pub(crate) fn browser(&self) -> Option<crate::agent_browser::Access> {
+        self.native
+            .as_ref()?
+            .browser
+            .clone()
+            .filter(|b| b.available())
+    }
+    pub(crate) fn arguments(
+        &self,
+        state: &State,
+        name: &str,
+        mut p: Value,
+    ) -> Result<Value, Value> {
+        let db = state.reader.lock().unwrap();
+        self.session(&db, false)?;
+        if let Some(scope) = &self.native {
+            let t = scope.caller(&db, false)?;
+            if p.get("threadId").is_none()
+                && (name.starts_with("t3_queue")
+                    || name.starts_with("t3_pending_request")
+                    || matches!(
+                        name,
+                        "t3_thread_organize" | "t3_thread_configure" | "t3_thread_configuration"
+                    ))
+            {
+                p["threadId"] = json!(scope.thread);
+            }
+            if p.get("projectId").is_none() && matches!(name, "t3_thread_list" | "t3_thread_search")
+            {
+                p["projectId"] = t["projectId"].clone();
+            }
+        }
+        Ok(p)
+    }
+    pub(crate) fn browser_admission(&self, state: &State, write: bool) -> Result<(), Value> {
+        let scope = self
+            .native
+            .as_ref()
+            .ok_or_else(|| failure("capability_denied", "Native browser access is unavailable."))?;
+        scope.caller(&state.reader.lock().unwrap(), write)?;
+        Ok(())
     }
     pub fn narrowed(mut self, runtime: &str, interaction: &str) -> Self {
         self.requested_runtime = Some(runtime.to_owned());
@@ -27,6 +93,13 @@ impl Authority {
         self
     }
     pub fn session(&self, db: &Connection, write: bool) -> Result<String, Value> {
+        if let Some(scope) = &self.native {
+            let t = scope.caller(db, write)?;
+            return Ok(t["runtimeMode"]
+                .as_str()
+                .unwrap_or("approval-required")
+                .to_owned());
+        }
         if self.expires_at <= now_ms() {
             return Err(failure("capability_denied", "The MCP credential expired."));
         }
@@ -72,11 +145,20 @@ impl Authority {
     }
     fn check_inner(&self, db: &Connection, c: &Value) -> Result<(), Value> {
         let ceiling = self.session(db, true)?;
+        let interaction = if let Some(scope) = &self.native {
+            scope.caller(db, true)?["interactionMode"]
+                .as_str()
+                .unwrap_or("plan")
+                .to_owned()
+        } else {
+            self.interaction_ceiling.clone()
+        };
+
         if c["type"]
             .as_str()
             .is_some_and(|s| s.starts_with("project."))
         {
-            if ceiling != "full-access" || self.interaction_ceiling != "default" {
+            if ceiling != "full-access" || interaction != "default" {
                 return Err(failure(
                     "capability_denied",
                     "Changing projects requires full-access mode.",
@@ -96,7 +178,7 @@ impl Authority {
                 "The target thread runs above this MCP client's runtime ceiling.",
             ));
         }
-        if (self.interaction_ceiling == "plan" && t["interactionMode"] != "plan")
+        if (interaction == "plan" && t["interactionMode"] != "plan")
             || !matches!(t["interactionMode"].as_str(), Some("default" | "plan"))
         {
             return Err(failure(

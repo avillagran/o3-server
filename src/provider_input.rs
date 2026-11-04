@@ -245,6 +245,7 @@ mod final_budget_tests {
         let history = format!("historical header {}", "é\\\"".repeat(400_000));
         let request = format!("DO_THIS_NEW_REQUEST {}", "r".repeat(800_000));
         let input = RunInput {
+            native_mcp: None,
             provider_instance_id: "codex".into(),
             native_session_id: None,
             thread_id: "test".into(),
