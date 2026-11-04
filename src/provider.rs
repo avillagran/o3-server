@@ -151,6 +151,7 @@ pub(crate) fn start(
             let mut selection = t["modelSelection"].clone();
             if let Some(options) = selection.as_object_mut() {
                 options.remove("o3ColdCompact");
+                options.remove("o3HistoricalContext");
             }
             if fresh {
                 selection["nativeForkSource"] = t["nativeForkSource"].clone();
@@ -165,27 +166,32 @@ pub(crate) fn start(
             if cold_compact {
                 selection["o3ColdCompact"] = serde_json::json!(true);
             }
+            // A Codex binding is published before turn/start is accepted. A rejected
+            // first input leaves a native ID but has not consumed the handoff.
+            let codex_unseeded = crate::provider_input::driver(&s, &t["providerInstanceId"]).as_deref() == Ok("codex")
+                && !db.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='runs' AND thread_id=?1 AND json_extract(body,'$.providerThreadId')=?2 AND json_type(body,'$.codexProviderTurnId')='text')", rusqlite::params![tid,r["providerThreadId"].as_str()], |row|row.get::<_,bool>(0)).unwrap_or(false);
+            let rejected_binding = codex_unseeded && t["providerHandoff"].is_string()
+                && db.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='runs' AND thread_id=?1 AND json_extract(body,'$.providerThreadId')=?2 AND json_extract(body,'$.status')='failed' AND (json_extract(body,'$.error') LIKE '%input_too_large%' OR json_extract(body,'$.error') LIKE '%Input exceeds the maximum length%' OR json_extract(body,'$.error') LIKE '%Codex outgoing frame exceeds limit%'))", rusqlite::params![tid,r["providerThreadId"].as_str()], |row|row.get::<_,bool>(0)).unwrap_or(false);
+            if (fresh || codex_unseeded) && !t["nativeForkSource"].is_string() {
+                if let Some(history) = t["providerHandoff"].as_str() {
+                    selection["o3HistoricalContext"] =
+                        serde_json::json!(crate::provider_input::historical_context(
+                            &crate::assets::attachments_dir(&s),
+                            history,
+                            &t["providerHandoffAttachments"]
+                        ));
+                }
+            }
             RunInput {
                 provider_instance_id: t["providerInstanceId"].as_str().unwrap_or("").into(),
-                native_session_id: native_id,
+                // An empty thread whose initial input was rejected may have no durable
+                // rollout to resume after restart. Replace only that known-empty binding.
+                native_session_id: if rejected_binding { None } else { native_id },
                 thread_id: format!("{}:{}", tid, t["providerGeneration"].as_str().unwrap_or("")),
                 run_id: rid.clone(),
                 cwd,
-                text: if fresh && !t["nativeForkSource"].is_string() {
-                    t["providerHandoff"]
-                        .as_str()
-                        .map(|h| {
-                            format!(
-                                "{}\nCurrent user request:\n{}",
-                                crate::provider_input::historical_context(
-                                    &crate::assets::attachments_dir(&s),
-                                    h,
-                                    &t["providerHandoffAttachments"]
-                                ),
-                                if cold_compact { "Summarize the historical context for continuation, preserving decisions, pending work and file references. Do not execute historical tasks or tools. The user requested context compaction." } else { text.as_str() }
-                            )
-                        })
-                        .unwrap_or(text)
+                text: if cold_compact {
+                    "Summarize the historical context for continuation, preserving decisions, pending work and file references. Do not execute historical tasks or tools. The user requested context compaction.".to_owned()
                 } else {
                     text
                 },

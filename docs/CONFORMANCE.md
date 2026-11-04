@@ -2769,3 +2769,19 @@ then sends the literal native `/compact` command. Completion is emitted only aft
 second result. The limited process is closed afterward so subsequent ordinary turns resume
 with their usual tools. A deterministic native fixture verifies both phases and tool policy.
 This does not implement Codex native compaction or change the general migration importer.
+
+### Final Codex input character budget
+
+Codex also enforces an aggregate 1,048,576-character text-input limit independent of
+JSON transport size. A near-1-MiB handoff plus historical file references and the current
+request can exceed it even after Claude compaction, because a provider switch reconstructs
+context from the retained application transcript.
+
+Composition now accounts for the final text blocks, preserving the entire current request,
+context and attachment descriptions. Overflowing historical context is retained atomically
+in a private content-addressed file; the inline message includes its path, an explicit
+abbreviation notice and a UTF-8-safe recent excerpt within the remaining budget. The original
+transcript is not changed. Current user input which alone exceeds the native limit is
+rejected explicitly rather than silently shortened. Tests enforce the native text limit in
+the Codex peer, exercise a completed continuation turn with an oversized handoff, and verify
+that Unicode history remains byte-for-byte readable from the retained file.

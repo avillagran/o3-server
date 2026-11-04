@@ -6,6 +6,8 @@ fixture = Path(sys.argv[0]).with_name('real-0.166.0.ndjson')
 recorded = [json.loads(line) for line in fixture.read_text().splitlines()]
 results = {r['frame']['id']: r['frame'].get('result') for r in recorded if r['direction']=='server' and 'result' in r['frame']}
 threads = 0
+rejected_handoff = False
+rejected_native_id = None
 requests = {}
 def send(v):
     print(json.dumps(v), flush=True)
@@ -21,8 +23,24 @@ for line in sys.stdin:
     elif m=='thread/start':
         threads+=1;result={'thread':{'id':'thread-'+str(threads)}}
     elif m=='thread/resume':
+        if p['threadId'] == rejected_native_id:
+            send(dict(id=i,error={'code':-32600,'message':'no rollout found for empty rejected thread'}));continue
         assert p['excludeTurns'] is True
         result={'thread':{'id':p['threadId']}}
+    elif m=='turn/start' and 'reject-once-handoff-proof' in json.dumps(p.get('input')):
+        text = ''.join(x.get('text','') for x in p['input'])
+        if not rejected_handoff:
+            rejected_handoff = True
+            rejected_native_id = p['threadId']
+            send(dict(id=i,error={'code':-32602,'message':'input_too_large'}));continue
+        assert 'retained-handoff-proof' in text, 'binding before admission must not consume handoff'
+        tid=p['threadId'];send(dict(id=i,result={'turn':{'id':'turn-'+tid}}))
+        notify('turn/started',tid,turn={'id':'turn-'+tid,'status':'inProgress'})
+        notify('item/agentMessage/delta',tid,itemId='message',delta='RETRY_CONTEXT_OK')
+        notify('turn/completed',tid,turn={'id':'turn-'+tid,'status':'completed'})
+        continue
+    elif m=='turn/start' and sum(len(x.get('text','')) for x in p.get('input',[])) > 1048576:
+        send(dict(id=i,error={'code':-32602,'message':'Input exceeds the maximum length of 1048576 characters.'}));continue
     elif m=='turn/start' and 'burst' in json.dumps(p.get('input')):
         # A burst of notifications far larger than any per-thread frame count.
         tid=p['threadId']; send(dict(id=i,result={'turn':{'id':'turn-'+tid}}))

@@ -159,3 +159,36 @@ fn fallback_tool_context_drops_oldest_with_an_explicit_marker() {
     assert!(!text.contains("proof-0"));
     assert!(text.contains("proof-2"));
 }
+
+#[test]
+fn rejected_codex_first_input_does_not_consume_handoff_when_binding_exists() {
+    let s = support::start(|s| {
+        *s.provider.lock().unwrap() = Some(Arc::new(o3_server::codex::CodexProvider::new(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/codex/mock-server.py"),
+            None,
+        )));
+    });
+    let c = s.connect();
+    c.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"create","threadId":"t","projectId":"p","title":"Retry","modelSelection":{"instanceId":"codex","model":"test"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
+    s.state.db.lock().unwrap().execute("UPDATE records SET body=json_set(body,'$.providerHandoff','retained-handoff-proof') WHERE kind='thread' AND id='t'",[]).unwrap();
+    for n in 1..=2 {
+        c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":format!("send{n}"),"messageId":format!("message{n}"),"threadId":"t","text":"reject-once-handoff-proof","attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
+        assert!(support::wait_for(Duration::from_secs(10), || {
+            let p = orchestration::thread_projection(&c, "t").unwrap();
+            p["runs"][n - 1]["status"] == if n == 1 { "failed" } else { "completed" }
+        }));
+        assert!(support::wait_for(Duration::from_secs(3), || s
+            .state
+            .active
+            .lock()
+            .unwrap()
+            .is_empty()));
+    }
+    let p = orchestration::thread_projection(&c, "t").unwrap();
+    assert!(p["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|m| m["text"] == "RETRY_CONTEXT_OK"));
+}
