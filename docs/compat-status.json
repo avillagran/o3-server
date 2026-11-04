@@ -1131,7 +1131,7 @@
     "message.dispatch": {
       "status": "done",
       "priority": "P0",
-      "note": "Native uploaded images and files, serialized context, attachment steering, attempt identity and active execution recovery have real client and deterministic native-peer coverage. The control outbox records uncertain handoffs without blind replay; exactly-once native effects are not claimed."
+      "note": "Native uploaded images and files, serialized context, attachment steering, attempt identity and active execution recovery have real client and deterministic native-peer coverage. The control outbox records uncertain handoffs without blind replay; exactly-once native effects are not claimed. 2026-11-04: ordinary provider changes now share native-compatible continuation or previous-row delta reuse, with exact durable cleanup before new MCP/input and queued recorded-model ownership. Five installed Claude/Codex turns preserve private words and original native ids. Full active cross-instance and selection policy remain pending; see provider-session-intake.json."
     },
     "notification.delivery.accept": {
       "status": "skip",
@@ -1286,7 +1286,7 @@
     "thread.model-selection.set": {
       "status": "skip",
       "priority": "unused",
-      "note": "Implemented: an explicit idle instance switch clears foreign native IDs and supplies bounded transcript text (tests/model_handoff.rs). No production caller in the three clients; desktop src/write.rs:189 sends message.dispatch modelSelection instead, which is tracked on its own. Reclassified by independent audit on 2026-11-02."
+      "note": "Shared idle selection and per-message selection preserve native ownership until run admission. Compatible homes continue their native conversation; returning to another provider reuses its previous root row and sends the missing delta with canonical transfer records. Background guards, durable exact cleanup/retry, queued recorded-model selection and legacy roots are covered by compatible-client/native-peer tests and five installed Claude/Codex turns. Full same-instance classification, auth overlays and active cross-instance policy remain pending; see provider-session-intake.json. The three pinned clients use per-message selection rather than this standalone command; MCP configure uses it."
     },
     "thread.pin": {
       "status": "done",

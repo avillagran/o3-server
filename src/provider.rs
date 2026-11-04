@@ -379,6 +379,18 @@ pub(crate) fn start(
             };
             (input, r["activeAttemptId"].as_str().map(str::to_owned))
         };
+        if let Err(error) =
+            crate::provider_switch::release_pending(&s, provider.as_ref(), &tid).await
+        {
+            let _ = persist_attempt(
+                &s,
+                &tid,
+                &rid,
+                attempt.as_deref(),
+                ProviderEvent::Failed(error),
+            );
+            return;
+        }
         if let Err(error) = crate::native_recovery::release_pending(
             &s,
             provider.as_ref(),

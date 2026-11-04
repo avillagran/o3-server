@@ -252,3 +252,31 @@ restart runs without app provider rows retain their prior continuation path.
 See `nightly/native-recovery-intake.json` for the exact source, native CLI proofs,
 validation and remaining gaps. The implementation services are unchanged in4179;
 its new secret-request behavior is recorded separately as pending.
+
+
+## Ordinary provider selection and returning conversations (2026-11-04)
+
+A selection command changes the requested model while preserving the native row's
+owner until the next run chooses its binding. Compatible instances share the native
+conversation. Otherwise admission picks the latest root row for the target provider
+or creates one. Returning to an existing row sends only visible history after its
+last completed or accepted run; a provider-changing merge carries full target
+history and the existing fork delta under the same handoff budget.
+
+Provider handoff records include canonical source/base refs and actor, and use
+portable_context or delta_context. Consumption records app admission, separately
+from the native history delivery acknowledgement. Queued messages reselect their
+recorded provider/model before ownership, even if later metadata chose another one.
+
+The selection receipt also stages exact old native cleanup. A per-thread gate waits
+for the outgoing execution and cleanup acknowledgement before acquiring the new
+MCP context or sending native input. Failure stays journaled and is retried before
+later input; another thread's native process or credential is not selected for
+release. Native background work rejects the switch before any selection, receipt
+or cleanup mutation. The entire outgoing wait/release has one 45-second deadline.
+Legacy pre-row imports keep their portable fallback; old Claude root row ownership
+normalizes without claiming native subagent bindings.
+
+See `nightly/provider-session-intake.json` for source/evidence and remaining gaps,
+including full same-instance classification, account-overlay setup and active
+cross-instance restart. This does not certify full nightly interchangeability.

@@ -1,0 +1,561 @@
+//! Provider-thread reuse, portable deltas and exact native release at selection boundaries.
+//! Adapted from nightly4179 Orchestrator/ProviderSwitchService (MIT).
+use crate::{
+    context_transfer::{list, own_items},
+    events::{append, get, put},
+    handoff_history as history,
+    store::{iso, now_ms, random_id, State},
+};
+use rusqlite::{params, Connection, OptionalExtension};
+use serde_json::{json, Value};
+use std::{
+    path::{Component, Path, PathBuf},
+    sync::Arc,
+};
+type Result<T> = std::result::Result<T, String>;
+pub(crate) fn initialize(db: &Connection) -> Result<()> {
+    db.execute_batch("CREATE TABLE IF NOT EXISTS provider_switches(id TEXT PRIMARY KEY,thread_id TEXT NOT NULL,payload TEXT NOT NULL,released_at TEXT,last_error TEXT); CREATE INDEX IF NOT EXISTS provider_switches_pending ON provider_switches(thread_id) WHERE released_at IS NULL;").map_err(|e|e.to_string())?;
+    db.execute("UPDATE records AS p SET body=json_set(body,'$.ownerNodeId',NULL) WHERE kind='providerThreads' AND json_extract(body,'$.driver')='claudeAgent' AND json_extract(body,'$.appThreadId')=thread_id AND EXISTS(SELECT 1 FROM records n WHERE n.kind='nodes' AND n.thread_id=p.thread_id AND n.id=json_extract(p.body,'$.ownerNodeId') AND json_extract(n.body,'$.kind')='root_turn')",[]).map_err(|e|e.to_string())?;
+    Ok(())
+}
+fn absolute(path: &Path) -> Result<PathBuf> {
+    let path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(|e| e.to_string())?
+            .join(path)
+    };
+    let mut result = PathBuf::new();
+    for part in path.components() {
+        match part {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                result.pop();
+            }
+            part => result.push(part.as_os_str()),
+        }
+    }
+    Ok(result)
+}
+fn identity(s: &State, id: &str) -> Result<(String, PathBuf)> {
+    let settings = crate::settings::read(s)?;
+    let driver = crate::provider_input::driver(s, &json!(id))?;
+    let entry = &settings["providerInstances"][id];
+    if !matches!(id, "codex" | "claudeAgent" | "claude" | "claude-code")
+        && !entry["driver"].is_string()
+    {
+        return Ok((format!("unavailable:{id}"), PathBuf::new()));
+    }
+    if !matches!(driver.as_str(), "codex" | "claudeAgent") {
+        return Ok((driver, PathBuf::from(format!("instance:{id}"))));
+    }
+    let configured = entry["config"]["homePath"]
+        .as_str()
+        .filter(|v| !v.trim().is_empty());
+    let inherited = if driver == "claudeAgent" {
+        entry["environment"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .rev()
+            .find(|e| e["name"] == "CLAUDE_CONFIG_DIR")
+            .and_then(|e| e["value"].as_str())
+            .map(str::to_owned)
+            .or_else(|| std::env::var("CLAUDE_CONFIG_DIR").ok())
+            .filter(|v| !v.trim().is_empty())
+    } else {
+        None
+    };
+    let path = if let Some(configured) = configured {
+        crate::provider::expand_home(configured)
+    } else if let Some(inherited) = inherited {
+        PathBuf::from(inherited.trim())
+    } else {
+        PathBuf::from(std::env::var_os("HOME").ok_or("Provider home directory is unavailable")?)
+            .join(if driver == "codex" {
+                ".codex"
+            } else {
+                ".claude"
+            })
+    };
+    Ok((driver, absolute(&path)?))
+}
+fn current(db: &Connection, thread: &Value) -> Result<Option<Value>> {
+    let Some(id) = thread["activeProviderThreadId"].as_str() else {
+        return Ok(None);
+    };
+    let body: Option<String> = db
+        .query_row(
+            "SELECT body FROM records WHERE kind='providerThreads' AND id=?",
+            [id],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    body.map(|body| serde_json::from_str(&body).map_err(|e| e.to_string()))
+        .transpose()
+}
+fn guard(db: &Connection, thread: &Value, target: &Value) -> Result<()> {
+    if let Some(pt) =
+        current(db, thread)?.filter(|pt| pt["providerInstanceId"] != target["instanceId"])
+    {
+        if crate::native_recovery::background_work(db, thread["id"].as_str().unwrap_or(""), &pt)? {
+            return Err("The previous provider is still running background agents or commands; wait for them or stop before switching.".into());
+        }
+    }
+    Ok(())
+}
+fn stage(db: &Connection, thread: &Value, pt: &Value) -> Result<()> {
+    let tid = thread["id"].as_str().ok_or("thread id missing")?;
+    let key = format!(
+        "{}:{}",
+        tid,
+        thread["providerGeneration"].as_str().unwrap_or("")
+    );
+    let id = format!(
+        "provider-switch:{}:{}",
+        pt["id"].as_str().unwrap_or(""),
+        key
+    );
+    let run_ids = list(db, "runs", tid)?
+        .into_iter()
+        .filter(|r| r["providerThreadId"] == pt["id"])
+        .map(|r| r["id"].clone())
+        .collect::<Vec<_>>();
+    let payload = json!({"providerInstanceId":pt["providerInstanceId"],"key":key,"nativeId":pt["nativeThreadRef"]["nativeId"],"providerSessionId":pt["providerSessionId"],"driver":pt["driver"],"runIds":run_ids});
+    db.execute(
+        "INSERT OR IGNORE INTO provider_switches(id,thread_id,payload) VALUES(?,?,?)",
+        params![id, tid, payload.to_string()],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+/// Metadata selection preserves native ownership until a run chooses a compatible row or a handoff.
+pub(crate) fn selection(
+    s: &State,
+    db: &Connection,
+    thread: &mut Value,
+    target: &Value,
+    command_id: &Value,
+) -> Result<()> {
+    guard(db, thread, target)?;
+    if let Some(pt) = current(db, thread)? {
+        if pt["providerInstanceId"] != target["instanceId"] {
+            identity(s, pt["providerInstanceId"].as_str().unwrap_or(""))?;
+            identity(s, target["instanceId"].as_str().unwrap_or(""))?;
+            stage(db, thread, &pt)?;
+        }
+    } else if thread["providerInstanceId"] != target["instanceId"] {
+        // Imported pre-row bindings keep their established portable migration path.
+        let tid = thread["id"].as_str().ok_or("thread id missing")?.to_owned();
+        let ordinal=db.query_row("SELECT coalesce(max(json_extract(body,'$.ordinal')),0) FROM records WHERE kind='runs' AND thread_id=?",[&tid],|r|r.get::<_,i64>(0)).map_err(|e|e.to_string())?;
+        crate::thread_commands::capture_handoff(db, thread, &tid, ordinal)?;
+        thread["providerGeneration"] = command_id.clone();
+        for key in [
+            "activeProviderThreadId",
+            "codexNativeThreadId",
+            "nativeForkSource",
+        ] {
+            thread[key] = Value::Null;
+        }
+    }
+    Ok(())
+}
+
+fn source_run(r: &Value) -> bool {
+    matches!(
+        r["status"].as_str(),
+        Some("completed" | "failed" | "interrupted")
+    ) && r["contextDiscarded"] != true
+}
+pub(crate) fn admit(
+    s: &State,
+    db: &Connection,
+    thread: &mut Value,
+    run: &mut Value,
+    at: &str,
+) -> Result<()> {
+    // A queued message keeps the model it recorded, even if idle metadata changed later.
+    if run["modelSelection"]["instanceId"].is_string()
+        && (thread["providerInstanceId"] != run["providerInstanceId"]
+            || thread["modelSelection"] != run["modelSelection"])
+    {
+        let switched = thread["providerInstanceId"] != run["providerInstanceId"];
+        selection(s, db, thread, &run["modelSelection"], &run["id"])?;
+        thread["providerInstanceId"] = run["providerInstanceId"].clone();
+        thread["modelSelection"] = run["modelSelection"].clone();
+        let tid = thread["id"].as_str().ok_or("thread id missing")?;
+        put(db, "thread", tid, tid, thread)?;
+        append(
+            db,
+            tid,
+            if switched {
+                "thread.provider-switched"
+            } else {
+                "thread.model-selection-updated"
+            },
+            thread.clone(),
+            thread,
+        )?;
+    }
+    let Some(active) = current(db, thread)? else {
+        return Ok(());
+    };
+    let target = run["providerInstanceId"]
+        .as_str()
+        .ok_or("run provider missing")?
+        .to_owned();
+    if active["providerInstanceId"] == target {
+        return Ok(());
+    }
+    let tid = thread["id"].as_str().ok_or("thread id missing")?.to_owned();
+    guard(db, thread, &json!({"instanceId":target}))?;
+    let source = active["providerInstanceId"]
+        .as_str()
+        .ok_or("source provider missing")?;
+    let source_identity = identity(s, source)?;
+    let target_identity = identity(s, &target)?;
+    let compatible = active["nativeThreadRef"].is_object()
+        && active["driver"] == target_identity.0
+        && source_identity == target_identity;
+    stage(db, thread, &active)?;
+    let all = list(db, "providerThreads", &tid)?;
+    let mut candidates = all
+        .iter()
+        .filter(|pt| {
+            pt["providerInstanceId"] == target
+                && pt["appThreadId"] == tid
+                && pt["ownerNodeId"].is_null()
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|a, b| {
+        b["lastRunOrdinal"]
+            .as_i64()
+            .unwrap_or(0)
+            .cmp(&a["lastRunOrdinal"].as_i64().unwrap_or(0))
+            .then_with(|| b["updatedAt"].as_str().cmp(&a["updatedAt"].as_str()))
+    });
+    let existing = if compatible {
+        Some(active.clone())
+    } else {
+        candidates.first().map(|pt| (*pt).clone())
+    };
+    let mut pt = if let Some(pt) = &existing {
+        pt.clone()
+    } else {
+        let id = format!("provider-thread-{}", random_id()?);
+        json!({"id":id,"appThreadId":tid,"driver":crate::provider_input::driver(s,&json!(target))?,"providerInstanceId":target,"providerSessionId":null,"ownerNodeId":null,"nativeThreadRef":null,"nativeConversationHeadRef":null,"status":"not_loaded","firstRunOrdinal":run["ordinal"],"lastRunOrdinal":run["ordinal"],"handoffIds":[],"forkedFrom":null,"contextUsage":null,"goal":null,"nativeMetadata":null,"pendingBackgroundTasks":[],"createdAt":at,"updatedAt":at})
+    };
+    pt["status"] = json!("active");
+    if !pt["firstRunOrdinal"].is_number() {
+        pt["firstRunOrdinal"] = run["ordinal"].clone();
+    }
+    pt["providerInstanceId"] = json!(target);
+    pt["providerSessionId"] = Value::Null;
+    pt["lastRunOrdinal"] = run["ordinal"].clone();
+    pt["updatedAt"] = json!(at);
+    let runs = list(db, "runs", &tid)?;
+    let turns = list(db, "providerTurns", &tid)?;
+    let merge = list(db, "contextTransfers", &tid)?
+        .iter()
+        .any(|t| t["type"] == "merge_back" && t["status"] == "pending");
+    let last_delivered = runs
+        .iter()
+        .filter(|run| {
+            source_run(run)
+                && run["providerThreadId"] == pt["id"]
+                && (run["status"] == "completed"
+                    || turns
+                        .iter()
+                        .any(|turn| turn["runAttemptId"] == run["activeAttemptId"]))
+        })
+        .max_by_key(|run| run["ordinal"].as_i64());
+    let since = if merge {
+        0
+    } else {
+        last_delivered
+            .and_then(|run| run["ordinal"].as_i64())
+            .unwrap_or(0)
+    };
+    let mut covered = runs
+        .iter()
+        .filter(|r| {
+            !compatible
+                && source_run(r)
+                && r["ordinal"].as_i64().is_some_and(|ordinal| {
+                    ordinal > since && ordinal < run["ordinal"].as_i64().unwrap_or(i64::MAX)
+                })
+        })
+        .collect::<Vec<_>>();
+    covered.sort_by_key(|run| run["ordinal"].as_i64().unwrap_or(0));
+    if !covered.is_empty() {
+        let items = own_items(db, &tid, run["ordinal"].as_i64().unwrap_or(1) - 1)?
+            .into_iter()
+            .filter(|i| {
+                covered.iter().any(|r| r["id"] == i["runId"])
+                    || (i["runId"].is_null() && (existing.is_none() || merge))
+            })
+            .collect::<Vec<_>>();
+        let from = covered
+            .iter()
+            .filter_map(|r| r["ordinal"].as_i64())
+            .min()
+            .unwrap_or(1);
+        let to = covered
+            .iter()
+            .filter_map(|r| r["ordinal"].as_i64())
+            .max()
+            .unwrap_or(from);
+        let coverage = history::coverage(&tid, from, to, &items);
+        let messages = items
+            .iter()
+            .filter_map(history::message)
+            .collect::<Vec<_>>();
+        let selected = history::select(&messages, &coverage, 0, history::cap());
+        let id = random_id()?;
+        let transfer_id = random_id()?;
+        let strategy = if existing.is_none() || merge {
+            "full_thread_summary"
+        } else {
+            "delta_since_target_last_seen"
+        };
+        let mut from_ids = Vec::new();
+        for id in covered
+            .iter()
+            .filter_map(|run| run["providerThreadId"].as_str())
+        {
+            if !from_ids.contains(&id) {
+                from_ids.push(id);
+            }
+        }
+        let handoff = json!({"id":id,"transferId":transfer_id,"threadId":tid,"targetRunId":run["id"],"fromProviderThreadIds":from_ids,"toProviderThreadId":pt["id"],"coveredRunOrdinals":{"from":from,"to":to},"strategy":strategy,"status":"ready","summaryMessageId":null,"summaryText":history::render(selected["messages"].as_array().unwrap(),selected["context"].as_str().unwrap()),"history":{"messages":selected["messages"],"coverage":coverage,"omittedItems":selected["omittedItems"],"omittedItemIds":selected["omittedItemIds"]},"createdByProviderInstanceId":null,"createdAt":at,"updatedAt":at});
+        let latest = covered
+            .iter()
+            .max_by_key(|r| r["ordinal"].as_i64())
+            .unwrap();
+        let base = if merge {
+            Value::Null
+        } else {
+            last_delivered
+                .map(|run| crate::context_transfer::canonical(db, &tid, run))
+                .unwrap_or(Value::Null)
+        };
+        let actor = get(db, "messages", run["userMessageId"].as_str().unwrap_or(""))?["createdBy"]
+            .as_str()
+            .unwrap_or("user")
+            .to_owned();
+        // Admission consumes a transfer; the delivery ACK independently records native acceptance.
+        let transfer = json!({"id":transfer_id,"type":"provider_handoff","sourceThreadId":tid,"targetThreadId":tid,"sourcePoint":crate::context_transfer::canonical(db,&tid,latest),"basePoint":base,"sourceProviderInstanceId":latest["providerInstanceId"],"targetProviderInstanceId":target,"targetRunId":run["id"],"status":"consumed","resolution":{"strategy":if strategy=="full_thread_summary"{"portable_context"}else{"delta_context"},"contextHandoffId":id},"createdBy":actor,"error":null,"createdAt":at,"updatedAt":at,"consumedAt":at});
+        put(db, "contextHandoffs", &id, &tid, &handoff)?;
+        append(db, &tid, "context-handoff.updated", handoff, thread)?;
+        put(db, "contextTransfers", &transfer_id, &tid, &transfer)?;
+        append(db, &tid, "context-transfer.created", transfer, thread)?;
+        pt["handoffIds"]
+            .as_array_mut()
+            .ok_or("provider handoff ids missing")?
+            .push(json!(id));
+        run["contextHandoffId"] = json!(id);
+    }
+    let ptid = pt["id"]
+        .as_str()
+        .ok_or("target provider row missing")?
+        .to_owned();
+    thread["activeProviderThreadId"] = json!(ptid);
+    thread["providerGeneration"] = run["id"].clone();
+    thread["providerInstanceId"] = json!(target);
+    thread["modelSelection"] = run["modelSelection"].clone();
+    thread["codexNativeThreadId"] = if pt["driver"] == "codex" {
+        pt["nativeThreadRef"]["nativeId"].clone()
+    } else {
+        Value::Null
+    };
+    thread["providerHandoff"] = Value::Null;
+    thread["providerHandoffAttachments"] = json!([]);
+    put(db, "providerThreads", &ptid, &tid, &pt)?;
+    append(db, &tid, "provider-thread.updated", pt, thread)?;
+    put(db, "thread", &tid, &tid, thread)?;
+    append(db, &tid, "thread.metadata-updated", thread.clone(), thread)?;
+    Ok(())
+}
+fn gate(s: &State, tid: &str) -> Arc<tokio::sync::Mutex<()>> {
+    let mut gates = s.provider_switch_gates.lock().unwrap();
+    gates.retain(|_, gate| gate.strong_count() > 0);
+    if let Some(gate) = gates.get(tid).and_then(std::sync::Weak::upgrade) {
+        return gate;
+    }
+    let gate = Arc::new(tokio::sync::Mutex::new(()));
+    gates.insert(tid.to_owned(), Arc::downgrade(&gate));
+    gate
+}
+pub(crate) async fn release_pending(
+    s: &State,
+    provider: &dyn crate::provider::Provider,
+    tid: &str,
+) -> Result<()> {
+    let gate = gate(s, tid);
+    let _guard = gate.lock().await;
+    let jobs = {
+        let db = s.db.lock().unwrap();
+        let mut q=db.prepare("SELECT id,payload FROM provider_switches WHERE thread_id=? AND released_at IS NULL ORDER BY rowid").map_err(|e|e.to_string())?;
+        let jobs = q
+            .query_map([tid], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        jobs
+    };
+    for (id, payload) in jobs {
+        let p: Value = serde_json::from_str(&payload).map_err(|e| e.to_string())?;
+        let work = async {
+            for run in p["runIds"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+            {
+                s.executions.wait_run(run).await;
+            }
+            provider
+                .detach(
+                    p["providerInstanceId"].as_str().unwrap_or(""),
+                    p["key"].as_str().unwrap_or(""),
+                    p["nativeId"].as_str(),
+                    true,
+                )
+                .await
+        };
+        let result = tokio::time::timeout(std::time::Duration::from_secs(45), work)
+            .await
+            .unwrap_or_else(|_| Err("Provider switch release timed out".into()));
+        if let Err(error) = result {
+            s.db.lock()
+                .unwrap()
+                .execute(
+                    "UPDATE provider_switches SET last_error=? WHERE id=?",
+                    params![error, id],
+                )
+                .map_err(|e| e.to_string())?;
+            return Err(error);
+        }
+        let mut db = s.db.lock().unwrap();
+        let tx = db.transaction().map_err(|e| e.to_string())?;
+        let at = iso(now_ms());
+        tx.execute(
+            "UPDATE provider_switches SET released_at=?,last_error=NULL WHERE id=?",
+            params![at, id],
+        )
+        .map_err(|e| e.to_string())?;
+        if let Some(session) = p["providerSessionId"].as_str() {
+            let removed=tx.execute("DELETE FROM records WHERE kind='providerSessions' AND thread_id=? AND id=? AND json_extract(body,'$.providerInstanceId')=?",params![tid,session,p["providerInstanceId"].as_str()]).map_err(|e|e.to_string())?;
+            if removed > 0 {
+                let thread = get(&tx, "thread", tid)?;
+                let sequence = append(
+                    &tx,
+                    tid,
+                    "provider-session.detached",
+                    json!({"providerSessionId":session,"detachedAt":at,"reason":"Provider switched."}),
+                    &thread,
+                )?;
+                tx.execute("UPDATE events SET body=json_set(body,'$.driver',?1,'$.providerInstanceId',?2) WHERE sequence=?3",params![p["driver"].as_str(),p["providerInstanceId"].as_str(),sequence]).map_err(|e|e.to_string())?;
+            }
+        }
+        tx.commit().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+pub(crate) fn start_release(s: Arc<State>, tid: String) {
+    if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+        runtime.spawn(async move {
+            let provider = s.provider.lock().unwrap().clone();
+            if let Some(provider) = provider {
+                let _ = release_pending(&s, provider.as_ref(), &tid).await;
+                s.notify();
+            }
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn legacy_claude_root_rows_upgrade_without_claiming_native_subagent_rows() {
+        let db = Connection::open_in_memory().unwrap();
+        crate::events::initialize(&db).unwrap();
+        for (id, kind, owner) in [
+            ("root", "root_turn", "root"),
+            ("child", "subagent_turn", "child"),
+        ] {
+            put(&db, "nodes", id, "t", &json!({"id":id,"kind":kind})).unwrap();
+            put(
+                &db,
+                "providerThreads",
+                id,
+                "t",
+                &json!({"id":id,"appThreadId":"t","driver":"claudeAgent","ownerNodeId":owner}),
+            )
+            .unwrap();
+        }
+        for _ in 0..2 {
+            initialize(&db).unwrap();
+            assert!(get(&db, "providerThreads", "root").unwrap()["ownerNodeId"].is_null());
+            assert_eq!(
+                get(&db, "providerThreads", "child").unwrap()["ownerNodeId"],
+                "child"
+            );
+        }
+        db.execute(
+            "UPDATE records SET body='invalid json' WHERE kind='providerThreads' AND id='root'",
+            [],
+        )
+        .unwrap();
+        assert!(current(&db, &json!({"activeProviderThreadId":"root"})).is_err());
+        assert!(current(&db, &json!({"activeProviderThreadId":"missing"}))
+            .unwrap()
+            .is_none());
+    }
+    #[test]
+    fn continuation_identity_uses_resolved_homes_and_keeps_literal_inherited_tilde() {
+        let dir = std::env::temp_dir().join(format!("provider-identity-{}", random_id().unwrap()));
+        let s = State::open(&dir).unwrap();
+        std::fs::write(s.dir.join("settings.json"),json!({"providerInstances":{
+            "first":{"driver":"codex","config":{"homePath":"/shared/home","shadowHomePath":"/account-a"}},
+            "second":{"driver":"codex","config":{"homePath":"/shared/./home","shadowHomePath":"/account-b"}},
+            "foreign":{"driver":"codex","config":{"homePath":"/other/home"}},
+            "claude-a":{"driver":"claudeAgent","config":{"homePath":"/claude/home"}},
+            "claude-b":{"driver":"claudeAgent","environment":[{"name":"CLAUDE_CONFIG_DIR","value":"/claude/./home"}]},
+            "literal":{"driver":"claudeAgent","environment":[{"name":"CLAUDE_CONFIG_DIR","value":"~/literal"}]},
+            "expanded":{"driver":"claudeAgent","config":{"homePath":"~/literal"}},
+            "unsupported-a":{"driver":"cursor"},"unsupported-b":{"driver":"cursor"}
+        }}).to_string()).unwrap();
+        assert_eq!(
+            identity(&s, "first").unwrap(),
+            identity(&s, "second").unwrap()
+        );
+        assert_ne!(
+            identity(&s, "first").unwrap(),
+            identity(&s, "foreign").unwrap()
+        );
+        assert_eq!(
+            identity(&s, "claude-a").unwrap(),
+            identity(&s, "claude-b").unwrap()
+        );
+        assert_ne!(
+            identity(&s, "literal").unwrap(),
+            identity(&s, "expanded").unwrap()
+        );
+        assert_ne!(
+            identity(&s, "unsupported-a").unwrap(),
+            identity(&s, "unsupported-b").unwrap()
+        );
+        assert_ne!(
+            identity(&s, "missing").unwrap(),
+            identity(&s, "claudeAgent").unwrap()
+        );
+        drop(s);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}
