@@ -1,9 +1,9 @@
 {
-  "checkedAt": "2026-11-04T06:36:03.963722+00:00",
+  "checkedAt": "2026-11-04T07:01:51.196306+00:00",
   "reference": "322f6544dfad0a3c8a0c8cbecf2c7f7874b14268",
   "tag": "v0.1.7-nightly.20261104.4151",
   "url": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.7-nightly.20261104.4151",
-  "scope": "Project mutations/clone, worktree readers and caller handoff, durable deletion and workspace transitions; full protocol goal remains active.",
+  "scope": "Project mutations/clone, worktree readers and caller handoff, durable deletion/workspace transitions, same-run native restart; full protocol goal remains active.",
   "implemented": [
     "t3_project_create/update/delete/clone with environment authority",
     "Transaction-time project admission before receipt replay, atomic workspace uniqueness and nonempty-delete checks",
@@ -14,10 +14,11 @@
     "Native credential revocation, cached Claude disposal and per-thread Codex unsubscribe across retired pools, retries and late bindings",
     "Restart/legacy tombstone recovery, terminal history, preview, schedule and attachment-sidecar cleanup with shared-file retention",
     "Ordinary thread.metadata.update expected-path/branch/empty comparisons, durable workspace detach barrier and native conversation/queue resumption; shared Codex credential retained",
-    "t3_worktree_handoff: managed Git creation and base fetch/metadata, serialized authority/expected-path binding, atomic continuation and effective setup terminal with partial-failure results"
+    "t3_worktree_handoff: managed Git creation and base fetch/metadata, serialized authority/expected-path binding, atomic continuation and effective setup terminal with partial-failure results",
+    "Same-instance Codex restart_active and MCP restart: same run/next attempt, graceful native interrupt/drain, receipt-atomic recovery, attempt ownership fencing and real installed Codex continuation proof"
   ],
   "pending": [
-    "Thread launch/restart/transfer and deferred caller settlement",
+    "Thread launch/transfer, cross-instance active handoff, cross-thread restart-continuation following and deferred caller settlement",
     "Other-host repository lookup adapters and complete project enrichment",
     "Remaining task/attachment/PR/device/preview/HTML/scheduler toolkits and subagent-specific scopes",
     "OAuth/DPoP/SSE/linked environments/hosted links, ACP/OpenCode, forceStopThread, execution-history importer",

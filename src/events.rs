@@ -42,6 +42,7 @@ pub fn initialize(db: &Connection) -> Result<()> {
     repair_boolean_settled_override(db)?;
     initialize_run_internal(db)?;
     crate::deletion::initialize(db)?;
+    crate::run_restart::initialize(db)?;
     crate::workspace_transition::initialize(db)?;
     crate::threadq::initialize(db)
 }
@@ -732,7 +733,7 @@ pub(crate) fn dispatch_scoped(
         }
         "message.dispatch" => {
             let mut resolved = c.clone();
-            resolved["dispatchMode"] = delivery_mode(s, &tx, &t, c)?;
+            resolved["dispatchMode"] = delivery_mode(s, &tx, &t, c, authority.is_some())?;
             if authority.is_some()
                 && c["deliveryIntent"] == "steer"
                 && resolved["dispatchMode"]["type"] != "steer_active"
@@ -744,6 +745,39 @@ pub(crate) fn dispatch_scoped(
                 .to_string());
             }
             let c = &resolved;
+            if c["dispatchMode"]["type"] == "restart_active" {
+                let rid = c["dispatchMode"]["targetRunId"]
+                    .as_str()
+                    .ok_or("targetRunId required")?;
+                let sender = s
+                    .active
+                    .lock()
+                    .unwrap()
+                    .get(rid)
+                    .cloned()
+                    .ok_or("Provider control unavailable for restart")?;
+                let permit = sender
+                    .try_reserve_owned()
+                    .map_err(|_| "Provider control busy")?;
+                let run = crate::run_restart::stage(&tx, c, &mut t, &at, authority.is_some())?;
+                let seq = sequence(&tx)?;
+                let result = json!({"sequence":seq});
+                tx.execute(
+                    "INSERT INTO receipts VALUES(?,?)",
+                    params![cid, result.to_string()],
+                )
+                .map_err(|e| e.to_string())?;
+                let result = if authority.is_some() {
+                    crate::mcp_access::sent_reply(&tx, c, &run, "restarted")?
+                } else {
+                    result
+                };
+                tx.commit().map_err(|e| e.to_string())?;
+                drop(db);
+                permit.send(crate::provider::ProviderControl::Interrupt);
+                s.notify();
+                return Ok(result);
+            }
             if let Some(selection) = c.get("modelSelection") {
                 change_selection(&tx, &mut t, c, selection)?;
             }
@@ -1345,7 +1379,7 @@ pub(crate) fn message_item(db: &Connection, tid: &str, m: &Value) -> Result<Valu
 }
 
 // Resolve the modern composer intent against live server state, not a client's snapshot.
-fn delivery_mode(s: &State, db: &Connection, t: &Value, c: &Value) -> Result<Value> {
+fn delivery_mode(s: &State, db: &Connection, t: &Value, c: &Value, mcp: bool) -> Result<Value> {
     let Some(intent) = c.get("deliveryIntent") else {
         return Ok(c["dispatchMode"].clone());
     };
@@ -1359,6 +1393,18 @@ fn delivery_mode(s: &State, db: &Connection, t: &Value, c: &Value) -> Result<Val
         } else {
             Err("workspace provider detach is pending".into())
         };
+    }
+    if mcp && intent == "restart" {
+        let running:Option<String>=db.query_row("SELECT r.id FROM records r WHERE r.kind='runs' AND r.thread_id=?1 AND json_extract(r.body,'$.status')='running' AND EXISTS(SELECT 1 FROM records p WHERE p.kind='providerTurns' AND p.thread_id=r.thread_id AND json_extract(p.body,'$.runAttemptId')=json_extract(r.body,'$.activeAttemptId') AND json_extract(p.body,'$.status')='running') ORDER BY r.rowid DESC LIMIT 1",[tid],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
+        return running
+            .map(|rid| json!({"type":"restart_active","targetRunId":rid}))
+            .ok_or_else(|| {
+                crate::mcp_tools::failure(
+                    "invalid_request",
+                    "The thread has no running provider turn that can be restarted.",
+                )
+                .to_string()
+            });
     }
     let mut active: Option<String> = db.query_row(
         "SELECT body FROM records WHERE kind='runs' AND thread_id=? AND json_extract(body,'$.status') IN ('preparing','starting','running','waiting') ORDER BY rowid DESC LIMIT 1",
@@ -1374,11 +1420,18 @@ fn delivery_mode(s: &State, db: &Connection, t: &Value, c: &Value) -> Result<Val
         });
     }
     let Some(active) = active else {
+        if mcp && intent == "restart" {
+            return Err(crate::mcp_tools::failure(
+                "invalid_request",
+                "The thread has no running turn that can be restarted.",
+            )
+            .to_string());
+        }
         return Ok(json!({"type":"start_immediately"}));
     };
     let run: Value = serde_json::from_str(&active).map_err(|e| e.to_string())?;
     if intent == "restart" {
-        return Err("restart delivery is not implemented".into());
+        return Ok(json!({"type":"restart_active","targetRunId":run["id"]}));
     }
     let rid = run["id"].as_str().ok_or("run id missing")?;
     let original =

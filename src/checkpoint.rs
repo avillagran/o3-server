@@ -101,6 +101,19 @@ fn sync_tree(path: &Path) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 pub fn capture(s: &State, tid: &str, rid: &str, cwd: &Path, baseline: bool) -> Result<(), String> {
+    capture_attempt(s, tid, rid, cwd, baseline, None)
+}
+pub(crate) fn capture_attempt(
+    s: &State,
+    tid: &str,
+    rid: &str,
+    cwd: &Path,
+    baseline: bool,
+    attempt: Option<&str>,
+) -> Result<(), String> {
+    if !crate::run_restart::matches(&s.db.lock().unwrap(), rid, attempt) {
+        return Ok(());
+    }
     let identity = workspace_identity(cwd)?;
     let index = s
         .dir
@@ -115,11 +128,19 @@ pub fn capture(s: &State, tid: &str, rid: &str, cwd: &Path, baseline: bool) -> R
         let tx = db.transaction().map_err(|e| e.to_string())?;
         let t = get(&tx, "thread", tid)?;
         let mut run = get(&tx, "runs", rid)?;
-        let scope = format!("scope-{tid}");
-        let id = if baseline {
-            format!("{rid}-baseline")
+        if !crate::run_restart::matches(&tx, rid, attempt) {
+            return Ok(());
+        }
+        let root = run["rootNodeId"].as_str().unwrap_or(rid);
+        let scope = if root == rid {
+            format!("scope-{tid}")
         } else {
-            format!("{rid}-checkpoint")
+            format!("scope-{tid}-{root}")
+        };
+        let id = if baseline {
+            format!("{root}-baseline")
+        } else {
+            format!("{root}-checkpoint")
         };
         let reference = format!("refs/o3/checkpoints/{}", crate::store::random_id()?);
         git(cwd, &index, &["update-ref", &reference, &commit])?;

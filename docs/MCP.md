@@ -145,8 +145,9 @@ zero remains invalid. Configure without modelSelection reads the current configu
 
 - t3_thread_send: send plain text with auto, queue or steer delivery. Auto uses the
   existing capability-aware steering/queue behavior; explicit steer refuses a thread
-  with no steerable live turn instead of silently queuing. Restart delivery remains
-  unimplemented and returns an explicit invalid_request failure.
+  with no steerable live turn instead of silently queuing. Restart requires a running
+  native turn and interrupt/restart capability; it replaces the active attempt within
+  the same run. Codex supports it; Claude does not advertise this capability.
 - t3_thread_interrupt: interrupt a named or active run, report already-terminal state
   or no_active_run. This does not hold or cancel queued messages, as in upstream's
   interrupt operation; queue cancellation is separate.
@@ -154,7 +155,8 @@ zero remains invalid. Configure without modelSelection reads the current configu
   unfinished work. Omitted runId pins the latest run at call time; idle returns
   immediately. Default wait is ten minutes, capped at one hour. It awaits notifications
   outside blocking workers and rechecks credential liveness at least once per second.
-  Restart-continuation following remains pending with restart support.
+  Same-run restart keeps this wait attached to the replacement attempt. Cross-thread
+  restart-continuation following remains pending.
 - t3_thread_organize: pin, unpin, snooze, unsnooze, settle, unsettle, archive, unarchive,
   or mark unread through the normal lifecycle. Caller-thread deferred settlement
   remains unimplemented.
@@ -186,7 +188,8 @@ rejection. These are deterministic protocol tests, not a live nightly differenti
 acceptance of the existing ChatGPT/OmaBridge integration.
 
 Pending: OAuth/DPoP, full SSE semantics,
-thread launch/restart/transfer, deferred caller settlement, task delegation,
+thread launch/transfer, cross-instance active handoff, cross-thread restart-continuation
+following, deferred caller settlement, task delegation,
 remaining worktree/attachment/PR/device/preview/HTML/scheduler toolkits and linked environments.
 Inherited-task acknowledgement and exact activity-text rendering also need upstream
 parity. No daily profile, external MCP integration or running service was changed.
@@ -415,3 +418,41 @@ Codex gpt-6.1-sol: each called the actual MCP handoff, ran setup and wrote a cod
 from before the move in its queued continuation. Event history contains one distinct
 native conversation ID per proof; both have interrupted then completed runs. This is
 an isolated server/native-CLI acceptance proof, not full compatible-desktop acceptance.
+
+
+## Same-run native restart (2026-11-04)
+
+Reference: nightly4151 (`322f6544dfad0a3c8a0c8cbecf2c7f7874b14268`),
+Orchestrator.dispatchSteerIntoRun, ThreadManagementService.latestSteerableRun,
+CodexAdapterV2 and ClaudeAdapterV2. Both ordinary restart_active and MCP
+`t3_thread_send(mode="restart")` use a receipt-atomic restart journal. They retain the
+run ID, mark the old attempt superseded, interrupt its root and add the next attempt
+with reason steering_restart and a new root. Same-instance model changes apply to the
+replacement. Cross-instance active selection handoff remains explicitly unsupported.
+
+Native interruption and owned-item drainage finish before replacement submission.
+A missing acknowledgement, failed interrupt or timeout fails explicitly without sending
+the replacement. Old executor events, command output, approval callbacks and checkpoint
+writes cannot mutate the new attempt. Native item IDs and checkpoint scopes are separated
+by attempt; the native conversation ID and MCP credential remain unchanged. App-owned
+background delegations remain independent. Stop, deletion or archive during the wait
+prevent replacement submission, and receipt replay does not repeat it.
+
+Startup recovers the durable replacement only before native submission. A crash after
+possible submission but before its durable native acknowledgement produces an explicit
+unknown-admission error, preserving the message for inspection rather than replaying it.
+This is not exactly-once native execution. Idle explicit MCP restart returns invalid_request;
+ordinary composer restart with no active run retains its start-immediately fallback.
+Maintenance and goal commands require separate turns; stopping turns cannot restart.
+
+Evidence: tests/run_restart.rs uses actual HTTP MCP and subprocess Codex/Claude peers
+for capability rejection, active ownership with queued work, stale frames/output/requests,
+receipt rollback/replay, model changes, native identity and cancellation. Module tests
+cover interruption timeout and both recovery boundaries. The opt-in
+`cargo run --locked --example live_run_restart` passed against installed Codex
+gpt-6.1-sol: one run, two attempts (superseded/completed), one native conversation ID,
+and the replacement wrote a code remembered from before interruption. No service was deployed.
+
+Validation for this restart block: full suites pass with 346 default / 343 no-default
+tests, 21 opt-ins ignored in each configuration. Strict Clippy passes in both modes;
+fmt, generated compatibility and all nine nightly-monitor tests pass.

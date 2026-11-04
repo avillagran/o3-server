@@ -404,6 +404,27 @@ pub fn open_stream(s: &State, p: &Value) -> Result<Cursor, Value> {
 
 /// Applies a provider's command event; called by the run supervisor for each one.
 pub fn persist(s: &State, tid: &str, rid: &str, event: CommandEvent) -> Result<(), String> {
+    persist_attempt(s, tid, rid, None, event)
+}
+pub(crate) fn persist_attempt(
+    s: &State,
+    tid: &str,
+    rid: &str,
+    attempt: Option<&str>,
+    event: CommandEvent,
+) -> Result<(), String> {
+    let db = s.db.lock().unwrap();
+    if !crate::run_restart::matches(&db, rid, attempt) {
+        return Ok(());
+    }
+    if get(&db, "thread", tid).is_ok_and(|t| !t["deletedAt"].is_null()) {
+        return Ok(());
+    }
+    if let CommandEvent::Output { item_id, chunk } = event {
+        s.streams.commands.append(tid, &item_id, &chunk);
+        return Ok(());
+    }
+    drop(db);
     if get(&s.db.lock().unwrap(), "thread", tid).is_ok_and(|t| !t["deletedAt"].is_null()) {
         return Ok(());
     }
@@ -415,6 +436,9 @@ pub fn persist(s: &State, tid: &str, rid: &str, event: CommandEvent) -> Result<(
         CommandEvent::Started { item_id, input } => {
             let mut db = s.db.lock().unwrap();
             let tx = db.transaction().map_err(|e| e.to_string())?;
+            if !crate::run_restart::matches(&tx, rid, attempt) {
+                return Ok(());
+            }
             let thread = get(&tx, "thread", tid)?;
             if !thread["deletedAt"].is_null() {
                 return Ok(());
@@ -449,6 +473,9 @@ pub fn persist(s: &State, tid: &str, rid: &str, event: CommandEvent) -> Result<(
             {
                 let mut db = s.db.lock().unwrap();
                 let tx = db.transaction().map_err(|e| e.to_string())?;
+                if !crate::run_restart::matches(&tx, rid, attempt) {
+                    return Ok(());
+                }
                 let thread = get(&tx, "thread", tid)?;
                 if !thread["deletedAt"].is_null() {
                     return Ok(());
