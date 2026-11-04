@@ -29,6 +29,7 @@ pub(crate) fn pending(db: &Connection, rid: &str) -> Result<bool> {
     .map_err(|e| e.to_string())
 }
 pub(crate) fn stage(
+    state: &State,
     db: &Connection,
     c: &Value,
     t: &mut Value,
@@ -40,7 +41,10 @@ pub(crate) fn stage(
         .as_str()
         .ok_or("targetRunId required")?;
     let mut run = get(db, "runs", rid)?;
-    if run["threadId"] != tid || run["status"] != "running" || pending(db, rid)? {
+    if run["threadId"] != tid
+        || !matches!(run["status"].as_str(), Some("running" | "waiting"))
+        || pending(db, rid)?
+    {
         return Err("Target run has no running turn that can be restarted.".into());
     }
     if crate::workspace_transition::pending(db, tid)? || !t["archivedAt"].is_null() {
@@ -100,9 +104,9 @@ pub(crate) fn stage(
                 .unwrap_or(&run["modelSelection"])
         })
         .clone();
-    if selection["instanceId"] != run["providerInstanceId"] {
-        return Err("Active cross-instance selection handoff is not implemented yet.".into());
-    }
+    let source = run.clone();
+    let transition =
+        crate::provider_switch::active_plan(state, db, t, &source, &selection)?.transition;
     if !selection["model"].as_str().is_some_and(|s| !s.is_empty()) {
         return Err("Invalid model selection".into());
     }
@@ -173,6 +177,30 @@ pub(crate) fn stage(
         }
         Ok(())
     })?;
+    let changed_selection =
+        !crate::selection_transition::model_selections_equal(&t["modelSelection"], &selection);
+    let instance_changed = t["providerInstanceId"] != selection["instanceId"];
+    run["providerInstanceId"] = selection["instanceId"].clone();
+    run["modelSelection"] = selection.clone();
+    run["contextHandoffId"] = Value::Null;
+    db.execute(
+        "DELETE FROM provider_selection_plans WHERE thread_id=?",
+        [tid],
+    )
+    .map_err(|e| e.to_string())?;
+    crate::provider_switch::restart_binding(
+        state,
+        db,
+        t,
+        &mut run,
+        crate::provider_switch::RestartBinding {
+            source: &source,
+            transition,
+            generation: &next,
+            actor: if mcp { "agent" } else { "user" },
+            at,
+        },
+    )?;
     run["activeAttemptId"] = json!(next);
     run["rootNodeId"] = json!(root);
     run["userMessageId"] = c["messageId"].clone();
@@ -184,13 +212,22 @@ pub(crate) fn stage(
     crate::selection_transition::freeze_policy(t, &mut run);
     run["executionRequested"] = json!(true);
     run["recoveryPending"] = json!(false);
-    let changed_selection =
-        !crate::selection_transition::model_selections_equal(&t["modelSelection"], &selection);
+    t["providerInstanceId"] = selection["instanceId"].clone();
     t["modelSelection"] = selection;
     t["updatedAt"] = json!(at);
     put(db, "thread", tid, tid, t)?;
     if changed_selection {
-        append(db, tid, "thread.model-selection-updated", t.clone(), t)?;
+        append(
+            db,
+            tid,
+            if instance_changed {
+                "thread.provider-switched"
+            } else {
+                "thread.model-selection-updated"
+            },
+            t.clone(),
+            t,
+        )?;
     }
     put(db, "runs", rid, tid, &run)?;
     append(db, tid, "run.updated", run.clone(), t)?;
@@ -421,6 +458,15 @@ async fn drive(s: &Arc<State>, id: &str, timeout: Duration) -> Result<()> {
     if s.active.lock().unwrap().contains_key(&rid) {
         return Ok(());
     }
+    let provider = s
+        .provider
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or("No provider adapter available for replacement turn.")?;
+    // The release journal waits by run ID. Drain it before registering the new
+    // attempt under that same ID, or it would wait for its own replacement.
+    crate::provider_switch::release_pending(s, provider.as_ref(), &tid).await?;
     let text = {
         let mut db = s.db.lock().unwrap();
         let tx = db.transaction().map_err(|e| e.to_string())?;

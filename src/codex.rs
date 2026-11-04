@@ -542,13 +542,23 @@ impl CodexProvider {
             let mut pending=HashMap::<String,(Value,String)>::new();
             let mut owned=std::collections::HashSet::<String>::new();
             let mut terminal=None;
+            let mut interrupting=false;
+            let mut owned_commands=HashMap::<String,Option<String>>::new();
             loop {
                 if *cancel.borrow() { let _=c.call("turn/interrupt",json!({"threadId":tid,"turnId":turn})).await; return Ok(()); }
                 tokio::select! {
                     _=output.closed()=> { let _=c.call("turn/interrupt",json!({"threadId":tid,"turnId":turn})).await; return Ok(()); },
                     _=cancel.changed()=>continue,
                     action=control.recv()=>match action {
-                        Some(ProviderControl::Interrupt)=>{ if terminal.is_some() { terminal=Some(ProviderEvent::Interrupted); } c.call("turn/interrupt",json!({"threadId":tid,"turnId":turn})).await?; },
+                        Some(ProviderControl::Interrupt)=>{
+                            c.call("turn/interrupt",json!({"threadId":tid,"turnId":turn})).await?;
+                            interrupting=true;
+                            if terminal.is_some() {
+                                terminal=Some(ProviderEvent::Interrupted);
+                                contain_commands(&c,&tid,&mut owned,&mut owned_commands).await?;
+                                if owned.is_empty() { terminal_received=true; output.send(terminal.take().unwrap()).await.map_err(|_|"receiver closed")?; return Ok(()); }
+                            }
+                        },
                         None=>return Err("provider control channel closed".into()),
                         Some(ProviderControl::SteerContent(content))=>{ c.call("turn/steer",json!({"threadId":tid,"expectedTurnId":turn,"input":content})).await?; },
                         Some(ProviderControl::Steer(text))=>{ c.call("turn/steer",json!({"threadId":tid,"expectedTurnId":turn,"input":[{"type":"text","text":text,"text_elements":[]}]})).await?; },
@@ -580,8 +590,11 @@ impl CodexProvider {
                             if frame["method"]=="item/started" && matches!(frame["params"]["item"]["type"].as_str(),Some("commandExecution"|"collabAgentToolCall")) {
                                 if owned.len()>=64 {return Err("Codex owned item limit".into());}
                                 owned.insert(id.to_owned());
+                                if frame["params"]["item"]["type"] == "commandExecution" {
+                                    owned_commands.insert(id.to_owned(),frame["params"]["item"]["processId"].as_str().map(str::to_owned));
+                                }
                             }
-                            if frame["method"]=="item/completed" {owned.remove(id);}
+                            if frame["method"]=="item/completed" {owned.remove(id);owned_commands.remove(id);}
                         }
                         let failed=frame["params"]["turn"]["status"]=="failed";
                         let interrupted=frame["params"]["turn"]["status"]=="interrupted";
@@ -590,7 +603,9 @@ impl CodexProvider {
                         let event=if frame["method"]=="item/agentMessage/delta" {ProviderEvent::TextDelta(text)}else{ProviderEvent::Codex(frame)};
                         tokio::select! { r=output.send(event)=>r.map_err(|_|"receiver closed")?, _=cancel.changed()=>continue, _=output.closed()=>return Ok(()) }
                         for command in commands {output.send(ProviderEvent::Command(command)).await.map_err(|_|"receiver closed")?;}
+                        if interrupted {interrupting=true;}
                         if done {terminal=Some(if failed {ProviderEvent::Failed(failure_message)}else if interrupted{ProviderEvent::Interrupted}else{ProviderEvent::Completed});}
+                        if terminal.is_some() && interrupting {contain_commands(&c,&tid,&mut owned,&mut owned_commands).await?;}
                         if terminal.is_some() && owned.is_empty() { terminal_received=true; output.send(terminal.take().unwrap()).await.map_err(|_|"receiver closed")?; return Ok(()); }
                     }
                 }
@@ -606,6 +621,64 @@ impl CodexProvider {
         let _ = c.0.send(Op::Unsubscribe(tid)).await;
         result
     }
+}
+// nightly4179 explicitly contains tracked terminals before retiring interrupted command items.
+// A terminal native turn does not guarantee that every command emits item/completed.
+async fn contain_commands(
+    client: &Client,
+    native: &str,
+    owned: &mut std::collections::HashSet<String>,
+    commands: &mut HashMap<String, Option<String>>,
+) -> Result<(), String> {
+    for (item, process) in commands.iter() {
+        if let Some(process) = process {
+            tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                let result = client
+                    .call(
+                        "thread/backgroundTerminals/terminate",
+                        json!({"threadId":native,"processId":process}),
+                    )
+                    .await?;
+                match result["terminated"].as_bool() {
+                    Some(true) => return Ok::<(), String>(()),
+                    Some(false) => {}
+                    None => return Err("Invalid Codex terminal termination response".into()),
+                }
+                let mut cursor = None;
+                for _ in 0..256 {
+                    let mut params = json!({"threadId":native});
+                    if let Some(cursor) = cursor {
+                        params["cursor"] = cursor;
+                    }
+                    let page = client
+                        .call("thread/backgroundTerminals/list", params)
+                        .await?;
+                    let data = page["data"]
+                        .as_array()
+                        .ok_or("Invalid Codex terminal list response")?;
+                    if data
+                        .iter()
+                        .any(|terminal| terminal["processId"] == process.as_str())
+                    {
+                        return Err(
+                            "Codex background terminal remained active after termination".into(),
+                        );
+                    }
+                    match page.get("nextCursor") {
+                        Some(Value::Null) => return Ok(()),
+                        Some(Value::String(next)) => cursor = Some(json!(next)),
+                        _ => return Err("Invalid Codex terminal list cursor".into()),
+                    }
+                }
+                Err("Codex terminal list pagination exceeded limit".into())
+            })
+            .await
+            .map_err(|_| "Codex terminal termination timed out")??;
+        }
+        owned.remove(item);
+    }
+    commands.clear();
+    Ok(())
 }
 async fn unload(
     client: &Client,

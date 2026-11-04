@@ -3280,3 +3280,42 @@ thread preferences; final restart/selection/compatible-client suites 28 per mode
 (1 opt-in ignored), strict all-target Clippy both modes, fmt, generated compatibility,
 9 monitor tests, 96-case fixture reproduction and diff checks pass. Four installed app
 turns plus steering pass explicitly.
+
+## Active provider transition checkpoint (2026-11-04)
+
+PR33 passed both checks on 3d87dfc5eb424e6fd6af67b94efc11230c122ba9 and merged
+into dev3aaaef3b9f2a48a693cf89f84e5d3cea734568a0. Its staged checkout cancellation
+fixture now waits for durable cleanup acknowledgement as well as path removal.
+
+The next adaptation follows nightly4179 active steering/restart policy. It compares
+the incoming selection with the admitted run, preserves next-turn native steering,
+and promotes an immediate provider/session change to interrupt-and-restart. The
+run keeps its identity; the new attempt/root receives the incoming provider and
+model. Compatible profiles resume their native history. Portable handoffs include
+the current active ordinal and snapshot history before the replacement message.
+Claude session binding preserves the staged attempt/root identity.
+
+The restart journal waits for old native acknowledgement and execution release,
+then detaches the exact outgoing native binding before registering the replacement
+under the same run ID. Native release failures prevent delivery. Codex interrupted
+command items can lack item/completed: tracked terminal IDs must pass explicit
+termination/list confirmation before the adapter retires those command items.
+Ordinary completed turns retain the existing owned-item drain.
+
+Compatible-client regressions cover explicit restart, steer and auto, preference
+changes, receipt rollback, delayed acknowledgement, stale old output, release
+failure, physical terminal containment refusal and stop/delete/archive while
+waiting. The installed-provider proof and final validation inventory are recorded
+in [active-provider-handoff-intake.json](nightly/active-provider-handoff-intake.json).
+
+Recursive native descendant containment, complete pooled/retired-session cleanup,
+SDK options, source guards and exact event/modelSwitch/checkpoint-scope fidelity
+remain open, alongside the broader MCP/auth/environment/drivers, differential,
+desktop/Android and resource backlog. This is a partial protocol checkpoint.
+
+Validation: final full suites447 default /444 without default features,27 opt-ins
+ignored each; strict all-target Clippy both modes, fmt, generated compatibility,
+9 monitor tests,96 pinned selection fixture reproduction and diff checks pass.
+Four installed app turns prove both active replacement paths and private-history
+recall. Native first-use shared-home SQLite initialization is serialized in that
+proof; concurrent first-use initialization remains unverified.

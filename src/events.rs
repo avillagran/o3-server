@@ -795,9 +795,13 @@ pub(crate) fn dispatch_prepared(
         "message.dispatch" => {
             let mut resolved = c.clone();
             resolved["dispatchMode"] = delivery_mode(s, &tx, &t, c, authority.is_some())?;
+            resolve_steering_restart(s, &tx, &t, &mut resolved)?;
             if authority.is_some()
                 && c["deliveryIntent"] == "steer"
-                && resolved["dispatchMode"]["type"] != "steer_active"
+                && !matches!(
+                    resolved["dispatchMode"]["type"].as_str(),
+                    Some("steer_active" | "restart_active")
+                )
             {
                 return Err(crate::mcp_tools::failure(
                     "invalid_request",
@@ -820,7 +824,7 @@ pub(crate) fn dispatch_prepared(
                 let permit = sender
                     .try_reserve_owned()
                     .map_err(|_| "Provider control busy")?;
-                let run = crate::run_restart::stage(&tx, c, &mut t, &at, authority.is_some())?;
+                let run = crate::run_restart::stage(s, &tx, c, &mut t, &at, authority.is_some())?;
                 let seq = sequence(&tx)?;
                 let result = json!({"sequence":seq});
                 tx.execute(
@@ -1466,6 +1470,45 @@ pub(crate) fn message_item(db: &Connection, tid: &str, m: &Value) -> Result<Valu
 }
 
 // Resolve the modern composer intent against live server state, not a client's snapshot.
+fn resolve_steering_restart(s: &State, db: &Connection, t: &Value, c: &mut Value) -> Result<()> {
+    if c["dispatchMode"]["type"] != "steer_active" {
+        return Ok(());
+    }
+    let rid = c["dispatchMode"]["targetRunId"]
+        .as_str()
+        .ok_or("targetRunId required")?;
+    let run = get(db, "runs", rid)?;
+    let target = c.get("modelSelection").unwrap_or(&t["modelSelection"]);
+    let changed =
+        !crate::selection_transition::model_selections_equal(&run["modelSelection"], target);
+    let restart_selection = if changed {
+        !matches!(
+            crate::provider_switch::active_plan(s, db, t, &run, target)?.transition,
+            crate::selection_transition::Transition::Reuse
+                | crate::selection_transition::Transition::SwitchModelInSession
+        )
+    } else {
+        false
+    };
+    let pt = get(
+        db,
+        "providerThreads",
+        run["providerThreadId"].as_str().unwrap_or(""),
+    )
+    .unwrap_or(Value::Null);
+    let session = get(
+        db,
+        "providerSessions",
+        pt["providerSessionId"].as_str().unwrap_or(""),
+    )
+    .unwrap_or(Value::Null);
+    let restart_attachments = c["attachments"].as_array().is_some_and(|a| !a.is_empty())
+        && session["capabilities"]["turns"]["activeSteeringAcceptsAttachments"] == false;
+    if restart_selection || restart_attachments {
+        c["dispatchMode"]["type"] = json!("restart_active");
+    }
+    Ok(())
+}
 fn delivery_mode(s: &State, db: &Connection, t: &Value, c: &Value, mcp: bool) -> Result<Value> {
     let Some(intent) = c.get("deliveryIntent") else {
         return Ok(c["dispatchMode"].clone());
