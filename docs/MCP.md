@@ -173,3 +173,9 @@ read-limit clamping and explicit foreign-environment refusal above. See
 release references and remaining changes; this does not update the validated 3726
 RPC baseline or certify complete 4151 equivalence. Hosted links, linked routing and provider-native caller policy remain pending with
 their enabling features. The per-request T3-Mode-Limit narrowing itself is implemented.
+
+Final validation after the 4151 alignment: 316 default / 313 no-default tests pass,
+with 21 opt-ins ignored each; 16 HTTP MCP cases and the transaction-authority unit
+regression are included. Strict Clippy passes in both modes; fmt, generated
+compatibility and all nine nightly-monitor tests pass. No live deployment, provider
+inference or complete-nightly conformance is asserted.
