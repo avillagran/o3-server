@@ -29,7 +29,11 @@ upstream MCP scope sets and the runtime ceiling. Read-only credentials cannot mu
 Thread mutations require orchestration:operate and a target whose current runtime
 mode is no broader than the credential's persisted ceiling. Mode order is
 approval-required < auto-accept-edits < auto < full-access; execution support remains
-provider-specific. External clients have the default interaction-mode ceiling.
+provider-specific. External clients normally have the default interaction-mode ceiling. A per-request
+T3-Mode-Limit header (`<runtimeMode>/<interactionMode>`) can only narrow it: the runtime
+ceiling is the minimum of the grant and request, and plan cannot write a default-mode
+target. Asking for a broader header never raises the persisted grant. Malformed headers
+are rejected with invalid_mode_limit/400, even before initialization.
 
 Both command dispatchers check current credential expiry, revocation, scopes and the
 target's modes under the same SQLite write transaction as the mutation, before
@@ -92,8 +96,17 @@ MIT notice is retained in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ## Thread control
 
-The catalog now includes 21 tools: the seven initial readers, nine thread mutation
-tools and five further readers. External clients pass threadId explicitly.
+The catalog includes 23 tools, retaining the earlier granular queue/question names
+alongside nightly 4151's grouped t3_queue and t3_pending_request. Their action selects
+the same read or write path: read-only credentials can list/read, and cannot edit,
+cancel, promote or respond. External clients pass threadId explicitly.
+
+All tools accept environmentId. The current environment is allowed; a foreign target
+returns a capability failure before local execution, until linked routing is ported.
+Thread list supports allProjects=true (projectId=null in the result), includes projectId
+on each item and treats statuses=[] as no filter. Thread read clamps positive limit,
+runLimit and maxCharsPerItem above their documented maxima, matching the current schema;
+zero remains invalid. Configure without modelSelection reads the current configuration.
 
 - t3_thread_send: send plain text with auto, queue or steer delivery. Auto uses the
   existing capability-aware steering/queue behavior; explicit steer refuses a thread
@@ -110,7 +123,7 @@ tools and five further readers. External clients pass threadId explicitly.
 - t3_thread_organize: pin, unpin, snooze, unsnooze, settle, unsettle, archive, unarchive,
   or mark unread through the normal lifecycle. Caller-thread deferred settlement
   requires the still-pending provider registry/native injection.
-- t3_thread_configure: change provider/model selection without changing permission modes.
+- t3_thread_configure: read configuration, or change provider/model selection without changing permission modes.
 - t3_queue_list / t3_queue_read / t3_queue_edit / t3_queue_cancel / t3_queue_reorder /
   t3_queue_promote_to_steer: operate on the real queue using its existing ordering,
   text limits, attachment preservation, status validation and native control path.
@@ -151,3 +164,12 @@ trip through native projection. A stale-authority unit regression covers both wr
 transactions and confirms denial before receipt replay. The public mutation regression
 fails against the previous reader-only commit. Native providers here are deterministic
 fixtures; no real model inference or live nightly differential is claimed.
+
+Nightly intake was refreshed on 2026-11-04 to 4151,
+`322f6544dfad0a3c8a0c8cbecf2c7f7874b14268`. Contract/source comparison added the
+grouped tools, configure read overload, list item projectId/allProjects, empty statuses,
+read-limit clamping and explicit foreign-environment refusal above. See
+[nightly/mcp-thread-control-intake.json](nightly/mcp-thread-control-intake.json) for the
+release references and remaining changes; this does not update the validated 3726
+RPC baseline or certify complete 4151 equivalence. Hosted links, linked routing and provider-native caller policy remain pending with
+their enabling features. The per-request T3-Mode-Limit narrowing itself is implemented.

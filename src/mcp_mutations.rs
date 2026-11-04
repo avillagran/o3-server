@@ -27,11 +27,13 @@ pub(crate) fn catalog() -> Vec<Value> {
     let mut promote = queue.clone();
     promote["targetRunId"] = string();
     let mut tools=vec![
+        definition_write("t3_queue","Manage queued messages with action list, read, edit, cancel, reorder, or promote_to_steer. Read actions remain available to read-only clients.",json!({"action":{"type":"string","enum":["list","read","edit","cancel","reorder","promote_to_steer"]},"threadId":string(),"queuedRunId":string(),"text":{"type":"string","maxLength":100000},"beforeRunId":{"anyOf":[string(),{"type":"null"}]},"targetRunId":string(),"cursor":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":100}}),&["action"]),
+        definition_write("t3_pending_request","List, read or respond to pending user questions. This cannot approve a permission request. Read actions remain available to read-only clients.",json!({"action":{"type":"string","enum":["list","read","respond"]},"threadId":string(),"requestId":string(),"answers":{"type":"object"}}),&["action"]),
         definition_write("t3_thread_send","Send a message through the existing dispatch lifecycle. auto steers a capable active turn, otherwise queues; queue waits behind an active turn. Reuse clientRequestId for retries. Restart delivery is not available yet.",json!({"threadId":string(),"message":{"type":"string","minLength":1,"maxLength":120000},"mode":{"type":"string","enum":["auto","queue","steer","restart"]},"clientRequestId":{"type":"string","minLength":1,"maxLength":256}}),&["threadId","message"]),
         definition_write("t3_thread_interrupt","Interrupt the active or named run using the existing interrupt lifecycle. Reuse clientRequestId for retries.",json!({"threadId":string(),"runId":string(),"reason":{"type":"string","maxLength":2000},"clientRequestId":{"type":"string","minLength":1,"maxLength":256}}),&["threadId"]),
         definition("t3_thread_wait","Wait for the selected durable run. Timeout does not interrupt work; omit runId to select the latest run at call time.",json!({"threadId":string(),"runId":string(),"timeoutMs":{"type":"number"}}),&["threadId"]),
         definition_write("t3_thread_organize","Pin, snooze, settle, archive or mark a thread unread using existing lifecycle commands. External clients pass threadId.",json!({"threadId":string(),"action":{"type":"string","enum":["pin","unpin","snooze","unsnooze","settle","unsettle","archive","unarchive","mark_unread"]},"snoozedUntil":string()}),&["action"]),
-        definition_write("t3_thread_configure","Change a thread's provider/model selection with the existing selection command. Permission modes are preserved.",json!({"threadId":string(),"modelSelection":{"type":"object","properties":{"instanceId":string(),"provider":string(),"model":string(),"options":{"anyOf":[{"type":"array","items":{"type":"object","properties":{"id":string(),"value":{"anyOf":[string(),{"type":"boolean"}]}},"required":["id","value"]}},{"type":"object"}]}},"required":["model"]}}),&["modelSelection"]),
+        definition_write("t3_thread_configure","Change a thread's provider/model selection with the existing selection command. Permission modes are preserved. Omit modelSelection to read the current configuration.",json!({"threadId":string(),"modelSelection":{"type":"object","properties":{"instanceId":string(),"provider":string(),"model":string(),"options":{"anyOf":[{"type":"array","items":{"type":"object","properties":{"id":string(),"value":{"anyOf":[string(),{"type":"boolean"}]}},"required":["id","value"]}},{"type":"object"}]}},"required":["model"]}}),&[]),
         definition("t3_queue_list","List queued messages in delivery order with live offset pagination.",json!({"threadId":string(),"cursor":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":100}}),&[]),
         definition("t3_queue_read","Read up to 16,000 text units of a queued message.",queue.clone(),&["queuedRunId"]),
         definition_write("t3_queue_edit","Replace queued text, preserving its attachments; already-started messages are refused.",edit,&["queuedRunId","text"]),
@@ -45,7 +47,7 @@ pub(crate) fn catalog() -> Vec<Value> {
     for tool in &mut tools {
         if matches!(
             tool["name"].as_str(),
-            Some("t3_thread_send" | "t3_pending_request_respond")
+            Some("t3_thread_send" | "t3_pending_request_respond" | "t3_pending_request")
         ) {
             tool["annotations"]["openWorldHint"] = json!(true);
         }
@@ -55,7 +57,9 @@ pub(crate) fn catalog() -> Vec<Value> {
 pub(crate) fn handles(name: &str) -> bool {
     matches!(
         name,
-        "t3_thread_send"
+        "t3_queue"
+            | "t3_pending_request"
+            | "t3_thread_send"
             | "t3_thread_interrupt"
             | "t3_thread_organize"
             | "t3_thread_configure"
@@ -97,8 +101,17 @@ fn command_id(authority: &Authority, name: &str, p: &Value) -> Result<String, Va
         .map_err(|e| failure("orchestration_error", &e.to_string()))?;
     Ok(format!("mcp:{:x}", Sha256::digest(material)))
 }
-pub(crate) fn call(s: &Arc<State>, claims: &Value, name: &str, p: &Value) -> Reply {
-    let authority = Authority::from_claims(claims)?;
+pub(crate) fn call(s: &Arc<State>, authority: &Authority, name: &str, p: &Value) -> Reply {
+    if matches!(name, "t3_queue" | "t3_pending_request") {
+        let legacy = format!("{}_{}", name, p["action"].as_str().unwrap_or(""));
+        crate::mcp_tools::validate(&legacy, p).map_err(|e| failure("invalid_request", &e))?;
+        return call(s, authority, &legacy, p);
+    }
+    if name == "t3_thread_configure" && p.get("modelSelection").is_none() {
+        authority.session(&s.reader.lock().unwrap(), false)?;
+        return crate::mcp_tools::call(s, "t3_thread_configuration", p);
+    }
+
     let mut normalized = p.clone();
     for key in [
         "threadId",
@@ -118,10 +131,10 @@ pub(crate) fn call(s: &Arc<State>, claims: &Value, name: &str, p: &Value) -> Rep
         name,
         "t3_queue_list" | "t3_queue_read" | "t3_pending_request_list" | "t3_pending_request_read"
     ) {
-        return read(s, &authority, name, p);
+        return read(s, authority, name, p);
     }
     let tid = target(p, "threadId")?;
-    let cid = command_id(&authority, name, p)?;
+    let cid = command_id(authority, name, p)?;
     let mut c = json!({"threadId":tid,"commandId":cid});
     match name {
         "t3_thread_send" => {
@@ -236,7 +249,7 @@ pub(crate) fn call(s: &Arc<State>, claims: &Value, name: &str, p: &Value) -> Rep
         }
         _ => return Err(failure("invalid_request", "Unknown tool.")),
     }
-    let mut result = events::dispatch_scoped(s, &c, Some(&authority)).map_err(command_error)?;
+    let mut result = events::dispatch_scoped(s, &c, Some(authority)).map_err(command_error)?;
     if name == "t3_thread_send" {
         let run = events::get(
             &s.reader.lock().unwrap(),
@@ -336,10 +349,9 @@ fn read(s: &State, authority: &Authority, name: &str, p: &Value) -> Reply {
     }
 }
 
-pub(crate) async fn wait(s: Arc<State>, claims: Value, p: Value) -> Reply {
+pub(crate) async fn wait(s: Arc<State>, authority: Authority, p: Value) -> Reply {
     use rusqlite::OptionalExtension;
     use std::time::{Duration, Instant};
-    let authority = Authority::from_claims(&claims)?;
     let tid = target(&p, "threadId")?.to_owned();
     let mut selected = p["runId"].as_str().map(|s| s.trim().to_owned());
     let timeout = p["timeoutMs"]

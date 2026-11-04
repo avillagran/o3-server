@@ -6,6 +6,8 @@ use serde_json::{json, Value};
 pub(crate) struct Authority {
     pub session_id: String,
     expires_at: i64,
+    requested_runtime: Option<String>,
+    interaction_ceiling: String,
 }
 impl Authority {
     pub fn from_claims(claims: &Value) -> Result<Self, Value> {
@@ -15,7 +17,14 @@ impl Authority {
                 .ok_or_else(|| failure("capability_denied", "Missing MCP session."))?
                 .to_owned(),
             expires_at: claims["exp"].as_i64().unwrap_or(0),
+            requested_runtime: None,
+            interaction_ceiling: "default".into(),
         })
+    }
+    pub fn narrowed(mut self, runtime: &str, interaction: &str) -> Self {
+        self.requested_runtime = Some(runtime.to_owned());
+        self.interaction_ceiling = interaction.to_owned();
+        self
     }
     pub fn session(&self, db: &Connection, write: bool) -> Result<String, Value> {
         if self.expires_at <= now_ms() {
@@ -51,6 +60,11 @@ impl Authority {
         if write && rank(ceiling).is_none() {
             return Err(failure("capability_denied", "Invalid MCP runtime ceiling."));
         }
+        if let Some(asked) = &self.requested_runtime {
+            if rank(asked) < rank(ceiling) {
+                return Ok(asked.clone());
+            }
+        }
         Ok(ceiling.to_owned())
     }
     pub fn check(&self, db: &Connection, command: &Value) -> Result<(), String> {
@@ -62,7 +76,7 @@ impl Authority {
             .as_str()
             .is_some_and(|s| s.starts_with("project."))
         {
-            if ceiling != "full-access" {
+            if ceiling != "full-access" || self.interaction_ceiling != "default" {
                 return Err(failure(
                     "capability_denied",
                     "Changing projects requires full-access mode.",
@@ -82,7 +96,9 @@ impl Authority {
                 "The target thread runs above this MCP client's runtime ceiling.",
             ));
         }
-        if !matches!(t["interactionMode"].as_str(), Some("default" | "plan")) {
+        if (self.interaction_ceiling == "plan" && t["interactionMode"] != "plan")
+            || !matches!(t["interactionMode"].as_str(), Some("default" | "plan"))
+        {
             return Err(failure(
                 "interaction_mode_escalation_denied",
                 "The target thread has an unsupported interaction mode.",
@@ -188,6 +204,21 @@ pub(crate) fn interrupt_target(
     Ok((resolved, None))
 }
 
+pub(crate) fn replay_reply(db: &Connection, c: &Value, mut result: Value) -> Result<Value, String> {
+    if c["type"] == "run.interrupt" {
+        if let Some(id) = result["runId"].as_str() {
+            let run = events::get(db, "runs", id)?;
+            if matches!(
+                run["status"].as_str(),
+                Some("completed" | "interrupted" | "failed" | "cancelled" | "rolled_back")
+            ) {
+                result["status"] = run["status"].clone();
+            }
+        }
+    }
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,19 +271,4 @@ mod tests {
         drop(state);
         std::fs::remove_dir_all(dir).unwrap();
     }
-}
-
-pub(crate) fn replay_reply(db: &Connection, c: &Value, mut result: Value) -> Result<Value, String> {
-    if c["type"] == "run.interrupt" {
-        if let Some(id) = result["runId"].as_str() {
-            let run = events::get(db, "runs", id)?;
-            if matches!(
-                run["status"].as_str(),
-                Some("completed" | "interrupted" | "failed" | "cancelled" | "rolled_back")
-            ) {
-                result["status"] = run["status"].clone();
-            }
-        }
-    }
-    Ok(result)
 }

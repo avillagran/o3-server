@@ -24,6 +24,8 @@ pub(crate) fn definition(
     properties: Value,
     required: &[&str],
 ) -> Value {
+    let mut properties = properties;
+    properties["environmentId"] = json!({"type":"string","minLength":1});
     json!({"name":name,"description":description,"inputSchema":{"type":"object","properties":properties,"required":required},"annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}})
 }
 pub(crate) fn catalog() -> Vec<Value> {
@@ -33,11 +35,25 @@ pub(crate) fn catalog() -> Vec<Value> {
         definition("t3_project_read","Read a registered project, workspace and saved scripts.",json!({"projectId":string()}),&["projectId"]),
         definition("t3_thread_configuration","Read a thread's provider/model selection and modes. Outside a thread, pass threadId.",json!({"threadId":string()}),&[]),
         definition("t3_thread_search","Search active thread titles and content. Omit projectId to search every project. Results are bounded, without exhaustive-result guarantee.",json!({"query":{"type":"string","minLength":2,"maxLength":200},"limit":integer(1,50),"projectId":string(),"projectIds":{"type":"array","items":string()},"titlesOnly":{"type":"boolean"}}),&["query"]),
-        definition("t3_thread_list","List project threads newest first, optionally filtering durable status, title, settled or snoozed state. Outside a thread, pass projectId.",json!({"projectId":string(),"statuses":{"type":"array","maxItems":10,"items":{"type":"string","enum":["idle","queued","preparing","starting","running","waiting","completed","failed","interrupted","cancelled","rolled_back"]}},"titleContains":{"type":"string","minLength":1,"maxLength":256},"settled":{"type":"boolean"},"snoozed":{"type":"boolean"},"includeSubagents":{"type":"boolean"},"cursor":integer(0,usize::MAX),"limit":integer(1,100)}),&[]),
+        definition("t3_thread_list","List project threads newest first, optionally filtering durable status, title, settled or snoozed state. Outside a thread, pass projectId.",json!({"projectId":string(),"allProjects":{"type":"boolean"},"statuses":{"type":"array","maxItems":10,"items":{"type":"string","enum":["idle","queued","preparing","starting","running","waiting","completed","failed","interrupted","cancelled","rolled_back"]}},"titleContains":{"type":"string","minLength":1,"maxLength":256},"settled":{"type":"boolean"},"snoozed":{"type":"boolean"},"includeSubagents":{"type":"boolean"},"cursor":integer(0,usize::MAX),"limit":integer(1,100)}),&[]),
         definition("t3_thread_read","Read durable thread state and paginated messages or activity. Use itemId and textOffset to read more of a truncated item.",json!({"threadId":string(),"itemId":string(),"textOffset":integer(0,usize::MAX),"view":{"type":"string","enum":["messages","activity"]},"afterPosition":integer(0,usize::MAX),"limit":integer(1,100),"runLimit":integer(1,50),"maxCharsPerItem":integer(1,50000)}),&["threadId"]),
     ];
     tools.extend(crate::mcp_mutations::catalog());
     tools
+}
+pub(crate) fn prepare_arguments(name: &str, mut args: Value) -> Value {
+    if name == "t3_thread_read" && args.is_object() {
+        for (key, max) in [
+            ("limit", 100),
+            ("runLimit", 50),
+            ("maxCharsPerItem", 50_000),
+        ] {
+            if uint(&args[key]).is_some_and(|n| n > max) {
+                args[key] = json!(max);
+            }
+        }
+    }
+    args
 }
 pub(crate) fn validate(name: &str, p: &Value) -> Result<(), String> {
     let tool = catalog()
@@ -248,17 +264,21 @@ fn list_item(t: &Value) -> Value {
         && t["pendingRuntimeRequest"].is_null()
         && !woke_on_error;
     let links=t["pullRequests"].as_array().into_iter().flatten().filter(|l|l["removedAt"].is_null()).map(|l|json!({"host":l["host"],"repository":l["repository"],"number":l["number"],"url":l["url"],"source":l["source"],"state":l["snapshot"]["state"]})).collect::<Vec<_>>();
-    json!({"threadId":t["id"],"title":t["title"],"createdBy":t["createdBy"],"creationSource":t["creationSource"],"status":t["activityRunStatus"].as_str().or(t["status"].as_str()).unwrap_or("idle"),"latestRunId":t["latestRunId"],"providerInstanceId":t["modelSelection"]["instanceId"],"model":t["modelSelection"]["model"],"runtimeMode":t["runtimeMode"],"interactionMode":t["interactionMode"],"linkedPullRequest":t["linkedPullRequest"],"pullRequests":links,"settled":settled,"settledAt":if settled{t["settledAt"].clone()}else{Value::Null},"snoozed":snoozed,"snoozedUntil":if snoozed{t["snoozedUntil"].clone()}else{Value::Null},"parentThreadId":t["lineage"]["parentThreadId"],"relationshipToParent":t["lineage"]["relationshipToParent"],"itemCount":t["visibleItemCount"],"createdAt":t["createdAt"],"updatedAt":t["updatedAt"]})
+    json!({"threadId":t["id"],"projectId":t["projectId"],"title":t["title"],"createdBy":t["createdBy"],"creationSource":t["creationSource"],"status":t["activityRunStatus"].as_str().or(t["status"].as_str()).unwrap_or("idle"),"latestRunId":t["latestRunId"],"providerInstanceId":t["modelSelection"]["instanceId"],"model":t["modelSelection"]["model"],"runtimeMode":t["runtimeMode"],"interactionMode":t["interactionMode"],"linkedPullRequest":t["linkedPullRequest"],"pullRequests":links,"settled":settled,"settledAt":if settled{t["settledAt"].clone()}else{Value::Null},"snoozed":snoozed,"snoozedUntil":if snoozed{t["snoozedUntil"].clone()}else{Value::Null},"parentThreadId":t["lineage"]["parentThreadId"],"relationshipToParent":t["lineage"]["relationshipToParent"],"itemCount":t["visibleItemCount"],"createdAt":t["createdAt"],"updatedAt":t["updatedAt"]})
 }
 fn thread_list(s: &State, p: &Value) -> Reply {
-    let project = target(p, "projectId")?;
+    let project = if p["allProjects"] == true {
+        None
+    } else {
+        Some(target(p, "projectId")?)
+    };
     let db = s.reader.lock().unwrap();
     let db = db.unchecked_transaction().map_err(unavailable)?;
     let cursor = number(p, "cursor", 0);
     let limit = number(p, "limit", 50);
     let mut total = 0;
     let mut page = Vec::new();
-    let mut query=db.prepare("SELECT body FROM records WHERE kind='thread' AND json_extract(body,'$.projectId')=? AND json_extract(body,'$.deletedAt') IS NULL AND json_extract(body,'$.archivedAt') IS NULL ORDER BY json_extract(body,'$.updatedAt') DESC,id DESC").map_err(unavailable)?;
+    let mut query=db.prepare("SELECT body FROM records WHERE kind='thread' AND (?1 IS NULL OR json_extract(body,'$.projectId')=?1) AND json_extract(body,'$.deletedAt') IS NULL AND json_extract(body,'$.archivedAt') IS NULL ORDER BY json_extract(body,'$.updatedAt') DESC,id DESC").map_err(unavailable)?;
     let mut records = query.query([project]).map_err(unavailable)?;
     while let Some(row) = records.next().map_err(unavailable)? {
         let t: Value = serde_json::from_str(
@@ -291,7 +311,7 @@ fn thread_list(s: &State, p: &Value) -> Reply {
         let item = list_item(&shell);
         if p["statuses"]
             .as_array()
-            .is_some_and(|a| !a.contains(&item["status"]))
+            .is_some_and(|a| !a.is_empty() && !a.contains(&item["status"]))
         {
             continue;
         }

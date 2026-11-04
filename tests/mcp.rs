@@ -334,7 +334,7 @@ fn mcp_checks_session_ownership_revocation_and_invalid_arguments() {
         &s,
         &token,
         Some(&id),
-        json!({"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"t3_thread_read","arguments":{"threadId":"a","limit":101}}}),
+        json!({"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"t3_thread_read","arguments":{"threadId":"a","limit":0}}}),
     );
     assert_eq!(bad["error"]["code"], -32602);
     let (_, _, missing) = request(
@@ -1022,8 +1022,8 @@ fn mcp_user_questions_round_trip_through_native_projection_without_permission_ap
         &s,
         &token,
         &id,
-        "t3_pending_request_list",
-        json!({"threadId":"high"}),
+        "t3_pending_request",
+        json!({"threadId":"high","action":"list"}),
     );
     let question = list["requestIds"][0].clone();
     assert!(question.is_string(), "{list}");
@@ -1031,16 +1031,16 @@ fn mcp_user_questions_round_trip_through_native_projection_without_permission_ap
         &s,
         &token,
         &id,
-        "t3_pending_request_read",
-        json!({"threadId":"high","requestId":question}),
+        "t3_pending_request",
+        json!({"threadId":"high","requestId":question,"action":"read"}),
     );
     assert_eq!(read["questions"][0]["question"], "Which color?");
     call(
         &s,
         &token,
         &id,
-        "t3_pending_request_respond",
-        json!({"threadId":"high","requestId":question,"answers":{"Which color?":"Blue"}}),
+        "t3_pending_request",
+        json!({"threadId":"high","requestId":question,"answers":{"Which color?":"Blue"},"action":"respond"}),
     );
     assert_eq!(
         call(
@@ -1181,4 +1181,259 @@ fn mcp_steers_native_turn_and_promotes_queued_message_without_replay() {
     let replay = call(&s, &token, &id, "t3_thread_interrupt", stop);
     assert_eq!(replay["runId"], requested["runId"]);
     assert_eq!(replay["status"], "interrupted");
+}
+
+#[test]
+fn mcp_current_nightly_groups_and_remote_targets_keep_their_authority() {
+    let (s, c) = control_fixture();
+    let qroot = s.dir.join("second");
+    std::fs::create_dir_all(&qroot).unwrap();
+    c.rpc("projects.mutate",json!({"type":"project.create","commandId":"pq","projectId":"q","title":"Other","workspaceRoot":qroot,"scripts":[]})).unwrap();
+    c.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"q-thread","threadId":"q-thread","projectId":"q","title":"Other","modelSelection":{"instanceId":"scripted","model":"test"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
+    let readonly = s
+        .state
+        .issue_mcp_session("read-only", 60_000, "reader")
+        .unwrap();
+    let rid = init(&s, &readonly);
+    let token = s
+        .state
+        .issue_mcp_session("full-access", 60_000, "writer")
+        .unwrap();
+    let id = init(&s, &token);
+    assert_eq!(
+        call(
+            &s,
+            &readonly,
+            &rid,
+            "t3_thread_configure",
+            json!({"threadId":"high"})
+        )["runtimeMode"],
+        "full-access"
+    );
+    let all = call(
+        &s,
+        &readonly,
+        &rid,
+        "t3_thread_list",
+        json!({"allProjects":true,"statuses":[]}),
+    );
+    assert_eq!(all["projectId"], Value::Null);
+    assert_eq!(all["total"], 3);
+    assert!(all["threads"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|t| t["projectId"] == "q"));
+    assert_eq!(
+        call(
+            &s,
+            &readonly,
+            &rid,
+            "t3_thread_read",
+            json!({"threadId":"high","limit":101,"runLimit":999,"maxCharsPerItem":999999})
+        )["thread"]["threadId"],
+        "high"
+    );
+    assert_eq!(
+        tool_error(
+            &s,
+            &token,
+            &id,
+            "t3_thread_organize",
+            json!({"environmentId":"another-environment","threadId":"high","action":"pin"})
+        )["code"],
+        "capability_denied"
+    );
+    let pinned:bool=s.state.db.lock().unwrap().query_row("SELECT json_extract(body,'$.pinnedAt') IS NOT NULL FROM records WHERE kind='thread' AND id='high'",[],|r|r.get(0)).unwrap();
+    assert!(!pinned);
+    assert_eq!(
+        call(
+            &s,
+            &readonly,
+            &rid,
+            "t3_environment_read",
+            json!({"environmentId":s.state.environment_id})
+        )["environmentId"],
+        s.state.environment_id
+    );
+    let sent = call(
+        &s,
+        &token,
+        &id,
+        "t3_thread_send",
+        json!({"threadId":"high","message":"start"}),
+    );
+    let queued = call(
+        &s,
+        &token,
+        &id,
+        "t3_thread_send",
+        json!({"threadId":"high","message":"queued","mode":"queue"}),
+    );
+    assert_eq!(
+        call(
+            &s,
+            &readonly,
+            &rid,
+            "t3_queue",
+            json!({"action":"list","threadId":"high"})
+        )["items"][0]["queuedRunId"],
+        queued["runId"]
+    );
+    assert_eq!(
+        tool_error(
+            &s,
+            &readonly,
+            &rid,
+            "t3_queue",
+            json!({"action":"edit","threadId":"high","queuedRunId":queued["runId"],"text":"denied"})
+        )["code"],
+        "capability_denied"
+    );
+    call(
+        &s,
+        &token,
+        &id,
+        "t3_queue",
+        json!({"action":"edit","threadId":"high","queuedRunId":queued["runId"],"text":"edited"}),
+    );
+    assert_eq!(
+        call(
+            &s,
+            &readonly,
+            &rid,
+            "t3_queue",
+            json!({"action":"read","threadId":"high","queuedRunId":queued["runId"]})
+        )["text"],
+        "edited"
+    );
+    call(
+        &s,
+        &token,
+        &id,
+        "t3_queue",
+        json!({"action":"cancel","threadId":"high","queuedRunId":queued["runId"]}),
+    );
+    assert_eq!(
+        call(
+            &s,
+            &readonly,
+            &rid,
+            "t3_pending_request",
+            json!({"action":"list","threadId":"high"})
+        )["requestIds"],
+        json!([])
+    );
+    call(
+        &s,
+        &token,
+        &id,
+        "t3_thread_interrupt",
+        json!({"threadId":"high","runId":sent["runId"]}),
+    );
+}
+
+#[test]
+fn mcp_mode_limit_header_only_narrows_runtime_and_interaction_authority() {
+    let (s, c) = control_fixture();
+    let token = s
+        .state
+        .issue_mcp_session("full-access", 60_000, "writer")
+        .unwrap();
+    let id = init(&s, &token);
+    let limited = s
+        .state
+        .issue_mcp_session("approval-required", 60_000, "limited")
+        .unwrap();
+    let lid = init(&s, &limited);
+    let invoke = |token: &str, id: &str, mode: &str, name: &str, args: Value| {
+        let auth = format!("Bearer {token}");
+        let body = json!({"jsonrpc":"2.0","id":25,"method":"tools/call","params":{"name":name,"arguments":args}});
+        let (status, _, bytes) = http(
+            &s.base,
+            "POST",
+            "/mcp",
+            &[
+                ("authorization", &auth),
+                ("mcp-session-id", id),
+                ("content-type", "application/json"),
+                ("t3-mode-limit", mode),
+            ],
+            body.to_string().as_bytes(),
+        );
+        (status, serde_json::from_slice::<Value>(&bytes).unwrap())
+    };
+    let pin = json!({"threadId":"high","action":"pin"});
+    let (status, v) = invoke(
+        &token,
+        &id,
+        "approval-required/default",
+        "t3_thread_organize",
+        pin.clone(),
+    );
+    assert_eq!(status, 200);
+    assert_eq!(
+        v["result"]["structuredContent"]["code"],
+        "runtime_mode_escalation_denied"
+    );
+    let (_, v) = invoke(
+        &limited,
+        &lid,
+        "full-access/default",
+        "t3_thread_organize",
+        pin.clone(),
+    );
+    assert_eq!(
+        v["result"]["structuredContent"]["code"],
+        "runtime_mode_escalation_denied"
+    );
+    let (_, v) = invoke(&token, &id, "full-access/plan", "t3_thread_organize", pin);
+    assert_eq!(
+        v["result"]["structuredContent"]["code"],
+        "interaction_mode_escalation_denied"
+    );
+    let (_, v) = invoke(
+        &token,
+        &id,
+        "approval-required/default",
+        "t3_thread_organize",
+        json!({"threadId":"low","action":"pin"}),
+    );
+    assert_eq!(v["result"]["isError"], false);
+    c.rpc("orchestration.dispatchCommand",json!({"type":"thread.interaction-mode.set","commandId":"plan-low","threadId":"low","interactionMode":"plan"})).unwrap();
+    let (_, v) = invoke(
+        &token,
+        &id,
+        "approval-required/plan",
+        "t3_thread_organize",
+        json!({"threadId":"low","action":"unpin"}),
+    );
+    assert_eq!(v["result"]["isError"], false);
+    let (_, v) = invoke(
+        &token,
+        &id,
+        "approval-required/plan",
+        "t3_thread_configure",
+        json!({"threadId":"high"}),
+    );
+    assert_eq!(v["result"]["isError"], false);
+    assert_eq!(
+        v["result"]["structuredContent"]["runtimeMode"],
+        "full-access"
+    );
+    for mode in [
+        "full-access",
+        "unknown/default",
+        "full-access/default/extra",
+    ] {
+        let (status, v) = invoke(
+            &token,
+            &id,
+            mode,
+            "t3_thread_organize",
+            json!({"threadId":"low","action":"pin"}),
+        );
+        assert_eq!(status, 400);
+        assert_eq!(v["error"], "invalid_mode_limit");
+    }
 }
