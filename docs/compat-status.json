@@ -14,7 +14,7 @@
     "assets.createUrl": {
       "status": "done",
       "priority": "P1",
-      "note": "Real-client signed grants cover all resource tags, Range and HEAD, and session, scope and canonical-boundary rechecks. Media kinds the desktop classifier accepts, including .aac, .opus, .avi and .ogv, download through real asset readers; playback itself is client codec behavior. MCP HTML injection has no production caller."
+      "note": "Real-client signed grants cover all resource tags, Range and HEAD, and session, scope and canonical-boundary rechecks. Media kinds the desktop classifier accepts, including .aac, .opus, .avi and .ogv, download through real asset readers; playback itself is client codec behavior. MCP HTML injection has no production caller. 2026-11-04 nightly4192: grant tokens verify like PayloadSigner, decoding with Effect's Base64Url (padded or unpadded, trailing bits ignored) and ignoring segments after the signature."
     },
     "assets.persistChatAttachments": {
       "status": "skip",
@@ -24,7 +24,7 @@
     "attachments.createUploadUrl": {
       "status": "done",
       "priority": "P1",
-      "note": "Real-client test (files_assets): HMAC-signed 10 min grant, type/size limits (10 MiB image, 50 MiB file), pending-<uuid>[-ext] ids. Token layout matches T3."
+      "note": "Real-client test (files_assets): HMAC-signed 10 min grant, type/size limits (10 MiB image, 50 MiB file), pending-<uuid>[-ext] ids. Token layout matches T3. 2026-11-04 nightly4192: upload grants share the asset signer key and PayloadSigner decoding rules."
     },
     "attachments.delete": {
       "status": "done",
@@ -644,7 +644,7 @@
     "scheduledTasks.upsert": {
       "status": "partial",
       "priority": "P2",
-      "note": "Signed inbound webhooks: body-only signature, templates and filters limited to signed body fields, permanent body-digest dedupe per task, bounded queue, durable dispatch claim. Unknown hooks and wrong tokens get the same 404 without the body being read. Pinned 3991 accepts unsigned query templates; o3 rejects them on purpose. Remaining: desktop T3ScheduledTasks.qml:21 and Android TaskEditor.kt:72 have no signing controls, so users cannot save a new webhook task; that needs client work. Triggered runs use the task's or thread's runtime mode, which can be full access."
+      "note": "Signed inbound webhooks: body-only signature, templates and filters limited to signed body fields, permanent body-digest dedupe per task, bounded queue, durable dispatch claim. Unknown hooks and wrong tokens get the same 404 without the body being read. Pinned 3991 accepts unsigned query templates; o3 rejects them on purpose. Remaining: desktop T3ScheduledTasks.qml:21 and Android TaskEditor.kt:72 have no signing controls, so users cannot save a new webhook task; that needs client work. Triggered runs use the task's or thread's runtime mode, which can be full access. 2026-11-04 nightly4192: signature tags decode with Effect's Hex/Base64 rules (no sign-prefixed hex digits; canonical base64 padding, trailing bits ignored) before HMAC verification."
     },
     "secrets.answerRequest": {
       "status": "done",

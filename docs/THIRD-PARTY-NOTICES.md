@@ -23,6 +23,9 @@ selection/session transition adaptations reference nightly4179,
 [selection-transition-intake.json](nightly/selection-transition-intake.json) and
 [active-provider-handoff-intake.json](nightly/active-provider-handoff-intake.json) and
 [provider-pool-lifetime-intake.json](nightly/provider-pool-lifetime-intake.json).
+Token and webhook signature decoding follows nightly4192,
+`7f6f47b27b44456f1c8214d3b566b375c09f629e`, and the MIT-licensed Effect 4.1.2
+encoders; see [signature-decoding-intake.json](nightly/signature-decoding-intake.json).
 
 MIT License
 
