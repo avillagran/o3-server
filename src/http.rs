@@ -209,6 +209,7 @@ fn upgrade(state: Arc<State>, session: Value, mut request: Request<Incoming>) ->
 async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Reply, Infallible> {
     let path = request.uri().path().to_owned();
     Ok(match (request.method().clone(), path.as_str()) {
+        (_, "/mcp") => crate::mcp::handle(state, request).await,
         (Method::GET, "/.well-known/t3/environment") => json_reply(
             StatusCode::OK,
             crate::settings::descriptor(&state).to_string(),

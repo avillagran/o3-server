@@ -29,6 +29,7 @@ pub const STANDARD_SCOPES: [&str; 16] = [
 pub struct State {
     pub(crate) rollback_pending: std::sync::atomic::AtomicBool,
     pub(crate) http: crate::http::Limits,
+    pub(crate) mcp: crate::mcp::Sessions,
     #[cfg(feature = "bridge")]
     pub bridge_endpoints: Mutex<Vec<Value>>,
     pub db: Mutex<Connection>,
@@ -185,6 +186,7 @@ impl State {
         Ok(Self {
             rollback_pending: std::sync::atomic::AtomicBool::new(false),
             http: crate::http::Limits::default(),
+            mcp: crate::mcp::Sessions::default(),
             #[cfg(feature = "bridge")]
             bridge_endpoints: Mutex::new(Vec::new()),
             settings_lock: Mutex::new(()),
@@ -319,7 +321,21 @@ impl State {
     pub fn session(&self, token: &str) -> Option<Value> {
         let now = now_ms();
         let claims = auth::verify(token, "session", &self.signing_key, now)?;
-        self.live(claims, now)
+        self.live(claims, now).filter(|v| v["sub"] != "mcp-client")
+    }
+
+    /// Dedicated MCP sessions never authenticate ordinary HTTP or WebSocket RPC.
+    pub fn mcp_session(&self, token: &str) -> Option<Value> {
+        let now = now_ms();
+        let claims = auth::verify(token, "session", &self.signing_key, now)?;
+        self.live(claims, now).filter(|v| {
+            v["sub"] == "mcp-client"
+                && v["jkt"].is_null()
+                && v["method"] == "bearer-access-token"
+                && v["scopes"]
+                    .as_array()
+                    .is_some_and(|a| a.iter().any(|s| s == "orchestration:read"))
+        })
     }
 
     /// The owning session of a websocket ticket; revoking a session voids its tickets.
@@ -329,28 +345,18 @@ impl State {
         if !claims["aud"].is_null() && claims["aud"] != usage {
             return None;
         }
-        self.live(claims, now)
+        self.live(claims, now).filter(|v| v["sub"] != "mcp-client")
     }
 
     fn live(&self, claims: Value, now: i64) -> Option<Value> {
         let sid = claims["sid"].as_str()?;
-        self.reader.lock().unwrap().query_row(
-            "SELECT 1 FROM auth_sessions WHERE session_id=? AND revoked_at IS NULL AND expires_at>?",
-            params![sid, now], |_| Ok(()),
-        ).optional().ok()??;
-        let (scopes, subject): (String, String) = self
-            .reader
-            .lock()
-            .unwrap()
-            .query_row(
-                "SELECT scopes,subject FROM auth_sessions WHERE session_id=?",
-                [sid],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .ok()?;
+        let (scopes, subject, client): (String, String, String) = self.reader.lock().unwrap()
+            .query_row("SELECT scopes,subject,client FROM auth_sessions WHERE session_id=? AND revoked_at IS NULL AND expires_at>?", params![sid,now], |r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional().ok()??;
         let mut claims = claims;
         claims["scopes"] = json!(scopes.split_whitespace().collect::<Vec<_>>());
         claims["sub"] = subject.into();
+        let client: Value = serde_json::from_str(&client).ok()?;
+        claims["runtimeModeCeiling"] = client["runtimeModeCeiling"].clone();
         Some(claims)
     }
 
@@ -361,9 +367,35 @@ impl State {
         ttl: i64,
         label: &str,
     ) -> Result<String, String> {
+        self.issue_session_client(subject, scopes, ttl, &json!({"client_label":label}))
+    }
+    pub fn issue_mcp_session(&self, access: &str, ttl: i64, label: &str) -> Result<String, String> {
+        let scopes: &[&str] = match access {
+            "read-only" => &["orchestration:read"],
+            "approval-required" | "auto-accept-edits" => {
+                &["orchestration:read", "orchestration:operate"]
+            }
+            "full-access" => &[
+                "orchestration:read",
+                "orchestration:operate",
+                "settings:write",
+                "source-control:write",
+            ],
+            _ => return Err("invalid MCP access level".into()),
+        };
+        self.issue_session_client("mcp-client", &scopes.iter().map(|s|(*s).to_owned()).collect::<Vec<_>>(),ttl,
+            &json!({"client_label":label,"runtimeModeCeiling":if access=="read-only"{Value::Null}else{json!(access)}}))
+    }
+    fn issue_session_client(
+        &self,
+        subject: &str,
+        scopes: &[String],
+        ttl: i64,
+        client: &Value,
+    ) -> Result<String, String> {
         let sid = random_id()?;
         let now = now_ms();
-        self.db.lock().unwrap().execute("INSERT INTO auth_sessions(session_id,subject,scopes,method,client,issued_at,expires_at) VALUES(?,?,?,?,?,?,?)",params![sid,subject,scopes.join(" "),"bearer-access-token",json!({"client_label":label}).to_string(),now,now+ttl]).map_err(|e|e.to_string())?;
+        self.db.lock().unwrap().execute("INSERT INTO auth_sessions(session_id,subject,scopes,method,client,issued_at,expires_at) VALUES(?,?,?,?,?,?,?)",params![sid,subject,scopes.join(" "),"bearer-access-token",client.to_string(),now,now+ttl]).map_err(|e|e.to_string())?;
         Ok(auth::sign(
             &json!({"v":1,"kind":"session","sid":sid,"sub":subject,"scopes":scopes,"method":"bearer-access-token","iat":now,"exp":now+ttl}),
             &self.signing_key,

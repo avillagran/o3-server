@@ -14,6 +14,7 @@ Commands:
   serve                     Run the server (default)
   import --from PATH        Import a T3 statev2.sqlite, read-only
   auth session issue        Issue a bearer session
+  auth mcp issue            Issue a dedicated MCP credential (--access read-only by default)
   auth session list         List sessions
   auth session revoke ID    Revoke a session
   auth pairing create       Create a one-time pairing credential
@@ -136,6 +137,23 @@ fn main() -> std::io::Result<()> {
         return Ok(());
     }
     if is_auth {
+        if args.get(1).map(String::as_str) == Some("mcp")
+            && args.get(2).map(String::as_str) == Some("issue")
+        {
+            let token = state
+                .issue_mcp_session(
+                    option(&args, "--access").unwrap_or("read-only"),
+                    ttl(option(&args, "--ttl").unwrap_or("30d"))?,
+                    option(&args, "--label").unwrap_or("MCP client"),
+                )
+                .map_err(std::io::Error::other)?;
+            if args.iter().any(|s| s == "--token-only") {
+                println!("{token}");
+            } else {
+                println!("{}", serde_json::json!({"token":token}));
+            }
+            return Ok(());
+        }
         if args.get(1).map(String::as_str) == Some("session")
             && args.get(2).map(String::as_str) == Some("issue")
         {

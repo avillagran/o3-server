@@ -66,9 +66,10 @@ these figures do **not** establish a controlled T3-to-o3 memory reduction:
 | Serving-process RSS, decimal MB | 287.20 | 625.53 |
 
 These live samples use `/proc/PID/status` (`VmRSS`) and exclude launchers, provider children
-and clients. Full compatibility remains pending: o3 does not serve T3's `/mcp` upstream,
-OpenCode/ACP providers or DPoP/browser-session authentication. Existing bearer sessions
-and native Claude/Codex support do not imply those capabilities are available.
+and clients. Full compatibility remains pending: `/mcp` now provides authenticated
+readers with dedicated credentials ([contract and gaps](docs/MCP.md)); MCP writes,
+provider token injection, OpenCode/ACP and DPoP/browser-session authentication remain
+pending. Native Claude/Codex support does not imply those capabilities are available.
 
 ## Build and test
 
