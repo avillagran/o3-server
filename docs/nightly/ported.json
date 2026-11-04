@@ -378,6 +378,10 @@
       "status": "not-applicable",
       "o3": "7899b36",
       "note": "Algoritmo upstream distinto: o3 usa branch.ab de porcelain v2, sin resolver nombre corto de upstream. Fixture con rama local origin/release y tag release verifica +1/-0 contra remoto real; comportamiento ya cubierto, no un nuevo port."
+    },
+    "8430db67328c15f92bdccc9fe56586e989402760": {
+      "status": "partial",
+      "note": "projects.searchContents implementado y probado con Connection real contra casos del contrato nightly 4119: Unicode UTF-16, palabras, regex/fallback, ignore y límites. Usa ignore/regex y escaneo fresco acotado; equivalencia de ranking/índice fff y diferencial nightly live pendientes. Ver docs/CONFORMANCE.md."
     }
   }
 }
