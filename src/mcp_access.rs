@@ -45,6 +45,58 @@ impl Authority {
     pub(crate) fn native_thread(&self) -> Option<&str> {
         self.native.as_ref().map(|s| s.thread.as_str())
     }
+    pub(crate) fn request_namespace(&self) -> String {
+        if self.is_native() {
+            self.session_id.clone()
+        } else {
+            format!("client:{}", self.session_id)
+        }
+    }
+    pub(crate) fn launch_context(
+        &self,
+        db: &Connection,
+    ) -> Result<(Option<Value>, String, String), Value> {
+        let runtime = self.session(db, true)?;
+        let caller = self
+            .native
+            .as_ref()
+            .map(|scope| scope.caller(db, true))
+            .transpose()?;
+        let interaction = caller
+            .as_ref()
+            .and_then(|t| t["interactionMode"].as_str())
+            .unwrap_or(&self.interaction_ceiling)
+            .to_owned();
+        Ok((caller, runtime, interaction))
+    }
+    pub(crate) fn check_launch(&self, db: &Connection, p: &Value) -> Result<(), String> {
+        let (_, ceiling, interaction) = self.launch_context(db).map_err(|e| e.to_string())?;
+        if rank(p["runtimeMode"].as_str().unwrap_or(""))
+            .is_none_or(|r| r > rank(&ceiling).unwrap_or(0))
+        {
+            return Err(failure(
+                "runtime_mode_escalation_denied",
+                "The launched thread would run above this caller's runtime ceiling.",
+            )
+            .to_string());
+        }
+        if !matches!(p["interactionMode"].as_str(), Some("plan" | "default"))
+            || (interaction == "plan" && p["interactionMode"] != "plan")
+        {
+            return Err(failure(
+                "interaction_mode_escalation_denied",
+                "The launched thread would run above this caller's interaction ceiling.",
+            )
+            .to_string());
+        }
+        if let Some(tid) = p["threadId"]
+            .as_str()
+            .filter(|tid| events::get(db, "thread", tid).is_ok())
+        {
+            self.check(db, &json!({"type":"launch.replay","threadId":tid}))?;
+        }
+        Ok(())
+    }
     pub(crate) fn browser(&self) -> Option<crate::agent_browser::Access> {
         self.native
             .as_ref()?
@@ -216,7 +268,7 @@ impl Authority {
         Ok(())
     }
 }
-fn rank(mode: &str) -> Option<u8> {
+pub(crate) fn rank(mode: &str) -> Option<u8> {
     match mode {
         "approval-required" => Some(0),
         "auto-accept-edits" => Some(1),

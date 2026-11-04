@@ -9,6 +9,72 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
+pub(crate) fn ensure_scratch(
+    s: &State,
+    authority: Option<&crate::mcp_access::Authority>,
+) -> Result<Value, String> {
+    if let Some(a) = authority {
+        a.launch_context(&s.db.lock().unwrap())
+            .map_err(|e| e.to_string())?;
+    }
+    let probe = Command::new("git")
+        .arg("-C")
+        .arg(&s.asset_profile_root)
+        .args(crate::proc::SAFE_CONFIG)
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    match probe {
+        Ok(status) if status.success() => {
+            return Err("Threads without a project are not available on this environment.".into())
+        }
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.to_string()),
+        _ => {}
+    }
+    let root = s.asset_profile_root.join("scratch");
+    std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+    let root = root
+        .canonicalize()
+        .map_err(|e| e.to_string())?
+        .to_string_lossy()
+        .into_owned();
+    let mut db = s.db.lock().unwrap();
+    let tx = db.transaction().map_err(|e| e.to_string())?;
+    if let Some(a) = authority {
+        a.launch_context(&tx).map_err(|e| e.to_string())?;
+    }
+    let existing:Option<String>=tx.query_row("SELECT id FROM records WHERE kind='project' AND json_extract(body,'$.workspaceRoot')=? AND json_extract(body,'$.deletedAt') IS NULL",[&root],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
+    if let Some(id) = existing {
+        return Ok(json!({"projectId":id}));
+    }
+    let id = crate::store::random_id()?;
+    let at = iso(now_ms());
+    let project = json!({"id":id,"title":"No project","workspaceRoot":root,"defaultModelSelection":null,"defaultThreadEnvMode":null,"autoPull":false,"faviconPath":null,"projectIcon":{"kind":"lucide","name":"message-square-dashed","color":"gray"},"repositoryIdentity":null,"archivedAt":null,"pinnedAt":null,"scripts":[],"createdAt":at,"updatedAt":at,"deletedAt":null});
+    events::put(&tx, "project", &id, "", &project)?;
+    let event = json!({"id":crate::store::random_id()?,"type":"project.create","payload":project,"occurredAt":at});
+    tx.execute(
+        "INSERT INTO events(thread_id,body) VALUES('',?)",
+        [event.to_string()],
+    )
+    .map_err(|e| e.to_string())?;
+    let sequence = tx.last_insert_rowid();
+    tx.execute(
+        "UPDATE events SET shell=? WHERE sequence=?",
+        rusqlite::params![
+            json!({"kind":"project.updated","sequence":sequence,"project":project}).to_string(),
+            sequence
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    drop(db);
+    s.notify();
+    Ok(json!({"projectId":id}))
+}
 pub(crate) struct Claim(Option<PathBuf>);
 impl Claim {
     pub(crate) fn commit(&mut self) {

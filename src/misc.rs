@@ -18,6 +18,7 @@ pub fn handles(tag: &str) -> bool {
             | "server.refreshUsageRates"
             | "projects.listIgnoredFiles"
             | "projects.createNew"
+            | "projects.ensureScratch"
             | "projectClone.start"
             | "worktreeSetup.cancel"
             | "orchestration.getOlderSettledThreads"
@@ -35,6 +36,9 @@ pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
         return crate::device::call(s, tag, p).await;
     }
     match tag {
+        "projects.ensureScratch" => crate::managed_folders::ensure_scratch(s, None).map_err(
+            |message| json!({"_tag":"OrchestrationDispatchCommandError","message":message}),
+        ),
         "server.getHostResources" => host_resources().await,
         "server.checkOtlpEndpoint" => check_otlp(p).await,
         "server.refreshUsageRates" => Ok(crate::usage_rates::refresh(s).await),

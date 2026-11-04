@@ -14,6 +14,7 @@
   "projectScriptOverrides": {},
   "projectAutoPullOverrides": {},
   "defaultModelSelection": null,
+  "fallbackModelSelection": null,
   "projectSettingsOverrides": {},
   "projectSettingsFolded": false,
   "enableAgentDeviceAccess": false,

@@ -148,6 +148,10 @@ zero remains invalid. Configure without modelSelection reads the current configu
   with no steerable live turn instead of silently queuing. Restart requires a running
   native turn and interrupt/restart capability; it replaces the active attempt within
   the same run. Codex supports it; Claude does not advertise this capability.
+- t3_thread_launch: create one top-level thread through the staged launch service.
+  Native callers inherit project/model/modes; outside clients pass projectId or scratch
+  and use effective project defaults. Workspace defaults to the project root. A stable
+  clientRequestId replays the same identity; current mode ceilings still apply.
 - t3_thread_interrupt: interrupt a named or active run, report already-terminal state
   or no_active_run. This does not hold or cancel queued messages, as in upstream's
   interrupt operation; queue cancellation is separate.
@@ -188,7 +192,7 @@ rejection. These are deterministic protocol tests, not a live nightly differenti
 acceptance of the existing ChatGPT/OmaBridge integration.
 
 Pending: OAuth/DPoP, full SSE semantics,
-thread launch/transfer, cross-instance active handoff, cross-thread restart-continuation
+thread transfer, cross-instance active handoff, cross-thread restart-continuation
 following, deferred caller settlement, task delegation,
 remaining worktree/attachment/PR/device/preview/HTML/scheduler toolkits and linked environments.
 Inherited-task acknowledgement and exact activity-text rendering also need upstream
@@ -529,3 +533,53 @@ newer native recovery and the wider toolkit/auth/environment/provider backlog re
 part of the active complete-protocol goal. No deployment or main promotion occurred.
 
 Validation: full suites pass with 361 default / 358 no-default tests, 21 opt-ins ignored each. Final library, staged launch, storage, import/reader and handoff regressions are also checked after the last recovery/readiness changes. Strict Clippy runs in both configurations; fmt, generated compatibility and nine monitor tests pass.
+
+
+## Native MCP top-level launch (2026-11-04)
+
+This supersedes the MCP-launch pending statements in earlier checkpoints. The core
+catalog now has 31 tools. `t3_thread_launch` uses the staged service merged in PR25
+(dev c4cc2f65). Native callers inherit their current project, model and modes; external
+clients use effective project defaults and configured usage-limit fallback. Explicit
+selection/options are preserved, including legacy provider/options normalization.
+Inherited unsupported runtime modes step down; explicit unsupported modes fail.
+
+Launch IDs derive from the authenticated caller namespace and clientRequestId,
+independently of HTTP transport sessions. Replay keeps accepted identity/model and
+skips new-workspace/default checks that may no longer pass. Current grant/caller modes,
+revocation and target modes are checked under both claim and message transactions,
+before receipt replay. Narrowing or revocation after claim leaves an empty durable
+thread and admits no message/run until authority permits retry. Top-level threads
+retain agent/MCP origin, sender identity and applicable link metadata.
+
+New existing-worktree targets must be live project Git worktrees; invalid base refs
+fail before thread creation when no configured remote can resolve them. Shared remote
+resolution supports remote-only branches and checkout supports Git commit searches.
+`projects.ensureScratch` shares atomic bootstrap with MCP scratch:true, preserves user
+icons and refuses profiles inside Git. Each Scratch launch claims a distinct folder.
+
+MCP accepts up to eight pending uploads. Claims copy and sync files before thread
+creation, retain pending sources for retries, and remove unused copies after rejected
+admission. Accepted message copies survive pending upload deletion; replay does not
+copy them again. Image provenance is omitted from tool schemas; pasted-file provenance
+and source attachment size/type constraints are retained. Non-MCP shared attachment
+intake and richer document extraction remain follow-up work.
+
+Ten real HTTP/native-peer tests cover defaults/fallback/options, explicit/inherited
+modes, replay, preflight/remote bases, Scratch and filesystem limits, attachment copy
+rollback/deletion, and native inheritance for both transports. A SQL trigger narrows
+or revokes authority at claim commit and proves second admission fails without a run.
+`examples/live_mcp_launch.rs` passed with installed Claude Haiku and Codex gpt-6.1-sol:
+each parent invoked the actual MCP tool, created exactly one new top-level thread,
+inherited model/modes/project, waited for synchronous setup before child admission,
+and copied a real setup proof file from the new checkout. Both parent/child completed.
+
+Validation: full suites 371 default / 368 no-default passed, with 21 opt-ins ignored
+each. Final MCP/staged-launch/handoff regressions pass in both modes; strict Clippy,
+fmt, generated compatibility and nine monitor tests pass. The monitor at 10:37 UTC
+still reports nightly4165, SHA8b44f42b14c8e273156474a924ccf29680dd7857.
+
+The complete-protocol goal remains active. Linked routing/OAuth/DPoP/SSE/hosted links,
+complete project/provider catalog enable precedence, transfer/cross-instance handoff,
+continuation settlement, broader toolkits, newer native recovery and current
+reference/UI acceptance remain open. No deployment or main promotion occurred.

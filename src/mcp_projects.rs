@@ -25,6 +25,7 @@ pub(crate) fn catalog() -> Vec<Value> {
     let colors = json!({"type":"string","enum":["gray","red","orange","amber","yellow","lime","green","emerald","teal","cyan","sky","blue","indigo","violet","purple","fuchsia","pink","rose"]});
     let icon = json!({"anyOf":[{"type":"null"},{"type":"object","properties":{"kind":{"type":"string","enum":["lucide"]},"name":{"type":"string","minLength":1,"maxLength":64,"pattern":"^[a-z0-9]+(?:-[a-z0-9]+)*$"},"color":colors},"required":["kind","name","color"]},{"type":"object","properties":{"kind":{"type":"string","enum":["emoji"]},"emoji":{"type":"string","minLength":1,"maxLength":32}},"required":["kind","emoji"]},{"type":"object","properties":{"kind":{"type":"string","enum":["monogram"]},"text":{"type":"string","minLength":1,"maxLength":32,"pattern":"^[\\p{L}\\p{N}][\\p{L}\\p{N}\\p{M}\\x{200c}\\x{200d}]*$"},"color":colors},"required":["kind","text","color"]}]});
     vec![
+        crate::mcp_launch::catalog(),
         write("t3_project_create","Register a folder, or omit workspaceRoot to create a named git project with README, icon and initial commit. Clone first with t3_project_clone if needed.",json!({"title":string(),"workspaceRoot":string(),"createWorkspaceRootIfMissing":{"type":"boolean"},"defaultModelSelection":nullable(model.clone()),"scripts":{"type":"array","items":script.clone()}}),&["title"]),
         write("t3_project_update","Update a project's settings; omitted fields are unchanged.",json!({"projectId":string(),"title":string(),"workspaceRoot":string(),"defaultModelSelection":nullable(model),"autoPull":{"type":"boolean"},"projectIcon":icon,"faviconPath":nullable(string()),"defaultThreadEnvMode":nullable(json!({"type":"string","enum":["local","worktree"]})),"scripts":{"type":"array","items":script},"pinned":{"type":"boolean"},"archived":{"type":"boolean"}}),&["projectId"]),
         write("t3_project_delete","Delete a project; nonempty projects require force=true. Its folder remains on disk.",json!({"projectId":string(),"force":{"type":"boolean"}}),&["projectId"]),
@@ -44,6 +45,7 @@ pub(crate) fn handles(name: &str) -> bool {
             | "t3_worktree_list"
             | "t3_worktree_status"
             | "t3_worktree_handoff"
+            | "t3_thread_launch"
     )
 }
 fn error(e: Value) -> Value {
@@ -85,6 +87,9 @@ fn normalize(schema: &Value, value: Value) -> Value {
     }
 }
 pub(crate) async fn call(s: Arc<State>, authority: Authority, name: &str, p: Value) -> Reply {
+    if name == "t3_thread_launch" {
+        return crate::mcp_launch::call(s, authority, p).await;
+    }
     let schema = catalog()
         .into_iter()
         .find(|t| t["name"] == name)

@@ -3075,3 +3075,41 @@ continuation settlement, newer native recovery and the published toolkit/auth/
 environment/provider backlog. See MCP.md and RECOVERY.md.
 
 Validation: full suites pass with 361 default / 358 no-default tests, 21 opt-ins ignored each. Final library, staged launch, storage, import/reader and handoff regressions are also checked after the last recovery/readiness changes. Strict Clippy runs in both configurations; fmt, generated compatibility and nine monitor tests pass.
+
+
+### MCP launch, transaction ceilings and upload claims (2026-11-04)
+
+MCP `t3_thread_launch` now calls the shared staged service. This supersedes earlier
+MCP-launch pending notes; broader protocol limits remain. The source intake is still
+nightly4165 SHA8b44f42b14c8e273156474a924ccf29680dd7857, confirmed at 10:37 UTC.
+
+`tests/mcp_launch.rs` adds ten integration tests with real MCP HTTP and Connection:
+
+- Effective project/global model defaults, configured exhausted-default fallback,
+  caller/key replay after defaults disappear, options preservation and legacy forms.
+- Explicit/inherited supported modes, narrowed headers and target-mode checks on replay.
+- A trigger changes or revokes the grant at thread-claim commit: message/run admission
+  fails, no preparation executes, and restoring authority retries the same identity.
+- Project Git worktree membership (including stale/recreated paths), invalid local
+  bases before claim, remote-only bases and Git commit-search preparation.
+- Shared Scratch bootstrap, icon preservation, distinct folders/replay and typed RPC
+  refusal when the server profile is inside a Git checkout.
+- Pending upload copies, failed claim/message rollback and retry, deletion of pending
+  originals before gated setup, and native consumption of the copied bytes by both
+  Claude/Codex peers. Native caller sessions also invoke launch themselves: the new
+  thread inherits project/model/modes and sender identity, defaults to project root
+  despite the caller's worktree, and remains top-level rather than delegated.
+
+`examples/live_mcp_launch.rs` passed with installed Claude Haiku and Codex gpt-6.1-sol.
+Each native parent created one new top-level thread through MCP launch; model/modes/
+project inherited, the synchronous setup gate prevented child provider admission,
+and the child read a setup file and wrote its exact bytes into a proof file in the
+new checkout. Both runs completed. These isolated live proofs do not certify the
+compatible desktop/Android UI or external OAuth/linked routing.
+
+Full suites pass with 371/368 tests and 21 opt-ins ignored per mode. Final affected MCP/staged/
+handoff tests and strict Clippy pass in both configurations; fmt, generated table
+and nine monitor tests pass. Non-MCP attachment intake, richer extraction, full provider/
+project enable precedence, numeric checkout progress, transfer/continuation, remaining
+toolkits/auth/environment/providers, newer runtime recovery and current differential/
+UI acceptance remain part of the active goal. No deployment/main promotion.

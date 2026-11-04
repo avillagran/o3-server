@@ -43,6 +43,9 @@ pub(crate) fn catalog() -> Vec<Value> {
     tools
 }
 pub(crate) fn prepare_arguments(name: &str, mut args: Value) -> Value {
+    if name == "t3_thread_launch" {
+        return crate::mcp_launch::normalize(args);
+    }
     if name == "t3_thread_read" && args.is_object() {
         for (key, max) in [
             ("limit", 100),

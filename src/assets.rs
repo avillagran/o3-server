@@ -85,7 +85,7 @@ pub fn attachments_dir(s: &State) -> PathBuf {
 // ------------------------------------------------------------------ attachment ids
 
 /// `<thread-segment>-<uuid>[-<ext>]`, as T3 names attachments. Returns (segment, ext).
-fn parse_id(id: &str) -> Option<(String, Option<String>)> {
+pub(crate) fn parse_id(id: &str) -> Option<(String, Option<String>)> {
     if id.is_empty() || id.len() > 256 || id.contains(['/', '\\', '.', '\0']) {
         return None;
     }

@@ -116,7 +116,7 @@ async fn git(root: &Path, args: &[&str], opts: Opts) -> Result<String, Value> {
         Err(operation("The git operation failed."))
     }
 }
-pub(crate) async fn remote_base(
+pub(crate) async fn remote_target(
     root: &Path,
     base: &str,
 ) -> Result<Option<(String, String)>, Value> {
@@ -161,6 +161,15 @@ pub(crate) async fn remote_base(
     {
         return Ok(None);
     }
+    Ok(Some((remote.to_owned(), branch.to_owned())))
+}
+pub(crate) async fn remote_base(
+    root: &Path,
+    base: &str,
+) -> Result<Option<(String, String)>, Value> {
+    let Some((remote, branch)) = remote_target(root, base).await? else {
+        return Ok(None);
+    };
     let refname = format!("refs/remotes/{remote}/{branch}");
     let out = output(
         root,
@@ -169,7 +178,7 @@ pub(crate) async fn remote_base(
             "--quiet",
             "--no-tags",
             "--",
-            remote,
+            &remote,
             &format!("+refs/heads/{branch}:{refname}"),
         ],
         Opts::NETWORK,

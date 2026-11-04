@@ -225,13 +225,21 @@ async fn prepare(
             )?;
             let fallback = if base == "-" { "@{-1}" } else { base };
             let reference = remote.as_ref().map(|r| r.0.as_str()).unwrap_or(fallback);
+            // Git's :/message syntax already names a commit; appending a type
+            // suffix changes the search text instead of verifying the type.
+            let commit_ref = if reference.starts_with(':') {
+                reference.to_owned()
+            } else {
+                format!("{reference}^{{commit}}")
+            };
             let commit = g(
                 &root,
                 &[
                     "rev-parse",
                     "--verify",
                     "--quiet",
-                    &format!("{reference}^{{commit}}"),
+                    "--end-of-options",
+                    &commit_ref,
                 ],
                 Opts::READ,
                 &cancel,

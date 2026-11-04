@@ -1569,6 +1569,11 @@ pub(crate) fn stage_message(
     if let Some(context) = c.get("context") {
         m["context"] = context.clone();
     }
+    if mcp_origin {
+        if let Some(sender) = c.get("senderThreadId") {
+            m["senderThreadId"] = sender.clone();
+        }
+    }
     if !c["text"].is_string() || !c["attachments"].is_array() {
         return Err("text and attachments required".into());
     }
