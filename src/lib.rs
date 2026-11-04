@@ -112,6 +112,7 @@ mod server_browser;
 
 mod agent_browser;
 
+mod provider_lifetime;
 mod run_restart;
 
 mod attachment_claims;

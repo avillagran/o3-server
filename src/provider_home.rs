@@ -434,6 +434,9 @@ pub(crate) struct Setup {
     ready: AtomicBool,
 }
 impl Setup {
+    pub(crate) fn shared_home(&self) -> &Path {
+        &self.home.shared
+    }
     pub(crate) fn new(home: Home) -> Arc<Self> {
         let ready = !home.overlay;
         Arc::new(Self {

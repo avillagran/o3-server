@@ -199,6 +199,17 @@ pub trait Provider: Send + Sync + 'static {
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(async { Ok(()) })
     }
+    /// Dispose one builtin scope without ending other instances served by this router.
+    fn dispose_instance<'a>(
+        &'a self,
+        _instance: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        self.dispose()
+    }
+    /// Close native resources owned by this instance scope before a replacement opens.
+    fn dispose<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
+    }
     fn config(&self) -> Vec<serde_json::Value> {
         Vec::new()
     }
@@ -927,13 +938,18 @@ fn persist_attempt(
             unreachable!()
         }
         ProviderEvent::Codex(frame) => {
+            let frame_binding = frame["method"] == "o3/binding";
             crate::codex_projection::persist(&tx, tid, rid, &thread, &mut run, &at, frame)?;
             thread = get(&tx, "thread", tid)?;
+            if frame_binding {
+                crate::provider_switch::bound(&tx, &thread, &run)?;
+            }
             crate::context_transfer::bound(&tx, &mut thread, &run, &at)?;
         }
         ProviderEvent::Native(frame) => {
             crate::claude_projection::persist(&tx, tid, rid, &mut thread, &mut run, &at, &frame)?;
             if frame["type"] == "session" {
+                crate::provider_switch::bound(&tx, &thread, &run)?;
                 crate::context_transfer::bound(&tx, &mut thread, &run, &at)?;
             }
         }
@@ -1065,6 +1081,19 @@ pub struct Providers {
     pub codex: std::sync::Arc<crate::codex::CodexProvider>,
 }
 impl Provider for Providers {
+    fn dispose_instance<'a>(
+        &'a self,
+        instance: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        match instance {
+            "codex" => self.codex.dispose(),
+            "claudeAgent" | "claude" | "claude-code" => match &self.claude {
+                Some(p) => p.dispose(),
+                None => Box::pin(async { Ok(()) }),
+            },
+            _ => Box::pin(async { Ok(()) }),
+        }
+    }
     fn capabilities(&self, instance: &str) -> Option<serde_json::Value> {
         match instance {
             "codex" => self.codex.capabilities(instance),
@@ -1522,18 +1551,22 @@ mod restart_tests {
 }
 
 /// Instance registry. Each configured identity owns its own native process/session pool.
-/// Replacing settings retires the old pool after its in-flight run releases it.
+/// Changed/removed scopes retire before their replacements admit native work.
 pub struct ConfiguredProviders {
     pub defaults: std::sync::Arc<dyn Provider>,
     pub directory: std::path::PathBuf,
     instances: std::sync::Mutex<std::collections::BTreeMap<String, Instance>>,
     last_settings: std::sync::Mutex<serde_json::Value>,
     discovered_defaults: std::sync::Mutex<std::collections::HashSet<String>>,
+    retired: std::sync::Mutex<Vec<std::sync::Arc<crate::provider_lifetime::Pool>>>,
+    builtin_scopes: std::sync::Mutex<
+        std::collections::BTreeMap<String, std::sync::Arc<crate::provider_lifetime::Pool>>,
+    >,
 }
 struct Instance {
     settings: serde_json::Value,
     discovered: bool,
-    provider: Option<std::sync::Arc<dyn Provider>>,
+    provider: Option<std::sync::Arc<crate::provider_lifetime::Pool>>,
     binary: std::path::PathBuf,
     preparation_error: Option<String>,
     continuation_key: Option<String>,
@@ -1546,6 +1579,8 @@ impl ConfiguredProviders {
             instances: Default::default(),
             last_settings: std::sync::Mutex::new(serde_json::json!({})),
             discovered_defaults: Default::default(),
+            retired: Default::default(),
+            builtin_scopes: Default::default(),
         }
     }
     fn settings(&self) -> serde_json::Value {
@@ -1562,12 +1597,94 @@ impl ConfiguredProviders {
         }
         last.clone()
     }
+    fn builtin_snapshot(&self) -> (Vec<String>, crate::provider_lifetime::Scopes) {
+        let instances = self.instances.lock().unwrap();
+        let scopes = self.builtin_scopes.lock().unwrap();
+        (instances.keys().cloned().collect(), scopes.clone())
+    }
+    fn builtin_scope(&self, id: &str) -> Option<std::sync::Arc<crate::provider_lifetime::Pool>> {
+        let id = if matches!(id, "claude" | "claude-code") {
+            "claudeAgent"
+        } else {
+            id
+        };
+        self.builtin_scopes.lock().unwrap().get(id).cloned()
+    }
+    async fn close_retired(&self) -> Result<(), String> {
+        let retired = self.retired.lock().unwrap().clone();
+        for pool in retired {
+            pool.close().await?;
+        }
+        self.retired.lock().unwrap().retain(|p| !p.is_closed());
+        Ok(())
+    }
     fn sync(&self) -> serde_json::Value {
         use serde_json::json;
         let settings = self.settings();
         let mut cache = self.instances.lock().unwrap();
         let hydrated = crate::provider_policy::hydrate(&settings);
-        cache.retain(|id, _| hydrated.get(id).is_some());
+        let available_builtins = self
+            .defaults
+            .config()
+            .into_iter()
+            .filter_map(|p| {
+                p["instanceId"]
+                    .as_str()
+                    .filter(|id| matches!(*id, "codex" | "claudeAgent"))
+                    .map(str::to_owned)
+            })
+            .collect::<Vec<_>>();
+        let mut builtin_scopes = self.builtin_scopes.lock().unwrap();
+        let mut retired = self.retired.lock().unwrap();
+        retired.retain(|pool| !pool.is_closed());
+        let mut newly_retired = Vec::new();
+        cache.retain(|id, instance| {
+            let keep = hydrated
+                .get(id)
+                .is_some_and(|entry| instance.settings == *entry);
+            if !keep {
+                if let Some(pool) = &instance.provider {
+                    pool.retire();
+                    retired.push(pool.clone());
+                    newly_retired.push(pool.clone());
+                }
+            }
+            keep
+        });
+        builtin_scopes.retain(|id, pool| {
+            let keep = available_builtins.contains(id) && hydrated.get(id).is_none();
+            if !keep {
+                pool.retire();
+                retired.push(pool.clone());
+                newly_retired.push(pool.clone());
+            }
+            keep
+        });
+        // Metadata inspection remains synchronous; physical close is asynchronous.
+        // Every new scope also carries this barrier, including inspection without a runtime.
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            for pool in newly_retired {
+                runtime.spawn(async move {
+                    let _ = pool.close().await;
+                });
+            }
+        }
+        let predecessors = retired.clone();
+        drop(retired);
+        for id in available_builtins {
+            if hydrated.get(&id).is_none() && !builtin_scopes.contains_key(&id) {
+                let provider = std::sync::Arc::new(crate::provider_lifetime::Builtin::new(
+                    self.defaults.clone(),
+                    id.clone(),
+                ));
+                builtin_scopes.insert(
+                    id.clone(),
+                    crate::provider_lifetime::Pool::new(provider, predecessors.clone()),
+                );
+                self.discovered_defaults.lock().unwrap().remove(&id);
+            }
+        }
+        drop(builtin_scopes);
         for (id, entry) in hydrated.as_object().into_iter().flatten() {
             if cache.get(id).is_some_and(|i| i.settings == *entry) {
                 continue;
@@ -1616,7 +1733,8 @@ impl ConfiguredProviders {
                 Instance {
                     settings: entry.clone(),
                     discovered: false,
-                    provider,
+                    provider: provider
+                        .map(|p| crate::provider_lifetime::Pool::new(p, predecessors.clone())),
                     binary,
                     preparation_error,
                     continuation_key,
@@ -1645,7 +1763,10 @@ impl Provider for ConfiguredProviders {
         match selected {
             Some(Some(p)) => p.capabilities(instance),
             Some(None) => None,
-            None => self.defaults.capabilities(instance),
+            None => self
+                .builtin_scope(instance)
+                .map(|p| p.capabilities(instance))
+                .unwrap_or_else(|| self.defaults.capabilities(instance)),
         }
     }
     fn plan_selection_transition(
@@ -1672,10 +1793,13 @@ impl Provider for ConfiguredProviders {
         match selected {
             Some(Some(p)) => p.plan_selection_transition(instance, current, target, capabilities),
             Some(None) => Ok(None),
-            None => {
-                self.defaults
-                    .plan_selection_transition(instance, current, target, capabilities)
-            }
+            None => match self.builtin_scope(instance) {
+                Some(p) => p.plan_selection_transition(instance, current, target, capabilities),
+                None => {
+                    self.defaults
+                        .plan_selection_transition(instance, current, target, capabilities)
+                }
+            },
         }
     }
 
@@ -1700,9 +1824,13 @@ impl Provider for ConfiguredProviders {
                 .and_then(|instance| instance.provider.clone())
         };
         Box::pin(async move {
+            self.close_retired().await?;
             match selected {
                 Some(p) => p.detach(instance, key, native, revoke).await,
-                None => self.defaults.detach(instance, key, native, revoke).await,
+                None => match self.builtin_scope(instance) {
+                    Some(p) => p.detach(instance, key, native, revoke).await,
+                    None => self.defaults.detach(instance, key, native, revoke).await,
+                },
             }
         })
     }
@@ -1713,26 +1841,30 @@ impl Provider for ConfiguredProviders {
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(async move {
             self.sync();
-            let configured = self
-                .instances
-                .lock()
-                .unwrap()
-                .keys()
-                .cloned()
-                .collect::<std::collections::HashSet<_>>();
+            self.close_retired().await?;
+            let (configured, builtin_scopes) = self.builtin_snapshot();
             let pending = {
                 let mut discovered = self.discovered_defaults.lock().unwrap();
                 ["codex", "claudeAgent"]
                     .into_iter()
-                    .filter(|id| !configured.contains(*id))
+                    .filter(|id| !configured.iter().any(|c| c.as_str() == *id))
                     .filter(|id| discovered.insert((*id).into()))
                     .map(str::to_owned)
                     .collect::<Vec<_>>()
             };
-            if !pending.is_empty() {
+            let mut unmanaged = Vec::new();
+            for id in pending {
+                match builtin_scopes.get(&id) {
+                    Some(p) => {
+                        let _ = p.discover(cwd.clone()).await;
+                    }
+                    None => unmanaged.push(id),
+                }
+            }
+            if !unmanaged.is_empty() {
                 let excluded = ["codex", "claudeAgent"]
                     .into_iter()
-                    .filter(|id| !pending.iter().any(|p| p == id))
+                    .filter(|id| !unmanaged.iter().any(|p| p == id))
                     .map(str::to_owned)
                     .collect();
                 let _ = self.defaults.discover_defaults(cwd.clone(), excluded).await;
@@ -1759,7 +1891,7 @@ impl Provider for ConfiguredProviders {
     fn poll_usage<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(async move {
             self.sync();
-            let settings = self.settings();
+            self.close_retired().await?;
             let providers: Vec<_> = self
                 .instances
                 .lock()
@@ -1768,13 +1900,12 @@ impl Provider for ConfiguredProviders {
                 .filter(|i| crate::provider_policy::instance_enabled(&i.settings))
                 .filter_map(|i| i.provider.clone())
                 .collect();
-            let excluded = settings["providerInstances"]
-                .as_object()
-                .into_iter()
-                .flatten()
-                .map(|(id, _)| id.clone())
-                .collect();
+            let (mut excluded, builtins) = self.builtin_snapshot();
+            excluded.extend(builtins.keys().cloned());
             let _ = self.defaults.poll_defaults(excluded).await;
+            for p in builtins.values() {
+                let _ = p.poll_usage().await;
+            }
             for p in providers {
                 let _ = p.poll_usage().await;
             }
@@ -1854,8 +1985,13 @@ impl Provider for ConfiguredProviders {
     fn refresh<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(async move {
             self.sync();
-            let excluded = self.instances.lock().unwrap().keys().cloned().collect();
+            self.close_retired().await?;
+            let (mut excluded, builtins) = self.builtin_snapshot();
+            excluded.extend(builtins.keys().cloned());
             self.defaults.refresh_defaults(excluded).await?;
+            for p in builtins.values() {
+                p.refresh().await?;
+            }
             let providers: Vec<_> = self
                 .instances
                 .lock()
@@ -1905,6 +2041,7 @@ impl Provider for ConfiguredProviders {
                         })
                     }
                 })
+                .or_else(|| self.builtin_scope(&input.provider_instance_id).map(Ok))
         };
         match selected {
             None if matches!(
@@ -1912,7 +2049,10 @@ impl Provider for ConfiguredProviders {
                 "codex" | "claudeAgent" | "claude" | "claude-code"
             ) =>
             {
-                self.defaults.execute(input, output, control, cancel)
+                Box::pin(async move {
+                    self.close_retired().await?;
+                    self.defaults.execute(input, output, control, cancel).await
+                })
             }
             None => Box::pin(async { Err("provider instance is not configured".into()) }),
             Some(selected) => {

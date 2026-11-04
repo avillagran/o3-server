@@ -12,14 +12,21 @@ def emit(v):print(json.dumps(v),flush=True)
 def log(method,params):
  if not (root/'.selection-fixture').exists():return
  # Never record injected MCP authentication/configuration.
- with (root/'selection-trace.jsonl').open('a') as f:f.write(json.dumps({'pid':os.getpid(),'method':method,'params':{k:v for k,v in params.items() if k!='config'}})+'\n')
+ previous=root/'.selection-previous-pid'
+ alive=False
+ if previous.exists():
+  try:os.kill(int(previous.read_text()),0);alive=True
+  except ProcessLookupError:pass
+ with (root/'selection-trace.jsonl').open('a') as f:f.write(json.dumps({'pid':os.getpid(),'method':method,'previousAlive':alive,'params':{k:v for k,v in params.items() if k!='config'}})+'\n')
 for line in sys.stdin:
  f=json.loads(line)
  if claude:
   if f['type']=='control_request':
    r=f['request'];log('claude/'+r['subtype'],r)
    if r['subtype']=='set_model':model=r['model']
-   emit({'type':'control_response','response':{'request_id':f['request_id'],'subtype':'success','response':{}}});continue
+   emit({'type':'control_response','response':{'request_id':f['request_id'],'subtype':'success','response':{}}})
+   if r['subtype']=='interrupt':emit({'type':'result','subtype':'success','session_id':native})
+   continue
   if f['type']!='user':continue
   text=f['message']['content'][0]['text'];log('claude/user',{'text':text,'model':model})
   emit({'type':'system','subtype':'init','session_id':native})
@@ -30,7 +37,17 @@ for line in sys.stdin:
  if i is None:continue
  if m in ('thread/start','thread/resume'):root=Path(p['cwd'])
  log(m,p)
- if m=='initialize':r={'capabilities':{}}
+ if m=='initialize':
+  home=Path(os.environ.get('CODEX_HOME','.'))
+  if (home/'.selection-init-lock-test').exists():
+   import fcntl
+   lock=(home/'.selection-init-lock').open('w')
+   try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+   except BlockingIOError:sys.exit('overlapping native state initialization')
+   (home/'.selection-init-entered').write_text(str(os.getpid()))
+   while not (home/'.selection-init-release').exists():time.sleep(.01)
+   fcntl.flock(lock,fcntl.LOCK_UN)
+  r={'capabilities':{}}
  elif m=='model/list':r={'data':[{'model':'one','displayName':'One','isDefault':True},{'model':'two','displayName':'Two'}]}
  elif m=='account/read':r={'account':{'type':'chatgpt'}}
  elif m=='account/rateLimits/read':r={'rateLimits':{}}

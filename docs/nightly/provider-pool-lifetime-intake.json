@@ -1,0 +1,53 @@
+{
+  "checkedAt": "2026-11-04T21:04:57.383182+00:00",
+  "tag": "v0.1.8-nightly.20261104.4179",
+  "reference": "9e85538535c8553901351112ab02dd1dd62db5ee",
+  "url": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.8-nightly.20261104.4179",
+  "scope": "Registry scope replacement, selected historical binding release and native startup/reap ownership. Complete protocol goal remains active.",
+  "sourceFiles": [
+    "apps/server/src/provider/ProviderInstanceRegistry.ts",
+    "apps/server/src/orchestration-v2/ProviderAdapterRegistry.ts",
+    "apps/server/src/orchestration-v2/ProviderSwitchService.ts",
+    "apps/server/src/orchestration-v2/ProviderSessionManager.ts",
+    "apps/server/src/orchestration-v2/Orchestrator.ts",
+    "apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts"
+  ],
+  "implemented": [
+    "Changed/removed explicit native instances retire their operations before replacement admission. Active executions receive native interrupt controls; metadata operations cancel. An exclusive barrier waits for admitted operations before native disposal. Cleanup is owned by a separate worker so abandoning a waiter cannot abandon reaping. Failed cleanup refuses replacement and may be retried.",
+    "Builtins in legacy routers use the same scope boundary. Adding an explicit builtin override closes its previous default scope; removal closes that override before the default reopens. Disposal selects one builtin rather than shutting down unrelated providers. Immutable scope snapshots prevent concurrent settings changes from bypassing managed admission via default discovery/refresh/quota routes.",
+    "The private binding index captures native owner keys and fresh binding IDs at binding events. Selection stages all planner-selected sessions, including historical bindings, while preserving target and stopped/error sessions. Historical background work refuses direct selection transactionally. Release ACKs mark the matching binding incarnation; retries and later rebinds do not reuse an old physical release receipt. Deletion purges routing metadata after native disposal.",
+    "Workspace planning now compares current live-session cwd against target worktree path with the source precedence rules; the service regression was red before the fix.",
+    "Codex discovery/quota probes participate in their owning instance actor scope. Disposal waits for child-process reap acknowledgements, including cancelled startup probes. Per shared-home startup gates serialize native SQLite initialization across probes, inference and account overlays, allowing independent homes to start concurrently. A cancelled handshake retains its gate until its actor is reaped. The overlap regression was red before the gate."
+  ],
+  "validation": {
+    "status": "passed",
+    "directed": "Four scope/barrier/cleanup unit tests; historical key/reopen/ACK/rebind/background/workspace service tests; Codex startup overlap/cancellation/different-home tests; three native-peer integration tests for replacement/removal/default override and preserved neighbor processes.",
+    "installed": "Final four app turns on installed Codex CLI0.166.0 gpt-6.1-sol and Claude Haiku. Each starts a shell, changes instance environment while active, verifies old shell and CLI PIDs disappear before replacement, then recalls a randomly generated private codeword absent from replacement input in the resumed native conversation. Uses the final registry implementation; builtin override/removal is covered separately by native-peer process tests. Temporary credential homes and owned processes cleaned.",
+    "reproduceInstalled": "tools/live-transfer-e2e --target provider_lifetime live_scope_replacement_reaps_active_shells_and_resumes_private_history",
+    "fullDefault": 460,
+    "fullNoDefault": 457,
+    "ignoredEach": 28,
+    "other": [
+      "strict all-target Clippy both modes",
+      "rustfmt",
+      "generated compatibility table",
+      "nightly monitor9",
+      "96 pinned selection fixture reproduction",
+      "git diff --check",
+      "changed Python fixture syntax"
+    ]
+  },
+  "pending": [
+    "Full ProviderSessionManager shared-session/attached-thread pooling and releaseUnlessBusy/queue policy, stopped/error projection reconciliation on registry changes, forced rebuild/credential-access epochs and all-driver auth probe scope ownership. Standalone generation/auth processes outside provider-adapter scopes need independent ownership validation.",
+    "Legacy imported bindings without a recorded native owner retain the prior fallback. Exact owner reconstruction and full cross-process/original-process reattachment remain unproven.",
+    "Recursive native descendant/late-lineage/dynamic/image work containment, unresponsive-adapter close policy, all SDK anchors/background guards and exact event/modelSwitch/checkpoint fidelity.",
+    "request_secret4179 and remaining MCP/auth/environment/provider drivers, importer/forceStop, source-wide differential, desktop/Android acceptance and resource measurements. No deployment or main promotion.",
+    "Latest4192 crypto/auth/DPoP/PayloadSigner, asset/upload/secret-token signing and client-runtime stream-defect recovery intake and differential verification. Relevant lifecycle source is unchanged; broader equivalence is not claimed."
+  ],
+  "latestReleaseCheck": {
+    "tag": "v0.1.8-nightly.20261104.4192",
+    "reference": "7f6f47b27b44456f1c8214d3b566b375c09f629e",
+    "publishedAt": "2026-11-04T20:52:51Z",
+    "scopeComparison": "Registry, switch policy, session manager, orchestrator, selection policy, contracts/src and shared/model are byte-identical to4179. Codex adapter/turn-start changes inspected: Effect.succeed(undefined) becomes Effect.undefined; Codex driver adds a Signature service dependency. No relevant lifecycle behavior change found in this comparison. Wider4192 crypto/auth migration and stream-recovery changes require separate verification."
+  }
+}
