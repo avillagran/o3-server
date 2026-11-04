@@ -3319,3 +3319,59 @@ ignored each; strict all-target Clippy both modes, fmt, generated compatibility,
 Four installed app turns prove both active replacement paths and private-history
 recall. Native first-use shared-home SQLite initialization is serialized in that
 proof; concurrent first-use initialization remains unverified.
+
+## Provider scope and selected-binding checkpoint (2026-11-04)
+
+PR34 passed both checks on d89b749182d531e57d66187dffb9c5c6cfd64110 and merged
+into dev75fb4390e8f0d49502bc5a9da4f2e158e2676f2c. The next adaptation follows
+nightly4179 ProviderInstanceRegistry scope replacement and ProviderSwitchService
+release selection.
+
+Modified and removed native instances retire before replacements admit native
+work. Executions receive native interruption; metadata operations cancel. Closure
+waits for admitted operations and native disposal, with cleanup owned independently
+of the waiter. Builtin default scopes obey the same rule when overridden or restored;
+other providers retain their processes. Scope snapshots prevent settings changes
+from routing startup through an unmanaged default.
+
+The private native-binding index retains the original owner key and binding
+incarnation. Normal selection journals all planner-selected historical sessions,
+preserving target peers and stopped/error records. Native ACKs mark only matching
+bindings; a later rebind gets a fresh physical release receipt. Historical native
+background work refuses direct selection atomically. Workspace planning uses live
+session cwd before the target worktree path, as the source service does.
+
+A controlled regression reproduced the fresh-home Codex SQLite failure: discovery
+uses its own temporary app-server while the inference actor initializes the same
+store. Startup now serializes initialize by shared home, including overlays; an
+independent home can start while another is held. Cancellation retains that startup
+gate until its child is reaped. Instance disposal also owns transient discovery and
+quota actors, and confirms reaping when an initialize waiter disappears.
+
+Four installed app turns with Codex CLI0.166.0 gpt-6.1-sol and Claude Haiku change
+instance environment while a native shell runs. The old shell and CLI are reaped
+before the replacement; the new process resumes native history and recalls a private
+random codeword absent from its input. Native-peer tests additionally cover default
+override/removal and unchanged neighbor processes. The final installed proof uses
+the completed registry implementation; builtin routing is covered separately by
+those process tests.
+
+Full shared-session attachment/releaseUnlessBusy and queued background policy,
+projection reconciliation on registry changes, credential/forced-rebuild epochs,
+legacy owner reconstruction, recursive native lineage and the broader protocol,
+differential/UI/resource backlog remain open. Evidence and final validation inventory:
+[provider-pool-lifetime-intake.json](nightly/provider-pool-lifetime-intake.json).
+
+Validation: full suites460 default /457 without default features,28 opt-ins
+ignored each; strict all-target Clippy both modes, fmt, generated compatibility,
+9 monitor tests,96 pinned selection fixture reproduction and diff checks pass.
+The workspace service and concurrent startup regressions were observed red before
+their production fixes; cancelled initialization verifies the exact child PID is
+reaped before disposal acknowledges.
+
+Nightly4192 (7f6f47b27b44456f1c8214d3b566b375c09f629e) appeared during final
+validation. Registry, switch/session/orchestrator/selection sources and contract
+schemas are unchanged from4179; inspected Codex adapter changes replace an
+undefined-valued Effect with Effect.undefined. This checkpoint remains applicable
+to those unchanged lifecycle sources. Broader4192 crypto/auth/PayloadSigner/DPoP
+and stream-defect recovery changes require their own intake and verification.

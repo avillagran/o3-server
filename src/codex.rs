@@ -1,4 +1,4 @@
-//! Codex 0.166 app-server: one process, bounded multiplexing, no retained history.
+//! Codex 0.166: shared inference actor, scoped probes and bounded multiplexing.
 use crate::provider::{Provider, ProviderControl, ProviderEvent, RunInput};
 use serde_json::{json, Value};
 use std::{collections::HashMap, future::Future, path::PathBuf, pin::Pin, sync::Mutex};
@@ -7,6 +7,9 @@ use tokio::{
     process::Command,
     sync::{mpsc, oneshot, watch},
 };
+
+#[path = "codex_lifetime.rs"]
+mod lifetime;
 
 const MAX_FRAME: usize = 1024 * 1024;
 // Provider input admits 8 MiB of serialized content, plus the RPC envelope.
@@ -103,6 +106,7 @@ pub struct CodexProvider {
     launch_args: Vec<String>,
     idle_timeout: std::time::Duration,
     client: tokio::sync::Mutex<Option<Client>>,
+    actors: lifetime::Actors,
     descriptor: std::sync::Arc<Mutex<Value>>,
 }
 fn codex_home(home: Option<&std::path::Path>) -> Option<PathBuf> {
@@ -204,6 +208,7 @@ impl CodexProvider {
             launch_args: Vec::new(),
             idle_timeout: std::time::Duration::from_secs(60),
             client: tokio::sync::Mutex::new(None),
+            actors: Default::default(),
             descriptor: std::sync::Arc::new(Mutex::new(json!({
                 "instanceId":"codex", "driver":"codex", "displayName":"Codex", "enabled":true,
                 "installed":false,"version":null,"status":"warning","auth":{"status":"unknown"},
@@ -212,6 +217,10 @@ impl CodexProvider {
                 "supportedRuntimeModes":["full-access","approval-required"],"reportsContextWindow":true
             }))),
         }
+    }
+    fn with_actor_scope(mut self, actors: lifetime::Actors) -> Self {
+        self.actors = actors;
+        self
     }
     pub fn with_launch_args(mut self, args: Vec<String>) -> Self {
         self.launch_args = args;
@@ -308,6 +317,27 @@ impl CodexProvider {
         result
     }
     async fn launch(&self) -> Result<Client, String> {
+        let state_home = match &self.home_setup {
+            Some(setup) => setup.shared_home().to_owned(),
+            None => self
+                .home
+                .clone()
+                .or_else(|| {
+                    self.environment
+                        .iter()
+                        .rev()
+                        .find(|(k, _)| k == "CODEX_HOME")
+                        .map(|(_, v)| PathBuf::from(v))
+                })
+                .or_else(|| codex_home(None))
+                .unwrap_or(crate::provider_home::host_home()?.join(".codex")),
+        };
+        let state_home = crate::provider_home::absolute(
+            &state_home,
+            &std::env::current_dir().map_err(|e| e.to_string())?,
+        );
+        let state_home = state_home.canonicalize().unwrap_or(state_home);
+        let mut startup = lifetime::startup(state_home).await;
         if let Some(setup) = &self.home_setup {
             setup.prepare().await?;
         }
@@ -327,9 +357,16 @@ impl CodexProvider {
             .spawn()
             .map_err(|e| format!("Cannot spawn Codex: {e}"))?;
         let (tx, rx) = mpsc::channel(32);
-        tokio::spawn(actor(child, rx, self.descriptor.clone(), self.idle_timeout));
+        let (finished, closed) = watch::channel(false);
+        let (descriptor, idle_timeout) = (self.descriptor.clone(), self.idle_timeout);
+        tokio::spawn(async move {
+            actor(child, rx, descriptor, idle_timeout).await;
+            finished.send_replace(true);
+        });
         let c = Client(tx);
+        startup.spawned(self.actors.track(&c, closed));
         let init=c.call("initialize",json!({"clientInfo":{"name":"o3-server","version":env!("CARGO_PKG_VERSION")},"capabilities":{"experimentalApi":true}})).await?;
+        startup.initialized();
         c.0.send(Op::Reply(json!({"method":"initialized","params":{}})))
             .await
             .map_err(|_| "Codex closed")?;
@@ -763,6 +800,13 @@ async fn unload(
     Ok(())
 }
 impl Provider for CodexProvider {
+    fn dispose<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            self.shutdown().await;
+            self.actors.close().await
+        })
+    }
+
     fn capabilities(&self, _instance: &str) -> Option<Value> {
         crate::selection_transition::native_capabilities("codex")
     }
@@ -805,7 +849,8 @@ impl Provider for CodexProvider {
             let discovery = Self::new(self.executable.clone(), self.home.clone())
                 .with_environment(self.environment.clone())
                 .with_home_setup(self.home_setup.clone())
-                .with_launch_args(self.launch_args.clone());
+                .with_launch_args(self.launch_args.clone())
+                .with_actor_scope(self.actors.clone());
             let result = async {
                 let c = discovery.connection().await?;
                 if let Ok(skills) = c.call("skills/list", json!({"cwds":[cwd]})).await {
@@ -882,7 +927,8 @@ impl Provider for CodexProvider {
             let probe = Self::new(self.executable.clone(), self.home.clone())
                 .with_environment(self.environment.clone())
                 .with_home_setup(self.home_setup.clone())
-                .with_launch_args(self.launch_args.clone());
+                .with_launch_args(self.launch_args.clone())
+                .with_actor_scope(self.actors.clone());
             let result = async {
                 let c = probe.connection().await?;
                 let response = c.call("account/rateLimits/read", json!({})).await?;
@@ -1175,6 +1221,119 @@ mod tests {
             attachments: json!([]),
             context: None,
         }
+    }
+    #[tokio::test]
+    async fn instance_disposal_reaps_a_cancelled_discovery_handshake_before_another_start() {
+        let home = std::env::temp_dir().join(format!(
+            "o3-cancel-startup-{}",
+            crate::store::random_id().unwrap()
+        ));
+        std::fs::create_dir(&home).unwrap();
+        std::fs::write(home.join(".selection-init-lock-test"), "").unwrap();
+        let provider = std::sync::Arc::new(CodexProvider::new(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/selection-peer.py"),
+            Some(home.clone()),
+        ));
+        let p = provider.clone();
+        let cwd = home.clone();
+        let discovery = tokio::spawn(async move { p.discover(cwd).await });
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while !home.join(".selection-init-entered").exists() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let pid = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                if let Some(pid) = std::fs::read_to_string(home.join(".selection-init-entered"))
+                    .ok()
+                    .and_then(|p| p.trim().parse::<u32>().ok())
+                {
+                    break pid;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        discovery.abort();
+        assert!(discovery.await.unwrap_err().is_cancelled());
+        tokio::time::timeout(std::time::Duration::from_secs(5), provider.dispose())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            !PathBuf::from(format!("/proc/{pid}")).exists(),
+            "cancelled probe was acknowledged before its child was reaped"
+        );
+        std::fs::write(home.join(".selection-init-release"), "").unwrap();
+        let (out, _events) = mpsc::channel(16);
+        let (_ctl, controls) = mpsc::channel(8);
+        let (_cancel, cancel) = watch::channel(false);
+        let mut run = input("after-cancel", None);
+        run.cwd = home.clone();
+        provider.run(run, out, controls, cancel).await.unwrap();
+        provider.dispose().await.unwrap();
+        std::fs::remove_dir_all(home).unwrap();
+    }
+    #[tokio::test]
+    async fn discovery_and_runtime_serialize_first_use_of_the_same_native_state_directory() {
+        let home =
+            std::env::temp_dir().join(format!("o3-startup-{}", crate::store::random_id().unwrap()));
+        std::fs::create_dir(&home).unwrap();
+        std::fs::write(home.join(".selection-init-lock-test"), "").unwrap();
+        let provider = std::sync::Arc::new(CodexProvider::new(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/selection-peer.py"),
+            Some(home.clone()),
+        ));
+        let p = provider.clone();
+        let cwd = home.clone();
+        let discovery = tokio::spawn(async move { p.discover(cwd).await });
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while !home.join(".selection-init-entered").exists() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let (out, _events) = mpsc::channel(16);
+        let (_ctl, controls) = mpsc::channel(8);
+        let (_cancel, cancel) = watch::channel(false);
+        let mut run = input("startup", None);
+        run.cwd = home.clone();
+        let p = provider.clone();
+        let mut runtime = tokio::spawn(async move { p.run(run, out, controls, cancel).await });
+        let result =
+            tokio::time::timeout(std::time::Duration::from_millis(150), &mut runtime).await;
+        assert!(
+            result.is_err(),
+            "runtime attempted overlapping native initialization: {result:?}"
+        );
+        let independent = home.join("independent");
+        std::fs::create_dir(&independent).unwrap();
+        let other = CodexProvider::new(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/selection-peer.py"),
+            Some(independent.clone()),
+        );
+        let (out, _events) = mpsc::channel(16);
+        let (_ctl, controls) = mpsc::channel(8);
+        let (_cancel, cancel) = watch::channel(false);
+        let mut run = input("independent", None);
+        run.cwd = independent;
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            other.run(run, out, controls, cancel),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        other.dispose().await.unwrap();
+        std::fs::write(home.join(".selection-init-release"), "").unwrap();
+        discovery.await.unwrap().unwrap();
+        runtime.await.unwrap().unwrap();
+        provider.shutdown().await;
+        std::fs::remove_dir_all(home).unwrap();
     }
     #[tokio::test]
     async fn signed_in_lazy_provider_is_selectable_by_clients_without_spawning() {

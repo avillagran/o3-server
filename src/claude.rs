@@ -787,6 +787,13 @@ impl Session {
     }
 }
 impl Provider for ClaudeProvider {
+    fn dispose<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            self.shutdown().await;
+            Ok(())
+        })
+    }
+
     fn capabilities(&self, _instance: &str) -> Option<Value> {
         crate::selection_transition::native_capabilities("claudeAgent")
     }

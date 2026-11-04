@@ -12,6 +12,7 @@ use std::{path::PathBuf, sync::Arc};
 type Result<T> = std::result::Result<T, String>;
 pub(crate) fn initialize(db: &Connection) -> Result<()> {
     db.execute_batch("CREATE TABLE IF NOT EXISTS provider_selection_plans(thread_id TEXT PRIMARY KEY,payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS provider_switches(id TEXT PRIMARY KEY,thread_id TEXT NOT NULL,payload TEXT NOT NULL,released_at TEXT,last_error TEXT); CREATE INDEX IF NOT EXISTS provider_switches_pending ON provider_switches(thread_id) WHERE released_at IS NULL;").map_err(|e|e.to_string())?;
+    db.execute_batch("CREATE TABLE IF NOT EXISTS provider_native_bindings(thread_id TEXT NOT NULL,session_id TEXT NOT NULL,provider_thread_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(thread_id,session_id,provider_thread_id));").map_err(|e|e.to_string())?;
     db.execute("UPDATE records AS p SET body=json_set(body,'$.ownerNodeId',NULL) WHERE kind='providerThreads' AND json_extract(body,'$.driver')='claudeAgent' AND json_extract(body,'$.appThreadId')=thread_id AND EXISTS(SELECT 1 FROM records n WHERE n.kind='nodes' AND n.thread_id=p.thread_id AND n.id=json_extract(p.body,'$.ownerNodeId') AND json_extract(n.body,'$.kind')='root_turn')",[]).map_err(|e|e.to_string())?;
     Ok(())
 }
@@ -100,12 +101,16 @@ pub(crate) fn plan(s: &State, db: &Connection, thread: &Value, target: &Value) -
         .as_str()
         .or_else(|| session.and_then(|s| s["cwd"].as_str()))
         .unwrap_or("<unresolved-workspace>");
-    let state = |model: &Value, identity: &(String, PathBuf)| json!({"driver":identity.0,"continuationIdentity":{"driverKind":identity.0,"continuationKey":identity.1},"modelSelection":model,"runtimeMode":thread["runtimeMode"],"interactionMode":thread["interactionMode"],"workspace":workspace});
+    let current_workspace = session
+        .and_then(|s| s["cwd"].as_str())
+        .or_else(|| thread["worktreePath"].as_str())
+        .unwrap_or("<unresolved-workspace>");
+    let state = |model: &Value, identity: &(String, PathBuf), workspace: &str| json!({"driver":identity.0,"continuationIdentity":{"driverKind":identity.0,"continuationKey":identity.1},"modelSelection":model,"runtimeMode":thread["runtimeMode"],"interactionMode":thread["interactionMode"],"workspace":workspace});
     let current = current_identity
         .as_ref()
         .filter(|_| current_caps.is_some() && (session.is_some() || native.is_some()))
-        .map(|id| state(&thread["modelSelection"], id));
-    let mut target_state = state(target, &target_identity);
+        .map(|id| state(&thread["modelSelection"], id, current_workspace));
+    let mut target_state = state(target, &target_identity, workspace);
     let settings = crate::settings::read(s)?;
     target_state["available"] = json!(
         target_caps.is_some()
@@ -167,29 +172,106 @@ fn guard(db: &Connection, thread: &Value, target: &Value) -> Result<()> {
     }
     Ok(())
 }
-fn stage(db: &Connection, thread: &Value, pt: &Value) -> Result<()> {
+// Owner keys belong to the native binding, not the thread's latest preference generation.
+// Keep this index private: its values are runtime routing metadata, not credentials.
+pub(crate) fn bound(db: &Connection, thread: &Value, run: &Value) -> Result<()> {
     let tid = thread["id"].as_str().ok_or("thread id missing")?;
-    let key = format!(
-        "{}:{}",
-        tid,
-        thread["providerGeneration"].as_str().unwrap_or("")
-    );
-    let id = format!(
-        "provider-switch:{}:{}",
-        pt["id"].as_str().unwrap_or(""),
-        key
-    );
-    let run_ids = list(db, "runs", tid)?
+    let pt = get(
+        db,
+        "providerThreads",
+        run["providerThreadId"]
+            .as_str()
+            .ok_or("provider thread missing")?,
+    )?;
+    let Some(session) = pt["providerSessionId"].as_str() else {
+        return Ok(());
+    };
+    let Some(native) = pt["nativeThreadRef"]["nativeId"].as_str() else {
+        return Ok(());
+    };
+    let payload = json!({"bindingId":random_id()?,"providerInstanceId":pt["providerInstanceId"],"providerSessionId":session,"providerThreadId":pt["id"],"nativeId":native,"key":format!("{}:{}",tid,thread["providerGeneration"].as_str().unwrap_or("")),"driver":pt["driver"]});
+    db.execute("INSERT INTO provider_native_bindings VALUES(?1,?2,?3,?4) ON CONFLICT(thread_id,session_id,provider_thread_id) DO UPDATE SET payload=excluded.payload",params![tid,session,pt["id"].as_str(),payload.to_string()]).map_err(|e|e.to_string())?;
+    Ok(())
+}
+fn stage_payload(db: &Connection, thread: &Value, mut payload: Value) -> Result<()> {
+    let tid = thread["id"].as_str().ok_or("thread id missing")?;
+    let pt = payload["providerThreadId"].as_str().map(str::to_owned);
+    payload["runIds"] = json!(list(db, "runs", tid)?
         .into_iter()
-        .filter(|r| r["providerThreadId"] == pt["id"])
+        .filter(|r| pt.is_some() && r["providerThreadId"] == payload["providerThreadId"])
         .map(|r| r["id"].clone())
-        .collect::<Vec<_>>();
-    let payload = json!({"providerInstanceId":pt["providerInstanceId"],"key":key,"nativeId":pt["nativeThreadRef"]["nativeId"],"providerSessionId":pt["providerSessionId"],"providerThreadId":pt["id"],"driver":pt["driver"],"runIds":run_ids});
+        .collect::<Vec<_>>());
+    let id = format!(
+        "provider-switch:{}:{}{}",
+        pt.as_deref()
+            .or(payload["providerSessionId"].as_str())
+            .unwrap_or(""),
+        payload["key"].as_str().unwrap_or(""),
+        payload["bindingId"]
+            .as_str()
+            .map(|id| format!(":{id}"))
+            .unwrap_or_default()
+    );
     db.execute(
         "INSERT OR IGNORE INTO provider_switches(id,thread_id,payload) VALUES(?,?,?)",
         params![id, tid, payload.to_string()],
     )
     .map_err(|e| e.to_string())?;
+    Ok(())
+}
+fn stage(db: &Connection, thread: &Value, pt: &Value) -> Result<()> {
+    let saved:Option<String>=db.query_row("SELECT payload FROM provider_native_bindings WHERE thread_id=?1 AND provider_thread_id=?2 AND json_extract(payload,'$.providerInstanceId')=?3 AND json_extract(payload,'$.nativeId') IS ?4 ORDER BY (session_id IS ?5) DESC,rowid DESC LIMIT 1",params![thread["id"].as_str(),pt["id"].as_str(),pt["providerInstanceId"].as_str(),pt["nativeThreadRef"]["nativeId"].as_str(),pt["providerSessionId"].as_str()],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
+    let payload = match saved {
+        Some(saved) => serde_json::from_str(&saved).map_err(|e| e.to_string())?,
+        None => {
+            json!({"providerInstanceId":pt["providerInstanceId"],"key":format!("{}:{}",thread["id"].as_str().unwrap_or(""),thread["providerGeneration"].as_str().unwrap_or("")),"nativeId":pt["nativeThreadRef"]["nativeId"],"providerSessionId":pt["providerSessionId"],"providerThreadId":pt["id"],"driver":pt["driver"]})
+        }
+    };
+    stage_payload(db, thread, payload)
+}
+fn stage_sessions(db: &Connection, thread: &Value, sessions: &[String]) -> Result<()> {
+    let tid = thread["id"].as_str().ok_or("thread id missing")?;
+    let threads = list(db, "providerThreads", tid)?;
+    for session in sessions {
+        let owned = threads
+            .iter()
+            .filter(|pt| pt["providerSessionId"] == *session)
+            .collect::<Vec<_>>();
+        for pt in &owned {
+            if crate::native_recovery::background_work(db, tid, pt)? {
+                return Err("The previous provider is still running background agents or commands; wait for them or stop before switching.".into());
+            }
+        }
+        let bindings = {
+            let mut q=db.prepare("SELECT payload FROM provider_native_bindings WHERE thread_id=? AND session_id=? AND json_extract(payload,'$.releasedAt') IS NULL").map_err(|e|e.to_string())?;
+            let rows = q
+                .query_map(params![tid, session], |r| r.get::<_, String>(0))
+                .map_err(|e| e.to_string())?
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?;
+            rows
+        };
+        if !bindings.is_empty() {
+            for binding in bindings {
+                stage_payload(
+                    db,
+                    thread,
+                    serde_json::from_str(&binding).map_err(|e| e.to_string())?,
+                )?;
+            }
+        } else if !owned.is_empty() {
+            for pt in owned {
+                stage(db, thread, pt)?;
+            }
+        } else {
+            let session = get(db, "providerSessions", session)?;
+            stage_payload(
+                db,
+                thread,
+                json!({"providerInstanceId":session["providerInstanceId"],"providerSessionId":session["id"],"providerThreadId":null,"nativeId":null,"key":format!("{}:{}",tid,thread["providerGeneration"].as_str().unwrap_or("")),"driver":session["driver"]}),
+            )?;
+        }
+    }
     Ok(())
 }
 /// Metadata selection preserves native ownership until a run chooses a compatible row or a handoff.
@@ -202,6 +284,7 @@ pub(crate) fn selection(
 ) -> Result<crate::selection_transition::Transition> {
     let plan = plan(s, db, thread, target)?;
     guard(db, thread, target)?;
+    stage_sessions(db, thread, &plan.release_sessions)?;
     db.execute("INSERT INTO provider_selection_plans VALUES(?,?) ON CONFLICT(thread_id) DO UPDATE SET payload=excluded.payload",params![thread["id"].as_str(),json!({"target":target,"transition":plan.transition,"providerThreadId":thread["activeProviderThreadId"],"sourceInstanceId":thread["modelSelection"]["instanceId"],"releaseSessionIds":plan.release_sessions}).to_string()]).map_err(|e|e.to_string())?;
     if let Some(pt) = current(db, thread)? {
         if pt["providerInstanceId"] != target["instanceId"]
@@ -722,6 +805,7 @@ pub(crate) async fn release_pending(
                 }
             }
         }
+        tx.execute("UPDATE provider_native_bindings SET payload=json_set(payload,'$.releasedAt',?4) WHERE thread_id=?1 AND json_extract(payload,'$.key')=?2 AND json_extract(payload,'$.nativeId') IS ?3 AND json_extract(payload,'$.bindingId') IS ?5",params![tid,p["key"].as_str(),p["nativeId"].as_str(),at,p["bindingId"].as_str()]).map_err(|e|e.to_string())?;
         tx.execute(
             "UPDATE provider_switches SET released_at=?,last_error=NULL WHERE id=?",
             params![at, id],
@@ -958,6 +1042,247 @@ mod plan_tests {
         );
         drop(db);
         drop(s);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod binding_tests {
+    use super::*;
+    use crate::provider::{Provider, ProviderControl, ProviderEvent, RunInput};
+    use std::{
+        future::Future,
+        pin::Pin,
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            Mutex,
+        },
+    };
+    type DetachCall = (String, String, Option<String>);
+    #[derive(Default)]
+    struct Peer {
+        calls: Mutex<Vec<DetachCall>>,
+        fail: AtomicBool,
+    }
+    impl Provider for Peer {
+        fn detach<'a>(
+            &'a self,
+            instance: &'a str,
+            key: &'a str,
+            native: Option<&'a str>,
+            _: bool,
+        ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+            Box::pin(async move {
+                self.calls.lock().unwrap().push((
+                    instance.into(),
+                    key.into(),
+                    native.map(str::to_owned),
+                ));
+                if self.fail.load(Ordering::Acquire) {
+                    Err("native detach failed".into())
+                } else {
+                    Ok(())
+                }
+            })
+        }
+        fn execute<'a>(
+            &'a self,
+            _: RunInput,
+            _: tokio::sync::mpsc::Sender<ProviderEvent>,
+            _: tokio::sync::mpsc::Receiver<ProviderControl>,
+            _: tokio::sync::watch::Receiver<bool>,
+        ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+            Box::pin(async { Ok(()) })
+        }
+    }
+    fn fixture() -> (State, Value, Arc<Peer>, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("o3-binding-test-{}", random_id().unwrap()));
+        let state = State::open(&dir).unwrap();
+        let peer = Arc::new(Peer::default());
+        *state.provider.lock().unwrap() = Some(peer.clone());
+        let thread = json!({"id":"t","providerInstanceId":"codex","modelSelection":{"instanceId":"codex","model":"one"},"activeProviderThreadId":"current","providerGeneration":"current-owner","runtimeMode":"full-access","interactionMode":"default"});
+        {
+            let db = state.db.lock().unwrap();
+            put(&db, "thread", "t", "t", &thread).unwrap();
+            for (pt, sid, instance, generation, status) in [
+                (
+                    "current",
+                    "current-session",
+                    "codex",
+                    "current-owner",
+                    "ready",
+                ),
+                (
+                    "history",
+                    "history-session",
+                    "codex",
+                    "historical-owner",
+                    "ready",
+                ),
+                (
+                    "target",
+                    "target-session",
+                    "claudeAgent",
+                    "target-owner",
+                    "ready",
+                ),
+                (
+                    "stopped",
+                    "stopped-session",
+                    "codex",
+                    "stopped-owner",
+                    "stopped",
+                ),
+            ] {
+                put(&db,"providerSessions",sid,"t",&json!({"id":sid,"driver":instance,"providerInstanceId":instance,"status":status,"updatedAt":if pt=="current"{"2026-11-04T03:00:00Z"}else{"2026-11-04T01:00:00Z"},"cwd":"/workspace","capabilities":crate::selection_transition::native_capabilities(instance).unwrap()})).unwrap();
+                put(&db,"providerThreads",pt,"t",&json!({"id":pt,"appThreadId":"t","providerInstanceId":instance,"driver":instance,"providerSessionId":sid,"nativeThreadRef":{"driver":instance,"nativeId":format!("native-{pt}"),"strength":"strong"},"pendingBackgroundTasks":[],"status":"active"})).unwrap();
+                let mut owner = thread.clone();
+                owner["providerGeneration"] = json!(generation);
+                bound(&db, &owner, &json!({"providerThreadId":pt})).unwrap();
+            }
+        }
+        (state, thread, peer, dir)
+    }
+    #[test]
+    fn changed_workspace_compares_the_live_session_cwd_with_the_target_thread_workspace() {
+        let (state, mut thread, _, dir) = fixture();
+        thread["worktreePath"] = json!("/new-workspace");
+        {
+            let db = state.db.lock().unwrap();
+            let result = plan(&state, &db, &thread, &thread["modelSelection"]).unwrap();
+            assert_eq!(
+                result.transition,
+                crate::selection_transition::Transition::RestartAndResume
+            );
+            assert_eq!(result.release_sessions, vec!["current-session"]);
+        }
+        drop(state);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[tokio::test]
+    async fn selected_historical_bindings_keep_their_owner_keys_across_reopen_and_preserve_target_peers(
+    ) {
+        let (state, mut thread, peer, dir) = fixture();
+        {
+            let db = state.db.lock().unwrap();
+            selection(
+                &state,
+                &db,
+                &mut thread,
+                &json!({"instanceId":"claudeAgent","model":"haiku"}),
+                &json!("switch"),
+            )
+            .unwrap();
+        }
+        drop(state);
+        let state = State::open(&dir).unwrap();
+        release_pending(&state, peer.as_ref(), "t").await.unwrap();
+        let mut calls = peer.calls.lock().unwrap().clone();
+        calls.sort();
+        assert_eq!(
+            calls,
+            vec![
+                (
+                    "codex".into(),
+                    "t:current-owner".into(),
+                    Some("native-current".into())
+                ),
+                (
+                    "codex".into(),
+                    "t:historical-owner".into(),
+                    Some("native-history".into())
+                )
+            ]
+        );
+        {
+            let db = state.db.lock().unwrap();
+            assert!(get(&db, "providerSessions", "target-session").is_ok());
+            assert!(get(&db, "providerSessions", "stopped-session").is_ok());
+            assert!(get(&db, "providerSessions", "current-session").is_err());
+            assert!(get(&db, "providerSessions", "history-session").is_err());
+            assert_eq!(db.query_row("SELECT count(*) FROM provider_native_bindings WHERE json_extract(payload,'$.releasedAt') IS NOT NULL",[],|r|r.get::<_,i64>(0)).unwrap(),2);
+        }
+        drop(state);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn historical_selected_session_background_work_refuses_the_whole_selection_atomically() {
+        let (state, mut thread, _, dir) = fixture();
+        {
+            let mut db = state.db.lock().unwrap();
+            let tx = db.transaction().unwrap();
+            let mut pt = get(&tx, "providerThreads", "history").unwrap();
+            pt["pendingBackgroundTasks"] = json!(["native-child"]);
+            put(&tx, "providerThreads", "history", "t", &pt).unwrap();
+            assert!(selection(
+                &state,
+                &tx,
+                &mut thread,
+                &json!({"instanceId":"claudeAgent","model":"haiku"}),
+                &json!("switch")
+            )
+            .unwrap_err()
+            .contains("background"));
+        }
+        assert_eq!(
+            state
+                .db
+                .lock()
+                .unwrap()
+                .query_row("SELECT count(*) FROM provider_switches", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        drop(state);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[tokio::test]
+    async fn failed_ack_preserves_binding_and_retry_then_rebind_does_not_reuse_an_old_release_receipt(
+    ) {
+        let (state, thread, peer, dir) = fixture();
+        {
+            let db = state.db.lock().unwrap();
+            stage(
+                &db,
+                &thread,
+                &get(&db, "providerThreads", "current").unwrap(),
+            )
+            .unwrap();
+        }
+        peer.fail.store(true, Ordering::Release);
+        assert!(release_pending(&state, peer.as_ref(), "t").await.is_err());
+        {
+            let db = state.db.lock().unwrap();
+            let payload:String=db.query_row("SELECT payload FROM provider_native_bindings WHERE provider_thread_id='current'",[],|r|r.get(0)).unwrap();
+            assert!(serde_json::from_str::<Value>(&payload).unwrap()["releasedAt"].is_null());
+        }
+        peer.fail.store(false, Ordering::Release);
+        release_pending(&state, peer.as_ref(), "t").await.unwrap();
+        {
+            let db = state.db.lock().unwrap();
+            let mut pt = get(&db, "providerThreads", "current").unwrap();
+            pt["providerSessionId"] = json!("current-session");
+            put(&db, "providerThreads", "current", "t", &pt).unwrap();
+            bound(&db, &thread, &json!({"providerThreadId":"current"})).unwrap();
+            stage(&db, &thread, &pt).unwrap();
+        }
+        release_pending(&state, peer.as_ref(), "t").await.unwrap();
+        assert_eq!(peer.calls.lock().unwrap().len(), 3);
+        assert_eq!(
+            state
+                .db
+                .lock()
+                .unwrap()
+                .query_row(
+                    "SELECT count(*) FROM provider_switches WHERE released_at IS NOT NULL",
+                    [],
+                    |r| r.get::<_, i64>(0)
+                )
+                .unwrap(),
+            2
+        );
+        drop(state);
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

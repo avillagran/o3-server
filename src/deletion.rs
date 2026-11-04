@@ -288,6 +288,15 @@ async fn dispose(state: &Arc<State>, id: &str, tid: &str, p: &Value) -> Result<(
             )
             .await?;
     }
+    state
+        .db
+        .lock()
+        .unwrap()
+        .execute(
+            "DELETE FROM provider_native_bindings WHERE thread_id=?",
+            [tid],
+        )
+        .map_err(|e| e.to_string())?;
     state.streams.commands.finish_thread(tid);
     state.streams.terminals.cleanup(tid).await?;
     crate::preview::cleanup(state, tid).await?;
