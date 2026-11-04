@@ -107,7 +107,7 @@ pub(crate) fn persist(
                 &t,
                 "providerThreads",
                 "provider-thread.updated",
-                json!({"id":pt,"appThreadId":tid,"driver":"codex","ownerNodeId":null,"nativeConversationHeadRef":null,"firstRunOrdinal":previous.get("firstRunOrdinal").unwrap_or(&run["ordinal"]),"lastRunOrdinal":run["ordinal"],"handoffIds":[],"forkedFrom":null,"providerInstanceId":thread["providerInstanceId"],"providerSessionId":session_id,"nativeThreadRef":{"driver":"codex","nativeId":native_thread,"strength":"strong"},"status":"active","createdAt":previous.get("createdAt").unwrap_or(&json!(at)),"updatedAt":at,"contextUsage":null,"goal":null,"nativeMetadata":null,"pendingBackgroundTasks":[]}),
+                json!({"id":pt,"appThreadId":tid,"driver":"codex","ownerNodeId":null,"nativeConversationHeadRef":null,"firstRunOrdinal":previous.get("firstRunOrdinal").unwrap_or(&run["ordinal"]),"lastRunOrdinal":run["ordinal"],"handoffIds":previous.get("handoffIds").cloned().unwrap_or(json!([])),"forkedFrom":previous["forkedFrom"],"providerInstanceId":thread["providerInstanceId"],"providerSessionId":session_id,"nativeThreadRef":{"driver":"codex","nativeId":native_thread,"strength":"strong"},"status":"active","createdAt":previous.get("createdAt").unwrap_or(&json!(at)),"updatedAt":at,"contextUsage":null,"goal":null,"nativeMetadata":null,"pendingBackgroundTasks":[]}),
             )?;
             record(
                 db,

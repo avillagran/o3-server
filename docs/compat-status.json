@@ -139,7 +139,7 @@
     "orchestration.dispatchCommand": {
       "status": "done",
       "priority": "P0",
-      "note": "Actual client Command, approval, queue, timeline, sidebar and awareness readers execute on server output; acceptForSession survives idle reap; imported native references share launch validation. Native control delivery has no exactly-once acknowledgement: uncertain handoffs are recorded as delivery-unknown, never replayed. Accepted limits: other-owner and delegated-cohort cases with no client flow; RECOVERY.md's exact original-process reattachment. See CONFORMANCE.md. 2026-11-02 audit implementation: historical fresh forks materialize bounded uploaded attachments and serialized historical context, excluding later runs; deterministic Claude/Codex peers assert provider-received image bytes and timeline reader output. Per-message provider selection shares identity reset/handoff with explicit selection; same-instance model changes retain identity. tests/model_handoff.rs includes failing-before controls. Oversize handoffs fail explicitly; arbitrary native context beyond stored conversation remains unproven. 2026-11-04: same-instance Codex restart_active retains the run and creates steering_restart attempts after native interruption/drain; stale writes are fenced by attempt. HTTP/native-peer and installed Codex continuation proofs pass. Claude capability rejection and unknown-admission failure are explicit. Cross-instance active handoff remains pending; see MCP.md."
+      "note": "Actual client Command, approval, queue, timeline, sidebar and awareness readers execute on server output; acceptForSession survives idle reap; imported native references share launch validation. Native control delivery has no exactly-once acknowledgement: uncertain handoffs are recorded as delivery-unknown, never replayed. Accepted limits: other-owner and delegated-cohort cases with no client flow; RECOVERY.md's exact original-process reattachment. See CONFORMANCE.md. 2026-11-02 audit implementation: historical fresh forks materialize bounded uploaded attachments and serialized historical context, excluding later runs; deterministic Claude/Codex peers assert provider-received image bytes and timeline reader output. Per-message provider selection shares identity reset/handoff with explicit selection; same-instance model changes retain identity. tests/model_handoff.rs includes failing-before controls. Oversize handoffs fail explicitly; arbitrary native context beyond stored conversation remains unproven. 2026-11-04: same-instance Codex restart_active retains the run and creates steering_restart attempts after native interruption/drain; stale writes are fenced by attempt. HTTP/native-peer and installed Codex continuation proofs pass. Claude capability rejection and unknown-admission failure are explicit. Cross-instance active handoff remains pending; see MCP.md. 2026-11-04 transfer port supersedes earlier historical-fork replay notes: portable transfers carry intact selected visible items and recovery references, excluding attachments and foreign native tools/reasoning. Canonical fork/merge/side-chat plans and acknowledged handoff delivery share normal dispatch. See context-transfer-intake.json for remaining fidelity limits."
     },
     "orchestration.getArchivedShellSnapshot": {
       "status": "partial",
@@ -1249,9 +1249,9 @@
       "note": "Real Connection lifecycle/idempotency test."
     },
     "thread.fork": {
-      "status": "done",
+      "status": "partial",
       "priority": "P1",
-      "note": "Latest completed forks use native continuity with no fallback budget. Historical forks hand bounded attachments, messages and tool results to the fresh session, keeping the newest and marking omissions, tested on Claude and Codex peers with real readers. Pinned attachment overflow behavior is not compared."
+      "note": "Nightly4165 canonical transfer plans, checkpoint-qualified latest_stable, explicit boundaries, private-state reset and unwatched PR inheritance. Shared first-turn admission resolves portable history or a native fork; Codex uses lastTurnId even after the source advances. Side chats preserve the stable base plus a separate post-boundary digest, including an empty parent. Compatible-client/native-peer coverage and installed Claude/Codex private-codeword proofs. Historical Claude native anchors still use the portable path; native-window budget and uncertain conversation replacement remain open. See context-transfer-intake.json."
     },
     "thread.guest-message.dismiss": {
       "status": "todo",
@@ -1274,9 +1274,9 @@
       "note": "tests/thread_commands.rs"
     },
     "thread.merge_back": {
-      "status": "skip",
-      "priority": "unused",
-      "note": "No client call site in inventory."
+      "status": "partial",
+      "priority": "P1",
+      "note": "Shared RPC/MCP fork-to-direct-parent lifecycle: idle/queue/source/relationship guards, supersession, receipt replay, own-run delta, consumption, handoff projections and durable provider delivery. Changing the target provider carries its full history together with the fork delta under one deduplicated budget. Current MCP authority checks cover both threads. Real compatible-client/native-peer and installed Claude/Codex proofs pass. Native replacement after uncertain delivery and full source-wide handoff/continuation parity remain pending."
     },
     "thread.metadata.update": {
       "status": "done",

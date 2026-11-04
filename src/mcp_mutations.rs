@@ -26,7 +26,9 @@ pub(crate) fn catalog() -> Vec<Value> {
     reorder["beforeRunId"] = json!({"anyOf":[string(),{"type":"null"}]});
     let mut promote = queue.clone();
     promote["targetRunId"] = string();
+    let point = json!({"anyOf":[{"type":"object","properties":{"type":{"type":"string","enum":["latest_stable"]}},"required":["type"]},{"type":"object","properties":{"type":{"type":"string","enum":["run"]},"runId":string()},"required":["type","runId"]},{"type":"object","properties":{"type":{"type":"string","enum":["checkpoint"]},"checkpointId":string()},"required":["type","checkpointId"]}]});
     let mut tools=vec![
+        definition_write("t3_thread_transfer","Fork a conversation, merge a fork's context back to its parent, or read transfer status. Outside a thread, pass threadId. A merge is consumed by the target's next message.",json!({"action":{"type":"string","enum":["fork","merge_back","status"]},"threadId":string(),"targetThreadId":string(),"sourcePoint":point,"title":string()}),&["action"]),
         definition_write("t3_queue","Manage queued messages with action list, read, edit, cancel, reorder, or promote_to_steer. Read actions remain available to read-only clients.",json!({"action":{"type":"string","enum":["list","read","edit","cancel","reorder","promote_to_steer"]},"threadId":string(),"queuedRunId":string(),"text":{"type":"string","maxLength":100000},"beforeRunId":{"anyOf":[string(),{"type":"null"}]},"targetRunId":string(),"cursor":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":100}}),&["action"]),
         definition_write("t3_pending_request","List, read or respond to pending user questions. This cannot approve a permission request. Read actions remain available to read-only clients.",json!({"action":{"type":"string","enum":["list","read","respond"]},"threadId":string(),"requestId":string(),"answers":{"type":"object"}}),&["action"]),
         definition_write("t3_thread_send","Send a message through the existing dispatch lifecycle. auto steers a capable active turn, otherwise queues; queue waits behind an active turn. Reuse clientRequestId for retries. Restart replaces a running provider turn with another attempt of the same run when the provider supports it.",json!({"threadId":string(),"message":{"type":"string","minLength":1,"maxLength":120000},"mode":{"type":"string","enum":["auto","queue","steer","restart"]},"clientRequestId":{"type":"string","minLength":1,"maxLength":256}}),&["threadId","message"]),
@@ -57,7 +59,8 @@ pub(crate) fn catalog() -> Vec<Value> {
 pub(crate) fn handles(name: &str) -> bool {
     matches!(
         name,
-        "t3_queue"
+        "t3_thread_transfer"
+            | "t3_queue"
             | "t3_pending_request"
             | "t3_thread_send"
             | "t3_thread_interrupt"
@@ -102,6 +105,48 @@ fn command_id(authority: &Authority, name: &str, p: &Value) -> Result<String, Va
     Ok(format!("mcp:{:x}", Sha256::digest(material)))
 }
 pub(crate) fn call(s: &Arc<State>, authority: &Authority, name: &str, p: &Value) -> Reply {
+    if name == "t3_thread_transfer" {
+        let tid = target(p, "threadId")?;
+        if p["action"] == "status" {
+            let db = s.db.lock().unwrap();
+            authority.session(&db, false)?;
+            let thread = events::get(&db, "thread", tid).map_err(command_error)?;
+            if !thread["deletedAt"].is_null() {
+                return Err(failure("thread_not_found", "The thread was not found."));
+            }
+            let mut q=db.prepare("SELECT body FROM records WHERE kind='contextTransfers' AND thread_id=? ORDER BY rowid").map_err(|e|command_error(e.to_string()))?;
+            let rows = q
+                .query_map([tid], |r| r.get::<_, String>(0))
+                .map_err(|e| command_error(e.to_string()))?;
+            let mut transfers = vec![];
+            for row in rows {
+                let t: Value =
+                    serde_json::from_str(&row.map_err(|e| command_error(e.to_string()))?)
+                        .map_err(|e| command_error(e.to_string()))?;
+                transfers.push(json!({"id":t["id"],"sourceThreadId":t["sourceThreadId"],"targetThreadId":t["targetThreadId"],"status":t["status"]}));
+            }
+            return Ok(json!({"transfers":transfers}));
+        }
+        let cid = random_id().map_err(command_error)?;
+        let target_id = if p["action"] == "merge_back" {
+            p["targetThreadId"]
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .ok_or_else(|| failure("invalid_request", "targetThreadId is required."))?
+                .to_owned()
+        } else {
+            format!("{cid}:fork")
+        };
+        let mut c = json!({"type":if p["action"]=="merge_back" {"thread.merge_back"}else{"thread.fork"},"commandId":cid,"sourceThreadId":tid,"targetThreadId":target_id,"sourcePoint":p.get("sourcePoint").cloned().unwrap_or(json!({"type":"latest_stable"})),"createdBy":"agent","creationSource":"mcp"});
+        if let Some(title) = p["title"].as_str() {
+            c["title"] = json!(title.trim());
+        }
+        let mut result = crate::thread_commands::dispatch_scoped(s, &c, Some(authority))
+            .map_err(command_error)?;
+        result["targetThreadId"] = json!(target_id);
+        return Ok(result);
+    }
     if matches!(name, "t3_queue" | "t3_pending_request") {
         let legacy = format!("{}_{}", name, p["action"].as_str().unwrap_or(""));
         crate::mcp_tools::validate(&legacy, p).map_err(|e| failure("invalid_request", &e))?;

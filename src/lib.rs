@@ -124,3 +124,8 @@ mod thread_launch;
 mod worktree_setup;
 
 pub mod document_text;
+
+mod context_transfer;
+mod handoff_history;
+
+mod handoff_delivery;

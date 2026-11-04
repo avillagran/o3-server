@@ -1518,3 +1518,142 @@ fn disabled_provider_errors_are_invalid_request_for_launch_and_attachment_or_pla
         .unwrap()
         .is_empty());
 }
+
+#[test]
+fn mcp_transfer_status_and_both_mutation_targets_use_current_authority() {
+    let s = support::start(|_| {});
+    let c = s.connect();
+    for (tid, mode) in [("source", "approval-required"), ("high", "full-access")] {
+        c.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":tid,"threadId":tid,"projectId":"p","title":tid,"modelSelection":{"instanceId":"codex","model":"test"},"runtimeMode":mode,"interactionMode":"default"})).unwrap();
+    }
+    {
+        let db = s.state.db.lock().unwrap();
+        for (kind, id, body) in [
+            (
+                "runs",
+                "seed",
+                json!({"id":"seed","threadId":"source","ordinal":1,"status":"completed","checkpointId":"cp","providerThreadId":"pt","providerInstanceId":"codex"}),
+            ),
+            (
+                "checkpoints",
+                "cp",
+                json!({"id":"cp","threadId":"source","runId":"seed"}),
+            ),
+        ] {
+            db.execute(
+                "INSERT INTO records VALUES (?,?,'source',?)",
+                rusqlite::params![kind, id, body.to_string()],
+            )
+            .unwrap();
+        }
+    }
+    let reader = s
+        .state
+        .issue_mcp_session("read-only", 60000, "reader")
+        .unwrap();
+    let read_id = init(&s, &reader);
+    assert_eq!(
+        call(
+            &s,
+            &reader,
+            &read_id,
+            "t3_thread_transfer",
+            json!({"action":"status","threadId":"source"})
+        ),
+        json!({"transfers":[]})
+    );
+    assert_eq!(
+        tool_error(
+            &s,
+            &reader,
+            &read_id,
+            "t3_thread_transfer",
+            json!({"action":"fork","threadId":"source"})
+        )["code"],
+        "capability_denied"
+    );
+    let token = s
+        .state
+        .issue_mcp_session("approval-required", 60000, "writer")
+        .unwrap();
+    let id = init(&s, &token);
+    let fork = call(
+        &s,
+        &token,
+        &id,
+        "t3_thread_transfer",
+        json!({"action":"fork","threadId":"source","title":"  Child  "}),
+    );
+    let tid = fork["targetThreadId"].as_str().unwrap();
+    let p = c
+        .rpc("orchestration.getThreadProjection", json!({"threadId":tid}))
+        .unwrap();
+    assert_eq!(p["thread"]["title"], "Child");
+    assert_eq!(p["thread"]["createdBy"], "agent");
+    assert_eq!(p["thread"]["creationSource"], "mcp");
+    let status = call(
+        &s,
+        &reader,
+        &read_id,
+        "t3_thread_transfer",
+        json!({"action":"status","threadId":tid}),
+    );
+    assert_eq!(status["transfers"][0]["status"], "pending");
+    assert_eq!(status["transfers"][0].as_object().unwrap().len(), 4);
+    assert_eq!(
+        tool_error(
+            &s,
+            &token,
+            &id,
+            "t3_thread_transfer",
+            json!({"action":"fork","threadId":"high"})
+        )["code"],
+        "runtime_mode_escalation_denied"
+    );
+    assert_eq!(
+        tool_error(
+            &s,
+            &token,
+            &id,
+            "t3_thread_transfer",
+            json!({"action":"merge_back","threadId":tid,"targetThreadId":"high"})
+        )["code"],
+        "runtime_mode_escalation_denied"
+    );
+    assert_eq!(
+        tool_error(
+            &s,
+            &token,
+            &id,
+            "t3_thread_transfer",
+            json!({"action":"merge_back","threadId":tid})
+        )["code"],
+        "invalid_request"
+    );
+    c.rpc(
+        "orchestration.dispatchCommand",
+        json!({"type":"thread.delete","commandId":"delete-transfer","threadId":tid}),
+    )
+    .unwrap();
+    assert_eq!(
+        tool_error(
+            &s,
+            &reader,
+            &read_id,
+            "t3_thread_transfer",
+            json!({"action":"status","threadId":tid})
+        )["code"],
+        "thread_not_found"
+    );
+    let claims = s.state.mcp_session(&token).unwrap();
+    s.state
+        .revoke_session(claims["sid"].as_str().unwrap())
+        .unwrap();
+    let (status, _, _) = request(
+        &s,
+        &token,
+        Some(&id),
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"t3_thread_transfer","arguments":{"action":"status","threadId":tid}}}),
+    );
+    assert_eq!(status, 401);
+}

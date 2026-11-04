@@ -1,0 +1,850 @@
+{
+  "source": "8b44f42b14c8e273156474a924ccf29680dd7857:packages/provider-core/src/server/handoffBudget.ts",
+  "items": [
+    {
+      "id": "item-0",
+      "threadId": "source",
+      "runId": null,
+      "providerThreadId": null,
+      "status": "completed",
+      "type": "user_message",
+      "text": "First request 😀 \"quote\"\n\tinicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio "
+    },
+    {
+      "id": "item-1",
+      "threadId": "source",
+      "runId": "run",
+      "providerThreadId": "provider-thread",
+      "status": "completed",
+      "type": "assistant_message",
+      "text": "Answer 日本語 data data data data data data data data data data data data data data data data data data data data "
+    },
+    {
+      "id": "item-2",
+      "threadId": "source",
+      "runId": "run",
+      "providerThreadId": "provider-thread",
+      "status": "completed",
+      "type": "command_execution",
+      "input": "printf test",
+      "exitCode": 0,
+      "output": "stdout\r\noutput"
+    },
+    {
+      "id": "item-3",
+      "threadId": "source",
+      "runId": "run",
+      "providerThreadId": "provider-thread",
+      "status": "completed",
+      "type": "error",
+      "failure": {
+        "message": "Failed native step"
+      }
+    },
+    {
+      "id": "item-4",
+      "threadId": "source",
+      "runId": "run",
+      "providerThreadId": "provider-thread",
+      "status": "completed",
+      "type": "run_interrupt_result",
+      "message": "Interrupted"
+    },
+    {
+      "id": "item-5",
+      "threadId": "source",
+      "runId": "run",
+      "providerThreadId": "provider-thread",
+      "status": "completed",
+      "type": "file_change",
+      "changes": [
+        {
+          "path": "src/日本語.rs"
+        },
+        {
+          "path": "README.md"
+        }
+      ]
+    },
+    {
+      "id": "item-6",
+      "threadId": "source",
+      "runId": "run",
+      "providerThreadId": "provider-thread",
+      "status": "completed",
+      "type": "proposed_plan",
+      "markdown": "# Plan\n- First\n- Second"
+    },
+    {
+      "id": "item-7",
+      "threadId": "source",
+      "runId": "run",
+      "providerThreadId": "provider-thread",
+      "status": "completed",
+      "type": "dynamic_tool",
+      "toolName": "Read",
+      "output": "foreign result"
+    },
+    {
+      "id": "item-8",
+      "threadId": "source",
+      "runId": "run",
+      "providerThreadId": "provider-thread",
+      "status": "completed",
+      "type": "reasoning",
+      "text": "hidden native reasoning"
+    },
+    {
+      "id": "item-9",
+      "threadId": "source",
+      "runId": "run",
+      "providerThreadId": "provider-thread",
+      "status": "completed",
+      "type": "file_change",
+      "fileName": "fallback.txt"
+    },
+    {
+      "id": "item-10",
+      "threadId": "source",
+      "runId": "run",
+      "providerThreadId": "provider-thread",
+      "status": "completed",
+      "type": "user_message",
+      "text": "Latest user\ncontinuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 "
+    },
+    {
+      "id": "item-11",
+      "threadId": "source",
+      "runId": "run",
+      "providerThreadId": "provider-thread",
+      "status": "completed",
+      "type": "assistant_message",
+      "text": "Latest answer\\control\u0001"
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "text": "First request 😀 \"quote\"\n\tinicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio ",
+      "threadId": "source",
+      "runId": null,
+      "itemId": "item-0",
+      "providerThreadId": null,
+      "status": "completed",
+      "kind": "user_message"
+    },
+    {
+      "role": "assistant",
+      "text": "Answer 日本語 data data data data data data data data data data data data data data data data data data data data ",
+      "threadId": "source",
+      "runId": "run",
+      "itemId": "item-1",
+      "providerThreadId": "provider-thread",
+      "status": "completed",
+      "kind": "assistant_message"
+    },
+    {
+      "role": "assistant",
+      "text": "Command: printf test\nExit code: 0\nstdout\r\noutput",
+      "threadId": "source",
+      "runId": "run",
+      "itemId": "item-2",
+      "providerThreadId": "provider-thread",
+      "status": "completed",
+      "kind": "command_execution"
+    },
+    {
+      "role": "assistant",
+      "text": "Failed native step",
+      "threadId": "source",
+      "runId": "run",
+      "itemId": "item-3",
+      "providerThreadId": "provider-thread",
+      "status": "completed",
+      "kind": "error"
+    },
+    {
+      "role": "assistant",
+      "text": "Interrupted",
+      "threadId": "source",
+      "runId": "run",
+      "itemId": "item-4",
+      "providerThreadId": "provider-thread",
+      "status": "completed",
+      "kind": "run_interrupt_result"
+    },
+    {
+      "role": "assistant",
+      "text": "File change: src/日本語.rs, README.md",
+      "threadId": "source",
+      "runId": "run",
+      "itemId": "item-5",
+      "providerThreadId": "provider-thread",
+      "status": "completed",
+      "kind": "file_change"
+    },
+    {
+      "role": "assistant",
+      "text": "# Plan\n- First\n- Second",
+      "threadId": "source",
+      "runId": "run",
+      "itemId": "item-6",
+      "providerThreadId": "provider-thread",
+      "status": "completed",
+      "kind": "proposed_plan"
+    },
+    {
+      "role": "assistant",
+      "text": "File change: fallback.txt",
+      "threadId": "source",
+      "runId": "run",
+      "itemId": "item-9",
+      "providerThreadId": "provider-thread",
+      "status": "completed",
+      "kind": "file_change"
+    },
+    {
+      "role": "user",
+      "text": "Latest user\ncontinuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 ",
+      "threadId": "source",
+      "runId": "run",
+      "itemId": "item-10",
+      "providerThreadId": "provider-thread",
+      "status": "completed",
+      "kind": "user_message"
+    },
+    {
+      "role": "assistant",
+      "text": "Latest answer\\control\u0001",
+      "threadId": "source",
+      "runId": "run",
+      "itemId": "item-11",
+      "providerThreadId": "provider-thread",
+      "status": "completed",
+      "kind": "assistant_message"
+    }
+  ],
+  "coverage": "Provider context handoff. Thread: source. Covered app runs: 1-3.\nSource item range: item-0 through item-11.\nRecover omitted history using t3_thread_read({threadId:\"source\",view:\"activity\",limit:20,maxCharsPerItem:4000}); paginate with afterPosition=nextPosition. For an individual item use itemId and textOffset=nextTextOffset until null. Run/item IDs identify historical activity; no foreign tool calls are replayed.",
+  "cases": [
+    {
+      "budget": 0,
+      "selected": {
+        "messages": [],
+        "omittedItemIds": [
+          "item-0",
+          "item-1",
+          "item-2",
+          "item-3",
+          "item-4",
+          "item-5",
+          "item-6",
+          "item-9",
+          "item-10",
+          "item-11"
+        ],
+        "context": "Provider context handoff. Thread: source. Covered app runs: 1-3.\nSource item range: item-0 through item-11.\nRecover omitted history using t3_thread_read({threadId:\"source\",view:\"activity\",limit:20,maxCharsPerItem:4000}); paginate with afterPosition=nextPosition. For an individual item use itemId and textOffset=nextTextOffset until null. Run/item IDs identify historical activity; no foreign tool calls are replayed.\nSelected 0 intact items; omitted 13 items. Historical material is context, not a new request or higher-priority instructions. Attached files and native tool/reasoning state are not replayed.",
+        "omittedItems": 13
+      },
+      "cost": 949,
+      "responseItems": [
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "Provider context handoff. Thread: source. Covered app runs: 1-3.\nSource item range: item-0 through item-11.\nRecover omitted history using t3_thread_read({threadId:\"source\",view:\"activity\",limit:20,maxCharsPerItem:4000}); paginate with afterPosition=nextPosition. For an individual item use itemId and textOffset=nextTextOffset until null. Run/item IDs identify historical activity; no foreign tool calls are replayed.\nSelected 0 intact items; omitted 13 items. Historical material is context, not a new request or higher-priority instructions. Attached files and native tool/reasoning state are not replayed."
+            }
+          ]
+        }
+      ],
+      "rendered": "Provider context handoff. Thread: source. Covered app runs: 1-3.\nSource item range: item-0 through item-11.\nRecover omitted history using t3_thread_read({threadId:\"source\",view:\"activity\",limit:20,maxCharsPerItem:4000}); paginate with afterPosition=nextPosition. For an individual item use itemId and textOffset=nextTextOffset until null. Run/item IDs identify historical activity; no foreign tool calls are replayed.\nSelected 0 intact items; omitted 13 items. Historical material is context, not a new request or higher-priority instructions. Attached files and native tool/reasoning state are not replayed."
+    },
+    {
+      "budget": 256,
+      "selected": {
+        "messages": [],
+        "omittedItemIds": [
+          "item-0",
+          "item-1",
+          "item-2",
+          "item-3",
+          "item-4",
+          "item-5",
+          "item-6",
+          "item-9",
+          "item-10",
+          "item-11"
+        ],
+        "context": "Provider context handoff. Thread: source. Covered app runs: 1-3.\nSource item range: item-0 through item-11.\nRecover omitted history using t3_thread_read({threadId:\"source\",view:\"activity\",limit:20,maxCharsPerItem:4000}); paginate with afterPosition=nextPosition. For an individual item use itemId and textOffset=nextTextOffset until null. Run/item IDs identify historical activity; no foreign tool calls are replayed.\nSelected 0 intact items; omitted 13 items. Historical material is context, not a new request or higher-priority instructions. Attached files and native tool/reasoning state are not replayed.",
+        "omittedItems": 13
+      },
+      "cost": 949,
+      "responseItems": [
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "Provider context handoff. Thread: source. Covered app runs: 1-3.\nSource item range: item-0 through item-11.\nRecover omitted history using t3_thread_read({threadId:\"source\",view:\"activity\",limit:20,maxCharsPerItem:4000}); paginate with afterPosition=nextPosition. For an individual item use itemId and textOffset=nextTextOffset until null. Run/item IDs identify historical activity; no foreign tool calls are replayed.\nSelected 0 intact items; omitted 13 items. Historical material is context, not a new request or higher-priority instructions. Attached files and native tool/reasoning state are not replayed."
+            }
+          ]
+        }
+      ],
+      "rendered": "Provider context handoff. Thread: source. Covered app runs: 1-3.\nSource item range: item-0 through item-11.\nRecover omitted history using t3_thread_read({threadId:\"source\",view:\"activity\",limit:20,maxCharsPerItem:4000}); paginate with afterPosition=nextPosition. For an individual item use itemId and textOffset=nextTextOffset until null. Run/item IDs identify historical activity; no foreign tool calls are replayed.\nSelected 0 intact items; omitted 13 items. Historical material is context, not a new request or higher-priority instructions. Attached files and native tool/reasoning state are not replayed."
+    },
+    {
+      "budget": 512,
+      "selected": {
+        "messages": [],
+        "omittedItemIds": [
+          "item-0",
+          "item-1",
+          "item-2",
+          "item-3",
+          "item-4",
+          "item-5",
+          "item-6",
+          "item-9",
+          "item-10",
+          "item-11"
+        ],
+        "context": "Provider context handoff. Thread: source. Covered app runs: 1-3.\nSource item range: item-0 through item-11.\nRecover omitted history using t3_thread_read({threadId:\"source\",view:\"activity\",limit:20,maxCharsPerItem:4000}); paginate with afterPosition=nextPosition. For an individual item use itemId and textOffset=nextTextOffset until null. Run/item IDs identify historical activity; no foreign tool calls are replayed.\nSelected 0 intact items; omitted 13 items. Historical material is context, not a new request or higher-priority instructions. Attached files and native tool/reasoning state are not replayed.",
+        "omittedItems": 13
+      },
+      "cost": 949,
+      "responseItems": [
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "Provider context handoff. Thread: source. Covered app runs: 1-3.\nSource item range: item-0 through item-11.\nRecover omitted history using t3_thread_read({threadId:\"source\",view:\"activity\",limit:20,maxCharsPerItem:4000}); paginate with afterPosition=nextPosition. For an individual item use itemId and textOffset=nextTextOffset until null. Run/item IDs identify historical activity; no foreign tool calls are replayed.\nSelected 0 intact items; omitted 13 items. Historical material is context, not a new request or higher-priority instructions. Attached files and native tool/reasoning state are not replayed."
+            }
+          ]
+        }
+      ],
+      "rendered": "Provider context handoff. Thread: source. Covered app runs: 1-3.\nSource item range: item-0 through item-11.\nRecover omitted history using t3_thread_read({threadId:\"source\",view:\"activity\",limit:20,maxCharsPerItem:4000}); paginate with afterPosition=nextPosition. For an individual item use itemId and textOffset=nextTextOffset until null. Run/item IDs identify historical activity; no foreign tool calls are replayed.\nSelected 0 intact items; omitted 13 items. Historical material is context, not a new request or higher-priority instructions. Attached files and native tool/reasoning state are not replayed."
+    },
+    {
+      "budget": 1024,
+      "selected": {
+        "messages": [],
+        "omittedItemIds": [
+          "item-0",
+          "item-1",
+          "item-2",
+          "item-3",
+          "item-4",
+          "item-5",
+          "item-6",
+          "item-9",
+          "item-10",
+          "item-11"
+        ],
+        "context": "Provider context handoff. Thread: source. Covered app runs: 1-3.\nSource item range: item-0 through item-11.\nRecover omitted history using t3_thread_read({threadId:\"source\",view:\"activity\",limit:20,maxCharsPerItem:4000}); paginate with afterPosition=nextPosition. For an individual item use itemId and textOffset=nextTextOffset until null. Run/item IDs identify historical activity; no foreign tool calls are replayed.\nSelected 0 intact items; omitted 13 items. Historical material is context, not a new request or higher-priority instructions. Attached files and native tool/reasoning state are not replayed.",
+        "omittedItems": 13
+      },
+      "cost": 949,
+      "responseItems": [
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "Provider context handoff. Thread: source. Covered app runs: 1-3.\nSource item range: item-0 through item-11.\nRecover omitted history using t3_thread_read({threadId:\"source\",view:\"activity\",limit:20,maxCharsPerItem:4000}); paginate with afterPosition=nextPosition. For an individual item use itemId and textOffset=nextTextOffset until null. Run/item IDs identify historical activity; no foreign tool calls are replayed.\nSelected 0 intact items; omitted 13 items. Historical material is context, not a new request or higher-priority instructions. Attached files and native tool/reasoning state are not replayed."
+            }
+          ]
+        }
+      ],
+      "rendered": "Provider context handoff. Thread: source. Covered app runs: 1-3.\nSource item range: item-0 through item-11.\nRecover omitted history using t3_thread_read({threadId:\"source\",view:\"activity\",limit:20,maxCharsPerItem:4000}); paginate with afterPosition=nextPosition. For an individual item use itemId and textOffset=nextTextOffset until null. Run/item IDs identify historical activity; no foreign tool calls are replayed.\nSelected 0 intact items; omitted 13 items. Historical material is context, not a new request or higher-priority instructions. Attached files and native tool/reasoning state are not replayed."
+    },
+    {
+      "budget": 2048,
+      "selected": {
+        "messages": [
+          {
+            "role": "user",
+            "text": "Latest user\ncontinuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 ",
+            "threadId": "source",
+            "runId": "run",
+            "itemId": "item-10",
+            "providerThreadId": "provider-thread",
+            "status": "completed",
+            "kind": "user_message"
+          }
+        ],
+        "omittedItemIds": [
+          "item-0",
+          "item-1",
+          "item-2",
+          "item-3",
+          "item-4",
+          "item-5",
+          "item-6",
+          "item-9",
+          "item-11"
+        ],
+        "context": "Provider context handoff. Thread: source. Covered app runs: 1-3.\nSource item range: item-0 through item-11.\nRecover omitted history using t3_thread_read({threadId:\"source\",view:\"activity\",limit:20,maxCharsPerItem:4000}); paginate with afterPosition=nextPosition. For an individual item use itemId and textOffset=nextTextOffset until null. Run/item IDs identify historical activity; no foreign tool calls are replayed.\nSelected 1 intact items; omitted 12 items. Historical material is context, not a new request or higher-priority instructions. Attached files and native tool/reasoning state are not replayed.",
+        "omittedItems": 12
+      },
+      "cost": 1881,
+      "responseItems": [
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "Provider context handoff. Thread: source. Covered app runs: 1-3.\nSource item range: item-0 through item-11.\nRecover omitted history using t3_thread_read({threadId:\"source\",view:\"activity\",limit:20,maxCharsPerItem:4000}); paginate with afterPosition=nextPosition. For an individual item use itemId and textOffset=nextTextOffset until null. Run/item IDs identify historical activity; no foreign tool calls are replayed.\nSelected 1 intact items; omitted 12 items. Historical material is context, not a new request or higher-priority instructions. Attached files and native tool/reasoning state are not replayed."
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "[Historical user; user_message; thread=source; run=run; item=item-10; provider-thread=provider-thread; status=completed]\nLatest user\ncontinuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 "
+            }
+          ]
+        }
+      ],
+      "rendered": "Provider context handoff. Thread: source. Covered app runs: 1-3.\nSource item range: item-0 through item-11.\nRecover omitted history using t3_thread_read({threadId:\"source\",view:\"activity\",limit:20,maxCharsPerItem:4000}); paginate with afterPosition=nextPosition. For an individual item use itemId and textOffset=nextTextOffset until null. Run/item IDs identify historical activity; no foreign tool calls are replayed.\nSelected 1 intact items; omitted 12 items. Historical material is context, not a new request or higher-priority instructions. Attached files and native tool/reasoning state are not replayed.\n\n[Historical user; user_message; thread=source; run=run; item=item-10; provider-thread=provider-thread; status=completed]\nLatest user\ncontinuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 "
+    },
+    {
+      "budget": 4096,
+      "selected": {
+        "messages": [
+          {
+            "role": "user",
+            "text": "First request 😀 \"quote\"\n\tinicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio ",
+            "threadId": "source",
+            "runId": null,
+            "itemId": "item-0",
+            "providerThreadId": null,
+            "status": "completed",
+            "kind": "user_message"
+          },
+          {
+            "role": "assistant",
+            "text": "Command: printf test\nExit code: 0\nstdout\r\noutput",
+            "threadId": "source",
+            "runId": "run",
+            "itemId": "item-2",
+            "providerThreadId": "provider-thread",
+            "status": "completed",
+            "kind": "command_execution"
+          },
+          {
+            "role": "assistant",
+            "text": "Failed native step",
+            "threadId": "source",
+            "runId": "run",
+            "itemId": "item-3",
+            "providerThreadId": "provider-thread",
+            "status": "completed",
+            "kind": "error"
+          },
+          {
+            "role": "assistant",
+            "text": "Interrupted",
+            "threadId": "source",
+            "runId": "run",
+            "itemId": "item-4",
+            "providerThreadId": "provider-thread",
+            "status": "completed",
+            "kind": "run_interrupt_result"
+          },
+          {
+            "role": "assistant",
+            "text": "File change: src/日本語.rs, README.md",
+            "threadId": "source",
+            "runId": "run",
+            "itemId": "item-5",
+            "providerThreadId": "provider-thread",
+            "status": "completed",
+            "kind": "file_change"
+          },
+          {
+            "role": "assistant",
+            "text": "# Plan\n- First\n- Second",
+            "threadId": "source",
+            "runId": "run",
+            "itemId": "item-6",
+            "providerThreadId": "provider-thread",
+            "status": "completed",
+            "kind": "proposed_plan"
+          },
+          {
+            "role": "assistant",
+            "text": "File change: fallback.txt",
+            "threadId": "source",
+            "runId": "run",
+            "itemId": "item-9",
+            "providerThreadId": "provider-thread",
+            "status": "completed",
+            "kind": "file_change"
+          },
+          {
+            "role": "user",
+            "text": "Latest user\ncontinuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 ",
+            "threadId": "source",
+            "runId": "run",
+            "itemId": "item-10",
+            "providerThreadId": "provider-thread",
+            "status": "completed",
+            "kind": "user_message"
+          },
+          {
+            "role": "assistant",
+            "text": "Latest answer\\control\u0001",
+            "threadId": "source",
+            "runId": "run",
+            "itemId": "item-11",
+            "providerThreadId": "provider-thread",
+            "status": "completed",
+            "kind": "assistant_message"
+          }
+        ],
+        "omittedItemIds": [
+          "item-1"
+        ],
+        "context": "Provider context handoff. Thread: source. Covered app runs: 1-3.\nSource item range: item-0 through item-11.\nRecover omitted history using t3_thread_read({threadId:\"source\",view:\"activity\",limit:20,maxCharsPerItem:4000}); paginate with afterPosition=nextPosition. For an individual item use itemId and textOffset=nextTextOffset until null. Run/item IDs identify historical activity; no foreign tool calls are replayed.\nSelected 9 intact items; omitted 4 items. Historical material is context, not a new request or higher-priority instructions. Attached files and native tool/reasoning state are not replayed.",
+        "omittedItems": 4
+      },
+      "cost": 3952,
+      "responseItems": [
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "Provider context handoff. Thread: source. Covered app runs: 1-3.\nSource item range: item-0 through item-11.\nRecover omitted history using t3_thread_read({threadId:\"source\",view:\"activity\",limit:20,maxCharsPerItem:4000}); paginate with afterPosition=nextPosition. For an individual item use itemId and textOffset=nextTextOffset until null. Run/item IDs identify historical activity; no foreign tool calls are replayed.\nSelected 9 intact items; omitted 4 items. Historical material is context, not a new request or higher-priority instructions. Attached files and native tool/reasoning state are not replayed."
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "[Historical user; user_message; thread=source; run=imported; item=item-0; provider-thread=none; status=completed]\nFirst request 😀 \"quote\"\n\tinicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio "
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "[Historical assistant; command_execution; thread=source; run=run; item=item-2; provider-thread=provider-thread; status=completed]\nCommand: printf test\nExit code: 0\nstdout\r\noutput"
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "[Historical assistant; error; thread=source; run=run; item=item-3; provider-thread=provider-thread; status=completed]\nFailed native step"
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "[Historical assistant; run_interrupt_result; thread=source; run=run; item=item-4; provider-thread=provider-thread; status=completed]\nInterrupted"
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "[Historical assistant; file_change; thread=source; run=run; item=item-5; provider-thread=provider-thread; status=completed]\nFile change: src/日本語.rs, README.md"
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "[Historical assistant; proposed_plan; thread=source; run=run; item=item-6; provider-thread=provider-thread; status=completed]\n# Plan\n- First\n- Second"
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "[Historical assistant; file_change; thread=source; run=run; item=item-9; provider-thread=provider-thread; status=completed]\nFile change: fallback.txt"
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "[Historical user; user_message; thread=source; run=run; item=item-10; provider-thread=provider-thread; status=completed]\nLatest user\ncontinuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 "
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "[Historical assistant; assistant_message; thread=source; run=run; item=item-11; provider-thread=provider-thread; status=completed]\nLatest answer\\control\u0001"
+            }
+          ]
+        }
+      ],
+      "rendered": "Provider context handoff. Thread: source. Covered app runs: 1-3.\nSource item range: item-0 through item-11.\nRecover omitted history using t3_thread_read({threadId:\"source\",view:\"activity\",limit:20,maxCharsPerItem:4000}); paginate with afterPosition=nextPosition. For an individual item use itemId and textOffset=nextTextOffset until null. Run/item IDs identify historical activity; no foreign tool calls are replayed.\nSelected 9 intact items; omitted 4 items. Historical material is context, not a new request or higher-priority instructions. Attached files and native tool/reasoning state are not replayed.\n\n[Historical user; user_message; thread=source; run=imported; item=item-0; provider-thread=none; status=completed]\nFirst request 😀 \"quote\"\n\tinicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio \n\n[Historical assistant; command_execution; thread=source; run=run; item=item-2; provider-thread=provider-thread; status=completed]\nCommand: printf test\nExit code: 0\nstdout\r\noutput\n\n[Historical assistant; error; thread=source; run=run; item=item-3; provider-thread=provider-thread; status=completed]\nFailed native step\n\n[Historical assistant; run_interrupt_result; thread=source; run=run; item=item-4; provider-thread=provider-thread; status=completed]\nInterrupted\n\n[Historical assistant; file_change; thread=source; run=run; item=item-5; provider-thread=provider-thread; status=completed]\nFile change: src/日本語.rs, README.md\n\n[Historical assistant; proposed_plan; thread=source; run=run; item=item-6; provider-thread=provider-thread; status=completed]\n# Plan\n- First\n- Second\n\n[Historical assistant; file_change; thread=source; run=run; item=item-9; provider-thread=provider-thread; status=completed]\nFile change: fallback.txt\n\n[Historical user; user_message; thread=source; run=run; item=item-10; provider-thread=provider-thread; status=completed]\nLatest user\ncontinuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 \n\n[Historical assistant; assistant_message; thread=source; run=run; item=item-11; provider-thread=provider-thread; status=completed]\nLatest answer\\control\u0001"
+    },
+    {
+      "budget": 16000,
+      "selected": {
+        "messages": [
+          {
+            "role": "user",
+            "text": "First request 😀 \"quote\"\n\tinicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio ",
+            "threadId": "source",
+            "runId": null,
+            "itemId": "item-0",
+            "providerThreadId": null,
+            "status": "completed",
+            "kind": "user_message"
+          },
+          {
+            "role": "assistant",
+            "text": "Answer 日本語 data data data data data data data data data data data data data data data data data data data data ",
+            "threadId": "source",
+            "runId": "run",
+            "itemId": "item-1",
+            "providerThreadId": "provider-thread",
+            "status": "completed",
+            "kind": "assistant_message"
+          },
+          {
+            "role": "assistant",
+            "text": "Command: printf test\nExit code: 0\nstdout\r\noutput",
+            "threadId": "source",
+            "runId": "run",
+            "itemId": "item-2",
+            "providerThreadId": "provider-thread",
+            "status": "completed",
+            "kind": "command_execution"
+          },
+          {
+            "role": "assistant",
+            "text": "Failed native step",
+            "threadId": "source",
+            "runId": "run",
+            "itemId": "item-3",
+            "providerThreadId": "provider-thread",
+            "status": "completed",
+            "kind": "error"
+          },
+          {
+            "role": "assistant",
+            "text": "Interrupted",
+            "threadId": "source",
+            "runId": "run",
+            "itemId": "item-4",
+            "providerThreadId": "provider-thread",
+            "status": "completed",
+            "kind": "run_interrupt_result"
+          },
+          {
+            "role": "assistant",
+            "text": "File change: src/日本語.rs, README.md",
+            "threadId": "source",
+            "runId": "run",
+            "itemId": "item-5",
+            "providerThreadId": "provider-thread",
+            "status": "completed",
+            "kind": "file_change"
+          },
+          {
+            "role": "assistant",
+            "text": "# Plan\n- First\n- Second",
+            "threadId": "source",
+            "runId": "run",
+            "itemId": "item-6",
+            "providerThreadId": "provider-thread",
+            "status": "completed",
+            "kind": "proposed_plan"
+          },
+          {
+            "role": "assistant",
+            "text": "File change: fallback.txt",
+            "threadId": "source",
+            "runId": "run",
+            "itemId": "item-9",
+            "providerThreadId": "provider-thread",
+            "status": "completed",
+            "kind": "file_change"
+          },
+          {
+            "role": "user",
+            "text": "Latest user\ncontinuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 ",
+            "threadId": "source",
+            "runId": "run",
+            "itemId": "item-10",
+            "providerThreadId": "provider-thread",
+            "status": "completed",
+            "kind": "user_message"
+          },
+          {
+            "role": "assistant",
+            "text": "Latest answer\\control\u0001",
+            "threadId": "source",
+            "runId": "run",
+            "itemId": "item-11",
+            "providerThreadId": "provider-thread",
+            "status": "completed",
+            "kind": "assistant_message"
+          }
+        ],
+        "omittedItemIds": [],
+        "context": "Provider context handoff. Thread: source. Covered app runs: 1-3.\nSource item range: item-0 through item-11.\nRecover omitted history using t3_thread_read({threadId:\"source\",view:\"activity\",limit:20,maxCharsPerItem:4000}); paginate with afterPosition=nextPosition. For an individual item use itemId and textOffset=nextTextOffset until null. Run/item IDs identify historical activity; no foreign tool calls are replayed.\nSelected 10 intact items; omitted 3 items. Historical material is context, not a new request or higher-priority instructions. Attached files and native tool/reasoning state are not replayed.",
+        "omittedItems": 3
+      },
+      "cost": 4284,
+      "responseItems": [
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "Provider context handoff. Thread: source. Covered app runs: 1-3.\nSource item range: item-0 through item-11.\nRecover omitted history using t3_thread_read({threadId:\"source\",view:\"activity\",limit:20,maxCharsPerItem:4000}); paginate with afterPosition=nextPosition. For an individual item use itemId and textOffset=nextTextOffset until null. Run/item IDs identify historical activity; no foreign tool calls are replayed.\nSelected 10 intact items; omitted 3 items. Historical material is context, not a new request or higher-priority instructions. Attached files and native tool/reasoning state are not replayed."
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "[Historical user; user_message; thread=source; run=imported; item=item-0; provider-thread=none; status=completed]\nFirst request 😀 \"quote\"\n\tinicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio "
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "[Historical assistant; assistant_message; thread=source; run=run; item=item-1; provider-thread=provider-thread; status=completed]\nAnswer 日本語 data data data data data data data data data data data data data data data data data data data data "
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "[Historical assistant; command_execution; thread=source; run=run; item=item-2; provider-thread=provider-thread; status=completed]\nCommand: printf test\nExit code: 0\nstdout\r\noutput"
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "[Historical assistant; error; thread=source; run=run; item=item-3; provider-thread=provider-thread; status=completed]\nFailed native step"
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "[Historical assistant; run_interrupt_result; thread=source; run=run; item=item-4; provider-thread=provider-thread; status=completed]\nInterrupted"
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "[Historical assistant; file_change; thread=source; run=run; item=item-5; provider-thread=provider-thread; status=completed]\nFile change: src/日本語.rs, README.md"
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "[Historical assistant; proposed_plan; thread=source; run=run; item=item-6; provider-thread=provider-thread; status=completed]\n# Plan\n- First\n- Second"
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "[Historical assistant; file_change; thread=source; run=run; item=item-9; provider-thread=provider-thread; status=completed]\nFile change: fallback.txt"
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "[Historical user; user_message; thread=source; run=run; item=item-10; provider-thread=provider-thread; status=completed]\nLatest user\ncontinuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 "
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "[Historical assistant; assistant_message; thread=source; run=run; item=item-11; provider-thread=provider-thread; status=completed]\nLatest answer\\control\u0001"
+            }
+          ]
+        }
+      ],
+      "rendered": "Provider context handoff. Thread: source. Covered app runs: 1-3.\nSource item range: item-0 through item-11.\nRecover omitted history using t3_thread_read({threadId:\"source\",view:\"activity\",limit:20,maxCharsPerItem:4000}); paginate with afterPosition=nextPosition. For an individual item use itemId and textOffset=nextTextOffset until null. Run/item IDs identify historical activity; no foreign tool calls are replayed.\nSelected 10 intact items; omitted 3 items. Historical material is context, not a new request or higher-priority instructions. Attached files and native tool/reasoning state are not replayed.\n\n[Historical user; user_message; thread=source; run=imported; item=item-0; provider-thread=none; status=completed]\nFirst request 😀 \"quote\"\n\tinicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio inicio \n\n[Historical assistant; assistant_message; thread=source; run=run; item=item-1; provider-thread=provider-thread; status=completed]\nAnswer 日本語 data data data data data data data data data data data data data data data data data data data data \n\n[Historical assistant; command_execution; thread=source; run=run; item=item-2; provider-thread=provider-thread; status=completed]\nCommand: printf test\nExit code: 0\nstdout\r\noutput\n\n[Historical assistant; error; thread=source; run=run; item=item-3; provider-thread=provider-thread; status=completed]\nFailed native step\n\n[Historical assistant; run_interrupt_result; thread=source; run=run; item=item-4; provider-thread=provider-thread; status=completed]\nInterrupted\n\n[Historical assistant; file_change; thread=source; run=run; item=item-5; provider-thread=provider-thread; status=completed]\nFile change: src/日本語.rs, README.md\n\n[Historical assistant; proposed_plan; thread=source; run=run; item=item-6; provider-thread=provider-thread; status=completed]\n# Plan\n- First\n- Second\n\n[Historical assistant; file_change; thread=source; run=run; item=item-9; provider-thread=provider-thread; status=completed]\nFile change: fallback.txt\n\n[Historical user; user_message; thread=source; run=run; item=item-10; provider-thread=provider-thread; status=completed]\nLatest user\ncontinuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 continuation 😀 \n\n[Historical assistant; assistant_message; thread=source; run=run; item=item-11; provider-thread=provider-thread; status=completed]\nLatest answer\\control\u0001"
+    }
+  ]
+}

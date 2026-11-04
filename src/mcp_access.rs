@@ -119,7 +119,10 @@ impl Authority {
                     || name.starts_with("t3_pending_request")
                     || matches!(
                         name,
-                        "t3_thread_organize" | "t3_thread_configure" | "t3_thread_configuration"
+                        "t3_thread_organize"
+                            | "t3_thread_configure"
+                            | "t3_thread_configuration"
+                            | "t3_thread_transfer"
                     ))
             {
                 p["threadId"] = json!(scope.thread);
@@ -222,6 +225,20 @@ impl Authority {
                     "capability_denied",
                     "Changing projects requires full-access mode.",
                 ));
+            }
+            return Ok(());
+        }
+        if matches!(
+            c["type"].as_str(),
+            Some("thread.fork" | "thread.merge_back")
+        ) {
+            let mut source = c.clone();
+            source["type"] = json!("transfer.authorize");
+            source["threadId"] = c["sourceThreadId"].clone();
+            self.check_inner(db, &source)?;
+            if c["type"] == "thread.merge_back" {
+                source["threadId"] = c["targetThreadId"].clone();
+                self.check_inner(db, &source)?;
             }
             return Ok(());
         }

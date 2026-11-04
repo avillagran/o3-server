@@ -258,11 +258,15 @@ impl ClaudeProvider {
             ]);
         }
         cmd.arg("--settings").arg(settings.to_string());
+        if let Some(id) = input.model_selection["o3NewSessionId"].as_str() {
+            cmd.arg("--session-id").arg(id);
+        }
         if let Some(id) = input.model_selection["nativeForkSource"].as_str() {
             cmd.arg("--resume").arg(id).arg("--fork-session");
         } else if let Some(id) = &input.native_session_id {
             cmd.arg("--resume").arg(id);
         }
+
         let mut child = cmd.spawn().map_err(|e| format!("Claude spawn: {e}"))?;
         let stdin = child.stdin.take().ok_or("Claude stdin missing")?;
         let stdout = BufReader::new(child.stdout.take().ok_or("Claude stdout missing")?);
@@ -273,7 +277,15 @@ impl ClaudeProvider {
             stdin,
             stdout,
             buffer: Vec::new(),
-            native: input.native_session_id.clone().unwrap_or_default(),
+            native: input
+                .native_session_id
+                .clone()
+                .or_else(|| {
+                    input.model_selection["o3NewSessionId"]
+                        .as_str()
+                        .map(str::to_owned)
+                })
+                .unwrap_or_default(),
             cwd: input.cwd.clone(),
             options: input.model_selection["options"].clone(),
             browser: injected.is_object(),
@@ -353,6 +365,21 @@ impl ClaudeProvider {
             return Ok(());
         }
         let mut content = crate::provider_input::content(&input, true)?;
+        let manual = crate::handoff_delivery::manual(&input, &mut content)?;
+        let mut deliveries = crate::handoff_delivery::prepare(&input, &content)?;
+        if (!deliveries.is_empty() || !manual.is_empty()) && input.native_session_id.is_none() {
+            input.model_selection["o3NewSessionId"] = json!(crate::store::random_id()?);
+        }
+        if !deliveries.is_empty() {
+            let context = deliveries
+                .iter()
+                .map(|d| d.inline())
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            let current = content[0]["text"].as_str().unwrap_or("");
+            content[0]["text"] = json!(format!("{context}\n\nUser message:\n{current}"));
+        }
+        deliveries.extend(manual);
         if crate::claude_models::compile(&input.model_selection)?.3 {
             let text = content[0]["text"].as_str().unwrap().to_owned();
             content[0]["text"] = json!(format!("{text}\n\nultrathink"));
@@ -402,6 +429,8 @@ impl ClaudeProvider {
         };
         let result = async {
             if *cancel.borrow() || output.is_closed() || matches!(control.try_recv(), Ok(ProviderControl::Interrupt)) { return Ok(false); }
+            for delivery in &deliveries {delivery.acknowledge(&output,&session.native,"pending").await?;}
+            let mut history_inline = false;
             session.send(json!({"type":"user","message":{"role":"user","content":content},"parent_tool_use_id":null,"session_id":session.native})).await?;
             output.send(ProviderEvent::Started).await.map_err(|_|"receiver closed")?;
             let mut pending: HashMap<String, Value> = HashMap::new();
@@ -459,7 +488,10 @@ impl ClaudeProvider {
                         if v["type"]=="rate_limit_event" {
                             self.metadata.lock().unwrap()["usageLimits"]=usage_limits(&v["rate_limit_info"]);
                         }
-                        if let Some(id)=v["session_id"].as_str() { session.native=id.into(); }
+                        if let Some(id)=v["session_id"].as_str() {
+                            session.native=id.into();
+                            if !history_inline { for delivery in &deliveries {delivery.acknowledge(&output,id,"inline").await?;} history_inline=true; }
+                        }
                         if v["type"]=="control_response" && v["response"]["subtype"]=="error" { return Err(format!("Claude control rejected: {}",v["response"]["error"])); }
                         if v["type"]=="control_cancel_request" {
                             if let Some(native)=v["request_id"].as_str() {

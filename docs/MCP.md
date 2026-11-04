@@ -695,3 +695,47 @@ Final affected regressions also passed 146/146 in each mode (five opt-ins ignore
 with 22 additional generation/MCP/native-policy tests and the compatible catalog
 reader check. Strict all-target Clippy passed in both modes; fmt, generated table
 and nine monitor tests passed.
+
+## Context transfers (nightly4165, 2026-11-04)
+
+The core catalog now contains 35 tools. `t3_thread_transfer` takes `action` fork,
+merge_back or status, with optional native-caller `threadId`. Fork and merge-back
+use the ordinary shared command/receipt path. Both current source and target modes
+are checked transactionally; status remains available to read-only credentials.
+Fork returns the generated target id; merge requires its direct parent as target.
+Status returns id/sourceThreadId/targetThreadId/status only. No retry key is advertised.
+
+Transfers record canonical source references instead of request tags. `latest_stable`
+selects a completed run with a checkpoint; explicit run/checkpoint boundaries enforce
+ownership and supported status. New forks clear guest/open/pin/snooze/title state
+and inherit PR context without watching. On first admission, Codex can fork at its
+strong native turn reference even after later source activity. Claude supports latest
+native forks; older boundaries take the portable path. Portable history preserves
+selected items intact, omission ids and recovery references; historical attachments
+and foreign native tool/reasoning state are excluded. This supersedes earlier fork
+attachment/tool replay notes for the new transfer path.
+
+Merge-back requires an idle target with no queued work and rejects a different
+pending fork source. Repeating a new merge supersedes the previous pending one;
+replaying its command id returns its receipt. Consumption uses only the fork's own
+visible rows. If the target changes provider, its own full history accompanies the
+delta. All pending handoffs share one deduplicated delivery budget. Side chats start
+supervised, retain their stable base and append a separate bounded digest of later
+parent activity to the current prompt. They do not inherit parent UI rows or re-inject
+that framing as historical items.
+
+Codex history injection persists pending delivery before `thread/inject_items`.
+Only method-not-found (-32601) falls back inline. Successful injection or accepted
+inline input persists its acknowledgement. Ambiguous delivery stays pending and
+blocks blind replay after restart; automatic native replacement is still pending.
+Claude confirms inline delivery from the observed native session. For native latest
+side chats, the CLI receives a preassigned UUID before input is sent.
+
+Source, fixtures, live native evidence and fidelity limits are recorded in
+[context-transfer-intake.json](nightly/context-transfer-intake.json). This checkpoint
+does not claim complete protocol or general provider-handoff parity.
+
+Validation: full suites 403 default / 400 no-default, 22 opt-ins ignored each; final
+affected suites 151 / 151 (6 ignored each), strict all-target Clippy both modes, fmt,
+generated compatibility and nightly monitor (9 tests) pass. The eight-turn native opt-in
+also passed explicitly.
