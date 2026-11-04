@@ -3010,9 +3010,10 @@ kills an actual Rust owning process. An HTTP integration uses real Connection, n
 Codex protocol peers and two worktree setups: closing one returns only after its daemon
 is absent from /proc, while the other's daemon remains alive, then is closed separately.
 
-This is a prerequisite for the full ThreadLaunchService port. Staged preparation,
-subscribeWorktreeSetup/cancel, completion, retry, durable preparation recovery and MCP
-thread launch remain pending. The source intake is nightly4165, SHA
+This was the prerequisite checkpoint for ThreadLaunchService. Staged preparation,
+tracking/cancel, completion and retry/recovery were still pending at PR24; the next
+checkpoint below implements that shared RPC service. MCP launch remains pending.
+The source intake is nightly4165, SHA
 8b44f42b14c8e273156474a924ccf29680dd7857 (08:04 UTC). The launch/setup service and
 tracker/contract are unchanged from4151; native runtime recovery and awareness projection
 changes require follow-up. See [thread-launch-intake.json](nightly/thread-launch-intake.json).
@@ -3022,3 +3023,55 @@ ignored each. After the final signal/event handling change, all library and hand
 tests pass again in both configurations (102 passed, 5 opt-ins ignored per mode).
 Strict Clippy passes in both modes; fmt, generated compatibility and nine monitor
 tests pass. No service deployment occurred.
+
+
+### Shared staged launch and setup lifecycle (2026-11-04)
+
+This supersedes the earlier synchronous workspace preparation and atomic-all launch
+claims in this document. ThreadLaunchService's durable thread claim commits first;
+initial message/context/run/events and its preparation job then commit atomically.
+A rejected message keeps an empty claim, and retry admits that message once without
+prior workspace effects. Accepted initial runs read `preparing` before Git/setup;
+release records provider execution intent only after the selected setup policy.
+
+The shared service prepares remote/local bases, managed checkouts/submodules,
+binds workspace metadata, observes setup completion, and releases the initial run.
+Synchronous failure retains its terminal/checkout for inspection and same-run retry.
+Async setup releases the agent while tracking continues. Shell readiness uses live
+bracketed-paste events or the quiet fallback, and keeps waiting on startup child
+prompts. Setup uses the Linux scope prerequisite above to reap escaped descendants.
+
+Worktree snapshots now contain ordered stages, bounded UTF-16 detail/tail/error,
+monotonic sequence and finished retention. Cancel is effective before release and
+returns false afterward. Checkout/ref rollback is restricted to owned resources;
+shared/external workspaces remain. Failed cleanup is durable and gates retry.
+Temporary branch generation follows naming/project override/collision rules, with
+rename intent persisted before Git mutation. Managed Scratch launches allocate a
+non-Git folder once. Preparation recovery resumes only unstarted work and explicitly
+fails uncertain effects without replaying a potentially started setup script.
+
+`tests/staged_launch.rs` provides ten HTTP/real-builder/native-peer regressions:
+both providers' sync setup ordering and replay, escaped daemon cancellation plus
+held queued input/retry, async release, sync failure inspection/retry, shell startup
+prompt, Scratch replay, branch policy/collision, physical rename followed by rejected
+metadata, locked checkout cleanup and project settings inside worktrees. Two module
+regressions reopen SQLite for safe resume/explicit retry and corrupt request/snapshot
+JSON, including valid JSON with an invalid type. Existing launch-reader, storage,
+scheduler and native-import regressions now follow deferred admission and source
+claim/replay semantics. Storage collection and async checkout binding share a gate.
+
+`examples/live_staged_launch.rs` passed using installed Claude Haiku and Codex
+gpt-6.1-sol. Each accepted one preparing run, waited for a gated synchronous script
+without provider turns, then used the native provider to copy the prepared checkout's
+file into a proof file. The same launch receipt replayed one run; tracking finished.
+These are isolated profiles, not a deployment or a desktop/Android UI acceptance run.
+
+Source: nightly4165 `8b44f42b14c8e273156474a924ccf29680dd7857`, confirmed
+09:51 UTC. MCP launch/mode-limited replay, Scratch bootstrap, numeric Git checkout
+percentages, first-message naming outside launch, full provider/project enable
+precedence, latest live reference differential and compatible UI acceptance stay
+open. The complete protocol goal also retains transfer/cross-instance handoff,
+continuation settlement, newer native recovery and the published toolkit/auth/
+environment/provider backlog. See MCP.md and RECOVERY.md.
+
+Validation: full suites pass with 361 default / 358 no-default tests, 21 opt-ins ignored each. Final library, staged launch, storage, import/reader and handoff regressions are also checked after the last recovery/readiness changes. Strict Clippy runs in both configurations; fmt, generated compatibility and nine monitor tests pass.

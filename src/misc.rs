@@ -41,11 +41,7 @@ pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
         "projects.listIgnoredFiles" => list_ignored(p).await,
         "projects.createNew" => create_new(s, p).await,
         "projectClone.start" => clone_start(s, p).await,
-        "worktreeSetup.cancel" => {
-            str_field(p, "threadId")?;
-            // Worktree preparation is not staged, so no setup is ever in flight to cancel.
-            Ok(json!({"cancelled":false}))
-        }
+        "worktreeSetup.cancel" => crate::thread_launch::cancel(s, p).await,
         "orchestration.getOlderSettledThreads" => older_settled(s, p),
         "orchestration.getWorkflowScript" => workflow_script(p).await,
         "orchestration.stopWorkflow" => Err(json!({

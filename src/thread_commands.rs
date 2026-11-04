@@ -122,6 +122,7 @@ fn promote(db: &Connection, tid: &str, thread: &Value, mut run: Value) -> Result
         .map(|m| m["text"].as_str().unwrap_or("").to_owned())
         .unwrap_or_default();
     run["status"] = json!("preparing");
+    run["executionRequested"] = json!(true);
     run["queuePosition"] = Value::Null;
     run["queueHeld"] = json!(false);
     let mut thread = thread.clone();

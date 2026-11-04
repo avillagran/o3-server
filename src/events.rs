@@ -43,6 +43,7 @@ pub fn initialize(db: &Connection) -> Result<()> {
     initialize_run_internal(db)?;
     crate::deletion::initialize(db)?;
     crate::run_restart::initialize(db)?;
+    crate::thread_launch::initialize(db)?;
     crate::workspace_transition::initialize(db)?;
     crate::threadq::initialize(db)
 }
@@ -534,6 +535,9 @@ pub(crate) fn dispatch_scoped(
         .as_str()
         .filter(|s| !s.is_empty())
         .ok_or("commandId required")?;
+    if c["type"] == "prepared-run.retry" {
+        return crate::thread_launch::retry(s, c, authority);
+    }
     if c["type"]
         .as_str()
         .is_some_and(crate::thread_commands::handles)
@@ -1509,8 +1513,20 @@ pub(crate) fn stage_message(
         );
     }
 
-    let queued =
-        c["dispatchMode"]["type"] == "queue_after_active" && (active_run.is_some() || detaching);
+    let latest:Option<String>=tx.query_row("SELECT body FROM records WHERE kind='runs' AND thread_id=? AND json_extract(body,'$.status')!='queued' ORDER BY json_extract(body,'$.ordinal') DESC,rowid DESC LIMIT 1",[tid],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
+    let missing_worktree = active_run.is_none()
+        && t["worktreePath"].is_null()
+        && latest
+            .and_then(|v| serde_json::from_str::<Value>(&v).ok())
+            .is_some_and(|r| {
+                matches!(r["status"].as_str(), Some("failed" | "interrupted"))
+                    && r["workspacePreparation"]["type"] == "worktree"
+            });
+    let queued = (mode == Some("queue_after_active")
+        && (active_run.is_some() || detaching || missing_worktree))
+        || (mode == Some("defer_start")
+            && c["dispatchMode"]["workspaceStrategy"].is_object()
+            && active_run.is_some());
     if mode != Some("defer_start") && s.provider.lock().unwrap().is_none() {
         return Err("no provider adapter configured; only defer_start is available".into());
     }
@@ -1574,8 +1590,9 @@ pub(crate) fn stage_message(
     let mut run = json!({"id":run_id,"threadId":tid,"ordinal":ordinal,"providerInstanceId":t["providerInstanceId"],"modelSelection":t["modelSelection"],"providerThreadId":null,"userMessageId":mid,"rootNodeId":null,"activeAttemptId":null,"status":"preparing","queuePosition":null,"requestedAt":at,"startedAt":null,"completedAt":null,"checkpointId":null,"contextHandoffId":null,"executionRequested":c["dispatchMode"]["type"]!="defer_start"});
     if queued {
         run["status"] = json!("queued");
+        run["executionRequested"] = json!(true);
         run["queuePosition"] = json!(crate::thread_commands::next_queue_position(tx, tid)?);
-        run["queueHeld"] = json!(false);
+        run["queueHeld"] = json!(missing_worktree);
     }
     if !queued {
         prepare_run_ownership(tx, tid, t, &mut run, at)?;
@@ -1587,7 +1604,7 @@ pub(crate) fn stage_message(
     }
     let item = message_item(tx, tid, &item_message)?;
     append(tx, tid, "turn-item.updated", item.clone(), t)?;
-    if mode == Some("defer_start") {
+    if mode == Some("defer_start") && !queued {
         let mut preparation = item;
         let id = format!("workspace-preparation:{run_id}");
         let object = preparation.as_object_mut().unwrap();
@@ -1619,6 +1636,13 @@ pub(crate) fn stage_message(
         )?;
         append(tx, tid, "turn-item.updated", preparation, t)?;
     }
+    if mode == Some("defer_start") && !queued && c["dispatchMode"]["workspaceStrategy"].is_object()
+    {
+        run["workspacePreparation"] = c["dispatchMode"]["workspaceStrategy"].clone();
+        let mut plan = json!({"commandId":cid,"projectId":t["projectId"],"workspaceStrategy":run["workspacePreparation"],"initialMessage":{"text":c["text"],"attachments":c["attachments"],"context":c["context"]}});
+        plan["expectedWorktreePath"] = t["worktreePath"].clone();
+        crate::thread_launch::enqueue(tx, tid, Some(&run_id), cid, &plan)?;
+    }
     put(tx, "runs", &run_id, tid, &run)?;
     let seq = append(tx, tid, "run.created", run, t)?;
     let result = json!({"sequence":seq});
@@ -1631,7 +1655,7 @@ pub(crate) fn stage_message(
     Ok((result, run_id, queued))
 }
 
-fn import_native(
+pub(crate) fn import_native(
     s: &State,
     db: &Connection,
     c: &Value,
@@ -1663,7 +1687,7 @@ fn import_native(
     Ok(())
 }
 
-fn new_thread(db: &Connection, c: &Value, tid: &str, at: &str) -> Result<Value> {
+pub(crate) fn new_thread(db: &Connection, c: &Value, tid: &str, at: &str) -> Result<Value> {
     Ok({
         for key in [
             "projectId",
@@ -1689,146 +1713,7 @@ fn new_thread(db: &Connection, c: &Value, tid: &str, at: &str) -> Result<Value> 
 }
 
 pub fn launch(s: &std::sync::Arc<State>, p: &Value) -> Result<Value> {
-    let _worktree = s
-        .worktree_gate
-        .try_read()
-        .map_err(|_| "worktree cleanup in progress; retry launch")?;
-    let _launch = s.launch_lock.lock().unwrap();
-    let cid = p["commandId"].as_str().ok_or("commandId required")?;
-    if let Some(result) =
-        s.db.lock()
-            .unwrap()
-            .query_row(
-                "SELECT result FROM receipts WHERE command_id=?",
-                [cid],
-                |r| r.get::<_, String>(0),
-            )
-            .optional()
-            .map_err(|e| e.to_string())?
-    {
-        return serde_json::from_str(&result).map_err(|e| e.to_string());
-    }
-    let tid = p["threadId"]
-        .as_str()
-        .map(str::to_owned)
-        .unwrap_or(format!("thread-{cid}"));
-    let mut create = p.clone();
-    create["type"] = json!("thread.create");
-    create["threadId"] = json!(tid);
-    create["commandId"] = json!(format!("{cid}:create"));
-    if p.get("initialMessage").is_some() && s.provider.lock().unwrap().is_none() {
-        return Err("no provider adapter configured".into());
-    }
-    let reuse = p["reuseExistingThread"] == true;
-    if reuse && p["threadId"].as_str().is_none() {
-        return Err("threadId required for reuse".into());
-    }
-    // Validate the message before workspace preparation can create filesystem effects.
-    if let Some(m) = p.get("initialMessage") {
-        if !m["text"].is_string() || !m["attachments"].is_array() {
-            return Err("text and attachments required".into());
-        }
-    }
-    let mut prepared = crate::workspace::prepare(s, p, &tid)?;
-    create["worktreePath"] = prepared.path.clone();
-    create["branch"] = prepared.branch.clone();
-    let result = (|| -> Result<_> {
-        let mut db = s.db.lock().unwrap();
-        if s.rollback_pending
-            .load(std::sync::atomic::Ordering::Acquire)
-        {
-            return Err("rollback recovery required".into());
-        }
-        let tx = db.transaction().map_err(|e| e.to_string())?;
-        let at = iso(now_ms());
-        let mut thread = if reuse {
-            let existing = get(&tx, "thread", &tid)?;
-            if existing["projectId"] != p["projectId"] {
-                return Err("reuse project does not match thread".into());
-            }
-            let occupied: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE thread_id=? AND kind IN ('messages','runs'))", [&tid], |r| r.get(0)).map_err(|e| e.to_string())?;
-            if occupied || !existing["archivedAt"].is_null() || !existing["deletedAt"].is_null() {
-                return Err("only an empty active thread can be reused".into());
-            }
-            let mut existing = existing;
-            existing["ownedWorktree"] = json!(
-                existing["ownedWorktree"] == true && existing["worktreePath"] == prepared.path
-            );
-            existing["branch"] = prepared.branch.clone();
-            existing["worktreePath"] = prepared.path.clone();
-            existing["updatedAt"] = json!(at);
-            put(&tx, "thread", &tid, &tid, &existing)?;
-            append(&tx, &tid, "thread.updated", existing.clone(), &existing)?;
-            existing
-        } else {
-            let thread = new_thread(&tx, &create, &tid, &at)?;
-            put(&tx, "thread", &tid, &tid, &thread)?;
-            append(&tx, &tid, "thread.created", thread.clone(), &thread)?;
-            thread
-        };
-        if prepared.is_owned() {
-            thread["ownedWorktree"] = json!(true);
-        }
-        if p.get("initialMessage").is_some() {
-            thread["modelSelection"] = p["modelSelection"].clone();
-            thread["providerInstanceId"] = p["modelSelection"]["instanceId"].clone();
-        }
-        if p["generateTitle"] == true {
-            if let Some(text) = p["initialMessage"]["text"].as_str() {
-                let title = text.split_whitespace().collect::<Vec<_>>().join(" ");
-                if !title.is_empty() {
-                    thread["title"] = json!(title.chars().take(80).collect::<String>());
-                    thread["titleRegeneration"] = json!({"requestId":cid,"startedAt":at});
-                }
-            }
-        }
-        import_native(s, &tx, p, &tid, &at, &mut thread)?;
-        put(&tx, "thread", &tid, &tid, &thread)?;
-        append(
-            &tx,
-            &tid,
-            "thread.metadata-updated",
-            thread.clone(),
-            &thread,
-        )?;
-        let mut start = None;
-        if let Some(m) = p.get("initialMessage") {
-            let message = json!({"type":"message.dispatch","commandId":format!("{cid}:initial"),"threadId":tid,"messageId":m["messageId"].as_str().map(str::to_owned).unwrap_or(format!("message-{cid}")),"text":m["text"],"context":m["context"],"attachments":m["attachments"],"dispatchMode":{"type":"start_immediately"}});
-            let (_, rid, _) = stage_message(s, &tx, &message, &mut thread, &at, false)?;
-            start = Some((rid, m["text"].as_str().unwrap().to_owned()));
-        }
-        let result = json!({"threadId":tid,"projection":projection_db(&tx,&tid)?,"resumed":reuse});
-        tx.execute(
-            "INSERT INTO receipts VALUES(?,?)",
-            params![cid, result.to_string()],
-        )
-        .map_err(|e| e.to_string())?;
-        tx.commit().map_err(|e| e.to_string())?;
-        drop(db);
-        Ok((result, start))
-    })();
-    let (result, start) = match result {
-        Ok(value) => {
-            prepared.commit();
-            value
-        }
-        Err(error) => {
-            return match prepared.rollback() {
-                Ok(()) => Err(error),
-                Err(cleanup) => Err(format!("{error}; worktree cleanup failed: {cleanup}")),
-            }
-        }
-    };
-    s.notify();
-    if p["generateTitle"] == true {
-        if let Some(text) = p["initialMessage"]["text"].as_str() {
-            crate::title::start(s.clone(), tid.clone(), cid.into(), text.into());
-        }
-    }
-    if let Some((rid, text)) = start {
-        crate::provider::start(s.clone(), tid, rid, text);
-    }
-    Ok(result)
+    crate::thread_launch::launch(s, p)
 }
 
 pub fn mutate_project(s: &State, c: &Value) -> Result<Value> {

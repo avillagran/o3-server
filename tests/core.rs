@@ -1,3 +1,4 @@
+mod support;
 #[path = "support/wire.rs"]
 mod wire;
 use o3_server::{import::from_t3, store::State};
@@ -228,23 +229,48 @@ fn worktree_and_reuse_launch() {
         "-qm",
         "fixture",
     ]);
-    let s = std::sync::Arc::new(State::open(&dir.join("profile")).unwrap());
+    let server = support::start(|_| {});
+    let s = server.state.clone();
     o3_server::events::mutate_project(&s,&json!({"type":"project.create","commandId":"p","projectId":"p","title":"Project","workspaceRoot":root})).unwrap();
     let mut p = json!({"commandId":"launch","threadId":"t","projectId":"p","title":"Thread","modelSelection":{"instanceId":"codex","model":"test"},"runtimeMode":"full-access","interactionMode":"default","workspaceStrategy":{"type":"worktree","baseRef":"HEAD","branch":"fixture-branch"}});
     let result = o3_server::events::launch(&s, &p).unwrap();
-    let path = result["projection"]["thread"]["worktreePath"]
+    assert_eq!(
+        result["projection"]["thread"]["worktreePath"],
+        serde_json::Value::Null
+    );
+    assert!(support::wait_for(
+        std::time::Duration::from_secs(10),
+        || o3_server::events::projection(&s, "t").unwrap()["thread"]["worktreePath"].is_string()
+    ));
+    let path = o3_server::events::projection(&s, "t").unwrap()["thread"]["worktreePath"]
         .as_str()
-        .unwrap();
-    assert!(std::path::Path::new(path).join(".git").exists());
-    assert_eq!(o3_server::events::launch(&s, &p).unwrap(), result);
+        .unwrap()
+        .to_owned();
+    assert!(std::path::Path::new(&path).join(".git").exists());
+    assert_eq!(o3_server::events::launch(&s, &p).unwrap()["resumed"], true);
     p["commandId"] = json!("reuse");
     p["reuseExistingThread"] = json!(true);
-    assert_eq!(o3_server::events::launch(&s, &p).unwrap()["resumed"], true);
+    p["workspaceStrategy"] =
+        json!({"type":"existing_worktree","worktreePath":path,"branch":"fixture-branch"});
+    assert_eq!(o3_server::events::launch(&s, &p).unwrap()["resumed"], false);
     p["commandId"] = json!("existing");
     p["threadId"] = json!("t2");
     p["reuseExistingThread"] = json!(false);
     p["workspaceStrategy"] = json!({"type":"existing_worktree","worktreePath":path});
     assert!(o3_server::events::launch(&s, &p).is_ok());
+    assert!(support::wait_for(
+        std::time::Duration::from_secs(10),
+        || s.db
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT count(*) FROM thread_launches WHERE completed=0",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap()
+            == 0
+    ));
     drop(s);
     std::fs::remove_dir_all(dir).unwrap();
 }

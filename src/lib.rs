@@ -111,3 +111,9 @@ mod server_browser;
 mod agent_browser;
 
 mod run_restart;
+
+mod launch_names;
+mod launch_worker;
+mod managed_folders;
+mod thread_launch;
+mod worktree_setup;

@@ -119,24 +119,54 @@ fn uploaded_images_files_and_context_reach_both_native_transports() {
 }
 
 #[test]
-fn launch_initial_message_and_receipt_roll_back_together_and_retry_once() {
+fn launch_claim_survives_rejected_initial_message_and_retry_admits_it_once() {
     let server = support::start(|s| {
         *s.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::ScriptedProvider));
         s.db.lock().unwrap().execute_batch("CREATE TRIGGER reject_run BEFORE INSERT ON records WHEN NEW.kind='runs' BEGIN SELECT RAISE(ABORT, 'injected run failure'); END;").unwrap();
     });
     let c = server.connect();
+    launch_project(&server, &c);
     let launch = json!({"commandId":"launch","threadId":"t","projectId":"p","title":"Atomic launch","modelSelection":{"instanceId":"scripted","model":"test"},"runtimeMode":"full-access","interactionMode":"default","workspaceStrategy":{"type":"root"},"initialMessage":{"messageId":"m","text":"hello","context":{"proof":"retained"},"attachments":[]}});
     assert!(c.rpc("orchestration.launchThread", launch.clone()).is_err());
     {
         let db = server.state.db.lock().unwrap();
-        for table in ["records", "events", "receipts"] {
-            assert_eq!(
-                db.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r
-                    .get::<_, i64>(0))
-                    .unwrap(),
-                0
-            );
-        }
+        assert_eq!(
+            db.query_row(
+                "SELECT count(*) FROM records WHERE thread_id='t' AND kind='thread'",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+            1
+        );
+        assert_eq!(db.query_row("SELECT count(*) FROM records WHERE thread_id='t' AND kind IN ('messages','runs','attempts','nodes')",[],|r|r.get::<_,i64>(0)).unwrap(),0);
+        assert_eq!(
+            db.query_row(
+                "SELECT count(*) FROM receipts WHERE command_id='launch'",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+            1
+        );
+        assert_eq!(
+            db.query_row(
+                "SELECT count(*) FROM receipts WHERE command_id='launch:initial-message'",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0
+        );
+        assert_eq!(
+            db.query_row(
+                "SELECT count(*) FROM thread_launches WHERE thread_id='t'",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0
+        );
         db.execute_batch("DROP TRIGGER reject_run").unwrap();
     }
     assert!(server.state.active.lock().unwrap().is_empty());
@@ -145,7 +175,9 @@ fn launch_initial_message_and_receipt_roll_back_together_and_retry_once() {
         result["projection"]["messages"][0]["context"]["proof"],
         "retained"
     );
-    assert_eq!(c.rpc("orchestration.launchThread", launch).unwrap(), result);
+    let replay = c.rpc("orchestration.launchThread", launch).unwrap();
+    assert_eq!(replay["resumed"], true);
+    assert_eq!(replay["threadId"], result["threadId"]);
     let db = server.state.db.lock().unwrap();
     assert_eq!(
         db.query_row("SELECT count(*) FROM records WHERE kind='runs'", [], |r| {
@@ -165,6 +197,7 @@ fn claude_structured_question_displays_and_accepts_client_answers() {
         )));
     });
     let c = server.connect();
+    launch_project(&server, &c);
     c.rpc("orchestration.launchThread",json!({"commandId":"launch","threadId":"t","projectId":"p","title":"Question","modelSelection":{"instanceId":"claudeAgent","model":"test"},"runtimeMode":"approval-required","interactionMode":"plan","workspaceStrategy":{"type":"root"},"initialMessage":{"text":"question-proof","attachments":[]}})).unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
     let request = loop {
@@ -207,6 +240,7 @@ fn claude_structured_question_dismisses_through_native_transport() {
         )));
     });
     let c = server.connect();
+    launch_project(&server, &c);
     c.rpc("orchestration.launchThread",json!({"commandId":"launch","threadId":"t","projectId":"p","title":"Question","modelSelection":{"instanceId":"claudeAgent","model":"test"},"runtimeMode":"approval-required","interactionMode":"plan","workspaceStrategy":{"type":"root"},"initialMessage":{"text":"question-proof","attachments":[]}})).unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
     let request = loop {
@@ -472,6 +506,7 @@ fn both_plan_acceptances_dispatch_implementation_and_complete_source_plan() {
             }))
         });
         let c = server.connect();
+        launch_project(&server, &c);
         c.rpc("orchestration.launchThread",json!({"commandId":"launch","threadId":"t","projectId":"p","title":"Plan","modelSelection":{"instanceId":instance,"model":"test"},"runtimeMode":"full-access","interactionMode":"plan","workspaceStrategy":{"type":"root"},"initialMessage":{"text":"plan-proof","attachments":[]}})).unwrap();
         let wait = || {
             let deadline = Instant::now() + Duration::from_secs(10);
@@ -608,9 +643,11 @@ fn launch_worktree_failure_rolls_back_and_reuse_updates_workspace_only() {
     assert!(!git(&["show-ref", "--verify", "refs/heads/launch-test"])
         .status
         .success());
-    assert!(c
+    let claimed = c
         .rpc("orchestration.getThreadProjection", json!({"threadId":"t"}))
-        .is_err());
+        .unwrap();
+    assert!(claimed["runs"].as_array().unwrap().is_empty());
+    assert!(claimed["thread"]["worktreePath"].is_null());
     server
         .state
         .db
@@ -619,21 +656,55 @@ fn launch_worktree_failure_rolls_back_and_reuse_updates_workspace_only() {
         .execute_batch("DROP TRIGGER reject_run")
         .unwrap();
     let result = c.rpc("orchestration.launchThread", launch.clone()).unwrap();
-    let path = result["projection"]["thread"]["worktreePath"]
+    assert_eq!(
+        result["projection"]["thread"]["worktreePath"],
+        serde_json::Value::Null
+    );
+    assert!(support::wait_for(Duration::from_secs(10), || c
+        .rpc("orchestration.getThreadProjection", json!({"threadId":"t"}))
+        .unwrap()["thread"]["worktreePath"]
+        .is_string()));
+    let path = c
+        .rpc("orchestration.getThreadProjection", json!({"threadId":"t"}))
+        .unwrap()["thread"]["worktreePath"]
         .as_str()
-        .unwrap();
-    assert!(std::path::Path::new(path).join(".git").exists());
-    assert_eq!(c.rpc("orchestration.launchThread", launch).unwrap(), result);
+        .unwrap()
+        .to_owned();
+    assert!(std::path::Path::new(&path).join(".git").exists());
+    let replay = c.rpc("orchestration.launchThread", launch).unwrap();
+    assert_eq!(replay["resumed"], true);
+    assert_eq!(replay["threadId"], result["threadId"]);
     c.rpc("orchestration.dispatchCommand", json!({"type":"thread.create","commandId":"empty","threadId":"empty","projectId":"p","title":"Keep title","modelSelection":{"instanceId":"scripted","model":"original"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
     let reuse = json!({"commandId":"reuse","threadId":"empty","reuseExistingThread":true,"projectId":"p","title":"Ignore title","modelSelection":{"instanceId":"scripted","model":"ignored"},"runtimeMode":"approval-required","interactionMode":"plan","workspaceStrategy":{"type":"existing_worktree","worktreePath":path,"branch":"launch-test"}});
     let reused = c.rpc("orchestration.launchThread", reuse.clone()).unwrap();
-    let t = &reused["projection"]["thread"];
+    assert!(support::wait_for(Duration::from_secs(10), || c
+        .rpc(
+            "orchestration.getThreadProjection",
+            json!({"threadId":"empty"})
+        )
+        .unwrap()["thread"]["worktreePath"]
+        == path));
+    let current = c
+        .rpc(
+            "orchestration.getThreadProjection",
+            json!({"threadId":"empty"}),
+        )
+        .unwrap();
+    let t = &current["thread"];
     assert_eq!(t["title"], "Keep title");
     assert_eq!(t["modelSelection"]["model"], "original");
     assert_eq!(t["branch"], "launch-test");
     assert_eq!(t["worktreePath"], path);
-    assert_eq!(c.rpc("orchestration.launchThread", reuse).unwrap(), reused);
+    let replay = c.rpc("orchestration.launchThread", reuse).unwrap();
+    assert_eq!(replay["resumed"], true);
+    assert_eq!(replay["threadId"], reused["threadId"]);
     let rejected = c.rpc("orchestration.launchThread", json!({"commandId":"occupied","threadId":"t","reuseExistingThread":true,"projectId":"p","workspaceStrategy":{"type":"root"}}));
     assert!(rejected.is_err());
-    assert!(std::path::Path::new(path).exists());
+    assert!(std::path::Path::new(&path).exists());
+}
+
+fn launch_project(server: &support::Server, c: &t3_protocol::Connection) {
+    let root = server.dir.join("launch-project");
+    std::fs::create_dir_all(&root).unwrap();
+    c.rpc("projects.mutate",json!({"type":"project.create","commandId":"launch-project","projectId":"p","title":"Test","workspaceRoot":root})).unwrap();
 }

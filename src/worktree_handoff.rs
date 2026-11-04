@@ -116,7 +116,10 @@ async fn git(root: &Path, args: &[&str], opts: Opts) -> Result<String, Value> {
         Err(operation("The git operation failed."))
     }
 }
-async fn remote_base(root: &Path, base: &str) -> Result<Option<(String, String)>, Value> {
+pub(crate) async fn remote_base(
+    root: &Path,
+    base: &str,
+) -> Result<Option<(String, String)>, Value> {
     let remotes = git(root, &["remote"], Opts::READ).await?;
     let mut remotes: Vec<_> = remotes.lines().collect();
     remotes.sort_by_key(|s| std::cmp::Reverse(s.len()));
@@ -191,7 +194,7 @@ async fn remote_base(root: &Path, base: &str) -> Result<Option<(String, String)>
     .await?;
     Ok(Some((commit, refname)))
 }
-async fn managed_path(
+pub(crate) async fn managed_path(
     s: &State,
     root: &Path,
     branch: &str,
@@ -394,7 +397,7 @@ fn bind(
     s.notify();
     Ok(continuation)
 }
-fn setup_script(settings: &Value, project: &Value) -> Option<Value> {
+pub(crate) fn setup_script(settings: &Value, project: &Value) -> Option<Value> {
     let id = project["id"].as_str().unwrap_or("");
     let scripts =
         if let Some(v) = settings["projectSettingsOverrides"][id].get("defaultProjectScripts") {
@@ -682,7 +685,10 @@ async fn run_setup(
     }
 }
 
-async fn comparison_base(root: &Path, reference: &str) -> Result<Option<(String, String)>, Value> {
+pub(crate) async fn comparison_base(
+    root: &Path,
+    reference: &str,
+) -> Result<Option<(String, String)>, Value> {
     let out = output(
         root,
         &[
