@@ -42,11 +42,8 @@ pub(crate) fn enabled(s: &State, pid: &str, instance: &Value) -> Result<()> {
         .filter(|s| !s.is_empty())
         .ok_or("Provider instance required")?;
     let settings = crate::settings::read(s)?;
-    if settings["providerInstances"][id]["enabled"] == false
-        || settings["providerInstances"][id]["config"]["enabled"] == false
-        || settings["projectSettingsOverrides"][pid]["providerInstances"][id]["enabled"] == false
-    {
-        return Err("Provider instance is disabled for this project".into());
+    if !crate::provider_policy::project_enabled(&settings, Some(pid), id) {
+        return Err(crate::provider_policy::disabled(pid, id));
     }
     Ok(())
 }

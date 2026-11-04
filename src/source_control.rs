@@ -14,12 +14,10 @@ pub(crate) fn effective(s: &State, root: &Path) -> Value {
                 .as_str()
                 .is_some_and(|v| Path::new(v) == root)
             {
-                if let Some(overrides) = settings["projectSettingsOverrides"]
-                    .get(p["id"].as_str().unwrap_or(""))
-                    .cloned()
-                {
-                    crate::settings::merge(&mut settings, &overrides);
-                }
+                settings = crate::provider_policy::project_settings(
+                    &settings,
+                    p["id"].as_str().unwrap_or(""),
+                );
                 break;
             }
         }
@@ -30,12 +28,8 @@ pub(crate) async fn generate(s: &State, root: &Path, kind: &str, data: &str) -> 
     generate_input(s, root, kind, data, None, None).await
 }
 pub(crate) fn project_settings(s: &State, project: &str) -> Value {
-    let mut settings = crate::settings::read(s).unwrap_or_default();
-    let overrides = settings["projectSettingsOverrides"][project].clone();
-    if overrides.is_object() {
-        crate::settings::merge(&mut settings, &overrides);
-    }
-    settings
+    let settings = crate::settings::read(s).unwrap_or_default();
+    crate::provider_policy::project_settings(&settings, project)
 }
 pub(crate) async fn generate_launch_branch(
     s: &State,
@@ -61,6 +55,19 @@ async fn generate_input(
     message: Option<&Value>,
     project: Option<&str>,
 ) -> Option<String> {
+    let resolved_project = project.map(str::to_owned).or_else(|| {
+        crate::projects::snapshot(s).ok()?["projects"]
+            .as_array()?
+            .iter()
+            .find(|p| {
+                p["workspaceRoot"]
+                    .as_str()
+                    .is_some_and(|p| Path::new(p) == root)
+            })?["id"]
+            .as_str()
+            .map(str::to_owned)
+    });
+    let project = resolved_project.as_deref();
     let settings = project
         .map(|id| project_settings(s, id))
         .unwrap_or_else(|| effective(s, root));
@@ -83,6 +90,13 @@ async fn generate_input(
         &settings["textGenerationModelSelection"]
     };
     let selection = crate::title::selection(s, preferred, &own)?;
+    if !crate::provider_policy::project_enabled(
+        &settings,
+        project,
+        selection["instanceId"].as_str()?,
+    ) {
+        return None;
+    }
     let style = &settings["sourceControlWritingStyle"];
     let instructions = if review {
         settings["reviewGuideInstructions"].as_str().unwrap_or("")

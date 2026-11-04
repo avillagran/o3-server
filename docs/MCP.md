@@ -647,3 +647,51 @@ Validation for this checkpoint: full suites 382 default / 379 no-default passed,
 21 opt-ins ignored each. Final affected regressions passed 151 default (6 ignored)
 and 53 no-default (1 ignored). Strict all-target Clippy passed in both modes; fmt,
 generated compatibility and nine nightly-monitor tests passed.
+
+## Provider instance enable policy (nightly4165)
+
+This checkpoint ports instance enablement across settings, registry hydration and
+thread admission. A boolean project override wins over both global flags. Without
+an override, any explicit false in the envelope or legacy `config.enabled` disables
+the instance; otherwise the driver's default applies. Cursor, Grok, FX, Kiro, Muse,
+Pi, OpenCode and Antigravity default off. Unconfigured ids inherit no enablement
+except the built-in `codex` and `claudeAgent` defaults. Boolean legacy flags fold
+into the envelope; omitted flags and invalid opaque config fields remain omitted
+or opaque on disk.
+
+The registry probes the union of global and project-enabled configured instances.
+A project can therefore use its globally disabled instance while other projects
+continue to reject new messages/launches. Project references do not recreate a
+removed instance. Project setting changes trigger reconciliation/discovery, while
+unchanged hydrated configurations retain their pool. Disabled entries are excluded
+from discovery, usage and configured/default health probes. Removing a default-id
+override allows its default driver to be discovered once. Invalid settings reads
+preserve the registry's last valid configuration rather than dropping its entries.
+Unsupported drivers have explicit unavailable snapshots, with no claimed setup
+capabilities or installed binary inferred from a saved executable path.
+
+Ordinary messages, continuation messages, launch and prepared retry/release use the
+same enable policy; accepted receipts retain their replay semantics. Existing MCP
+credential and target authority checks still precede receipt replay. Disabled-instance
+errors preserve project/instance identity at the RPC boundary and map to MCP
+`invalid_request`, including launch, plain sends and attachment sends. Internal title
+and source-control selection also respect project enablement even when another
+project keeps that instance present in the registry. Only source-defined project
+setting keys affect effective settings; provider overrides never replace driver
+configurations and opaque saved fields cannot overwrite environment-level state.
+
+Four integration tests cover both native drivers, actual compatible-client model
+catalog reads, settings round trips, project/global transitions, registry recovery,
+receipt replay, selected-instance admission and unavailable snapshots. A fifth MCP
+test covers the typed failures through actual HTTP and upload claims; a contract
+matrix covers driver defaults, conflicting flags and project/hydration precedence.
+Full suites pass 388 default / 385 no-default, with 21 opt-ins ignored each.
+
+This does not complete the provider subsystem: additional drivers, history-based
+legacy enable restoration, managed policies and the full text-generation model/
+quota fallback catalog remain pending. See
+[provider-policy-intake.json](nightly/provider-policy-intake.json).
+Final affected regressions also passed 146/146 in each mode (five opt-ins ignored),
+with 22 additional generation/MCP/native-policy tests and the compatible catalog
+reader check. Strict all-target Clippy passed in both modes; fmt, generated table
+and nine monitor tests passed.

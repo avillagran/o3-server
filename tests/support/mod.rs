@@ -35,6 +35,13 @@ pub fn start(configure: impl FnOnce(&Arc<o3_server::store::State>)) -> Server {
         .as_str()
         .unwrap()
         .to_owned();
+    // The scripted adapter is an explicitly configured fixture instance, like a
+    // real registered instance; unknown production ids must not inherit enablement.
+    std::fs::write(
+        state.dir.join("settings.json"),
+        json!({"providerInstances":{"scripted":{"driver":"scripted","enabled":true}}}).to_string(),
+    )
+    .unwrap();
     configure(&state);
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();

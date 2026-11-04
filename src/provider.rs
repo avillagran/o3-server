@@ -126,6 +126,12 @@ pub trait Provider: Send + Sync + 'static {
     fn poll_usage<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         self.refresh()
     }
+    fn refresh_defaults<'a>(
+        &'a self,
+        _excluded: Vec<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        self.refresh()
+    }
     fn discover_defaults<'a>(
         &'a self,
         cwd: std::path::PathBuf,
@@ -909,6 +915,17 @@ impl Provider for Providers {
         }
     }
 
+    fn refresh_defaults<'a>(
+        &'a self,
+        excluded: Vec<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            if !excluded.iter().any(|id| id == "codex") {
+                self.codex.probe().await?;
+            }
+            Ok(())
+        })
+    }
     fn discover_defaults<'a>(
         &'a self,
         cwd: std::path::PathBuf,
@@ -1313,7 +1330,8 @@ pub struct ConfiguredProviders {
     pub defaults: std::sync::Arc<dyn Provider>,
     pub directory: std::path::PathBuf,
     instances: std::sync::Mutex<std::collections::BTreeMap<String, Instance>>,
-    discovered_defaults: std::sync::atomic::AtomicBool,
+    last_settings: std::sync::Mutex<serde_json::Value>,
+    discovered_defaults: std::sync::Mutex<std::collections::HashSet<String>>,
 }
 struct Instance {
     settings: serde_json::Value,
@@ -1327,25 +1345,31 @@ impl ConfiguredProviders {
             defaults,
             directory,
             instances: Default::default(),
-            discovered_defaults: std::sync::atomic::AtomicBool::new(false),
+            last_settings: std::sync::Mutex::new(serde_json::json!({})),
+            discovered_defaults: Default::default(),
         }
     }
     fn settings(&self) -> serde_json::Value {
-        std::fs::read(self.directory.join("settings.json"))
-            .ok()
-            .and_then(|b| serde_json::from_slice(&b).ok())
-            .unwrap_or_else(|| serde_json::json!({}))
+        let current = match std::fs::read(self.directory.join("settings.json")) {
+            Ok(bytes) => serde_json::from_slice::<serde_json::Value>(&bytes)
+                .ok()
+                .filter(serde_json::Value::is_object),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Some(serde_json::json!({})),
+            Err(_) => None,
+        };
+        let mut last = self.last_settings.lock().unwrap();
+        if let Some(current) = current {
+            *last = current;
+        }
+        last.clone()
     }
     fn sync(&self) -> serde_json::Value {
         use serde_json::json;
         let settings = self.settings();
         let mut cache = self.instances.lock().unwrap();
-        cache.retain(|id, _| settings["providerInstances"].get(id).is_some());
-        for (id, entry) in settings["providerInstances"]
-            .as_object()
-            .into_iter()
-            .flatten()
-        {
+        let hydrated = crate::provider_policy::hydrate(&settings);
+        cache.retain(|id, _| hydrated.get(id).is_some());
+        for (id, entry) in hydrated.as_object().into_iter().flatten() {
             if cache.get(id).is_some_and(|i| i.settings == *entry) {
                 continue;
             }
@@ -1427,11 +1451,28 @@ impl Provider for ConfiguredProviders {
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(async move {
             self.sync();
-            if !self
-                .discovered_defaults
-                .swap(true, std::sync::atomic::Ordering::Relaxed)
-            {
-                let excluded = self.instances.lock().unwrap().keys().cloned().collect();
+            let configured = self
+                .instances
+                .lock()
+                .unwrap()
+                .keys()
+                .cloned()
+                .collect::<std::collections::HashSet<_>>();
+            let pending = {
+                let mut discovered = self.discovered_defaults.lock().unwrap();
+                ["codex", "claudeAgent"]
+                    .into_iter()
+                    .filter(|id| !configured.contains(*id))
+                    .filter(|id| discovered.insert((*id).into()))
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+            };
+            if !pending.is_empty() {
+                let excluded = ["codex", "claudeAgent"]
+                    .into_iter()
+                    .filter(|id| !pending.iter().any(|p| p == id))
+                    .map(str::to_owned)
+                    .collect();
                 let _ = self.defaults.discover_defaults(cwd.clone(), excluded).await;
             }
             let providers: Vec<_> = self
@@ -1440,7 +1481,7 @@ impl Provider for ConfiguredProviders {
                 .unwrap()
                 .values_mut()
                 .filter_map(|i| {
-                    if i.discovered || i.settings["enabled"] == false {
+                    if i.discovered || !crate::provider_policy::instance_enabled(&i.settings) {
                         return None;
                     }
                     i.discovered = true;
@@ -1462,7 +1503,7 @@ impl Provider for ConfiguredProviders {
                 .lock()
                 .unwrap()
                 .values()
-                .filter(|i| i.settings["enabled"] != false)
+                .filter(|i| crate::provider_policy::instance_enabled(&i.settings))
                 .filter_map(|i| i.provider.clone())
                 .collect();
             let excluded = settings["providerInstances"]
@@ -1502,11 +1543,24 @@ impl Provider for ConfiguredProviders {
                 .get("displayName")
                 .cloned()
                 .unwrap_or_else(|| json!(id));
-            descriptor["enabled"] = json!(
-                instance.settings["enabled"] != false
-                    && instance.settings["config"]["enabled"] != false
-            );
-            if descriptor["enabled"] == false {
+            descriptor["enabled"] =
+                json!(crate::provider_policy::instance_enabled(&instance.settings));
+            if instance.provider.is_none() {
+                let reason = format!(
+                    "Driver '{}' is not registered in this build.",
+                    instance.settings["driver"].as_str().unwrap_or("")
+                );
+                descriptor["enabled"] = json!(false);
+                descriptor["installed"] = json!(false);
+                descriptor["status"] = json!("error");
+                descriptor["version"] = serde_json::Value::Null;
+                descriptor["auth"] = json!({"status":"unknown"});
+                descriptor["message"] = json!(reason);
+                descriptor["availability"] = json!("unavailable");
+                descriptor["unavailableReason"] = json!(reason);
+                descriptor.as_object_mut().unwrap().remove("setup");
+            }
+            if instance.provider.is_some() && descriptor["enabled"] == false {
                 descriptor["status"] = json!("disabled");
             }
             result.push(descriptor);
@@ -1516,12 +1570,14 @@ impl Provider for ConfiguredProviders {
     fn refresh<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(async move {
             self.sync();
-            self.defaults.refresh().await?;
+            let excluded = self.instances.lock().unwrap().keys().cloned().collect();
+            self.defaults.refresh_defaults(excluded).await?;
             let providers: Vec<_> = self
                 .instances
                 .lock()
                 .unwrap()
                 .values()
+                .filter(|i| crate::provider_policy::instance_enabled(&i.settings))
                 .filter_map(|i| i.provider.clone())
                 .collect();
             for p in providers {
@@ -1552,7 +1608,7 @@ impl Provider for ConfiguredProviders {
                     },
                 )
                 .map(|i| {
-                    if i.settings["enabled"] == false || i.settings["config"]["enabled"] == false {
+                    if !crate::provider_policy::instance_enabled(&i.settings) {
                         Err("provider instance is disabled".to_owned())
                     } else if crate::executable::resolve(&i.binary).is_none() {
                         Err("provider binary is unavailable".to_owned())
@@ -1564,7 +1620,14 @@ impl Provider for ConfiguredProviders {
                 })
         };
         match selected {
-            None => self.defaults.execute(input, output, control, cancel),
+            None if matches!(
+                input.provider_instance_id.as_str(),
+                "codex" | "claudeAgent" | "claude" | "claude-code"
+            ) =>
+            {
+                self.defaults.execute(input, output, control, cancel)
+            }
+            None => Box::pin(async { Err("provider instance is not configured".into()) }),
             Some(selected) => {
                 Box::pin(async move { selected?.execute(input, output, control, cancel).await })
             }

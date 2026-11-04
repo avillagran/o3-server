@@ -179,7 +179,10 @@ pub fn update(s: &State, p: &Value) -> Result<Value, String> {
     normalize(&mut v, &patch)?;
     crate::profile::atomic_json(&s.dir.join("settings.json"), &v).map_err(|e| e.to_string())?;
     s.notify();
-    if patch.get("providerInstances").is_some() || p.get("providerInstanceMutation").is_some() {
+    if patch.get("providerInstances").is_some()
+        || patch.get("projectSettingsOverrides").is_some()
+        || p.get("providerInstanceMutation").is_some()
+    {
         if let (Ok(runtime), Some(provider)) = (
             tokio::runtime::Handle::try_current(),
             s.provider.lock().unwrap().clone(),
@@ -414,13 +417,7 @@ fn normalize_preferences(old: &Value, next: &mut Value, patch: &Value) -> Result
     }
     if let Some(instances) = next["providerInstances"].as_object_mut() {
         for instance in instances.values_mut() {
-            if let Some(enabled) = instance["config"]["enabled"].as_bool() {
-                instance["enabled"] = json!(instance["enabled"] != false && enabled);
-                instance["config"]
-                    .as_object_mut()
-                    .unwrap()
-                    .remove("enabled");
-            }
+            crate::provider_policy::fold_enabled(instance);
         }
     }
     Ok(())
@@ -697,16 +694,7 @@ fn normalize(v: &mut Value, patch: &Value) -> Result<(), String> {
             if !instance["config"].is_object() {
                 instance["config"] = json!({});
             }
-            if instance.get("enabled").is_none() {
-                instance["enabled"] = json!(true);
-            }
-            if let Some(enabled) = instance["config"].get("enabled") {
-                instance["enabled"] = json!(instance["enabled"] != false && enabled != false);
-                instance["config"]
-                    .as_object_mut()
-                    .unwrap()
-                    .remove("enabled");
-            }
+            crate::provider_policy::fold_enabled(instance);
             if instance["environment"].is_null() {
                 instance["environment"] = json!([]);
             }

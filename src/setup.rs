@@ -77,6 +77,9 @@ impl Registry {
 /// Only advertise setup operations that this server can actually execute.
 pub fn decorate(s: &State, config: &mut Value) {
     for p in config["providers"].as_array_mut().into_iter().flatten() {
+        if p["availability"] == "unavailable" {
+            continue;
+        }
         let supported = matches!(p["driver"].as_str(), Some("claudeAgent" | "codex"));
         let installed = p["installed"] == true;
         let id = p["instanceId"].as_str().unwrap_or("").to_owned();

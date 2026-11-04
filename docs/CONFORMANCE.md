@@ -3146,3 +3146,32 @@ equivalence or current desktop/Android UI acceptance. Guest-sharing attachment
 mediation and the rest of the protocol backlog remain pending. No deployment or
 main promotion occurred. Source/validation inventory:
 [attachment-intake.json](nightly/attachment-intake.json).
+
+### Provider enablement, registry hydration and admission, 2026-11-04
+
+PR27 passed both checks on dfae324 and merged into dev
+002f26443e62d85ecaa132bc182ab2da043373be. The next port follows nightly4165,
+confirmed at 11:53 UTC. Source instance defaults, envelope/config false precedence,
+project override precedence and union hydration now drive the native registry and
+shared message/launch admission. Omitted enable flags remain omitted when saved;
+unknown ids do not inherit enabled state. Project-only enablement probes/executes
+the configured native instance without changing its global setting. Other projects
+remain refused, and accepted command replay survives a later disable.
+
+`tests/provider_policy.rs` exercises real Claude/Codex adapter processes and the
+compatible client, including its model catalog reader. It verifies lazy discovery,
+settings-driven enable/disable/removal, rejected title generation while another
+project keeps the registry entry enabled, unavailable-driver snapshots and default
+probe exclusion/recovery after invalid JSON. `tests/mcp.rs` checks invalid_request
+errors for disabled launch/plain/attachment sends with real HTTP and an uploaded
+file. The policy matrix checks source driver defaults and all flag/override
+combinations, plus model overrides and opaque-setting isolation. Scripted fixtures
+now register their synthetic instance explicitly instead of depending on unknown
+ids being enabled.
+
+Full suites pass 388 default / 385 no-default, 21 opt-ins ignored each. This evidence
+covers enablement, not full catalog/text-generation/driver equivalence. Current UI
+acceptance, additional providers, history/managed-policy restoration, complete
+text-generation fallback and the broader protocol backlog remain open. Source and
+validation inventory: [provider-policy-intake.json](nightly/provider-policy-intake.json).
+No deployment or main promotion.
