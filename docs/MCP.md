@@ -227,3 +227,8 @@ turns exercise reuse, browser disable, abrupt process death, fresh credentials a
 shutdown. They assert configuration file permissions, argv isolation, missing-target
 defaults, lower-mode rejection, inactive-parent rejection and ordinary HTTP/WS denial.
 These deterministic peers are not a live inference or compatible desktop acceptance test.
+
+Final native-credential validation: 319 default / 316 no-default tests pass, with
+21 opt-ins ignored in each mode. Strict Clippy passes in both modes; fmt, generated
+compatibility and all nine nightly-monitor tests pass. No running-service deployment
+or complete-nightly conformance is asserted.

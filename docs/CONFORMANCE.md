@@ -2851,3 +2851,7 @@ per-turn lifecycle and the provider-registry gap above. Source reference: nightl
 See [MCP.md](MCP.md) for exact behavior and limits. The full preview/project/task/PR/device/
 HTML toolkits, OAuth/DPoP/SSE, linked environments, remaining providers and live client
 acceptance remain incomplete; this does not establish complete nightly parity.
+
+Validation for this block: 319 default / 316 no-default pass; 21 opt-ins ignored each.
+Strict Clippy in both modes, fmt, generated compatibility and nine nightly-monitor
+tests pass. No service deployment occurred.
