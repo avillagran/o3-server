@@ -501,6 +501,13 @@ pub(crate) fn append(
     Ok(seq)
 }
 pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
+    dispatch_scoped(s, c, None)
+}
+pub(crate) fn dispatch_scoped(
+    s: &std::sync::Arc<State>,
+    c: &Value,
+    authority: Option<&crate::mcp_access::Authority>,
+) -> Result<Value> {
     if s.rollback_pending
         .load(std::sync::atomic::Ordering::Acquire)
     {
@@ -528,7 +535,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
         .as_str()
         .is_some_and(crate::thread_commands::handles)
     {
-        return crate::thread_commands::dispatch(s, c);
+        return crate::thread_commands::dispatch_scoped(s, c, authority);
     }
     if c["type"] == "thread.stop" {
         let target = {
@@ -548,7 +555,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             interrupt["type"] = json!("run.interrupt");
             interrupt["runId"] = run["id"].clone();
             interrupt["holdQueue"] = json!(true);
-            if let Ok(result) = dispatch(s, &interrupt) {
+            if let Ok(result) = dispatch_scoped(s, &interrupt, authority) {
                 return Ok(result);
             }
         }
@@ -560,6 +567,9 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
         return Err("rollback recovery required".into());
     }
     let tx = db.transaction().map_err(|e| e.to_string())?;
+    if let Some(authority) = authority {
+        authority.check(&tx, c)?;
+    }
     if let Some(r) = tx
         .query_row(
             "SELECT result FROM receipts WHERE command_id=?",
@@ -569,8 +579,24 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
         .optional()
         .map_err(|e| e.to_string())?
     {
-        return serde_json::from_str(&r).map_err(|e| e.to_string());
+        let result = serde_json::from_str(&r).map_err(|e| e.to_string())?;
+        return if authority.is_some() {
+            crate::mcp_access::replay_reply(&tx, c, result)
+        } else {
+            Ok(result)
+        };
     }
+    let resolved;
+    let c = if authority.is_some() && c["type"] == "run.interrupt" {
+        let (command, terminal) = crate::mcp_access::interrupt_target(&tx, c)?;
+        if let Some(result) = terminal {
+            return Ok(result);
+        }
+        resolved = command;
+        &resolved
+    } else {
+        c
+    };
     let kind = c["type"].as_str().ok_or("type required")?;
     let tid = c["threadId"].as_str().ok_or("threadId required")?;
     let at = iso(now_ms());
@@ -691,6 +717,16 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
         "message.dispatch" => {
             let mut resolved = c.clone();
             resolved["dispatchMode"] = delivery_mode(s, &tx, &t, c)?;
+            if authority.is_some()
+                && c["deliveryIntent"] == "steer"
+                && resolved["dispatchMode"]["type"] != "steer_active"
+            {
+                return Err(crate::mcp_tools::failure(
+                    "invalid_request",
+                    "The thread has no active turn that can be steered.",
+                )
+                .to_string());
+            }
             let c = &resolved;
             if let Some(selection) = c.get("modelSelection") {
                 change_selection(&tx, &mut t, c, selection)?;
@@ -727,7 +763,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                     .try_reserve_owned()
                     .map_err(|_| "provider control busy")?;
                 let mid = c["messageId"].as_str().ok_or("messageId required")?;
-                let m = json!({"id":mid,"threadId":tid,"runId":rid,"nodeId":rid,"role":"user","text":text,"attachments":c["attachments"],"context":c["context"],"streaming":false,"createdBy":"user","creationSource":"web","createdAt":at,"updatedAt":at});
+                let m = json!({"id":mid,"threadId":tid,"runId":rid,"nodeId":rid,"role":"user","text":text,"attachments":c["attachments"],"context":c["context"],"streaming":false,"createdBy":if authority.is_some(){"agent"}else{"user"},"creationSource":if authority.is_some(){"mcp"}else{"web"},"createdAt":at,"updatedAt":at});
                 put(&tx, "messages", mid, tid, &m)?;
                 append(&tx, tid, "message.updated", m.clone(), &t)?;
                 let mut item = message_item(&tx, tid, &m)?;
@@ -748,6 +784,11 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                     params![cid, result.to_string()],
                 )
                 .map_err(|e| e.to_string())?;
+                let result = if authority.is_some() {
+                    crate::mcp_access::sent_reply(&tx, c, rid, "steered")?
+                } else {
+                    result
+                };
                 tx.commit().map_err(|e| e.to_string())?;
                 drop(db);
                 permit.send(crate::provider::ProviderControl::SteerContent(content));
@@ -755,7 +796,18 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                 s.notify();
                 return Ok(result);
             }
-            let (result, run_id, queued) = stage_message(s, &tx, c, &mut t, &at)?;
+            let (result, run_id, queued) =
+                stage_message(s, &tx, c, &mut t, &at, authority.is_some())?;
+            let result = if authority.is_some() {
+                crate::mcp_access::sent_reply(
+                    &tx,
+                    c,
+                    &run_id,
+                    if queued { "queued" } else { "started" },
+                )?
+            } else {
+                result
+            };
             tx.commit().map_err(|e| e.to_string())?;
             drop(db);
             s.notify();
@@ -851,7 +903,11 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             if c["holdQueue"] == true {
                 crate::thread_commands::hold_queue(&tx, tid, &t)?;
             }
-            let result = json!({"sequence":seq});
+            let result = if authority.is_some() {
+                json!({"threadId":tid,"runId":rid,"status":"interrupt_requested"})
+            } else {
+                json!({"sequence":seq})
+            };
             crate::outbox::stage(&tx, c)?;
             tx.execute(
                 "INSERT INTO receipts VALUES(?,?)",
@@ -1337,6 +1393,7 @@ fn stage_message(
     c: &Value,
     t: &mut Value,
     at: &str,
+    mcp_origin: bool,
 ) -> Result<(Value, String, bool)> {
     let tid = c["threadId"].as_str().ok_or("threadId required")?;
     let cid = c["commandId"].as_str().ok_or("commandId required")?;
@@ -1402,7 +1459,7 @@ fn stage_message(
     }
     let run_id = random_id()?;
     let mid = c["messageId"].as_str().ok_or("messageId required")?;
-    let mut m = json!({"id":mid,"threadId":tid,"runId":run_id,"nodeId":run_id,"role":"user","text":c["text"],"attachments":c["attachments"],"streaming":false,"createdBy":"user","creationSource":"web","createdAt":at,"updatedAt":at});
+    let mut m = json!({"id":mid,"threadId":tid,"runId":run_id,"nodeId":run_id,"role":"user","text":c["text"],"attachments":c["attachments"],"streaming":false,"createdBy":if mcp_origin{"agent"}else{"user"},"creationSource":if mcp_origin{"mcp"}else{"web"},"createdAt":at,"updatedAt":at});
     if let Some(reference) = c.get("sourcePlanRef") {
         m["sourcePlanRef"] = reference.clone();
     }
@@ -1645,7 +1702,7 @@ pub fn launch(s: &std::sync::Arc<State>, p: &Value) -> Result<Value> {
         let mut start = None;
         if let Some(m) = p.get("initialMessage") {
             let message = json!({"type":"message.dispatch","commandId":format!("{cid}:initial"),"threadId":tid,"messageId":m["messageId"].as_str().map(str::to_owned).unwrap_or(format!("message-{cid}")),"text":m["text"],"context":m["context"],"attachments":m["attachments"],"dispatchMode":{"type":"start_immediately"}});
-            let (_, rid, _) = stage_message(s, &tx, &message, &mut thread, &at)?;
+            let (_, rid, _) = stage_message(s, &tx, &message, &mut thread, &at, false)?;
             start = Some((rid, m["text"].as_str().unwrap().to_owned()));
         }
         let result = json!({"threadId":tid,"projection":projection_db(&tx,&tid)?,"resumed":reuse});

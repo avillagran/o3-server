@@ -18,11 +18,16 @@ fn string() -> Value {
 fn integer(min: usize, max: usize) -> Value {
     json!({"type":"integer","minimum":min,"maximum":max})
 }
-fn definition(name: &str, description: &str, properties: Value, required: &[&str]) -> Value {
+pub(crate) fn definition(
+    name: &str,
+    description: &str,
+    properties: Value,
+    required: &[&str],
+) -> Value {
     json!({"name":name,"description":description,"inputSchema":{"type":"object","properties":properties,"required":required},"annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}})
 }
 pub(crate) fn catalog() -> Vec<Value> {
-    vec![
+    let mut tools=vec![
         definition("t3_environment_read","Read this server's identity and selected environment preferences.",json!({}),&[]),
         definition("t3_project_list","List registered projects with live offset pagination.",json!({"cursor":integer(0,usize::MAX),"limit":integer(1,100)}),&[]),
         definition("t3_project_read","Read a registered project, workspace and saved scripts.",json!({"projectId":string()}),&["projectId"]),
@@ -30,7 +35,9 @@ pub(crate) fn catalog() -> Vec<Value> {
         definition("t3_thread_search","Search active thread titles and content. Omit projectId to search every project. Results are bounded, without exhaustive-result guarantee.",json!({"query":{"type":"string","minLength":2,"maxLength":200},"limit":integer(1,50),"projectId":string(),"projectIds":{"type":"array","items":string()},"titlesOnly":{"type":"boolean"}}),&["query"]),
         definition("t3_thread_list","List project threads newest first, optionally filtering durable status, title, settled or snoozed state. Outside a thread, pass projectId.",json!({"projectId":string(),"statuses":{"type":"array","maxItems":10,"items":{"type":"string","enum":["idle","queued","preparing","starting","running","waiting","completed","failed","interrupted","cancelled","rolled_back"]}},"titleContains":{"type":"string","minLength":1,"maxLength":256},"settled":{"type":"boolean"},"snoozed":{"type":"boolean"},"includeSubagents":{"type":"boolean"},"cursor":integer(0,usize::MAX),"limit":integer(1,100)}),&[]),
         definition("t3_thread_read","Read durable thread state and paginated messages or activity. Use itemId and textOffset to read more of a truncated item.",json!({"threadId":string(),"itemId":string(),"textOffset":integer(0,usize::MAX),"view":{"type":"string","enum":["messages","activity"]},"afterPosition":integer(0,usize::MAX),"limit":integer(1,100),"runLimit":integer(1,50),"maxCharsPerItem":integer(1,50000)}),&["threadId"]),
-    ]
+    ];
+    tools.extend(crate::mcp_mutations::catalog());
+    tools
 }
 pub(crate) fn validate(name: &str, p: &Value) -> Result<(), String> {
     let tool = catalog()
@@ -41,6 +48,14 @@ pub(crate) fn validate(name: &str, p: &Value) -> Result<(), String> {
 }
 fn validate_schema(schema: &Value, p: &Value) -> Result<(), String> {
     let fail = || Err("value does not match input schema".to_owned());
+    if let Some(choices) = schema["anyOf"].as_array() {
+        return if choices.iter().any(|s| validate_schema(s, p).is_ok()) {
+            Ok(())
+        } else {
+            fail()
+        };
+    }
+
     match schema["type"].as_str() {
         Some("object") => {
             let Some(object) = p.as_object() else {
@@ -83,6 +98,16 @@ fn validate_schema(schema: &Value, p: &Value) -> Result<(), String> {
                 return fail();
             }
         }
+        Some("null") => {
+            if !p.is_null() {
+                return fail();
+            }
+        }
+        Some("number") => {
+            if !p.is_number() {
+                return fail();
+            }
+        }
         Some("boolean") => {
             if !p.is_boolean() {
                 return fail();
@@ -114,7 +139,7 @@ fn uint(v: &Value) -> Option<u64> {
             .map(|n| n as u64)
     })
 }
-fn number(p: &Value, key: &str, default: usize) -> usize {
+pub(crate) fn number(p: &Value, key: &str, default: usize) -> usize {
     uint(&p[key]).map(|n| n as usize).unwrap_or(default)
 }
 
@@ -381,7 +406,7 @@ fn thread_read(s: &State, p: &Value) -> Reply {
 }
 // Return complete Unicode scalar values, including when a UTF-16 page boundary hits
 // a surrogate pair. The next cursor always points past the complete returned text.
-fn text_page(text: &str, offset: usize, max: usize) -> (String, Option<usize>) {
+pub(crate) fn text_page(text: &str, offset: usize, max: usize) -> (String, Option<usize>) {
     let mut units = 0;
     let mut start = None;
     let end = offset.saturating_add(max);

@@ -260,17 +260,27 @@ pub(crate) async fn handle(state: Arc<State>, req: Request<Incoming>) -> Respons
             // Database and settings reads stay off Tokio I/O workers.
             let s = state.clone();
             let name = name.to_owned();
-            let result = tokio::task::spawn_blocking(move || {
+            let claims = claims.clone();
+            let result = if name == "t3_thread_wait" {
                 let _permit = permit;
-                crate::mcp_tools::call(&s, &name, &args)
-            })
-            .await;
-            let result = result.unwrap_or_else(|_| {
-                Err(crate::mcp_tools::failure(
-                    "orchestration_error",
-                    "Unable to read server state.",
-                ))
-            });
+                crate::mcp_mutations::wait(s, claims, args).await
+            } else {
+                tokio::task::spawn_blocking(move || {
+                    let _permit = permit;
+                    if crate::mcp_mutations::handles(&name) {
+                        crate::mcp_mutations::call(&s, &claims, &name, &args)
+                    } else {
+                        crate::mcp_tools::call(&s, &name, &args)
+                    }
+                })
+                .await
+                .unwrap_or_else(|_| {
+                    Err(crate::mcp_tools::failure(
+                        "orchestration_error",
+                        "Unable to complete the operation.",
+                    ))
+                })
+            };
             let (content, is_error) = match result {
                 Ok(v) => (v, false),
                 Err(v) => (v, true),

@@ -5,6 +5,8 @@ pub mod additions;
 pub mod auth;
 pub mod http;
 mod mcp;
+mod mcp_access;
+mod mcp_mutations;
 mod mcp_tools;
 pub mod rpc;
 pub mod store;

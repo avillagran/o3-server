@@ -1,6 +1,6 @@
 # MCP interoperability
 
-`/mcp` implements the read side of the Streamable HTTP transport using MCP protocol
+`/mcp` implements Streamable HTTP transport with durable readers and thread control using MCP protocol
 `2025-06-18`. This is an incremental port, not full MCP or nightly parity.
 
 ## Credentials
@@ -24,9 +24,19 @@ WebSocket tickets. Expiry and revocation are checked from SQLite on every reques
 Proof-bound credentials are rejected until DPoP is implemented, with no bearer
 fallback. The auth row's scopes and runtime ceiling are authoritative.
 
-`approval-required`, `auto-accept-edits` and `full-access` issuance preserve the
-upstream MCP scope sets and runtime ceiling. This initial catalog contains reads
-only; these access levels do not enable unpublished write operations.
+`approval-required`, `auto-accept-edits`, `auto` and `full-access` issuance preserve
+upstream MCP scope sets and the runtime ceiling. Read-only credentials cannot mutate.
+Thread mutations require orchestration:operate and a target whose current runtime
+mode is no broader than the credential's persisted ceiling. Mode order is
+approval-required < auto-accept-edits < auto < full-access; execution support remains
+provider-specific. External clients have the default interaction-mode ceiling.
+
+Both command dispatchers check current credential expiry, revocation, scopes and the
+target's modes under the same SQLite write transaction as the mutation, before
+receipt replay. A mode change or credential downgrade while waiting cannot bypass
+admission. Authority travels separately from wire commands: callers cannot inject
+it or raise their ceiling through arguments. Thread configure changes only the model
+selection, with legacy provider/options normalization; it does not change modes.
 
 ## Transport
 
@@ -79,6 +89,43 @@ The monitored 4119 source has the same transport protocol and credential separat
 full behavioral equivalence to that nightly has not been established. The upstream
 MIT notice is retained in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
+
+## Thread control
+
+The catalog now includes 21 tools: the seven initial readers, nine thread mutation
+tools and five further readers. External clients pass threadId explicitly.
+
+- t3_thread_send: send plain text with auto, queue or steer delivery. Auto uses the
+  existing capability-aware steering/queue behavior; explicit steer refuses a thread
+  with no steerable live turn instead of silently queuing. Restart delivery remains
+  unimplemented and returns an explicit invalid_request failure.
+- t3_thread_interrupt: interrupt a named or active run, report already-terminal state
+  or no_active_run. This does not hold or cancel queued messages, as in upstream's
+  interrupt operation; queue cancellation is separate.
+- t3_thread_wait: await the selected run's durable terminal state, with timedOut for
+  unfinished work. Omitted runId pins the latest run at call time; idle returns
+  immediately. Default wait is ten minutes, capped at one hour. It awaits notifications
+  outside blocking workers and rechecks credential liveness at least once per second.
+  Restart-continuation following remains pending with restart support.
+- t3_thread_organize: pin, unpin, snooze, unsnooze, settle, unsettle, archive, unarchive,
+  or mark unread through the normal lifecycle. Caller-thread deferred settlement
+  requires the still-pending provider registry/native injection.
+- t3_thread_configure: change provider/model selection without changing permission modes.
+- t3_queue_list / t3_queue_read / t3_queue_edit / t3_queue_cancel / t3_queue_reorder /
+  t3_queue_promote_to_steer: operate on the real queue using its existing ordering,
+  text limits, attachment preservation, status validation and native control path.
+- t3_pending_request_list / t3_pending_request_read / t3_pending_request_respond:
+  expose pending user questions only. Response admission checks the request's actual
+  stored thread and kind, so this cannot approve a permission request.
+
+Send and interrupt accept clientRequestId. IDs are namespaced by the authenticated
+credential, operation and key, independently of the transport session. Receipts are
+committed with the underlying effect before native delivery. Retrying a send reuses
+its message/run IDs and original delivery classification; status reflects the current
+run. Interrupt retries report terminal state once available. MCP messages record
+createdBy=agent and creationSource=mcp. Read/write results share the ordinary SQLite
+projection, event log and control outbox.
+
 ## Evidence and remaining work
 
 `tests/mcp.rs` exercises real loopback HTTP and the real Connection's project/thread
@@ -91,11 +138,16 @@ rejection. These are deterministic protocol tests, not a live nightly differenti
 acceptance of the existing ChatGPT/OmaBridge integration.
 
 Pending: provider registry tokens and native injection, OAuth/DPoP, full SSE semantics,
-write access/mode enforcement, thread send/wait/interrupt/launch, task delegation,
+project mutations, thread launch/restart, task delegation,
 worktree/attachment/PR/device/preview/HTML/scheduler toolkits and linked environments.
 Inherited-task acknowledgement and exact activity-text rendering also need upstream
 parity. No daily profile, external MCP integration or running service was changed.
 
-Validation for this port: full suites 307 default / 304 no-default pass, with 21
-opt-ins ignored in each; the final eight MCP regressions pass in both modes. Strict
-Clippy in both modes, fmt, generated compatibility and nine monitor tests pass.
+The initial reader port passed full suites 307 default / 304 no-default, with 21
+opt-ins ignored in each. Thread-control regressions additionally cover read-only and
+runtime refusal, target/credential changes, receipt deduplication, agent provenance,
+queue lifecycle, native steering/promotion, interrupt/wait and a user-question round
+trip through native projection. A stale-authority unit regression covers both write
+transactions and confirms denial before receipt replay. The public mutation regression
+fails against the previous reader-only commit. Native providers here are deterministic
+fixtures; no real model inference or live nightly differential is claimed.

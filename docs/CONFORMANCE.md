@@ -2820,3 +2820,14 @@ published reader tools, protocol regressions and explicit gaps. `/mcp` now exist
 it does not yet implement all upstream toolkits or fix existing external integrations
 automatically. The older browser-only per-run broker is independent. Full nightly
 MCP parity remains unproven.
+
+### MCP thread control and transaction-time admission (2026-11-04)
+
+Thread tools reuse the ordinary dispatchers. MCP authority is not accepted in wire
+commands; current credential/target modes are checked under the SQLite write lock,
+before replay or mutation. Receipts and native delivery preserve the ordinary outbox
+boundary, with agent/mcp provenance for submitted messages. New tests cover send
+deduplication, queue edits/order/cancel, steering/promotion, question-only responses,
+interrupt/wait and mode refusals. The stale-authority unit test covers both dispatch
+paths. See MCP.md for exact tools and remaining restart/launch/provider-registry gaps.
+This is still partial MCP parity; no daily profile or service deployment occurred.
