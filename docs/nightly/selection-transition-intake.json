@@ -48,7 +48,8 @@
       "four installed native app turns plus two steering deliveries"
     ],
     "scopeNotes": [
-      "The complete suites precede the final small implicit restart-preference fallback fix. Final restart/selection/compatible-client suites pass28per mode (1opt-in ignored), including the new red-to-green implicit case and explicit rollback/replay. Both strict Clippy modes cover the final source. Native steering implementation is unchanged after its installed proof."
+      "The complete suites precede the final small implicit restart-preference fallback fix. Final restart/selection/compatible-client suites pass28per mode (1opt-in ignored), including the new red-to-green implicit case and explicit rollback/replay. Both strict Clippy modes cover the final source. Native steering implementation is unchanged after its installed proof.",
+      "Remote minimal CI on156bca5 found the locked-worktree fixture retried after directory removal but before durable cleanup acknowledgement. The fixture now waits for the same pending predicate as prepared-run.retry. Both staged-launch suites10each,12targeted repetitions per mode and strict Clippy both modes pass; production code is unchanged."
     ]
   },
   "pending": [
