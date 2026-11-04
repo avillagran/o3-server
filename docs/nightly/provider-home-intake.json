@@ -47,12 +47,19 @@
     ],
     "scopeNotes": [
       "The final default home integration was repeated after adding the sibling process/identity proof. Complete no-default suite and both Clippy modes cover that final test. Native production code is unchanged after the three-turn installed proof.",
-      "Remote default CI on14151a6 exposed a webhook fixture race: runCount commits before the failed claim is requeued. The fixture now waits for its future due time before simulating a crash/receipt replay. Both webhook suites (4 each), 12 targeted repetitions per mode and strict Clippy both modes pass; production webhook code is unchanged."
-    ]
+      "Remote default CI on14151a6 exposed a webhook fixture race: runCount commits before the failed claim is requeued. The fixture now waits for its future due time before simulating a crash/receipt replay. Both webhook suites (4 each), 12 targeted repetitions per mode and strict Clippy both modes pass; production webhook code is unchanged.",
+      "Remote minimal CI on a02c536 exposed an RPC read deadline during source-control discovery. CLI probes now use the source five-second budget, authenticated API probes three seconds, and independent VCS/CLI/API groups execute together. Barrier scripts prove parallel start; a timed-out native auth process is reaped and returns unknown. New discovery budget units (2), thread commands (11), vcs compatibility (13) and strict Clippy pass in both modes. Complete final-head CI remains the merge gate."
+    ],
+    "fullLocalReference": "14151a68ec2e62ebd3a2c6a30ad89ca31ffe2269",
+    "ciRepairAffectedEachMode": 26
   },
   "pending": [
     "Complete same-instance selection transition classifiers and all negotiated capabilities; full registry replacement/session-pool lifetime semantics.",
     "Active cross-instance restart/continuation/settlement and all historical SDK/source-busy/subagent/setup-side-chat guards, timeline and event-order fidelity.",
     "request_secret4179, broader MCP/auth/environment/provider/importer/forceStop surfaces, complete source-wide differential, current desktop/Android acceptance and resource measurements. No deployment, main promotion or M2 changes."
+  ],
+  "ciRepairSources": [
+    "apps/server/src/sourceControl/SourceControlDiscovery.ts",
+    "packages/source-control-core/src/server/discovery.ts"
   ]
 }

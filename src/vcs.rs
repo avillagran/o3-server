@@ -841,7 +841,18 @@ pub async fn init(p: Value) -> Reply {
 /// Discovery probes are bounded and do not initiate provider login or installation. They run
 /// concurrently: sequential CLI auth checks (gh contacts its host) could exceed a client timeout.
 pub async fn discover() -> Reply {
-    let mut systems = Vec::new();
+    discover_with(
+        |name| name.to_owned(),
+        |key| std::env::var(key).ok(),
+        std::time::Duration::from_secs(5),
+    )
+    .await
+}
+async fn discover_with(
+    executable: impl Fn(&str) -> String + Copy,
+    environment: impl Fn(&str) -> Option<String> + Copy,
+    probe_timeout: std::time::Duration,
+) -> Reply {
     let jobs = [
         (
             "git",
@@ -857,13 +868,13 @@ pub async fn discover() -> Reply {
         ),
     ]
     .into_iter()
-    .map(|(kind, label, implemented, hint)| async move {
+    .map(|(kind, label, implemented, hint)| { let command=executable(kind);async move {
         let output = proc::run(
-            kind,
+            &command,
             Path::new("/"),
             &["--version"],
             Opts {
-                timeout: std::time::Duration::from_secs(5),
+                timeout: probe_timeout,
                 cap: 8000,
                 allow_truncate: true,
             },
@@ -884,18 +895,17 @@ pub async fn discover() -> Reply {
             None => json!({"_tag":"None"}),
         };
         json!({"kind":kind,"label":label,"executable":kind,"implemented":implemented,"status":status,"version":option(version),"installHint":hint,"detail":option(detail)})
-    });
-    systems.extend(futures_util::future::join_all(jobs).await);
+    }});
+    let systems = futures_util::future::join_all(jobs);
     let option = |v: Option<String>| match v {
         Some(v) if !v.trim().is_empty() => json!({"_tag":"Some","value":v.trim()}),
         _ => json!({"_tag":"None"}),
     };
     let probe = || Opts {
-        timeout: std::time::Duration::from_secs(20),
+        timeout: probe_timeout,
         cap: 16_000,
         allow_truncate: true,
     };
-    let mut providers = Vec::new();
     // CLI-backed hosts, as upstream: version probe, then a read-only auth status. Never logs in.
     let jobs = [
         (
@@ -921,8 +931,8 @@ pub async fn discover() -> Reply {
         ),
     ]
     .into_iter()
-    .map(|(kind, label, exe, auth_args, hint)| async move {
-        let version = proc::run(exe, Path::new("/"), &["--version"], probe(), &[]).await;
+    .map(|(kind, label, exe, auth_args, hint)| { let command=executable(exe);async move {
+        let version = proc::run(&command, Path::new("/"), &["--version"], probe(), &[]).await;
         let (status, version, detail) = match version {
             Ok(o) if o.ok() => ("available", o.text().lines().next().map(str::to_owned), None),
             Ok(o) => ("missing", None, Some(o.stderr)),
@@ -930,7 +940,7 @@ pub async fn discover() -> Reply {
         };
         let mut auth = json!({"status":"unknown","account":{"_tag":"None"},"host":{"_tag":"None"},"detail":{"_tag":"None"}});
         if status == "available" {
-            match proc::run(exe, Path::new("/"), auth_args, probe(), &[]).await {
+            match proc::run(&command, Path::new("/"), auth_args, probe(), &[]).await {
                 Ok(o) if o.ok() => {
                     auth["status"] = json!("authenticated");
                     let text = o.text();
@@ -960,8 +970,8 @@ pub async fn discover() -> Reply {
             auth["status"] = json!("unknown");
         }
         json!({"kind":kind,"label":label,"executable":exe,"status":status,"version":option(version),"installHint":hint,"detail":option(detail),"auth":auth})
-    });
-    providers.extend(futures_util::future::join_all(jobs).await);
+    }});
+    let cli_providers = futures_util::future::join_all(jobs);
     let jobs = [
         (
             "bitbucket",
@@ -973,7 +983,7 @@ pub async fn discover() -> Reply {
             "forgejo",
             "Forgejo / Gitea",
             "FORGEJO_TOKEN",
-            std::env::var("FORGEJO_URL").ok().and_then(|url| {
+            environment("FORGEJO_URL").and_then(|url| {
                 let mut url = url::Url::parse(&url).ok()?;
                 if url.scheme() != "https"
                     || !url.username().is_empty()
@@ -995,9 +1005,8 @@ pub async fn discover() -> Reply {
         ),
     ]
     .into_iter()
-    .map(|(kind, label, token_env, endpoint)| async move {
-        let token = std::env::var(token_env)
-            .ok()
+    .map(|(kind, label, token_env, endpoint)| { let cafe=executable("cafe");async move {
+        let token = environment(token_env)
             .filter(|s| !s.trim().is_empty());
         let mut auth = json!({"status":"unknown","account":{"_tag":"None"},"host":{"_tag":"None"},"detail":{"_tag":"None"}});
         if let Some(endpoint) = endpoint.as_deref() {
@@ -1012,7 +1021,7 @@ pub async fn discover() -> Reply {
                 // Documented authenticated API command: the CLI owns its stored
                 // login. Never retrieve a token or expose CLI output/errors.
                 if let Ok(out) = proc::run(
-                    "cafe",
+                    &cafe,
                     Path::new("/"),
                     &[
                         "--host",
@@ -1024,7 +1033,7 @@ pub async fn discover() -> Reply {
                         "/auth/principal",
                     ],
                     Opts {
-                        timeout: std::time::Duration::from_secs(5),
+                        timeout: probe_timeout,
                         cap: 65536,
                         allow_truncate: false,
                     },
@@ -1058,8 +1067,10 @@ pub async fn discover() -> Reply {
             "Environment credentials supported; desktop credential storage is not implemented."
         };
         json!({"kind":kind,"label":label,"status":"available","version":{"_tag":"None"},"installHint":format!("Configure {token_env} on the server."),"detail":option(Some(detail.into())),"auth":auth})
-    });
-    providers.extend(futures_util::future::join_all(jobs).await);
+    }});
+    let token_providers = futures_util::future::join_all(jobs);
+    let (systems, mut providers, tokens) = tokio::join!(systems, cli_providers, token_providers);
+    providers.extend(tokens);
     Ok(json!({"versionControlSystems":systems,"sourceControlProviders":providers}))
 }
 
@@ -1075,7 +1086,7 @@ async fn api_token_auth(endpoint: &str, token: &str) -> Value {
     let mut auth = json!({"status":"unknown","account":{"_tag":"None"},"host":option(host),"detail":{"_tag":"None"}});
     let Ok(client) = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
-        .timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(3))
         .build()
     else {
         return auth;
@@ -1165,5 +1176,79 @@ mod token_tests {
             assert!(!auth.to_string().contains("fixture-secret"));
             worker.join().unwrap();
         }
+    }
+}
+
+#[cfg(test)]
+mod discovery_budget_tests {
+    use super::*;
+    use std::{fs, os::unix::fs::PermissionsExt, time::Duration};
+    fn root() -> PathBuf {
+        let p = std::env::temp_dir().join(format!(
+            "discovery-budget-{}",
+            crate::store::random_id().unwrap()
+        ));
+        fs::create_dir(&p).unwrap();
+        p
+    }
+    fn quote(path: &Path) -> String {
+        format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"))
+    }
+    fn script(root: &Path, name: &str, body: &str) -> String {
+        let p = root.join(name);
+        fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
+        fs::set_permissions(&p, fs::Permissions::from_mode(0o700)).unwrap();
+        p.to_string_lossy().into_owned()
+    }
+    #[tokio::test]
+    async fn independent_vcs_and_host_probes_start_together() {
+        let root = root();
+        let started = quote(&root.join("auth-started"));
+        let done = quote(&root.join("git-done"));
+        let git=script(&root,"git",&format!("while [ ! -f {started} ]; do /usr/bin/sleep 0.01; done\nprintf 'fixture-git 1.0\\n'\n: > {done}"));
+        let gh=script(&root,"gh",&format!("if [ \"$1\" = '--version' ]; then printf 'fixture-gh 1.0\\n'; exit 0; fi\n: > {started}\nwhile [ ! -f {done} ]; do /usr/bin/sleep 0.01; done\nprintf '%s\\n' '{{\"hosts\":{{\"github.com\":[{{\"active\":true,\"state\":\"success\",\"login\":\"fixture\"}}]}}}}'"));
+        let resolve = |name: &str| match name {
+            "git" => git.clone(),
+            "gh" => gh.clone(),
+            _ => root.join("missing").to_string_lossy().into_owned(),
+        };
+        let value = discover_with(resolve, |_| None, Duration::from_secs(2))
+            .await
+            .unwrap();
+        assert_eq!(value["versionControlSystems"][0]["status"], "available");
+        assert_eq!(
+            value["sourceControlProviders"][0]["auth"]["status"],
+            "authenticated"
+        );
+        assert_eq!(
+            value["sourceControlProviders"][0]["auth"]["account"]["value"],
+            "fixture"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[tokio::test]
+    async fn timed_out_auth_is_unknown_and_its_owned_process_is_reaped() {
+        let root = root();
+        let pid_file = root.join("auth-pid");
+        let git = script(&root, "git", "printf 'fixture-git 1.0\\n'");
+        let gh=script(&root,"gh",&format!("if [ \"$1\" = '--version' ]; then printf 'fixture-gh 1.0\\n'; exit 0; fi\nprintf '%s' \"$$\" > {}\n/usr/bin/sleep 30",quote(&pid_file)));
+        let resolve = |name: &str| match name {
+            "git" => git.clone(),
+            "gh" => gh.clone(),
+            _ => root.join("missing").to_string_lossy().into_owned(),
+        };
+        let value = discover_with(resolve, |_| None, Duration::from_secs(1))
+            .await
+            .unwrap();
+        assert_eq!(value["versionControlSystems"][0]["status"], "available");
+        let host = &value["sourceControlProviders"][0];
+        assert_eq!(host["status"], "available");
+        assert_eq!(host["auth"]["status"], "unknown");
+        let pid = fs::read_to_string(pid_file).unwrap();
+        assert!(
+            !Path::new("/proc").join(pid).exists(),
+            "probe process was not reaped"
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 }
