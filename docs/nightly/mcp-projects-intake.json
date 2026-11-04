@@ -12,6 +12,7 @@
     "t3_worktree_list/status, native default target and removed-worktree fallback"
   ],
   "pending": [
+    "Before draft integration: port force-project child deletion plans/effects (provider/session/run cancellation and resource cleanup)",
     "Worktree handoff: compare expected path, detach current provider, prepare setup and durable continuation together",
     "Thread launch/restart/transfer and deferred caller settlement",
     "Other-host repository lookup adapters and complete project enrichment",

@@ -2879,3 +2879,9 @@ Validation: full suites pass with 326 default / 323 no-default tests (21 opt-ins
 ignored each). Final MCP/project/clone/native regressions and strict Clippy pass in
 both configurations; fmt, generated compatibility and nine nightly-monitor tests pass.
 The existing compatible desktop and live hosted-network flows were not exercised.
+
+Source audit also found a required integration follow-up: force deletion currently
+marks child records deleted, whereas ProjectService.deleteChildThread plans durable
+thread-deletion effects. Native/session/run cancellation and resource cleanup must
+be aligned before integrating the draft project port. This gap is preserved explicitly
+rather than treating CRUD persistence tests as proof of the whole deletion lifecycle.

@@ -250,7 +250,10 @@ ProjectService, creation does not record defaultModelSelection; update does. Upd
 preserves omitted fields, supports nullable defaults/icon/favicon, scripts, pin/archive
 and autoPull. Monograms allow at most two grapheme clusters. New script IDs must follow
 the source's 1–24 lowercase letter/digit/hyphen rule; existing invalid IDs may be edited.
-Delete refuses a nonempty project without force and retains its folder.
+Delete refuses a nonempty project without force and retains its folder. The existing
+force cascade writes child-thread tombstones; source parity still requires durable
+child deletion effects (provider/session/run cancellation and resource cleanup).
+This is a required follow-up before integrating the draft project port.
 
 Clone creates an independent checkout: it does not register or adopt an existing project.
 The same implementation now handles ordinary sourceControl.cloneRepository. It accepts
