@@ -1,0 +1,34 @@
+{
+  "checkedAt": "2026-11-04T08:04:02.058962+00:00",
+  "tag": "v0.1.8-nightly.20261104.4165",
+  "reference": "8b44f42b14c8e273156474a924ccf29680dd7857",
+  "url": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.8-nightly.20261104.4165",
+  "scope": "Thread launch/source intake and Linux setup process ownership prerequisite; complete protocol goal remains active.",
+  "sourceFiles": [
+    "apps/server/src/orchestration-v2/ThreadLaunchService.ts",
+    "apps/server/src/project/ProjectSetupScriptRunner.ts",
+    "apps/server/src/project/WorktreeSetupTracker.ts",
+    "packages/contracts/src/worktreeSetup.ts"
+  ],
+  "comparison": "ThreadLaunchService, ProjectSetupScriptRunner, WorktreeSetupTracker and worktreeSetup contract are unchanged from nightly4151 to4165.",
+  "implemented": [
+    "Same-run Codex restart integrated via PR23 after both exact-head CI checks passed (dev e3a52b3).",
+    "Linux setup terminals use an isolated subreaper whose owner-pipe lifetime survives daemonization, environment clearing and server process-group death. Closing a setup terminal awaits scope cleanup; independent scopes are preserved."
+  ],
+  "pending": [
+    "ThreadLaunchService deferred admission, background fetch/checkout/submodules/setup/agent tracking, prepared-run progress/release/fail/retry and durable recovery.",
+    "Setup completion observation, sync/async script release, branch naming/rename, managed Scratch allocation, MCP thread launch and mode-limited replay.",
+    "Native active cross-instance handoff, transfer/cross-thread continuation and deferred caller settlement.",
+    "Nightly4165 native recovery changes: requeue interrupted startup effects without colliding effect IDs, native runtime reattachment and bounded awareness projection.",
+    "Remaining protocol toolkits/auth/environment/providers and latest differential/compatible-client acceptance."
+  ],
+  "evidence": [
+    "process_scope module tests: cancel, owner drop, normal shell exit, SIGKILL owner, process-group death and admission errors.",
+    "HTTP/native-peer worktree_handoff test: close reaps a double-fork/setsid/env-cleared setup daemon and preserves an independent setup scope."
+  ],
+  "limits": [
+    "Process ownership enhancement is Linux-specific; other supported targets retain existing PTY behavior.",
+    "No staged-launch or subscribeWorktreeSetup capability is promoted by this prerequisite.",
+    "No service deployment or main promotion."
+  ]
+}

@@ -9,8 +9,39 @@ use tokio::io::unix::AsyncFd;
 
 pub struct Pty {
     pub master: AsyncFd<OwnedFd>,
-    pub child: tokio::process::Child,
+    pub child: Child,
     pub pid: i32,
+}
+pub enum Child {
+    Native(tokio::process::Child),
+    #[cfg(target_os = "linux")]
+    Scoped(crate::process_scope::Child),
+}
+impl Child {
+    pub(crate) fn completion(&self) -> Option<tokio::sync::watch::Receiver<bool>> {
+        match self {
+            #[cfg(target_os = "linux")]
+            Self::Scoped(child) => Some(child.completion()),
+            Self::Native(_) => None,
+        }
+    }
+    pub async fn wait(&mut self) -> io::Result<std::process::ExitStatus> {
+        match self {
+            Self::Native(child) => child.wait().await,
+            #[cfg(target_os = "linux")]
+            Self::Scoped(child) => child.wait().await,
+        }
+    }
+    pub fn stop_scope(&mut self) -> bool {
+        match self {
+            #[cfg(target_os = "linux")]
+            Self::Scoped(child) => {
+                child.stop();
+                true
+            }
+            Self::Native(_) => false,
+        }
+    }
 }
 
 fn cvt(r: libc::c_int) -> io::Result<libc::c_int> {
@@ -52,6 +83,16 @@ pub fn spawn(
     cols: u16,
     rows: u16,
 ) -> io::Result<Pty> {
+    spawn_with_scope(program, cwd, env, cols, rows, false)
+}
+pub(crate) fn spawn_with_scope(
+    program: &str,
+    cwd: &Path,
+    env: &[(String, String)],
+    cols: u16,
+    rows: u16,
+    scoped: bool,
+) -> io::Result<Pty> {
     let (mut m, mut s) = (0, 0);
     let ws = winsize(cols, rows);
     cvt(unsafe { libc::openpty(&mut m, &mut s, std::ptr::null_mut(), std::ptr::null(), &ws) })?;
@@ -59,6 +100,26 @@ pub fn spawn(
     let slave = unsafe { OwnedFd::from_raw_fd(s) };
     set_flags(m, true, true)?;
     set_flags(s, true, false)?;
+    #[cfg(not(target_os = "linux"))]
+    if scoped {
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Owned setup process scopes require Linux",
+        ));
+    }
+    #[cfg(target_os = "linux")]
+    if scoped {
+        let program = crate::executable::resolve(Path::new(program))
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Shell executable not found"))?;
+        let (child, pid) = crate::process_scope::spawn(&program, cwd, env, s)?;
+        #[allow(deprecated)]
+        let master = AsyncFd::new(master)?;
+        return Ok(Pty {
+            master,
+            child: Child::Scoped(child),
+            pid,
+        });
+    }
     let mut command = tokio::process::Command::new(program);
     command
         .current_dir(cwd)
@@ -86,7 +147,11 @@ pub fn spawn(
     // `OwnedFd` owns its descriptor for the registration's lifetime, which is what the lint asks for.
     #[allow(deprecated)]
     let master = AsyncFd::new(master)?;
-    Ok(Pty { master, child, pid })
+    Ok(Pty {
+        master,
+        child: Child::Native(child),
+        pid,
+    })
 }
 
 pub fn resize(master: &AsyncFd<OwnedFd>, cols: u16, rows: u16) -> io::Result<()> {

@@ -19,6 +19,8 @@ pub use http::{serve, serve_io};
 pub mod command_output;
 pub mod events;
 pub mod ops;
+#[cfg(target_os = "linux")]
+mod process_scope;
 pub mod profile;
 pub mod provider;
 pub mod pty;

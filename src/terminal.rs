@@ -36,6 +36,16 @@ const MAX_LIVE: usize = 64;
 const MAX_PENDING_CONTROL: usize = 8 * 1024;
 const DEFAULT_COLS: u16 = 120;
 const DEFAULT_ROWS: u16 = 30;
+async fn await_scope(completion: Option<tokio::sync::watch::Receiver<bool>>) -> Result<(), String> {
+    if let Some(mut done) = completion {
+        while !*done.borrow() {
+            done.changed()
+                .await
+                .map_err(|_| "Setup process scope ended without confirming cleanup".to_owned())?;
+        }
+    }
+    Ok(())
+}
 const BLOCKLIST: [&str; 10] = [
     "PORT",
     "ELECTRON_RENDERER_PORT",
@@ -368,12 +378,14 @@ struct Logged {
 }
 
 struct Proc {
+    completion: Option<tokio::sync::watch::Receiver<bool>>,
     master: Arc<AsyncFd<OwnedFd>>,
     /// Dropping (or sending on) this stops the process group: HUP and TERM, then KILL after a grace period.
     _stop: oneshot::Sender<()>,
 }
 
 struct SessionState {
+    scoped: bool,
     cwd: String,
     worktree_path: Option<String>,
     env: Option<BTreeMap<String, String>>,
@@ -490,6 +502,7 @@ impl Session {
             global,
             persistence: Mutex::new(None),
             st: Mutex::new(SessionState {
+                scoped: false,
                 cwd: cwd.into(),
                 worktree_path: worktree,
                 env,
@@ -618,7 +631,11 @@ impl Session {
 
 // ---------------------------------------------------------------- pump (one task per live process)
 
-async fn kill_group(child: &mut tokio::process::Child, pid: i32) {
+async fn kill_group(child: &mut pty::Child, pid: i32) {
+    if child.stop_scope() {
+        let _ = child.wait().await;
+        return;
+    }
     pty::signal_session(pid, libc::SIGHUP);
     pty::signal_session(pid, libc::SIGTERM);
     let timed_out = tokio::time::timeout(KILL_GRACE, child.wait())
@@ -636,11 +653,12 @@ async fn pump(
     sess: Arc<Session>,
     gen: u64,
     master: Arc<AsyncFd<OwnedFd>>,
-    mut child: tokio::process::Child,
+    mut child: pty::Child,
     pid: i32,
     mut stop: oneshot::Receiver<()>,
 ) {
     use std::os::unix::process::ExitStatusExt;
+    let scoped = child.completion().is_some();
     let mut buf = vec![0u8; 16 * 1024];
     let mut decoder = Utf8Stream::default();
     let mut status = None;
@@ -680,7 +698,9 @@ async fn pump(
     }
     sess.output(gen, decoder.finish());
     let status = status.and_then(Result::ok);
-    pty::signal_group(pid, libc::SIGHUP);
+    if !scoped {
+        pty::signal_group(pid, libc::SIGHUP);
+    }
     sess.exited(
         gen,
         status.and_then(|s| s.code()),
@@ -798,6 +818,7 @@ fn check_cwd(cwd: &str) -> Result<(), Value> {
 }
 
 struct Launch {
+    scoped: bool,
     thread: String,
     terminal: String,
     cwd: String,
@@ -809,6 +830,7 @@ struct Launch {
 fn launch_of(s: &State, p: &Value, cwd_required: bool) -> Result<Launch, Value> {
     let (thread, terminal) = key_of(p)?;
     Ok(Launch {
+        scoped: false,
         cwd: if cwd_required || p.get("cwd").is_some() {
             cwd_of(p)?
         } else {
@@ -1047,7 +1069,7 @@ impl Manager {
         let mut last_error = String::new();
         let mut spawned = None;
         for shell in &candidates {
-            match pty::spawn(shell, Path::new(&st.cwd), &env, cols, rows) {
+            match pty::spawn_with_scope(shell, Path::new(&st.cwd), &env, cols, rows, st.scoped) {
                 Ok(p) => {
                     spawned = Some(p);
                     break;
@@ -1062,6 +1084,7 @@ impl Manager {
                 let master = Arc::new(p.master);
                 let (stop_tx, stop_rx) = oneshot::channel();
                 st.proc = Some(Proc {
+                    completion: p.child.completion(),
                     master: master.clone(),
                     _stop: stop_tx,
                 });
@@ -1095,6 +1118,7 @@ impl Manager {
             self.notify.clone(),
             self.global.clone(),
         );
+        sess.st.lock().unwrap().scoped = l.scoped;
         *sess.persistence.lock().unwrap() = self.history_path(&l.thread, &l.terminal);
         sess
     }
@@ -1129,6 +1153,7 @@ impl Manager {
                 .clone()
                 .unwrap_or_else(|| st.worktree_path.clone());
             let changed = st.cwd != l.cwd
+                || (l.scoped && !st.scoped)
                 || (st.proc.is_some() && st.env != l.env)
                 || st.worktree_path != next_worktree;
             if changed {
@@ -1136,6 +1161,7 @@ impl Manager {
                 st.cwd = l.cwd.clone();
                 st.worktree_path = next_worktree;
                 st.env = l.env.clone();
+                st.scoped |= l.scoped;
                 st.history.clear();
                 st.pending_ctl.clear();
             } else if matches!(st.status, "exited" | "error") {
@@ -1222,7 +1248,7 @@ impl Manager {
             if let Some(session) = self.get(&key) {
                 session.persistence.lock().unwrap().take();
             }
-            self.close_session(&key);
+            await_scope(self.close_session(&key)).await?;
         }
         let dir = self.history_dir.lock().unwrap().clone();
         if let Some(dir) = dir {
@@ -1246,7 +1272,7 @@ impl Manager {
         }
         Ok(())
     }
-    fn close_session(&self, key: &(String, String)) {
+    fn close_session(&self, key: &(String, String)) -> Option<tokio::sync::watch::Receiver<bool>> {
         let removed = self.sessions.lock().unwrap().remove(key);
         self.closed.lock().unwrap().insert(key.clone());
         if self.closed.lock().unwrap().len() > 4096 {
@@ -1254,13 +1280,16 @@ impl Manager {
         }
         if let Some(sess) = removed {
             let mut st = sess.st.lock().unwrap();
+            let completion = st.proc.as_ref().and_then(|p| p.completion.clone());
             Session::stop_process(&mut st);
             st.closed = true;
             let seq = st.advance();
             sess.publish(&mut st, json!({"type":"closed"}), seq);
             st.history.clear();
             st.pending_ctl.clear();
+            return completion;
         }
+        None
     }
 
     fn ensure_poller(self: &Arc<Self>) {
@@ -1446,7 +1475,9 @@ pub async fn call(s: &Arc<State>, tag: &str, p: &Value) -> Result<Value, Value> 
                 .to_owned();
             let _guard = m.lifecycle.lock().await;
             match p.get("terminalId").and_then(Value::as_str) {
-                Some(id) => m.close_session(&(thread, id.to_owned())),
+                Some(id) => await_scope(m.close_session(&(thread, id.to_owned())))
+                    .await
+                    .map_err(|e| invalid(&e))?,
                 None => {
                     let keys: Vec<_> = m
                         .sessions
@@ -1457,7 +1488,9 @@ pub async fn call(s: &Arc<State>, tag: &str, p: &Value) -> Result<Value, Value> 
                         .cloned()
                         .collect();
                     for key in keys {
-                        m.close_session(&key);
+                        await_scope(m.close_session(&key))
+                            .await
+                            .map_err(|e| invalid(&e))?;
                     }
                 }
             }
@@ -1477,8 +1510,20 @@ pub(crate) async fn project_script(
     command: String,
 ) -> Result<(), Value> {
     let mut changed = s.streams.terminals.notify.subscribe();
-    call(s, "terminal.open", p).await?;
-    let session = s.streams.terminals.require(&key_of(p)?)?;
+    let mut launch = launch_of(s, p, true)?;
+    // Project setup owns its descendants even when they daemonize. Ordinary
+    // interactive terminals retain their existing lifecycle.
+    launch.scoped = cfg!(target_os = "linux");
+    let session = {
+        let manager = &s.streams.terminals;
+        let _guard = manager.lifecycle.lock().await;
+        if crate::events::get(&s.db.lock().unwrap(), "thread", &launch.thread)
+            .is_ok_and(|t| !t["deletedAt"].is_null())
+        {
+            return Err(invalid("The thread was deleted."));
+        }
+        manager.open_locked(&launch)?
+    };
     let generation = session.st.lock().unwrap().gen;
     let weak = Arc::downgrade(s);
     let cwd = p["cwd"].clone();

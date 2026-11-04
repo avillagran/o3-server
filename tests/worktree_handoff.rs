@@ -9,6 +9,51 @@ use std::{
 };
 use t3_protocol::Connection;
 const WAIT: Duration = Duration::from_secs(15);
+#[cfg(target_os = "linux")]
+#[test]
+fn setup_terminal_close_reaps_daemonized_descendants_and_preserves_other_scopes() {
+    let target = Fixture::new("codex");
+    let survivor = Fixture::new("codex");
+    let command = r#"python3 -c 'import os,time; os.fork() and os._exit(0); os.setsid(); os.fork() and os._exit(0); os.environ.clear(); [os.close(fd) for fd in (0,1,2)]; open("daemon.pid","w").write(str(os.getpid())); time.sleep(1000)'"#;
+    let mut daemons = Vec::new();
+    for (f, branch) in [(&target, "daemon-target"), (&survivor, "daemon-survivor")] {
+        f.settings(json!({"projectSettingsOverrides":{"p":{"newWorktreesStartFromOrigin":false,"defaultProjectScripts":[{"id":"daemon","name":"Daemon","icon":"configure","command":command,"runOnWorktreeCreate":true}]}}}));
+        let result = ok(f.call(json!({"branch":branch})));
+        assert_eq!(result["setupScript"]["status"], "started");
+        let pid = PathBuf::from(result["worktreePath"].as_str().unwrap()).join("daemon.pid");
+        assert!(support::wait_for(WAIT, || std::fs::read_to_string(&pid)
+            .is_ok_and(|p| p.parse::<i32>().is_ok())));
+        daemons.push(
+            std::fs::read_to_string(pid)
+                .unwrap()
+                .parse::<i32>()
+                .unwrap(),
+        );
+    }
+    target
+        .c
+        .rpc(
+            "terminal.close",
+            json!({"threadId":"t","terminalId":"setup-daemon"}),
+        )
+        .unwrap();
+    assert!(
+        !Path::new(&format!("/proc/{}", daemons[0])).exists(),
+        "close must await owned descendant cleanup"
+    );
+    assert!(
+        Path::new(&format!("/proc/{}", daemons[1])).exists(),
+        "another setup scope must survive"
+    );
+    survivor
+        .c
+        .rpc(
+            "terminal.close",
+            json!({"threadId":"t","terminalId":"setup-daemon"}),
+        )
+        .unwrap();
+    assert!(!Path::new(&format!("/proc/{}", daemons[1])).exists());
+}
 fn git(at: &Path, args: &[&str]) -> String {
     let out = Command::new("git")
         .current_dir(at)
