@@ -3203,3 +3203,39 @@ Validation: full suites 403 default / 400 no-default, 22 opt-ins ignored each; f
 affected suites 151 / 151 (6 ignored each), strict all-target Clippy both modes, fmt,
 generated compatibility and nightly monitor (9 tests) pass. The eight-turn native opt-in
 also passed explicitly.
+
+## Native provider home checkpoint (2026-11-04)
+
+PR31 passed both checks on fe2a063 and merged into dev
+6f8257083009dc5b27782ccca4815cd5207b924f. The next port follows nightly4179,
+confirmed through the official release API. The native runtime and continuation
+keys now share Codex/Claude home resolution. Codex account overlays share history
+and runtime state while preserving private authentication, model cache and local
+runtime directories. Source-shaped conflicts reject existing real shared entries
+and private auth symlinks; live local writer locks remain local until later setup.
+
+Twenty-one generated cases execute pinned TypeScript resolvers. Filesystem tests
+cover concurrent/idempotent setup, stale and relative links, runtime lock migration
+and explicit error shapes. The compatible Rust client and subprocess peers cover
+relative configured homes before workspace cwd changes, exact alias configuration,
+shared native history across separate credential sentinels, pre-launch auth-symlink
+refusal and recovery after explicit repair. No private credential is linked or copied
+by the overlay materializer.
+
+An installed Codex run found that unsubscribe can acknowledge before writer cache
+eviction. Native sessions now request zero retention after unsubscribe and detach
+waits for the native close notification under a deadline. A delayed-eviction peer
+with OS writer locks covers this ordering. Three installed Codex inference turns
+pass through the direct profile and two overlays: one native conversation, earlier
+private codewords, separate regular auth files, no portable handoff or model tool use.
+The proof uses private copies of one login; distinct account logins are not claimed.
+
+Validation inventory: [provider-home-intake.json](nightly/provider-home-intake.json).
+Complete selection/registry lifetime policy, active cross-instance lifecycle,
+request_secret4179, broader provider/MCP/auth surfaces, current desktop/Android
+acceptance and resource measurements remain open. No deployment or main promotion.
+
+Validation: full suites 432 default / 429 no-default, 25 opt-ins ignored each;
+strict all-target Clippy both modes, fmt, generated compatibility, monitor (9),
+fixture reproduction and diff checks pass. The final default home integration
+also passes with the sibling native process assertion.
