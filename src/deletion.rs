@@ -15,7 +15,7 @@ type Result<T> = std::result::Result<T, String>;
 pub(crate) fn initialize(db: &Connection) -> Result<()> {
     db.execute_batch("CREATE TABLE IF NOT EXISTS deletion_effects(id TEXT PRIMARY KEY,thread_id TEXT NOT NULL,payload TEXT NOT NULL,completed_at INTEGER,attempts INTEGER NOT NULL DEFAULT 0,retry_at INTEGER NOT NULL DEFAULT 0,last_error TEXT); CREATE INDEX IF NOT EXISTS deletion_thread ON deletion_effects(thread_id); CREATE INDEX IF NOT EXISTS deletion_pending ON deletion_effects(retry_at) WHERE completed_at IS NULL; CREATE TABLE IF NOT EXISTS deletion_attachments(effect_id TEXT NOT NULL,attachment_id TEXT NOT NULL,PRIMARY KEY(effect_id,attachment_id));").map_err(|e|e.to_string())
 }
-fn visit(
+pub(crate) fn visit(
     db: &Connection,
     tid: &str,
     kind: &str,
@@ -271,7 +271,7 @@ async fn dispose(state: &Arc<State>, id: &str, tid: &str, p: &Value) -> Result<(
     }
     signal(state, tid);
     state.executions.stopped(tid).await?;
-    let handled = state.native_mcp.dispose_thread(tid).await?;
+    let handled = state.native_mcp.dispose_thread(tid, true).await?;
     let provider = state.provider.lock().unwrap().clone();
     if let Some(provider) = provider.filter(|_| !handled) {
         provider
@@ -279,6 +279,7 @@ async fn dispose(state: &Arc<State>, id: &str, tid: &str, p: &Value) -> Result<(
                 p["providerInstanceId"].as_str().unwrap_or(""),
                 p["threadKey"].as_str().unwrap_or(""),
                 p["nativeThreadId"].as_str(),
+                true,
             )
             .await?;
     }

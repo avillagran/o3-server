@@ -42,6 +42,7 @@ pub fn initialize(db: &Connection) -> Result<()> {
     repair_boolean_settled_override(db)?;
     initialize_run_internal(db)?;
     crate::deletion::initialize(db)?;
+    crate::workspace_transition::initialize(db)?;
     crate::threadq::initialize(db)
 }
 /// Upstream 077 (1973e0a68): a boolean `settledOverride` breaks the thread schema; true means
@@ -659,6 +660,7 @@ pub(crate) fn dispatch_scoped(
             "thread.visited"
         }
         "thread.metadata.update" => {
+            crate::workspace_transition::plan(&tx, &t, c, &at)?;
             if c["regenerateTitle"] == true {
                 let text: Option<String> = tx.query_row("SELECT json_extract(body,'$.text') FROM records WHERE kind='messages' AND thread_id=? AND json_extract(body,'$.role')='user' ORDER BY rowid LIMIT 1",[tid],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
                 let title = crate::title::fallback(text.as_deref().unwrap_or(""));
@@ -1083,6 +1085,12 @@ pub(crate) fn dispatch_scoped(
     .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
     drop(db);
+    if kind == "thread.metadata.update" && c.get("worktreePath").is_some() {
+        // The worker uses the durable outbox to distinguish a real change from a no-op.
+        if crate::workspace_transition::pending(&s.db.lock().unwrap(), tid)? {
+            s.executions.cancel(tid);
+        }
+    }
     s.notify();
     if c["regenerateTitle"] == true {
         let text = {
@@ -1345,6 +1353,13 @@ fn delivery_mode(s: &State, db: &Connection, t: &Value, c: &Value) -> Result<Val
         return Err("invalid delivery intent".into());
     }
     let tid = t["id"].as_str().ok_or("thread id missing")?;
+    if crate::workspace_transition::pending(db, tid)? {
+        return if intent == "auto" {
+            Ok(json!({"type":"queue_after_active"}))
+        } else {
+            Err("workspace provider detach is pending".into())
+        };
+    }
     let mut active: Option<String> = db.query_row(
         "SELECT body FROM records WHERE kind='runs' AND thread_id=? AND json_extract(body,'$.status') IN ('preparing','starting','running','waiting') ORDER BY rowid DESC LIMIT 1",
         [tid], |r| r.get(0)).optional().map_err(|e|e.to_string())?;
@@ -1431,13 +1446,18 @@ fn stage_message(
             .find(|rid| get(tx, "runs", rid).is_ok_and(|r| r["threadId"] == tid))
             .cloned();
     }
+    let detaching = crate::workspace_transition::pending(tx, tid)?;
+    if detaching && matches!(mode, Some("start_immediately" | "steer_active")) {
+        return Err("workspace provider detach is pending; use queue_after_active".into());
+    }
     if c["dispatchMode"]["type"] == "start_immediately" && active_run.is_some() {
         return Err(
             "thread already has an active run; use queue_after_active or steer_active".into(),
         );
     }
 
-    let queued = c["dispatchMode"]["type"] == "queue_after_active" && active_run.is_some();
+    let queued =
+        c["dispatchMode"]["type"] == "queue_after_active" && (active_run.is_some() || detaching);
     if mode != Some("defer_start") && s.provider.lock().unwrap().is_none() {
         return Err("no provider adapter configured; only defer_start is available".into());
     }

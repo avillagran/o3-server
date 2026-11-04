@@ -2907,3 +2907,27 @@ modes; fmt, generated compatibility and nine monitor tests pass. Source rechecke
 06:06 UTC remains nightly4151 (322f6544dfad0a3c8a0c8cbecf2c7f7874b14268).
 Installed-provider inference, compatible desktop acceptance and the broader nightly
 protocol remain unverified/incomplete; no service deployment occurred. See [MCP.md](MCP.md).
+
+
+### Workspace metadata transitions (2026-11-04)
+
+Ordinary thread.metadata.update now enforces expectedWorktreePath, expectedBranch and
+expectedEmpty under the receipt transaction and plans a durable native detach on a real
+path change. Live work is interrupted; queued messages wait behind the detach barrier
+and resume the same native conversation in the new cwd. Shared Codex credentials and
+sibling threads survive; exclusive Claude sessions restart with --resume. No-op/title
+changes leave sessions attached. A separate durable queue-release marker covers a
+restart after native detach; failures retry and late native bindings are unloaded.
+Source: nightly4151 Orchestrator, ProviderSessionManager and ProviderSessionTransitionPolicy,
+confirmed at 06:15 UTC (322f6544dfad0a3c8a0c8cbecf2c7f7874b14268).
+
+Tests inspect actual RPC/MCP and subprocess native-protocol traffic plus transaction
+rollback, expected-state races and persistent restart boundaries. This completes a
+prerequisite for MCP handoff, whose branch/base/create/setup/continuation service remains
+pending; no new MCP tool or full-nightly conformance is asserted. See [MCP.md](MCP.md).
+
+Validation for this block: full suites pass with 333 default / 330 no-default tests,
+21 opt-ins ignored each. Final transaction/recovery module tests plus 32 workspace,
+deletion, queue/thread-command and HTTP MCP regressions pass per configuration.
+Strict Clippy passes in both modes; fmt, generated compatibility and all nine
+nightly-monitor tests pass. No service deployment occurred.

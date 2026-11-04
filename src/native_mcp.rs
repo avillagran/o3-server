@@ -26,7 +26,7 @@ struct Entries {
     threads: HashMap<String, Weak<Context>>,
 }
 type Dispose = Arc<
-    dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>>
+    dyn Fn(bool) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>>
         + Send
         + Sync,
 >;
@@ -127,7 +127,7 @@ impl Registry {
         context.scope.touched.store(now_ms(), Ordering::Relaxed);
         Some(context.scope.clone())
     }
-    pub(crate) async fn dispose_thread(&self, thread: &str) -> Result<bool, String> {
+    pub(crate) async fn dispose_thread(&self, thread: &str, revoke: bool) -> Result<bool, String> {
         let contexts: Vec<_> = self
             .entries
             .lock()
@@ -142,7 +142,7 @@ impl Registry {
             let dispose = context.dispose.lock().unwrap().clone();
             if let Some(dispose) = dispose {
                 handled = true;
-                dispose().await?;
+                dispose(revoke).await?;
             }
         }
         Ok(handled)
@@ -214,7 +214,15 @@ impl Registry {
                     thread,
                     instance,
                     generation,
-                    cwd,
+                    // A shared Codex process keeps its credential across workspace
+                    // detach/resume. Exclusive CLI contexts still include cwd.
+                    if instance == "codex"
+                        || settings["providerInstances"][instance]["driver"] == "codex"
+                    {
+                        Value::Null
+                    } else {
+                        json!(cwd)
+                    },
                     options,
                     settings["providerInstances"][instance]
                 ]))

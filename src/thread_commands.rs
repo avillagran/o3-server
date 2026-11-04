@@ -40,6 +40,9 @@ pub fn handles(kind: &str) -> bool {
 const BLOCKING: &str = "('preparing','starting','running','waiting')";
 
 pub fn has_blocking_run(db: &Connection, tid: &str) -> Result<bool> {
+    if crate::workspace_transition::pending(db, tid)? {
+        return Ok(true);
+    }
     db.query_row(
         &format!("SELECT EXISTS(SELECT 1 FROM records WHERE kind='runs' AND thread_id=? AND json_extract(body,'$.status') IN {BLOCKING})"),
         [tid],
@@ -131,6 +134,11 @@ fn promote(db: &Connection, tid: &str, thread: &Value, mut run: Value) -> Result
 
 /// Called when a run ends: starts the next queued message of the thread, if any.
 pub fn advance(s: &Arc<State>, tid: &str) {
+    if let Err(error) = advance_checked(s, tid) {
+        eprintln!("Unable to advance thread queue: {error}");
+    }
+}
+pub(crate) fn advance_checked(s: &Arc<State>, tid: &str) -> Result<()> {
     let started = (|| -> Result<Option<(String, String)>> {
         let mut db = s.db.lock().unwrap();
         let tx = db.transaction().map_err(|e| e.to_string())?;
@@ -151,10 +159,11 @@ pub fn advance(s: &Arc<State>, tid: &str) {
         tx.commit().map_err(|e| e.to_string())?;
         Ok(Some(started))
     })();
-    if let Ok(Some((rid, text))) = started {
+    if let Some((rid, text)) = started? {
         s.notify();
         crate::provider::start(s.clone(), tid.to_owned(), rid, text);
     }
+    Ok(())
 }
 
 struct Outcome {

@@ -316,7 +316,7 @@ impl ClaudeProvider {
             let id = context.id().to_owned();
             let dispose_sessions = sessions.clone();
             let dispose_key = key.clone();
-            context.set_disposer(std::sync::Arc::new(move || {
+            context.set_disposer(std::sync::Arc::new(move |_revoke| {
                 let sessions = dispose_sessions.clone();
                 let key = dispose_key.clone();
                 Box::pin(async move {
@@ -681,6 +681,7 @@ impl Provider for ClaudeProvider {
         _instance: &'a str,
         key: &'a str,
         _native: Option<&'a str>,
+        _revoke: bool,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(async move {
             let session = self.sessions.lock().unwrap().remove(key);
