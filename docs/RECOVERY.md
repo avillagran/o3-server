@@ -173,3 +173,17 @@ Once owned tasks/items finish, the adapter reports interrupted without requiring
 a second native turn result. Pinned 3991 retains an unresolved runtime request after stopping its run while
 the native session stays open. o3 preserves that request too; interruption alone
 does not invent a native request resolution. Channel loss/restart cancels it.
+
+
+MCP launch admission (2026-11-04): caller/key namespaces survive HTTP-session
+reinitialization. Both claim and message transactions recheck current authority,
+including target modes on receipt replay. A claim committed just before grant
+narrowing/revocation remains empty; no deferred run is admitted. Retry after authority
+is restored recovers that identity. Accepted replay uses the stored model and does
+not require a still-existing base ref or project default.
+
+MCP pending uploads are copied before thread creation, synced and admitted with the
+message. Rejected admissions remove this attempt's unused copies and preserve pending
+retry sources. Accepted copies are independent from pending deletion/sweeping, and
+receipt replay does not create a new set. This does not assert crash-atomic filesystem/
+SQLite commits or complete shared non-MCP attachment-intake parity.

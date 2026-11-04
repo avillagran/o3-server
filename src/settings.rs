@@ -287,6 +287,7 @@ fn apply_entry_patches(old: &Value, next: &mut Value, patch: &Value) -> Result<(
     }
     for field in [
         "defaultModelSelection",
+        "fallbackModelSelection",
         "sourceControlWriterModelSelection",
         "reviewGuideModelSelection",
         "defaultProjectScripts",
@@ -573,6 +574,7 @@ fn normalize(v: &mut Value, patch: &Value) -> Result<(), String> {
     }
     for field in [
         "defaultModelSelection",
+        "fallbackModelSelection",
         "textGenerationModelSelection",
         "sourceControlWriterModelSelection",
         "reviewGuideModelSelection",

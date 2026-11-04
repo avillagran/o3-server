@@ -189,7 +189,7 @@
     "orchestration.launchThread": {
       "status": "done",
       "priority": "P0",
-      "note": "Automatic generateTitle launches preserve fallback titles even with unsupported saved Codex text generation; no provider substitution. Real Connection/title readers cover this and explicit regeneration errors. Pinned 3991 accepts saved selection and empty automatic launch; full initial-message generation on reference is unproven. Broader parity remains subject to independent audit. 2026-11-04: staged launch accepts a preparing run before Git/setup, preserves a durable thread claim when initial-message admission fails, and replays without duplicate runs. Shared service supports sync/async setup, same-run retry, interruption recovery, branch naming and Scratch allocation. Installed Claude Haiku and Codex gpt-6.1-sol pass gated-setup proofs. MCP launch/transfer, provider-catalog enable precedence, numeric checkout progress and latest live differential remain open; see MCP.md."
+      "note": "Automatic generateTitle launches preserve fallback titles even with unsupported saved Codex text generation; no provider substitution. Real Connection/title readers cover this and explicit regeneration errors. Pinned 3991 accepts saved selection and empty automatic launch; full initial-message generation on reference is unproven. Broader parity remains subject to independent audit. 2026-11-04: staged launch accepts a preparing run before Git/setup, preserves a durable thread claim when initial-message admission fails, and replays without duplicate runs. Shared service supports sync/async setup, same-run retry, interruption recovery, branch naming and Scratch allocation. Installed Claude Haiku and Codex gpt-6.1-sol pass gated-setup proofs. MCP launch now shares this service with transactional mode ceilings, durable caller/key replay, pending attachment copies and native caller inheritance (tests/mcp_launch.rs). Installed native CLI launch proofs pass. Transfer, provider-catalog enable precedence, numeric checkout progress and latest live differential remain open; see MCP.md."
     },
     "orchestration.searchThread": {
       "status": "skip",
@@ -304,7 +304,7 @@
     "projects.ensureScratch": {
       "status": "skip",
       "priority": "unused",
-      "note": "No client call site in inventory."
+      "note": "Implemented through the shared managed-folder helper: atomic bootstrap, preserved user icon, separate non-Git folder per launch and explicit refusal when the server profile is inside a Git checkout. tests/mcp_launch.rs drives the RPC through real Connection. Classified unused because the pinned client has no builder call site."
     },
     "projects.listEntries": {
       "status": "skip",

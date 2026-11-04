@@ -112,8 +112,10 @@ mod agent_browser;
 
 mod run_restart;
 
+mod launch_attachments;
 mod launch_names;
 mod launch_worker;
 mod managed_folders;
+mod mcp_launch;
 mod thread_launch;
 mod worktree_setup;

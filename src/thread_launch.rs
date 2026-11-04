@@ -84,6 +84,16 @@ pub(crate) fn enqueue(
     Ok(())
 }
 pub(crate) fn launch(s: &Arc<State>, incoming: &Value) -> Result<Value> {
+    launch_scoped(s, incoming, None)
+}
+pub(crate) fn launch_scoped(
+    s: &Arc<State>,
+    incoming: &Value,
+    authority: Option<&crate::mcp_access::Authority>,
+) -> Result<Value> {
+    if let Some(a) = authority {
+        a.check_launch(&s.db.lock().unwrap(), incoming)?;
+    }
     let _workspace = s
         .worktree_gate
         .try_read()
@@ -96,9 +106,11 @@ pub(crate) fn launch(s: &Arc<State>, incoming: &Value) -> Result<Value> {
         .filter(|s| !s.is_empty())
         .ok_or("commandId required")?;
     let pid = p["projectId"].as_str().ok_or("projectId required")?;
-    enabled(s, pid, &p["modelSelection"]["instanceId"])?;
     let mut db = s.db.lock().unwrap();
     let tx = db.transaction().map_err(|e| e.to_string())?;
+    if let Some(a) = authority {
+        a.check_launch(&tx, p)?;
+    }
     let project = get(&tx, "project", pid).map_err(|_| "Project was not found")?;
     if !project["deletedAt"].is_null() {
         return Err("Project was deleted".into());
@@ -119,6 +131,9 @@ pub(crate) fn launch(s: &Arc<State>, incoming: &Value) -> Result<Value> {
         )
         .optional()
         .map_err(|e| e.to_string())?;
+    if receipt.is_none() {
+        enabled(s, pid, &p["modelSelection"]["instanceId"])?;
+    }
     // Profiles from before staged launch have a composite launch receipt.
     if claim.is_none() {
         if let Some(receipt) = receipt {
@@ -172,6 +187,20 @@ pub(crate) fn launch(s: &Arc<State>, incoming: &Value) -> Result<Value> {
             return Err("no provider adapter configured".into());
         }
     }
+    // Validate/copy uploads before creating a thread, as ThreadMessageIntake does.
+    // An accepted receipt already owns its message's immutable copies.
+    let mut claims = if authority.is_some()
+        && p.get("initialMessage").is_some()
+        && claim.as_ref().is_none_or(|c| c.2.is_none())
+    {
+        Some(crate::launch_attachments::claim(
+            s,
+            &tid,
+            &p["initialMessage"]["attachments"],
+        )?)
+    } else {
+        None
+    };
     let at = iso(now_ms());
     let thread = if was_claimed {
         let t = get(&tx, "thread", &tid)?;
@@ -208,6 +237,18 @@ pub(crate) fn launch(s: &Arc<State>, incoming: &Value) -> Result<Value> {
             Value::Null
         };
         let mut t = events::new_thread(&tx, &create, &tid, &at)?;
+        if let Some(a) = authority {
+            t["createdBy"] = json!("agent");
+            t["creationSource"] = json!("mcp");
+            if let Some(caller) = a.launch_context(&tx).map_err(|e| e.to_string())?.0 {
+                if let Some(origin) = caller.get("linkOrigin").filter(|v| !v.is_null()) {
+                    t["linkOrigin"] = origin.clone();
+                    if let Some(provenance) = p.get("delegatedFrom").filter(|v| v.is_object()) {
+                        t["delegatedFrom"] = provenance.clone();
+                    }
+                }
+            }
+        }
         events::import_native(s, &tx, p, &tid, &at, &mut t)?;
         put(&tx, "thread", &tid, &tid, &t)?;
         append(&tx, &tid, "thread.created", t.clone(), &t)?;
@@ -253,6 +294,9 @@ pub(crate) fn launch(s: &Arc<State>, incoming: &Value) -> Result<Value> {
     // recovers its thread id and repeats only the previously unaccepted message.
     let mut db = s.db.lock().unwrap();
     let tx = db.transaction().map_err(|e| e.to_string())?;
+    if let Some(a) = authority {
+        a.check_launch(&tx, p)?;
+    }
     let mut t = get(&tx, "thread", &tid)?;
     if !t["archivedAt"].is_null() || !t["deletedAt"].is_null() {
         return Err("The launch target is archived or deleted".into());
@@ -274,14 +318,22 @@ pub(crate) fn launch(s: &Arc<State>, incoming: &Value) -> Result<Value> {
     } else {
         strategy.clone()
     };
-    let mut message = json!({"type":"message.dispatch","commandId":format!("{cid}:initial-message"),"threadId":tid,"messageId":m["messageId"].as_str().map(str::to_owned).unwrap_or(format!("message-{cid}")),"text":m["text"],"attachments":m["attachments"],"dispatchMode":{"type":"defer_start","workspaceStrategy":preparation}});
+    let attachments = claims
+        .as_ref()
+        .map(|c| &c.attachments)
+        .unwrap_or(&m["attachments"]);
+    let mut message = json!({"type":"message.dispatch","commandId":format!("{cid}:initial-message"),"threadId":tid,"messageId":m["messageId"].as_str().map(str::to_owned).unwrap_or(format!("message-{cid}")),"text":m["text"],"attachments":attachments,"dispatchMode":{"type":"defer_start","workspaceStrategy":preparation}});
+    if let Some(sender) = m.get("senderThreadId") {
+        message["senderThreadId"] = sender.clone();
+    }
     if let Some(context) = m.get("context") {
         message["context"] = context.clone();
     }
     if p["generateTitle"] == true {
         message["titleSeed"] = p["title"].clone();
     }
-    let (accepted, rid, _) = events::stage_message(s, &tx, &message, &mut t, &at, false)?;
+    let (accepted, rid, _) =
+        events::stage_message(s, &tx, &message, &mut t, &at, authority.is_some())?;
     tx.execute(
         "UPDATE launch_claims SET run_id=?1 WHERE command_id=?2",
         params![rid, cid],
@@ -289,6 +341,9 @@ pub(crate) fn launch(s: &Arc<State>, incoming: &Value) -> Result<Value> {
     .map_err(|e| e.to_string())?;
     result = json!({"threadId":tid,"projection":events::projection_db(&tx,&tid)?,"resumed":false,"sequence":accepted["sequence"]});
     tx.commit().map_err(|e| e.to_string())?;
+    if let Some(claims) = claims.as_mut() {
+        claims.keep();
+    }
     drop(db);
     s.notify();
     if p["generateTitle"] == true {
