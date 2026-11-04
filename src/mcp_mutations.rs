@@ -29,7 +29,7 @@ pub(crate) fn catalog() -> Vec<Value> {
     let mut tools=vec![
         definition_write("t3_queue","Manage queued messages with action list, read, edit, cancel, reorder, or promote_to_steer. Read actions remain available to read-only clients.",json!({"action":{"type":"string","enum":["list","read","edit","cancel","reorder","promote_to_steer"]},"threadId":string(),"queuedRunId":string(),"text":{"type":"string","maxLength":100000},"beforeRunId":{"anyOf":[string(),{"type":"null"}]},"targetRunId":string(),"cursor":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":100}}),&["action"]),
         definition_write("t3_pending_request","List, read or respond to pending user questions. This cannot approve a permission request. Read actions remain available to read-only clients.",json!({"action":{"type":"string","enum":["list","read","respond"]},"threadId":string(),"requestId":string(),"answers":{"type":"object"}}),&["action"]),
-        definition_write("t3_thread_send","Send a message through the existing dispatch lifecycle. auto steers a capable active turn, otherwise queues; queue waits behind an active turn. Reuse clientRequestId for retries. Restart delivery is not available yet.",json!({"threadId":string(),"message":{"type":"string","minLength":1,"maxLength":120000},"mode":{"type":"string","enum":["auto","queue","steer","restart"]},"clientRequestId":{"type":"string","minLength":1,"maxLength":256}}),&["threadId","message"]),
+        definition_write("t3_thread_send","Send a message through the existing dispatch lifecycle. auto steers a capable active turn, otherwise queues; queue waits behind an active turn. Reuse clientRequestId for retries. Restart replaces a running provider turn with another attempt of the same run when the provider supports it.",json!({"threadId":string(),"message":{"type":"string","minLength":1,"maxLength":120000},"mode":{"type":"string","enum":["auto","queue","steer","restart"]},"clientRequestId":{"type":"string","minLength":1,"maxLength":256}}),&["threadId","message"]),
         definition_write("t3_thread_interrupt","Interrupt the active or named run using the existing interrupt lifecycle. Reuse clientRequestId for retries.",json!({"threadId":string(),"runId":string(),"reason":{"type":"string","maxLength":2000},"clientRequestId":{"type":"string","minLength":1,"maxLength":256}}),&["threadId"]),
         definition("t3_thread_wait","Wait for the selected durable run. Timeout does not interrupt work; omit runId to select the latest run at call time.",json!({"threadId":string(),"runId":string(),"timeoutMs":{"type":"number"}}),&["threadId"]),
         definition_write("t3_thread_organize","Pin, snooze, settle, archive or mark a thread unread using existing lifecycle commands. External clients pass threadId.",json!({"threadId":string(),"action":{"type":"string","enum":["pin","unpin","snooze","unsnooze","settle","unsettle","archive","unarchive","mark_unread"]},"snoozedUntil":string()}),&["action"]),
@@ -147,12 +147,7 @@ pub(crate) fn call(s: &Arc<State>, authority: &Authority, name: &str, p: &Value)
                     c["deliveryIntent"] = json!(p["mode"].as_str().unwrap_or("auto"))
                 }
                 "queue" => c["dispatchMode"] = json!({"type":"queue_after_active"}),
-                "restart" => {
-                    return Err(failure(
-                        "invalid_request",
-                        "Restart delivery is not implemented yet.",
-                    ))
-                }
+                "restart" => c["deliveryIntent"] = json!("restart"),
                 _ => return Err(failure("invalid_request", "Invalid delivery mode.")),
             }
         }

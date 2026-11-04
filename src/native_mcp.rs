@@ -339,7 +339,7 @@ impl Scope {
                 ));
             }
 
-            let active:bool=db.query_row("SELECT coalesce((SELECT json_extract(body,'$.providerInstanceId')=?2 AND json_extract(body,'$.status') IN ('preparing','starting','running','waiting') FROM records WHERE kind='runs' AND thread_id=?1 ORDER BY rowid DESC LIMIT 1),0)",rusqlite::params![self.thread,self.instance],|r|r.get(0)).map_err(|_|failure("orchestration_error","Unable to check provider liveness."))?;
+            let active:bool=db.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='runs' AND thread_id=?1 AND json_extract(body,'$.providerInstanceId')=?2 AND json_extract(body,'$.status') IN ('preparing','starting','running','waiting'))",rusqlite::params![self.thread,self.instance],|r|r.get(0)).map_err(|_|failure("orchestration_error","Unable to check provider liveness."))?;
             let background:bool=db.query_row("SELECT EXISTS(SELECT 1 FROM records r WHERE kind IN ('subagents','backgroundTasks') AND thread_id=?1 AND (kind='backgroundTasks' OR NOT EXISTS(SELECT 1 FROM records b WHERE b.kind='backgroundTasks' AND b.thread_id=r.thread_id AND json_extract(b.body,'$.itemId')=r.id)) AND json_extract(body,'$.providerInstanceId')=?2 AND (kind='subagents' OR json_extract(body,'$.kind')='subagent') AND coalesce(json_extract(body,'$.status'),'pending') NOT IN ('completed','cancelled','failed','interrupted'))",rusqlite::params![self.thread,self.instance],|r|r.get(0)).map_err(|_|failure("orchestration_error","Unable to check provider background work."))?;
             if !t["archivedAt"].is_null() || !(active || background) {
                 return Err(failure(

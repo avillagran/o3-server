@@ -31,7 +31,12 @@ pub(crate) fn save_item(db: &Connection, tid: &str, t: &Value, mut v: Value) -> 
     };
     if let Some(kind) = kind {
         v["nodeId"] = json!(id);
-        let node = json!({"id":id,"threadId":tid,"runId":v["runId"],"parentNodeId":v["parentItemId"].as_str().map(|s|json!(s)).unwrap_or_else(||v["runId"].clone()),"rootNodeId":v["runId"],"kind":kind,"status":v["status"],"countsForRun":true,"providerThreadId":t["activeProviderThreadId"],"providerTurnId":v["providerTurnId"],"nativeItemRef":v["nativeItemRef"],"runtimeRequestId":null,"checkpointScopeId":null,"startedAt":v["startedAt"],"completedAt":v["completedAt"]});
+        let root = get(db, "runs", v["runId"].as_str().unwrap_or(""))
+            .ok()
+            .map(|r| r["rootNodeId"].clone())
+            .filter(|v| !v.is_null())
+            .unwrap_or_else(|| v["runId"].clone());
+        let node = json!({"id":id,"threadId":tid,"runId":v["runId"],"parentNodeId":v["parentItemId"].as_str().map(|s|json!(s)).unwrap_or_else(||root.clone()),"rootNodeId":root,"kind":kind,"status":v["status"],"countsForRun":true,"providerThreadId":t["activeProviderThreadId"],"providerTurnId":v["providerTurnId"],"nativeItemRef":v["nativeItemRef"],"runtimeRequestId":null,"checkpointScopeId":null,"startedAt":v["startedAt"],"completedAt":v["completedAt"]});
         put(db, "nodes", id, tid, &node)?;
         append(db, tid, "node.updated", node, t)?;
     }

@@ -107,3 +107,5 @@ mod external_update;
 mod server_browser;
 
 mod agent_browser;
+
+mod run_restart;

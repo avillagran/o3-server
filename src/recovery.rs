@@ -8,6 +8,7 @@ use serde_json::{json, Value};
 pub fn recover(db: &mut Connection) -> Result<(), String> {
     let tx = db.transaction().map_err(|e| e.to_string())?;
     crate::deletion::recover(&tx)?;
+    crate::run_restart::recover(&tx)?;
     use rusqlite::OptionalExtension;
     let mut cursor = 0i64;
     loop {
@@ -21,6 +22,9 @@ pub fn recover(db: &mut Connection) -> Result<(), String> {
         } else {
             serde_json::from_str(&body).map_err(|e| e.to_string())?
         };
+        if kind == "runs" && crate::run_restart::pending(&tx, &id)? {
+            continue;
+        }
         let event = match kind.as_str() {
             "thread" if !v["titleRegeneration"].is_null() => {
                 v["titleRegeneration"] = Value::Null;

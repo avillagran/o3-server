@@ -606,6 +606,7 @@ pub async fn serve(listener: TcpListener, state: Arc<State>) -> std::io::Result<
         .map_err(std::io::Error::other)?;
     crate::deletion::start(&state);
     crate::workspace_transition::start(&state);
+    crate::run_restart::start(&state);
     crate::recovery::resume(&state).map_err(std::io::Error::other)?;
     crate::heap::collect();
     state.start_checkpointer();

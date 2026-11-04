@@ -23,6 +23,21 @@ impl Drop for ExecutionGuard {
     }
 }
 impl Executions {
+    pub(crate) fn cancel_run(&self, run: &str) {
+        if let Some(run) = self.0.lock().unwrap().get(run) {
+            run.cancel.send_replace(true);
+        }
+    }
+    pub(crate) async fn wait_run(&self, run: &str) {
+        let run = self.0.lock().unwrap().get(run).cloned();
+        if let Some(mut run) = run {
+            while !*run.done.borrow() {
+                if run.done.changed().await.is_err() {
+                    break;
+                }
+            }
+        }
+    }
     pub(crate) fn cancel(&self, thread: &str) {
         for r in self
             .0
@@ -211,7 +226,7 @@ pub(crate) fn start(
     tokio::task::spawn(async move {
         let _guard = guard;
 
-        let mut input = {
+        let (mut input, attempt) = {
             let db = s.db.lock().unwrap();
             let t = crate::events::get(&db, "thread", &tid).unwrap_or_default();
             let r = crate::events::get(&db, "runs", &rid).unwrap_or_default();
@@ -259,7 +274,7 @@ pub(crate) fn start(
             // A Codex binding is published before turn/start is accepted. A rejected
             // first input leaves a native ID but has not consumed the handoff.
             let codex_unseeded = crate::provider_input::driver(&s, &t["providerInstanceId"]).as_deref() == Ok("codex")
-                && !db.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='runs' AND thread_id=?1 AND json_extract(body,'$.providerThreadId')=?2 AND json_type(body,'$.codexProviderTurnId')='text')", rusqlite::params![tid,r["providerThreadId"].as_str()], |row|row.get::<_,bool>(0)).unwrap_or(false);
+                && !db.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE thread_id=?1 AND json_extract(body,'$.providerThreadId')=?2 AND ((kind='runs' AND json_type(body,'$.codexProviderTurnId')='text') OR (kind='providerTurns' AND json_type(body,'$.nativeTurnRef.nativeId')='text')))", rusqlite::params![tid,r["providerThreadId"].as_str()], |row|row.get::<_,bool>(0)).unwrap_or(false);
             let rejected_binding = codex_unseeded && t["providerHandoff"].is_string()
                 && db.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='runs' AND thread_id=?1 AND json_extract(body,'$.providerThreadId')=?2 AND json_extract(body,'$.status')='failed' AND (json_extract(body,'$.error') LIKE '%input_too_large%' OR json_extract(body,'$.error') LIKE '%Input exceeds the maximum length%' OR json_extract(body,'$.error') LIKE '%Codex outgoing frame exceeds limit%'))", rusqlite::params![tid,r["providerThreadId"].as_str()], |row|row.get::<_,bool>(0)).unwrap_or(false);
             if (fresh || codex_unseeded) && !t["nativeForkSource"].is_string() {
@@ -272,7 +287,7 @@ pub(crate) fn start(
                         ));
                 }
             }
-            RunInput {
+            let input = RunInput {
                 native_mcp: None,
                 provider_instance_id: t["providerInstanceId"].as_str().unwrap_or("").into(),
                 // An empty thread whose initial input was rejected may have no durable
@@ -300,7 +315,8 @@ pub(crate) fn start(
                 } else {
                     m.get("context").cloned()
                 },
-            }
+            };
+            (input, r["activeAttemptId"].as_str().map(str::to_owned))
         };
         // Internal config is issued here, never accepted from persisted model options.
         if let Some(selection) = input.model_selection.as_object_mut() {
@@ -324,7 +340,13 @@ pub(crate) fn start(
             {
                 Ok(context) => Some(context),
                 Err(message) => {
-                    let _ = persist(&s, &tid, &rid, ProviderEvent::Failed(message));
+                    let _ = persist_attempt(
+                        &s,
+                        &tid,
+                        &rid,
+                        attempt.as_deref(),
+                        ProviderEvent::Failed(message),
+                    );
                     s.active.lock().unwrap().remove(&rid);
                     s.notify();
                     return;
@@ -342,10 +364,21 @@ pub(crate) fn start(
         let ct = tid.clone();
         let cr = rid.clone();
         let cc = checkpoint_cwd.clone();
+        let checkpoint_attempt = attempt.clone();
         let _ = tokio::task::spawn_blocking(move || {
-            crate::checkpoint::capture(&checkpoint_state, &ct, &cr, &cc, true)
+            crate::checkpoint::capture_attempt(
+                &checkpoint_state,
+                &ct,
+                &cr,
+                &cc,
+                true,
+                checkpoint_attempt.as_deref(),
+            )
         })
         .await;
+        if crate::run_restart::admission(&s, &rid, attempt.as_deref()).is_err() {
+            return;
+        }
         let mut task = tokio::task::spawn(async move {
             provider
                 .execute(input, output, controls, cancellation)
@@ -374,6 +407,13 @@ pub(crate) fn start(
                     continue;
                 }
             };
+            if !crate::run_restart::matches(&s.db.lock().unwrap(), &rid, attempt.as_deref()) {
+                buffered.clear();
+                if let Some(attempt) = attempt.as_deref() {
+                    let _ = crate::run_restart::observed(&s, &rid, attempt, &event);
+                }
+                continue;
+            }
             if let ProviderEvent::TextDelta(delta) = event {
                 if buffered.len().saturating_add(delta.len()) > 1024 * 1024 {
                     failure = Some("assistant message exceeds 1 MiB".into());
@@ -384,7 +424,15 @@ pub(crate) fn start(
                     if let Some(end) = buffered.rfind("\n\n") {
                         let tail = buffered.split_off(end + 2);
                         let text = std::mem::replace(&mut buffered, tail);
-                        if persist(&s, &tid, &rid, ProviderEvent::TextDelta(text)).is_err() {
+                        if persist_attempt(
+                            &s,
+                            &tid,
+                            &rid,
+                            attempt.as_deref(),
+                            ProviderEvent::TextDelta(text),
+                        )
+                        .is_err()
+                        {
                             break;
                         }
                     }
@@ -400,10 +448,11 @@ pub(crate) fn start(
                             | ProviderEvent::Interrupted
                     ));
             if flush
-                && persist(
+                && persist_attempt(
                     &s,
                     &tid,
                     &rid,
+                    attempt.as_deref(),
                     ProviderEvent::TextDelta(std::mem::take(&mut buffered)),
                 )
                 .is_err()
@@ -419,8 +468,9 @@ pub(crate) fn start(
                 let ct = tid.clone();
                 let cr = rid.clone();
                 let cc = checkpoint_cwd.clone();
+                let ca = attempt.clone();
                 let _ = tokio::task::spawn_blocking(move || {
-                    crate::checkpoint::capture(&cs, &ct, &cr, &cc, false)
+                    crate::checkpoint::capture_attempt(&cs, &ct, &cr, &cc, false, ca.as_deref())
                 })
                 .await;
             }
@@ -431,15 +481,19 @@ pub(crate) fn start(
                 ProviderEvent::Codex(f) => f["params"]["o3RequestId"].as_str().map(str::to_owned),
                 _ => None,
             };
-            let (ps, pt, pr) = (s.clone(), tid.clone(), rid.clone());
-            if tokio::task::spawn_blocking(move || persist(&ps, &pt, &pr, event))
-                .await
-                .unwrap_or_else(|e| Err(e.to_string()))
-                .is_err()
+            let (ps, pt, pr, pa) = (s.clone(), tid.clone(), rid.clone(), attempt.clone());
+            if tokio::task::spawn_blocking(move || {
+                persist_attempt(&ps, &pt, &pr, pa.as_deref(), event)
+            })
+            .await
+            .unwrap_or_else(|e| Err(e.to_string()))
+            .is_err()
             {
                 break;
             }
-            if let Some(id) = request_id {
+            if let Some(id) = request_id.filter(|_| {
+                crate::run_restart::matches(&s.db.lock().unwrap(), &rid, attempt.as_deref())
+            }) {
                 let granted = {
                     let db = s.db.lock().unwrap();
                     let request =
@@ -463,12 +517,19 @@ pub(crate) fn start(
             }
         }
         if !buffered.is_empty() {
-            let _ = persist(&s, &tid, &rid, ProviderEvent::TextDelta(buffered));
+            let _ = persist_attempt(
+                &s,
+                &tid,
+                &rid,
+                attempt.as_deref(),
+                ProviderEvent::TextDelta(buffered),
+            );
         }
         let _ = cancel.send(true);
         tokio::select! {r=&mut task=>{match r {Ok(Ok(()))=>finished=true,Ok(Err(e))=>failure=Some(e),Err(e)=>failure=Some(e.to_string())}},_=tokio::time::sleep(std::time::Duration::from_secs(2))=>{task.abort();let _=task.await;}}
         s.native_mcp.finish_turn(&tid).await;
         if !checkpoint_finished
+            && crate::run_restart::matches(&s.db.lock().unwrap(), &rid, attempt.as_deref())
             && !crate::workspace_transition::pending(&s.db.lock().unwrap(), &tid).unwrap_or(true)
             && crate::events::get(&s.db.lock().unwrap(), "thread", &tid)
                 .is_ok_and(|t| t["deletedAt"].is_null())
@@ -477,22 +538,28 @@ pub(crate) fn start(
             let ct = tid.clone();
             let cr = rid.clone();
             let cc = checkpoint_cwd.clone();
+            let ca = attempt.clone();
             let _ = tokio::task::spawn_blocking(move || {
-                crate::checkpoint::capture(&cs, &ct, &cr, &cc, false)
+                crate::checkpoint::capture_attempt(&cs, &ct, &cr, &cc, false, ca.as_deref())
             })
             .await;
         }
         s.active.lock().unwrap().remove(&rid);
         let final_run = crate::events::get(&s.db.lock().unwrap(), "runs", &rid);
         if let Ok(run) = final_run {
-            if !matches!(
-                run["status"].as_str(),
-                Some("completed" | "interrupted" | "failed" | "cancelled")
-            ) {
-                let _ = persist(
+            if attempt
+                .as_deref()
+                .is_none_or(|a| run["activeAttemptId"].as_str() == Some(a))
+                && !matches!(
+                    run["status"].as_str(),
+                    Some("completed" | "interrupted" | "failed" | "cancelled")
+                )
+            {
+                let _ = persist_attempt(
                     &s,
                     &tid,
                     &rid,
+                    attempt.as_deref(),
                     ProviderEvent::Failed(failure.unwrap_or_else(|| {
                         if finished {
                             "provider ended without completion"
@@ -504,7 +571,9 @@ pub(crate) fn start(
                 );
             }
         }
-        if crate::events::has_live_requests(&s, &tid, &rid).unwrap_or(false) {
+        if crate::run_restart::matches(&s.db.lock().unwrap(), &rid, attempt.as_deref())
+            && crate::events::has_live_requests(&s, &tid, &rid).unwrap_or(false)
+        {
             let state = s.clone();
             let (thread, run) = (tid.clone(), rid.clone());
             tokio::spawn(async move {
@@ -530,11 +599,17 @@ fn interrupt_deadline_after(
     rid: String,
     timeout: std::time::Duration,
 ) -> tokio::task::JoinHandle<()> {
+    let attempt = crate::events::get(&s.db.lock().unwrap(), "runs", &rid)
+        .ok()
+        .and_then(|r| r["activeAttemptId"].as_str().map(str::to_owned));
     tokio::spawn(async move {
         let mut changed = s.changed.subscribe();
         let deadline = tokio::time::sleep(timeout);
         tokio::pin!(deadline);
         loop {
+            if !crate::run_restart::matches(&s.db.lock().unwrap(), &rid, attempt.as_deref()) {
+                return;
+            }
             if crate::events::get(&s.db.lock().unwrap(), "runs", &rid).is_ok_and(|r| {
                 matches!(
                     r["status"].as_str(),
@@ -549,10 +624,11 @@ fn interrupt_deadline_after(
             }
         }
         let _ = tokio::task::spawn_blocking(move || {
-            let _ = persist(
+            let _ = persist_attempt(
                 &s,
                 &tid,
                 &rid,
+                attempt.as_deref(),
                 ProviderEvent::Failed(
                     "Interrupt acknowledgement timed out; native delivery unknown".into(),
                 ),
@@ -562,10 +638,20 @@ fn interrupt_deadline_after(
     })
 }
 
+#[cfg(test)]
 fn persist(
     s: &crate::store::State,
     tid: &str,
     rid: &str,
+    event: ProviderEvent,
+) -> Result<(), String> {
+    persist_attempt(s, tid, rid, None, event)
+}
+fn persist_attempt(
+    s: &crate::store::State,
+    tid: &str,
+    rid: &str,
+    expected: Option<&str>,
     event: ProviderEvent,
 ) -> Result<(), String> {
     s.native_mcp.touch(tid);
@@ -581,6 +667,15 @@ fn persist(
             | C::Output { item_id, .. }
             | C::Finished { item_id, .. } => item_id,
         };
+        let root = crate::events::get(&s.db.lock().unwrap(), "runs", rid)
+            .ok()
+            .and_then(|r| r["rootNodeId"].as_str().map(str::to_owned))
+            .unwrap_or_else(|| rid.into());
+        if root != rid {
+            if let Some(native) = id.strip_prefix(&format!("codex-item-{rid}-")) {
+                *id = format!("codex-item-{root}-{native}");
+            }
+        }
         if let Some(native) = id.strip_prefix("native-tool:") {
             *id = format!("tool-{rid}-{native}");
             if matches!(command, C::Finished { .. }) {
@@ -607,13 +702,27 @@ fn persist(
                 }
             }
         }
-        return crate::command_output::persist(s, tid, rid, command);
+        return crate::command_output::persist_attempt(s, tid, rid, expected, command);
     }
     let settings = crate::settings::read(s)?;
     let mut db = s.db.lock().unwrap();
     let tx = db.transaction().map_err(|e| e.to_string())?;
     let mut thread = get(&tx, "thread", tid)?;
     let mut run = get(&tx, "runs", rid)?;
+    if !crate::run_restart::matches(&tx, rid, expected) {
+        if let Some(attempt) = expected {
+            crate::run_restart::note_terminal(&tx, rid, attempt, &event)?;
+        }
+        tx.commit().map_err(|e| e.to_string())?;
+        drop(db);
+        s.notify();
+        return Ok(());
+    }
+    if matches!(&event,ProviderEvent::Codex(f) if f["method"]=="turn/started") {
+        if let Some(attempt) = expected {
+            crate::run_restart::admitted(&tx, rid, attempt)?;
+        }
+    }
     if !thread["deletedAt"].is_null() {
         return Ok(());
     }
@@ -638,7 +747,14 @@ fn persist(
             run["recoveryPending"] = json!(false);
         }
         ProviderEvent::TextDelta(delta) => {
-            let mid = format!("assistant-{rid}");
+            let mid = if run["rootNodeId"].as_str().is_some_and(|root| root != rid) {
+                format!(
+                    "assistant-{rid}-{}",
+                    run["activeAttemptId"].as_str().unwrap_or("")
+                )
+            } else {
+                format!("assistant-{rid}")
+            };
             let mut message=get(&tx,"messages",&mid).unwrap_or_else(|_|json!({"id":mid,"threadId":tid,"runId":rid,"nodeId":null,"role":"assistant","text":"","attachments":[],"streaming":true,"createdBy":"agent","creationSource":"web","createdAt":at,"updatedAt":at}));
             message["nodeId"] = run["rootNodeId"].clone();
             message["providerThreadId"] = run["providerThreadId"].clone();
@@ -702,7 +818,14 @@ fn persist(
                 &at,
                 run["status"].as_str().unwrap_or("failed"),
             )?;
-            let mid = format!("assistant-{rid}");
+            let mid = if run["rootNodeId"].as_str().is_some_and(|root| root != rid) {
+                format!(
+                    "assistant-{rid}-{}",
+                    run["activeAttemptId"].as_str().unwrap_or("")
+                )
+            } else {
+                format!("assistant-{rid}")
+            };
             if let Ok(mut message) = get(&tx, "messages", &mid) {
                 message["streaming"] = json!(false);
                 message["updatedAt"] = json!(at);

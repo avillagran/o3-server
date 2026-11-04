@@ -2961,3 +2961,34 @@ Codex gpt-6.1-sol: each called the actual MCP handoff, ran setup and wrote a cod
 from before the move in its queued continuation. Event history contains one distinct
 native conversation ID per proof; both have interrupted then completed runs. This is
 an isolated server/native-CLI acceptance proof, not full compatible-desktop acceptance.
+
+
+### Same-run Codex interrupt/restart (2026-11-04)
+
+The earlier restart_active/MCP restart gap is closed for same-instance Codex turns.
+Source is nightly4151, `322f6544dfad0a3c8a0c8cbecf2c7f7874b14268`:
+Orchestrator.dispatchSteerIntoRun, ThreadManagementService.latestSteerableRun and the
+provider adapters. The source advertises interrupt/restart for Codex and refuses Claude.
+The durable operation retains the run ID, supersedes the old attempt and creates an
+ordinally increasing steering_restart attempt/root. It waits for the old native terminal
+and executor drainage before submitting the replacement in the same native conversation.
+
+Four HTTP/native-peer integration tests and two module tests cover same-run identity,
+MCP caller scope with a newer queued run, same-instance model changes, receipt atomicity
+and replay, preserved app-owned delegation, attempt-separated output/checkpoints,
+stale frames/requests, capability/maintenance rejection, failed/missing acknowledgement,
+Stop/delete/archive races and startup recovery. Before native admission, startup recovers
+the exact durable replacement; after ambiguous admission it fails explicitly and preserves
+the message without replay. Old executor fallback, output and checkpoint writes are
+fenced by attempt ownership. See [MCP.md](MCP.md) for delivery bounds.
+
+The opt-in live_run_restart example passed with installed Codex gpt-6.1-sol: the replacement
+recovered a code from earlier native context, with one run, two attempts and one native
+conversation ID. This is isolated native-CLI evidence. Full-nightly differential and
+compatible desktop/Android acceptance remain pending. Cross-instance active handoff,
+thread launch/transfer and cross-thread restart-continuation following remain open;
+this does not establish full protocol parity.
+
+Validation for this restart block: full suites pass with 346 default / 343 no-default
+tests, 21 opt-ins ignored in each configuration. Strict Clippy passes in both modes;
+fmt, generated compatibility and all nine nightly-monitor tests pass.

@@ -34,6 +34,7 @@ pub struct State {
     pub(crate) executions: crate::provider::Executions,
     pub(crate) worktree_handoffs: Mutex<std::collections::HashSet<String>>,
     pub(crate) workspace_detach_started: std::sync::atomic::AtomicBool,
+    pub(crate) restart_started: std::sync::atomic::AtomicBool,
     pub(crate) deletion_started: std::sync::atomic::AtomicBool,
     #[cfg(feature = "bridge")]
     pub bridge_endpoints: Mutex<Vec<Value>>,
@@ -195,6 +196,7 @@ impl State {
             native_mcp: crate::native_mcp::Registry::default(),
             executions: Default::default(),
             deletion_started: Default::default(),
+            restart_started: Default::default(),
             workspace_detach_started: Default::default(),
             worktree_handoffs: Default::default(),
             #[cfg(feature = "bridge")]

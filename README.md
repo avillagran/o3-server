@@ -69,7 +69,8 @@ These live samples use `/proc/PID/status` (`VmRSS`) and exclude launchers, provi
 and clients. Full compatibility remains pending: `/mcp` now provides authenticated
 readers and thread control with dedicated credentials and automatic Claude/Codex injection
 ([contract and gaps](docs/MCP.md)); project mutations, worktree readers and calling-thread
-worktree handoff with setup/continuation are also available. Thread launch/restart/transfer,
+worktree handoff with setup/continuation and same-instance Codex run restart are also
+available. Thread launch/transfer, cross-instance active handoff,
 remaining toolkits, OpenCode/ACP and DPoP/browser authentication remain pending. Native Claude/Codex support does not imply those capabilities are available.
 
 ## Build and test
