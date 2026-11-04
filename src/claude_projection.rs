@@ -86,7 +86,7 @@ pub(crate) fn persist(
             put(db, "providerSessions", id, tid, &session)?;
             append(db, tid, "provider-session.updated", session, t)?;
             let previous = get(db, "providerThreads", id).unwrap_or(Value::Null);
-            let p = json!({"id":id,"driver":"claudeAgent","providerInstanceId":t["providerInstanceId"],"providerSessionId":id,"appThreadId":tid,"ownerNodeId":rid,"nativeThreadRef":reference(&json!(native)),"nativeConversationHeadRef":null,"contextUsage":null,"goal":null,"nativeMetadata":null,"pendingBackgroundTasks":[],"status":"active","firstRunOrdinal":previous.get("firstRunOrdinal").unwrap_or(&run["ordinal"]),"lastRunOrdinal":run["ordinal"],"handoffIds":[],"forkedFrom":null,"createdAt":previous.get("createdAt").unwrap_or(&json!(at)),"updatedAt":at});
+            let p = json!({"id":id,"driver":"claudeAgent","providerInstanceId":t["providerInstanceId"],"providerSessionId":id,"appThreadId":tid,"ownerNodeId":rid,"nativeThreadRef":reference(&json!(native)),"nativeConversationHeadRef":null,"contextUsage":null,"goal":null,"nativeMetadata":null,"pendingBackgroundTasks":[],"status":"active","firstRunOrdinal":previous.get("firstRunOrdinal").unwrap_or(&run["ordinal"]),"lastRunOrdinal":run["ordinal"],"handoffIds":previous.get("handoffIds").cloned().unwrap_or(json!([])),"forkedFrom":previous["forkedFrom"],"createdAt":previous.get("createdAt").unwrap_or(&json!(at)),"updatedAt":at});
             put(db, "providerThreads", id, tid, &p)?;
             append(db, tid, "provider-thread.updated", p, t)?;
             let turn = json!({"id":rid,"providerThreadId":id,"nodeId":rid,"runAttemptId":aid,"nativeTurnRef":null,"ordinal":run["ordinal"],"status":"running","startedAt":at,"completedAt":null});

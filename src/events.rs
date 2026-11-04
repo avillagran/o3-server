@@ -45,6 +45,7 @@ pub fn initialize(db: &Connection) -> Result<()> {
     crate::run_restart::initialize(db)?;
     crate::thread_launch::initialize(db)?;
     crate::workspace_transition::initialize(db)?;
+    crate::context_transfer::initialize(db)?;
     crate::threadq::initialize(db)
 }
 /// Upstream 077 (1973e0a68): a boolean `settledOverride` breaks the thread schema; true means
@@ -1256,6 +1257,7 @@ fn interrupt_items(
 }
 
 pub(crate) fn prepare_run_ownership(
+    state: &State,
     tx: &Connection,
     tid: &str,
     t: &mut Value,
@@ -1275,11 +1277,7 @@ pub(crate) fn prepare_run_ownership(
             format!("provider-thread-{}", crate::store::random_id()?)
         };
         t["activeProviderThreadId"] = json!(id);
-        let driver = if t["providerInstanceId"] == "codex" {
-            "codex"
-        } else {
-            "claudeAgent"
-        };
+        let driver = crate::provider_input::driver(state, &t["providerInstanceId"])?;
         let p = json!({"id":id,"appThreadId":tid,"driver":driver,"providerInstanceId":t["providerInstanceId"],"providerSessionId":id,"ownerNodeId":null,"nativeThreadRef":native.map(|native|json!({"driver":driver,"nativeId":native,"strength":"strong"})),"nativeConversationHeadRef":null,"status":"not_loaded","firstRunOrdinal":ordinal,"lastRunOrdinal":ordinal,"handoffIds":[],"forkedFrom":null,"contextUsage":null,"goal":null,"nativeMetadata":null,"pendingBackgroundTasks":[],"createdAt":at,"updatedAt":at});
         put(tx, "providerThreads", &id, tid, &p)?;
         put(tx, "thread", tid, tid, t)?;
@@ -1632,8 +1630,10 @@ pub(crate) fn stage_message(
         run["queueHeld"] = json!(missing_worktree);
     }
     if !queued {
-        prepare_run_ownership(tx, tid, t, &mut run, at)?;
+        prepare_run_ownership(s, tx, tid, t, &mut run, at)?;
     }
+    crate::context_transfer::admit(s, tx, t, &mut run, queued, at)?;
+    put(tx, "thread", tid, tid, t)?;
     let mut item_message = m.clone();
     item_message["providerThreadId"] = run["providerThreadId"].clone();
     if queued {

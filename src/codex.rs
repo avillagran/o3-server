@@ -349,7 +349,9 @@ impl CodexProvider {
         ) {
             return Err("Codex runtime mode is not implemented".into());
         }
-        let content = crate::provider_input::content(&input, false)?;
+        let mut content = crate::provider_input::content(&input, false)?;
+        let manual = crate::handoff_delivery::manual(&input, &mut content)?;
+        let deliveries = crate::handoff_delivery::prepare(&input, &content)?;
         let c = self.connection().await?;
         if let Some(context) = &input.native_mcp {
             let context = context
@@ -370,6 +372,9 @@ impl CodexProvider {
         }else{json!({"enabled":false})}});
         let response = if let Some(id) = input.model_selection["nativeForkSource"].as_str() {
             params["threadId"] = json!(id);
+            if input.model_selection["nativeForkLastTurnId"].is_string() {
+                params["lastTurnId"] = input.model_selection["nativeForkLastTurnId"].clone();
+            }
             c.call("thread/fork", params).await?
         } else if let Some(id) = input.native_session_id.as_ref() {
             params["threadId"] = json!(id);
@@ -415,6 +420,23 @@ impl CodexProvider {
         let mut terminal_received = false;
         let result=async {
             output.send(ProviderEvent::Codex(json!({"method":"o3/binding","params":{"threadId":tid,"cwd":input.cwd}}))).await.map_err(|_|"receiver closed")?;
+            let mut inline = vec![];
+            for delivery in &deliveries {
+                delivery.acknowledge(&output,&tid,"pending").await?;
+                match c.call("thread/inject_items",json!({"threadId":tid,"items":delivery.items()})).await {
+                    Ok(_)=>delivery.acknowledge(&output,&tid,"injected").await?,
+                    Err(error) if serde_json::from_str::<Value>(&error).is_ok_and(|e|e["code"]==-32601)=>inline.push(delivery),
+                    Err(error)=>return Err(error),
+                }
+            }
+            if !inline.is_empty() {
+                let context = inline.iter().map(|d|d.inline()).collect::<Vec<_>>().join("\n\n");
+                let current=content[0]["text"].as_str().unwrap_or("");
+                content[0]["text"]=json!(format!("{context}\n\nUser message:\n{current}"));
+                if content.iter().filter_map(|v|v["text"].as_str()).map(str::len).sum::<usize>()>1024*1024 || serde_json::to_vec(&content).map_err(|e|e.to_string())?.len()>8*1024*1024 {return Err("Context handoff exceeds native input budget".into())}
+            }
+            for delivery in &manual {delivery.acknowledge(&output,&tid,"pending").await?;}
+            inline.extend(manual.iter());
             let effort=input.model_selection["options"].as_array().and_then(|a|a.iter().find(|v|v["id"]=="reasoningEffort")).map(|v|v["value"].clone());
             let mut turn_params=json!({"threadId":tid,"input":content,"model":input.model_selection["model"],"effort":effort});
             if let Some(tier) = input.model_selection["options"].as_array().and_then(|a| a.iter().find(|v| v["id"] == "serviceTier")).and_then(|v| v["value"].as_str()) {
@@ -423,10 +445,11 @@ impl CodexProvider {
             if input.interaction_mode=="plan" {turn_params["collaborationMode"]=json!({"mode":"plan","settings":{"model":input.model_selection["model"],"reasoning_effort":effort,"developer_instructions":null}});}
             // A pre-start interrupt can arrive while thread initialization is
             // awaiting its native acknowledgement. Never start a late turn.
-            if *cancel.borrow() || output.is_closed() || matches!(control.try_recv(), Ok(ProviderControl::Interrupt)) { return Ok(()); }
+            if *cancel.borrow() || output.is_closed() || matches!(control.try_recv(), Ok(ProviderControl::Interrupt)) { for delivery in inline {delivery.acknowledge(&output,&tid,"unsent").await?;} return Ok(()); }
             let response=c.call("turn/start",turn_params).await?;
             let turn=response["turn"]["id"].as_str().ok_or("Codex turn id missing")?.to_owned();
             active_turn=Some(turn.clone());
+            for delivery in inline { delivery.acknowledge(&output,&tid,"inline").await?; }
             output.send(ProviderEvent::Codex(json!({"method":"turn/started","params":{"threadId":tid,"turn":response["turn"]}}))).await.map_err(|_|"receiver closed")?;
             let mut pending=HashMap::<String,(Value,String)>::new();
             let mut owned=std::collections::HashSet::<String>::new();

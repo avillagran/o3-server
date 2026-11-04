@@ -3175,3 +3175,31 @@ acceptance, additional providers, history/managed-policy restoration, complete
 text-generation fallback and the broader protocol backlog remain open. Source and
 validation inventory: [provider-policy-intake.json](nightly/provider-policy-intake.json).
 No deployment or main promotion.
+
+## Context-transfer checkpoint (2026-11-04)
+
+Pinned nightly4165 source drives ordinary fork/merge-back/side-chat plans and native
+handoff delivery. `tests/context_transfer.rs` uses the compatible client and real
+adapter subprocess peers for canonical boundaries, supersession/receipt replay,
+metadata reset, merge guards, per-fork visibility, provider-changing merge in both
+directions, side-chat digests, injection fallback and durable unknown-delivery refusal.
+`tests/mcp.rs` checks status under read-only access and both write target ceilings.
+
+The history fixture generator runs the pinned pure TypeScript functions. Seven
+budgets match Rust message conversion, coverage, exact selection, rendered content,
+response items and serialized cost. `tools/live-transfer-e2e` passed eight installed
+Claude Haiku/Codex turns in isolated homes: private-codeword inheritance, historical
+Codex anchoring after a later override, actual merge context consumption and latest
+Claude side-chat framing with a preassigned native id. Native providers shut down
+before temporary credential-copy homes are removed.
+
+The command table explicitly marks fork/merge partial: Claude historical native
+anchors, native-window budget integration, automatic uncertain-conversation replacement
+and remaining provider-handoff/continuation parity are still open. See
+[context-transfer-intake.json](nightly/context-transfer-intake.json). No deployment or
+main promotion is part of this checkpoint.
+
+Validation: full suites 403 default / 400 no-default, 22 opt-ins ignored each; final
+affected suites 151 / 151 (6 ignored each), strict all-target Clippy both modes, fmt,
+generated compatibility and nightly monitor (9 tests) pass. The eight-turn native opt-in
+also passed explicitly.

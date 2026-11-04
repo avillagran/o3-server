@@ -85,6 +85,10 @@ pub struct RunInput {
     pub context: Option<serde_json::Value>,
 }
 pub enum ProviderEvent {
+    ContextDelivery {
+        data: serde_json::Value,
+        reply: tokio::sync::oneshot::Sender<Result<(), String>>,
+    },
     Codex(serde_json::Value),
     Started,
     Native(serde_json::Value),
@@ -263,9 +267,20 @@ pub(crate) fn start(
             if let Some(options) = selection.as_object_mut() {
                 options.remove("o3ColdCompact");
                 options.remove("o3HistoricalContext");
+                for key in [
+                    "o3TransferHandoffs",
+                    "nativeForkSource",
+                    "nativeForkLastTurnId",
+                    "o3NewSessionId",
+                    "o3HandoffError",
+                    "o3DeliveredHistoryItemIds",
+                ] {
+                    options.remove(key);
+                }
             }
             if fresh {
                 selection["nativeForkSource"] = t["nativeForkSource"].clone();
+                selection["nativeForkLastTurnId"] = t["nativeForkLastTurnId"].clone();
             }
             let cold_compact = fresh
                 && crate::provider_input::driver(&s, &t["providerInstanceId"]).as_deref()
@@ -292,6 +307,13 @@ pub(crate) fn start(
                             &t["providerHandoffAttachments"]
                         ));
                 }
+            }
+            match crate::context_transfer::input(&db, &t, &r) {
+                Ok(context) => {
+                    selection["o3TransferHandoffs"] = context["handoffs"].clone();
+                    selection["o3DeliveredHistoryItemIds"] = context["deliveredItemIds"].clone();
+                }
+                Err(error) => selection["o3HandoffError"] = serde_json::json!(error),
             }
             let input = RunInput {
                 native_mcp: None,
@@ -683,6 +705,11 @@ fn persist_attempt(
     expected: Option<&str>,
     event: ProviderEvent,
 ) -> Result<(), String> {
+    if let ProviderEvent::ContextDelivery { data, reply } = event {
+        let result = crate::context_transfer::delivery(s, tid, rid, expected, data);
+        let _ = reply.send(result.clone());
+        return result;
+    }
     s.native_mcp.touch(tid);
     use crate::{
         events::{append, get, message_item, put},
@@ -763,12 +790,17 @@ fn persist_attempt(
     }
     let at = iso(now_ms());
     match event {
+        ProviderEvent::ContextDelivery { .. } => unreachable!(),
         ProviderEvent::Codex(frame) => {
             crate::codex_projection::persist(&tx, tid, rid, &thread, &mut run, &at, frame)?;
             thread = get(&tx, "thread", tid)?;
+            crate::context_transfer::bound(&tx, &mut thread, &run, &at)?;
         }
         ProviderEvent::Native(frame) => {
             crate::claude_projection::persist(&tx, tid, rid, &mut thread, &mut run, &at, &frame)?;
+            if frame["type"] == "session" {
+                crate::context_transfer::bound(&tx, &mut thread, &run, &at)?;
+            }
         }
         ProviderEvent::Started => {
             run["status"] = json!("running");

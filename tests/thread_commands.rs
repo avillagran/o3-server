@@ -248,14 +248,26 @@ fn mark_unread_rewinds_the_visit_watermark_before_the_last_completion() {
 
 #[test]
 fn fork_creates_a_linked_thread_with_inherited_history() {
-    let (_s, c) = server(true);
+    let (s, c) = server(true);
     create(&c, "t1");
     let err = cmd(&c, json!({"type":"thread.fork","commandId":"f0","sourceThreadId":"t1","targetThreadId":"t2","sourcePoint":{"type":"latest_stable"}})).unwrap_err().to_string();
     assert!(err.contains("No stable source run"), "{err}");
     complete_first_run(&c, "t1");
     let run_id = run_of(&c, "t1", "m1")["id"].clone();
-    let a = cmd(&c, json!({"type":"thread.fork","commandId":"f1","sourceThreadId":"t1","targetThreadId":"t2","sourcePoint":{"type":"latest_stable"},"title":"Branch","createdBy":"user","creationSource":"web"})).unwrap();
-    assert_eq!(a, cmd(&c, json!({"type":"thread.fork","commandId":"f1","sourceThreadId":"t1","targetThreadId":"t2","sourcePoint":{"type":"latest_stable"}})).unwrap());
+    let a = cmd(&c, json!({"type":"thread.fork","commandId":"f1","sourceThreadId":"t1","targetThreadId":"t2","sourcePoint":{"type":"run","runId":run_id},"title":"Branch","createdBy":"user","creationSource":"web"})).unwrap();
+    assert_eq!(a, cmd(&c, json!({"type":"thread.fork","commandId":"f1","sourceThreadId":"t1","targetThreadId":"t2","sourcePoint":{"type":"run","runId":run_id}})).unwrap());
+    let latest: i64 = s
+        .state
+        .db
+        .lock()
+        .unwrap()
+        .query_row(
+            "SELECT max(sequence) FROM events WHERE thread_id='t2'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(a["sequence"], latest);
     let t = thread(&c, "t2");
     assert_eq!(t["title"], "Branch");
     assert_eq!(

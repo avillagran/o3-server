@@ -211,3 +211,17 @@ projects; removing the last enabling project stops new use. Accepted message
 receipts still replay after disable, while new message/launch/prepared admissions
 check the applicable project policy. Registry availability alone is not project
 authorization. Unknown project references do not restore removed configurations.
+
+Context transfers (2026-11-04): fork/merge-back admission persists source references,
+handoff records and run ownership with the command receipt. Legacy request-tag fork
+sources normalize on open without synthesizing native anchors. Adapter-only selection
+fields are rebuilt from SQLite, never accepted from wire model options.
+
+Native context delivery has a separate acknowledgement. Pending is committed before
+Codex history injection or inline prompt submission. In-memory success alone cannot
+mark it delivered; acknowledgement commits first. Stale attempts and terminal runs
+cannot mutate the delivery journal. Successful history and per-native-thread item ids
+are not injected on later ordinary turns. Only a definite unknown-method response
+allows inline fallback. A definitely unsent cancelled inline prompt can clear pending.
+An ambiguous outcome retains pending and fails later replay, including after State
+reopen. Automatic fresh-native replacement/reconstruction remains outside this block.

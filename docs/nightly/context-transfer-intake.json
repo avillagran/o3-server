@@ -1,0 +1,60 @@
+{
+  "checkedAt": "2026-11-04T12:54:07.516803+00:00",
+  "tag": "v0.1.8-nightly.20261104.4165",
+  "reference": "8b44f42b14c8e273156474a924ccf29680dd7857",
+  "url": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.8-nightly.20261104.4165",
+  "scope": "Ordinary fork/merge-back/side-chat transfers and durable native context delivery; complete protocol goal remains active.",
+  "sourceFiles": [
+    "packages/contracts/src/orchestrationV2.ts",
+    "packages/provider-core/src/server/handoffBudget.ts",
+    "packages/shared/src/orchestrationV2Timeline.ts",
+    "apps/server/src/orchestration-v2/ThreadForkService.ts",
+    "apps/server/src/orchestration-v2/ContextHandoffService.ts",
+    "apps/server/src/orchestration-v2/ContextHandoffDelivery.ts",
+    "apps/server/src/orchestration-v2/Orchestrator.ts",
+    "apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts",
+    "apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts",
+    "apps/server/src/mcp/toolkits/thread/handlers.ts",
+    "apps/server/src/mcp/toolkits/thread/tools.ts"
+  ],
+  "implemented": [
+    "MCP t3_thread_transfer fork/merge_back/status; ordinary commands share durable plans and command receipts. Both mutation targets use current transactional MCP authority, including before accepted replay. Core catalog: 35.",
+    "Canonical source refs, strict checkpoint-qualified completed latest_stable, explicit run/checkpoint ownership/status checks; legacy tagged fork sources normalize idempotently without inventing native anchors. Private fork metadata clears and inherited PR links do not watch.",
+    "First-turn native/portable resolution and consumption; Codex strong historical turn anchors; Claude latest forks and preassigned native ids for inline side-chat delivery. Ordinary/provider-changing merge-back delivers own fork delta and full target history as needed.",
+    "Direct-parent/project/busy/queue/multiple-source guards and repeated merge supersession; run/handoff/transfer/provider-thread projections, receipt replay and generation-aware provider-thread driver assignment.",
+    "Side chats start supervised, reject nested/subagent sources and pending workspace detach, omit inherited UI rows, preserve their stable base and carry a separate up to 8,000 UTF-16 post-boundary digest. Empty-parent side chat has a canonical source without a run.",
+    "Portable item selection matches source visibility and byte budgets; priority/intact items, omitted ids and paginated recovery references; aggregate delivery deduplicates already-delivered native-thread item ids. Historical attachments and foreign tool/reasoning state are not replayed.",
+    "History injection journals pending before Codex RPC; only -32601 falls back inline. Successful native/inline acknowledgement persists delivery. Unknown outcomes remain pending and block blind replay, including after State reopen; stale/terminal acknowledgements cannot mutate history. Manual side-chat notes stay in current input, outside history injection."
+  ],
+  "evidence": [
+    "Nine compatible-client integration regressions and one live opt-in in tests/context_transfer.rs; both adapters use real subprocess native-protocol peers. Tests include provider-changing merge in both directions, source advance, repeated receipts, supersession, visibility, source ownership, strict latest_stable, side chats, ambiguity/reopen and metadata reset.",
+    "HTTP MCP regression validates read-only status, agent/MCP provenance, both target ceilings and revoked credentials.",
+    "Seven budget fixtures are generated from actual pinned nightly pure TypeScript functions. Rust matches message conversion, coverage, exact selection, rendered history, response items and serialized byte costs.",
+    "tools/live-transfer-e2e passed with installed Claude Haiku and Codex gpt-6.1-sol in isolated credential-copy homes: eight short turns; native forks preserve a private word, native Codex historical fork ignores a later override, merge returns another private word present only in the fork, and latest Claude side chat confirms a preassigned native id plus inline framing. Providers shut down before private-home cleanup."
+  ],
+  "validation": {
+    "status": "passed",
+    "fullDefault": 403,
+    "fullNoDefault": 400,
+    "ignoredEach": 22,
+    "finalAffectedDefault": 151,
+    "finalAffectedNoDefault": 151,
+    "finalAffectedIgnoredEach": 6,
+    "strictClippy": "all targets, both feature modes",
+    "other": [
+      "rustfmt",
+      "generated compatibility table",
+      "nightly monitor9",
+      "seven authoritative TypeScript budget cases",
+      "eight installed native inference turns"
+    ]
+  },
+  "pending": [
+    "Full native Claude historical boundary/SDK fork behavior and legacy Codex missing-anchor/archive recovery equivalence.",
+    "Automatic native-conversation replacement/reconstruction after uncertain history delivery; current behavior explicitly blocks replay.",
+    "Native context-window occupancy/model/attachment-budget integration beyond the shared source cap and actual outgoing request/frame limits.",
+    "Complete staged-workspace side-chat admission guards, subagent native-fork eligibility and secondary/native handoff timeline projection equivalence.",
+    "Complete non-merge provider-handoff/delta migration, active cross-instance restart/continuation, caller settlement and broader MCP/auth/environment/driver/importer/forceStop backlog.",
+    "Latest desktop/Android acceptance and complete source-wide differential parity. No deployment/main promotion; M2runtime1155b85 remains unchanged."
+  ]
+}
