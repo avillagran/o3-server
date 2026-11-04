@@ -60,6 +60,7 @@ enum Op {
     Subscribe(String, Route, oneshot::Sender<Result<(), String>>),
     Unsubscribe(String),
     Shutdown(oneshot::Sender<()>),
+    ReleaseMcp(String, Option<String>, bool, oneshot::Sender<Vec<String>>),
     RetainMcp(
         String,
         std::sync::Arc<crate::native_mcp::Context>,
@@ -371,6 +372,22 @@ impl CodexProvider {
             .ok_or("Codex thread id missing")?
             .to_owned();
         if let Some(context) = &input.native_mcp {
+            let sender = c.0.downgrade();
+            let key = context.thread_key();
+            let native = tid.clone();
+            context.set_disposer(std::sync::Arc::new(move || {
+                let sender = sender.clone();
+                let key = key.clone();
+                let native = native.clone();
+                Box::pin(async move {
+                    let Some(sender) = sender.upgrade() else {
+                        return Ok(());
+                    };
+                    unload(&Client(sender), &key, Some(&native)).await
+                })
+            }));
+        }
+        if let Some(context) = &input.native_mcp {
             let (ack, ready) = oneshot::channel();
             c.0.send(Op::RetainMcp(tid.clone(), context.clone(), ack))
                 .await
@@ -468,7 +485,76 @@ impl CodexProvider {
         result
     }
 }
+async fn unload(client: &Client, key: &str, native: Option<&str>) -> Result<(), String> {
+    let (tx, rx) = oneshot::channel();
+    if client
+        .0
+        .send(Op::ReleaseMcp(
+            key.into(),
+            native.map(str::to_owned),
+            false,
+            tx,
+        ))
+        .await
+        .is_err()
+    {
+        return Ok(());
+    }
+    let ids = rx.await.map_err(|_| "Codex closed during thread unload")?;
+    for id in ids {
+        if let Err(error) = client
+            .call("thread/unsubscribe", json!({"threadId":id}))
+            .await
+        {
+            let lower = error.to_lowercase();
+            if ![
+                "not found",
+                "not loaded",
+                "not subscribed",
+                "unknown thread",
+            ]
+            .iter()
+            .any(|s| lower.contains(s))
+            {
+                return Err(error);
+            }
+        }
+    }
+    // Keep owners reachable until the native acknowledgement, so retry can reach
+    // a retired provider pool after a transient unload failure.
+    let (tx, rx) = oneshot::channel();
+    if client
+        .0
+        .send(Op::ReleaseMcp(key.into(), None, true, tx))
+        .await
+        .is_ok()
+    {
+        let _ = rx.await;
+    }
+
+    Ok(())
+}
 impl Provider for CodexProvider {
+    fn detach<'a>(
+        &'a self,
+        _instance: &'a str,
+        key: &'a str,
+        native: Option<&'a str>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            let client = self
+                .client
+                .lock()
+                .await
+                .clone()
+                .filter(|c| !c.0.is_closed());
+            let Some(client) = client else {
+                return Ok(());
+            };
+            unload(&client, key, native).await
+        })
+    }
+
     fn discover<'a>(
         &'a self,
         cwd: PathBuf,
@@ -661,7 +747,7 @@ async fn actor(
 ) {
     let mut stdin = child.stdin.take().unwrap();
     let mut reader = BufReader::with_capacity(8192, child.stdout.take().unwrap());
-    let mut calls = HashMap::<u64, Reply>::new();
+    let mut calls = HashMap::<u64, (String, Reply)>::new();
     let mut native_contexts = HashMap::<String, std::sync::Arc<crate::native_mcp::Context>>::new();
     let mut routes = HashMap::<String, Route>::new();
     let mut next = 0u64;
@@ -681,11 +767,22 @@ async fn actor(
                     Some(Op::Subscribe(id,tx,ack))=>{let result=if routes.len()>=32||routes.contains_key(&id){Err("Codex thread already active or capacity reached".into())}else{routes.insert(id,tx);Ok(())};let _=ack.send(result);continue;},
                     Some(Op::Shutdown(ack))=>{shutdown=Some(ack);return Ok(());},
                     Some(Op::Unsubscribe(id))=>{routes.remove(&id);continue;},
+                    Some(Op::ReleaseMcp(key,native,finish,ack))=>{
+                        let mut ids:Vec<_>=native_contexts.iter().filter(|(_,c)|c.thread_key()==key).map(|(id,_)|id.clone()).collect();
+                        if let Some(id)=native {
+                            if !ids.contains(&id)&&!native_contexts.contains_key(&id)&&routes.get(&id).is_none_or(|r|r.tx.is_closed()){ids.push(id);}
+                        }
+                        for id in &ids {
+                            if let Some(c)=native_contexts.get(id){c.revoke();}
+                            if finish{native_contexts.remove(id);}
+                        }
+                        let _=ack.send(ids);continue;
+                    },
                     Some(Op::RetainMcp(id,context,ack))=>{let result=if native_contexts.len()>=256 && !native_contexts.contains_key(&id){Err("Codex MCP session capacity reached".into())}else{if let Some(old)=native_contexts.insert(id,context.clone()){if old.id()!=context.id(){old.revoke();}}Ok(())};let _=ack.send(result);continue;},
                     Some(Op::Reply(frame))=>frame,
                     Some(Op::Call(method,params,reply))=>{
                         if calls.len()>=32 {let _=reply.send(Err("Codex RPC capacity reached".into()));continue;}
-                        next+=1;calls.insert(next,reply);json!({"id":next,"method":method,"params":params})
+                        next+=1;calls.insert(next,(method.clone(),reply));json!({"id":next,"method":method,"params":params})
                     }
                 };
                 let bytes=serde_json::to_vec(&frame).map_err(|e|e.to_string())?;
@@ -694,7 +791,24 @@ async fn actor(
             },
             frame=read_sized_frame(&mut reader,&mut buffer)=>{
                 let (frame,size)=frame?.ok_or("Codex stdout closed")?;
-                if frame.get("method").is_none(){if let Some(id)=frame["id"].as_u64(){if let Some(reply)=calls.remove(&id){let _=reply.send(if frame.get("error").is_some(){Err(frame["error"].to_string())}else{Ok(frame["result"].clone())});}}continue;}
+                if frame.get("method").is_none(){
+                    if let Some(id)=frame["id"].as_u64(){
+                        if let Some((method,reply))=calls.remove(&id){
+                            let response=if frame.get("error").is_some(){Err(frame["error"].to_string())}else{Ok(frame["result"].clone())};
+                            if let Err(Ok(response))=reply.send(response){
+                                if matches!(method.as_str(),"thread/start"|"thread/resume"|"thread/fork"){
+                                    if let Some(tid)=response["thread"]["id"].as_str().filter(|id|!routes.contains_key(*id)&&!native_contexts.contains_key(*id)){
+                                        // Cancellation can precede the binding acknowledgement. Unload the
+                                        // orphan after learning its ID, without touching sibling threads.
+                                        let bytes=serde_json::to_vec(&json!({"id":format!("o3-dispose:{id}"),"method":"thread/unsubscribe","params":{"threadId":tid}})).map_err(|e|e.to_string())?;
+                                        tokio::time::timeout(std::time::Duration::from_secs(10),async{stdin.write_all(&bytes).await?;stdin.write_all(b"\n").await}).await.map_err(|_|"Codex orphan unload write timed out")?.map_err(|e|e.to_string())?;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    continue;
+                }
                 if frame["method"]=="account/rateLimits/updated" {descriptor.lock().unwrap()["usageLimits"]=usage_limits(&frame["params"]["rateLimits"]);}
                 let tid=frame["params"]["threadId"].as_str();
                 if let Some(tid)=tid {
@@ -717,7 +831,7 @@ async fn actor(
         }
         d["message"] = json!(reason);
     }
-    for (_, reply) in calls {
+    for (_, (_, reply)) in calls {
         let _ = reply.send(Err(reason.clone()));
     }
     let _ = child.kill().await;

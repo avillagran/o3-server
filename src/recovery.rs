@@ -7,6 +7,7 @@ use rusqlite::Connection;
 use serde_json::{json, Value};
 pub fn recover(db: &mut Connection) -> Result<(), String> {
     let tx = db.transaction().map_err(|e| e.to_string())?;
+    crate::deletion::recover(&tx)?;
     use rusqlite::OptionalExtension;
     let mut cursor = 0i64;
     loop {

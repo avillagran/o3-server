@@ -41,6 +41,7 @@ pub fn initialize(db: &Connection) -> Result<()> {
     db.execute_batch("CREATE INDEX IF NOT EXISTS records_turn_ordinal ON records(thread_id,json_extract(body,'$.ordinal')) WHERE kind='turnItems'; CREATE INDEX IF NOT EXISTS records_user_message ON records(thread_id) WHERE kind='messages' AND json_extract(body,'$.role')='user';").map_err(|e|e.to_string())?;
     repair_boolean_settled_override(db)?;
     initialize_run_internal(db)?;
+    crate::deletion::initialize(db)?;
     crate::threadq::initialize(db)
 }
 /// Upstream 077 (1973e0a68): a boolean `settledOverride` breaks the thread schema; true means
@@ -605,6 +606,9 @@ pub(crate) fn dispatch_scoped(
     } else {
         get(&tx, "thread", tid)?
     };
+    if kind != "thread.delete" && !t["deletedAt"].is_null() {
+        return Err("The thread was deleted".into());
+    }
     let event = match kind {
         "thread.create" => {
             import_native(s, &tx, c, tid, &at, &mut t)?;
@@ -619,8 +623,18 @@ pub(crate) fn dispatch_scoped(
             "thread.unarchived"
         }
         "thread.delete" => {
-            t["deletedAt"] = json!(at);
-            "thread.deleted"
+            crate::deletion::plan(&tx, &mut t, cid, &at)?;
+            let result = json!({"sequence":sequence(&tx)?});
+            tx.execute(
+                "INSERT INTO receipts VALUES(?,?)",
+                params![cid, result.to_string()],
+            )
+            .map_err(|e| e.to_string())?;
+            tx.commit().map_err(|e| e.to_string())?;
+            drop(db);
+            crate::deletion::signal(s, tid);
+            s.notify();
+            return Ok(result);
         }
         "thread.pin" => {
             t["pinnedAt"] = json!(at);
@@ -1592,6 +1606,11 @@ fn new_thread(db: &Connection, c: &Value, tid: &str, at: &str) -> Result<Value> 
         if get(db, "thread", tid).is_ok() {
             return Err("thread already exists".into());
         }
+        if get(db, "project", c["projectId"].as_str().unwrap_or(""))
+            .is_ok_and(|p| !p["deletedAt"].is_null())
+        {
+            return Err("Project was deleted".into());
+        }
         json!({"id":tid,"projectId":c["projectId"],"title":c["title"],"providerInstanceId":c["modelSelection"]["instanceId"],"modelSelection":c["modelSelection"],"runtimeMode":c["runtimeMode"],"interactionMode":c["interactionMode"],"branch":c["branch"],"worktreePath":c["worktreePath"],"createdBy":"user","creationSource":c.get("creationSource").cloned().unwrap_or(json!("web")),"lineage":{"parentThreadId":null,"relationshipToParent":null,"rootThreadId":tid},"forkedFrom":null,"activeProviderThreadId":null,"createdAt":at,"updatedAt":at,"archivedAt":null,"settledOverride":null,"settledAt":null,"lastVisitedAt":null,"snoozedAt":null,"snoozedUntil":null,"pullRequests":[],"deletedAt":null})
     })
 }
@@ -1851,15 +1870,18 @@ pub(crate) fn mutate_project_scoped(
     if c["type"] == "project.delete" {
         p["deletedAt"] = json!(at);
     }
+    let mut deleted = Vec::new();
     if c["type"] == "project.delete" && c["force"] == true {
-        for mut t in list(&tx, "thread", None, i64::MAX as usize)? {
-            if t["projectId"] == id && t["deletedAt"].is_null() {
-                t["deletedAt"] = json!(at);
-                t["updatedAt"] = json!(at);
-                let tid = t["id"].as_str().ok_or("thread id missing")?.to_owned();
-                put(&tx, "thread", &tid, &tid, &t)?;
-                append(&tx, &tid, "thread.deleted", t.clone(), &t)?;
-            }
+        let mut cursor = 0i64;
+        loop {
+            let row=tx.query_row("SELECT rowid,id,body FROM records WHERE kind='thread' AND json_extract(body,'$.projectId')=?1 AND json_extract(body,'$.deletedAt') IS NULL AND rowid>?2 ORDER BY rowid LIMIT 1",params![id,cursor],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).optional().map_err(|e|e.to_string())?;
+            let Some((row, tid, body)) = row else {
+                break;
+            };
+            cursor = row;
+            let mut thread = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+            crate::deletion::plan(&tx, &mut thread, &format!("{cid}:delete-thread:{tid}"), &at)?;
+            deleted.push(tid);
         }
     }
     put(&tx, "project", id, "", &p)?;
@@ -1888,6 +1910,9 @@ pub(crate) fn mutate_project_scoped(
     .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
     drop(db);
+    for tid in deleted {
+        crate::deletion::signal(s, &tid);
+    }
     s.notify();
     Ok(p)
 }

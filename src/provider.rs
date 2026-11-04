@@ -1,6 +1,59 @@
 //! Adapter boundary: local asynchronous tasks, bounded output, explicit cancellation.
 use std::{future::Future, pin::Pin};
 use tokio::sync::{mpsc, watch};
+#[derive(Default)]
+pub(crate) struct Executions(std::sync::Mutex<std::collections::BTreeMap<String, Execution>>);
+#[derive(Clone)]
+struct Execution {
+    thread: String,
+    cancel: watch::Sender<bool>,
+    done: watch::Receiver<bool>,
+}
+struct ExecutionGuard {
+    state: std::sync::Arc<crate::store::State>,
+    run: String,
+    done: watch::Sender<bool>,
+}
+impl Drop for ExecutionGuard {
+    fn drop(&mut self) {
+        self.state.active.lock().unwrap().remove(&self.run);
+        self.state.executions.0.lock().unwrap().remove(&self.run);
+        self.done.send_replace(true);
+        self.state.notify();
+    }
+}
+impl Executions {
+    pub(crate) fn cancel(&self, thread: &str) {
+        for r in self
+            .0
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|r| r.thread == thread)
+        {
+            r.cancel.send_replace(true);
+        }
+    }
+    pub(crate) async fn stopped(&self, thread: &str) -> Result<(), String> {
+        let runs: Vec<_> = self
+            .0
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|r| r.thread == thread)
+            .cloned()
+            .collect();
+        for mut run in runs {
+            run.cancel.send_replace(true);
+            while !*run.done.borrow() {
+                if run.done.changed().await.is_err() {
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
+}
 pub struct RunInput {
     pub native_mcp: Option<std::sync::Arc<crate::native_mcp::Context>>,
     pub provider_instance_id: String,
@@ -71,6 +124,14 @@ pub trait Provider: Send + Sync + 'static {
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         self.poll_usage()
     }
+    fn detach<'a>(
+        &'a self,
+        _instance: &'a str,
+        _key: &'a str,
+        _native: Option<&'a str>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
+    }
     fn config(&self) -> Vec<serde_json::Value> {
         Vec::new()
     }
@@ -130,12 +191,38 @@ pub(crate) fn start(
     let (output, mut events) = mpsc::channel(16);
     let (control, controls) = mpsc::channel(8);
     let (cancel, cancellation) = watch::channel(false);
+    let (done, finished) = watch::channel(false);
+    s.executions.0.lock().unwrap().insert(
+        rid.clone(),
+        Execution {
+            thread: tid.clone(),
+            cancel: cancel.clone(),
+            done: finished,
+        },
+    );
     s.active.lock().unwrap().insert(rid.clone(), control);
+    let guard = ExecutionGuard {
+        state: s.clone(),
+        run: rid.clone(),
+        done,
+    };
+    let mut stopped = cancellation.clone();
     tokio::task::spawn(async move {
+        let _guard = guard;
+
         let mut input = {
             let db = s.db.lock().unwrap();
             let t = crate::events::get(&db, "thread", &tid).unwrap_or_default();
             let r = crate::events::get(&db, "runs", &rid).unwrap_or_default();
+            if !t["deletedAt"].is_null()
+                || matches!(
+                    r["status"].as_str(),
+                    Some("cancelled" | "completed" | "failed" | "interrupted" | "rolled_back")
+                )
+            {
+                return;
+            }
+
             let m = crate::events::get(&db, "messages", r["userMessageId"].as_str().unwrap_or(""))
                 .unwrap_or_default();
             let cwd = t["worktreePath"]
@@ -273,7 +360,12 @@ pub(crate) fn start(
         let mut failure = None;
         let mut changed = s.changed.subscribe();
         loop {
+            if *stopped.borrow() {
+                break;
+            }
             let event = tokio::select! {
+                biased;
+                _=stopped.changed()=>break,
                 event = events.recv() => match event { Some(event) => event, None => break },
                 _ = changed.changed() => {
                     if crate::events::get(&s.db.lock().unwrap(), "runs", &rid).is_ok_and(|r| matches!(r["status"].as_str(), Some("completed" | "failed" | "interrupted" | "cancelled"))) { break; }
@@ -363,7 +455,7 @@ pub(crate) fn start(
                 }
             }
             let interrupted = crate::events::get(&s.db.lock().unwrap(), "runs", &rid)
-                .is_ok_and(|r| r["status"] == "interrupted");
+                .is_ok_and(|r| matches!(r["status"].as_str(), Some("interrupted" | "cancelled")));
             if interrupted {
                 break;
             }
@@ -374,7 +466,10 @@ pub(crate) fn start(
         let _ = cancel.send(true);
         tokio::select! {r=&mut task=>{match r {Ok(Ok(()))=>finished=true,Ok(Err(e))=>failure=Some(e),Err(e)=>failure=Some(e.to_string())}},_=tokio::time::sleep(std::time::Duration::from_secs(2))=>{task.abort();let _=task.await;}}
         s.native_mcp.finish_turn(&tid).await;
-        if !checkpoint_finished {
+        if !checkpoint_finished
+            && crate::events::get(&s.db.lock().unwrap(), "thread", &tid)
+                .is_ok_and(|t| t["deletedAt"].is_null())
+        {
             let cs = s.clone();
             let ct = tid.clone();
             let cr = rid.clone();
@@ -389,7 +484,7 @@ pub(crate) fn start(
         if let Ok(run) = final_run {
             if !matches!(
                 run["status"].as_str(),
-                Some("completed" | "interrupted" | "failed")
+                Some("completed" | "interrupted" | "failed" | "cancelled")
             ) {
                 let _ = persist(
                     &s,
@@ -516,6 +611,9 @@ fn persist(
     let tx = db.transaction().map_err(|e| e.to_string())?;
     let mut thread = get(&tx, "thread", tid)?;
     let mut run = get(&tx, "runs", rid)?;
+    if !thread["deletedAt"].is_null() {
+        return Ok(());
+    }
     if matches!(
         run["status"].as_str(),
         Some("interrupted" | "completed" | "failed" | "cancelled")
@@ -645,6 +743,22 @@ pub struct Providers {
     pub codex: std::sync::Arc<crate::codex::CodexProvider>,
 }
 impl Provider for Providers {
+    fn detach<'a>(
+        &'a self,
+        instance: &'a str,
+        key: &'a str,
+        native: Option<&'a str>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        match instance {
+            "codex" => self.codex.detach(instance, key, native),
+            "claudeAgent" | "claude" | "claude-code" => match &self.claude {
+                Some(p) => p.detach(instance, key, native),
+                None => Box::pin(async { Ok(()) }),
+            },
+            _ => Box::pin(async { Ok(()) }),
+        }
+    }
+
     fn discover_defaults<'a>(
         &'a self,
         cwd: std::path::PathBuf,
@@ -1132,6 +1246,30 @@ impl ConfiguredProviders {
     }
 }
 impl Provider for ConfiguredProviders {
+    fn detach<'a>(
+        &'a self,
+        instance: &'a str,
+        key: &'a str,
+        native: Option<&'a str>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        let selected = self
+            .instances
+            .lock()
+            .unwrap()
+            .get(if matches!(instance, "claude" | "claude-code") {
+                "claudeAgent"
+            } else {
+                instance
+            })
+            .and_then(|i| i.provider.clone());
+        Box::pin(async move {
+            match selected {
+                Some(p) => p.detach(instance, key, native).await,
+                None => self.defaults.detach(instance, key, native).await,
+            }
+        })
+    }
+
     fn discover<'a>(
         &'a self,
         cwd: std::path::PathBuf,

@@ -1,18 +1,20 @@
 {
-  "checkedAt": "2026-11-04T05:21:17.676084+00:00",
+  "checkedAt": "2026-11-04T06:06:06.961726+00:00",
   "reference": "322f6544dfad0a3c8a0c8cbecf2c7f7874b14268",
   "tag": "v0.1.7-nightly.20261104.4151",
   "url": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.7-nightly.20261104.4151",
-  "scope": "Project mutations, shared clone RPC and worktree readers only; full protocol goal remains active.",
+  "scope": "Project mutations, shared clone RPC, worktree readers and shared durable deletion lifecycle; full protocol goal remains active.",
   "implemented": [
     "t3_project_create/update/delete/clone with environment authority",
     "Transaction-time project admission before receipt replay, atomic workspace uniqueness and nonempty-delete checks",
     "Named scaffold/commitError, pin/archive, script-ID and grapheme rules",
     "Shared sourceControl.cloneRepository with raw URLs, GitHub lookup and SSH/HTTPS fallback",
-    "t3_worktree_list/status, native default target and removed-worktree fallback"
+    "t3_worktree_list/status, native default target and removed-worktree fallback",
+    "Receipt-atomic ordinary/forced-project thread deletion with cancellation and persistent cleanup outbox",
+    "Native credential revocation, cached Claude disposal and per-thread Codex unsubscribe across retired pools, retries and late bindings",
+    "Restart/legacy tombstone recovery, terminal history, preview, schedule and attachment-sidecar cleanup with shared-file retention"
   ],
   "pending": [
-    "Before draft integration: port force-project child deletion plans/effects (provider/session/run cancellation and resource cleanup)",
     "Worktree handoff: compare expected path, detach current provider, prepare setup and durable continuation together",
     "Thread launch/restart/transfer and deferred caller settlement",
     "Other-host repository lookup adapters and complete project enrichment",

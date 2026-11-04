@@ -42,6 +42,7 @@ struct Inner {
 #[derive(Default)]
 pub struct Manager {
     inner: Arc<Mutex<Inner>>,
+    lifecycle: tokio::sync::Mutex<()>,
     pub(crate) browser: crate::server_browser::Browsers,
 }
 
@@ -183,6 +184,21 @@ pub async fn sync_navigation(s: &State, thread: &str, tab: &str) {
 }
 
 pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
+    let _gate = if tag == "preview.open" {
+        Some(s.streams.p2.preview.lifecycle.lock().await)
+    } else {
+        None
+    };
+    if tag == "preview.open"
+        && crate::events::get(
+            &s.db.lock().unwrap(),
+            "thread",
+            p["threadId"].as_str().unwrap_or(""),
+        )
+        .is_ok_and(|t| !t["deletedAt"].is_null())
+    {
+        return Err(invalid("The thread was deleted."));
+    }
     if tag == "preview.clearProfile" {
         let profile = str_field(p, "profileId")?;
         s.streams.p2.preview.browser.clear(&s.dir, profile).await?;
@@ -854,6 +870,13 @@ fn scan_servers(
     out
 }
 
+pub(crate) async fn cleanup(s: &State, thread: &str) -> Result<(), String> {
+    let _gate = s.streams.p2.preview.lifecycle.lock().await;
+    call(s, "preview.close", &json!({"threadId":thread}))
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
 pub async fn shutdown(s: &State) {
     s.streams.p2.preview.browser.shutdown().await;
 }

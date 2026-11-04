@@ -31,6 +31,8 @@ pub struct State {
     pub(crate) http: crate::http::Limits,
     pub(crate) mcp: crate::mcp::Sessions,
     pub(crate) native_mcp: crate::native_mcp::Registry,
+    pub(crate) executions: crate::provider::Executions,
+    pub(crate) deletion_started: std::sync::atomic::AtomicBool,
     #[cfg(feature = "bridge")]
     pub bridge_endpoints: Mutex<Vec<Value>>,
     pub db: Mutex<Connection>,
@@ -189,6 +191,8 @@ impl State {
             http: crate::http::Limits::default(),
             mcp: crate::mcp::Sessions::default(),
             native_mcp: crate::native_mcp::Registry::default(),
+            executions: Default::default(),
+            deletion_started: Default::default(),
             #[cfg(feature = "bridge")]
             bridge_endpoints: Mutex::new(Vec::new()),
             settings_lock: Mutex::new(()),

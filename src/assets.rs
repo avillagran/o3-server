@@ -143,6 +143,32 @@ pub(crate) fn attachment_path_in(dir: &Path, id: &str) -> Option<PathBuf> {
     }
 }
 
+pub(crate) fn cleanup_attachment(s: &State, id: &str) -> Result<(), String> {
+    let Some((_, extension)) = parse_id(id) else {
+        return Ok(());
+    };
+    let extensions = extension.map(|e| vec![e]).unwrap_or_else(|| {
+        SAFE_IMAGE_EXT
+            .iter()
+            .chain(&["bin"])
+            .map(|e| e.to_string())
+            .collect()
+    });
+    for extension in extensions {
+        let path = attachments_dir(s).join(format!("{}.{}", id.to_lowercase(), extension));
+        let mut sidecar = path.clone().into_os_string();
+        sidecar.push(".txt");
+        for path in [path, std::path::PathBuf::from(sidecar)] {
+            match std::fs::remove_file(path) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e.to_string()),
+            }
+        }
+    }
+    Ok(())
+}
+
 fn file_extension(name: &str) -> String {
     match name.rsplit_once('.').map(|(_, e)| e.to_lowercase()) {
         Some(e)

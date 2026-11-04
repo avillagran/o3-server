@@ -2885,3 +2885,25 @@ marks child records deleted, whereas ProjectService.deleteChildThread plans dura
 thread-deletion effects. Native/session/run cancellation and resource cleanup must
 be aligned before integrating the draft project port. This gap is preserved explicitly
 rather than treating CRUD persistence tests as proof of the whole deletion lifecycle.
+
+
+### Durable deletion integration follow-up resolved (2026-11-04)
+
+This supersedes the force-deletion gap recorded above. Ordinary thread.delete and
+forced project deletion now share receipt-atomic cancellation and a durable resource
+outbox, following nightly4151 ThreadDeletion/ResourceCleanupService/EffectWorker.
+Native MCP is revoked, active work stops, cached Claude sessions are reaped and affected
+Codex native threads are unsubscribed without stopping shared-process siblings. The
+outbox retries failures/restarts and legacy tombstones are planned before run recovery.
+Terminal history, previews, scheduled tasks and attachment sidecars are cleaned;
+attachments shared by live threads and checkout folders are retained.
+
+Four new integration tests exercise actual HTTP MCP and native-protocol subprocesses,
+including active self-deletion, retired pools, failed unsubscribe, late binding replies,
+atomic receipt rollback/replay, startup recovery and partial filesystem failures.
+Full suites: 330 default / 327 no-default pass, 21 opt-ins ignored in each. Final
+Codex/deletion/provider/MCP/background/browser regressions and strict Clippy pass in both
+modes; fmt, generated compatibility and nine monitor tests pass. Source rechecked at
+06:06 UTC remains nightly4151 (322f6544dfad0a3c8a0c8cbecf2c7f7874b14268).
+Installed-provider inference, compatible desktop acceptance and the broader nightly
+protocol remain unverified/incomplete; no service deployment occurred. See [MCP.md](MCP.md).
