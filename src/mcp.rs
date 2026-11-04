@@ -366,7 +366,9 @@ pub(crate) async fn handle(state: Arc<State>, req: Request<Incoming>) -> Respons
                 tokio::task::spawn_blocking(move || {
                     let _permit = permit;
                     let args = authority.arguments(&s, &name, args)?;
-                    let mut result = if crate::mcp_mutations::handles(&name) {
+                    let mut result = if crate::mcp_attachments::handles(&name) {
+                        crate::mcp_attachments::call(&s, &authority, &name, &args)
+                    } else if crate::mcp_mutations::handles(&name) {
                         crate::mcp_mutations::call(&s, &authority, &name, &args)
                     } else {
                         crate::mcp_tools::call(&s, &name, &args)

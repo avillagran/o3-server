@@ -44,6 +44,12 @@ fn ttl(s: &str) -> std::io::Result<i64> {
 fn main() -> std::io::Result<()> {
     o3_server::heap::configure();
     let args: Vec<_> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|s| s == "__document-text") {
+        if args.len() != 3 {
+            std::process::exit(2);
+        }
+        o3_server::document_text::worker(Path::new(&args[1]), &args[2]);
+    }
     // Before any command runs: `auth session issue --help` must never mint a credential.
     if args.iter().any(|a| a == "--help" || a == "-h") {
         print!("{USAGE}");

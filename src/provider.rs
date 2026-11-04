@@ -318,6 +318,29 @@ pub(crate) fn start(
             };
             (input, r["activeAttemptId"].as_str().map(str::to_owned))
         };
+        if input
+            .attachments
+            .as_array()
+            .is_some_and(|a| a.iter().any(|v| v["type"] == "file"))
+        {
+            let state = s.clone();
+            let attachments = input.attachments.clone();
+            let _ = tokio::task::spawn_blocking(move || {
+                for value in attachments
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|v| v["type"] == "file")
+                {
+                    if let Some(path) =
+                        crate::assets::attachment_path(&state, value["id"].as_str().unwrap_or(""))
+                    {
+                        state.document_text.ensure(&path);
+                    }
+                }
+            })
+            .await;
+        }
         // Internal config is issued here, never accepted from persisted model options.
         if let Some(selection) = input.model_selection.as_object_mut() {
             selection.remove("o3BrowserMcp");

@@ -3113,3 +3113,36 @@ and nine monitor tests pass. Non-MCP attachment intake, richer extraction, full 
 project enable precedence, numeric checkout progress, transfer/continuation, remaining
 toolkits/auth/environment/providers, newer runtime recovery and current differential/
 UI acceptance remain part of the active goal. No deployment/main promotion.
+
+### Shared attachment intake and document worker, 2026-11-04
+
+PR26's exact head db56824 passed both CI modes and merged into dev e561df2.
+The next port follows nightly4165 (`8b44f42b14c8e273156474a924ccf29680dd7857`),
+confirmed again at 11:25 UTC. Ordinary messages, queued edits, runtime question
+answers, staged launch and three new MCP attachment tools share pending-copy
+admission outside SQLite's write lock. Scoped writes recheck authority at commit;
+accepted receipts preserve their first copied identities and rejected attempts
+remove unused copies. Native active sends retain sender and agent/MCP origin in
+both the message and user-message item. Question answers expose original and
+extracted paths with their source answer and attachment projection.
+
+`tests/attachment_intake.rs` uses actual HTTP, the compatible lib-t3-rust client,
+SQLite rejection injection and both native transport peers. It proves upload
+ownership across transport sessions, native caller defaulting, canonical stored
+metadata, unrelated-thread rejection, rollback and retry, queue-edit replay,
+question sidecars and concurrent independent SQLite writes during gated extraction.
+The native peers read the copied notebook and extracted text after pending discard.
+`tests/document_text.rs` runs the real CLI against 64 evaluated nightly structure
+fixtures plus RTF/notebook/Unicode cases and explicit archive/output/input bounds.
+The parser covers all nine source formats. Unit tests exercise the isolated worker's
+transient/permanent failure caches, private sidecars and output limits.
+
+Installed Claude Haiku and Codex gpt-6.1-sol each completed
+`examples/live_attachment_intake.rs`: an actual uploaded DOCX contained a generated
+token unavailable in the prompt, the pending source was deleted, and the agent read
+the extracted path and wrote the token exactly into its workspace. These are native
+provider and compatible-client proofs for this flow. They do not certify full nightly
+equivalence or current desktop/Android UI acceptance. Guest-sharing attachment
+mediation and the rest of the protocol backlog remain pending. No deployment or
+main promotion occurred. Source/validation inventory:
+[attachment-intake.json](nightly/attachment-intake.json).

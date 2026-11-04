@@ -1,5 +1,18 @@
 //! Common transcript operations shared by provider drivers.
 pub(crate) use crate::claude_projection::save_item;
+pub(crate) fn question_answer(item: &mut serde_json::Value, command: &serde_json::Value) {
+    use serde_json::{json, Value};
+    if item["type"] != "user_input_request" || command.get("answers").is_none() {
+        return;
+    }
+    let texts = item["questions"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|q| Some((q["id"].as_str()?.to_owned(), q["question"].clone())))
+        .collect::<serde_json::Map<String, Value>>();
+    item["questionAnswer"] = json!({"requestId":command["requestId"],"answers":command["answers"],"attachmentsByQuestionId":command.get("attachmentsByQuestionId").cloned().unwrap_or(json!({})),"questionTextById":texts});
+}
 pub(crate) fn finish(
     db: &rusqlite::Connection,
     tid: &str,

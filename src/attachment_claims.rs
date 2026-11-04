@@ -1,4 +1,4 @@
-//! Pending upload claims for MCP thread launch. Copies isolate the durable message
+//! Shared pending upload claims. Copies isolate the durable message
 //! from pending-upload deletion and preserve its retry source on rejected admission.
 use crate::{
     assets,
@@ -8,24 +8,67 @@ use serde_json::{json, Value};
 use std::{collections::HashSet, io::Write, os::unix::fs::OpenOptionsExt, path::PathBuf};
 pub(crate) struct Claims {
     pub attachments: Value,
-    paths: Vec<PathBuf>,
+    paths: Vec<(String, PathBuf)>,
 }
 impl Claims {
     pub(crate) fn keep(&mut self) {
         self.paths.clear();
     }
+    pub(crate) fn empty() -> Self {
+        Self {
+            attachments: json!([]),
+            paths: vec![],
+        }
+    }
+    pub(crate) fn absorb(&mut self, mut other: Self) {
+        self.paths.append(&mut other.paths);
+    }
+    pub(crate) fn retain_used(&mut self, value: &Value) {
+        fn ids(value: &Value, set: &mut HashSet<String>) {
+            match value {
+                Value::Array(values) => {
+                    for value in values {
+                        ids(value, set)
+                    }
+                }
+                Value::Object(values) => {
+                    if let Some(id) = values.get("id").and_then(Value::as_str) {
+                        set.insert(id.into());
+                    }
+                    for value in values.values() {
+                        ids(value, set)
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut used = HashSet::new();
+        ids(value, &mut used);
+        self.paths.retain(|(id, _)| !used.contains(id));
+    }
 }
 impl Drop for Claims {
     fn drop(&mut self) {
-        for path in &self.paths {
+        for (_, path) in &self.paths {
             let _ = std::fs::remove_file(path);
         }
     }
 }
-pub(crate) fn claim(s: &State, tid: &str, values: &Value) -> Result<Claims, String> {
+pub(crate) fn validate(values: &Value) -> Result<(), String> {
     let values = values.as_array().ok_or("Attachments must be an array")?;
-    if values.len() > 8 {
-        return Err("You can attach up to 8 files per launch".into());
+    if values.len() > 100 {
+        return Err("You can attach up to 100 files per message or question response".into());
+    }
+    for value in values {
+        let kind = value["type"].as_str().unwrap_or("");
+        let size = value["sizeBytes"]
+            .as_u64()
+            .ok_or("Invalid attachment size")?;
+        if (kind == "image" && size > 10 * 1024 * 1024)
+            || (kind == "file" && (size == 0 || size > 50 * 1024 * 1024))
+        {
+            return Err("Attachment exceeds the file size limit".into());
+        }
     }
     let total_images = values
         .iter()
@@ -43,9 +86,37 @@ pub(crate) fn claim(s: &State, tid: &str, values: &Value) -> Result<Claims, Stri
             n.saturating_add(v["sizeBytes"].as_u64().unwrap_or(0))
         });
     if total_images > 80 * 1024 * 1024 {
-        return Err("Images can total up to 80 MiB per launch".into());
+        return Err("Images can total up to 80 MiB per message or question response".into());
     }
+    Ok(())
+}
+pub(crate) fn pending(value: &Value) -> bool {
+    assets::parse_id(value["id"].as_str().unwrap_or(""))
+        .is_some_and(|(segment, _)| segment == "pending")
+}
+pub(crate) fn claim(s: &State, tid: &str, values: &Value) -> Result<Claims, String> {
+    validate(values)?;
+    let values = values.as_array().unwrap();
     let mut ids = HashSet::new();
+    for value in values {
+        let id = value["id"].as_str().ok_or("Attachment id required")?;
+        if !ids.insert(id) {
+            return Err("Duplicate attachment ids are not allowed".into());
+        }
+    }
+    if !values.iter().any(pending) {
+        for value in values {
+            if value["type"] == "file" {
+                if let Some(path) = assets::attachment_path(s, value["id"].as_str().unwrap_or("")) {
+                    s.document_text.ensure(&path);
+                }
+            }
+        }
+        return Ok(Claims {
+            attachments: json!(values),
+            paths: vec![],
+        });
+    }
     let mut result = Claims {
         attachments: json!([]),
         paths: vec![],
@@ -61,7 +132,7 @@ pub(crate) fn claim(s: &State, tid: &str, values: &Value) -> Result<Claims, Stri
             }
         })
         .collect::<String>();
-    let segment = segment
+    let mut segment = segment
         .split('-')
         .filter(|p| !p.is_empty())
         .collect::<Vec<_>>()
@@ -75,14 +146,28 @@ pub(crate) fn claim(s: &State, tid: &str, values: &Value) -> Result<Claims, Stri
     if segment.is_empty() {
         return Err("Invalid attachment thread identity".into());
     }
+    if segment == "pending" {
+        segment = "_pending".into();
+    }
     for value in values {
         let id = value["id"].as_str().ok_or("Attachment id required")?;
-        if !ids.insert(id) {
-            return Err("Duplicate attachment ids are not allowed".into());
+        if !pending(value) {
+            if value["type"] == "file" {
+                if let Some(path) = assets::attachment_path(s, id) {
+                    s.document_text.ensure(&path);
+                }
+            }
+            result
+                .attachments
+                .as_array_mut()
+                .unwrap()
+                .push(value.clone());
+            continue;
         }
-        let (_, extension) = assets::parse_id(id)
-            .filter(|(p, _)| p == "pending")
-            .ok_or("A new thread accepts only pending attachment uploads")?;
+        if !matches!(value["type"].as_str(), Some("image" | "file")) {
+            return Err("Attachment type does not match the upload".into());
+        }
+        let (_, extension) = assets::parse_id(id).ok_or("Invalid pending attachment id")?;
         let source = assets::attachment_path(s, id).ok_or("Attachment not found")?;
         let size = std::fs::metadata(&source).map_err(|e| e.to_string())?.len();
         if value["sizeBytes"].as_u64() != Some(size) {
@@ -124,7 +209,7 @@ pub(crate) fn claim(s: &State, tid: &str, values: &Value) -> Result<Claims, Stri
             .mode(0o600)
             .open(&destination)
             .map_err(|e| e.to_string())?;
-        result.paths.push(destination.clone());
+        result.paths.push((final_id.clone(), destination.clone()));
         let mut input = std::fs::File::open(&source).map_err(|e| e.to_string())?;
         let copied = std::io::copy(&mut input, &mut out).map_err(|e| e.to_string())?;
         if copied != size {
@@ -142,16 +227,26 @@ pub(crate) fn claim(s: &State, tid: &str, values: &Value) -> Result<Claims, Stri
                 "{}.txt",
                 destination.file_name().unwrap().to_string_lossy()
             ));
-            result.paths.push(target.clone());
-            let _ = std::fs::copy(sidecar, target);
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(&target)
+                .map_err(|e| e.to_string())?;
+            result.paths.push((final_id.clone(), target));
+            let mut input = std::fs::File::open(sidecar).map_err(|e| e.to_string())?;
+            std::io::copy(&mut input, &mut file)
+                .and_then(|_| file.sync_all())
+                .map_err(|e| e.to_string())?;
+        }
+        if value["type"] == "file" {
+            if let Some(sidecar) = s.document_text.ensure(&destination) {
+                if !result.paths.iter().any(|(_, p)| p == &sidecar) {
+                    result.paths.push((final_id.clone(), sidecar));
+                }
+            }
         }
         let mut claimed = value.clone();
-        claimed.as_object_mut().unwrap().retain(|key, _| {
-            matches!(
-                key.as_str(),
-                "type" | "id" | "name" | "mimeType" | "sizeBytes"
-            ) || (key == "source" && value["type"] == "file")
-        });
         claimed["id"] = json!(final_id);
         claimed["mimeType"] = json!(mime);
         if value["type"] == "file"

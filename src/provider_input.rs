@@ -104,7 +104,21 @@ pub(crate) fn materialize(
     context: Option<&Value>,
     claude: bool,
 ) -> Result<Vec<Value>, String> {
-    let mut text = text.to_owned();
+    const BOOTSTRAP:&str="[User attached one or more files without additional text. Respond using the conversation context and the attached files.]";
+    let only_think = regex::Regex::new(r"(?i)^Ultrathink:\s*$")
+        .unwrap()
+        .is_match(text.trim());
+    let mut text = if attachments.as_array().is_some_and(|a| !a.is_empty())
+        && (text.trim().is_empty() || only_think)
+    {
+        if only_think {
+            format!("Ultrathink:\n{BOOTSTRAP}")
+        } else {
+            BOOTSTRAP.into()
+        }
+    } else {
+        text.to_owned()
+    };
     if let Some(context) = context.filter(|c| !c.is_null()) {
         text.push_str("\n\nAdditional context supplied by the user:\n");
         text.push_str(&serde_json::to_string(context).map_err(|e| e.to_string())?);
@@ -152,8 +166,10 @@ pub(crate) fn materialize(
                 out.push(json!({"type":"localImage","path":path}));
             }
         } else {
-            // Both native agents can read arbitrary file formats with their own tools.
-            out.push(json!({"type":"text","text":format!("User attached file {} ({mime}), available at {}. Read it when needed.", serde_json::to_string(name).unwrap(), serde_json::to_string(&path).unwrap())}));
+            let extracted = crate::document_text::sidecar(&path)
+                .map(|p| format!(" (text extracted to: {})", json!(p)))
+                .unwrap_or_default();
+            out.push(json!({"type":"text","text":format!("User attached file {} ({mime}), available at {}{extracted}. Read it when needed.", serde_json::to_string(name).unwrap(), serde_json::to_string(&path).unwrap())}));
         }
     }
     if serde_json::to_vec(&out).map_err(|e| e.to_string())?.len() > 8 * 1024 * 1024 {
