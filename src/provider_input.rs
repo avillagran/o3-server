@@ -182,6 +182,7 @@ pub(crate) fn materialize(
 pub(crate) fn driver(s: &crate::store::State, instance: &Value) -> Result<String, String> {
     let id = instance.as_str().ok_or("provider instance required")?;
     let settings = crate::settings::read(s)?;
+    let id = crate::provider_policy::configured_id(&settings, id);
     Ok(settings["providerInstances"][id]["driver"]
         .as_str()
         .unwrap_or(if id == "codex" {

@@ -154,7 +154,7 @@ fn scheduling_flags_ordering_and_modes() {
     // Modes and model selection.
     cmd(&c, json!({"type":"thread.runtime-mode.set","commandId":"mo1","threadId":"t1","runtimeMode":"approval-required"})).unwrap();
     cmd(&c, json!({"type":"thread.interaction-mode.set","commandId":"mo2","threadId":"t1","interactionMode":"plan"})).unwrap();
-    cmd(&c, json!({"type":"thread.model-selection.set","commandId":"mo3","threadId":"t1","modelSelection":{"instanceId":"other","model":"big","options":[]}})).unwrap();
+    cmd(&c, json!({"type":"thread.model-selection.set","commandId":"mo3","threadId":"t1","modelSelection":{"instanceId":"scripted","model":"big","options":[]}})).unwrap();
     let t = thread(&c, "t1");
     assert_eq!(
         (t["runtimeMode"].as_str(), t["interactionMode"].as_str()),
@@ -165,7 +165,7 @@ fn scheduling_flags_ordering_and_modes() {
             t["providerInstanceId"].as_str(),
             t["modelSelection"]["model"].as_str()
         ),
-        (Some("other"), Some("big"))
+        (Some("scripted"), Some("big"))
     );
 
     // The shell stream carries these as thread updates.

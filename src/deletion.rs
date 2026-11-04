@@ -167,6 +167,11 @@ pub(crate) fn plan(db: &Connection, thread: &mut Value, command: &str, at: &str)
         }
         Ok(())
     })?;
+    db.execute(
+        "DELETE FROM provider_selection_plans WHERE thread_id=?",
+        [&tid],
+    )
+    .map_err(|e| e.to_string())?;
     db.execute("UPDATE records SET body=json_set(body,'$.status','cancelled','$.error','The thread was deleted.') WHERE kind='controlOutbox' AND thread_id=? AND json_extract(body,'$.status') IN ('pending','handed-off','delivery-unknown')",[&tid]).map_err(|e|e.to_string())?;
     db.execute(
         "INSERT OR IGNORE INTO deletion_effects(id,thread_id,payload) VALUES(?1,?2,?3)",

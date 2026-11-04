@@ -11,14 +11,15 @@ use serde_json::{json, Value};
 use std::{path::PathBuf, sync::Arc};
 type Result<T> = std::result::Result<T, String>;
 pub(crate) fn initialize(db: &Connection) -> Result<()> {
-    db.execute_batch("CREATE TABLE IF NOT EXISTS provider_switches(id TEXT PRIMARY KEY,thread_id TEXT NOT NULL,payload TEXT NOT NULL,released_at TEXT,last_error TEXT); CREATE INDEX IF NOT EXISTS provider_switches_pending ON provider_switches(thread_id) WHERE released_at IS NULL;").map_err(|e|e.to_string())?;
+    db.execute_batch("CREATE TABLE IF NOT EXISTS provider_selection_plans(thread_id TEXT PRIMARY KEY,payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS provider_switches(id TEXT PRIMARY KEY,thread_id TEXT NOT NULL,payload TEXT NOT NULL,released_at TEXT,last_error TEXT); CREATE INDEX IF NOT EXISTS provider_switches_pending ON provider_switches(thread_id) WHERE released_at IS NULL;").map_err(|e|e.to_string())?;
     db.execute("UPDATE records AS p SET body=json_set(body,'$.ownerNodeId',NULL) WHERE kind='providerThreads' AND json_extract(body,'$.driver')='claudeAgent' AND json_extract(body,'$.appThreadId')=thread_id AND EXISTS(SELECT 1 FROM records n WHERE n.kind='nodes' AND n.thread_id=p.thread_id AND n.id=json_extract(p.body,'$.ownerNodeId') AND json_extract(n.body,'$.kind')='root_turn')",[]).map_err(|e|e.to_string())?;
     Ok(())
 }
 fn identity(s: &State, id: &str) -> Result<(String, PathBuf)> {
     let settings = crate::settings::read(s)?;
     let driver = crate::provider_input::driver(s, &json!(id))?;
-    let mut entry = settings["providerInstances"][id].clone();
+    let configured = crate::provider_policy::configured_id(&settings, id);
+    let mut entry = settings["providerInstances"][configured].clone();
     if !matches!(id, "codex" | "claudeAgent" | "claude" | "claude-code")
         && !entry["driver"].is_string()
     {
@@ -29,6 +30,117 @@ fn identity(s: &State, id: &str) -> Result<(String, PathBuf)> {
         Some(home) => Ok((home.driver, home.shared)),
         None => Ok((driver, PathBuf::from(format!("instance:{id}")))),
     }
+}
+
+#[derive(Debug)]
+pub(crate) struct Plan {
+    pub transition: crate::selection_transition::Transition,
+    pub release_sessions: Vec<String>,
+}
+/// Native continuation can outlive a stopped session record. Prefer the newest live
+/// record, retaining the newest negotiated capabilities when only native history remains.
+pub(crate) fn plan(s: &State, db: &Connection, thread: &Value, target: &Value) -> Result<Plan> {
+    use crate::selection_transition::{decide, model_selections_equal, Transition};
+    let provider = s.provider.lock().unwrap().clone();
+    let caps = |id: &str| {
+        provider
+            .as_ref()
+            .and_then(|p| p.capabilities(id))
+            .or_else(|| {
+                if provider.is_none() {
+                    crate::provider_input::driver(s, &json!(id))
+                        .ok()
+                        .and_then(|driver| {
+                            crate::selection_transition::native_capabilities(&driver)
+                        })
+                } else {
+                    None
+                }
+            })
+    };
+    let from = thread["modelSelection"]["instanceId"]
+        .as_str()
+        .unwrap_or("");
+    let to = target["instanceId"].as_str().unwrap_or("");
+    let current_caps = caps(from);
+    let target_caps = caps(to);
+    let mut sessions: Vec<_> = list(db, "providerSessions", thread["id"].as_str().unwrap_or(""))?
+        .into_iter()
+        .filter(|v| v["providerInstanceId"] == from)
+        .collect();
+    sessions.sort_by(|a, b| b["updatedAt"].as_str().cmp(&a["updatedAt"].as_str()));
+    let live = |session: &&Value| !matches!(session["status"].as_str(), Some("stopped" | "error"));
+    let session = sessions.iter().find(live);
+    let negotiated = session
+        .or_else(|| sessions.first())
+        .map(|s| &s["capabilities"])
+        .or(current_caps.as_ref());
+    let native = current(db, thread)?
+        .filter(|pt| pt["providerInstanceId"] == from && pt["nativeThreadRef"].is_object());
+    let current_identity = identity(s, from).ok();
+    let target_identity = identity(s, to)?;
+    let selection = if from == to
+        && !model_selections_equal(&thread["modelSelection"], target)
+        && current_caps.is_some()
+        && (session.is_some() || native.is_some())
+    {
+        match &provider {
+            Some(provider) => provider.plan_selection_transition(
+                to,
+                &thread["modelSelection"],
+                target,
+                negotiated.unwrap_or(&Value::Null),
+            )?,
+            None => None,
+        }
+    } else {
+        None
+    };
+    let workspace = thread["worktreePath"]
+        .as_str()
+        .or_else(|| session.and_then(|s| s["cwd"].as_str()))
+        .unwrap_or("<unresolved-workspace>");
+    let state = |model: &Value, identity: &(String, PathBuf)| json!({"driver":identity.0,"continuationIdentity":{"driverKind":identity.0,"continuationKey":identity.1},"modelSelection":model,"runtimeMode":thread["runtimeMode"],"interactionMode":thread["interactionMode"],"workspace":workspace});
+    let current = current_identity
+        .as_ref()
+        .filter(|_| current_caps.is_some() && (session.is_some() || native.is_some()))
+        .map(|id| state(&thread["modelSelection"], id));
+    let mut target_state = state(target, &target_identity);
+    let settings = crate::settings::read(s)?;
+    target_state["available"] = json!(
+        target_caps.is_some()
+            && crate::provider_policy::project_enabled(&settings, thread["projectId"].as_str(), to)
+    );
+    let transition =
+        decide(&json!({"current":current,"target":target_state,"selectionTransition":selection}));
+    if let Transition::Reject { reason } = &transition {
+        return Err(reason.clone());
+    }
+    let release_sessions = sessions
+        .iter()
+        .filter(live)
+        .filter(|s| match transition {
+            Transition::RestartAndResume => session.is_some_and(|current| current["id"] == s["id"]),
+            _ => false,
+        })
+        .filter_map(|s| s["id"].as_str().map(str::to_owned))
+        .collect();
+    // Handoffs release other instances, including their pooled bindings, rather than
+    // the target's existing reusable session. The outgoing exact native job is staged below.
+    let release_sessions = if transition == Transition::CreateWithHandoff {
+        list(db, "providerSessions", thread["id"].as_str().unwrap_or(""))?
+            .iter()
+            .filter(live)
+            .filter(|s| s["providerInstanceId"] != to)
+            .filter_map(|s| s["id"].as_str().map(str::to_owned))
+            .collect()
+    } else {
+        release_sessions
+    };
+    Ok(Plan {
+        transition,
+        release_sessions,
+    })
 }
 fn current(db: &Connection, thread: &Value) -> Result<Option<Value>> {
     let Some(id) = thread["activeProviderThreadId"].as_str() else {
@@ -87,10 +199,19 @@ pub(crate) fn selection(
     thread: &mut Value,
     target: &Value,
     command_id: &Value,
-) -> Result<()> {
+) -> Result<crate::selection_transition::Transition> {
+    let plan = plan(s, db, thread, target)?;
     guard(db, thread, target)?;
+    db.execute("INSERT INTO provider_selection_plans VALUES(?,?) ON CONFLICT(thread_id) DO UPDATE SET payload=excluded.payload",params![thread["id"].as_str(),json!({"target":target,"transition":plan.transition,"providerThreadId":thread["activeProviderThreadId"],"sourceInstanceId":thread["modelSelection"]["instanceId"],"releaseSessionIds":plan.release_sessions}).to_string()]).map_err(|e|e.to_string())?;
     if let Some(pt) = current(db, thread)? {
-        if pt["providerInstanceId"] != target["instanceId"] {
+        if pt["providerInstanceId"] != target["instanceId"]
+            || (pt["providerInstanceId"] == thread["modelSelection"]["instanceId"]
+                && matches!(
+                    plan.transition,
+                    crate::selection_transition::Transition::RestartAndResume
+                        | crate::selection_transition::Transition::CreateWithHandoff
+                ))
+        {
             identity(s, pt["providerInstanceId"].as_str().unwrap_or(""))?;
             identity(s, target["instanceId"].as_str().unwrap_or(""))?;
             stage(db, thread, &pt)?;
@@ -109,7 +230,7 @@ pub(crate) fn selection(
             thread[key] = Value::Null;
         }
     }
-    Ok(())
+    Ok(plan.transition)
 }
 
 fn source_run(r: &Value) -> bool {
@@ -128,7 +249,10 @@ pub(crate) fn admit(
     // A queued message keeps the model it recorded, even if idle metadata changed later.
     if run["modelSelection"]["instanceId"].is_string()
         && (thread["providerInstanceId"] != run["providerInstanceId"]
-            || thread["modelSelection"] != run["modelSelection"])
+            || !crate::selection_transition::model_selections_equal(
+                &thread["modelSelection"],
+                &run["modelSelection"],
+            ))
     {
         let switched = thread["providerInstanceId"] != run["providerInstanceId"];
         selection(s, db, thread, &run["modelSelection"], &run["id"])?;
@@ -148,14 +272,57 @@ pub(crate) fn admit(
             thread,
         )?;
     }
-    let Some(active) = current(db, thread)? else {
+    let active = current(db, thread)?;
+    let pending: Option<String> = db
+        .query_row(
+            "SELECT payload FROM provider_selection_plans WHERE thread_id=?",
+            [thread["id"].as_str()],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    db.execute(
+        "DELETE FROM provider_selection_plans WHERE thread_id=?",
+        [thread["id"].as_str()],
+    )
+    .map_err(|e| e.to_string())?;
+    let pending = pending
+        .map(|p| serde_json::from_str::<Value>(&p).map_err(|e| e.to_string()))
+        .transpose()?;
+    let transition = pending
+        .filter(|p| {
+            p["providerThreadId"] == thread["activeProviderThreadId"]
+                && active
+                    .as_ref()
+                    .is_some_and(|pt| pt["providerInstanceId"] == p["sourceInstanceId"])
+                && crate::selection_transition::model_selections_equal(
+                    &p["target"],
+                    &run["modelSelection"],
+                )
+        })
+        .map(|p| {
+            serde_json::from_value::<crate::selection_transition::Transition>(
+                p["transition"].clone(),
+            )
+            .map_err(|e| e.to_string())
+        })
+        .transpose()?;
+    let Some(active) = active else {
         return Ok(());
     };
     let target = run["providerInstanceId"]
         .as_str()
         .ok_or("run provider missing")?
         .to_owned();
-    if active["providerInstanceId"] == target {
+    if active["providerInstanceId"] == target
+        && !matches!(
+            transition,
+            Some(
+                crate::selection_transition::Transition::RestartAndResume
+                    | crate::selection_transition::Transition::CreateWithHandoff
+            )
+        )
+    {
         return Ok(());
     }
     let tid = thread["id"].as_str().ok_or("thread id missing")?.to_owned();
@@ -165,7 +332,8 @@ pub(crate) fn admit(
         .ok_or("source provider missing")?;
     let source_identity = identity(s, source)?;
     let target_identity = identity(s, &target)?;
-    let compatible = active["nativeThreadRef"].is_object()
+    let compatible = transition != Some(crate::selection_transition::Transition::CreateWithHandoff)
+        && active["nativeThreadRef"].is_object()
         && active["driver"] == target_identity.0
         && source_identity == target_identity;
     stage(db, thread, &active)?;
@@ -174,6 +342,7 @@ pub(crate) fn admit(
         .iter()
         .filter(|pt| {
             pt["providerInstanceId"] == target
+                && pt["id"] != active["id"]
                 && pt["appThreadId"] == tid
                 && pt["ownerNodeId"].is_null()
         })
@@ -504,6 +673,129 @@ mod tests {
             identity(&s, "missing").unwrap(),
             identity(&s, "claudeAgent").unwrap()
         );
+        drop(s);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod plan_tests {
+    use super::*;
+    use crate::{
+        provider::{Provider, ProviderControl, ProviderEvent, RunInput},
+        selection_transition::{Selection, Transition},
+    };
+    use std::{
+        future::Future,
+        pin::Pin,
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            Mutex,
+        },
+    };
+    struct Adapter {
+        acp: AtomicBool,
+        seen: Mutex<Vec<Value>>,
+    }
+    impl Provider for Adapter {
+        fn plan_selection_transition(
+            &self,
+            _instance: &str,
+            current: &Value,
+            target: &Value,
+            caps: &Value,
+        ) -> Result<Option<Selection>> {
+            self.seen.lock().unwrap().push(caps.clone());
+            Ok(Some(if self.acp.load(Ordering::SeqCst) {
+                crate::selection_transition::acp(
+                    &json!({"current":current,"target":target,"sessionCapabilities":caps}),
+                )
+            } else {
+                Selection::RestartSession
+            }))
+        }
+        fn execute<'a>(
+            &'a self,
+            _input: RunInput,
+            _output: tokio::sync::mpsc::Sender<ProviderEvent>,
+            _control: tokio::sync::mpsc::Receiver<ProviderControl>,
+            _cancel: tokio::sync::watch::Receiver<bool>,
+        ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+            Box::pin(async { Err("planner tests never open a native session".into()) })
+        }
+    }
+    #[test]
+    fn live_session_selection_and_dead_negotiation_follow_the_pinned_service() {
+        let dir = std::env::temp_dir().join(format!("selection-plan-{}", random_id().unwrap()));
+        let s = State::open(&dir).unwrap();
+        let adapter = Arc::new(Adapter {
+            acp: AtomicBool::new(false),
+            seen: Mutex::new(vec![]),
+        });
+        *s.provider.lock().unwrap() = Some(adapter.clone());
+        let thread = json!({"id":"t","projectId":"p","modelSelection":{"instanceId":"codex","model":"one"},"providerInstanceId":"codex","activeProviderThreadId":"native-row","runtimeMode":"full-access","interactionMode":"default","worktreePath":"/repo"});
+        let target = json!({"instanceId":"codex","model":"two"});
+        let mut db = s.db.lock().unwrap();
+        put(&db, "thread", "t", "t", &thread).unwrap();
+        put(&db,"providerThreads","native-row","t",&json!({"id":"native-row","appThreadId":"t","providerInstanceId":"codex","driver":"codex","nativeThreadRef":{"nativeId":"native-id"}})).unwrap();
+        for (id, status, updated, supports) in [
+            ("live-older", "ready", "2026-01-01T00:00:00Z", false),
+            ("live-newer", "ready", "2026-01-02T00:00:00Z", true),
+            ("dead-newest", "error", "2026-01-03T00:00:00Z", false),
+        ] {
+            put(&db,"providerSessions",id,"t",&json!({"id":id,"providerInstanceId":"codex","status":status,"updatedAt":updated,"cwd":"/repo","capabilities":{"sessions":{"supportsModelSwitchInSession":supports}}})).unwrap();
+        }
+        let p = plan(&s, &db, &thread, &target).unwrap();
+        assert_eq!(p.transition, Transition::RestartAndResume);
+        assert_eq!(p.release_sessions, vec!["live-newer"]);
+        assert_eq!(
+            adapter.seen.lock().unwrap().last().unwrap()["sessions"]
+                ["supportsModelSwitchInSession"],
+            true
+        );
+        db.execute("UPDATE records SET body=json_set(body,'$.status','stopped') WHERE kind='providerSessions'",[]).unwrap();
+        let p = plan(&s, &db, &thread, &target).unwrap();
+        assert_eq!(p.transition, Transition::RestartAndResume);
+        assert!(p.release_sessions.is_empty());
+        assert_eq!(
+            adapter.seen.lock().unwrap().last().unwrap()["sessions"]
+                ["supportsModelSwitchInSession"],
+            false
+        );
+        adapter.acp.store(true, Ordering::SeqCst);
+        assert!(plan(&s, &db, &thread, &target)
+            .unwrap_err()
+            .contains("does not expose a model-switch capability"));
+        let options =
+            json!({"instanceId":"codex","model":"one","options":[{"id":"effort","value":"high"}]});
+        assert_eq!(
+            plan(&s, &db, &thread, &options).unwrap().transition,
+            Transition::SwitchModelInSession
+        );
+        db.execute("UPDATE records SET body=json_set(body,'$.nativeThreadRef',NULL) WHERE kind='providerThreads'",[]).unwrap();
+        let calls = adapter.seen.lock().unwrap().len();
+        assert_eq!(
+            plan(&s, &db, &thread, &target).unwrap().transition,
+            Transition::CreateWithHandoff
+        );
+        assert_eq!(adapter.seen.lock().unwrap().len(), calls);
+        db.execute("UPDATE records SET body=json_set(body,'$.nativeThreadRef',json('{\"nativeId\":\"native-id\"}')) WHERE kind='providerThreads'",[]).unwrap();
+        db.execute("INSERT INTO provider_selection_plans VALUES('t',?)",[json!({"target":thread["modelSelection"],"providerThreadId":"native-row","sourceInstanceId":"codex","transition":{"type":"corrupted"}}).to_string()]).unwrap();
+        {
+            let tx = db.transaction().unwrap();
+            let mut t = thread.clone();
+            let mut run = json!({"id":"r","providerInstanceId":"codex","modelSelection":thread["modelSelection"]});
+            assert!(admit(&s, &tx, &mut t, &mut run, "now").is_err());
+        }
+        assert_eq!(
+            db.query_row("SELECT count(*) FROM provider_selection_plans", [], |r| r
+                .get::<_, i64>(
+                0
+            ))
+            .unwrap(),
+            1
+        );
+        drop(db);
         drop(s);
         std::fs::remove_dir_all(dir).unwrap();
     }

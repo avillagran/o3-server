@@ -690,6 +690,19 @@ async fn unload(
     Ok(())
 }
 impl Provider for CodexProvider {
+    fn capabilities(&self, _instance: &str) -> Option<Value> {
+        crate::selection_transition::native_capabilities("codex")
+    }
+    fn plan_selection_transition(
+        &self,
+        _instance: &str,
+        _current: &Value,
+        _target: &Value,
+        _capabilities: &Value,
+    ) -> Result<Option<crate::selection_transition::Selection>, String> {
+        Ok(crate::selection_transition::turn_scoped())
+    }
+
     fn detach<'a>(
         &'a self,
         _instance: &'a str,

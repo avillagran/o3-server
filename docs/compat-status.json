@@ -1164,9 +1164,9 @@
       "note": "No client call site in inventory."
     },
     "provider.switch": {
-      "status": "skip",
+      "status": "partial",
       "priority": "unused",
-      "note": "No client call site in inventory."
+      "note": "Shares guarded planning/receipts with model selection and emits provider-switched events. Compatible-home restart, incompatible/same-instance classified handoff, missing/unavailable classification refusal and native-owner queue restore have compatible-client/native-peer coverage. Active cross-instance lifecycle, full pool cleanup and remaining SDK policies are pending; see selection-transition-intake.json."
     },
     "queue.resume": {
       "status": "done",
@@ -1284,9 +1284,9 @@
       "note": "Title regeneration uses bounded tool-free generation when supported; an explicit unsupported selection produces an actionable RPC error rather than silently substituting another provider. Explicit rename wins over asynchronous completion. Real Connection/title reader coverage: tests/title_generation.rs and tests/generation_selection.rs. Workspace binding updates compare expectedWorktreePath/expectedBranch/expectedEmpty under the receipt transaction. A real path change interrupts live work, durably detaches the native session and gates queued work until detach succeeds; native conversation identity is resumed in the new cwd. Shared Codex credentials/processes survive this detach. Coverage: tests/workspace_transition.rs and workspace_transition module recovery/atomicity tests. The native MCP handoff service now uses this transition with managed Git creation, setup-terminal launch and receipt-atomic continuation (tests/worktree_handoff.rs)."
     },
     "thread.model-selection.set": {
-      "status": "skip",
+      "status": "partial",
       "priority": "unused",
-      "note": "Shared idle selection and per-message selection preserve native ownership until run admission. Compatible homes continue their native conversation; returning to another provider reuses its previous root row and sends the missing delta with canonical transfer records. Background guards, durable exact cleanup/retry, queued recorded-model selection and legacy roots are covered by compatible-client/native-peer tests and five installed Claude/Codex turns. Full same-instance classification, auth overlays and active cross-instance policy remain pending; see provider-session-intake.json. The three pinned clients use per-message selection rather than this standalone command; MCP configure uses it."
+      "note": "Source transition policy and native next-turn classifiers permit active same-instance steering/preferences without replacing its attempt. Latest live/dead negotiated capabilities, durable restart/handoff/refusal, canonical option ordering, legacy alias routing and frozen admitted model/modes are covered. Four installed Claude/Codex app turns preserve active native commands and private history. Active cross-instance lifecycle, full pool/SDK cleanup and remaining source policy are pending; see selection-transition-intake.json. Pinned clients normally send per-message selection; MCP configuration also uses this standalone command."
     },
     "thread.pin": {
       "status": "done",

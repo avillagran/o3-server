@@ -434,7 +434,7 @@ impl ClaudeProvider {
                 };
                 if same_mcp
                     && s.cwd == input.cwd
-                    && s.options == input.model_selection["options"]
+                    && crate::selection_transition::option_key(&s.options) == crate::selection_transition::option_key(&input.model_selection["options"])
                     && s.child.try_wait().map_err(|e| e.to_string())?.is_none()
                 {
                     s.control(
@@ -787,6 +787,19 @@ impl Session {
     }
 }
 impl Provider for ClaudeProvider {
+    fn capabilities(&self, _instance: &str) -> Option<Value> {
+        crate::selection_transition::native_capabilities("claudeAgent")
+    }
+    fn plan_selection_transition(
+        &self,
+        _instance: &str,
+        _current: &Value,
+        _target: &Value,
+        _capabilities: &Value,
+    ) -> Result<Option<crate::selection_transition::Selection>, String> {
+        Ok(crate::selection_transition::turn_scoped())
+    }
+
     fn detach<'a>(
         &'a self,
         _instance: &'a str,

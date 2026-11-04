@@ -272,35 +272,47 @@ fn mcp_restart_preserves_run_and_native_identity_waits_for_terminal_and_fences_o
 }
 #[test]
 fn restart_receipt_rollback_does_not_interrupt_and_same_instance_selection_is_applied() {
-    let f = Fixture::new("codex");
-    let p = projection(&f.c);
-    let rid = &p["runs"][0]["id"];
-    let c = json!({"type":"message.dispatch","commandId":"restart","threadId":"t","messageId":"replacement","text":"replacement","attachments":[],"modelSelection":{"instanceId":"codex","model":"new-model"},"dispatchMode":{"type":"restart_active","targetRunId":rid}});
-    f.s.state.db.lock().unwrap().execute_batch("CREATE TRIGGER reject_restart BEFORE INSERT ON receipts WHEN NEW.command_id='restart' BEGIN SELECT RAISE(ABORT,'injected'); END;").unwrap();
-    assert!(f.c.rpc("orchestration.dispatchCommand", c.clone()).is_err());
-    assert_eq!(count(&f.s, "SELECT count(*) FROM run_restarts"), 0);
-    assert_eq!(projection(&f.c)["attempts"].as_array().unwrap().len(), 1);
-    assert!(!f.root.join("interrupt-seen").exists());
-    f.s.state
-        .db
-        .lock()
-        .unwrap()
-        .execute_batch("DROP TRIGGER reject_restart")
-        .unwrap();
-    let receipt = command(&f.c, c.clone());
-    assert!(support::wait_for(WAIT, || projection(&f.c)["runs"][0]
-        ["status"]
-        == "completed"));
-    assert_eq!(command(&f.c, c), receipt);
-    assert_eq!(projection(&f.c)["runs"].as_array().unwrap().len(), 1);
-    let starts: Vec<Value> = std::fs::read_to_string(f.root.join("starts.jsonl"))
-        .unwrap()
-        .lines()
-        .map(|l| serde_json::from_str(l).unwrap())
-        .collect();
-    assert_eq!(starts.len(), 2);
-    assert_eq!(starts[1]["model"], "new-model");
+    for explicit in [true, false] {
+        let f = Fixture::new("codex");
+        let p = projection(&f.c);
+        let rid = &p["runs"][0]["id"];
+        if !explicit {
+            command(
+                &f.c,
+                json!({"type":"thread.model-selection.set","commandId":"future-preference","threadId":"t","modelSelection":{"instanceId":"codex","model":"new-model"}}),
+            );
+        }
+        let mut c = json!({"type":"message.dispatch","commandId":"restart","threadId":"t","messageId":"replacement","text":"replacement","attachments":[],"modelSelection":{"instanceId":"codex","model":"new-model"},"dispatchMode":{"type":"restart_active","targetRunId":rid}});
+        if !explicit {
+            c.as_object_mut().unwrap().remove("modelSelection");
+        }
+        f.s.state.db.lock().unwrap().execute_batch("CREATE TRIGGER reject_restart BEFORE INSERT ON receipts WHEN NEW.command_id='restart' BEGIN SELECT RAISE(ABORT,'injected'); END;").unwrap();
+        assert!(f.c.rpc("orchestration.dispatchCommand", c.clone()).is_err());
+        assert_eq!(count(&f.s, "SELECT count(*) FROM run_restarts"), 0);
+        assert_eq!(projection(&f.c)["attempts"].as_array().unwrap().len(), 1);
+        assert!(!f.root.join("interrupt-seen").exists());
+        f.s.state
+            .db
+            .lock()
+            .unwrap()
+            .execute_batch("DROP TRIGGER reject_restart")
+            .unwrap();
+        let receipt = command(&f.c, c.clone());
+        assert!(support::wait_for(WAIT, || projection(&f.c)["runs"][0]
+            ["status"]
+            == "completed"));
+        assert_eq!(command(&f.c, c), receipt);
+        assert_eq!(projection(&f.c)["runs"].as_array().unwrap().len(), 1);
+        let starts: Vec<Value> = std::fs::read_to_string(f.root.join("starts.jsonl"))
+            .unwrap()
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert_eq!(starts.len(), 2);
+        assert_eq!(starts[1]["model"], "new-model");
+    }
 }
+
 #[test]
 fn unsupported_claude_and_maintenance_are_refused_and_interrupt_failure_is_explicit() {
     let f = Fixture::new("claudeAgent");

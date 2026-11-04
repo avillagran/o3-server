@@ -13,15 +13,24 @@ fn change_selection(
     if !value["instanceId"].is_string() || !value["model"].as_str().is_some_and(|m| !m.is_empty()) {
         return Err("invalid model selection".into());
     }
-    if t["modelSelection"] == *value {
+    if crate::selection_transition::model_selections_equal(&t["modelSelection"], value) {
         return Ok(());
     }
     let tid = t["id"].as_str().ok_or("thread id missing")?.to_owned();
     let active: bool = db.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='runs' AND thread_id=? AND json_extract(body,'$.status') IN ('preparing','starting','running','waiting'))", [&tid], |r|r.get(0)).map_err(|e|e.to_string())?;
-    if active {
-        return Err("change model after the active run finishes".into());
+    let transition = crate::provider_switch::selection(s, db, t, value, &c["commandId"])?;
+    if active
+        && !matches!(
+            transition,
+            crate::selection_transition::Transition::Reuse
+                | crate::selection_transition::Transition::SwitchModelInSession
+        )
+    {
+        return Err(
+            "The active selection requires an interrupt-and-restart; send it with restart intent."
+                .into(),
+        );
     }
-    crate::provider_switch::selection(s, db, t, value, &c["commandId"])?;
     db.execute(
         "DELETE FROM records WHERE kind='approvalPolicies' AND thread_id=?",
         [&tid],
@@ -65,7 +74,12 @@ pub(crate) fn normalize_settled_override(v: &mut Value) {
     }
 }
 // Durable execution bookkeeping is deliberately separate from wire records.
-const INTERNAL_RUN_FIELDS: [&str; 3] = ["executionRequested", "recoveryPending", "recoveryReason"];
+const INTERNAL_RUN_FIELDS: [&str; 4] = [
+    "executionRequested",
+    "recoveryPending",
+    "recoveryReason",
+    "executionPolicy",
+];
 fn take_run_internal(v: &mut Value) -> Value {
     let mut internal = json!({});
     for key in INTERNAL_RUN_FIELDS {
@@ -714,18 +728,32 @@ pub(crate) fn dispatch_prepared(
             "thread.metadata-updated"
         }
         "thread.model-selection.set"
+        | "provider.switch"
         | "thread.runtime-mode.set"
         | "thread.interaction-mode.set" => {
             let active:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='runs' AND thread_id=? AND json_extract(body,'$.status') IN ('preparing','starting','running','waiting'))",[tid],|r|r.get(0)).map_err(|e|e.to_string())?;
-            if active {
-                return Err("change model or mode after the active run finishes".into());
+            if active && kind == "thread.runtime-mode.set" {
+                let pt = t["activeProviderThreadId"]
+                    .as_str()
+                    .and_then(|id| get(&tx, "providerThreads", id).ok());
+                let caps = pt
+                    .as_ref()
+                    .and_then(|pt| pt["providerSessionId"].as_str())
+                    .and_then(|id| get(&tx, "providerSessions", id).ok())
+                    .map(|s| s["capabilities"].clone())
+                    .unwrap_or(Value::Null);
+                if caps["sessions"]["supportsRuntimeModeSwitchInSession"] != true {
+                    return Err("The active provider cannot change runtime mode in session.".into());
+                }
             }
             let key = match kind {
-                "thread.model-selection.set" => "modelSelection",
+                "thread.model-selection.set" | "provider.switch" => "modelSelection",
                 "thread.runtime-mode.set" => "runtimeMode",
                 _ => "interactionMode",
             };
             let value = c.get(key).ok_or("mode or model selection required")?;
+            let instance_changed =
+                key == "modelSelection" && t["providerInstanceId"] != value["instanceId"];
             if key == "modelSelection" {
                 change_selection(s, &tx, &mut t, c, value)?;
             } else if key == "runtimeMode"
@@ -740,7 +768,10 @@ pub(crate) fn dispatch_prepared(
             {
                 return Err("unsupported interaction mode".into());
             }
-            if t[key] != *value && matches!(key, "runtimeMode" | "modelSelection") {
+            if (key == "runtimeMode" && t[key] != *value)
+                || (key == "modelSelection"
+                    && !crate::selection_transition::model_selections_equal(&t[key], value))
+            {
                 tx.execute(
                     "DELETE FROM records WHERE kind='approvalPolicies' AND thread_id=?",
                     [tid],
@@ -749,7 +780,14 @@ pub(crate) fn dispatch_prepared(
             }
             t[key] = value.clone();
             match kind {
-                "thread.model-selection.set" => "thread.model-selection-updated",
+                "provider.switch" => "thread.provider-switched",
+                "thread.model-selection.set" => {
+                    if instance_changed {
+                        "thread.provider-switched"
+                    } else {
+                        "thread.model-selection-updated"
+                    }
+                }
                 "thread.runtime-mode.set" => "thread.runtime-mode-updated",
                 _ => "thread.interaction-mode-updated",
             }
@@ -802,7 +840,16 @@ pub(crate) fn dispatch_prepared(
                 return Ok(result);
             }
             if let Some(selection) = c.get("modelSelection") {
+                let changed = !crate::selection_transition::model_selections_equal(
+                    &t["modelSelection"],
+                    selection,
+                );
                 change_selection(s, &tx, &mut t, c, selection)?;
+                if changed && c["dispatchMode"]["type"] == "steer_active" {
+                    t["updatedAt"] = json!(at);
+                    put(&tx, "thread", tid, tid, &t)?;
+                    append(&tx, tid, "thread.model-selection-updated", t.clone(), &t)?;
+                }
             }
             if c["dispatchMode"]["type"] == "steer_active" {
                 let rid = c["dispatchMode"]["targetRunId"]
@@ -823,7 +870,7 @@ pub(crate) fn dispatch_prepared(
                     text,
                     &c["attachments"],
                     c.get("context"),
-                    crate::provider_input::driver(s, &t["providerInstanceId"])? != "codex",
+                    crate::provider_input::driver(s, &run["providerInstanceId"])? != "codex",
                 )?;
                 let sender = s
                     .active
@@ -1160,7 +1207,7 @@ pub(crate) fn dispatch_prepared(
             s.executions.cancel(tid);
         }
     }
-    if kind == "thread.model-selection.set" {
+    if matches!(kind, "thread.model-selection.set" | "provider.switch") {
         crate::provider_switch::start_release(s.clone(), tid.into());
     }
     s.notify();
@@ -1269,6 +1316,7 @@ pub(crate) fn prepare_run_ownership(
     at: &str,
 ) -> Result<()> {
     crate::provider_switch::admit(state, tx, t, run, at)?;
+    crate::selection_transition::freeze_policy(t, run);
     let run_id = run["id"].as_str().ok_or("run id missing")?.to_owned();
     let ordinal = run["ordinal"].clone();
     if t["activeProviderThreadId"]

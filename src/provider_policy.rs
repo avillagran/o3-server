@@ -25,16 +25,34 @@ pub(crate) fn instance_enabled(instance: &Value) -> bool {
         Some("cursor" | "grok" | "fx" | "kiro" | "muse" | "pi" | "opencode" | "antigravity")
     ))
 }
+/// Exact configured aliases own their settings. Legacy aliases otherwise route
+/// through the same canonical entry as the native provider registry.
+pub(crate) fn configured_id<'a>(settings: &Value, id: &'a str) -> &'a str {
+    if settings["providerInstances"].get(id).is_none() && matches!(id, "claude" | "claude-code") {
+        "claudeAgent"
+    } else {
+        id
+    }
+}
 pub(crate) fn project_enabled(settings: &Value, project: Option<&str>, id: &str) -> bool {
     if let Some(enabled) = project.and_then(|p| {
         settings["projectSettingsOverrides"][p]["providerInstances"][id]["enabled"].as_bool()
     }) {
         return enabled;
     }
+    let canonical = configured_id(settings, id);
+    if canonical != id {
+        if let Some(enabled) = project.and_then(|p| {
+            settings["projectSettingsOverrides"][p]["providerInstances"][canonical]["enabled"]
+                .as_bool()
+        }) {
+            return enabled;
+        }
+    }
     settings["providerInstances"]
-        .get(id)
+        .get(canonical)
         .map(instance_enabled)
-        .unwrap_or(matches!(id, "codex" | "claudeAgent"))
+        .unwrap_or(matches!(canonical, "codex" | "claudeAgent"))
 }
 /// Model-valued overrides cannot select a project-disabled instance. Provider
 /// instance overrides remain in their own map, never replacing driver configs.
@@ -137,6 +155,20 @@ pub(crate) fn hydrate(settings: &Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn legacy_aliases_share_canonical_policy_unless_they_own_an_exact_entry() {
+        let mut settings = json!({"providerInstances":{"claudeAgent":{"driver":"claudeAgent","enabled":false}},"projectSettingsOverrides":{"p":{"providerInstances":{"claudeAgent":{"enabled":true}}}}});
+        assert_eq!(configured_id(&settings, "claude"), "claudeAgent");
+        assert!(!project_enabled(&settings, None, "claude"));
+        assert!(project_enabled(&settings, Some("p"), "claude"));
+        settings["projectSettingsOverrides"]["p"]["providerInstances"]["claude"] =
+            json!({"enabled":false});
+        assert!(!project_enabled(&settings, Some("p"), "claude"));
+        settings["providerInstances"]["claude"] = json!({"driver":"codex","enabled":true});
+        assert_eq!(configured_id(&settings, "claude"), "claude");
+        assert!(project_enabled(&settings, None, "claude"));
+        assert!(!project_enabled(&settings, None, "unregistered"));
+    }
     #[test]
     fn source_defaults_conflicts_project_precedence_and_hydration() {
         for (driver, default) in [

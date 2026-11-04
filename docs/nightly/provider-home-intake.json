@@ -51,7 +51,12 @@
       "Remote minimal CI on a02c536 exposed an RPC read deadline during source-control discovery. CLI probes now use the source five-second budget, authenticated API probes three seconds, and independent VCS/CLI/API groups execute together. Barrier scripts prove parallel start; a timed-out native auth process is reaped and returns unknown. New discovery budget units (2), thread commands (11), vcs compatibility (13) and strict Clippy pass in both modes. Complete final-head CI remains the merge gate."
     ],
     "fullLocalReference": "14151a68ec2e62ebd3a2c6a30ad89ca31ffe2269",
-    "ciRepairAffectedEachMode": 26
+    "ciRepairAffectedEachMode": 26,
+    "remoteCi": {
+      "head": "2cec3bdcfbb88515385db693314673b1aa27afd4",
+      "requiredChecks": "both SUCCESS, no comments/reviews pending",
+      "mergedDev": "0d6a6280380d139046a563e63aa116bc13dfd6d0"
+    }
   },
   "pending": [
     "Complete same-instance selection transition classifiers and all negotiated capabilities; full registry replacement/session-pool lifetime semantics.",

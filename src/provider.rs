@@ -145,6 +145,20 @@ pub enum ProviderControl {
 /// and reap owned per-run subprocesses before resolving. Shared process adapters expose
 /// an explicit shutdown that reaps the process after all runs. Futures must be Send.
 pub trait Provider: Send + Sync + 'static {
+    /// Cached capabilities only: called while the command transaction owns the database.
+    fn capabilities(&self, instance: &str) -> Option<serde_json::Value> {
+        crate::selection_transition::native_capabilities(instance)
+    }
+    fn plan_selection_transition(
+        &self,
+        _instance: &str,
+        _current: &serde_json::Value,
+        _target: &serde_json::Value,
+        _capabilities: &serde_json::Value,
+    ) -> Result<Option<crate::selection_transition::Selection>, String> {
+        Ok(None)
+    }
+
     fn refresh<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(async { Ok(()) })
     }
@@ -198,6 +212,19 @@ pub trait Provider: Send + Sync + 'static {
 }
 pub struct ScriptedProvider;
 impl Provider for ScriptedProvider {
+    fn capabilities(&self, instance: &str) -> Option<serde_json::Value> {
+        (instance == "scripted").then(|| serde_json::json!({}))
+    }
+    fn plan_selection_transition(
+        &self,
+        _instance: &str,
+        _current: &serde_json::Value,
+        _target: &serde_json::Value,
+        _capabilities: &serde_json::Value,
+    ) -> Result<Option<crate::selection_transition::Selection>, String> {
+        Ok(crate::selection_transition::turn_scoped())
+    }
+
     fn execute<'a>(
         &'a self,
         _input: RunInput,
@@ -290,7 +317,11 @@ pub(crate) fn start(
                 .unwrap_or_else(|| s.dir.clone());
             let native_id = crate::projection::native_id(&db, &t);
             let fresh = native_id.is_none();
-            let mut selection = t["modelSelection"].clone();
+            let mut selection = r
+                .get("modelSelection")
+                .filter(|v| v.is_object())
+                .unwrap_or(&t["modelSelection"])
+                .clone();
             if let Some(options) = selection.as_object_mut() {
                 options.remove("o3ColdCompact");
                 options.remove("o3HistoricalContext");
@@ -350,7 +381,11 @@ pub(crate) fn start(
             }
             let input = RunInput {
                 native_mcp: None,
-                provider_instance_id: t["providerInstanceId"].as_str().unwrap_or("").into(),
+                provider_instance_id: r["providerInstanceId"]
+                    .as_str()
+                    .or_else(|| t["providerInstanceId"].as_str())
+                    .unwrap_or("")
+                    .into(),
                 // An empty thread whose initial input was rejected may have no durable
                 // rollout to resume after restart. Replace only that known-empty binding.
                 native_session_id: if rejected_binding { None } else { native_id },
@@ -363,8 +398,16 @@ pub(crate) fn start(
                     text
                 },
                 model_selection: selection,
-                runtime_mode: t["runtimeMode"].as_str().unwrap_or("full-access").into(),
-                interaction_mode: t["interactionMode"].as_str().unwrap_or("default").into(),
+                runtime_mode: r["executionPolicy"]["runtimeMode"]
+                    .as_str()
+                    .or_else(|| t["runtimeMode"].as_str())
+                    .unwrap_or("full-access")
+                    .into(),
+                interaction_mode: r["executionPolicy"]["interactionMode"]
+                    .as_str()
+                    .or_else(|| t["interactionMode"].as_str())
+                    .unwrap_or("default")
+                    .into(),
                 attachment_root: crate::assets::attachments_dir(&s),
                 attachments: if r["recoveryPending"] == true {
                     serde_json::json!([])
@@ -1022,6 +1065,36 @@ pub struct Providers {
     pub codex: std::sync::Arc<crate::codex::CodexProvider>,
 }
 impl Provider for Providers {
+    fn capabilities(&self, instance: &str) -> Option<serde_json::Value> {
+        match instance {
+            "codex" => self.codex.capabilities(instance),
+            "claudeAgent" | "claude" | "claude-code" => {
+                self.claude.as_ref()?.capabilities(instance)
+            }
+            _ => None,
+        }
+    }
+    fn plan_selection_transition(
+        &self,
+        instance: &str,
+        current: &serde_json::Value,
+        target: &serde_json::Value,
+        capabilities: &serde_json::Value,
+    ) -> Result<Option<crate::selection_transition::Selection>, String> {
+        match instance {
+            "codex" => {
+                self.codex
+                    .plan_selection_transition(instance, current, target, capabilities)
+            }
+            "claudeAgent" | "claude" | "claude-code" => self
+                .claude
+                .as_ref()
+                .map(|p| p.plan_selection_transition(instance, current, target, capabilities))
+                .unwrap_or(Ok(None)),
+            _ => Ok(None),
+        }
+    }
+
     fn detach<'a>(
         &'a self,
         instance: &'a str,
@@ -1554,6 +1627,58 @@ impl ConfiguredProviders {
     }
 }
 impl Provider for ConfiguredProviders {
+    fn capabilities(&self, instance: &str) -> Option<serde_json::Value> {
+        self.sync();
+        let selected = {
+            let entries = self.instances.lock().unwrap();
+            entries
+                .get(instance)
+                .or_else(|| {
+                    if matches!(instance, "claude" | "claude-code") {
+                        entries.get("claudeAgent")
+                    } else {
+                        None
+                    }
+                })
+                .map(|i| i.provider.clone())
+        };
+        match selected {
+            Some(Some(p)) => p.capabilities(instance),
+            Some(None) => None,
+            None => self.defaults.capabilities(instance),
+        }
+    }
+    fn plan_selection_transition(
+        &self,
+        instance: &str,
+        current: &serde_json::Value,
+        target: &serde_json::Value,
+        capabilities: &serde_json::Value,
+    ) -> Result<Option<crate::selection_transition::Selection>, String> {
+        self.sync();
+        let selected = {
+            let entries = self.instances.lock().unwrap();
+            entries
+                .get(instance)
+                .or_else(|| {
+                    if matches!(instance, "claude" | "claude-code") {
+                        entries.get("claudeAgent")
+                    } else {
+                        None
+                    }
+                })
+                .map(|i| i.provider.clone())
+        };
+        match selected {
+            Some(Some(p)) => p.plan_selection_transition(instance, current, target, capabilities),
+            Some(None) => Ok(None),
+            None => {
+                self.defaults
+                    .plan_selection_transition(instance, current, target, capabilities)
+            }
+        }
+    }
+
     fn detach<'a>(
         &'a self,
         instance: &'a str,

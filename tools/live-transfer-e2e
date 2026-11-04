@@ -22,7 +22,7 @@ def cleanup_owned(home):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('test',nargs='?',default='live_native_fork_and_merge_back_with_private_codewords')
-    parser.add_argument('--target',choices=['context_transfer','provider_home'],default='context_transfer')
+    parser.add_argument('--target',choices=['context_transfer','provider_home','selection_transition'],default='context_transfer')
     args=parser.parse_args()
     root=pathlib.Path(__file__).resolve().parent.parent
     env={**os.environ,'TMPDIR':'/var/tmp/o3-build/tmp','CARGO_TARGET_DIR':'/var/tmp/o3-build/target-recheck'}

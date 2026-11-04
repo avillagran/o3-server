@@ -15,11 +15,12 @@ adaptations also reference nightly4165,
 [provider-policy-intake.json](nightly/provider-policy-intake.json), and
 [context-transfer-intake.json](nightly/context-transfer-intake.json), and
 [native-recovery-intake.json](nightly/native-recovery-intake.json) for source files.
-The ordinary provider-session handoff, continuation and native home/auth-overlay
-adaptations reference nightly4179,
+The provider-session handoff, continuation, native home/auth-overlay and
+selection/session transition adaptations reference nightly4179,
 `9e85538535c8553901351112ab02dd1dd62db5ee`; see
 [provider-session-intake.json](nightly/provider-session-intake.json) and
-[provider-home-intake.json](nightly/provider-home-intake.json).
+[provider-home-intake.json](nightly/provider-home-intake.json) and
+[selection-transition-intake.json](nightly/selection-transition-intake.json).
 
 MIT License
 
