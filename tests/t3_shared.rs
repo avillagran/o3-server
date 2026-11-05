@@ -99,8 +99,46 @@ fn o3_and_t3_hand_the_same_history_back_and_forth() {
     );
     assert_t3_verifies(&db);
 
-    // T3 owns it next and renames the thread the way its reducer does.
+    // T3 owns it next and renames the thread the way its reducer does; its encoder drops fields
+    // only O3 keeps.
     let mut renamed = thread.clone();
+    renamed
+        .as_object_mut()
+        .unwrap()
+        .insert("o3OnlyField".into(), json!(true));
+    {
+        let state = State::open(&userdata).unwrap();
+        let mut body: Value = serde_json::from_str(
+            &state
+                .db
+                .lock()
+                .unwrap()
+                .query_row(
+                    "SELECT body FROM records WHERE kind='thread' AND id='t'",
+                    [],
+                    |r| r.get::<_, String>(0),
+                )
+                .unwrap(),
+        )
+        .unwrap();
+        body["o3OnlyField"] = json!(true);
+        state
+            .db
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE records SET body=? WHERE kind='thread' AND id='t'",
+                [body.to_string()],
+            )
+            .unwrap();
+        state
+            .db
+            .lock()
+            .unwrap()
+            .execute("DELETE FROM t3_dirty", [])
+            .unwrap();
+    }
+    renamed.as_object_mut().unwrap().remove("o3OnlyField");
     renamed["title"] = json!("Renamed in T3");
     renamed["updatedAt"] = json!("2030-01-01T00:00:00.000Z");
     db.execute(
@@ -126,7 +164,11 @@ fn o3_and_t3_hand_the_same_history_back_and_forth() {
         let mut shared = t3_shared::start(&state).unwrap().expect("T3 base");
         let projection = o3_server::events::projection(&state, "t").unwrap();
         assert_eq!(projection["thread"]["title"], "Renamed in T3");
-        assert_eq!(t3_shared::export(&state, &mut shared).unwrap(), 0);
+        assert_eq!(
+            t3_shared::export(&state, &mut shared).unwrap(),
+            0,
+            "taken-in records were written back"
+        );
         let shell = o3_server::events::shell(&state).unwrap().to_string();
         assert!(shell.contains("Renamed in T3"), "{shell}");
     }

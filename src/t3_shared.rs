@@ -974,6 +974,17 @@ pub fn export(s: &State, t3: &mut Connection) -> Result<usize> {
     }
 }
 
+/// A record just taken from T3 is T3's state already; the fields only O3 keeps were dropped by
+/// T3's encoder on purpose, so writing it back would only churn events.
+fn taken_from_t3(db: &Connection, kind_name: &str, id: &str) -> Result<()> {
+    db.execute(
+        "DELETE FROM t3_dirty WHERE kind=? AND id=?",
+        params![kind_name, id],
+    )
+    .map(|_| ())
+    .map_err(|e| e.to_string())
+}
+
 /// Puts a T3 row into O3 the way O3's own producers do, and tells subscribed clients.
 fn take_in(db: &Connection, kind_name: &str, tid: &str, v: &Value) -> Result<bool> {
     let id = required(v, "id")?;
@@ -994,6 +1005,7 @@ fn take_in(db: &Connection, kind_name: &str, tid: &str, v: &Value) -> Result<boo
         return Ok(false);
     }
     events::put(db, kind_name, &id, tid, &v)?;
+    taken_from_t3(db, kind_name, &id)?;
     if kind_name == "turnItems" {
         let mut visible = events::get(db, "visibleTurnItems", &id).unwrap_or_else(|_| {
             json!({"position":v["ordinal"],"visibility":"local","sourceThreadId":tid,"sourceItemId":id})
@@ -1029,6 +1041,7 @@ fn take_in_project(db: &Connection, v: &Value) -> Result<bool> {
         return Ok(false);
     }
     events::put(db, "project", &id, "", &merged)?;
+    taken_from_t3(db, "project", &id)?;
     let body = json!({"id":random_id()?,"type":"project.update","payload":merged,"occurredAt":merged["updatedAt"]});
     db.execute(
         "INSERT INTO events(thread_id,body) VALUES('',?)",
