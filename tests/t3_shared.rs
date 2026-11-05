@@ -294,6 +294,15 @@ fn runs_o3_numbered_without_seeing_t3_move_after_t3_and_o3_values_fit_t3() {
         "t",
         &json!({"id":"cp","threadId":"t","scopeId":"scope","runId":"o3-run-b","ordinalWithinScope":2,"appRunOrdinal":2,"ref":"refs/o3/checkpoints/x","status":"ready"}),
     );
+    for baseline in ["base-a", "base-b"] {
+        put_record(
+            &state,
+            "checkpoints",
+            baseline,
+            "t",
+            &json!({"id":baseline,"threadId":"t","scopeId":"scope","runId":"o3-run-a","ordinalWithinScope":0,"appRunOrdinal":0,"ref":"refs/o3/checkpoints/b","status":"ready"}),
+        );
+    }
     put_record(
         &state,
         "providerSessions",
@@ -327,6 +336,10 @@ fn runs_o3_numbered_without_seeing_t3_move_after_t3_and_o3_values_fit_t3() {
     ))
     .unwrap();
     assert_eq!(checkpoint["appRunOrdinal"], 4);
+    assert_eq!(
+        one::<i64>(&db, "SELECT count(*) FROM orchestration_v2_projection_checkpoints WHERE scope_id='scope' AND ordinal_within_scope=0"),
+        1
+    );
     assert!(checkpoint["nodeId"].is_string() && checkpoint["capturedAt"].is_string());
     assert_eq!(
         one::<String>(&db, "SELECT status FROM orchestration_v2_projection_provider_sessions WHERE provider_session_id='session'"),
