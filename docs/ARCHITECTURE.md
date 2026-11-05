@@ -14,9 +14,9 @@ Fuentes normativas: `docs/research/t3-wire-contract.md`, `docs/research/client-u
 2. **Perfil compatible.** Se respeta `T3CODE_HOME` (por defecto `~/.t3`), con `userdata/environment-id`, `secrets/*.bin`,
    `settings.json`, `server-runtime.json`. Comparte la clave de firma, así que los tokens existentes siguen valiendo.
    Rehúsa arrancar si `server-runtime.json` apunta a un PID vivo.
-3. **Shared base with T3 (target, 2026-11-05).** O3 and T3 must read and write the same `statev2.sqlite`; see
-   `docs/SHARED-STATE.md`. Until its write path lands, O3 keeps history in `userdata/o3.sqlite` and imports T3's
-   threads from a consistent, read-only copy of `statev2.sqlite`.
+3. **Shared base with T3 (2026-11-05).** O3 and T3 share the profile and `statev2.sqlite`: O3 writes every change
+   there as T3's event sink would and takes in what T3 wrote; see `docs/SHARED-STATE.md`. O3-only data stays in
+   `userdata/o3.sqlite`.
 4. **Binario único multi-nombre.** Responde la CLI que usa el desktop (`auth session issue`, `__ssh-helper`, `service install`,
    `serve`), de modo que un symlink `t3` lo haga drop-in sin tocar el desktop.
 5. **Memoria.** Tokio `multi_thread` con `worker_threads(2)`, `max_blocking_threads(2)` y stacks de 512 KiB; estado `Arc<State>` con SQLite bajo `Mutex`, mimalloc, proyecciones en SQLite y no en RAM, caché SQLite acotada,

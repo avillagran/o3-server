@@ -1,55 +1,60 @@
 # Shared state with T3
 
 **Decision (2026-11-05):** O3 Server and T3 must be fully interchangeable on the same base. Both run on
-the same profile (`T3CODE_HOME`, default `~/.t3`), and both read and write the same thread history in
+the same profile (`T3CODE_HOME`, default `~/.t3`) and the same thread history in
 `userdata/statev2.sqlite`. O3 may add features, but they live beside T3's data and never replace it.
 
 This replaces the 2026-10-31 rule "T3's database is never written" (`ARCHITECTURE.md` item 3).
 
-## Where we are
+## What is shared
 
-| Layer | Shared today | Notes |
-|---|---|---|
-| Profile directory | Yes | O3 honors `T3CODE_HOME` and `--base-dir`, defaulting to `~/.t3`. |
-| `server-runtime.json`, `environment-id`, `secrets/server-signing-key.bin` | Yes | Same files, so pairing and OmaBridge follow whichever server runs. |
-| Settings, keybindings, connection catalog, attachments | Yes | Same files. |
-| Thread history | **No** | O3 writes `userdata/o3.sqlite`. `o3-server import` copies T3's projections once, read-only, and local records win. Work done in O3 is invisible to T3. |
+| Layer | How |
+|---|---|
+| Profile directory | O3 honors `T3CODE_HOME` and `--base-dir`, defaulting to `~/.t3`. |
+| `server-runtime.json`, `environment-id`, `secrets/server-signing-key.bin` | Same files, so pairing and OmaBridge follow whichever server runs. |
+| Settings, keybindings, connection catalog, attachments | Same files. |
+| Thread history | `src/t3_shared.rs`: O3 writes every change into `statev2.sqlite` and takes in what T3 wrote. |
 
 Only one server owns a profile at a time (`profile::refuse_live`, the ownership lock and port 3773).
+That is what lets the two directions below run without coordination.
 
-## Target
+## How O3 writes T3's base
 
-O3 opens `statev2.sqlite` as its system of record:
+T3 keeps an event log (`orchestration_events`) and projections its reducer derives from it. T3 does
+not rebuild projections at start: it trusts them, after checking that the
+`orchestration_v2_projection_metadata` high-water mark equals the newest agent event and that every
+projected thread has a `thread.created` event. So O3 writes both, exactly as T3's event sink does:
 
-1. **Schema gate.** O3 reads `effect_sql_migrations` on start. It writes only when the highest migration
-   is one it implements (73 today, `ActiveTurnItemIndexes`). Otherwise it opens the base read-only and
-   says so in `server.getConfig`; it never runs or invents migrations of its own on T3 tables.
-2. **One log.** Every state change appends to `orchestration_events` with T3's envelope (global
-   `sequence`, `event_id`, `aggregate_kind`, `stream_id`, `stream_version`, `event_type`,
-   `application_event_version`, command, causation and correlation ids, actor, payload, metadata) and
-   records `orchestration_v2_command_receipts`, in the same transaction as the projection rows.
-3. **T3's reducers.** Projection rows (`orchestration_v2_projection_*`, `projection_projects`, message
-   search, turn item positions, outbox and workflows) are written exactly as T3's reducers write them,
-   so T3 can start on the base without a rebuild.
-4. **O3 extras.** Data T3 has no table for (usage ledger, background tasks, Claude tasks, MCP claims)
-   moves to `o3_*` tables in the same file, created by O3 only, ignored by T3.
-5. **Exit from `o3.sqlite`.** A one-time export appends O3-only threads to the shared log, then
-   `o3.sqlite` keeps only the extras until they move into `o3_*` tables.
+1. **Schema gate.** O3 writes only when the newest row in `effect_sql_migrations` is migration 73,
+   `ActiveTurnItemIndexes` (`t3_shared::MIGRATION_HEAD`), and the projection schema is version 2.
+   Any other base is left untouched and O3 logs why; a newer T3 needs a matching O3.
+2. **Marks.** Triggers on O3's `records` table mark every changed record of a shared kind in
+   `t3_dirty`, with a version so a record rewritten during an export stays marked.
+3. **Export.** A background thread drains the marks about every 250 ms, and once more when the server
+   stops. For each record whose T3 row differs, it appends one T3 v2 event (`thread.created`,
+   `run.updated`, `turn-item.updated`, `project.meta-updated` and so on, with T3's envelope and
+   metadata) and upserts the projection row with T3's reducer SQL, including its merge rules
+   (recorded run fields, subagent completion delivery, provider turn token usage, the active
+   provider thread on the thread row, turn item positions and the thread's `updatedAt`). The
+   high-water mark and O3's cursor move in the same transaction. A record T3's columns cannot hold
+   is skipped and listed in `t3_rejects`.
+4. **Catch-up.** At start, O3 reads T3's events after its cursor (`o3_sync.o3SeenSequence`) and takes
+   in the current T3 row of every record they touched, emitting client events so open clients see
+   the change.
+5. **Adoption.** The first time O3 meets a T3 base, it takes in every T3 row it lacks (its own records
+   win) and marks all of its records, so the first export writes what T3 lacks or holds differently.
 
-## Phases
+A profile without `statev2.sqlite` keeps the marks until T3 creates its database; O3 does not create
+T3's schema.
 
-1. **Inventory.** List every event type and reducer up to migration 73 from T3's source, mapped to
-   O3's `events.rs` kinds. Output: a coverage table like `CONFORMANCE.md`.
-2. **Read path.** O3 serves reads straight from `statev2.sqlite` projections (no import), behind a flag.
-   Differential tests against T3 on a copy of a real profile.
-3. **Write path.** Event append, receipts and reducers, one aggregate at a time (projects, threads,
-   messages, turn items, runs, provider sessions, checkpoints, plans, subagents, runtime requests,
-   scheduled tasks). Each step is accepted only when T3, started on the result, shows the same
-   threads and continues them.
-4. **Switch-over test.** Alternate O3 and T3 on one profile copy: create in one, continue in the
-   other, both directions, with Claude and Codex.
-5. **Migration of existing O3 profiles.** Export O3-only history into the shared log; keep a consistent
-   backup of both databases first.
+## What stays O3's own
 
-Until phase 3 lands, the safe mode stays: O3 on `~/.t3` with `o3.sqlite`, and `o3-server import` to
-pick up threads T3 created.
+O3-only data with no T3 table (usage ledger, background and Claude tasks, MCP claims, control outbox,
+`visibleTurnItems`, receipts) stays in `userdata/o3.sqlite` beside `statev2.sqlite`.
+
+## Verification
+
+- `tests/t3_shared.rs` builds T3's schema at migration 73 (`tests/fixtures/t3-statev2-73.sql`) and
+  covers both directions, idempotent re-export, adoption and the schema gate.
+- `tests/shared_acceptance.rs` (opt-in) runs O3 on a copy of a real profile, then the real T3 runtime
+  on the same copy, and reads every live thread through T3's own decoders.
