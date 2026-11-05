@@ -61,6 +61,7 @@ pub mod setup;
 pub mod snapshot;
 pub mod stacked;
 pub mod streams;
+pub mod t3_shared;
 pub mod terminal;
 pub mod thread_commands;
 pub mod threadq;
