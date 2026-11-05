@@ -294,6 +294,18 @@ fn runs_o3_numbered_without_seeing_t3_move_after_t3_and_o3_values_fit_t3() {
         "t",
         &json!({"id":"cp","threadId":"t","scopeId":"scope","runId":"o3-run-b","ordinalWithinScope":2,"appRunOrdinal":2,"ref":"refs/o3/checkpoints/x","status":"ready"}),
     );
+    for (id, at) in [
+        ("turn-early", "2026-02-01T00:00:00.000Z"),
+        ("turn-late", "2026-02-02T00:00:00.000Z"),
+    ] {
+        put_record(
+            &state,
+            "providerTurns",
+            id,
+            "t",
+            &json!({"id":id,"providerThreadId":"pt","nodeId":"n","runAttemptId":null,"ordinal":3,"status":"completed","startedAt":at,"completedAt":at}),
+        );
+    }
     for baseline in ["base-a", "base-b"] {
         put_record(
             &state,
@@ -336,6 +348,11 @@ fn runs_o3_numbered_without_seeing_t3_move_after_t3_and_o3_values_fit_t3() {
     ))
     .unwrap();
     assert_eq!(checkpoint["appRunOrdinal"], 4);
+    let turn = |id: &str| -> i64 {
+        db.query_row("SELECT ordinal FROM orchestration_v2_projection_provider_turns WHERE provider_turn_id=?", [id], |r| r.get(0))
+            .unwrap()
+    };
+    assert_eq!((turn("turn-early"), turn("turn-late")), (3, 4));
     assert_eq!(
         one::<i64>(&db, "SELECT count(*) FROM orchestration_v2_projection_checkpoints WHERE scope_id='scope' AND ordinal_within_scope=0"),
         1
