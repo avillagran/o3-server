@@ -423,3 +423,70 @@ fn runs_o3_numbered_without_seeing_t3_move_after_t3_and_o3_values_fit_t3() {
     drop(db);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn sessions_issued_by_either_server_are_accepted_by_the_other() {
+    let root = profile();
+    let userdata = root.join("userdata");
+    let db = t3(&userdata);
+    let scopes: Vec<String> = o3_server::store::STANDARD_SCOPES
+        .iter()
+        .map(|s| (*s).to_owned())
+        .collect();
+    db.execute(
+        "INSERT INTO auth_sessions(session_id,subject,scopes,method,client_label,client_device_type,issued_at,expires_at) VALUES('t3-session','owner',?1,'bearer-access-token','phone','mobile','2026-01-01T00:00:00.000Z','2099-01-01T00:00:00.000Z')",
+        [json!(scopes).to_string()],
+    )
+    .unwrap();
+    let state = Arc::new(State::open(&userdata).unwrap());
+    let shared = t3_shared::start(&state).unwrap().expect("T3 base");
+    let (o3_scopes, client): (String, String) = state
+        .db
+        .lock()
+        .unwrap()
+        .query_row(
+            "SELECT scopes,client FROM auth_sessions WHERE session_id='t3-session'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(o3_scopes, scopes.join(" "));
+    assert!(client.contains("phone"), "{client}");
+
+    let token = state
+        .issue_session("owner", &scopes, 3_600_000, "desktop")
+        .unwrap();
+    assert!(!token.is_empty());
+    let issued: String = state
+        .db
+        .lock()
+        .unwrap()
+        .query_row(
+            "SELECT session_id FROM auth_sessions WHERE session_id<>'t3-session'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(state.revoke_session("t3-session").unwrap());
+    exporter_drains(&state, shared);
+    let (t3_scopes, label, revoked): (String, String, Option<String>) = db
+        .query_row(
+            "SELECT scopes,client_label,revoked_at FROM auth_sessions WHERE session_id=?",
+            [&issued],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Vec<String>>(&t3_scopes).unwrap(),
+        scopes
+    );
+    assert_eq!((label.as_str(), revoked), ("desktop", None));
+    assert!(one::<Option<String>>(
+        &db,
+        "SELECT revoked_at FROM auth_sessions WHERE session_id='t3-session'"
+    )
+    .is_some());
+    drop(state);
+    drop(db);
+    std::fs::remove_dir_all(root).unwrap();
+}

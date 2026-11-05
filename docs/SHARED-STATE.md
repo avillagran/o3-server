@@ -14,6 +14,7 @@ This replaces the 2026-10-31 rule "T3's database is never written" (`ARCHITECTUR
 | `server-runtime.json`, `environment-id`, `secrets/server-signing-key.bin` | Same files, so pairing and OmaBridge follow whichever server runs. |
 | Settings, keybindings, connection catalog, attachments | Same files. |
 | Thread history | `src/t3_shared.rs`: O3 writes every change into `statev2.sqlite` and takes in what T3 wrote. |
+| Client sessions | O3 mirrors the sessions it issues or revokes into T3's `auth_sessions` and, at start, takes in T3's live sessions and revocations, so a client paired with either server is accepted by the other (tokens are signed with the shared key). |
 
 Only one server owns a profile at a time (`profile::refuse_live`, the ownership lock and port 3773).
 That is what lets the two directions below run without coordination.
