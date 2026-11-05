@@ -152,7 +152,7 @@ fn real_t3_reads_what_o3_wrote_into_a_copied_profile() {
             .unwrap();
         rows.collect::<Result<_, _>>().unwrap()
     };
-    eprintln!("rejects: {rejects:?}");
+    assert!(rejects.is_empty(), "records T3 could not take: {rejects:?}");
 
     // 2. The invariants T3 checks before trusting its projections.
     let t3db = read_only(&userdata.join("statev2.sqlite"));

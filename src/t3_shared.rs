@@ -1125,8 +1125,9 @@ type Numbered = (i64, String, String, bool, String);
 
 /// Before sharing T3's base, O3 numbered runs (and provider turns) without seeing T3's: its first
 /// import carried no runs. Where an O3-only record takes an ordinal T3 already uses in the same
-/// group, every O3-only record of that group moves after T3's last ordinal, in time order. Turn
-/// items keep their ordinals: O3 placed them after T3's already. Returns how many moved.
+/// group, every O3-only record of that group moves after T3's last ordinal, in time order; where
+/// only O3's own records share an ordinal, the later ones move to the end. Turn items keep their
+/// ordinals: O3 placed them after T3's already. Returns how many moved.
 fn renumber_forks(
     tx: &Transaction,
     t3: &Connection,
@@ -1162,18 +1163,20 @@ fn renumber_forks(
     for records in groups.values() {
         let taken: std::collections::HashSet<i64> =
             records.iter().filter(|r| r.3).map(|r| r.0).collect();
-        if !records.iter().any(|r| !r.3 && taken.contains(&r.0)) {
-            continue;
-        }
-        let first = records
-            .iter()
-            .filter(|r| r.3)
-            .map(|r| r.0)
-            .max()
-            .unwrap_or(0)
-            + 1;
         let mut own: Vec<_> = records.iter().filter(|r| !r.3).collect();
         own.sort_by(|a, b| (&a.2, a.0).cmp(&(&b.2, b.0)));
+        let (first, own) = if own.iter().any(|r| taken.contains(&r.0)) {
+            // Numbered without seeing T3's: all of O3's move after T3's last.
+            (taken.iter().max().copied().unwrap_or(0) + 1, own)
+        } else {
+            // Only O3's own duplicates: the earliest keeps its ordinal, later ones move to the end.
+            let mut seen = std::collections::HashSet::new();
+            let later: Vec<_> = own.iter().copied().filter(|r| !seen.insert(r.0)).collect();
+            if later.is_empty() {
+                continue;
+            }
+            (records.iter().map(|r| r.0).max().unwrap_or(0) + 1, later)
+        };
         for (next, (old, id, _, _, tid)) in (first..).zip(own) {
             let mut body = events::get(tx, kind_name, id)?;
             body["ordinal"] = json!(next);
