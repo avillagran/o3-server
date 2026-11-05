@@ -272,7 +272,11 @@ impl CodexProvider {
                 (true, false) => "warning",
             }
         );
-        d["auth"] = json!({"status":"unknown"});
+        // Retained limits belong to the last verified identity. A lightweight
+        // availability check must not strip that identity from the observation.
+        if d["usageLimits"].is_null() {
+            d["auth"] = json!({"status":"unknown"});
+        }
         d["message"] = json!(if installed {
             "Codex available; starts on first turn, authentication checked then"
         } else {
@@ -619,7 +623,7 @@ impl CodexProvider {
                             frame["params"]["o3RequestId"]=json!(request_id);
                         }
                         if frame["method"]=="account/rateLimits/updated" {
-                            self.descriptor.lock().unwrap()["usageLimits"]=usage_limits(&frame["params"]["rateLimits"]);
+                            publish_usage(&mut self.descriptor.lock().unwrap(), &frame["params"]["rateLimits"], None, frame["params"]["accountId"].as_str());
                         }
                         let failure_message=frame["params"]["turn"]["error"]["message"].as_str().unwrap_or("Codex turn failed").to_owned();
                         let done=frame["method"]=="turn/completed";
@@ -932,8 +936,13 @@ impl Provider for CodexProvider {
             let result = async {
                 let c = probe.connection().await?;
                 let response = c.call("account/rateLimits/read", json!({})).await?;
-                self.descriptor.lock().unwrap()["usageLimits"] =
-                    usage_limits(&response["rateLimits"]);
+                let auth = probe.descriptor.lock().unwrap()["auth"].clone();
+                publish_usage(
+                    &mut self.descriptor.lock().unwrap(),
+                    &response["rateLimits"],
+                    Some(&auth),
+                    response["accountId"].as_str(),
+                );
                 Ok::<_, String>(())
             }
             .await;
@@ -1113,7 +1122,7 @@ async fn actor(
                         if let Some(waiters)=closing.remove(id){for waiter in waiters{let _=waiter.send(Ok(()));}}
                     }
                 }
-                if frame["method"]=="account/rateLimits/updated" {descriptor.lock().unwrap()["usageLimits"]=usage_limits(&frame["params"]["rateLimits"]);}
+                if frame["method"]=="account/rateLimits/updated" {publish_usage(&mut descriptor.lock().unwrap(), &frame["params"]["rateLimits"], None, frame["params"]["accountId"].as_str());}
                 let tid=frame["params"]["threadId"].as_str();
                 if let Some(tid)=tid {
                     if let Some(route)=routes.get(tid){if !route.push(frame.clone(),size){routes.remove(tid);}}
@@ -1149,6 +1158,43 @@ async fn actor(
     }
 }
 
+// Identity and limits form one observation. Native T3 uses rateLimits.accountId
+// as workspaceId; account/read alone does not provide it for ChatGPT accounts.
+fn publish_usage(
+    descriptor: &mut Value,
+    limits: &Value,
+    auth: Option<&Value>,
+    account_id: Option<&str>,
+) {
+    let source = auth.unwrap_or(&descriptor["auth"]);
+    let mut identity = json!({"status":source["status"].as_str().unwrap_or("unknown")});
+    for key in ["email", "workspaceId", "label"] {
+        if let Some(value) = source[key]
+            .as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty() && s.len() <= 320 && !s.chars().any(char::is_control))
+        {
+            identity[key] = json!(value);
+        }
+    }
+    if let Some(account) = account_id
+        .or(limits["accountId"].as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && s.len() <= 320 && !s.chars().any(char::is_control))
+    {
+        if auth.is_none()
+            && identity["workspaceId"]
+                .as_str()
+                .is_some_and(|previous| previous != account)
+        {
+            identity.as_object_mut().unwrap().remove("email");
+        }
+        identity["workspaceId"] = json!(account);
+    }
+    descriptor["auth"] = identity;
+    descriptor["usageLimits"] = usage_limits(limits);
+}
+
 fn usage_limits(limits: &Value) -> Value {
     let mut windows = Vec::new();
     for (id, label, kind) in [
@@ -1159,6 +1205,13 @@ fn usage_limits(limits: &Value) -> Value {
         if !w.is_object() {
             continue;
         }
+        // Codex can report only a weekly limit in `primary`. Its position is
+        // not its period; keep the same duration-based classification as T3.
+        let (label, kind) = match w["windowDurationMins"].as_u64() {
+            Some(10080) => ("Weekly", "weekly"),
+            Some(300) => ("Session", "session"),
+            _ => (label, kind),
+        };
         let mut window = json!({"id":id,"kind":kind,"label":label,"usedPercent":w["usedPercent"].as_f64().unwrap_or(0.0).clamp(0.0,100.0)});
         if let Some(mins) = w["windowDurationMins"].as_u64() {
             window["windowDurationMins"] = json!(mins);
@@ -1205,6 +1258,82 @@ fn command_events(frame: &Value, rid: &str) -> Vec<crate::command_output::Comman
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn quota_probe_retains_verified_account_identity_without_retaining_actor() {
+        let executable = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/codex/usage-identity.py");
+        for account in ["one", "two"] {
+            let provider = CodexProvider::new(executable.clone(), None)
+                .with_environment(vec![("O3_TEST_ACCOUNT".into(), account.into())]);
+            provider.poll_usage().await.unwrap();
+            let config = provider.config();
+            assert_eq!(
+                config[0]["auth"]["email"],
+                format!("{account}@example.test")
+            );
+            assert_eq!(
+                config[0]["auth"]["workspaceId"],
+                format!("account-{account}")
+            );
+            assert_eq!(
+                config[0]["usageLimits"]["windows"][0]["usedPercent"].as_f64(),
+                Some(37.0)
+            );
+            assert!(
+                provider.client.lock().await.is_none(),
+                "quota probe retained inference actor"
+            );
+            provider.probe_cached().unwrap();
+            assert_eq!(
+                provider.config()[0]["auth"],
+                config[0]["auth"],
+                "cached availability stripped identity from last quota observation"
+            );
+        }
+    }
+    #[test]
+    fn quota_window_period_follows_duration_not_primary_position() {
+        let limits = usage_limits(
+            &json!({"primary":{"windowDurationMins":10080,"usedPercent":6},"secondary":{"windowDurationMins":300,"usedPercent":20}}),
+        );
+        assert_eq!(limits["windows"][0]["kind"], "weekly");
+        assert_eq!(limits["windows"][0]["label"], "Weekly");
+        assert_eq!(limits["windows"][1]["kind"], "session");
+        assert_eq!(limits["windows"][1]["label"], "Session");
+    }
+    #[test]
+    fn quota_identity_is_public_and_notifications_keep_account_boundaries() {
+        let mut d = json!({});
+        let auth =
+            json!({"status":"authenticated","email":"same@example.test","accessToken":"PRIVATE"});
+        publish_usage(
+            &mut d,
+            &json!({"accountId":"workspace-one","primary":{"usedPercent":10}}),
+            Some(&auth),
+            None,
+        );
+        assert_eq!(d["auth"]["workspaceId"], "workspace-one");
+        assert!(!d.to_string().contains("PRIVATE"));
+        publish_usage(
+            &mut d,
+            &json!({"accountId":"workspace-one","primary":{"usedPercent":20}}),
+            None,
+            None,
+        );
+        assert_eq!(d["auth"]["email"], "same@example.test");
+        publish_usage(
+            &mut d,
+            &json!({"accountId":"workspace-two","primary":{"usedPercent":30}}),
+            None,
+            None,
+        );
+        assert!(
+            d["auth"].get("email").is_none(),
+            "workspace change reused prior identity without account/read"
+        );
+        assert_eq!(d["auth"]["workspaceId"], "workspace-two");
+    }
+
     fn input(thread: &str, resume: Option<String>) -> RunInput {
         RunInput {
             native_mcp: None,
