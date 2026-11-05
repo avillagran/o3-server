@@ -19,6 +19,7 @@ Commands:
   auth session revoke ID    Revoke a session
   auth pairing create       Create a one-time pairing credential
   service install           Install the user service
+  --version                 Print the version
 
 The profile comes from T3CODE_HOME (default ~/.t3).
 ";
@@ -49,6 +50,11 @@ fn main() -> std::io::Result<()> {
             std::process::exit(2);
         }
         o3_server::document_text::worker(Path::new(&args[1]), &args[2]);
+    }
+    // Installers verify a downloaded binary with this; it touches no profile.
+    if args.first().is_some_and(|s| s == "--version" || s == "-V") {
+        println!("o3-server {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
     }
     // Before any command runs: `auth session issue --help` must never mint a credential.
     if args.iter().any(|a| a == "--help" || a == "-h") {
