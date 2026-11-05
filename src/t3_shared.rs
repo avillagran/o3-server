@@ -557,6 +557,20 @@ fn export_record(tx: &Transaction, k: &Kind, tid: &str, v: &Value) -> Result<Opt
     if existing.as_ref() == Some(v) {
         return Ok(None);
     }
+    if k.kind == "checkpoints" && existing.is_none() {
+        // O3 keeps a baseline per run at position 0 of its scope; T3 holds one checkpoint per
+        // position, and the state before a run is the previous run's checkpoint.
+        let taken: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM orchestration_v2_projection_checkpoints WHERE scope_id=?1 AND ordinal_within_scope=?2 AND checkpoint_id<>?3)",
+                params![text(v, "scopeId"), int(v, "ordinalWithinScope"), id],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if taken {
+            return Ok(None);
+        }
+    }
     let stream = if k.kind == "thread" { id.as_str() } else { tid };
     if stream.is_empty() {
         return Err("record has no thread".into());
