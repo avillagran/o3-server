@@ -194,6 +194,9 @@ pub fn initialize(db: &Connection) -> Result<()> {
     // Conflict-free on purpose: an outer statement's conflict policy overrides a trigger's own.
     let mark = "UPDATE t3_dirty SET version=version+1,thread_id=new.thread_id WHERE kind=new.kind AND id=new.id;
            INSERT INTO t3_dirty SELECT new.kind,new.id,new.thread_id,1 WHERE NOT EXISTS(SELECT 1 FROM t3_dirty WHERE kind=new.kind AND id=new.id);";
+    // Sessions are shared too: a client paired with either server is accepted by the other.
+    let session = "UPDATE t3_dirty SET version=version+1 WHERE kind='authSession' AND id=new.session_id;
+           INSERT INTO t3_dirty SELECT 'authSession',new.session_id,'',1 WHERE NOT EXISTS(SELECT 1 FROM t3_dirty WHERE kind='authSession' AND id=new.session_id);";
     db.execute_batch(&format!(
         "CREATE TABLE IF NOT EXISTS t3_dirty(kind TEXT NOT NULL,id TEXT NOT NULL,thread_id TEXT NOT NULL,version INTEGER NOT NULL,PRIMARY KEY(kind,id));
          CREATE TABLE IF NOT EXISTS t3_rejects(kind TEXT NOT NULL,id TEXT NOT NULL,error TEXT NOT NULL,at INTEGER NOT NULL,PRIMARY KEY(kind,id));
@@ -201,6 +204,23 @@ pub fn initialize(db: &Connection) -> Result<()> {
          DROP TRIGGER IF EXISTS t3_dirty_update;
          CREATE TRIGGER t3_dirty_insert AFTER INSERT ON records WHEN new.kind IN ({kinds}) BEGIN {mark} END;
          CREATE TRIGGER t3_dirty_update AFTER UPDATE OF body ON records WHEN new.kind IN ({kinds}) BEGIN {mark} END;"
+    ))
+    .map_err(|e| e.to_string())?;
+    let sessions: bool = db
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='auth_sessions')",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if !sessions {
+        return Ok(());
+    }
+    db.execute_batch(&format!(
+        "DROP TRIGGER IF EXISTS t3_session_insert;
+         DROP TRIGGER IF EXISTS t3_session_update;
+         CREATE TRIGGER t3_session_insert AFTER INSERT ON auth_sessions BEGIN {session} END;
+         CREATE TRIGGER t3_session_update AFTER UPDATE ON auth_sessions BEGIN {session} END;"
     ))
     .map_err(|e| e.to_string())
 }
@@ -787,6 +807,180 @@ fn o3_shape(v: &mut Value) {
     }
 }
 
+fn iso_ms(text: &str) -> Option<i64> {
+    time::OffsetDateTime::parse(text, &time::format_description::well_known::Rfc3339)
+        .ok()
+        .map(|at| (at.unix_timestamp_nanos() / 1_000_000) as i64)
+}
+
+/// T3's per-client columns, which O3 keeps together in its `client` JSON.
+const CLIENT_COLUMNS: [&str; 8] = [
+    "client_label",
+    "client_ip_address",
+    "client_user_agent",
+    "client_device_type",
+    "client_os",
+    "client_browser",
+    "client_surface",
+    "client_app_version",
+];
+
+fn o3_session(db: &Connection, id: &str) -> Result<Option<Value>> {
+    db.query_row(
+        "SELECT subject,scopes,method,client,issued_at,expires_at,revoked_at FROM auth_sessions WHERE session_id=?",
+        [id],
+        |r| {
+            Ok(json!({
+                "sessionId": id,
+                "subject": r.get::<_, String>(0)?,
+                "scopes": r.get::<_, String>(1)?,
+                "method": r.get::<_, String>(2)?,
+                "client": r.get::<_, String>(3)?,
+                "issuedAt": r.get::<_, i64>(4)?,
+                "expiresAt": r.get::<_, i64>(5)?,
+                "revokedAt": r.get::<_, Option<i64>>(6)?,
+            }))
+        },
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+}
+
+/// Writes an O3 session into T3's `auth_sessions`: scopes as T3's JSON array, times as ISO.
+fn export_session(tx: &Transaction, v: &Value) -> Result<bool> {
+    let id = required(v, "sessionId")?;
+    let expires = iso(v["expiresAt"].as_i64().ok_or("expiresAt missing")?);
+    let revoked = v["revokedAt"].as_i64().map(iso);
+    let existing: Option<(String, Option<String>)> = tx
+        .query_row(
+            "SELECT expires_at,revoked_at FROM auth_sessions WHERE session_id=?",
+            [&id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let same = |at: &str, ours: &str| iso_ms(at) == iso_ms(ours);
+    if existing.as_ref().is_some_and(|(e, r)| {
+        same(e, &expires)
+            && match (r, &revoked) {
+                (None, None) => true,
+                (Some(a), Some(b)) => same(a, b),
+                _ => false,
+            }
+    }) {
+        return Ok(false);
+    }
+    let scopes: Vec<&str> = v["scopes"]
+        .as_str()
+        .unwrap_or_default()
+        .split_whitespace()
+        .collect();
+    let client: Value =
+        serde_json::from_str(v["client"].as_str().unwrap_or("{}")).unwrap_or_default();
+    let column = |name: &str| client.get(name).and_then(Value::as_str).map(str::to_owned);
+    tx.execute(
+        "INSERT INTO auth_sessions(session_id,subject,scopes,method,client_label,client_ip_address,client_user_agent,client_device_type,client_os,client_browser,client_surface,client_app_version,issued_at,expires_at,revoked_at)
+         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)
+         ON CONFLICT(session_id) DO UPDATE SET expires_at=excluded.expires_at,revoked_at=excluded.revoked_at",
+        params![
+            id,
+            required(v, "subject")?,
+            json!(scopes).to_string(),
+            required(v, "method")?,
+            column("client_label"),
+            column("client_ip_address"),
+            column("client_user_agent"),
+            column("client_device_type").unwrap_or_else(|| "unknown".into()),
+            column("client_os"),
+            column("client_browser"),
+            column("client_surface"),
+            column("client_app_version"),
+            iso(v["issuedAt"].as_i64().unwrap_or_else(now_ms)),
+            expires,
+            revoked,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+/// A T3 session row: id, subject, scopes, method, client, issued, expires, revoked.
+type T3Session = (
+    String,
+    String,
+    String,
+    String,
+    Value,
+    String,
+    String,
+    Option<String>,
+);
+
+/// Takes in the live sessions T3 issued or revoked, so its paired clients reach O3 too.
+fn take_sessions(s: &State, t3: &Connection) -> Result<usize> {
+    let now = iso(now_ms());
+    let rows: Vec<T3Session> = {
+        let mut q = t3
+            .prepare(&format!(
+                "SELECT session_id,subject,scopes,method,{},issued_at,expires_at,revoked_at FROM auth_sessions WHERE expires_at>?",
+                CLIENT_COLUMNS.join(",")
+            ))
+            .map_err(|e| e.to_string())?;
+        let rows = q
+            .query_map([&now], |r| {
+                let mut client = Map::new();
+                for (i, name) in CLIENT_COLUMNS.iter().enumerate() {
+                    if let Some(value) = r.get::<_, Option<String>>(4 + i)? {
+                        client.insert((*name).into(), json!(value));
+                    }
+                }
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    Value::Object(client),
+                    r.get(12)?,
+                    r.get(13)?,
+                    r.get(14)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<std::result::Result<_, _>>()
+            .map_err(|e| e.to_string())?
+    };
+    let mut db = s.db.lock().unwrap();
+    let tx = db.transaction().map_err(|e| e.to_string())?;
+    let mut taken = 0;
+    for (id, subject, scopes, method, client, issued, expires, revoked) in rows {
+        let scopes = serde_json::from_str::<Vec<String>>(&scopes)
+            .map(|s| s.join(" "))
+            .unwrap_or(scopes);
+        let (Some(issued), Some(expires)) = (iso_ms(&issued), iso_ms(&expires)) else {
+            continue;
+        };
+        let revoked = revoked.as_deref().and_then(iso_ms);
+        let changed = tx
+            .execute(
+                "INSERT INTO auth_sessions(session_id,subject,scopes,method,client,issued_at,expires_at,revoked_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)
+                 ON CONFLICT(session_id) DO UPDATE SET revoked_at=coalesce(auth_sessions.revoked_at,excluded.revoked_at)
+                 WHERE auth_sessions.revoked_at IS NULL AND excluded.revoked_at IS NOT NULL",
+                params![id, subject, scopes, method, client.to_string(), issued, expires, revoked],
+            )
+            .map_err(|e| e.to_string())?;
+        if changed > 0 {
+            taken += 1;
+            tx.execute(
+                "DELETE FROM t3_dirty WHERE kind='authSession' AND id=?",
+                [&id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(taken)
+}
+
 struct Dirty {
     kind: String,
     id: String,
@@ -888,6 +1082,17 @@ pub fn export(s: &State, t3: &mut Connection) -> Result<usize> {
             drop(q);
             let mut batch = Vec::with_capacity(raw.len());
             for (kind, id, thread_id, version, body) in raw {
+                if kind == "authSession" {
+                    let body = o3_session(&db, &id)?;
+                    batch.push(Dirty {
+                        kind,
+                        id,
+                        thread_id,
+                        version,
+                        body,
+                    });
+                    continue;
+                }
                 let body = match body.map(|b| serde_json::from_str::<Value>(&b)) {
                     Some(Ok(v)) => Some(t3_shape(&db, &kind, v)),
                     Some(Err(e)) => {
@@ -923,6 +1128,8 @@ pub fn export(s: &State, t3: &mut Connection) -> Result<usize> {
                 // Project events do not move the thread projections' high-water mark.
                 let result = if item.kind == "project" {
                     export_project(&tx, v).map(|written| written.map(|_| None))
+                } else if item.kind == "authSession" {
+                    export_session(&tx, v).map(|written| written.then_some(None))
                 } else {
                     let k = kind(&item.kind).ok_or("unknown kind")?;
                     export_record(&tx, k, &item.thread_id, v).map(|written| written.map(Some))
@@ -1295,6 +1502,11 @@ fn adopt(s: &State, t3: &Connection) -> Result<usize> {
         [],
     )
     .map_err(|e| e.to_string())?;
+    db.execute(
+        "INSERT OR IGNORE INTO t3_dirty SELECT 'authSession',session_id,'',0 FROM auth_sessions",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
     Ok(taken)
 }
 
@@ -1305,11 +1517,12 @@ pub fn start(s: &State) -> Result<Option<Connection>> {
         return Ok(None);
     };
     let latest_sequence = latest(&t3)?;
-    let report = match seen(&t3)? {
+    let mut report = match seen(&t3)? {
         None => json!({"adopted": adopt(s, &t3)?}),
         Some(after) if after < latest_sequence => json!({"tookIn": catch_up(s, &t3, after)?}),
         Some(_) => json!({}),
     };
+    report["sessions"] = json!(take_sessions(s, &t3)?);
     set_seen(&t3, latest_sequence)?;
     s.notify();
     eprintln!("T3 shared base {}: {report}", database(&s.dir).display());
