@@ -487,6 +487,30 @@ fn sessions_issued_by_either_server_are_accepted_by_the_other() {
     )
     .is_some());
     drop(state);
+    // A session O3 issued before this profile was shared reaches T3 on the next start too.
+    let state = Arc::new(State::open(&userdata).unwrap());
+    state
+        .db
+        .lock()
+        .unwrap()
+        .execute("INSERT INTO auth_sessions(session_id,subject,scopes,method,client,issued_at,expires_at) VALUES('older','owner','orchestration:read','bearer-access-token','{}',1,4102444800000)", [])
+        .unwrap();
+    state
+        .db
+        .lock()
+        .unwrap()
+        .execute("DELETE FROM t3_dirty", [])
+        .unwrap();
+    let shared = t3_shared::start(&state).unwrap().expect("T3 base");
+    exporter_drains(&state, shared);
+    assert_eq!(
+        one::<String>(
+            &db,
+            "SELECT scopes FROM auth_sessions WHERE session_id='older'"
+        ),
+        "[\"orchestration:read\"]"
+    );
+    drop(state);
     drop(db);
     std::fs::remove_dir_all(root).unwrap();
 }

@@ -1502,11 +1502,6 @@ fn adopt(s: &State, t3: &Connection) -> Result<usize> {
         [],
     )
     .map_err(|e| e.to_string())?;
-    db.execute(
-        "INSERT OR IGNORE INTO t3_dirty SELECT 'authSession',session_id,'',0 FROM auth_sessions",
-        [],
-    )
-    .map_err(|e| e.to_string())?;
     Ok(taken)
 }
 
@@ -1523,6 +1518,14 @@ pub fn start(s: &State) -> Result<Option<Connection>> {
         Some(_) => json!({}),
     };
     report["sessions"] = json!(take_sessions(s, &t3)?);
+    // Sessions are few; the exporter skips the ones T3 already holds as O3 does.
+    s.db.lock()
+        .unwrap()
+        .execute(
+            "INSERT OR IGNORE INTO t3_dirty SELECT 'authSession',session_id,'',0 FROM auth_sessions",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
     set_seen(&t3, latest_sequence)?;
     s.notify();
     eprintln!("T3 shared base {}: {report}", database(&s.dir).display());
