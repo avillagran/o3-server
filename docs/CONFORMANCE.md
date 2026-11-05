@@ -3401,3 +3401,27 @@ fix changes no server wire. Evidence:
 Validation: full suites 463 default / 460 without default features, 28 opt-ins
 ignored each; strict all-target Clippy both modes, fmt, generated compatibility
 and diff checks pass.
+
+## Scheduled tasks for Android (2026-11-04)
+
+Android acceptance on 2026-11-03 authenticated to both hosts, then failed with
+`Unknown request tag: scheduledTasks.list`. That text is the defect of Effect's
+RpcServer, so the replies came from T3 Node, not from o3, which answers unknown tags
+with `o3-server does not implement …`. T3 nightly 3991 (live on NODE) and 4192 define
+no `scheduledTasks.list`: their only task read is the `scheduledTasks.subscribe`
+stream. lib-t3-rust had registered `list` from the older pinned contract.
+
+o3 now serves `scheduledTasks.subscribe` like ScheduledTaskService.subscribeList.
+It emits `{tasks}` at once, then the full newest-first list after every write, and
+hides `webhook` without `orchestration:operate`. Upsert, setEnabled, delete and runNow
+follow the nightly service: commandId-derived ids, `once` schedules, kept `nextRunAt`
+for unchanged schedules, normalized webhook schedules with encoded hook paths,
+idempotent delete, and webhook runNow refusal. `scheduledTasks.list` stays for older o3
+clients. lib-t3-rust PR26 reads `scheduledTasks.list` from the stream, falling back
+to the RPC only when the stream is unknown. Evidence:
+[scheduled-tasks-intake.json](nightly/scheduled-tasks-intake.json).
+
+Validation: full suites 466 default / 463 without default features, 29 opt-ins
+ignored each; strict all-target Clippy both modes, fmt, generated compatibility and
+diff checks pass. The opt-in differential against real T3 3991 and the existing signed
+webhook differential pass.

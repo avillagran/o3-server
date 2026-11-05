@@ -30,6 +30,8 @@ pub struct Ops {
     pub usage_rate_failure: AtomicBool,
     pub usage_rate_refresh: tokio::sync::Mutex<()>,
     pub scheduler_wake: tokio::sync::Notify,
+    /// Bumped on every scheduled-task write so `scheduledTasks.subscribe` re-emits the list.
+    tasks_version: std::sync::atomic::AtomicU64,
     notify: Notifier,
 }
 
@@ -54,6 +56,7 @@ impl Ops {
             usage_rate_failure: AtomicBool::new(false),
             usage_rate_refresh: tokio::sync::Mutex::new(()),
             scheduler_wake: tokio::sync::Notify::new(),
+            tasks_version: Default::default(),
             notify,
         }
     }
@@ -88,8 +91,15 @@ impl Ops {
     pub fn report_version(&self) -> (u64, Option<Value>) {
         self.report.lock().unwrap().clone()
     }
+    /// Every scheduled-task write calls this: it re-plans the timer and wakes list subscribers.
     pub fn wake_scheduler(&self) {
+        self.tasks_version
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.scheduler_wake.notify_one();
+        crate::terminal::bump(&self.notify);
+    }
+    pub fn tasks_version(&self) -> u64 {
+        self.tasks_version.load(std::sync::atomic::Ordering::SeqCst)
     }
 }
 

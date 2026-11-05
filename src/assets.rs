@@ -1558,14 +1558,14 @@ fn resolve(s: &State, token: &str, rest: &str) -> Option<Resolved> {
     }
 }
 
-fn percent_decode(s: &str) -> Option<String> {
+pub(crate) fn percent_decode(s: &str) -> Option<String> {
     let bytes = s.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%' {
             let h = std::str::from_utf8(bytes.get(i + 1..i + 3)?).ok()?;
-            out.push(u8::from_str_radix(h, 16).ok()?);
+            out.push(crate::auth::decode_hex(h)?[0]);
             i += 3;
         } else {
             out.push(bytes[i]);

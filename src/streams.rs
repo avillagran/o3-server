@@ -37,7 +37,15 @@ pub struct ReportCursor {
     waiting: bool,
 }
 
+/// `scheduledTasks.subscribe`: `{tasks}` now, then the full list after each task write.
+pub struct TasksCursor {
+    seen: Option<u64>,
+    waiting: bool,
+    hide_webhook: bool,
+}
+
 pub enum Live {
+    Tasks(TasksCursor),
     Terminal(terminal::Cursor),
     Command(command_output::Cursor),
     Report(ReportCursor),
@@ -50,6 +58,25 @@ impl Live {
             Live::Terminal(c) => c.next(s),
             Live::Command(c) => c.next(s),
             Live::P2(c) => c.next(s),
+            Live::Tasks(c) => {
+                if c.waiting {
+                    return Step::Idle;
+                }
+                // Read the version first: a write racing this read bumps it again.
+                let version = s.streams.ops.tasks_version();
+                if c.seen == Some(version) {
+                    return Step::Idle;
+                }
+                match crate::scheduled::list_view(s, c.hide_webhook) {
+                    Ok(list) => {
+                        c.seen = Some(version);
+                        c.waiting = true;
+                        Step::Values(vec![list])
+                    }
+                    // T3 ends the stream with the list's ScheduledTaskError; end it here too.
+                    Err(_) => Step::Done,
+                }
+            }
             Live::Report(c) => {
                 if c.waiting {
                     return Step::Idle;
@@ -69,6 +96,7 @@ impl Live {
             Live::Terminal(c) => c.ack(),
             Live::Command(c) => c.ack(),
             Live::P2(c) => c.ack(),
+            Live::Tasks(c) => c.waiting = false,
             Live::Report(c) => c.waiting = false,
         }
     }
@@ -78,6 +106,7 @@ impl Live {
             Live::Terminal(c) => c.is_full(),
             Live::Command(c) => c.is_full(),
             Live::P2(c) => c.is_full(),
+            Live::Tasks(c) => c.waiting,
             Live::Report(c) => c.waiting,
         }
     }
@@ -93,12 +122,20 @@ pub fn is_live_tag(tag: &str) -> bool {
                 | "subscribeTerminalMetadata"
                 | "orchestration.subscribeCommandOutput"
                 | "server.getStorageCleanupReport"
+                | "scheduledTasks.subscribe"
         )
 }
 
 pub async fn open(s: &Arc<State>, tag: &str, p: &Value) -> Result<Live, Value> {
     if crate::p2::is_stream(tag) {
         crate::p2::open(s, tag, p).map(Live::P2)
+    } else if tag == "scheduledTasks.subscribe" {
+        crate::scheduled::ensure_started(s);
+        Ok(Live::Tasks(TasksCursor {
+            seen: None,
+            waiting: false,
+            hide_webhook: p["_hideWebhook"] == true,
+        }))
     } else if tag == "server.getStorageCleanupReport" {
         Ok(Live::Report(ReportCursor {
             seen: None,

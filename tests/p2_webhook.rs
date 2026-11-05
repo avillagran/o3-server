@@ -54,7 +54,8 @@ fn signed_webhook_definition_is_readable_without_leaking_secret() {
     db.execute("UPDATE hook_queue SET due=0,expires=0", [])
         .unwrap();
     drop(db);
-    scheduled_tasks::set_enabled(&c, "hook", true).unwrap();
+    // An unchanged setEnabled is a no-op in T3, so wake the timer directly.
+    s.state.streams.ops.wake_scheduler();
     assert!(support::wait_for(std::time::Duration::from_secs(2), || s
         .state
         .db
@@ -132,7 +133,8 @@ fn signature_tags_decode_like_t3_effect_encoding() {
     let encoded = base64::engine::general_purpose::STANDARD.encode(tag(other));
     let unpadded = format!("sha256={}", encoded.trim_end_matches('='));
     assert!(post(&s.base, &b64_path, other, &unpadded).contains("401"));
-    assert!(post(&s.base, &b64_path, other, &format!("sha256={encoded}")).contains("accepted"));
+    let reply = post(&s.base, &b64_path, other, &format!("sha256={encoded}"));
+    assert!(reply.contains("accepted"), "{reply}");
 }
 
 fn tag(body: &str) -> Vec<u8> {
@@ -272,7 +274,8 @@ fn failed_dispatch_keeps_accepted_work_durable() {
     .unwrap();
     db.execute("UPDATE hook_queue SET due=0", []).unwrap();
     drop(db);
-    scheduled_tasks::set_enabled(&c, "retry", true).unwrap();
+    // An unchanged setEnabled is a no-op in T3, so wake the timer directly.
+    s.state.streams.ops.wake_scheduler();
     assert!(support::wait_for(std::time::Duration::from_secs(2), || s
         .state
         .db
@@ -286,4 +289,31 @@ fn failed_dispatch_keeps_accepted_work_durable() {
         scheduled_tasks::list(&c).unwrap()["tasks"][0]["runCount"],
         1
     );
+}
+
+#[test]
+fn command_id_hooks_route_through_their_encoded_path() {
+    let s = support::start(|_| {});
+    let c = s.connect();
+    let p = json!({"commandId":"android-hook","title":"Hook","prompt":"inspect {{body.action}}","enabled":true,"schedule":{"type":"webhook","signature":{"header":"X-Hub-Signature-256","encoding":"hex","prefix":"sha256=","secret":"fixture-only-key"}},"projectId":"p","workspaceStrategy":{"type":"root"},"modelSelection":{"instanceId":"scripted","model":"m"},"runtimeMode":"full-access","interactionMode":"default"});
+    let task =
+        scheduled_tasks::upsert(&c, &TaskUpsert::from_json(&p).unwrap()).unwrap()["task"].clone();
+    assert_eq!(task["id"], "scheduled-task:android-hook");
+    // T3 stores the header lowercased and encodes the id like encodeURIComponent.
+    assert_eq!(
+        task["schedule"]["signature"]["header"],
+        "x-hub-signature-256"
+    );
+    assert_eq!(
+        task["schedule"]["maxDeliveryAgeMinutes"],
+        serde_json::Value::Null
+    );
+    let path = task["webhook"]["path"].as_str().unwrap();
+    assert!(
+        path.starts_with("/api/hooks/scheduled-task%3Aandroid-hook/"),
+        "{path}"
+    );
+    let body = r#"{"action":"opened"}"#;
+    assert!(post(&s.base, path, body, "sha256=00").contains("401"));
+    assert!(post(&s.base, path, body, &sign(body)).contains("accepted"));
 }
