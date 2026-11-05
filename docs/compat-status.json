@@ -604,7 +604,7 @@
     "scheduledTasks.delete": {
       "status": "done",
       "priority": "P2",
-      "note": "tests/ops.rs."
+      "note": "tests/ops.rs. 2026-11-04: idempotent like T3; a missing id still returns {id}."
     },
     "scheduledTasks.getWebhookDelivery": {
       "status": "skip",
@@ -614,7 +614,7 @@
     "scheduledTasks.list": {
       "status": "done",
       "priority": "P2",
-      "note": "tests/ops.rs."
+      "note": "tests/ops.rs. 2026-11-04: absent from T3 nightly 3991/4192, which answer `Unknown request tag: scheduledTasks.list` (the 2026-11-03 Android rejection came from NODE's T3). Kept for older o3 clients; same view as subscribe, webhook hidden without orchestration:operate."
     },
     "scheduledTasks.listWebhookDeliveries": {
       "status": "skip",
@@ -629,22 +629,22 @@
     "scheduledTasks.runNow": {
       "status": "done",
       "priority": "P2",
-      "note": "Desktop scheduled_tasks.rs:68, Android MaintenanceScreen.kt:83. A real reader passes; succeeded means dispatch and launch succeeded."
+      "note": "Desktop scheduled_tasks.rs:68, Android MaintenanceScreen.kt:83. A real reader passes; succeeded means dispatch and launch succeeded. 2026-11-04: webhook tasks are refused; the run is stored as running before launch; `once` counts from the run start."
     },
     "scheduledTasks.setEnabled": {
       "status": "done",
       "priority": "P2",
-      "note": "tests/ops.rs."
+      "note": "tests/ops.rs. 2026-11-04: an unchanged value is a no-op; enabling a past `once` fails as in T3."
     },
     "scheduledTasks.subscribe": {
-      "status": "skip",
-      "priority": "unused",
-      "note": "No client call site in inventory."
+      "status": "done",
+      "priority": "P2",
+      "note": "T3 nightly 3991/4192 read path (they have no scheduledTasks.list). tests/ops.rs and differential upstream_scheduled_tasks_android_contract against real 3991: {tasks} at once, the full list after every write (coalesced like T3's sliding PubSub), webhook stripped without orchestration:operate, newest-first order. lib-t3-rust PR26 reads scheduledTasks.list from this stream."
     },
     "scheduledTasks.upsert": {
       "status": "partial",
       "priority": "P2",
-      "note": "Signed inbound webhooks: body-only signature, templates and filters limited to signed body fields, permanent body-digest dedupe per task, bounded queue, durable dispatch claim. Unknown hooks and wrong tokens get the same 404 without the body being read. Pinned 3991 accepts unsigned query templates; o3 rejects them on purpose. Remaining: desktop T3ScheduledTasks.qml:21 and Android TaskEditor.kt:72 have no signing controls, so users cannot save a new webhook task; that needs client work. Triggered runs use the task's or thread's runtime mode, which can be full access. 2026-11-04 nightly4192: signature tags decode with Effect's Hex/Base64 rules (no sign-prefixed hex digits; canonical base64 padding, trailing bits ignored) before HMAC verification."
+      "note": "Signed inbound webhooks: body-only signature, templates and filters limited to signed body fields, permanent body-digest dedupe per task, bounded queue, durable dispatch claim. Unknown hooks and wrong tokens get the same 404 without the body being read. Pinned 3991 accepts unsigned query templates; o3 rejects them on purpose. Remaining: desktop T3ScheduledTasks.qml:21 and Android TaskEditor.kt:72 have no signing controls, so users cannot save a new webhook task; that needs client work. Triggered runs use the task's or thread's runtime mode, which can be full access. 2026-11-04 nightly4192: signature tags decode with Effect's Hex/Base64 rules (no sign-prefixed hex digits; canonical base64 padding, trailing bits ignored) before HMAC verification. 2026-11-04 nightly service parity: id `id ?? scheduled-task:<commandId|uuid>` (replays update the same row), `once` schedules with T3's ISO-with-offset check, an unchanged schedule/enabled keeps nextRunAt, stored webhook schedule normalized (lowercase header, null age, kept dedupe/filters), encodeURIComponent hook paths, creationSource from the save."
     },
     "secrets.answerRequest": {
       "status": "done",

@@ -417,6 +417,8 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                                 "Request" if !eof=>{
                                     let tag=frame["tag"].as_str().unwrap_or("");let p=&frame["payload"];
                                     if let Err(e)=authorize(&session,tag,p){if send(&mut ws,exit(&id,Err(e))).await.is_err(){return}continue;}
+                                    // T3 strips task webhooks for sessions without operate; never trust a client flag.
+                                    let task_view;let p=if matches!(tag,"scheduledTasks.list"|"scheduledTasks.subscribe") {let mut v=p.clone();if !v.is_object(){v=json!({});}v["_hideWebhook"]=json!(authorize(&session,"scheduledTasks.upsert",&Value::Null).is_err());task_view=v;&task_view}else{p};
                                     if crate::streams::is_live_tag(tag) {
                                         if subscriptions.len()>=64||subscriptions.contains_key(&id.to_string()) {if send(&mut ws,exit(&id,Err(error("subscription limit or duplicate id".into())))).await.is_err(){return}continue;}
                                         match crate::streams::open(&s,tag,p).await {

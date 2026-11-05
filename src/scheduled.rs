@@ -1,13 +1,14 @@
 //! Scheduled tasks: stored definitions plus an in-process timer that launches threads.
 //!
-//! Supported schedules are `interval` and `fixed_time` (UTC, optionally on chosen weekdays).
-//! Webhook schedules need an inbound endpoint and secret handling that this server does not
-//! have, so defining one is refused instead of accepted and never fired.
+//! Schedules follow T3 nightly 4192: `interval`, `fixed_time` (UTC, optionally on chosen
+//! weekdays), `once` and signed `webhook` (inbound route in `webhook.rs`). T3 reads tasks only
+//! through the `scheduledTasks.subscribe` stream; `scheduledTasks.list` stays for older o3
+//! clients. Without `orchestration:operate` both views drop each task's `webhook`.
 use crate::{
     events::{get, put},
     store::{iso, now_ms, random_id, State},
 };
-use rusqlite::{params, OptionalExtension};
+use rusqlite::params;
 use serde_json::{json, Value};
 use std::{sync::Arc, time::Duration};
 
@@ -28,7 +29,7 @@ fn failure(message: &str, task: Option<&str>) -> Value {
 
 pub fn call(s: &Arc<State>, tag: &str, p: &Value) -> Option<Reply> {
     Some(match tag {
-        "scheduledTasks.list" => list(s).map(|tasks| json!({"tasks":tasks})),
+        "scheduledTasks.list" => list_view(s, p["_hideWebhook"] == true),
         "scheduledTasks.upsert" => upsert(s, p).map(|task| json!({"task":task})),
         "scheduledTasks.setEnabled" => set_enabled(s, p).map(|task| json!({"task":task})),
         "scheduledTasks.delete" => delete(s, p).map(|id| json!({"id":id})),
@@ -39,7 +40,8 @@ pub fn call(s: &Arc<State>, tag: &str, p: &Value) -> Option<Reply> {
 
 fn list(s: &State) -> Result<Vec<Value>, Value> {
     let db = s.db.lock().unwrap();
-    let mut q = db.prepare("SELECT body FROM records WHERE kind=? ORDER BY json_extract(body,'$.createdAt'), rowid").map_err(|e| failure(&e.to_string(), None))?;
+    // T3 listRows: newest first, then task id.
+    let mut q = db.prepare("SELECT body FROM records WHERE kind=? ORDER BY json_extract(body,'$.createdAt') DESC, id ASC").map_err(|e| failure(&e.to_string(), None))?;
     let rows = q
         .query_map([KIND], |r| r.get::<_, String>(0))
         .map_err(|e| failure(&e.to_string(), None))?;
@@ -51,6 +53,128 @@ fn list(s: &State) -> Result<Vec<Value>, Value> {
         );
     }
     Ok(out)
+}
+
+/// `{tasks}` as T3's `subscribeList` emits it; read-only sessions do not see webhook URLs.
+pub fn list_view(s: &State, hide_webhook: bool) -> Reply {
+    let mut tasks = list(s)?;
+    if hide_webhook {
+        for task in &mut tasks {
+            if let Some(t) = task.as_object_mut() {
+                t.remove("webhook");
+            }
+        }
+    }
+    Ok(json!({ "tasks": tasks }))
+}
+
+/// T3's `ISO_WITH_OFFSET` check for `once.runAt`: a real calendar day, an explicit offset and
+/// a UTC instant within years 0000-9999. Returns epoch milliseconds.
+fn run_at_ms(text: &str) -> Option<i64> {
+    let b = text.as_bytes();
+    let digits = |r: std::ops::Range<usize>| {
+        b.get(r.clone())
+            .is_some_and(|d| d.iter().all(u8::is_ascii_digit))
+    };
+    if b.len() < 17
+        || !digits(0..4)
+        || b[4] != b'-'
+        || !digits(5..7)
+        || b[7] != b'-'
+        || !digits(8..10)
+        || b[10] != b'T'
+        || !digits(11..13)
+        || b[13] != b':'
+        || !digits(14..16)
+    {
+        return None;
+    }
+    let mut i = 16;
+    let mut seconds = ":00".to_owned();
+    if b.get(i) == Some(&b':') {
+        if !digits(i + 1..i + 3) {
+            return None;
+        }
+        i += 3;
+        if b.get(i) == Some(&b'.') {
+            let start = i + 1;
+            i = start;
+            while b.get(i).is_some_and(u8::is_ascii_digit) {
+                i += 1;
+            }
+            if i == start {
+                return None;
+            }
+        }
+        seconds.clear();
+    }
+    let offset = &text[i..];
+    let offset_ok = offset == "Z"
+        || (offset.len() == 6
+            && matches!(offset.as_bytes()[0], b'+' | b'-')
+            && offset.as_bytes()[3] == b':'
+            && offset
+                .bytes()
+                .enumerate()
+                .all(|(k, c)| matches!(k, 0 | 3) || c.is_ascii_digit()));
+    let hour: u8 = text[11..13].parse().ok()?;
+    let minute: u8 = text[14..16].parse().ok()?;
+    if !offset_ok
+        || hour > 23
+        || minute > 59
+        || (seconds.is_empty() && text[17..19].parse::<u8>().ok()? > 59)
+    {
+        return None;
+    }
+    let normalized = format!("{}{seconds}{offset}", &text[..i]);
+    let at =
+        time::OffsetDateTime::parse(&normalized, &time::format_description::well_known::Rfc3339)
+            .ok()?;
+    // Date.parse("0000-01-01T00:00:00Z") and Date.parse("+010000-01-01T00:00:00Z").
+    const YEAR_0000: i64 = -62_167_219_200_000;
+    const YEAR_10000: i64 = 253_402_300_800_000;
+    let ms = (at.unix_timestamp_nanos() / 1_000_000) as i64;
+    (YEAR_0000..YEAR_10000).contains(&ms).then_some(ms)
+}
+
+/// T3 `isSameSchedule`: an edit that keeps it keeps the pending `nextRunAt`.
+fn same_schedule(a: &Value, b: &Value) -> bool {
+    let weekdays = |v: &Value| {
+        let mut d: Vec<i64> = v["weekdays"]
+            .as_array()
+            .map(|a| a.iter().filter_map(Value::as_i64).collect())
+            .unwrap_or_default();
+        d.sort_unstable();
+        d.dedup();
+        if d.len() == 7 {
+            Vec::new()
+        } else {
+            d
+        }
+    };
+    match (a["type"].as_str(), b["type"].as_str()) {
+        (Some("interval"), Some("interval")) => a["everyMs"] == b["everyMs"],
+        (Some("webhook"), Some("webhook")) => true,
+        (Some("once"), Some("once")) => {
+            a["runAt"].as_str().and_then(run_at_ms) == b["runAt"].as_str().and_then(run_at_ms)
+        }
+        (Some("fixed_time"), Some("fixed_time")) => {
+            let at = |v: &Value| v["timeOfDay"].as_str().and_then(time_of_day);
+            at(a).is_some() && at(a) == at(b) && weekdays(a) == weekdays(b)
+        }
+        _ => false,
+    }
+}
+
+/// T3 `requireFutureOnce`: an enabled one-time task whose time has passed would never run.
+fn require_future_once(enabled: bool, schedule: &Value, now: i64, id: &str) -> Result<(), Value> {
+    if enabled && schedule["type"] == "once" && next_run(schedule, now).is_none() {
+        return Err(failure(
+            "The run time has passed. Pick a time in the future.",
+            Some(id),
+        ));
+    }
+    Ok(())
 }
 
 fn time_of_day(text: &str) -> Option<i64> {
@@ -69,6 +193,7 @@ fn time_of_day(text: &str) -> Option<i64> {
 pub fn next_run(schedule: &Value, now: i64) -> Option<i64> {
     match schedule["type"].as_str()? {
         "interval" => Some(now + schedule["everyMs"].as_i64()?),
+        "once" => run_at_ms(schedule["runAt"].as_str()?).filter(|at| *at > now),
         "fixed_time" => {
             let at = time_of_day(schedule["timeOfDay"].as_str()?)?;
             let weekdays: Vec<i64> = schedule["weekdays"]
@@ -127,12 +252,25 @@ fn validate(p: &Value) -> Result<(), Value> {
                 ));
             }
         }
+        Some("once") => {
+            if sched["runAt"]
+                .as_str()
+                .map(str::trim)
+                .and_then(run_at_ms)
+                .is_none()
+            {
+                return Err(failure(
+                    "Expected an ISO date and time with an offset.",
+                    None,
+                ));
+            }
+        }
         Some("webhook") => {
             crate::webhook::validate(sched).map_err(|e| failure(e, None))?;
         }
         _ => {
             return Err(failure(
-                "A schedule of type interval or fixed_time is required.",
+                "A schedule of type interval, fixed_time, once or webhook is required.",
                 None,
             ))
         }
@@ -163,26 +301,20 @@ fn upsert(s: &Arc<State>, p: &Value) -> Reply {
     let tx = db
         .transaction()
         .map_err(|e| failure(&e.to_string(), None))?;
-    if let Some(cid) = p["commandId"].as_str() {
-        let receipt: Option<String> = tx
-            .query_row(
-                "SELECT result FROM receipts WHERE command_id=?",
-                [format!("scheduled-upsert:{cid}")],
-                |r| r.get(0),
-            )
-            .optional()
-            .map_err(|e| failure(&e.to_string(), None))?;
-        if let Some(r) = receipt {
-            return serde_json::from_str(&r).map_err(|e| failure(&e.to_string(), None));
-        }
-    }
-    let id = p["id"]
-        .as_str()
-        .map(str::to_owned)
-        .unwrap_or_else(|| random_id().unwrap_or_default());
+    // T3: `id ?? scheduled-task:<commandId>`, else a fresh `scheduled-task:<uuid>`. A replay
+    // with the same commandId resolves to the same row, keeping its run history.
+    let id = match (p["id"].as_str(), p["commandId"].as_str()) {
+        (Some(id), _) => id.to_owned(),
+        (None, Some(cid)) => format!("scheduled-task:{cid}"),
+        (None, None) => format!(
+            "scheduled-task:{}",
+            random_id()
+                .map_err(|e| failure(&format!("Could not generate schedule task id. {e}"), None))?
+        ),
+    };
     let existing = get(&tx, KIND, &id).ok();
     if existing.is_none() && p["requireExisting"] == true {
-        return Err(failure("The scheduled task no longer exists.", Some(&id)));
+        return Err(failure("Schedule task not found.", Some(&id)));
     }
     if existing.is_none() {
         let count: i64 = tx
@@ -196,26 +328,68 @@ fn upsert(s: &Arc<State>, p: &Value) -> Reply {
     }
     let old = existing.clone().unwrap_or_else(|| json!({"createdAt":at,"lastRunAt":null,"lastRunStatus":"never","lastRunError":null,"runCount":0}));
     let enabled = p["enabled"] == true;
-    let mut task = json!({"id":id,"title":p["title"].as_str().map(str::trim),"prompt":p["prompt"].as_str().map(str::trim),"enabled":enabled,"schedule":p["schedule"],"projectId":p["projectId"],"threadId":p.get("threadId").cloned().unwrap_or(Value::Null),"workspaceStrategy":p["workspaceStrategy"],"modelSelection":p["modelSelection"],"runtimeMode":p["runtimeMode"],"interactionMode":p["interactionMode"],"createdBy":p.get("createdBy").cloned().unwrap_or(json!("user")),"creationSource":p.get("creationSource").cloned().unwrap_or(json!("web")),"createdAt":old["createdAt"],"updatedAt":at,"nextRunAt":Value::Null,"lastRunAt":old["lastRunAt"],"lastRunStatus":old["lastRunStatus"],"lastRunError":old["lastRunError"],"runCount":old["runCount"]});
-    if enabled {
-        task["nextRunAt"] = next_run(&p["schedule"], now)
-            .map(|t| json!(iso(t)))
-            .unwrap_or(Value::Null);
+    let mut schedule = p["schedule"].clone();
+    if schedule["type"] == "once" {
+        let run_at = schedule["runAt"]
+            .as_str()
+            .map(str::trim)
+            .and_then(run_at_ms);
+        schedule = json!({"type":"once","runAt":run_at.map(iso)});
     }
+    if schedule["type"] == "webhook" {
+        // T3's stored webhook schedule: lowercase header, explicit null age, omitted
+        // dedupe/filters keep what was stored, and an empty filter list is dropped.
+        let prior = existing
+            .as_ref()
+            .map(|e| &e["schedule"])
+            .filter(|s| s["type"] == "webhook");
+        let sig = &p["schedule"]["signature"];
+        let mut next = json!({"type":"webhook","signature":Value::Null,"maxDeliveryAgeMinutes":p["schedule"]["maxDeliveryAgeMinutes"].clone()});
+        if sig.is_object() {
+            let mut stored = json!({"header":sig["header"].as_str().map(str::to_lowercase),"encoding":sig["encoding"],"prefix":sig["prefix"]});
+            if let Some(secret) = sig.get("secret") {
+                stored["secret"] = secret.clone();
+            }
+            next["signature"] = stored;
+        }
+        if let Some(dedupe) = p["schedule"]
+            .get("dedupe")
+            .or_else(|| prior.and_then(|s| s.get("dedupe")))
+        {
+            next["dedupe"] = dedupe.clone();
+        }
+        let filters = p["schedule"]
+            .get("filters")
+            .or_else(|| prior.and_then(|s| s.get("filters")));
+        if let Some(f) = filters.filter(|f| f.as_array().is_some_and(|a| !a.is_empty())) {
+            next["filters"] = f.clone();
+        }
+        schedule = next;
+    }
+    let unchanged = existing
+        .as_ref()
+        .is_some_and(|e| e["enabled"] == enabled && same_schedule(&e["schedule"], &schedule));
+    if !unchanged {
+        require_future_once(enabled, &schedule, now, &id)?;
+    }
+    let mut task = json!({"id":id,"title":p["title"].as_str().map(str::trim),"prompt":p["prompt"].as_str().map(str::trim),"enabled":enabled,"schedule":schedule,"projectId":p["projectId"],"threadId":p.get("threadId").cloned().unwrap_or(Value::Null),"workspaceStrategy":p["workspaceStrategy"],"modelSelection":p["modelSelection"],"runtimeMode":p["runtimeMode"],"interactionMode":p["interactionMode"],"createdBy":p.get("createdBy").cloned().unwrap_or(json!("user")),"creationSource":p.get("creationSource").cloned().unwrap_or(json!("web")),"createdAt":old["createdAt"],"updatedAt":at,"nextRunAt":Value::Null,"lastRunAt":old["lastRunAt"],"lastRunStatus":old["lastRunStatus"],"lastRunError":old["lastRunError"],"runCount":old["runCount"]});
+    match &existing {
+        Some(e) if unchanged => {
+            task["nextRunAt"] = e["nextRunAt"].clone();
+        }
+        _ if enabled => {
+            task["nextRunAt"] = next_run(&schedule, now)
+                .map(|t| json!(iso(t)))
+                .unwrap_or(Value::Null);
+        }
+        _ => {}
+    }
+    // T3 keeps the original creator but records this save's creationSource.
     if let Some(e) = &existing {
         task["createdBy"] = e["createdBy"].clone();
-        task["creationSource"] = e["creationSource"].clone();
     }
     crate::webhook::prepare(&tx, &id, &mut task).map_err(|e| failure(&e, Some(&id)))?;
     put(&tx, KIND, &id, "", &task).map_err(|e| failure(&e, Some(&id)))?;
-    let result = json!({"task":task});
-    if let Some(cid) = p["commandId"].as_str() {
-        tx.execute(
-            "INSERT INTO receipts VALUES(?,?)",
-            params![format!("scheduled-upsert:{cid}"), result.to_string()],
-        )
-        .map_err(|e| failure(&e.to_string(), None))?;
-    }
     tx.commit().map_err(|e| failure(&e.to_string(), None))?;
     drop(db);
     ensure_started(s);
@@ -232,8 +406,11 @@ fn set_enabled(s: &Arc<State>, p: &Value) -> Reply {
         .as_bool()
         .ok_or_else(|| failure("enabled is required", Some(id)))?;
     let db = s.db.lock().unwrap();
-    let mut task =
-        get(&db, KIND, id).map_err(|_| failure("The scheduled task does not exist.", Some(id)))?;
+    let mut task = get(&db, KIND, id).map_err(|_| failure("Schedule task not found.", Some(id)))?;
+    if task["enabled"] == enabled {
+        return Ok(task);
+    }
+    require_future_once(enabled, &task["schedule"], now_ms(), id)?;
     task["enabled"] = json!(enabled);
     task["nextRunAt"] = if enabled {
         next_run(&task["schedule"], now_ms())
@@ -258,8 +435,8 @@ fn delete(s: &Arc<State>, p: &Value) -> Result<String, Value> {
     let tx = db
         .transaction()
         .map_err(|e| failure(&e.to_string(), Some(id)))?;
-    let task =
-        get(&tx, KIND, id).map_err(|_| failure("The scheduled task does not exist.", Some(id)))?;
+    // T3 deletes idempotently: a missing task still answers `{id}`.
+    let task = get(&tx, KIND, id).unwrap_or(Value::Null);
     tx.execute(
         "DELETE FROM records WHERE kind=? AND id=?",
         params![KIND, id],
@@ -287,6 +464,14 @@ fn run_now(s: &Arc<State>, p: &Value) -> Reply {
         .as_str()
         .filter(|v| !v.is_empty())
         .ok_or_else(|| failure("id is required", None))?;
+    let task = get(&s.db.lock().unwrap(), KIND, id)
+        .map_err(|_| failure("Schedule task not found.", Some(id)))?;
+    if task["schedule"]["type"] == "webhook" {
+        return Err(failure(
+            "Webhook tasks run when their URL receives a request.",
+            Some(id),
+        ));
+    }
     fire(s, id)
 }
 
@@ -303,8 +488,22 @@ pub(crate) fn fire_prompt_key(
     prompt: Option<&str>,
     job: Option<&str>,
 ) -> Reply {
-    let mut task = get(&s.db.lock().unwrap(), KIND, id)
-        .map_err(|_| failure("The scheduled task does not exist.", Some(id)))?;
+    let started = now_ms();
+    let mut task = {
+        let db = s.db.lock().unwrap();
+        let mut task =
+            get(&db, KIND, id).map_err(|_| failure("Schedule task not found.", Some(id)))?;
+        // T3 markRunning: subscribers see the run before the launch settles.
+        let mut running = task.clone();
+        running["lastRunAt"] = json!(iso(started));
+        running["lastRunStatus"] = json!("running");
+        running["lastRunError"] = Value::Null;
+        running["updatedAt"] = json!(iso(started));
+        put(&db, KIND, id, "", &running).map_err(|e| failure(&e, Some(id)))?;
+        task["lastRunAt"] = running["lastRunAt"].clone();
+        task
+    };
+    s.streams.ops.wake_scheduler();
     if let Some(prompt) = prompt {
         task["prompt"] = json!(prompt);
     }
@@ -322,9 +521,8 @@ pub(crate) fn fire_prompt_key(
     let now = now_ms();
     let db = s.db.lock().unwrap();
     // The task may have been deleted or edited while launching; update what is stored now.
-    let mut task =
-        get(&db, KIND, id).map_err(|_| failure("The scheduled task does not exist.", Some(id)))?;
-    task["lastRunAt"] = json!(iso(now));
+    let mut task = get(&db, KIND, id).map_err(|_| failure("Schedule task not found.", Some(id)))?;
+    task["lastRunAt"] = json!(iso(started));
     task["runCount"] = json!(number);
     match &outcome {
         Ok(()) => {
@@ -336,8 +534,14 @@ pub(crate) fn fire_prompt_key(
             task["lastRunError"] = json!(e.chars().take(500).collect::<String>());
         }
     }
+    // A one-time task counts from the run's start, so an early manual run keeps its slot.
+    let from = if task["schedule"]["type"] == "once" {
+        started
+    } else {
+        now
+    };
     task["nextRunAt"] = if task["enabled"] == true {
-        next_run(&task["schedule"], now)
+        next_run(&task["schedule"], from)
             .map(|t| json!(iso(t)))
             .unwrap_or(Value::Null)
     } else {

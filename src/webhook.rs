@@ -104,10 +104,41 @@ pub fn prepare(db: &Connection, id: &str, task: &mut Value) -> Result<(), String
         .as_object_mut()
         .ok_or("signature required")?
         .remove("secret");
-    task["webhook"] =
-        json!({"path":format!("/api/hooks/{id}/{token}"),"url":null,"hasSecret":true});
+    // T3 `webhookPath`: `encodeURIComponent(taskId)`, since ids look like `scheduled-task:<id>`.
+    task["webhook"] = json!({"path":format!("/api/hooks/{}/{token}", encode_component(id)),"url":null,"hasSecret":true});
     Ok(())
 }
+/// A task without the fields its runs write, for comparing definitions.
+fn definition(task: &Value) -> Value {
+    let mut t = task.clone();
+    if let Some(m) = t.as_object_mut() {
+        for key in [
+            "lastRunAt",
+            "lastRunStatus",
+            "lastRunError",
+            "runCount",
+            "nextRunAt",
+            "updatedAt",
+        ] {
+            m.remove(key);
+        }
+    }
+    t
+}
+
+/// JavaScript `encodeURIComponent`.
+pub fn encode_component(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for b in text.bytes() {
+        if b.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
 fn text(v: &Value) -> String {
     match v {
         Value::String(s) => s.clone(),
@@ -267,8 +298,9 @@ pub fn accept(
     let Ok(tx) = db.transaction() else {
         return (503, "error");
     };
-    // A definition edit or credential rotation invalidates the verified snapshot.
-    if get(&tx, "scheduledTasks", id).ok().as_ref() != Some(&task)
+    // A definition edit or credential rotation invalidates the verified snapshot. Run state
+    // (a concurrent run marking itself running or finished) is not a definition change.
+    if get(&tx, "scheduledTasks", id).ok().map(|t| definition(&t)) != Some(definition(&task))
         || get(&tx, "hookCredentials", id).ok().as_ref() != Some(&creds)
     {
         return (409, "definition_changed");
@@ -425,6 +457,27 @@ pub fn tick(s: &Arc<State>) {
             s.db.lock()
                 .unwrap()
                 .execute("DELETE FROM hook_queue WHERE id=?", [&id]);
+    }
+}
+
+#[cfg(test)]
+mod definition_tests {
+    use super::*;
+    #[test]
+    fn run_state_is_not_a_definition_change() {
+        let task = json!({"id":"t","enabled":true,"prompt":"p","schedule":{"type":"webhook"},"runCount":0,"lastRunStatus":"never","lastRunAt":null,"lastRunError":null,"nextRunAt":null,"updatedAt":"a"});
+        let mut running = task.clone();
+        running["lastRunStatus"] = json!("running");
+        running["runCount"] = json!(1);
+        running["updatedAt"] = json!("b");
+        assert_eq!(definition(&task), definition(&running));
+        let mut paused = task.clone();
+        paused["enabled"] = json!(false);
+        assert_ne!(definition(&task), definition(&paused));
+        assert_eq!(
+            encode_component("scheduled-task:a b/ñ"),
+            "scheduled-task%3Aa%20b%2F%C3%B1"
+        );
     }
 }
 

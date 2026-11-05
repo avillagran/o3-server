@@ -2036,6 +2036,98 @@ fn upstream_p2_webhook_reader() {
 }
 
 #[test]
+#[ignore = "starts isolated real T3 and o3; tools/conformance-diff"]
+fn upstream_scheduled_tasks_android_contract() {
+    use t3_protocol::api::scheduled_tasks::{self, TaskUpsert};
+    let root = PathBuf::from("/var/tmp/o3-build/tmp").join(format!(
+        "scheduled-android-{}",
+        o3_server::store::random_id().unwrap()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let reference = reference_binary();
+    let mut views = Vec::new();
+    for (label, bin) in [
+        ("reference", reference.as_path()),
+        ("o3", Path::new(env!("CARGO_BIN_EXE_o3-server"))),
+    ] {
+        let home = root.join(label);
+        let s = start(bin, &home);
+        let c = connect(&s);
+        c.rpc("projects.mutate",json!({"type":"project.create","commandId":"p","projectId":"p","title":"Tasks fixture","workspaceRoot":home})).unwrap();
+        // Exactly what the Android client sent on 2026-11-03.
+        let list = raw_rpc(&s, "scheduledTasks.list", json!({}));
+        let first = |c: &Connection| {
+            stream(c, "scheduledTasks.subscribe", json!({}), 1)["items"][0].clone()
+        };
+        let empty = first(&c);
+        let mut input = json!({"commandId":"android-cmd","title":"Nightly","prompt":"check the build","enabled":true,"schedule":{"type":"interval","everyMs":3_600_000},"projectId":"p","workspaceStrategy":{"type":"root"},"modelSelection":{"instanceId":"codex","model":"fixture"},"runtimeMode":"full-access","interactionMode":"default"});
+        let created = c.rpc("scheduledTasks.upsert", input.clone()).unwrap();
+        input["title"] = json!("Nightly renamed");
+        let replay = c.rpc("scheduledTasks.upsert", input).unwrap();
+        let id = created["task"]["id"].as_str().unwrap().to_owned();
+        let off = c
+            .rpc(
+                "scheduledTasks.setEnabled",
+                json!({"id":id,"enabled":false}),
+            )
+            .unwrap();
+        let off_again = c
+            .rpc(
+                "scheduledTasks.setEnabled",
+                json!({"id":id,"enabled":false}),
+            )
+            .unwrap();
+        let hook = scheduled_tasks::upsert(&c, &TaskUpsert::from_json(&json!({"commandId":"android-hook","title":"Hook","prompt":"inspect {{body.action}}","enabled":true,"schedule":{"type":"webhook","signature":{"header":"x-hub-signature-256","encoding":"hex","prefix":"sha256=","secret":"fixture-only-key"}},"projectId":"p","workspaceStrategy":{"type":"root"},"modelSelection":{"instanceId":"codex","model":"fixture"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap()).unwrap();
+        let run_hook = outcome(c.rpc("scheduledTasks.runNow", json!({"id":hook["task"]["id"]})));
+        let populated = first(&c);
+        let deleted = c.rpc("scheduledTasks.delete", json!({"id":id})).unwrap();
+        let deleted_again = outcome(c.rpc("scheduledTasks.delete", json!({"id":id})));
+        let missing = outcome(c.rpc("scheduledTasks.setEnabled", json!({"id":id,"enabled":true})));
+        eprintln!("{label}: list={list} empty={empty} id={id} replayTitle={} runHook={run_hook} deletedAgain={deleted_again} missing={missing}", replay["task"]["title"]);
+        assert_eq!(empty, json!({"tasks":[]}), "{label}");
+        assert_eq!(id, "scheduled-task:android-cmd", "{label}");
+        assert_eq!(replay["task"]["id"], created["task"]["id"], "{label}");
+        assert_eq!(
+            off_again, off,
+            "{label}: unchanged setEnabled keeps updatedAt"
+        );
+        assert_eq!(deleted, json!({"id":id}), "{label}");
+        assert!(
+            !populated.to_string().contains("fixture-only-key"),
+            "{label}"
+        );
+        views.push(json!({
+            "listRejectedAsUnknown": list.to_string().contains("Unknown request tag: scheduledTasks.list"),
+            "created": shape(&created, ""),
+            "replay": shape(&replay, ""),
+            "off": shape(&off, ""),
+            "hook": shape(&hook, ""),
+            "runHook": run_hook["error"].as_str().is_some_and(|e| e.contains("Webhook tasks run when their URL receives a request.")),
+            "populated": shape(&populated, ""),
+            "deletedAgain": shape(&deleted_again, ""),
+            "missing": missing["error"].as_str().is_some_and(|e| e.contains("Schedule task not found.")),
+        }));
+    }
+    eprintln!("scheduled task observations: {}", json!(views));
+    // The pinned nightly has no scheduledTasks.list; o3 keeps it only for older o3 clients.
+    assert_eq!(views[0]["listRejectedAsUnknown"], true);
+    assert_eq!(views[1]["listRejectedAsUnknown"], false);
+    for key in [
+        "created",
+        "replay",
+        "off",
+        "hook",
+        "runHook",
+        "populated",
+        "deletedAgain",
+        "missing",
+    ] {
+        assert_eq!(views[0][key], views[1][key], "{key}");
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 #[ignore = "internal parent-death fixture; called only by its regression test"]
 fn harness_parent_fixture() {
     let Some(home) = std::env::var_os("O3_PARENT_FIXTURE") else {

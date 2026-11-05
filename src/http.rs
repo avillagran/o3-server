@@ -219,7 +219,10 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
             if parts.len() != 2 {
                 return Ok(json_reply(StatusCode::NOT_FOUND, "{}".into()));
             }
-            let (id, token) = (parts[0].to_owned(), parts[1].to_owned());
+            let Some(id) = crate::assets::percent_decode(parts[0]) else {
+                return Ok(json_reply(StatusCode::NOT_FOUND, "{}".into()));
+            };
+            let token = parts[1].to_owned();
             // Every rejection looks the same and costs one keyed lookup: no body is read
             // without the hook's token, so unauthenticated traffic cannot crowd out its sender.
             let check_state = state.clone();
