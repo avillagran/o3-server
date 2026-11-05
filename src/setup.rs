@@ -477,6 +477,11 @@ fn update_flow(s: &State, d: &Driver, flow_id: &str, f: impl FnOnce(&mut Flow)) 
     let mut flows = s.streams.p2.setup.flows.lock().unwrap();
     if let Some(flow) = flows.get_mut(&d.instance).filter(|f| f.id == flow_id) {
         f(flow);
+        // A finished flow has nothing left for the user to do: drop the browser link or
+        // device code so clients stop offering them.
+        if matches!(flow.phase, "succeeded" | "failed" | "cancelled") {
+            flow.interaction = None;
+        }
     }
     drop(flows);
     s.streams.p2.setup.touch(s);
@@ -587,6 +592,14 @@ async fn run_flow(
                     f.input = None;
                 });
                 let verified = verify(&d).await;
+                if verified {
+                    // The provider list reports the account its running CLI read at startup;
+                    // refresh it so the new sign-in shows without a server restart.
+                    let provider = s.provider.lock().unwrap().clone();
+                    if let Some(provider) = provider {
+                        let _ = provider.refresh().await;
+                    }
+                }
                 update_flow(&s, &d, &flow_id, |f| {
                     f.phase = if verified { "succeeded" } else { "failed" };
                     f.message = Some(if verified {
