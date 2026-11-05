@@ -43,6 +43,14 @@ projected thread has a `thread.created` event. So O3 writes both, exactly as T3'
    the change.
 5. **Adoption.** The first time O3 meets a T3 base, it takes in every T3 row it lacks (its own records
    win) and marks all of its records, so the first export writes what T3 lacks or holds differently.
+   O3's first import carried no runs, so O3 may have numbered runs (and provider turns) from 1 again;
+   where one collides with a T3 ordinal, O3's records of that thread move after T3's last, with the
+   checkpoints that name them.
+6. **Shape.** T3's decoders reject a whole thread, and its startup, on one value outside its schema,
+   so the exporter maps O3-only values to T3's nearest (`disconnected` sessions are `stopped`, a bare
+   cost is a USD amount, a null message context is absent, an unknown runtime mode asks for
+   approval) and fills the fields O3's own checkpoints lack from their run and thread. Taking a T3
+   row in merges it over O3's record, so O3-only fields stay.
 
 A profile without `statev2.sqlite` keeps the marks until T3 creates its database; O3 does not create
 T3's schema.
@@ -58,3 +66,6 @@ O3-only data with no T3 table (usage ledger, background and Claude tasks, MCP cl
   covers both directions, idempotent re-export, adoption and the schema gate.
 - `tests/shared_acceptance.rs` (opt-in) runs O3 on a copy of a real profile, then the real T3 runtime
   on the same copy, and reads every live thread through T3's own decoders.
+- `tools/validate-t3-shared.ts` decodes every projection row, and the events O3 wrote, with T3's
+  contract schemas. Run it on a copy after a T3 nightly bump, together with the acceptance test,
+  before moving `MIGRATION_HEAD`.

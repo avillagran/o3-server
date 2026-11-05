@@ -231,3 +231,123 @@ fn a_profile_without_t3_keeps_marks_until_t3_creates_its_base() {
     drop(state);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+fn put_record(state: &State, kind: &str, id: &str, tid: &str, body: &Value) {
+    state
+        .db
+        .lock()
+        .unwrap()
+        .execute(
+            "INSERT INTO records(kind,id,thread_id,body) VALUES(?1,?2,?3,?4) ON CONFLICT(kind,id) DO UPDATE SET body=excluded.body",
+            params![kind, id, tid, body.to_string()],
+        )
+        .unwrap();
+}
+
+fn run(id: &str, ordinal: i64, at: &str) -> Value {
+    json!({"id":id,"threadId":"t","ordinal":ordinal,"providerInstanceId":"codex","providerThreadId":null,"status":"completed","requestedAt":at,"completedAt":at})
+}
+
+#[test]
+fn runs_o3_numbered_without_seeing_t3_move_after_t3_and_o3_values_fit_t3() {
+    let root = profile();
+    let userdata = root.join("userdata");
+    let db = t3(&userdata);
+    let thread = json!({"id":"t","projectId":"p","title":"Forked","providerInstanceId":"codex","modelSelection":{"instanceId":"codex","model":"test"},"runtimeMode":"text-only","interactionMode":"default","activeProviderThreadId":null,"createdAt":"2026-01-01T00:00:00.000Z","updatedAt":"2026-01-01T00:00:00.000Z","archivedAt":null,"deletedAt":null});
+    db.execute(
+        "INSERT INTO orchestration_events(event_id,aggregate_kind,stream_id,stream_version,event_type,occurred_at,actor_kind,payload_json,metadata_json,application_event_version) VALUES('created','thread','t',0,'thread.created','2026-01-01T00:00:00.000Z','client',?1,'{}',2)",
+        [thread.to_string()],
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO orchestration_v2_projection_threads(thread_id,project_id,title,default_provider,provider_instance_id,runtime_mode,interaction_mode,created_at,updated_at,payload_json) VALUES('t','p','Forked','codex','codex','approval-required','default','2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z',?1)",
+        [thread.to_string()],
+    )
+    .unwrap();
+    for (id, ordinal) in [("t3-run-1", 1), ("t3-run-2", 2)] {
+        db.execute(
+            "INSERT INTO orchestration_v2_projection_runs(run_id,thread_id,ordinal,provider,provider_instance_id,status,requested_at,payload_json) VALUES(?1,'t',?2,'codex','codex','completed','2026-01-01T00:00:00.000Z',?3)",
+            params![id, ordinal, run(id, ordinal, "2026-01-01T00:00:00.000Z").to_string()],
+        )
+        .unwrap();
+    }
+    let state = Arc::new(State::open(&userdata).unwrap());
+    put_record(&state, "thread", "t", "t", &thread);
+    put_record(
+        &state,
+        "runs",
+        "o3-run-a",
+        "t",
+        &run("o3-run-a", 1, "2026-02-01T00:00:00.000Z"),
+    );
+    put_record(
+        &state,
+        "runs",
+        "o3-run-b",
+        "t",
+        &run("o3-run-b", 2, "2026-02-02T00:00:00.000Z"),
+    );
+    put_record(
+        &state,
+        "checkpoints",
+        "cp",
+        "t",
+        &json!({"id":"cp","threadId":"t","scopeId":"scope","runId":"o3-run-b","ordinalWithinScope":2,"appRunOrdinal":2,"ref":"refs/o3/checkpoints/x","status":"ready"}),
+    );
+    put_record(
+        &state,
+        "providerSessions",
+        "session",
+        "t",
+        &json!({"id":"session","driver":"codex","providerInstanceId":"codex","status":"disconnected","cwd":"/","model":null,"capabilities":{},"createdAt":"2026-02-01T00:00:00.000Z","updatedAt":"2026-02-01T00:00:00.000Z","lastError":null}),
+    );
+    let shared = t3_shared::start(&state).unwrap().expect("T3 base");
+    exporter_drains(&state, shared);
+
+    let ordinal = |id: &str| -> i64 {
+        db.query_row(
+            "SELECT ordinal FROM orchestration_v2_projection_runs WHERE run_id=?",
+            [id],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        (
+            ordinal("t3-run-1"),
+            ordinal("t3-run-2"),
+            ordinal("o3-run-a"),
+            ordinal("o3-run-b")
+        ),
+        (1, 2, 3, 4)
+    );
+    let checkpoint: Value = serde_json::from_str(&one::<String>(
+        &db,
+        "SELECT payload_json FROM orchestration_v2_projection_checkpoints WHERE checkpoint_id='cp'",
+    ))
+    .unwrap();
+    assert_eq!(checkpoint["appRunOrdinal"], 4);
+    assert!(checkpoint["nodeId"].is_string() && checkpoint["capturedAt"].is_string());
+    assert_eq!(
+        one::<String>(&db, "SELECT status FROM orchestration_v2_projection_provider_sessions WHERE provider_session_id='session'"),
+        "stopped"
+    );
+    assert_eq!(
+        one::<String>(
+            &db,
+            "SELECT runtime_mode FROM orchestration_v2_projection_threads WHERE thread_id='t'"
+        ),
+        "approval-required"
+    );
+    let rejects: i64 = state
+        .db
+        .lock()
+        .unwrap()
+        .query_row("SELECT count(*) FROM t3_rejects", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(rejects, 0);
+    assert_t3_verifies(&db);
+    drop(state);
+    drop(db);
+    std::fs::remove_dir_all(root).unwrap();
+}

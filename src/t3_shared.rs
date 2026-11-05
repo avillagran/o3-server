@@ -717,12 +717,128 @@ fn export_project(tx: &Transaction, v: &Value) -> Result<Option<i64>> {
     Ok(sequence)
 }
 
+/// Values O3 uses that T3's schema has no room for, mapped to T3's nearest: a session O3 calls
+/// `disconnected` is `stopped`, a bare cost is an amount in USD, a null message context is absent,
+/// and a runtime mode T3 lacks asks for approval.
+fn shape_values(kind_name: &str, v: &mut Value) {
+    const SESSION: [&str; 6] = [
+        "starting", "ready", "running", "waiting", "stopped", "error",
+    ];
+    const RUNTIME: [&str; 4] = [
+        "approval-required",
+        "auto-accept-edits",
+        "auto",
+        "full-access",
+    ];
+    match kind_name {
+        "providerSessions" => {
+            if !v["status"].as_str().is_some_and(|s| SESSION.contains(&s)) {
+                v["status"] = json!("stopped");
+            }
+        }
+        "messages" => {
+            if v.get("context").is_some_and(Value::is_null) {
+                v.as_object_mut().map(|o| o.remove("context"));
+            }
+        }
+        "thread"
+            if !v["runtimeMode"]
+                .as_str()
+                .is_some_and(|s| RUNTIME.contains(&s)) =>
+        {
+            v["runtimeMode"] = json!("approval-required");
+        }
+        _ => {}
+    }
+    if let Some(usage) = v.get_mut("contextUsage").and_then(Value::as_object_mut) {
+        match usage.get("cost") {
+            Some(Value::Number(n)) => {
+                let amount = n.as_f64().unwrap_or(0.0);
+                usage.insert("cost".into(), json!({"amount": amount, "currency": "USD"}));
+            }
+            Some(Value::Null) => {
+                usage.remove("cost");
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The reverse for fields O3 reads in its own form: a T3 cost object back to O3's USD amount.
+fn o3_shape(v: &mut Value) {
+    if let Some(usage) = v.get_mut("contextUsage").and_then(Value::as_object_mut) {
+        if let Some(amount) = usage.get("cost").and_then(|c| c.get("amount")).cloned() {
+            usage.insert("cost".into(), amount);
+        }
+    }
+}
+
 struct Dirty {
     kind: String,
     id: String,
     thread_id: String,
     version: i64,
-    body: Option<String>,
+    body: Option<Value>,
+}
+
+/// O3's own checkpoints predate the shared base and lack fields T3's schema requires. Fill them from
+/// the run and thread they belong to; fields O3 already has are never changed.
+fn t3_shape(db: &Connection, kind_name: &str, mut v: Value) -> Value {
+    if !v.is_object() {
+        return v;
+    }
+    shape_values(kind_name, &mut v);
+    if !matches!(kind_name, "checkpoints" | "checkpointScopes") {
+        return v;
+    }
+    let run = v["runId"]
+        .as_str()
+        .and_then(|id| events::get(db, "runs", id).ok());
+    let thread = v["threadId"]
+        .as_str()
+        .and_then(|id| events::get(db, "thread", id).ok());
+    let id = v["id"].as_str().unwrap_or_default().to_owned();
+    let fill = |v: &mut Value, field: &str, value: Value| {
+        if v.get(field).is_none_or(Value::is_null) {
+            v[field] = value;
+        }
+    };
+    let node = run
+        .as_ref()
+        .and_then(|r| r["rootNodeId"].as_str().map(str::to_owned))
+        .unwrap_or_else(|| format!("node:o3:{id}"));
+    if v.get("nodeId").is_none_or(Value::is_null) {
+        v["nodeId"] = json!(node);
+    }
+    let when = |r: Option<&Value>, fields: &[&str]| {
+        r.and_then(|r| {
+            fields
+                .iter()
+                .find_map(|f| r[*f].as_str().map(str::to_owned))
+        })
+    };
+    if kind_name == "checkpoints" {
+        let at = when(run.as_ref(), &["completedAt", "requestedAt"])
+            .or_else(|| when(thread.as_ref(), &["updatedAt"]))
+            .unwrap_or_else(|| iso(now_ms()));
+        fill(&mut v, "capturedAt", json!(at));
+        fill(&mut v, "parentCheckpointId", Value::Null);
+        fill(&mut v, "files", json!([]));
+        fill(&mut v, "ordinalWithinScope", json!(0));
+        if !v["appRunOrdinal"].as_i64().is_some_and(|n| n > 0) {
+            v["appRunOrdinal"] = Value::Null;
+        }
+    } else {
+        let at = when(thread.as_ref(), &["createdAt"]).unwrap_or_else(|| iso(now_ms()));
+        fill(&mut v, "createdAt", json!(at));
+        fill(&mut v, "runId", Value::Null);
+        fill(&mut v, "parentScopeId", Value::Null);
+        fill(&mut v, "providerThreadId", Value::Null);
+        fill(&mut v, "ordinalWithinParent", json!(0));
+        let root = v["kind"] == "root_run";
+        fill(&mut v, "advancesAppRunCount", json!(root));
+    }
+    v
 }
 
 /// Exports every marked record. Returns how many were written to T3.
@@ -738,21 +854,41 @@ pub fn export(s: &State, t3: &mut Connection) -> Result<usize> {
             let mut rows = q
                 .query(params![after, BATCH_ROWS as i64])
                 .map_err(|e| e.to_string())?;
-            let (mut batch, mut bytes) = (Vec::new(), 0usize);
+            let (mut raw, mut bytes) = (Vec::new(), 0usize);
             while let Some(row) = rows.next().map_err(|e| e.to_string())? {
                 after = row.get(0).map_err(|e| e.to_string())?;
                 let body: Option<String> = row.get(5).map_err(|e| e.to_string())?;
                 bytes += body.as_ref().map_or(0, String::len);
-                batch.push(Dirty {
-                    kind: row.get(1).map_err(|e| e.to_string())?,
-                    id: row.get(2).map_err(|e| e.to_string())?,
-                    thread_id: row.get(3).map_err(|e| e.to_string())?,
-                    version: row.get(4).map_err(|e| e.to_string())?,
+                raw.push((
+                    row.get::<_, String>(1).map_err(|e| e.to_string())?,
+                    row.get::<_, String>(2).map_err(|e| e.to_string())?,
+                    row.get::<_, String>(3).map_err(|e| e.to_string())?,
+                    row.get::<_, i64>(4).map_err(|e| e.to_string())?,
                     body,
-                });
+                ));
                 if bytes > BATCH_BYTES {
                     break;
                 }
+            }
+            drop(rows);
+            drop(q);
+            let mut batch = Vec::with_capacity(raw.len());
+            for (kind, id, thread_id, version, body) in raw {
+                let body = match body.map(|b| serde_json::from_str::<Value>(&b)) {
+                    Some(Ok(v)) => Some(t3_shape(&db, &kind, v)),
+                    Some(Err(e)) => {
+                        eprintln!("T3 export skipped unreadable {kind} {id}: {e}");
+                        None
+                    }
+                    None => None,
+                };
+                batch.push(Dirty {
+                    kind,
+                    id,
+                    thread_id,
+                    version,
+                    body,
+                });
             }
             batch
         };
@@ -766,17 +902,16 @@ pub fn export(s: &State, t3: &mut Connection) -> Result<usize> {
         let mut last = None;
         for item in &batch {
             // A deleted record has no T3 counterpart to remove: T3 never deletes projection rows.
-            let Some(body) = &item.body else { continue };
+            let Some(v) = &item.body else { continue };
             let result = (|| -> Result<Option<Option<i64>>> {
-                let v: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
                 tx.execute_batch("SAVEPOINT o3_record")
                     .map_err(|e| e.to_string())?;
                 // Project events do not move the thread projections' high-water mark.
                 let result = if item.kind == "project" {
-                    export_project(&tx, &v).map(|written| written.map(|_| None))
+                    export_project(&tx, v).map(|written| written.map(|_| None))
                 } else {
                     let k = kind(&item.kind).ok_or("unknown kind")?;
-                    export_record(&tx, k, &item.thread_id, &v).map(|written| written.map(Some))
+                    export_record(&tx, k, &item.thread_id, v).map(|written| written.map(Some))
                 };
                 let end = if result.is_ok() {
                     "RELEASE o3_record"
@@ -832,16 +967,16 @@ fn take_in(db: &Connection, kind_name: &str, tid: &str, v: &Value) -> Result<boo
     if kind_name == "thread" {
         events::normalize_settled_override(&mut v);
     }
+    o3_shape(&mut v);
     let current = events::get(db, kind_name, &id).ok();
-    if kind_name == "runs" {
-        // O3's own run fields live beside the public record and are kept.
-        if current.as_ref().is_some_and(|c| {
-            v.as_object()
-                .is_some_and(|o| o.iter().all(|(key, value)| c.get(key) == Some(value)))
-        }) {
-            return Ok(false);
-        }
-    } else if current.as_ref() == Some(&v) {
+    // T3's row wins field by field; fields only O3 keeps (run bookkeeping, checkpoint identity)
+    // stay.
+    if let (Some(Value::Object(old)), Value::Object(new)) = (&current, &v) {
+        let mut merged = old.clone();
+        merged.extend(new.clone());
+        v = Value::Object(merged);
+    }
+    if current.as_ref() == Some(&v) {
         return Ok(false);
     }
     events::put(db, kind_name, &id, tid, &v)?;
@@ -971,6 +1106,88 @@ fn catch_up(s: &State, t3: &Connection, after: i64) -> Result<usize> {
     Ok(taken)
 }
 
+/// One numbered record: ordinal, id, time, whether T3 has it, and its thread.
+type Numbered = (i64, String, String, bool, String);
+
+/// Before sharing T3's base, O3 numbered runs (and provider turns) without seeing T3's: its first
+/// import carried no runs. Where an O3-only record takes an ordinal T3 already uses in the same
+/// group, every O3-only record of that group moves after T3's last ordinal, in time order. Turn
+/// items keep their ordinals: O3 placed them after T3's already. Returns how many moved.
+fn renumber_forks(
+    tx: &Transaction,
+    t3: &Connection,
+    kind_name: &str,
+    group: &str,
+    time: &str,
+) -> Result<usize> {
+    let k = kind(kind_name).ok_or("unknown kind")?;
+    let mut groups: std::collections::BTreeMap<String, Vec<Numbered>> = Default::default();
+    {
+        let mut q = tx
+            .prepare("SELECT id,thread_id,body FROM records WHERE kind=?")
+            .map_err(|e| e.to_string())?;
+        let mut rows = q.query([kind_name]).map_err(|e| e.to_string())?;
+        while let Some(row) = rows.next().map_err(|e| e.to_string())? {
+            let id: String = row.get(0).map_err(|e| e.to_string())?;
+            let tid: String = row.get(1).map_err(|e| e.to_string())?;
+            let body: Value =
+                serde_json::from_str(&row.get::<_, String>(2).map_err(|e| e.to_string())?)
+                    .map_err(|e| e.to_string())?;
+            let (Some(key), Some(ordinal)) = (text(&body, group), int(&body, "ordinal")) else {
+                continue;
+            };
+            let shared = payload_row(t3, k, &id)?.is_some();
+            let at = text(&body, time).unwrap_or_default();
+            groups
+                .entry(key)
+                .or_default()
+                .push((ordinal, id, at, shared, tid));
+        }
+    }
+    let mut moved = 0;
+    for records in groups.values() {
+        let taken: std::collections::HashSet<i64> =
+            records.iter().filter(|r| r.3).map(|r| r.0).collect();
+        if !records.iter().any(|r| !r.3 && taken.contains(&r.0)) {
+            continue;
+        }
+        let first = records
+            .iter()
+            .filter(|r| r.3)
+            .map(|r| r.0)
+            .max()
+            .unwrap_or(0)
+            + 1;
+        let mut own: Vec<_> = records.iter().filter(|r| !r.3).collect();
+        own.sort_by(|a, b| (&a.2, a.0).cmp(&(&b.2, b.0)));
+        for (next, (old, id, _, _, tid)) in (first..).zip(own) {
+            let mut body = events::get(tx, kind_name, id)?;
+            body["ordinal"] = json!(next);
+            events::put(tx, kind_name, id, tid, &body)?;
+            if kind_name == "runs" {
+                // A checkpoint names its run's ordinal.
+                let mut q = tx
+                    .prepare("SELECT id,thread_id,body FROM records WHERE kind='checkpoints' AND json_extract(body,'$.runId')=?")
+                    .map_err(|e| e.to_string())?;
+                let checkpoints: Vec<(String, String, String)> = q
+                    .query_map([id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                    .map_err(|e| e.to_string())?
+                    .collect::<std::result::Result<_, _>>()
+                    .map_err(|e| e.to_string())?;
+                for (cid, ctid, cbody) in checkpoints {
+                    let mut cp: Value = serde_json::from_str(&cbody).map_err(|e| e.to_string())?;
+                    if cp["appRunOrdinal"] == json!(old) {
+                        cp["appRunOrdinal"] = json!(next);
+                        events::put(tx, "checkpoints", &cid, &ctid, &cp)?;
+                    }
+                }
+            }
+            moved += 1;
+        }
+    }
+    Ok(moved)
+}
+
 /// First sync on a profile: take in T3's history O3 lacks (O3's own records win), then mark every
 /// O3 record so the next export writes whatever T3 lacks or holds differently.
 fn adopt(s: &State, t3: &Connection) -> Result<usize> {
@@ -1022,6 +1239,7 @@ fn adopt(s: &State, t3: &Connection) -> Result<usize> {
                     if k.kind == "thread" {
                         events::normalize_settled_override(&mut row);
                     }
+                    o3_shape(&mut row);
                     let tid = tid.clone().unwrap_or_default();
                     events::put(&tx, k.kind, id, &tid, &row)?;
                     if k.kind == "turnItems" {
@@ -1034,7 +1252,14 @@ fn adopt(s: &State, t3: &Connection) -> Result<usize> {
             tx.commit().map_err(|e| e.to_string())?;
         }
     }
-    let db = s.db.lock().unwrap();
+    let mut db = s.db.lock().unwrap();
+    let tx = db.transaction().map_err(|e| e.to_string())?;
+    let renumbered = renumber_forks(&tx, t3, "runs", "threadId", "requestedAt")?
+        + renumber_forks(&tx, t3, "providerTurns", "providerThreadId", "startedAt")?;
+    if renumbered > 0 {
+        eprintln!("T3 shared base: renumbered {renumbered} O3 records that collided with T3's");
+    }
+    tx.commit().map_err(|e| e.to_string())?;
     db.execute(
         &format!("INSERT OR IGNORE INTO t3_dirty SELECT kind,id,thread_id,0 FROM records WHERE kind IN ({})", kinds_sql()),
         [],
