@@ -578,6 +578,12 @@ mod crash_tests {
             scheduled_tasks::{self, TaskUpsert},
         };
         let s = crate::checkpoint::recovery_test_support::start(|s| {
+            // This fixture advances each crash boundary manually. The automatic timer
+            // would be another live owner when next_due checks abandoned-claim recovery.
+            s.streams
+                .ops
+                .scheduler
+                .store(true, std::sync::atomic::Ordering::Release);
             *s.provider.lock().unwrap() = Some(Arc::new(crate::provider::ScriptedProvider));
         });
         let c = s.connect();
