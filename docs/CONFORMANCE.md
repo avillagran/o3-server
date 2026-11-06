@@ -1,5 +1,21 @@
 # Conformance evidence
 
+## Server-browser resource scopes, 2026-11-06
+
+Server browsers now use the profile registry and the upstream unowned collecting
+scope policy. Scope preparation precedes CDP descriptor allocation; the duplicate
+uses an owned file descriptor on every failure path. The actor waits for scope
+cleanup before reporting completion. Human and agent previews reuse the same
+launcher and shared browser profiles retain their process until the final tab closes.
+
+Nine affected compatible-client cases pass in each feature mode, along with
+strict Clippy. The real systemd opt-in case also passes in both modes: descriptors
+3/4 carry CDP commands and screenshot replies through systemd-run, the process
+has OOM score800 and belongs to the expected profile slice, closing one tab
+preserves a sibling, and final shutdown reaps the browser process. This uses a
+private Python CDP peer, not an actual Chromium renderer. Upstream ServerBrowser
+source is unchanged between4262 and4275. No host deployment occurred.
+
 ## Native agent resource scopes, 2026-11-06
 
 The headless server enables one per-profile Linux registry for native Claude and
