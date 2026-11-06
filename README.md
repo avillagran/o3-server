@@ -95,7 +95,22 @@ The test runner compiles without running tests on the host, then executes them i
 a rootless Podman container with read-only source/binaries, temporary state, no
 network and no provider credentials. The runtime includes the media and CLI test
 dependencies. Use `--integration <target>` or `--unit-filter <name>` for a focused
-regression. Native opt-ins use the separate runners documented in `docs/nightly/`.
+regression.
+
+For arbitrary Cargo and harness arguments, use the general sandbox with that
+same runtime image:
+
+```sh
+tools/test-rust-sandbox --image localhost/o3-server-tests:local -- --no-default-features -j 4
+tools/test-rust-sandbox --image localhost/o3-server-tests:local -- --test native_goals stop_during_automatic_goal_turn
+```
+
+The general runner requires a private Node installation and mounts its runtime,
+sources, binaries and Git metadata read-only. Its default memory limit is 6 GiB
+with four test workers; set `--memory` or `--test-threads` before `--` to adjust
+those limits. Tests that require credentials, hardware or an official reference
+remain opt-in and use the dedicated isolated runners documented in `docs/nightly/`.
+
 
 ## Try it beside T3 (pilot)
 

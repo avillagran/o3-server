@@ -87,6 +87,11 @@
       "scope": "settings:write",
       "stream": false
     },
+    "sourceControl.star": {
+      "dynamic": false,
+      "scope": "source-control:write",
+      "stream": false
+    },
     "sourceControl.starred": {
       "dynamic": false,
       "scope": "orchestration:read",
