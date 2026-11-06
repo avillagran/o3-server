@@ -85,10 +85,17 @@ is pushed; `o3-server --version` prints that version.
 
 ```sh
 cargo build --release -j 4
-cargo test -j 4
+tools/build-test-image
+tools/test-scheduled-modes --all-tests
+tools/test-scheduled-modes --default-features --all-tests
 ```
 
 Keep build output off tmpfs, for example `CARGO_TARGET_DIR=/var/tmp/o3-build/main`.
+The test runner compiles without running tests on the host, then executes them in
+a rootless Podman container with read-only source/binaries, temporary state, no
+network and no provider credentials. The runtime includes the media and CLI test
+dependencies. Use `--integration <target>` or `--unit-filter <name>` for a focused
+regression. Native opt-ins use the separate runners documented in `docs/nightly/`.
 
 ## Try it beside T3 (pilot)
 

@@ -32,6 +32,11 @@ through PR #48 (`3102911`), retaining native goal ownership and continuation.
 contains 108 save cases and eight legacy/stored cases, with revision and source
 hash. It does not substitute a rewritten reference function.
 
+Build the dependency-complete local runtime once with `tools/build-test-image`.
+It contains Python, Git, Node and FFmpeg without copying source or user profiles
+into the image. Test containers mount source and compiled artifacts read-only;
+they receive no credentials or network access.
+
 `tools/test-scheduled-modes` compiles without executing tests on the host and runs
 in rootless Podman with read-only source/binaries, private tmpfs state, no network
 or credentials. It covers real-client mode/binding/queue/provenance behavior,
@@ -79,7 +84,18 @@ The existing crash/receipt regression reproduced the failure before the fix and
 passes afterward. A second regression verifies live ownership, release and
 recovery directly. Both are now included in the routine container runner;
 `--unit-filter webhook::crash_tests` executes them without rebuilding unrelated
-integration binaries.
+integration binaries. Use `--integration <target>` for an affected integration
+crate or `--all-tests` for every ordinary Cargo test. The runner mounts the real
+CLI artifact at its compiled path and starts in the checkout, matching CI
+workspace authorization. Complete output is retained in a unique private log.
+
+The PR merge matrix for head `7602e9c` passes: 533 minimal and 536 default tests, 37
+ignored opt-ins per configuration, all-target Clippy, formatting, compatibility
+generation and watcher checks. This is evidence for that commit, not a claim
+of full-platform parity. GitHub tests the candidate merged with `dev`, which
+includes the thread-read additions from PR #49. The standalone candidate before
+that merge has 530 minimal tests and 36 ignored opt-ins; these counts must not be
+reported as equivalent checkout contents.
 
 ## Still open
 

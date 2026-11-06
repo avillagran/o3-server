@@ -90,8 +90,9 @@ and transaction behavior, not external CLI compatibility.
 Commands:
 
 ```sh
-cargo test --no-default-features --lib fresh_context::tests
-cargo test --lib fresh_context::tests
+tools/build-test-image
+tools/test-scheduled-modes --unit-filter fresh_context::tests
+tools/test-scheduled-modes --default-features --unit-filter fresh_context::tests
 cargo clippy --no-default-features --lib -- -D warnings
 cargo clippy --lib -- -D warnings
 cargo fmt --all -- --check

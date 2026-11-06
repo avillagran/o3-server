@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+"""Build the rootless test runtime without copying a checkout or user profiles into it."""
+import pathlib
+import subprocess
+import tempfile
+
+root = pathlib.Path(__file__).resolve().parent.parent
+context = pathlib.Path(tempfile.mkdtemp(prefix='o3-test-image-', dir='/var/tmp'))
+result = subprocess.run([
+    'podman', 'build', '--tag', 'localhost/o3-server-tests:local',
+    '--file', str(root / 'tools/Containerfile.tests'), str(context),
+], cwd=root, timeout=600, capture_output=True, text=True)
+(context/'build.log').write_text(result.stdout+result.stderr)
+print(f'Test runtime build evidence: {context}',flush=True)
+print('\n'.join((result.stdout+result.stderr).splitlines()[-40:] if result.returncode else result.stdout.splitlines()[-4:]),flush=True)
+raise SystemExit(result.returncode)

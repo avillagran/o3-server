@@ -32,16 +32,23 @@ binaries = [pathlib.Path(v['executable']) for line in build.stdout.splitlines() 
 assert len(binaries) >= 6 if options.all_tests else len(binaries) == (1 if options.unit_filter or options.integration else 6)
 assert all(binary.parent==binaries[0].parent for binary in binaries)
 name = 'o3-scheduled-tests-' + uuid.uuid4().hex
-runtime_mounts=[]
-if options.all_tests or options.integration:
-    node=pathlib.Path(subprocess.check_output(['mise','where','node'],text=True).strip()).resolve()
-    assert (node/'bin/node').is_file()
-    runtime_mounts=['-v',f'{node}:/test-node:ro','--env','PATH=/test-node/bin:/usr/local/bin:/usr/bin:/bin']
-args = ['podman', 'run', '--rm', '--name', name, '--userns=keep-id', '--user', f'{os.getuid()}:{os.getgid()}', '--read-only', '--tmpfs', '/tmp:rw,exec,size=1g,mode=1777', '--cap-drop=ALL', '--security-opt=no-new-privileges', '--pids-limit=512', '--memory=4g', '--network=none', f'--workdir={root}', '--env', 'HOME=/tmp/home', '--env', f'O3_UNIT_FILTER={options.unit_filter or ""}', '--env', f'O3_ALL_TESTS={int(options.all_tests)}', '-v', f'{root}:{root}:ro', '-v', f'{binaries[0].parent}:/test-bin:ro', '-v', f'{binaries[0].parent.parent}:{binaries[0].parent.parent}:ro', *runtime_mounts, os.environ.get('O3_FRESH_CONTEXT_IMAGE', 'localhost/android-sandbox:latest'), 'sh', '-c', 'set -eu; umask 077; mkdir -p "$HOME"; for binary in "$@"; do if test "$O3_ALL_TESTS" = 1; then /test-bin/"$binary" --test-threads=1; continue; fi; case "$binary" in o3_server-*) if test -n "$O3_UNIT_FILTER"; then /test-bin/"$binary" "$O3_UNIT_FILTER" --nocapture --test-threads=1; continue; fi; /test-bin/"$binary" scheduled::tests --test-threads=1; /test-bin/"$binary" webhook::crash_tests --test-threads=1; /test-bin/"$binary" fresh_context::tests --test-threads=1; /test-bin/"$binary" native_goal::tests --test-threads=1 ;; *) /test-bin/"$binary" --test-threads=1 ;; esac; done', 'scheduled-nightly', *[b.name for b in binaries]]
+test_image=os.environ.get('O3_FRESH_CONTEXT_IMAGE', 'localhost/o3-server-tests:local')
+if subprocess.run(['podman','image','exists',test_image]).returncode:
+    raise SystemExit('Test runtime missing. Run tools/build-test-image first.')
+args = ['podman', 'run', '--rm', '--name', name, '--userns=keep-id', '--user', f'{os.getuid()}:{os.getgid()}', '--read-only', '--tmpfs', '/tmp:rw,exec,size=1g,mode=1777', '--cap-drop=ALL', '--security-opt=no-new-privileges', '--pids-limit=512', '--memory=4g', '--network=none', f'--workdir={root}', '--env', 'HOME=/tmp/home', '--env', f'O3_UNIT_FILTER={options.unit_filter or ""}', '--env', f'O3_ALL_TESTS={int(options.all_tests)}', '-v', f'{root}:{root}:ro', '-v', f'{binaries[0].parent}:/test-bin:ro', '-v', f'{binaries[0].parent.parent}:{binaries[0].parent.parent}:ro', test_image, 'sh', '-c', 'set -eu; umask 077; mkdir -p "$HOME"; for binary in "$@"; do if test "$O3_ALL_TESTS" = 1; then /test-bin/"$binary" --test-threads=1; continue; fi; case "$binary" in o3_server-*) if test -n "$O3_UNIT_FILTER"; then /test-bin/"$binary" "$O3_UNIT_FILTER" --nocapture --test-threads=1; continue; fi; /test-bin/"$binary" scheduled::tests --test-threads=1; /test-bin/"$binary" webhook::crash_tests --test-threads=1; /test-bin/"$binary" fresh_context::tests --test-threads=1; /test-bin/"$binary" native_goal::tests --test-threads=1 ;; *) /test-bin/"$binary" --test-threads=1 ;; esac; done', 'scheduled-nightly', *[b.name for b in binaries]]
 try:
     result = subprocess.run(args, cwd=root, timeout=900 if options.all_tests else 300, capture_output=True, text=True)
     evidence=pathlib.Path(tempfile.mkdtemp(prefix='o3-container-tests-',dir='/var/tmp'))
     (evidence/'output.log').write_text(result.stdout+result.stderr)
+    (evidence/'result.json').write_text(json.dumps({
+        'returncode': result.returncode,
+        'defaultFeatures': options.default_features,
+        'allTests': options.all_tests,
+        'integration': options.integration,
+        'unitFilter': options.unit_filter,
+        'image': test_image,
+        'binaries': [str(binary) for binary in binaries],
+    }, indent=2)+'\n')
     print(f'Container test evidence: {evidence}',flush=True)
     if result.returncode:
         print(result.stdout+result.stderr,flush=True)
