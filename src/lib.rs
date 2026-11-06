@@ -126,8 +126,8 @@ pub mod device_native_owner;
 pub mod device_native_platform;
 pub mod device_native_proxy;
 pub mod device_native_runtime;
-pub mod device_native_tools;
 pub mod device_native_state;
+pub mod device_native_tools;
 
 mod background;
 
