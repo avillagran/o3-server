@@ -1412,6 +1412,74 @@ mod tests {
         finish(&mut shared).await;
         shared_lease.stop().await;
 
+        // The CDP descriptors must survive systemd-run as well as the normal
+        // launch path. Keep the browser peer inside this private namespace.
+        use std::os::unix::fs::PermissionsExt;
+        let mut browser_state = crate::store::State::open(&root.join("browser-state")).unwrap();
+        browser_state.agent_scopes = registry.clone();
+        let peer = root.join("browser-cdp.py");
+        std::fs::write(&peer, include_str!("../tests/fixtures/browser-cdp.py")).unwrap();
+        std::fs::set_permissions(&peer, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let browser = &browser_state.streams.p2.preview.browser;
+        *browser.fixture_binary.lock().unwrap() = Some(peer);
+        browser
+            .open(
+                &browser_state,
+                "browser-thread",
+                "browser-tab",
+                "default",
+                None,
+            )
+            .await
+            .unwrap();
+        let profile = std::fs::read_dir(browser_state.dir.join("browser-profiles"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        let browser_pid = std::fs::read_to_string(profile.join("fixture.pid"))
+            .unwrap()
+            .parse::<u64>()
+            .unwrap();
+        let group = std::fs::read_to_string(format!("/proc/{browser_pid}/cgroup")).unwrap();
+        assert!(group.contains(&registry.owned_slice) && group.contains("t3code-preview-browser-"));
+        assert_eq!(
+            std::fs::read_to_string(format!("/proc/{browser_pid}/oom_score_adj"))
+                .unwrap()
+                .trim(),
+            "800"
+        );
+        assert_eq!(
+            browser
+                .screenshot("browser-thread", "browser-tab")
+                .await
+                .unwrap(),
+            [255, 216, 255, 217]
+        );
+        assert!(!registry.kill("browser-thread").await);
+        browser
+            .open(
+                &browser_state,
+                "another-browser-thread",
+                "another-browser-tab",
+                "default",
+                None,
+            )
+            .await
+            .unwrap();
+        browser.close("browser-thread", Some("browser-tab")).await;
+        assert!(Path::new(&format!("/proc/{browser_pid}")).exists());
+        assert_eq!(
+            browser
+                .screenshot("another-browser-thread", "another-browser-tab")
+                .await
+                .unwrap(),
+            [255, 216, 255, 217]
+        );
+        browser.shutdown().await;
+        gone(browser_pid).await;
+
         let (mut victim, mut oom_lease, _) = worker(&registry, "oom", false, false, true).await;
         let limits = Registry::ctl(
             &backend,

@@ -72,6 +72,11 @@ cleanup, OOM diagnosis and shared Codex protection. Source helpers agree on 163
 executed cases, and private peers exercise configured native transports and the
 compatible client's OOM response. A real systemd user manager in a disposable
 container also verifies detached-child cleanup, shared-process protection, a
-kernel OOM at 32 MiB and orphan cleanup across two profiles. Terminal and browser
+kernel OOM at 32 MiB and orphan cleanup across two profiles. Terminal
 launchers, typed failure cards and `forceStopThread` orchestration remain open;
 see [`nightly/agent-scope-intake.json`](nightly/agent-scope-intake.json).
+
+The server-browser launcher now uses that registry too. The real systemd case
+verifies inherited CDP descriptors, scope membership, child OOM score, shared
+profile lifetime and shutdown with a private protocol peer. Real Chromium
+rendering remains covered only by its separately documented acceptance.
