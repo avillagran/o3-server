@@ -1,0 +1,752 @@
+{
+  "source": "c55db3e9c72fdf584f4b54192fb39beb88667b59",
+  "commands": [
+    {
+      "input": {
+        "text": "/goal",
+        "attachments": []
+      },
+      "expected": {
+        "type": "show"
+      }
+    },
+    {
+      "input": {
+        "text": "/goal",
+        "attachments": [
+          {
+            "id": "image"
+          }
+        ]
+      },
+      "expected": null
+    },
+    {
+      "input": {
+        "text": " /goal edit\n",
+        "attachments": []
+      },
+      "expected": {
+        "type": "show"
+      }
+    },
+    {
+      "input": {
+        "text": " /goal edit\n",
+        "attachments": [
+          {
+            "id": "image"
+          }
+        ]
+      },
+      "expected": null
+    },
+    {
+      "input": {
+        "text": "/goal Clear",
+        "attachments": []
+      },
+      "expected": {
+        "type": "clear"
+      }
+    },
+    {
+      "input": {
+        "text": "/goal Clear",
+        "attachments": [
+          {
+            "id": "image"
+          }
+        ]
+      },
+      "expected": null
+    },
+    {
+      "input": {
+        "text": "/goal PAUSE",
+        "attachments": []
+      },
+      "expected": {
+        "type": "pause"
+      }
+    },
+    {
+      "input": {
+        "text": "/goal PAUSE",
+        "attachments": [
+          {
+            "id": "image"
+          }
+        ]
+      },
+      "expected": null
+    },
+    {
+      "input": {
+        "text": "/goal resume",
+        "attachments": []
+      },
+      "expected": {
+        "type": "resume"
+      }
+    },
+    {
+      "input": {
+        "text": "/goal resume",
+        "attachments": [
+          {
+            "id": "image"
+          }
+        ]
+      },
+      "expected": null
+    },
+    {
+      "input": {
+        "text": "/goal implement\nall",
+        "attachments": []
+      },
+      "expected": {
+        "type": "set",
+        "objective": "implement\nall"
+      }
+    },
+    {
+      "input": {
+        "text": "/goal implement\nall",
+        "attachments": [
+          {
+            "id": "image"
+          }
+        ]
+      },
+      "expected": null
+    },
+    {
+      "input": {
+        "text": "/GOAL x",
+        "attachments": []
+      },
+      "expected": null
+    },
+    {
+      "input": {
+        "text": "/GOAL x",
+        "attachments": [
+          {
+            "id": "image"
+          }
+        ]
+      },
+      "expected": null
+    },
+    {
+      "input": {
+        "text": "/goals",
+        "attachments": []
+      },
+      "expected": null
+    },
+    {
+      "input": {
+        "text": "/goals",
+        "attachments": [
+          {
+            "id": "image"
+          }
+        ]
+      },
+      "expected": null
+    },
+    {
+      "input": {
+        "text": "/goalX",
+        "attachments": []
+      },
+      "expected": null
+    },
+    {
+      "input": {
+        "text": "/goalX",
+        "attachments": [
+          {
+            "id": "image"
+          }
+        ]
+      },
+      "expected": null
+    },
+    {
+      "input": {
+        "text": "/goalx",
+        "attachments": []
+      },
+      "expected": null
+    },
+    {
+      "input": {
+        "text": "/goalx",
+        "attachments": [
+          {
+            "id": "image"
+          }
+        ]
+      },
+      "expected": null
+    },
+    {
+      "input": {
+        "text": "﻿/goal\tEDIT\n",
+        "attachments": []
+      },
+      "expected": {
+        "type": "show"
+      }
+    },
+    {
+      "input": {
+        "text": "﻿/goal\tEDIT\n",
+        "attachments": [
+          {
+            "id": "image"
+          }
+        ]
+      },
+      "expected": null
+    },
+    {
+      "input": {
+        "text": "/goal resume more",
+        "attachments": []
+      },
+      "expected": {
+        "type": "set",
+        "objective": "resume more"
+      }
+    },
+    {
+      "input": {
+        "text": "/goal resume more",
+        "attachments": [
+          {
+            "id": "image"
+          }
+        ]
+      },
+      "expected": null
+    }
+  ],
+  "goals": [
+    {
+      "input": {
+        "objective": "  implement 1:1  ",
+        "status": "active",
+        "tokensUsed": -5,
+        "timeUsedSeconds": -2,
+        "tokenBudget": 1234
+      },
+      "expected": {
+        "objective": "implement 1:1",
+        "status": "active",
+        "tokensUsed": 0,
+        "tokenBudget": 1234,
+        "timeUsedSeconds": 0
+      }
+    },
+    {
+      "input": {
+        "objective": "  implement 1:1  ",
+        "status": "paused",
+        "tokensUsed": -5,
+        "timeUsedSeconds": -2,
+        "tokenBudget": 1234
+      },
+      "expected": {
+        "objective": "implement 1:1",
+        "status": "paused",
+        "tokensUsed": 0,
+        "tokenBudget": 1234,
+        "timeUsedSeconds": 0
+      }
+    },
+    {
+      "input": {
+        "objective": "  implement 1:1  ",
+        "status": "blocked",
+        "tokensUsed": -5,
+        "timeUsedSeconds": -2,
+        "tokenBudget": 1234
+      },
+      "expected": {
+        "objective": "implement 1:1",
+        "status": "blocked",
+        "tokensUsed": 0,
+        "tokenBudget": 1234,
+        "timeUsedSeconds": 0
+      }
+    },
+    {
+      "input": {
+        "objective": "  implement 1:1  ",
+        "status": "usageLimited",
+        "tokensUsed": -5,
+        "timeUsedSeconds": -2,
+        "tokenBudget": 1234
+      },
+      "expected": {
+        "objective": "implement 1:1",
+        "status": "usage_limited",
+        "tokensUsed": 0,
+        "tokenBudget": 1234,
+        "timeUsedSeconds": 0
+      }
+    },
+    {
+      "input": {
+        "objective": "  implement 1:1  ",
+        "status": "budgetLimited",
+        "tokensUsed": -5,
+        "timeUsedSeconds": -2,
+        "tokenBudget": 1234
+      },
+      "expected": {
+        "objective": "implement 1:1",
+        "status": "budget_limited",
+        "tokensUsed": 0,
+        "tokenBudget": 1234,
+        "timeUsedSeconds": 0
+      }
+    },
+    {
+      "input": {
+        "objective": "  implement 1:1  ",
+        "status": "complete",
+        "tokensUsed": -5,
+        "timeUsedSeconds": -2,
+        "tokenBudget": 1234
+      },
+      "expected": {
+        "objective": "implement 1:1",
+        "status": "complete",
+        "tokensUsed": 0,
+        "tokenBudget": 1234,
+        "timeUsedSeconds": 0
+      }
+    },
+    {
+      "input": {
+        "objective": "﻿done﻿",
+        "status": "complete",
+        "tokensUsed": 53,
+        "timeUsedSeconds": 2
+      },
+      "expected": {
+        "objective": "done",
+        "status": "complete",
+        "tokensUsed": 53,
+        "tokenBudget": null,
+        "timeUsedSeconds": 2
+      }
+    },
+    {
+      "input": {
+        "objective": " \t ",
+        "status": "active",
+        "tokensUsed": 0,
+        "timeUsedSeconds": 0
+      },
+      "expected": null
+    },
+    {
+      "input": {
+        "objective": "fractional",
+        "status": "active",
+        "tokensUsed": 1.5,
+        "timeUsedSeconds": 2.75,
+        "tokenBudget": null
+      },
+      "expected": {
+        "objective": "fractional",
+        "status": "active",
+        "tokensUsed": 1.5,
+        "tokenBudget": null,
+        "timeUsedSeconds": 2.75
+      }
+    }
+  ],
+  "claudeGoals": [
+    {
+      "current": null,
+      "message": {
+        "type": "assistant",
+        "parent_tool_use_id": null,
+        "message": {
+          "model": "<synthetic>",
+          "content": [
+            {
+              "type": "text",
+              "text": "Goal set: Finish"
+            }
+          ]
+        }
+      },
+      "changed": true,
+      "expected": {
+        "objective": "Finish",
+        "status": "active",
+        "checks": 0
+      }
+    },
+    {
+      "current": {
+        "objective": "Finish",
+        "status": "active",
+        "checks": 1,
+        "lastCheck": "old feedback"
+      },
+      "message": {
+        "type": "assistant",
+        "parent_tool_use_id": null,
+        "message": {
+          "model": "<synthetic>",
+          "content": [
+            {
+              "type": "text",
+              "text": "Goal set: Replacement"
+            }
+          ]
+        }
+      },
+      "changed": true,
+      "expected": {
+        "objective": "Replacement",
+        "status": "active",
+        "checks": 0
+      }
+    },
+    {
+      "current": {
+        "objective": "Finish",
+        "status": "active",
+        "checks": 1,
+        "lastCheck": "old feedback"
+      },
+      "message": {
+        "type": "assistant",
+        "parent_tool_use_id": null,
+        "message": {
+          "model": "<synthetic>",
+          "content": [
+            {
+              "type": "text",
+              "text": "Goal set:  "
+            }
+          ]
+        }
+      },
+      "changed": false,
+      "expected": null
+    },
+    {
+      "current": {
+        "objective": "Finish",
+        "status": "active",
+        "checks": 1,
+        "lastCheck": "old feedback"
+      },
+      "message": {
+        "type": "assistant",
+        "parent_tool_use_id": null,
+        "message": {
+          "model": "<synthetic>",
+          "content": [
+            {
+              "type": "text",
+              "text": "Goal cleared: Finish"
+            }
+          ]
+        }
+      },
+      "changed": true,
+      "expected": null
+    },
+    {
+      "current": {
+        "objective": "Finish",
+        "status": "active",
+        "checks": 1,
+        "lastCheck": "old feedback"
+      },
+      "message": {
+        "type": "assistant",
+        "parent_tool_use_id": null,
+        "message": {
+          "model": "<synthetic>",
+          "content": [
+            {
+              "type": "text",
+              "text": "No goal set"
+            }
+          ]
+        }
+      },
+      "changed": true,
+      "expected": null
+    },
+    {
+      "current": {
+        "objective": "Finish",
+        "status": "active",
+        "checks": 1,
+        "lastCheck": "old feedback"
+      },
+      "message": {
+        "type": "assistant",
+        "parent_tool_use_id": null,
+        "message": {
+          "model": "<synthetic>",
+          "content": [
+            {
+              "type": "text",
+              "text": "Goal active: Finish (3 turns)"
+            }
+          ]
+        }
+      },
+      "changed": true,
+      "expected": {
+        "objective": "Finish",
+        "status": "active",
+        "checks": 3,
+        "lastCheck": "old feedback"
+      }
+    },
+    {
+      "current": {
+        "objective": "Finish",
+        "status": "active",
+        "checks": 1,
+        "lastCheck": "old feedback"
+      },
+      "message": {
+        "type": "assistant",
+        "parent_tool_use_id": null,
+        "message": {
+          "model": "<synthetic>",
+          "content": [
+            {
+              "type": "text",
+              "text": "Goal active: Finish (1 turn)"
+            }
+          ]
+        }
+      },
+      "changed": true,
+      "expected": {
+        "objective": "Finish",
+        "status": "active",
+        "checks": 1,
+        "lastCheck": "old feedback"
+      }
+    },
+    {
+      "current": {
+        "objective": "Finish",
+        "status": "active",
+        "checks": 1,
+        "lastCheck": "old feedback"
+      },
+      "message": {
+        "type": "assistant",
+        "parent_tool_use_id": null,
+        "message": {
+          "model": "<synthetic>",
+          "content": [
+            {
+              "type": "text",
+              "text": "Goal active: Different (not yet evaluated)"
+            }
+          ]
+        }
+      },
+      "changed": true,
+      "expected": {
+        "objective": "Different",
+        "status": "active",
+        "checks": 0
+      }
+    },
+    {
+      "current": null,
+      "message": {
+        "type": "assistant",
+        "parent_tool_use_id": null,
+        "message": {
+          "model": "<synthetic>",
+          "content": [
+            {
+              "type": "text",
+              "text": "﻿Goal set:  Work\nnow  ﻿"
+            }
+          ]
+        }
+      },
+      "changed": true,
+      "expected": {
+        "objective": "Work\nnow",
+        "status": "active",
+        "checks": 0
+      }
+    },
+    {
+      "current": {
+        "objective": "Finish",
+        "status": "active",
+        "checks": 1,
+        "lastCheck": "old feedback"
+      },
+      "message": {
+        "type": "assistant",
+        "parent_tool_use_id": "child",
+        "message": {
+          "model": "<synthetic>",
+          "content": [
+            {
+              "type": "text",
+              "text": "Goal cleared: Finish"
+            }
+          ]
+        }
+      },
+      "changed": false,
+      "expected": null
+    },
+    {
+      "current": {
+        "objective": "Finish",
+        "status": "active",
+        "checks": 1,
+        "lastCheck": "old feedback"
+      },
+      "message": {
+        "type": "assistant",
+        "parent_tool_use_id": null,
+        "message": {
+          "model": "haiku",
+          "content": [
+            {
+              "type": "text",
+              "text": "Goal cleared: Finish"
+            }
+          ]
+        }
+      },
+      "changed": false,
+      "expected": null
+    },
+    {
+      "current": {
+        "objective": "Finish",
+        "status": "active",
+        "checks": 1,
+        "lastCheck": "old feedback"
+      },
+      "message": {
+        "type": "user",
+        "isSynthetic": true,
+        "parent_tool_use_id": null,
+        "message": {
+          "content": "Stop hook feedback:\n[Finish]:  keep working  "
+        }
+      },
+      "changed": true,
+      "expected": {
+        "objective": "Finish",
+        "status": "active",
+        "checks": 2,
+        "lastCheck": "keep working"
+      }
+    },
+    {
+      "current": {
+        "objective": "Finish",
+        "status": "active",
+        "checks": 1,
+        "lastCheck": "old feedback"
+      },
+      "message": {
+        "type": "user",
+        "isSynthetic": false,
+        "parent_tool_use_id": null,
+        "message": {
+          "content": "Stop hook feedback:\n[Finish]:  keep working  "
+        }
+      },
+      "changed": false,
+      "expected": null
+    },
+    {
+      "current": {
+        "objective": "Finish",
+        "status": "active",
+        "checks": 1,
+        "lastCheck": "old feedback"
+      },
+      "message": {
+        "type": "user",
+        "isSynthetic": true,
+        "parent_tool_use_id": null,
+        "message": {
+          "content": [
+            {
+              "type": "text",
+              "text": "Stop hook feedback:\n[Finish]: "
+            },
+            {
+              "type": "text",
+              "text": "continue"
+            }
+          ]
+        }
+      },
+      "changed": true,
+      "expected": {
+        "objective": "Finish",
+        "status": "active",
+        "checks": 2,
+        "lastCheck": "continue"
+      }
+    },
+    {
+      "current": null,
+      "message": {
+        "type": "user",
+        "isSynthetic": true,
+        "parent_tool_use_id": null,
+        "message": {
+          "content": "Stop hook feedback:\n[Finish]: continue"
+        }
+      },
+      "changed": false,
+      "expected": null
+    },
+    {
+      "current": {
+        "objective": "Finish",
+        "status": "active",
+        "checks": 1,
+        "lastCheck": "old feedback"
+      },
+      "message": {
+        "type": "user",
+        "isSynthetic": true,
+        "parent_tool_use_id": null,
+        "message": {
+          "content": "Stop hook feedback:\n[Other]: continue"
+        }
+      },
+      "changed": false,
+      "expected": null
+    }
+  ]
+}

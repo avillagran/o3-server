@@ -8,6 +8,8 @@ use tokio::{
     sync::{mpsc, oneshot, watch},
 };
 
+#[path = "codex_goal.rs"]
+mod goals;
 #[path = "codex_lifetime.rs"]
 mod lifetime;
 
@@ -70,6 +72,7 @@ enum Op {
     Reply(Value),
     Subscribe(String, Route, oneshot::Sender<Result<(), String>>),
     Unsubscribe(String),
+    WatchGoal(String, bool),
     Shutdown(oneshot::Sender<()>),
     WaitForClose(String, oneshot::Sender<Result<(), String>>),
     ReleaseMcp(
@@ -588,8 +591,41 @@ impl CodexProvider {
         ready.await.map_err(|_| "Codex closed")??;
         let mut active_turn = None;
         let mut terminal_received = false;
+        let goal_command = crate::native_goal::parse(&input.text, &input.attachments);
+        let mut goal = goals::State::new(
+            if input.native_session_id.as_deref() == Some(tid.as_str()) {
+                input.model_selection["o3NativeGoal"].clone()
+            } else {
+                Value::Null
+            },
+        );
+        goal.origin = if input.model_selection["o3GoalCommandOrigin"] == "user" {
+            "user"
+        } else {
+            "automatic"
+        };
+        if !goal.current.is_null() {
+            c.0.send(Op::WatchGoal(tid.clone(), goal.active()))
+                .await
+                .map_err(|_| "Codex closed")?;
+        }
         let result=async {
             output.send(ProviderEvent::Codex(json!({"method":"o3/binding","params":{"threadId":tid,"cwd":input.cwd}}))).await.map_err(|_|"receiver closed")?;
+            if let Some(command) = &goal_command {
+                if let Some(reply) = goal.prepare(&c, &tid, command, &output).await? {
+                    output.send(ProviderEvent::Codex(json!({"method":"turn/started","params":{"threadId":tid,"o3GoalCommand":true,"turn":{"id":format!("goal-command:{}",input.model_selection["o3AttemptId"].as_str().unwrap_or(&input.run_id))}}}))).await.map_err(|_|"receiver closed")?;
+                    if let Some(reply) = reply { output.send(ProviderEvent::TextDelta(reply)).await.map_err(|_|"receiver closed")?; }
+                    terminal_received=true;
+                    output.send(ProviderEvent::Completed).await.map_err(|_|"receiver closed")?;
+                    return Ok(());
+                }
+                if let crate::native_goal::Command::Set(objective) = command {
+                    let original = std::mem::replace(&mut input.text, format!("Start working toward this goal: {objective}"));
+                    let prepared = crate::provider_input::content(&input, false);
+                    input.text = original;
+                    content = prepared?;
+                } else if matches!(command, crate::native_goal::Command::Resume) { content.clear(); }
+            }
             let mut inline = vec![];
             for delivery in &deliveries {
                 delivery.acknowledge(&output,&tid,"pending").await?;
@@ -615,30 +651,65 @@ impl CodexProvider {
             if input.interaction_mode=="plan" {turn_params["collaborationMode"]=json!({"mode":"plan","settings":{"model":input.model_selection["model"],"reasoning_effort":effort,"developer_instructions":null}});}
             // A pre-start interrupt can arrive while thread initialization is
             // awaiting its native acknowledgement. Never start a late turn.
-            if *cancel.borrow() || output.is_closed() || matches!(control.try_recv(), Ok(ProviderControl::Interrupt)) { for delivery in inline {delivery.acknowledge(&output,&tid,"unsent").await?;} return Ok(()); }
+            if *cancel.borrow() || output.is_closed() || matches!(control.try_recv(), Ok(ProviderControl::Interrupt)) {
+                for delivery in inline {delivery.acknowledge(&output,&tid,"unsent").await?;}
+                terminal_received=true; let _=output.send(ProviderEvent::Interrupted).await; return Ok(());
+            }
             let response=c.call("turn/start",turn_params).await?;
-            let turn=response["turn"]["id"].as_str().ok_or("Codex turn id missing")?.to_owned();
+            let mut turn=response["turn"]["id"].as_str().ok_or("Codex turn id missing")?.to_owned();
             active_turn=Some(turn.clone());
             for delivery in inline { delivery.acknowledge(&output,&tid,"inline").await?; }
-            output.send(ProviderEvent::Codex(json!({"method":"turn/started","params":{"threadId":tid,"turn":response["turn"]}}))).await.map_err(|_|"receiver closed")?;
+            output.send(ProviderEvent::Codex(json!({"method":"turn/started","params":{"threadId":tid,"o3GoalTurn":goal.managed||goal.active(),"turn":response["turn"]}}))).await.map_err(|_|"receiver closed")?;
+            let mut activation = None;
+            if goal.managed {
+                let (reply, response) = oneshot::channel();
+                c.0.send(Op::Call("thread/goal/set".into(),json!({"threadId":tid,"status":"active","origin":goal.origin}),reply)).await.map_err(|_|"Codex closed")?;
+                activation=Some(response);
+            }
+            let activation_deadline=tokio::time::Instant::now()+std::time::Duration::from_secs(30);
             let mut pending=HashMap::<String,(Value,String)>::new();
             let mut owned=std::collections::HashSet::<String>::new();
             let mut terminal=None;
             let mut interrupting=false;
             let mut owned_commands=HashMap::<String,Option<String>>::new();
+            let mut goal_deadline = None;
+            let mut terminal_at = None;
             loop {
                 if *cancel.borrow() { let _=c.call("turn/interrupt",json!({"threadId":tid,"turnId":turn})).await; return Ok(()); }
                 tokio::select! {
                     _=output.closed()=> { let _=c.call("turn/interrupt",json!({"threadId":tid,"turnId":turn})).await; return Ok(()); },
                     _=cancel.changed()=>continue,
+                    response=async {activation.as_mut().unwrap().await}, if activation.is_some()=>{
+                        let response=response.map_err(|_|"Codex activation channel closed")?.map_err(goals::rejection)?;
+                        activation=None;
+                        goal.activated(&response, &tid, &output).await?;
+                        if terminal.is_some() && owned.is_empty() {
+                            if goal.active() {goal_deadline=Some(terminal_at.unwrap_or_else(tokio::time::Instant::now)+std::time::Duration::from_secs(5));}
+                            else {terminal_received=true;output.send(terminal.take().unwrap()).await.map_err(|_|"receiver closed")?;return Ok(());}
+                        }
+                    },
+                    _=tokio::time::sleep_until(activation_deadline), if activation.is_some()=>return Err("Codex goal activation timed out".into()),
+                    _=async { tokio::time::sleep_until(goal_deadline.unwrap()).await }, if goal_deadline.is_some()=>{
+                        goal.pause(&c, &tid, &output).await?;
+                        terminal_received=true;
+                        output.send(terminal.take().unwrap()).await.map_err(|_|"receiver closed")?;
+                        return Ok(());
+                    },
                     action=control.recv()=>match action {
                         Some(ProviderControl::Interrupt)=>{
-                            c.call("turn/interrupt",json!({"threadId":tid,"turnId":turn})).await?;
+                            goal.pause(&c, &tid, &output).await?;
                             interrupting=true;
                             if terminal.is_some() {
                                 terminal=Some(ProviderEvent::Interrupted);
                                 contain_commands(&c,&tid,&mut owned,&mut owned_commands).await?;
                                 if owned.is_empty() { terminal_received=true; output.send(terminal.take().unwrap()).await.map_err(|_|"receiver closed")?; return Ok(()); }
+                            }
+                            if let Err(error)=c.call("turn/interrupt",json!({"threadId":tid,"turnId":turn})).await {
+                                let already_ended = !goal.current.is_null() && serde_json::from_str::<Value>(&error).is_ok_and(|error|error["code"]==-32602 && error["message"].as_str().is_some_and(|message|{
+                                    let message=message.to_lowercase();
+                                    ["already ended","not active","not running","not found","no active turn"].iter().any(|text|message.contains(text))
+                                }));
+                                if !already_ended {return Err(error);}
                             }
                         },
                         None=>return Err("provider control channel closed".into()),
@@ -652,7 +723,25 @@ impl CodexProvider {
                     },
                     frame=frames.recv()=>{
                         let mut frame=frame.ok_or("Codex notification channel closed or overflowed")?;
+                        if goal.observe(&frame, &output, &tid).await? {
+                            if !goal.active() && !goal.managed && terminal.is_some() && owned.is_empty() {
+                                terminal_received=true;
+                                output.send(terminal.take().unwrap()).await.map_err(|_|"receiver closed")?;
+                                return Ok(());
+                            }
+                            if goal.active() && terminal.is_some() && owned.is_empty() && goal_deadline.is_none() {
+                                goal_deadline=Some(terminal_at.unwrap_or_else(tokio::time::Instant::now)+std::time::Duration::from_secs(5));
+                            }
+                            continue;
+                        }
+                        if frame["method"]=="turn/started" && goal_deadline.is_some() && goal.active() && !interrupting {
+                            if let Some(next) = frame["params"]["turn"]["id"].as_str().filter(|next|*next!=turn) {
+                                output.send(ProviderEvent::Codex(json!({"method":"o3/goal-turn-completed","params":{"threadId":tid,"turnId":turn}}))).await.map_err(|_|"receiver closed")?;
+                                turn=next.to_owned(); active_turn=Some(turn.clone()); terminal=None; terminal_at=None; goal_deadline=None;
+                            }
+                        }
                         if frame["params"]["turnId"].as_str().or_else(||frame["params"]["turn"]["id"].as_str()).is_some_and(|id|id!=turn){continue;}
+                        if frame["method"]=="turn/started" && (goal.active()||goal.managed) {frame["params"]["o3GoalTurn"]=json!(true);}
                         if let Some(id)=frame.get("id").cloned() {
                             if pending.len()>=16 { return Err("Too many pending Codex requests".into()); }
                             let method=frame["method"].as_str().unwrap_or("").to_owned();
@@ -686,13 +775,25 @@ impl CodexProvider {
                         tokio::select! { r=output.send(event)=>r.map_err(|_|"receiver closed")?, _=cancel.changed()=>continue, _=output.closed()=>return Ok(()) }
                         for command in commands {output.send(ProviderEvent::Command(command)).await.map_err(|_|"receiver closed")?;}
                         if interrupted {interrupting=true;}
-                        if done {terminal=Some(if failed {ProviderEvent::Failed(failure_message)}else if interrupted{ProviderEvent::Interrupted}else{ProviderEvent::Completed});}
+                        if done {terminal_at=Some(tokio::time::Instant::now());terminal=Some(if failed {ProviderEvent::Failed(failure_message)}else if interrupted{ProviderEvent::Interrupted}else{ProviderEvent::Completed});}
                         if terminal.is_some() && interrupting {contain_commands(&c,&tid,&mut owned,&mut owned_commands).await?;}
-                        if terminal.is_some() && owned.is_empty() { terminal_received=true; output.send(terminal.take().unwrap()).await.map_err(|_|"receiver closed")?; return Ok(()); }
+                        if terminal.is_some() && owned.is_empty() {
+                            if matches!(terminal,Some(ProviderEvent::Completed)) && (goal.active()||goal.managed) && !interrupting {
+                                if goal.active() && goal_deadline.is_none() {goal_deadline=Some(terminal_at.unwrap()+std::time::Duration::from_secs(5));}
+                            } else {terminal_received=true; output.send(terminal.take().unwrap()).await.map_err(|_|"receiver closed")?; return Ok(());}
+                        }
                     }
                 }
             }
         }.await;
+        let paused = if active_turn.is_some() || goal.managed {
+            goal.pause(&c, &tid, &output).await
+        } else {
+            Ok(())
+        };
+        if result.is_err() {
+            let _ = goal.publish(&output, &tid).await;
+        }
         if result.is_err() || !terminal_received {
             if let Some(turn) = active_turn {
                 let _ = c
@@ -701,7 +802,7 @@ impl CodexProvider {
             }
         }
         let _ = c.0.send(Op::Unsubscribe(tid)).await;
-        result
+        result.and(paused)
     }
 }
 // nightly4179 explicitly contains tracked terminals before retiring interrupted command items.
@@ -1069,6 +1170,31 @@ async fn read_sized_frame<R: tokio::io::AsyncBufRead + Unpin>(
         }
     }
 }
+async fn stop_orphan_goal(
+    stdin: &mut tokio::process::ChildStdin,
+    tid: &str,
+    turn: Option<&str>,
+) -> Result<(), String> {
+    let mut frames = vec![
+        json!({"id":format!("o3-orphan-goal-pause:{tid}"),"method":"thread/goal/set","params":{"threadId":tid,"status":"paused","origin":"automatic"}}),
+    ];
+    if let Some(turn) = turn {
+        frames.push(json!({"id":format!("o3-orphan-goal-interrupt:{tid}:{turn}"),"method":"turn/interrupt","params":{"threadId":tid,"turnId":turn}}));
+    }
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        for frame in frames {
+            stdin
+                .write_all(serde_json::to_string(&frame).unwrap().as_bytes())
+                .await?;
+            stdin.write_all(b"\n").await?;
+        }
+        Ok::<(), std::io::Error>(())
+    })
+    .await
+    .map_err(|_| "Codex orphan goal stop timed out")?
+    .map_err(|error| error.to_string())
+}
+
 async fn actor(
     mut child: tokio::process::Child,
     mut ops: mpsc::Receiver<Op>,
@@ -1082,6 +1208,11 @@ async fn actor(
     let mut closing = HashMap::<String, Vec<oneshot::Sender<Result<(), String>>>>::new();
     let mut native_contexts = HashMap::<String, std::sync::Arc<crate::native_mcp::Context>>::new();
     let mut routes = HashMap::<String, Route>::new();
+    let mut root_goals = HashMap::<String, bool>::new();
+    let mut running_goal_turns = HashMap::<String, String>::new();
+    let mut goal_versions = HashMap::<String, u64>::new();
+    let mut goal_requests = HashMap::<u64, u64>::new();
+    let mut desired_goals = HashMap::<String, bool>::new();
     let mut next = 0u64;
     let mut buffer = FrameBuffer::default();
     let mut shutdown = None;
@@ -1104,7 +1235,15 @@ async fn actor(
                         else {closing.entry(id).or_default().push(ack);}
                         continue;
                     },
-                    Some(Op::Unsubscribe(id))=>{routes.remove(&id);continue;},
+                    Some(Op::Unsubscribe(id))=>{
+                        routes.remove(&id);
+                        if root_goals.get(&id)==Some(&true) || (root_goals.contains_key(&id) && running_goal_turns.contains_key(&id)) {
+                            stop_orphan_goal(&mut stdin, &id, running_goal_turns.get(&id).map(String::as_str)).await?;
+                            root_goals.insert(id, false);
+                        }
+                        continue;
+                    },
+                    Some(Op::WatchGoal(id,active))=>{desired_goals.insert(id.clone(),active);root_goals.insert(id,active);continue;},
                     Some(Op::ReleaseMcp(key,native,release,ack))=>{
                         let mut ids:Vec<_>=native_contexts.iter().filter(|(_,c)|c.thread_key()==key).map(|(id,_)|id.clone()).collect();
                         if let Some(id)=native {
@@ -1121,7 +1260,16 @@ async fn actor(
                     Some(Op::Reply(frame))=>frame,
                     Some(Op::Call(method,params,reply))=>{
                         if calls.len()>=32 {let _=reply.send(Err("Codex RPC capacity reached".into()));continue;}
-                        next+=1;calls.insert(next,(method.clone(),params["threadId"].as_str().map(str::to_owned),reply));json!({"id":next,"method":method,"params":params})
+                        if method.starts_with("thread/goal/") {if let Some(id)=params["threadId"].as_str(){root_goals.entry(id.into()).or_insert(false);}}
+                        next+=1;
+                        if method.starts_with("thread/goal/") {
+                            if let Some(tid)=params["threadId"].as_str() {
+                                goal_requests.insert(next,*goal_versions.get(tid).unwrap_or(&0));
+                                if method=="thread/goal/set" && params["status"].is_string() {desired_goals.insert(tid.into(),params["status"]=="active");}
+                                if method=="thread/goal/clear" {desired_goals.insert(tid.into(),false);}
+                            }
+                        }
+                        calls.insert(next,(method.clone(),params["threadId"].as_str().map(str::to_owned),reply));json!({"id":next,"method":method,"params":params})
                     }
                 };
                 let bytes=serde_json::to_vec(&frame).map_err(|e|e.to_string())?;
@@ -1132,8 +1280,19 @@ async fn actor(
                 let (frame,size)=frame?.ok_or("Codex stdout closed")?;
                 if frame.get("method").is_none(){
                     if let Some(id)=frame["id"].as_u64(){
-                        if let Some((method,_native,reply))=calls.remove(&id){
+                        if let Some((method,native,reply))=calls.remove(&id){
                             let response=if frame.get("error").is_some(){Err(frame["error"].to_string())}else{Ok(frame["result"].clone())};
+                            let observed_version = goal_requests.remove(&id);
+                            if method.starts_with("thread/goal/") {
+                                if let (Some(native),Ok(result))=(&native,&response) {
+                                    if observed_version==Some(*goal_versions.get(native).unwrap_or(&0)) {root_goals.insert(native.clone(),result["goal"]["status"]=="active");}
+                                    // A cancelled activation may acknowledge after Stop's pause.
+                                    // Reassert the later intent instead of reviving orphan work.
+                                    if method=="thread/goal/set" && result["goal"]["status"]=="active" && desired_goals.get(native)==Some(&false) {
+                                        stop_orphan_goal(&mut stdin,native,None).await?;
+                                    }
+                                }
+                            }
                             if let Err(Ok(response))=reply.send(response){
                                 if matches!(method.as_str(),"thread/start"|"thread/resume"|"thread/fork"){
                                     if let Some(tid)=response["thread"]["id"].as_str().filter(|id|!routes.contains_key(*id)&&(!native_contexts.contains_key(*id)||unloaded.contains(*id))&&!calls.values().any(|(m,n,r)|m=="thread/resume"&&n.as_deref()==Some(*id)&&!r.is_closed())){
@@ -1156,6 +1315,28 @@ async fn actor(
                 if frame["method"]=="account/rateLimits/updated" {publish_usage(&mut descriptor.lock().unwrap(), &frame["params"]["rateLimits"], None, frame["params"]["accountId"].as_str());}
                 let tid=frame["params"]["threadId"].as_str();
                 if let Some(tid)=tid {
+                    if routes.contains_key(tid) && matches!(frame["method"].as_str(),Some("thread/goal/updated"|"thread/goal/cleared")) {
+                        root_goals.entry(tid.into()).or_insert(false);
+                    }
+                    if routes.contains_key(tid) || root_goals.contains_key(tid) {
+                        if frame["method"]=="turn/started" {
+                            if let Some(turn)=frame["params"]["turn"]["id"].as_str() {running_goal_turns.insert(tid.into(),turn.into());}
+                        }
+                        if frame["method"]=="turn/completed" && running_goal_turns.get(tid).is_some_and(|turn|frame["params"]["turn"]["id"]==*turn) {running_goal_turns.remove(tid);}
+                    }
+                    if root_goals.contains_key(tid) {
+                        if matches!(frame["method"].as_str(),Some("thread/goal/updated"|"thread/goal/cleared")) {*goal_versions.entry(tid.into()).or_insert(0)+=1;}
+                        if frame["method"]=="thread/goal/updated" {root_goals.insert(tid.into(),frame["params"]["goal"]["status"]=="active");}
+                        if frame["method"]=="thread/goal/cleared" {root_goals.insert(tid.into(),false);}
+                        if frame["method"]=="turn/started" {
+                            if let Some(turn)=frame["params"]["turn"]["id"].as_str() {
+                                if !routes.contains_key(tid) {
+                                    stop_orphan_goal(&mut stdin, tid, Some(turn)).await?;
+                                    root_goals.insert(tid.into(),false);
+                                }
+                            }
+                        }
+                    }
                     if let Some(route)=routes.get(tid){if !route.push(frame.clone(),size){routes.remove(tid);}}
                     else if let Some(id)=frame.get("id"){let bytes=serde_json::to_vec(&json!({"id":id,"error":{"code":-32601,"message":"No active thread"}})).unwrap();stdin.write_all(&bytes).await.map_err(|e|e.to_string())?;stdin.write_all(b"\n").await.map_err(|e|e.to_string())?;}
                 }else if frame["method"]=="account/rateLimits/updated"{

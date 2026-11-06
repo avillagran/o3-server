@@ -22,8 +22,8 @@ fn manual_handoff(h: &Value) -> bool {
 }
 pub(crate) fn maintenance(text: &Value) -> bool {
     text.as_str().is_some_and(|s| {
-        let s = s.trim().to_ascii_lowercase();
-        s == "/compact" || s == "/goal" || s.starts_with("/goal ")
+        let s = crate::native_goal::trim(s);
+        s.eq_ignore_ascii_case("/compact") || crate::native_goal::parse(s, &json!([])).is_some()
     })
 }
 pub(crate) fn maintenance_input(input: &RunInput) -> bool {
