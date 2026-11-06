@@ -119,8 +119,10 @@ retain the original native request or task snapshot.
 
 ## Remaining work
 
-Relay proof verification, relay-origin URLs, secret providers and global managed
-policy still need implementation and acceptance. Imported ambiguous preparation
+Relay proof verification, secret-provider consumers and the remaining managed
+policy families still need implementation and acceptance. Derived relay-origin
+URLs now have their [own source and RPC checks](RELAY-ORIGIN.md); endpoint
+presentation does not certify relay delivery authentication. Imported ambiguous preparation
 needs its complete ownership/reconciliation path. Legacy accepted O3 rows retain
 only a rendered prompt and expiry. The desktop readiness guard prevents switching
 with retained deliveries or replay claims; lossless migration and launches outside

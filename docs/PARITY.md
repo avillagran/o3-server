@@ -12,6 +12,32 @@ remain in scope. Legacy aliases are tracked separately and do not count as curre
 nightly coverage. Pure web/mobile/desktop presentation is outside this headless target;
 server behavior supporting those clients remains in scope.
 
+## Context and policy checkpoint
+
+Native composer context is decoded separately from stored message text and
+projected at provider/history boundaries. Future payload key order survives
+JSON parsing while established semantic task hashes remain canonical. See
+[composer context](nightly/COMPOSER-CONTEXT.md) for source fixtures and the
+remaining isolated UTF-16 surrogate limitation.
+
+Immutable machine-policy intake enforces authentication and global webhook
+restrictions. Settings, provider and runtime overlays have native codec,
+source-oracle and private transport checks; unfinished policy families still
+refuse production startup. Client/connect and Tailscale controls remain in
+implementation, not implied by the pure decision helpers. See
+[managed policy](nightly/MANAGED-POLICY.md),
+[managed settings](nightly/MANAGED-SETTINGS.md) and
+[client limits](nightly/MANAGED-LIMITS.md).
+
+Shared-profile readiness detects retained legacy deliveries and duplicate claims
+without clearing them. The desktop lifecycle guard checks before and after
+shutdown; direct external T3 launches remain outside that control path.
+[Native webhook admission](nightly/NATIVE-WEBHOOK-ADMISSION.md) records this
+boundary. [Relay-origin URLs](nightly/RELAY-ORIGIN.md) are derived from native
+private metadata, while signed relay admission is still open. The
+[1Password resolver core](nightly/SECRET-PROVIDERS.md) has isolated native-source
+and process checks; its consumer integrations remain separate work.
+
 ## Reference and evidence
 
 [`nightly/parity-4262.json`](nightly/parity-4262.json) inventories 211 discovered
