@@ -1,8 +1,8 @@
 # Headless nightly parity
 
-The active target is T3 Code headless nightly **4275**, commit
-`6577c6b6185167c0e502fa01f9e8e8f2dee6ff25`, published on 2026-11-06.
-[Upstream release](https://github.com/pingdotgg/t3code/releases/tag/v0.1.8-nightly.20261106.4275).
+The active target is T3 Code headless nightly **4288**, commit
+`32a0531748c44b25072d7495ce0b9bd7e9450a87`, published on 2026-11-06.
+[Upstream release](https://github.com/pingdotgg/t3code/releases/tag/v0.1.8-nightly.20261106.4288).
 The implementation is not yet a complete 1:1 replacement.
 
 The scope includes every headless RPC, command, HTTP/CLI surface, authentication
@@ -39,6 +39,12 @@ private metadata, while signed relay admission is still open. The
 and process checks; its consumer integrations remain separate work.
 
 ## Reference and evidence
+
+[`nightly/drift-4288.json`](nightly/drift-4288.json) records the latest source
+intake. Existing checkpoint evidence remains scoped to its recorded 4262/4275
+comparisons. Background Git lanes, provider-thread query performance, Muse
+live-view refusals and Azure DevOps changes still need their implementation
+and acceptance review.
 
 [`nightly/parity-4262.json`](nightly/parity-4262.json) inventories 211 discovered
 public method names and records existing method statuses as historical evidence,
