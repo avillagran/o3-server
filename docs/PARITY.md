@@ -67,7 +67,8 @@ The candidate advertises `scheduledTaskThreadModes` and implements `new_thread`,
 `continue` and `fresh_session`, including first-run binding, stale-form saves,
 project changes, queued bound sends, task provenance and guarded completion.
 [Evidence and remaining limitations](nightly/SCHEDULED-TASK-MODES.md) distinguish
-native runtime checks from source-function and peer regressions. Task definitions
-still live in O3's private store; bidirectional task/webhook storage and the rest
-of the service lifecycle remain open. This block is not certification of every
+native runtime checks from source-function and peer regressions. Definition edits
+now pass O3 → T3 subscription → O3 handover with native ledger rows preserved;
+webhook ingress/dispatch, legacy accepted-work migration and the rest of the
+service lifecycle remain open. This block is not certification of every
 scheduled-task method in the inventory.

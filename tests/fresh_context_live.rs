@@ -813,12 +813,155 @@ fn official_scheduled_store_retains_pending_coalescence_and_replay() {
         }
     }
     tx.commit().unwrap();
+    drop(source);
+    // Hand ownership to O3, edit through its task service, and let the real reference read
+    // that edit over its public subscription. No provider is configured on the O3 side.
+    let state = Arc::new(State::open(&profile.join("userdata")).unwrap());
+    let mut shared = o3_server::t3_shared::start(&state).unwrap().unwrap();
+    let mut input = o3_server::scheduled::call(&state, "scheduledTasks.list", &json!({}))
+        .unwrap()
+        .unwrap()["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|task| task["id"] == "continue")
+        .unwrap()
+        .clone();
+    input["title"] = json!("O3 task handover");
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            o3_server::scheduled::call(&state, "scheduledTasks.upsert", &input)
+                .unwrap()
+                .unwrap();
+        });
+    o3_server::t3_shared::export(&state, &mut shared).unwrap();
+    drop(shared);
+    drop(state);
+    let (client, process) = start_reference(&binary, &profile, &output);
+    let first_snapshot = std::cell::RefCell::new(None);
+    let received = std::cell::Cell::new(false);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    client
+        .subscribe(
+            "scheduledTasks.subscribe",
+            json!({}),
+            || received.get() || Instant::now() > deadline,
+            |item| {
+                if let Some(item) = item {
+                    first_snapshot.replace(Some(item));
+                    received.set(true);
+                }
+                Ok(())
+            },
+        )
+        .unwrap();
+    let public = first_snapshot
+        .into_inner()
+        .expect("Reference task subscription did not yield a snapshot");
+    let tasks = public["tasks"].as_array().unwrap();
+    assert_eq!(
+        tasks.iter().find(|task| task["id"] == "continue").unwrap()["title"],
+        "O3 task handover"
+    );
+    let mut native_edit = tasks
+        .iter()
+        .find(|task| task["id"] == "fresh")
+        .unwrap()
+        .clone();
+    native_edit["title"] = json!("T3 task handover returned");
+    client.rpc("scheduledTasks.upsert", native_edit).unwrap();
+    drop(client);
+    drop(process);
+    let state = State::open(&profile.join("userdata")).unwrap();
+    let shared = o3_server::t3_shared::start(&state).unwrap().unwrap();
+    let body: String = state
+        .db
+        .lock()
+        .unwrap()
+        .query_row(
+            "SELECT body FROM records WHERE kind='scheduledTasks' AND id='fresh'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let returned: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(returned["title"], "T3 task handover returned");
+    assert_eq!(returned["threadMode"], "fresh_session");
+    let pending_after: (String, String, String) = state
+        .db
+        .lock()
+        .unwrap()
+        .query_row(
+            "SELECT task_json,request_json,delivery_ids_json FROM scheduled_task_webhook_pending",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&pending_after.0).unwrap(),
+        task
+    );
+    assert_eq!(
+        serde_json::from_str::<Value>(&pending_after.1).unwrap(),
+        request
+    );
+    assert_eq!(
+        serde_json::from_str::<Value>(&pending_after.2).unwrap(),
+        deliveries
+    );
+    let runs: i64 = shared
+        .query_row(
+            "SELECT count(*) FROM orchestration_v2_projection_runs",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(runs, 0);
+    drop(shared);
+    drop(state);
+    // Refresh the filtered export from the final handover, still copying only task tables.
+    sanitized
+        .execute(
+            "ATTACH DATABASE ?1 AS task_source",
+            [profile.join("userdata/statev2.sqlite").to_str().unwrap()],
+        )
+        .unwrap();
+    let tx = sanitized.transaction().unwrap();
+    for table in [
+        "scheduled_task_webhook_replay_keys",
+        "scheduled_task_webhook_pending",
+        "scheduled_task_webhook_relay_deliveries",
+        "scheduled_task_webhook_deliveries",
+        "scheduled_tasks",
+    ] {
+        tx.execute(&format!("DELETE FROM {table}"), []).unwrap();
+    }
+    for table in [
+        "scheduled_tasks",
+        "scheduled_task_webhook_deliveries",
+        "scheduled_task_webhook_pending",
+        "scheduled_task_webhook_replay_keys",
+        "scheduled_task_webhook_relay_deliveries",
+    ] {
+        tx.execute(
+            &format!("INSERT INTO {table} SELECT * FROM task_source.{table}"),
+            [],
+        )
+        .unwrap();
+    }
+    tx.commit().unwrap();
+    sanitized
+        .execute_batch("DETACH DATABASE task_source")
+        .unwrap();
     std::fs::write(
         output.join("scheduled-store.json"),
         serde_json::to_vec_pretty(&snapshot).unwrap(),
     )
     .unwrap();
-    std::fs::write(output.join("scheduled-store-result.json"), serde_json::to_vec_pretty(&json!({"reference":"v0.1.8-nightly.20261106.4262","tasks":4,"pending":1,"coalescedDeliveryIds":2,"replayKeys":2,"nativeTurns":0,"providerCredentials":false,"retainedAfterRestart":true,"exportContainsTaskTablesOnly":true})).unwrap()).unwrap();
+    std::fs::write(output.join("scheduled-store-result.json"), serde_json::to_vec_pretty(&json!({"reference":"v0.1.8-nightly.20261106.4262","tasks":4,"pending":1,"coalescedDeliveryIds":2,"replayKeys":2,"nativeTurns":0,"providerCredentials":false,"retainedAfterRestart":true,"exportContainsTaskTablesOnly":true,"o3TaskEditReadByT3Subscription":true,"nativeTaskEditReadByO3":true,"pendingPreservedAcrossHandover":true})).unwrap()).unwrap();
     println!("SCHEDULED_STORE_REFERENCE_PASS: task modes, pending snapshot, latest coalesced request and replay retained without inference");
 }
 

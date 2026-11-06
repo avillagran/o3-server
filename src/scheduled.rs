@@ -489,7 +489,7 @@ fn set_enabled(s: &Arc<State>, p: &Value) -> Reply {
     Ok(task)
 }
 
-fn remove_task(db: &rusqlite::Connection, id: &str) -> Result<(), Value> {
+pub(crate) fn remove_task(db: &rusqlite::Connection, id: &str) -> Result<(), Value> {
     let webhook = get(db, KIND, id).is_ok_and(|task| task["schedule"]["type"] == "webhook")
         || get(db, "hookCredentials", id).is_ok();
     db.execute(
@@ -497,6 +497,7 @@ fn remove_task(db: &rusqlite::Connection, id: &str) -> Result<(), Value> {
         [id],
     )
     .map_err(|e| failure(&e.to_string(), Some(id)))?;
+    crate::task_shared::delete_ledger(db, id).map_err(|e| failure(&e, Some(id)))?;
     if webhook {
         for sql in [
             "DELETE FROM records WHERE kind='hookCredentials' AND id=?1",

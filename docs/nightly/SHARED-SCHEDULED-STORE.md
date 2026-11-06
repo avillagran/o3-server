@@ -1,9 +1,15 @@
-# Shared scheduled-task persistence: reference intake
+# Shared scheduled-task persistence
 
-Shared scheduled-task storage is still incomplete. Conversation modes execute in
-O3, but its definitions, credentials and webhook queue remain private. The
-shared-history exporter does not transfer those tables. Do not switch servers
-expecting accepted webhook work or task edits to follow the profile yet.
+Task definitions, private endpoint credentials and native webhook ledger rows now
+travel with migration-80 shared profiles. O3 imports native edits and deletions
+even when the thread-event sequence has not advanced. Its task edits export back
+to the native tables without inventing orchestration events.
+
+Webhook execution handover remains incomplete: O3's existing ingress and worker
+still use its private legacy queue, while imported native pending rows are
+preserved for the next owner. The new ingress/dispatch adapter and lossless
+legacy-work migration are still required before using this draft for due webhook
+work. No additional shared-task capability is advertised.
 
 The reference proof is pinned to official nightly 4262, commit `c55db3e9`, with
 the release digest and source hashes in `scheduled-store-intake.json`. Nightly
@@ -42,29 +48,61 @@ with the same group and a repeated first request produce:
 of receipt IDs. Restarting the actual reference retains those JSON values, the
 due time, pending state and replay count without creating any run.
 
-The evidence includes a JSON snapshot and a filtered SQLite export. The export
+The proof then hands the actual disposable profile to O3. An edit through O3's
+task service is read by the real T3 `scheduledTasks.subscribe` stream. T3 edits a
+second task through RPC; a new O3 startup imports that edit. The original pending
+task/request/member IDs survive both handovers with zero inference turns.
+
+The evidence includes the initial JSON snapshot and a final filtered SQLite export. The export
 uses the pinned empty schema with only synthetic task-table rows; authentication,
 pairing sessions, logs and unrelated profile data are excluded. Its four public
 task rows pass the exact contracts with Effect 4.1.2 and zero rejected rows.
-The JSON and database stay outside Git because they contain synthetic endpoint
-tokens. The committed intake contains hashes, counts and field descriptions.
+The raw JSON and database stay outside Git because they contain synthetic endpoint
+tokens. A separate committed fixture replaces tokens and delivery IDs with explicit
+placeholders, fixes timestamps and moves deadlines to 2100. The intake records
+its source and the scope of the runtime proof.
 
-## Required implementation boundary
+## Independent synchronization boundary
 
 Task mutations do not append orchestration events. A thread-event cursor cannot
 detect edits or deletions made while T3 owns the profile. Shared task persistence
-therefore needs its own transactional baseline and deletion tracking. First
-adoption must distinguish absent rows from intentional deletion; later handovers
-must preserve pending O3 intent when the native task did not change.
+therefore uses its own native-side baseline of row hashes and local database
+identity/generation. Startup compares both copies with that baseline before
+changing task rows. It imports native changes, retains unexported local intent
+when native state is unchanged, and refuses conflicting changes while retaining
+both copies. Deletions compare against the previous baseline rather than treating
+every absent row as an initial empty profile. JSON property order and whitespace
+do not create false conflicts.
 
-Definitions alone are insufficient. Handover must preserve endpoint token/secret,
-receipt history, pending owner and member deliveries, replay expiry, relay
-deduplication and dispatch/completion recovery. The current private O3 queue
+Definitions, private credentials, last webhook delivery identity, receipt history,
+pending snapshots/member IDs, replay keys/expiry and relay-deduplication rows are
+synchronized. The public task never includes the signing secret. Updates use
+UPSERT rather than REPLACE so task edits do not cascade-delete pending work.
+Pending windows can exchange their unique coalescing keys inside a transaction.
+
+Local imports commit before the native baseline. A native commit failure can
+therefore replay an already committed local import safely; it cannot acknowledge
+an import that never committed. Background export observes task notifications as
+well as history changes. An unchanged local generation skips ledger scans; scans
+hold row keys and hashes and read large bodies one at a time. A recreated local
+database has a new identity and restores unchanged native rows instead of
+interpreting the missing local rows as deletions.
+
+`tools/test-scheduled-modes --integration shared_tasks` exercises both directions,
+event-free edits/deletions, private fields, retained local intent, conflicts,
+atomic export failure, coalescing-key exchanges, database recovery, native commit
+failure and task-only background notifications. The legacy shared-history tests
+retain their separate schema-73 and schema-80 coverage.
+
+## Still required
+
+Dispatch/completion recovery and new O3 ingress still require the native ledger
+adapter. The current private O3 queue
 stores a rendered prompt and expiry, which cannot reconstruct the original
 native task/request snapshot. Existing accepted work needs a lossless migration
 or an explicit compatibility boundary before ownership can change.
 
-Still required: both handover directions, unchanged/deleted/replaced definitions,
-due and expired windows, edits while queued, dispatch crash recovery, successful
-and failed completion, relay delivery and policy behavior. The desktop composer
+Still required: due and expired windows, edits while queued, dispatch crash
+recovery, successful and failed completion, relay ingestion and policy behavior.
+Preserving a relay row does not prove relay ingestion or verification. The desktop composer
 and the remaining platform inventory retain their separate acceptance gaps.

@@ -70,7 +70,7 @@ pub fn validate(s: &Value) -> Result<(), &'static str> {
     }
     Ok(())
 }
-fn initialize(db: &Connection) -> Result<(), String> {
+pub(crate) fn initialize(db: &Connection) -> Result<(), String> {
     db.execute_batch("CREATE TABLE IF NOT EXISTS hook_queue(id TEXT PRIMARY KEY,task TEXT NOT NULL,coalesce TEXT NOT NULL,due INTEGER NOT NULL,expires INTEGER NOT NULL,prompt TEXT NOT NULL); CREATE INDEX IF NOT EXISTS hook_queue_due ON hook_queue(due); CREATE TABLE IF NOT EXISTS hook_replay(task TEXT NOT NULL,key TEXT NOT NULL,expires INTEGER NOT NULL,PRIMARY KEY(task,key));").map_err(|e|e.to_string())
 }
 pub fn prepare(db: &Connection, id: &str, task: &mut Value) -> Result<(), String> {

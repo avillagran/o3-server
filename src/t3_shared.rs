@@ -281,6 +281,7 @@ pub fn open(dir: &Path) -> Result<Option<Connection>> {
                 return Err(format!("T3 migration 80 is missing {table}.{column}"));
             }
         }
+        crate::task_shared::validate(&db)?;
     }
     let version: Option<i64> = db
         .query_row(
@@ -1131,7 +1132,7 @@ fn t3_shape(db: &Connection, kind_name: &str, mut v: Value) -> Value {
 
 /// Exports every marked record. Returns how many were written to T3.
 pub fn export(s: &State, t3: &mut Connection) -> Result<usize> {
-    let mut written = 0;
+    let mut written = crate::task_shared::export(s, t3)?;
     let mut after = 0i64;
     loop {
         let batch = {
@@ -1647,7 +1648,7 @@ fn reshape_events(t3: &Connection) -> Result<usize> {
 /// Brings O3 up to date with T3's base and returns the open connection for the exporter, which
 /// writes the backlog in the background.
 pub fn start(s: &State) -> Result<Option<Connection>> {
-    let Some(t3) = open(&s.dir)? else {
+    let Some(mut t3) = open(&s.dir)? else {
         return Ok(None);
     };
     let latest_sequence = latest(&t3)?;
@@ -1657,6 +1658,7 @@ pub fn start(s: &State) -> Result<Option<Connection>> {
         Some(_) => json!({}),
     };
     report["sessions"] = json!(take_sessions(s, &t3)?);
+    report["taskRows"] = json!(crate::task_shared::start(s, &mut t3)?);
     // Migration 76 adds fields older exporters could not persist. Revisit local project intent
     // once after T3 upgrades its database, even if the old exporter already recorded a rejection.
     if has_column(&t3, PROJECTS.table, "pinned_at")? {
@@ -1733,10 +1735,17 @@ impl Exporter {
             .stack_size(256 * 1024)
             .spawn(move || {
                 let mut first = true;
+                let mut task_version = s.streams.ops.tasks_version();
                 loop {
                     let stopping = flag.load(Ordering::Acquire);
-                    if first || stopping || changes.has_changed().unwrap_or(true) {
+                    let tasks = s.streams.ops.tasks_version();
+                    if first
+                        || stopping
+                        || tasks != task_version
+                        || changes.has_changed().unwrap_or(true)
+                    {
                         first = false;
+                        task_version = tasks;
                         changes.borrow_and_update();
                         if let Err(e) = export(&s, &mut t3) {
                             eprintln!("T3 export failed: {e}");

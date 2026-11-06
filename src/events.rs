@@ -59,6 +59,8 @@ pub fn initialize(db: &Connection) -> Result<()> {
     crate::fresh_context::initialize(db)?;
     crate::context_transfer::initialize(db)?;
     crate::threadq::initialize(db)?;
+    crate::webhook::initialize(db)?;
+    crate::task_shared::initialize(db)?;
     crate::t3_shared::initialize(db)
 }
 /// Upstream 077 (1973e0a68): a boolean `settledOverride` breaks the thread schema; true means

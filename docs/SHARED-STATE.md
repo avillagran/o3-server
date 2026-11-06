@@ -62,6 +62,12 @@ projected thread has a `thread.created` event. So O3 writes both, exactly as T3'
 A profile without `statev2.sqlite` keeps the marks until T3 creates its database; O3 does not create
 T3's schema.
 
+At migration 80, task definitions and private webhook ledger tables use a
+separate row-hash baseline because task mutations emit no orchestration events.
+Both definition directions and ledger preservation pass an official-runtime
+handover. Native webhook dispatch and migration of O3's old private queue remain
+incomplete; see [the task storage boundary](nightly/SHARED-SCHEDULED-STORE.md).
+
 ## What stays O3's own
 
 O3-only data with no T3 table (usage ledger, background and Claude tasks, MCP claims, control outbox,

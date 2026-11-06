@@ -23,7 +23,7 @@
       "sha256": "9da228d2dd53572ef38ed6ce864b9b939db41fc5edf33a662f78c072ee5a14cf"
     }
   ],
-  "status": "reference evidence; O3 shared task storage remains unimplemented",
+  "status": "Definition handover and native ledger preservation implemented; native ingress/dispatch and legacy accepted-work migration remain open",
   "scenario": {
     "providerCredentials": false,
     "network": "none",
@@ -47,7 +47,10 @@
     "httpStatus": 202,
     "latestRequestRetained": true,
     "pendingRetainedAfterRestart": true,
-    "filteredExport": "empty schema 80 plus synthetic task tables only"
+    "filteredExport": "empty schema 80 plus synthetic task tables only",
+    "o3TaskEditReadByT3Subscription": true,
+    "nativeTaskEditReadByO3": true,
+    "pendingPreservedAcrossHandover": true
   },
   "tables": [
     "scheduled_tasks",
@@ -57,11 +60,16 @@
     "scheduled_task_webhook_relay_deliveries"
   ],
   "notProven": [
-    "relay ingestion",
-    "due-window dispatch and completion",
-    "O3 to T3 task handover",
-    "T3 to O3 task handover",
+    "relay ingestion and verification",
+    "due-window dispatch and completion in O3",
+    "new O3 ingress through the native webhook ledger",
+    "lossless migration of legacy accepted O3 work",
     "cross-process crash recovery",
     "global nightly parity"
-  ]
+  ],
+  "fixture": {
+    "path": "tests/fixtures/t3-task-store-4262.json",
+    "sha256": "eb858f608179522114c249f31406d64dea45603bea01f742ae4d87b8da3b91b2",
+    "redaction": "Explicit placeholder endpoint tokens and delivery IDs; fixed timestamps; future deadlines moved to 2100"
+  }
 }

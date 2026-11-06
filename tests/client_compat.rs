@@ -544,7 +544,12 @@ fn protocol_rejected_before_auth() {
 #[test]
 fn projects_share_the_thread_sequence_and_replay_log() {
     let (_, c) = connected(false);
-    let p = json!({"type":"project.create","commandId":"project-create","projectId":"p1","title":"Project","workspaceRoot":"/var/tmp/o3-build/tmp","scripts":[]});
+    let workspace = std::env::temp_dir().join(format!(
+        "o3-client-project-{}",
+        o3_server::store::random_id().unwrap()
+    ));
+    std::fs::create_dir(&workspace).unwrap();
+    let p = json!({"type":"project.create","commandId":"project-create","projectId":"p1","title":"Project","workspaceRoot":workspace,"scripts":[]});
     let result = c.rpc("projects.mutate", p.clone()).unwrap();
     assert_eq!(result, c.rpc("projects.mutate", p).unwrap());
     let shell = c

@@ -104,9 +104,9 @@ requirements are documented in [SHARED-SCHEDULED-STORE.md](SHARED-SCHEDULED-STOR
 
 - Diagnose the reference's intermittent rapid-follow-up answers; avoid treating
   a successful repeat or a guessed cause as resolution.
-- Bidirectional scheduled-task definitions, webhook credentials and pending
-  delivery state in the shared T3 database. This block changes O3's task behavior,
-  not its storage ownership.
+- Native webhook ingress/dispatch, completion recovery and lossless migration of
+  old accepted O3 work. Definitions and native ledger rows now pass bidirectional
+  storage checks; preserved pending rows alone do not prove execution handover.
 - Complete service lifecycle comparison, including thread/project moves,
   timer/manual/webhook contention, restart recovery, managed policy and failures.
 - The live desktop composer, remaining RPCs/drivers and full platform audit.

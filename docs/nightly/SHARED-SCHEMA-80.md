@@ -18,7 +18,7 @@ metadata. T3 remains responsible for creating and migrating its tables.
 | 77, boolean settlement repair | T3 runs its repair; O3 already normalizes imported boolean settlement values before exposing them. |
 | 78, correlation index removal | No query depends on the removed index; export retains the correlation column. |
 | 79, delegated recovery indexes | Preserve the native JSON expression indexes; exporter inserts use the same existing payload columns. |
-| 80, scheduled-task thread mode | Require and preserve the native `thread_mode` column. Task storage and execution remain outside this shared-history exporter. |
+| 80, scheduled-task thread mode | Require and preserve the native `thread_mode` column. Definitions and native webhook ledgers use an independent row-hash baseline; ingress/dispatch and legacy-work migration remain open. |
 
 The first migration-80 startup revisits local projects once, recovering pin/archive
 intent an older exporter could not persist. Successful or already-equal exports
