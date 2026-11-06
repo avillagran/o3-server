@@ -349,6 +349,7 @@ fn main() -> std::io::Result<()> {
                 _=interrupt.recv()=>Ok(()),
                 _=term.recv()=>Ok(()),
             };
+            state.begin_shutdown();
             if !serving.is_finished() {
                 serving.abort();
                 let _ = serving.await;

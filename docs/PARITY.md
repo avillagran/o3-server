@@ -65,6 +65,18 @@ Unicode trimming and 31 malformed-input wire defects. Families reuse the common 
 projection, whose complete field fidelity remains a separate task. The full headless
 goal remains active after either block.
 
+The live-history repair retains the upstream active-run message cohort and orders
+visible windows by canonical position rather than physical record age. Plain and
+compact compatible-client snapshots preserve a growing answer through600 tools,
+and older pages remain complete without duplicates. This repair is installed on
+NODE and M2. The two reported NODE threads expose readable answers and active goals,
+and both executions continued after restart. Intel remains unreachable.
+
+Server teardown now fences late provider receipts without issuing user Stop or
+native goal-control commands. Process acceptance includes graceful and abrupt
+restart; complete session-disposal, idle-wake and forced-stop parity remain open.
+See [`nightly/shutdown-intake.json`](nightly/shutdown-intake.json).
+
 The forge-star block provides personal GitHub GET/PUT operations, host-scoped
 credentials, native private token slots and quota protection. The real compatible
 client exercises read/star/read against private HTTP, while the official runtime
