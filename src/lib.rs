@@ -134,6 +134,7 @@ pub mod device_native_tools;
 mod background;
 
 mod cliproxy;
+mod cliproxy_projection;
 mod config_sources;
 
 mod title;

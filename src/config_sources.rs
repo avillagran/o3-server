@@ -213,109 +213,20 @@ pub(crate) async fn request(
     serde_json::from_slice(&bytes).map_err(|_| ())
 }
 async fn account(config: &Value, account: &Value) -> Value {
-    let codex = account["provider"] == "codex";
     let checked = iso(now_ms());
-    let mut out = json!({"id":account["id"],"driver":if codex {"codex"} else {"claudeAgent"},"email":account["email"],"workspaceId":account["id_token"]["chatgpt_account_id"]});
-    let usage = crate::cliproxy::usage(
-        config["url"].as_str().unwrap_or(""),
-        config["managementKey"].as_str().unwrap_or(""),
-        account,
-    )
-    .await
-    .ok();
-    let Some(usage) = usage else {
-        out["usageLimits"] = json!({"checkedAt":checked,"windows":[],"unavailable":{"reason":"probeFailed","message":"The hub could not read this account's usage."}});
-        return out;
-    };
-    let mut windows = Vec::new();
-    for (key, id, label, kind) in if codex {
-        [
-            ("primary_window", "primary", "Session", "session"),
-            ("secondary_window", "secondary", "Weekly", "weekly"),
-        ]
-    } else {
-        [
-            ("five_hour", "five_hour", "Session", "session"),
-            ("seven_day", "seven_day", "Weekly", "weekly"),
-        ]
-    } {
-        let w = if codex {
-            &usage["rate_limit"][key]
-        } else {
-            &usage[key]
-        };
-        let used = w[if codex { "used_percent" } else { "utilization" }].as_f64();
-        if let Some(used) = used.filter(|v| v.is_finite()) {
-            let mut window =
-                json!({"id":id,"label":label,"kind":kind,"usedPercent":used.clamp(0.,100.)});
-            if codex {
-                if let Some(reset) = w["reset_at"].as_i64() {
-                    window["resetsAt"] = json!(iso(reset.saturating_mul(1000)));
-                }
-                if let Some(seconds) = w["limit_window_seconds"].as_u64() {
-                    window["windowDurationMins"] = json!(seconds / 60);
-                }
-            } else if w["resets_at"].is_string() {
-                window["resetsAt"] = w["resets_at"].clone();
-            }
-            windows.push(window);
-        }
-    }
-    if !codex {
-        for limit in usage["limits"].as_array().into_iter().flatten() {
-            if limit["kind"] != "weekly_scoped" {
-                continue;
-            }
-            if let (Some(name), Some(used)) = (
-                limit["scope"]["model"]["display_name"].as_str(),
-                limit["percent"].as_f64(),
-            ) {
-                let id = format!(
-                    "seven_day_{}",
-                    name.to_lowercase()
-                        .chars()
-                        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-                        .collect::<String>()
-                );
-                windows.push(json!({"id":id,"label":format!("Weekly · {name}"),"kind":"weekly","usedPercent":used.clamp(0.,100.),"resetsAt":limit["resets_at"],"windowDurationMins":10080}));
-            }
-        }
-    }
-    out["plan"] = if codex {
-        usage["plan_type"].clone()
-    } else {
-        json!("Claude Subscription")
-    };
-    out["usageLimits"] = json!({"checkedAt":checked,"windows":windows});
-    let credits = if codex {
-        crate::cliproxy::credits(
-            config["url"].as_str().unwrap_or(""),
-            config["managementKey"].as_str().unwrap_or(""),
-            account,
-            now_ms(),
-        )
-        .await
-        .ok()
+    let base = config["url"].as_str().unwrap_or("");
+    let key = config["managementKey"].as_str().unwrap_or("");
+    let usage = crate::cliproxy::usage(base, key, account).await.ok();
+    let available = if account["provider"] == "codex" && usage.is_some() {
+        crate::cliproxy::credits(base, key, account, now_ms())
+            .await
+            .ok()
     } else {
         None
     };
-    if let Some(credits) = credits {
-        out["usageLimits"]["resetCredits"] = json!({"availableCount":credits.len()});
-        if let Some(first) = credits.first() {
-            out["usageLimits"]["resetCredits"]["nextCreditId"] = first["id"].clone();
-            if let Some(at) = first["expires_at"].as_str().and_then(|value| {
-                chrono::DateTime::parse_from_rfc3339(value)
-                    .or_else(|_| chrono::DateTime::parse_from_rfc2822(value))
-                    .ok()
-            }) {
-                out["usageLimits"]["resetCredits"]["nextExpiresAt"] =
-                    json!(iso(at.timestamp_millis()));
-            }
-        }
-    }
-
-    out
+    crate::cliproxy_projection::project(account, usage.as_ref(), available.as_deref(), &checked)
 }
+
 pub(crate) async fn refresh(state: &State) -> Vec<Value> {
     let service = &state.streams.ops.usage_sources;
     let _refresh = service.refresh.lock().await;
@@ -402,14 +313,23 @@ async fn read_sources(state: &State, settings: &Value) -> Vec<Value> {
         .await
         {
             Ok(files) => {
-                let mut accounts = Vec::new();
-                for a in files.iter().take(4096) {
-                    if a["disabled"] != true
-                        && matches!(a["provider"].as_str(), Some("codex" | "claude"))
-                    {
-                        accounts.push(account(&config, a).await);
-                    }
-                }
+                use futures_util::StreamExt;
+                let files = files
+                    .into_iter()
+                    .filter(|file: &Value| {
+                        file["disabled"] != true
+                            && matches!(file["provider"].as_str(), Some("codex" | "claude"))
+                    })
+                    .take(4096)
+                    .collect::<Vec<_>>();
+                let accounts = futures_util::stream::iter(files)
+                    .map(|file: Value| {
+                        let config = config.clone();
+                        async move { account(&config, &file).await }
+                    })
+                    .buffered(4)
+                    .collect::<Vec<_>>()
+                    .await;
                 source["accounts"] = json!(accounts);
             }
             Err(failure) => source["error"] = json!(failure.detail()),

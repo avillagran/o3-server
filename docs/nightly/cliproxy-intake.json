@@ -96,12 +96,12 @@
   "coveredPhysicalApiCases": 42,
   "completeNightlyParity": false,
   "remainingBoundaries": [
-    "native full account/usage projection",
     "provider-instance direct redemption drivers",
     "client quota reducer reset ID retention and UI action",
     "noncanonical JavaScript Date.parse expiry strings",
     "runtime-specific TLS/transport error classification",
     "HTTP response body resource limit differs from native unbounded decoding",
     "isolated UTF-16 surrogates rejected by serde JSON string transport"
-  ]
+  ],
+  "accountProjectionLeaf": "CLIPROXY-PROJECTION.md"
 }

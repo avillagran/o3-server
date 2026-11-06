@@ -172,7 +172,7 @@ async fn private_op_reset_route_serializes_refresh_and_publishes_redeemed_credit
                     release.take().unwrap().await.unwrap();
                     json!({"code":"reset"})
                 } else if url.ends_with("/rate-limit-reset-credits") {
-                    json!({"credits":if redeemed {json!([])} else {json!([{"id":"credit","status":"available","reset_type":"codex_rate_limits","expires_at":"2028-01-01T00:00:00Z"}])}})
+                    json!({"credits":if redeemed {json!([])} else {json!([{"id":"credit","status":"available","reset_type":"codex_rate_limits","expires_at":"2099-01-01T00:00:00Z"}])}})
                 } else {
                     assert!(url.ends_with("/usage"));
                     json!({"plan_type":"pro","rate_limit":null})
