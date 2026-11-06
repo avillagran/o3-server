@@ -541,19 +541,21 @@ impl Session {
         json!({"threadId":self.thread_id,"terminalId":self.terminal_id,"cwd":st.cwd,"worktreePath":st.worktree_path,"status":st.status,"pid":st.pid,"exitCode":st.exit_code,"exitSignal":st.exit_signal,"hasRunningSubprocess":st.has_subprocess,"label":st.label(&self.terminal_id),"updatedAt":st.updated_at})
     }
 
-    /// Records one event under the session lock, in both replay logs, and wakes subscribers.
-    fn publish(&self, st: &mut SessionState, mut event: Value, seq: u64) {
+    fn persist_history(&self, st: &SessionState) {
         if let Some(path) = self.persistence.lock().unwrap().as_ref() {
-            let result = if st.closed {
-                std::fs::remove_file(path)
-            } else {
-                let temp = path.with_extension("pending");
-                std::fs::write(&temp, self.snapshot_of(st).to_string())
-                    .and_then(|_| std::fs::rename(temp, path))
-            };
-            if let Err(error) = result {
+            let temp = path.with_extension("pending");
+            if let Err(error) = std::fs::write(&temp, self.snapshot_of(st).to_string())
+                .and_then(|_| std::fs::rename(temp, path))
+            {
                 eprintln!("terminal history persistence failed: {error}");
             }
+        }
+    }
+
+    /// Records one event under the session lock, in both replay logs, and wakes subscribers.
+    fn publish(&self, st: &mut SessionState, mut event: Value, seq: u64) {
+        if !st.closed {
+            self.persist_history(st);
         }
         event["threadId"] = json!(self.thread_id);
         event["terminalId"] = json!(self.terminal_id);
@@ -1143,7 +1145,28 @@ impl Manager {
             self.global.clone(),
         );
         sess.st.lock().unwrap().scoped = l.scoped;
-        *sess.persistence.lock().unwrap() = self.history_path(&l.thread, &l.terminal);
+        let path = self.history_path(&l.thread, &l.terminal);
+        if let Some(path) = path.as_ref() {
+            if let Ok(bytes) = std::fs::symlink_metadata(path).and_then(|metadata| {
+                if !metadata.file_type().is_file()
+                    || metadata.len() > 6 * HISTORY_BYTES as u64 + 65536
+                {
+                    return Err(std::io::Error::other("invalid terminal history file"));
+                }
+                std::fs::read(path)
+            }) {
+                if let Ok(value) = serde_json::from_slice::<Value>(&bytes) {
+                    if value["threadId"] == l.thread && value["terminalId"] == l.terminal {
+                        sess.st
+                            .lock()
+                            .unwrap()
+                            .history
+                            .append(value["history"].as_str().unwrap_or(""));
+                    }
+                }
+            }
+        }
+        *sess.persistence.lock().unwrap() = path;
         sess
     }
 
@@ -1272,8 +1295,12 @@ impl Manager {
             if let Some(session) = self.get(&key) {
                 session.persistence.lock().unwrap().take();
             }
-            await_scope(self.close_session(&key)).await?;
+            await_scope(self.close_session(&key, true)).await?;
         }
+        self.delete_thread_history(thread)
+    }
+
+    fn delete_thread_history(&self, thread: &str) -> Result<(), String> {
         let dir = self.history_dir.lock().unwrap().clone();
         if let Some(dir) = dir {
             for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())? {
@@ -1296,7 +1323,21 @@ impl Manager {
         }
         Ok(())
     }
-    fn close_session(&self, key: &(String, String)) -> Option<tokio::sync::watch::Receiver<bool>> {
+    fn delete_history(&self, key: &(String, String)) {
+        if let Some(path) = self.history_path(&key.0, &key.1) {
+            if let Err(error) = std::fs::remove_file(path) {
+                if error.kind() != std::io::ErrorKind::NotFound {
+                    eprintln!("terminal history deletion failed: {error}");
+                }
+            }
+        }
+    }
+
+    fn close_session(
+        &self,
+        key: &(String, String),
+        delete_history: bool,
+    ) -> Option<tokio::sync::watch::Receiver<bool>> {
         let removed = self.sessions.lock().unwrap().remove(key);
         self.closed.lock().unwrap().insert(key.clone());
         if self.closed.lock().unwrap().len() > 4096 {
@@ -1308,10 +1349,18 @@ impl Manager {
             Session::stop_process(&mut st);
             st.closed = true;
             let seq = st.advance();
+            if delete_history {
+                self.delete_history(key);
+            } else {
+                sess.persist_history(&st);
+            }
             sess.publish(&mut st, json!({"type":"closed"}), seq);
             st.history.clear();
             st.pending_ctl.clear();
             return completion;
+        }
+        if delete_history {
+            self.delete_history(key);
         }
         None
     }
@@ -1500,9 +1549,11 @@ pub async fn call(s: &Arc<State>, tag: &str, p: &Value) -> Result<Value, Value> 
                 .to_owned();
             let _guard = m.lifecycle.lock().await;
             match p.get("terminalId").and_then(Value::as_str) {
-                Some(id) => await_scope(m.close_session(&(thread, id.to_owned())))
-                    .await
-                    .map_err(|e| invalid(&e))?,
+                Some(id) => await_scope(
+                    m.close_session(&(thread, id.to_owned()), p["deleteHistory"] == true),
+                )
+                .await
+                .map_err(|e| invalid(&e))?,
                 None => {
                     let keys: Vec<_> = m
                         .sessions
@@ -1513,9 +1564,13 @@ pub async fn call(s: &Arc<State>, tag: &str, p: &Value) -> Result<Value, Value> 
                         .cloned()
                         .collect();
                     for key in keys {
-                        await_scope(m.close_session(&key))
+                        await_scope(m.close_session(&key, false))
                             .await
                             .map_err(|e| invalid(&e))?;
+                    }
+                    if p["deleteHistory"] == true {
+                        m.delete_thread_history(&thread)
+                            .map_err(|error| invalid(&error))?;
                     }
                 }
             }

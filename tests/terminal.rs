@@ -624,8 +624,74 @@ fn bounded_history_survives_state_reopen_for_attach_and_open() {
         .connect()
         .rpc(
             "terminal.close",
-            json!({"threadId":"persist","terminalId":"term-1"}),
+            json!({"threadId":"persist","terminalId":"term-1","deleteHistory":true}),
         )
         .unwrap();
     assert_eq!(std::fs::read_dir(history_dir).unwrap().count(), 0);
+}
+
+#[test]
+fn close_preserves_history_until_explicit_deletion_including_closed_sessions() {
+    let (s, cwd) = server();
+    let c = s.connect();
+    for (thread, terminal, marker) in [
+        ("keep", "one", "KEEP-HISTORY"),
+        ("keep", "two", "BULK-HISTORY"),
+        ("other", "one", "OTHER-HISTORY"),
+    ] {
+        open(&c, thread, terminal, &cwd);
+        let mut tail = attach(s.connect(), thread, terminal, json!({}));
+        tail.next(T);
+        write(&c, thread, terminal, &format!("echo {marker}; exit\n"));
+        tail.until(T, |e| {
+            e["type"] == "exited" || e["snapshot"]["status"] == "exited"
+        });
+    }
+    let history_dir = s.dir.join("terminal-history");
+    c.rpc(
+        "terminal.close",
+        json!({"threadId":"keep","terminalId":"one"}),
+    )
+    .unwrap();
+    assert_eq!(std::fs::read_dir(&history_dir).unwrap().count(), 3);
+    let reopened = open(&c, "keep", "one", &cwd);
+    assert!(reopened["history"]
+        .as_str()
+        .unwrap()
+        .contains("KEEP-HISTORY"));
+    c.rpc(
+        "terminal.close",
+        json!({"threadId":"keep","terminalId":"one"}),
+    )
+    .unwrap();
+    // Explicit deletion applies even after the process/session was already removed.
+    c.rpc(
+        "terminal.close",
+        json!({"threadId":"keep","terminalId":"one","deleteHistory":true}),
+    )
+    .unwrap();
+    assert_eq!(std::fs::read_dir(&history_dir).unwrap().count(), 2);
+    c.rpc(
+        "terminal.close",
+        json!({"threadId":"keep","terminalId":"two"}),
+    )
+    .unwrap();
+    // Bulk deletion includes histories whose sessions are no longer in memory.
+    c.rpc(
+        "terminal.close",
+        json!({"threadId":"keep","deleteHistory":true}),
+    )
+    .unwrap();
+    assert_eq!(std::fs::read_dir(&history_dir).unwrap().count(), 1);
+    let restored = start(|state| state.streams.terminals.restore(&history_dir).unwrap());
+    let mut other = attach(restored.connect(), "other", "one", json!({"resume":true}));
+    assert!(other.next(T)["snapshot"]["history"]
+        .as_str()
+        .unwrap()
+        .contains("OTHER-HISTORY"));
+    let deleted = open(&restored.connect(), "keep", "one", &cwd);
+    assert!(!deleted["history"]
+        .as_str()
+        .unwrap()
+        .contains("KEEP-HISTORY"));
 }
