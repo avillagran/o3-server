@@ -93,6 +93,18 @@ pub(crate) fn spawn_with_scope(
     rows: u16,
     scoped: bool,
 ) -> io::Result<Pty> {
+    let command = crate::agent_scope::TerminalCommand::plain(program, env);
+    spawn_prepared(&command, cwd, cols, rows, scoped)
+}
+pub(crate) fn spawn_prepared(
+    launch: &crate::agent_scope::TerminalCommand,
+    cwd: &Path,
+    cols: u16,
+    rows: u16,
+    scoped: bool,
+) -> io::Result<Pty> {
+    let program = &launch.program;
+    let env = &launch.env;
     let (mut m, mut s) = (0, 0);
     let ws = winsize(cols, rows);
     cvt(unsafe { libc::openpty(&mut m, &mut s, std::ptr::null_mut(), std::ptr::null(), &ws) })?;
@@ -109,9 +121,10 @@ pub(crate) fn spawn_with_scope(
     }
     #[cfg(target_os = "linux")]
     if scoped {
-        let program = crate::executable::resolve(Path::new(program))
+        let program = crate::executable::resolve(program)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Shell executable not found"))?;
-        let (child, pid) = crate::process_scope::spawn(&program, cwd, env, s)?;
+        let (child, pid) =
+            crate::process_scope::spawn(&program, &launch.args, cwd, env, s, launch.adjust_oom)?;
         #[allow(deprecated)]
         let master = AsyncFd::new(master)?;
         return Ok(Pty {
@@ -122,6 +135,7 @@ pub(crate) fn spawn_with_scope(
     }
     let mut command = tokio::process::Command::new(program);
     command
+        .args(&launch.args)
         .current_dir(cwd)
         .env_clear()
         .envs(env.iter().map(|(k, v)| (k, v)))
@@ -130,7 +144,11 @@ pub(crate) fn spawn_with_scope(
         .stderr(Stdio::from(slave))
         .kill_on_drop(true);
     unsafe {
-        command.pre_exec(|| {
+        let adjust_oom = launch.adjust_oom;
+        command.pre_exec(move || {
+            if adjust_oom {
+                crate::agent_scope::raise_oom_score();
+            }
             if libc::setsid() < 0 {
                 return Err(io::Error::last_os_error());
             }
