@@ -127,8 +127,23 @@ pub enum ProviderEvent {
     Completed,
     Interrupted,
     Failed(String),
+    /// Structured native failure fields; normalized before durable publication.
+    FailedWithDetails(serde_json::Value),
     /// A command item and its transient output; see `command_output`.
     Command(crate::command_output::CommandEvent),
+}
+impl ProviderEvent {
+    pub(crate) fn failure_input(&self) -> Option<serde_json::Value> {
+        match self {
+            Self::Failed(message) => Some(serde_json::json!({"message":message})),
+            Self::FailedWithDetails(failure) => Some(if failure.is_object() {
+                failure.clone()
+            } else {
+                serde_json::json!({"cause":failure})
+            }),
+            _ => None,
+        }
+    }
 }
 pub enum ProviderControl {
     Steer(String),
@@ -594,10 +609,14 @@ pub(crate) fn start(
                 }
                 continue;
             }
-            let event = if matches!(event, ProviderEvent::Failed(_))
-                && s.agent_scopes.oom_killed(&tid).await
-            {
-                ProviderEvent::Failed("Killed: out of memory.".into())
+            let event = if let Some(mut failure) = event.failure_input() {
+                if s.agent_scopes.oom_killed(&tid).await {
+                    failure["message"] = serde_json::json!("Killed: out of memory.");
+                    failure["code"] = serde_json::json!("oom_kill");
+                    ProviderEvent::FailedWithDetails(failure)
+                } else {
+                    event
+                }
             } else {
                 event
             };
@@ -633,6 +652,7 @@ pub(crate) fn start(
                         event,
                         ProviderEvent::Completed
                             | ProviderEvent::Failed(_)
+                            | ProviderEvent::FailedWithDetails(_)
                             | ProviderEvent::Interrupted
                     ));
             if flush
@@ -649,7 +669,10 @@ pub(crate) fn start(
             }
             if matches!(
                 event,
-                ProviderEvent::Completed | ProviderEvent::Interrupted | ProviderEvent::Failed(_)
+                ProviderEvent::Completed
+                    | ProviderEvent::Interrupted
+                    | ProviderEvent::Failed(_)
+                    | ProviderEvent::FailedWithDetails(_)
             ) {
                 checkpoint_finished = true;
                 let cs = s.clone();
@@ -743,25 +766,22 @@ pub(crate) fn start(
                     Some("completed" | "interrupted" | "failed" | "cancelled")
                 )
             {
+                let message = failure.unwrap_or_else(|| {
+                    if finished {
+                        "provider ended without completion"
+                    } else {
+                        "provider failed"
+                    }
+                    .into()
+                });
                 let failure = if s.agent_scopes.oom_killed(&tid).await {
-                    Some("Killed: out of memory.".into())
+                    ProviderEvent::FailedWithDetails(
+                        serde_json::json!({"message":"Killed: out of memory.","code":"oom_kill"}),
+                    )
                 } else {
-                    failure
+                    ProviderEvent::Failed(message)
                 };
-                let _ = persist_attempt(
-                    &s,
-                    &tid,
-                    &rid,
-                    attempt.as_deref(),
-                    ProviderEvent::Failed(failure.unwrap_or_else(|| {
-                        if finished {
-                            "provider ended without completion"
-                        } else {
-                            "provider failed"
-                        }
-                        .into()
-                    })),
-                );
+                let _ = persist_attempt(&s, &tid, &rid, attempt.as_deref(), failure);
             }
         }
         if crate::run_restart::matches(&s.db.lock().unwrap(), &rid, attempt.as_deref())
@@ -840,7 +860,7 @@ fn persist(
 ) -> Result<(), String> {
     persist_attempt(s, tid, rid, None, event)
 }
-fn persist_attempt(
+pub(crate) fn persist_attempt(
     s: &crate::store::State,
     tid: &str,
     rid: &str,
@@ -1014,7 +1034,10 @@ fn persist_attempt(
             run["status"] = json!("waiting");
         }
         ProviderEvent::Command(_) => unreachable!(),
-        ProviderEvent::Completed | ProviderEvent::Interrupted | ProviderEvent::Failed(_) => {
+        ProviderEvent::Completed
+        | ProviderEvent::Interrupted
+        | ProviderEvent::Failed(_)
+        | ProviderEvent::FailedWithDetails(_) => {
             run["status"] = json!(if matches!(event, ProviderEvent::Completed) {
                 "completed"
             } else if matches!(event, ProviderEvent::Interrupted) {
@@ -1023,10 +1046,19 @@ fn persist_attempt(
                 "failed"
             });
             run["completedAt"] = json!(at);
-            if let ProviderEvent::Failed(ref error) = event {
-                run["error"] = json!(error);
+            if let Some(mut input) = event.failure_input() {
+                if input["class"].is_null() {
+                    input["class"] = run["errorClass"].clone();
+                }
+                if input["resetAt"].is_null() {
+                    input["resetAt"] = thread["usageLimitResetAt"].clone();
+                }
+                let failure = crate::provider_failure::make(&input);
+                run["error"] = failure["message"].clone();
+                run["errorClass"] = failure["class"].clone();
+                crate::provider_failure::persist(&tx, tid, &thread, &run, &failure, &at)?;
             }
-            if matches!(event, ProviderEvent::Failed(_)) {
+            if event.failure_input().is_some() {
                 tx.execute("UPDATE records SET body=json_set(body,'$.status','delivery-unknown','$.error','provider ended without interrupt acknowledgement') WHERE kind='controlOutbox' AND thread_id=?1 AND json_extract(body,'$.command.runId')=?2 AND json_extract(body,'$.status') IN ('pending','handed-off')", rusqlite::params![tid,rid]).map_err(|e|e.to_string())?;
             }
             if matches!(event, ProviderEvent::Interrupted) {

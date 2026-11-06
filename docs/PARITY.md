@@ -80,7 +80,7 @@ cleanup, OOM diagnosis and shared Codex protection. Source helpers agree on 163
 executed cases, and private peers exercise configured native transports and the
 compatible client's OOM response. A real systemd user manager in a disposable
 container also verifies detached-child cleanup, shared-process protection, a
-kernel OOM at 32 MiB and orphan cleanup across two profiles. Typed failure cards and `forceStopThread` orchestration remain open;
+kernel OOM at 32 MiB and orphan cleanup across two profiles. `forceStopThread` orchestration remains open;
 see [`nightly/agent-scope-intake.json`](nightly/agent-scope-intake.json).
 
 The server-browser launcher now uses that registry too. The real systemd case
@@ -93,3 +93,11 @@ with clean environments, preserved wrapper argv and child OOM adjustment. Real
 systemd checks verify controlling TTY and PID/session/group identity, lazy API
 initialization and survival of owned-profile agent cleanup. This does not add
 durable PTY reconnection after an actual server restart.
+
+Failed turns now publish a structured terminal error card with upstream identity,
+bounded and redacted messages/codes, class, retryability and optional usage reset.
+Confirmed OOM changes the message and code while retaining the failure class.
+The real client renders the card; stale attempts and duplicate terminal events
+cannot replace it. Provider-specific classification, retries and the remaining
+session lifecycle are still open; see
+[`nightly/provider-failure-intake.json`](nightly/provider-failure-intake.json).

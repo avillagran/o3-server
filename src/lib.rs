@@ -25,6 +25,7 @@ pub mod ops;
 mod process_scope;
 pub mod profile;
 pub mod provider;
+mod provider_failure;
 mod provider_policy;
 pub mod pty;
 pub mod routes;

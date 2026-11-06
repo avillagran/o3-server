@@ -1,0 +1,3156 @@
+{
+  "source": "c55db3e9c72fdf584f4b54192fb39beb88667b59",
+  "cases": [
+    {
+      "input": {},
+      "expected": {
+        "class": "unknown",
+        "message": "Provider turn failed.",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": ""
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Provider turn failed.",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "   "
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Provider turn failed.",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "A useful failure."
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "A useful failure.",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "﻿ padded ﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "padded",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "See https://alice:private@example.com/path?q=private#private)."
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "See https://example.com/path).",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "éhttps://example.com?token=private and xhttps://example.com?token=kept"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "éhttps://example.com/ and xhttps://example.com?token=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Bearer private; Basic private, bearer private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Bearer [REDACTED]; Basic [REDACTED], bearer [REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xBearer kept éBearer private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xBearer kept éBearer [REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "api_key=private password:\"private value\" secret=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "api_key=[REDACTED] password:[REDACTED] secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "{\"access_token\":\"private\",\"Authorization\":\"Bearer private\",\"other\":\"keep\"}"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "{\"access_token\":\"[REDACTED]\",\"Authorization\":\"[REDACTED]\"other\":\"keep\"}",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "{'credential':'private','api-key':'private'}"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "{'credential':'[REDACTED]','api-key':'[REDACTED]'}",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "foo-api-key=private prefix_token = private secret=\"private value\""
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "foo-api-key=[REDACTED] prefix_token = [REDACTED] secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "sk-QQQQQQQQQQQQQQQQQQQQQQQQ"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "sk-QQQQQQQQQQQQQQQQQQQQ---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "[REDACTED]---",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xsk-QQQQQQQQQQQQQQQQQQQQQQQQ"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xsk-QQQQQQQQQQQQQQQQQQQQQQQQ",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "é sk-QQQQQQQQQQQQQQQQQQQQQQQQ"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "é [REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "before\u0000middle\u0007after\tline\nnext"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "before middle after \tline\nnext",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🧪suffix"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪🧪…",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "https://example.com/onetwo?secret=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "https://example.com/one%C2%85two",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "https://alice:private@example.com/path?secret=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "https://example.com/path",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Bearer private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Bearer [REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "api_key=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "api_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "sk-QQQQQQQQQQQQQQQQQQQQ"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "https://alice:private@example.com/path?secret=private-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "https://example.com/path",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Bearer private-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Bearer [REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "api_key=private-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "api_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "sk-QQQQQQQQQQQQQQQQQQQQ-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "[REDACTED]-",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "https://alice:private@example.com/path?secret=private---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "https://example.com/path",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Bearer private---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Bearer [REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "api_key=private---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "api_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "sk-QQQQQQQQQQQQQQQQQQQQ---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "[REDACTED]---",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "https://alice:private@example.com/path?secret=privateK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "https://example.com/path",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Bearer privateK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Bearer [REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "api_key=privateK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "api_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "sk-QQQQQQQQQQQQQQQQQQQQK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "[REDACTED]K",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "https://alice:private@example.com/path?secret=privateé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "https://example.com/path",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Bearer privateé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Bearer [REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "api_key=privateé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "api_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "sk-QQQQQQQQQQQQQQQQQQQQé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "[REDACTED]é",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "https://alice:private@example.com/path?secret=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "https://example.com/path",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Bearer private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Bearer [REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "api_key=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "api_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "sk-QQQQQQQQQQQQQQQQQQQQ"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "https://alice:private@example.com/path?secret=private﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "https://example.com/path",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Bearer private﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Bearer [REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "api_key=private﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "api_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "sk-QQQQQQQQQQQQQQQQQQQQ﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xhttps://alice:private@example.com/path?secret=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xhttps://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xBearer private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xBearer private",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xapi_key=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xsk-QQQQQQQQQQQQQQQQQQQQ"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xsk-QQQQQQQQQQQQQQQQQQQQ",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xhttps://alice:private@example.com/path?secret=private-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xhttps://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xBearer private-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xBearer private-",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xapi_key=private-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xsk-QQQQQQQQQQQQQQQQQQQQ-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xsk-QQQQQQQQQQQQQQQQQQQQ-",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xhttps://alice:private@example.com/path?secret=private---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xhttps://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xBearer private---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xBearer private---",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xapi_key=private---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xsk-QQQQQQQQQQQQQQQQQQQQ---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xsk-QQQQQQQQQQQQQQQQQQQQ---",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xhttps://alice:private@example.com/path?secret=privateK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xhttps://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xBearer privateK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xBearer privateK",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xapi_key=privateK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xsk-QQQQQQQQQQQQQQQQQQQQK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xsk-QQQQQQQQQQQQQQQQQQQQK",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xhttps://alice:private@example.com/path?secret=privateé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xhttps://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xBearer privateé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xBearer privateé",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xapi_key=privateé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xsk-QQQQQQQQQQQQQQQQQQQQé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xsk-QQQQQQQQQQQQQQQQQQQQé",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xhttps://alice:private@example.com/path?secret=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xhttps://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xBearer private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xBearer private",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xapi_key=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xsk-QQQQQQQQQQQQQQQQQQQQ"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xsk-QQQQQQQQQQQQQQQQQQQQ",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xhttps://alice:private@example.com/path?secret=private﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xhttps://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xBearer private﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xBearer private",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xapi_key=private﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "xsk-QQQQQQQQQQQQQQQQQQQQ﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "xsk-QQQQQQQQQQQQQQQQQQQQ",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "éhttps://alice:private@example.com/path?secret=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "éhttps://example.com/path",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "éBearer private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "éBearer [REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "éapi_key=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "éapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ésk-QQQQQQQQQQQQQQQQQQQQ"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "é[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "éhttps://alice:private@example.com/path?secret=private-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "éhttps://example.com/path",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "éBearer private-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "éBearer [REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "éapi_key=private-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "éapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ésk-QQQQQQQQQQQQQQQQQQQQ-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "é[REDACTED]-",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "éhttps://alice:private@example.com/path?secret=private---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "éhttps://example.com/path",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "éBearer private---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "éBearer [REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "éapi_key=private---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "éapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ésk-QQQQQQQQQQQQQQQQQQQQ---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "é[REDACTED]---",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "éhttps://alice:private@example.com/path?secret=privateK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "éhttps://example.com/path",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "éBearer privateK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "éBearer [REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "éapi_key=privateK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "éapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ésk-QQQQQQQQQQQQQQQQQQQQK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "é[REDACTED]K",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "éhttps://alice:private@example.com/path?secret=privateé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "éhttps://example.com/path",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "éBearer privateé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "éBearer [REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "éapi_key=privateé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "éapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ésk-QQQQQQQQQQQQQQQQQQQQé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "é[REDACTED]é",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "éhttps://alice:private@example.com/path?secret=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "éhttps://example.com/path",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "éBearer private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "éBearer [REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "éapi_key=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "éapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ésk-QQQQQQQQQQQQQQQQQQQQ"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "é[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "éhttps://alice:private@example.com/path?secret=private﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "éhttps://example.com/path",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "éBearer private﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "éBearer [REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "éapi_key=private﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "éapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ésk-QQQQQQQQQQQQQQQQQQQQ﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "é[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Khttps://alice:private@example.com/path?secret=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Khttps://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "KBearer private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "KBearer private",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Kapi_key=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Kapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Ksk-QQQQQQQQQQQQQQQQQQQQ"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "K[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Khttps://alice:private@example.com/path?secret=private-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Khttps://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "KBearer private-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "KBearer private-",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Kapi_key=private-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Kapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Ksk-QQQQQQQQQQQQQQQQQQQQ-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "K[REDACTED]-",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Khttps://alice:private@example.com/path?secret=private---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Khttps://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "KBearer private---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "KBearer private---",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Kapi_key=private---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Kapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Ksk-QQQQQQQQQQQQQQQQQQQQ---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "K[REDACTED]---",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Khttps://alice:private@example.com/path?secret=privateK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Khttps://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "KBearer privateK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "KBearer privateK",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Kapi_key=privateK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Kapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Ksk-QQQQQQQQQQQQQQQQQQQQK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "K[REDACTED]K",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Khttps://alice:private@example.com/path?secret=privateé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Khttps://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "KBearer privateé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "KBearer privateé",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Kapi_key=privateé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Kapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Ksk-QQQQQQQQQQQQQQQQQQQQé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "K[REDACTED]é",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Khttps://alice:private@example.com/path?secret=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Khttps://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "KBearer private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "KBearer private",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Kapi_key=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Kapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Ksk-QQQQQQQQQQQQQQQQQQQQ"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "K[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Khttps://alice:private@example.com/path?secret=private﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Khttps://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "KBearer private﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "KBearer private",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Kapi_key=private﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Kapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Ksk-QQQQQQQQQQQQQQQQQQQQ﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "K[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſhttps://alice:private@example.com/path?secret=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſhttps://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſBearer private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſBearer private",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſapi_key=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſsk-QQQQQQQQQQQQQQQQQQQQ"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſ[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſhttps://alice:private@example.com/path?secret=private-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſhttps://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſBearer private-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſBearer private-",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſapi_key=private-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſsk-QQQQQQQQQQQQQQQQQQQQ-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſ[REDACTED]-",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſhttps://alice:private@example.com/path?secret=private---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſhttps://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſBearer private---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſBearer private---",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſapi_key=private---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſsk-QQQQQQQQQQQQQQQQQQQQ---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſ[REDACTED]---",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſhttps://alice:private@example.com/path?secret=privateK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſhttps://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſBearer privateK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſBearer privateK",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſapi_key=privateK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſsk-QQQQQQQQQQQQQQQQQQQQK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſ[REDACTED]K",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſhttps://alice:private@example.com/path?secret=privateé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſhttps://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſBearer privateé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſBearer privateé",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſapi_key=privateé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſsk-QQQQQQQQQQQQQQQQQQQQé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſ[REDACTED]é",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſhttps://alice:private@example.com/path?secret=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſhttps://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſBearer private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſBearer private",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſapi_key=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſsk-QQQQQQQQQQQQQQQQQQQQ"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſ[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſhttps://alice:private@example.com/path?secret=private﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſhttps://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſBearer private﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſBearer private",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſapi_key=private﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſapi_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "ſsk-QQQQQQQQQQQQQQQQQQQQ﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "ſ[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-https://alice:private@example.com/path?secret=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-https://example.com/path",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-Bearer private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-Bearer [REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-api_key=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-api_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-sk-QQQQQQQQQQQQQQQQQQQQ"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-https://alice:private@example.com/path?secret=private-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-https://example.com/path",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-Bearer private-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-Bearer [REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-api_key=private-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-api_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-sk-QQQQQQQQQQQQQQQQQQQQ-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-[REDACTED]-",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-https://alice:private@example.com/path?secret=private---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-https://example.com/path",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-Bearer private---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-Bearer [REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-api_key=private---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-api_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-sk-QQQQQQQQQQQQQQQQQQQQ---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-[REDACTED]---",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-https://alice:private@example.com/path?secret=privateK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-https://example.com/path",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-Bearer privateK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-Bearer [REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-api_key=privateK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-api_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-sk-QQQQQQQQQQQQQQQQQQQQK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-[REDACTED]K",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-https://alice:private@example.com/path?secret=privateé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-https://example.com/path",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-Bearer privateé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-Bearer [REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-api_key=privateé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-api_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-sk-QQQQQQQQQQQQQQQQQQQQé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-[REDACTED]é",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-https://alice:private@example.com/path?secret=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-https://example.com/path",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-Bearer private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-Bearer [REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-api_key=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-api_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-sk-QQQQQQQQQQQQQQQQQQQQ"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-https://alice:private@example.com/path?secret=private﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-https://example.com/path",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-Bearer private﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-Bearer [REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-api_key=private﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-api_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "-sk-QQQQQQQQQQQQQQQQQQQQ﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "-[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_https://alice:private@example.com/path?secret=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_https://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_Bearer private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_Bearer private",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_api_key=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_api_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_sk-QQQQQQQQQQQQQQQQQQQQ"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_sk-QQQQQQQQQQQQQQQQQQQQ",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_https://alice:private@example.com/path?secret=private-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_https://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_Bearer private-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_Bearer private-",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_api_key=private-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_api_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_sk-QQQQQQQQQQQQQQQQQQQQ-"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_sk-QQQQQQQQQQQQQQQQQQQQ-",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_https://alice:private@example.com/path?secret=private---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_https://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_Bearer private---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_Bearer private---",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_api_key=private---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_api_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_sk-QQQQQQQQQQQQQQQQQQQQ---"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_sk-QQQQQQQQQQQQQQQQQQQQ---",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_https://alice:private@example.com/path?secret=privateK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_https://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_Bearer privateK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_Bearer privateK",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_api_key=privateK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_api_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_sk-QQQQQQQQQQQQQQQQQQQQK"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_sk-QQQQQQQQQQQQQQQQQQQQK",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_https://alice:private@example.com/path?secret=privateé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_https://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_Bearer privateé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_Bearer privateé",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_api_key=privateé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_api_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_sk-QQQQQQQQQQQQQQQQQQQQé"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_sk-QQQQQQQQQQQQQQQQQQQQé",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_https://alice:private@example.com/path?secret=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_https://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_Bearer private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_Bearer private",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_api_key=private"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_api_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_sk-QQQQQQQQQQQQQQQQQQQQ"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_sk-QQQQQQQQQQQQQQQQQQQQ",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_https://alice:private@example.com/path?secret=private﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_https://alice:private@example.com/path?secret=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_Bearer private﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_Bearer private",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_api_key=private﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_api_key=[REDACTED]",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "_sk-QQQQQQQQQQQQQQQQQQQQ﻿"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "_sk-QQQQQQQQQQQQQQQQQQQQ",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Native failure",
+        "class": "unknown",
+        "retryable": false,
+        "code": "native-code",
+        "resetAt": "2026-11-06T18:00:00+02:00"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Native failure",
+        "code": "native-code",
+        "retryable": false
+      }
+    },
+    {
+      "input": {
+        "message": "Native failure",
+        "class": "provider_error",
+        "retryable": false,
+        "code": "native-code",
+        "resetAt": "2026-11-06T18:00:00+02:00"
+      },
+      "expected": {
+        "class": "provider_error",
+        "message": "Native failure",
+        "code": "native-code",
+        "retryable": false
+      }
+    },
+    {
+      "input": {
+        "message": "Native failure",
+        "class": "transport_error",
+        "retryable": false,
+        "code": "native-code",
+        "resetAt": "2026-11-06T18:00:00+02:00"
+      },
+      "expected": {
+        "class": "transport_error",
+        "message": "Native failure",
+        "code": "native-code",
+        "retryable": false
+      }
+    },
+    {
+      "input": {
+        "message": "Native failure",
+        "class": "validation_error",
+        "retryable": false,
+        "code": "native-code",
+        "resetAt": "2026-11-06T18:00:00+02:00"
+      },
+      "expected": {
+        "class": "validation_error",
+        "message": "Native failure",
+        "code": "native-code",
+        "retryable": false
+      }
+    },
+    {
+      "input": {
+        "message": "Native failure",
+        "class": "usage_limit",
+        "retryable": false,
+        "code": "native-code",
+        "resetAt": "2026-11-06T18:00:00+02:00"
+      },
+      "expected": {
+        "class": "usage_limit",
+        "message": "Native failure",
+        "code": "native-code",
+        "retryable": false,
+        "resetAt": "2026-11-06T16:00:00.000Z"
+      }
+    },
+    {
+      "input": {
+        "class": "usage_limit",
+        "resetAt": "invalid"
+      },
+      "expected": {
+        "class": "usage_limit",
+        "message": "Provider turn failed.",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "class": "usage_limit",
+        "resetAt": "2026-11-06"
+      },
+      "expected": {
+        "class": "usage_limit",
+        "message": "Provider turn failed.",
+        "code": null,
+        "retryable": null,
+        "resetAt": "2026-11-06T00:00:00.000Z"
+      }
+    },
+    {
+      "input": {
+        "message": "  ",
+        "code": "  "
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Provider turn failed.",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "message": "Failure",
+        "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🧪suffix"
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Failure",
+        "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…",
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "cause": {
+          "_tag": "ProviderAdapterTurnStartError",
+          "message": "private raw defect",
+          "cause": {
+            "_tag": "ProviderAdapterProtocolError",
+            "reason": "previous_turn_active"
+          }
+        }
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "The provider could not start this turn: the previous turn is still running. Retry the turn; if it keeps failing, check the provider setup and server logs.",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "cause": {
+          "_tag": "ProviderAdapterTurnStartError",
+          "cause": {
+            "_tag": "CodexGoalObjectiveTooLongError",
+            "message": "Shorten the objective."
+          }
+        }
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Shorten the objective.",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "cause": {
+          "_tag": "ProviderAdapterEventStreamError",
+          "message": "private raw defect",
+          "cause": {
+            "_tag": "ProviderAdapterProtocolError",
+            "reason": "previous_turn_active"
+          }
+        }
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "The provider event stream closed unexpectedly: the previous turn is still running. Retry the turn; if it keeps failing, check the provider and server logs.",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "cause": {
+          "_tag": "ProviderAdapterEventStreamError",
+          "cause": {
+            "_tag": "CodexGoalObjectiveTooLongError",
+            "message": "Shorten the objective."
+          }
+        }
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Shorten the objective.",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "cause": {
+          "_tag": "ProviderAdapterOpenSessionError",
+          "message": "private raw defect",
+          "cause": {
+            "_tag": "ProviderAdapterProtocolError",
+            "reason": "previous_turn_active"
+          }
+        }
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "The provider session could not be opened: the previous turn is still running. Check that the provider is installed and signed in, then retry the turn.",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "cause": {
+          "_tag": "ProviderAdapterOpenSessionError",
+          "cause": {
+            "_tag": "CodexGoalObjectiveTooLongError",
+            "message": "Shorten the objective."
+          }
+        }
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Shorten the objective.",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "cause": {
+          "_tag": "ProviderAdapterResumeThreadError",
+          "message": "private raw defect",
+          "cause": {
+            "_tag": "ProviderAdapterProtocolError",
+            "reason": "previous_turn_active"
+          }
+        }
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "The provider conversation could not be resumed: the previous turn is still running. Retry the turn; if it keeps failing, check the provider and server logs.",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "cause": {
+          "_tag": "ProviderAdapterResumeThreadError",
+          "cause": {
+            "_tag": "CodexGoalObjectiveTooLongError",
+            "message": "Shorten the objective."
+          }
+        }
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Shorten the objective.",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "cause": {
+          "_tag": "ContextHandoffBudgetError"
+        }
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "The request leaves too little context for a provider handoff. Shorten the request or use a larger-context model; the current request has not been truncated.",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "cause": {
+          "_tag": "ContextHandoffBackgroundWorkError"
+        }
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "The target provider still has background work running. Wait for it to finish or stop it before retrying the handoff.",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "cause": {
+          "_tag": "CodexAppServerRequestError",
+          "method": "thread/goal/set",
+          "message": "goal objective must not be empty"
+        }
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Codex rejected the goal: goal objective must not be empty.",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "cause": {
+          "_tag": "CodexAppServerRequestError",
+          "method": "thread/goal/set",
+          "message": "private defect"
+        }
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Provider turn failed.",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "cause": {
+          "_tag": "AcpProcessExitedError",
+          "signal": "SIGKILL"
+        }
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "The provider process exited after signal SIGKILL. Check the server logs for the provider's output, then retry the turn.",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "cause": {
+          "_tag": "AcpProcessExitedError",
+          "code": 17
+        }
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "The provider process exited with code 17. Check the server logs for the provider's output, then retry the turn.",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "cause": {
+          "_tag": "AcpProcessExitedError",
+          "signal": "private output",
+          "code": 1.5
+        }
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "The provider process exited. Check the server logs for the provider's output, then retry the turn.",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "cause": {
+          "_tag": "ContextHandoffDeliveryUncertainError"
+        }
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "T3 could not confirm whether conversation history reached the provider. Retry the turn to recover the session.",
+        "code": null,
+        "retryable": null
+      }
+    },
+    {
+      "input": {
+        "cause": {
+          "_tag": "UnknownDefect",
+          "message": "private raw defect",
+          "code": "safe-code"
+        }
+      },
+      "expected": {
+        "class": "unknown",
+        "message": "Provider turn failed.",
+        "code": "safe-code",
+        "retryable": null
+      }
+    }
+  ],
+  "cards": [
+    {
+      "input": {
+        "driver": "codex",
+        "threadId": "thread:ñ",
+        "runId": "run:1",
+        "nodeId": "node:1",
+        "providerThreadId": "provider:1",
+        "providerTurnId": "turn:/🧪",
+        "itemOrdinal": 7,
+        "failure": {
+          "class": "provider_error",
+          "message": "Native failure",
+          "code": null,
+          "retryable": null
+        },
+        "occurredAt": "2026-11-06T18:00:00.123Z"
+      },
+      "expected": {
+        "id": "turn-item:provider:codex:native-item:terminal-failure%3Aturn%3A%2F%F0%9F%A7%AA",
+        "threadId": "thread:ñ",
+        "runId": "run:1",
+        "nodeId": "node:1",
+        "providerThreadId": "provider:1",
+        "providerTurnId": "turn:/🧪",
+        "nativeItemRef": null,
+        "parentItemId": null,
+        "ordinal": 7,
+        "status": "failed",
+        "title": "Provider error",
+        "startedAt": "2026-11-06T18:00:00.123Z",
+        "completedAt": "2026-11-06T18:00:00.123Z",
+        "updatedAt": "2026-11-06T18:00:00.123Z",
+        "type": "error",
+        "failure": {
+          "class": "provider_error",
+          "message": "Native failure",
+          "code": null,
+          "retryable": null
+        }
+      }
+    },
+    {
+      "input": {
+        "driver": "codex",
+        "threadId": "thread:ñ",
+        "runId": "run:1",
+        "nodeId": "node:1",
+        "providerThreadId": "provider:1",
+        "providerTurnId": "provider-turn:provider:codex:native-turn:failed%3Aattempt%3A%2F%F0%9F%A7%AA",
+        "itemOrdinal": 7,
+        "failure": {
+          "class": "provider_error",
+          "message": "Native failure",
+          "code": null,
+          "retryable": null
+        },
+        "occurredAt": "2026-11-06T18:00:00.123Z",
+        "retry": {
+          "attempt": 2,
+          "maxAttempts": 3,
+          "retryDelayMs": 1000
+        },
+        "retryStartedAt": "2026-11-06T17:59:00.123Z"
+      },
+      "expected": {
+        "id": "turn-item:provider:codex:native-item:terminal-failure%3Aprovider-turn%3Aprovider%3Acodex%3Anative-turn%3Afailed%253Aattempt%253A%252F%25F0%259F%25A7%25AA",
+        "threadId": "thread:ñ",
+        "runId": "run:1",
+        "nodeId": "node:1",
+        "providerThreadId": "provider:1",
+        "providerTurnId": "provider-turn:provider:codex:native-turn:failed%3Aattempt%3A%2F%F0%9F%A7%AA",
+        "nativeItemRef": null,
+        "parentItemId": null,
+        "ordinal": 7,
+        "status": "failed",
+        "title": "Provider error",
+        "startedAt": "2026-11-06T17:59:00.123Z",
+        "completedAt": "2026-11-06T18:00:00.123Z",
+        "updatedAt": "2026-11-06T18:00:00.123Z",
+        "type": "error",
+        "failure": {
+          "class": "provider_error",
+          "message": "Native failure",
+          "code": null,
+          "retryable": null
+        },
+        "retry": {
+          "attempt": 2,
+          "maxAttempts": 3,
+          "retryDelayMs": 1000
+        }
+      }
+    },
+    {
+      "input": {
+        "driver": "codex",
+        "threadId": "thread:ñ",
+        "runId": "run:1",
+        "nodeId": "node:1",
+        "providerThreadId": "provider:1",
+        "providerTurnId": "turn:/🧪",
+        "itemOrdinal": 7,
+        "failure": {
+          "class": "usage_limit",
+          "message": "Native failure",
+          "code": null,
+          "retryable": null
+        },
+        "occurredAt": "2026-11-06T18:00:00.123Z"
+      },
+      "expected": {
+        "id": "turn-item:provider:codex:native-item:terminal-failure%3Aturn%3A%2F%F0%9F%A7%AA",
+        "threadId": "thread:ñ",
+        "runId": "run:1",
+        "nodeId": "node:1",
+        "providerThreadId": "provider:1",
+        "providerTurnId": "turn:/🧪",
+        "nativeItemRef": null,
+        "parentItemId": null,
+        "ordinal": 7,
+        "status": "failed",
+        "title": "Usage limit reached",
+        "startedAt": "2026-11-06T18:00:00.123Z",
+        "completedAt": "2026-11-06T18:00:00.123Z",
+        "updatedAt": "2026-11-06T18:00:00.123Z",
+        "type": "error",
+        "failure": {
+          "class": "usage_limit",
+          "message": "Native failure",
+          "code": null,
+          "retryable": null
+        }
+      }
+    },
+    {
+      "input": {
+        "driver": "codex",
+        "threadId": "thread:ñ",
+        "runId": "run:1",
+        "nodeId": "node:1",
+        "providerThreadId": "provider:1",
+        "providerTurnId": "provider-turn:provider:codex:native-turn:failed%3Aattempt%3A%2F%F0%9F%A7%AA",
+        "itemOrdinal": 7,
+        "failure": {
+          "class": "usage_limit",
+          "message": "Native failure",
+          "code": null,
+          "retryable": null
+        },
+        "occurredAt": "2026-11-06T18:00:00.123Z",
+        "retry": {
+          "attempt": 2,
+          "maxAttempts": 3,
+          "retryDelayMs": 1000
+        },
+        "retryStartedAt": "2026-11-06T17:59:00.123Z"
+      },
+      "expected": {
+        "id": "turn-item:provider:codex:native-item:terminal-failure%3Aprovider-turn%3Aprovider%3Acodex%3Anative-turn%3Afailed%253Aattempt%253A%252F%25F0%259F%25A7%25AA",
+        "threadId": "thread:ñ",
+        "runId": "run:1",
+        "nodeId": "node:1",
+        "providerThreadId": "provider:1",
+        "providerTurnId": "provider-turn:provider:codex:native-turn:failed%3Aattempt%3A%2F%F0%9F%A7%AA",
+        "nativeItemRef": null,
+        "parentItemId": null,
+        "ordinal": 7,
+        "status": "failed",
+        "title": "Usage limit reached",
+        "startedAt": "2026-11-06T17:59:00.123Z",
+        "completedAt": "2026-11-06T18:00:00.123Z",
+        "updatedAt": "2026-11-06T18:00:00.123Z",
+        "type": "error",
+        "failure": {
+          "class": "usage_limit",
+          "message": "Native failure",
+          "code": null,
+          "retryable": null
+        },
+        "retry": {
+          "attempt": 2,
+          "maxAttempts": 3,
+          "retryDelayMs": 1000
+        }
+      }
+    },
+    {
+      "input": {
+        "driver": "claudeAgent",
+        "threadId": "thread:ñ",
+        "runId": "run:1",
+        "nodeId": "node:1",
+        "providerThreadId": "provider:1",
+        "providerTurnId": "turn:/🧪",
+        "itemOrdinal": 7,
+        "failure": {
+          "class": "provider_error",
+          "message": "Native failure",
+          "code": null,
+          "retryable": null
+        },
+        "occurredAt": "2026-11-06T18:00:00.123Z"
+      },
+      "expected": {
+        "id": "turn-item:provider:claudeAgent:native-item:terminal-failure%3Aturn%3A%2F%F0%9F%A7%AA",
+        "threadId": "thread:ñ",
+        "runId": "run:1",
+        "nodeId": "node:1",
+        "providerThreadId": "provider:1",
+        "providerTurnId": "turn:/🧪",
+        "nativeItemRef": null,
+        "parentItemId": null,
+        "ordinal": 7,
+        "status": "failed",
+        "title": "Provider error",
+        "startedAt": "2026-11-06T18:00:00.123Z",
+        "completedAt": "2026-11-06T18:00:00.123Z",
+        "updatedAt": "2026-11-06T18:00:00.123Z",
+        "type": "error",
+        "failure": {
+          "class": "provider_error",
+          "message": "Native failure",
+          "code": null,
+          "retryable": null
+        }
+      }
+    },
+    {
+      "input": {
+        "driver": "claudeAgent",
+        "threadId": "thread:ñ",
+        "runId": "run:1",
+        "nodeId": "node:1",
+        "providerThreadId": "provider:1",
+        "providerTurnId": "provider-turn:provider:claudeAgent:native-turn:failed%3Aattempt%3A%2F%F0%9F%A7%AA",
+        "itemOrdinal": 7,
+        "failure": {
+          "class": "provider_error",
+          "message": "Native failure",
+          "code": null,
+          "retryable": null
+        },
+        "occurredAt": "2026-11-06T18:00:00.123Z",
+        "retry": {
+          "attempt": 2,
+          "maxAttempts": 3,
+          "retryDelayMs": 1000
+        },
+        "retryStartedAt": "2026-11-06T17:59:00.123Z"
+      },
+      "expected": {
+        "id": "turn-item:provider:claudeAgent:native-item:terminal-failure%3Aprovider-turn%3Aprovider%3AclaudeAgent%3Anative-turn%3Afailed%253Aattempt%253A%252F%25F0%259F%25A7%25AA",
+        "threadId": "thread:ñ",
+        "runId": "run:1",
+        "nodeId": "node:1",
+        "providerThreadId": "provider:1",
+        "providerTurnId": "provider-turn:provider:claudeAgent:native-turn:failed%3Aattempt%3A%2F%F0%9F%A7%AA",
+        "nativeItemRef": null,
+        "parentItemId": null,
+        "ordinal": 7,
+        "status": "failed",
+        "title": "Provider error",
+        "startedAt": "2026-11-06T17:59:00.123Z",
+        "completedAt": "2026-11-06T18:00:00.123Z",
+        "updatedAt": "2026-11-06T18:00:00.123Z",
+        "type": "error",
+        "failure": {
+          "class": "provider_error",
+          "message": "Native failure",
+          "code": null,
+          "retryable": null
+        },
+        "retry": {
+          "attempt": 2,
+          "maxAttempts": 3,
+          "retryDelayMs": 1000
+        }
+      }
+    },
+    {
+      "input": {
+        "driver": "claudeAgent",
+        "threadId": "thread:ñ",
+        "runId": "run:1",
+        "nodeId": "node:1",
+        "providerThreadId": "provider:1",
+        "providerTurnId": "turn:/🧪",
+        "itemOrdinal": 7,
+        "failure": {
+          "class": "usage_limit",
+          "message": "Native failure",
+          "code": null,
+          "retryable": null
+        },
+        "occurredAt": "2026-11-06T18:00:00.123Z"
+      },
+      "expected": {
+        "id": "turn-item:provider:claudeAgent:native-item:terminal-failure%3Aturn%3A%2F%F0%9F%A7%AA",
+        "threadId": "thread:ñ",
+        "runId": "run:1",
+        "nodeId": "node:1",
+        "providerThreadId": "provider:1",
+        "providerTurnId": "turn:/🧪",
+        "nativeItemRef": null,
+        "parentItemId": null,
+        "ordinal": 7,
+        "status": "failed",
+        "title": "Usage limit reached",
+        "startedAt": "2026-11-06T18:00:00.123Z",
+        "completedAt": "2026-11-06T18:00:00.123Z",
+        "updatedAt": "2026-11-06T18:00:00.123Z",
+        "type": "error",
+        "failure": {
+          "class": "usage_limit",
+          "message": "Native failure",
+          "code": null,
+          "retryable": null
+        }
+      }
+    },
+    {
+      "input": {
+        "driver": "claudeAgent",
+        "threadId": "thread:ñ",
+        "runId": "run:1",
+        "nodeId": "node:1",
+        "providerThreadId": "provider:1",
+        "providerTurnId": "provider-turn:provider:claudeAgent:native-turn:failed%3Aattempt%3A%2F%F0%9F%A7%AA",
+        "itemOrdinal": 7,
+        "failure": {
+          "class": "usage_limit",
+          "message": "Native failure",
+          "code": null,
+          "retryable": null
+        },
+        "occurredAt": "2026-11-06T18:00:00.123Z",
+        "retry": {
+          "attempt": 2,
+          "maxAttempts": 3,
+          "retryDelayMs": 1000
+        },
+        "retryStartedAt": "2026-11-06T17:59:00.123Z"
+      },
+      "expected": {
+        "id": "turn-item:provider:claudeAgent:native-item:terminal-failure%3Aprovider-turn%3Aprovider%3AclaudeAgent%3Anative-turn%3Afailed%253Aattempt%253A%252F%25F0%259F%25A7%25AA",
+        "threadId": "thread:ñ",
+        "runId": "run:1",
+        "nodeId": "node:1",
+        "providerThreadId": "provider:1",
+        "providerTurnId": "provider-turn:provider:claudeAgent:native-turn:failed%3Aattempt%3A%2F%F0%9F%A7%AA",
+        "nativeItemRef": null,
+        "parentItemId": null,
+        "ordinal": 7,
+        "status": "failed",
+        "title": "Usage limit reached",
+        "startedAt": "2026-11-06T17:59:00.123Z",
+        "completedAt": "2026-11-06T18:00:00.123Z",
+        "updatedAt": "2026-11-06T18:00:00.123Z",
+        "type": "error",
+        "failure": {
+          "class": "usage_limit",
+          "message": "Native failure",
+          "code": null,
+          "retryable": null
+        },
+        "retry": {
+          "attempt": 2,
+          "maxAttempts": 3,
+          "retryDelayMs": 1000
+        }
+      }
+    }
+  ]
+}
