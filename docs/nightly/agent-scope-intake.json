@@ -1,0 +1,84 @@
+{
+  "reference": {
+    "tag": "v0.1.8-nightly.20261106.4275",
+    "commit": "6577c6b6185167c0e502fa01f9e8e8f2dee6ff25",
+    "sourceUnchangedFrom4262": true
+  },
+  "sourceFiles": [
+    {
+      "path": "apps/server/src/process/agentScope.ts",
+      "sha256": "01e4a69112340afeb20fc03aae2b53379642544caf6517bf55c1ab8e98178c34"
+    },
+    {
+      "path": "packages/shared/src/AgentScope.ts",
+      "sha256": "b11b339510e0491094f786f371dff3c199347d14cc32617fc7c9030e0ab11231"
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ProviderSessionManager.ts",
+      "sha256": "0ba8717bf18a2bc0203b9bfc810d8d2fd237d0e0407d95195e0eeb0659513751"
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ProviderEventIngestor.ts",
+      "sha256": "d9931f0ea37a146805c91e93acff8e3f6ce0d737cfc881a38bef73f327f7d785"
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts",
+      "sha256": "f3530c34b1334c2aae845ba8dc18028443e643eff735737c0c0f6a9ced7ae7db"
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts",
+      "sha256": "61233a6e9267009f01ad2fc293cd21c9572045f8b754643b2429330588295ae2"
+    }
+  ],
+  "implemented": [
+    "Linux native Claude and Codex launch through one per-profile registry, including configured instances, discovery and quota probes.",
+    "Lazy systemd scope discovery, legacy OOMPolicy fallback, owned-profile orphan cleanup and upstream memory, CPU, IO and task limits.",
+    "Child OOM score 800 without a shell wrapper; native arguments, environment changes, cwd, stdio and process ownership are retained.",
+    "Shared Codex scopes use OOMPolicy=continue when available; legacy shared scopes retain OOM diagnostics and cannot be killed for one thread. Joining another session clears stale scope ownership.",
+    "Bounded thread tracking, delayed and sticky OOM diagnosis, scope-stop guards, cgroup.kill with awaited writes and systemctl kill fallback. Explicit adapter shutdown awaits scope cleanup; dropped scopes schedule best-effort cleanup.",
+    "Confirmed OOM replaces generic transport EOF text in the run visible to the compatible client. Claude descendants inherit the trusted app thread ID."
+  ],
+  "validation": {
+    "upstreamHelperCases": 163,
+    "privateContainerTests": 14,
+    "configuredProviderDrivers": [
+      "codex",
+      "claudeAgent"
+    ],
+    "nativeSystemdManagerExercised": true,
+    "externalServicesChanged": false,
+    "nativeSystemdLifecycleCases": 1,
+    "nativeSystemdChecks": [
+      "Detached setsid descendants are reaped after their parent exits.",
+      "Per-thread cgroup.kill terminates the owned parent and detached descendant.",
+      "Shared processes survive a per-thread kill request.",
+      "An asserted 32 MiB kernel memory.max causes a confirmed, sticky OOM result.",
+      "Restarted profile cleanup stops only that profile; another profile remains running."
+    ],
+    "fullDefaultBeforeAddingOptInCase": {
+      "passed": 531,
+      "failed": 0,
+      "ignored": 35
+    },
+    "fullMinimalBeforeAddingOptInCase": {
+      "passed": 528,
+      "failed": 0,
+      "ignored": 35
+    },
+    "nativeSystemdModes": [
+      "default",
+      "minimal"
+    ],
+    "strictClippyModes": [
+      "default",
+      "minimal"
+    ],
+    "affectedChecksPerMode": 14
+  },
+  "remaining": [
+    "Attach the same scope policy to PTYs, command-output launchers and server browser processes.",
+    "Public forceStopThread orchestration, atomic session release and shared-session outcomes remain a separate block.",
+    "Complete native failure turn-item taxonomy, including the typed oom_kill failure code; this block exposes the confirmed OOM message.",
+    "Complete provider driver, idle wake, shared schema and other headless nightly inventory gaps."
+  ]
+}

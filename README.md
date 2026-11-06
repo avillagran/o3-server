@@ -106,6 +106,11 @@ The container has a 6 GiB memory limit and four test workers by default. Set
 credentials, hardware or an official reference remain opt-in and need their
 dedicated isolated runners.
 
+`tools/test-agent-systemd` runs the opt-in native scope lifecycle in a separate
+rootless container with its own systemd user manager and private cgroups. It
+verifies detached descendants, shared-process protection, profile orphan cleanup
+and an OOM fixture capped at 32 MiB. No host service manager or bus is mounted.
+
 ## Try it beside T3 (pilot)
 
 `tools/pilot` runs o3-server next to your running T3 without touching it: its own port (chosen by

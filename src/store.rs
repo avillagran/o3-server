@@ -27,6 +27,7 @@ pub const STANDARD_SCOPES: [&str; 16] = [
 ];
 
 pub struct State {
+    pub agent_scopes: std::sync::Arc<crate::agent_scope::Registry>,
     pub(crate) forge: crate::forge::GitHub,
     pub(crate) rollback_pending: std::sync::atomic::AtomicBool,
     pub(crate) http: crate::http::Limits,
@@ -201,6 +202,7 @@ impl State {
         let streams = crate::streams::Hub::new();
         streams.terminals.restore(&dir.join("terminal-history"))?;
         Ok(Self {
+            agent_scopes: crate::agent_scope::Registry::new(dir),
             forge: Default::default(),
             rollback_pending: std::sync::atomic::AtomicBool::new(false),
             http: crate::http::Limits::default(),
