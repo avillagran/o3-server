@@ -4,6 +4,55 @@ use crate::native_goal::{self, Command};
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
+/// Notifications may precede thread/resume's reply and subscription. Unknown
+/// native children retain metadata without becoming owned root conversations.
+#[derive(Default)]
+pub(super) struct Snapshots(std::collections::VecDeque<(String, Value)>);
+impl Snapshots {
+    pub fn observe(&mut self, frame: &Value, routed: impl Fn(&str) -> bool) {
+        let goal = match frame["method"].as_str() {
+            Some("thread/goal/cleared") => &Value::Null,
+            Some("thread/goal/updated") => &frame["params"]["goal"],
+            _ => return,
+        };
+        if let Some(thread) = frame["params"]["threadId"].as_str() {
+            self.remember(thread, goal, routed);
+        }
+    }
+    pub fn remember(&mut self, thread: &str, raw: &Value, routed: impl Fn(&str) -> bool) {
+        if thread.is_empty() || thread.len() > 512 {
+            return;
+        }
+        // Native objectives allow 4000 Unicode scalars, at most 16000 UTF-8 bytes.
+        if raw["objective"]
+            .as_str()
+            .is_some_and(|text| text.len() > 16000)
+            || !(raw["tokenBudget"].is_null() || raw["tokenBudget"].is_number())
+        {
+            return;
+        }
+        let Ok(goal) = native_goal::codex(raw) else {
+            return;
+        };
+        if let Some(index) = self.0.iter().position(|(id, _)| id == thread) {
+            self.0.remove(index);
+        }
+        if self.0.len() >= 512 {
+            let Some(index) = self.0.iter().position(|(id, _)| !routed(id)) else {
+                return;
+            };
+            self.0.remove(index);
+        }
+        self.0.push_back((thread.into(), goal));
+    }
+    pub fn get(&self, thread: &str) -> Option<Value> {
+        self.0
+            .iter()
+            .find(|(id, _)| id == thread)
+            .map(|(_, goal)| goal.clone())
+    }
+}
+
 pub(super) fn rejection(error: String) -> String {
     if let Ok(value) = serde_json::from_str::<Value>(&error) {
         if let Some(message) = value["message"].as_str() {
@@ -224,5 +273,41 @@ impl State {
         }
         self.publish(output, tid).await?;
         Ok(true)
+    }
+}
+
+#[cfg(test)]
+mod snapshot_tests {
+    use super::*;
+
+    #[test]
+    fn bounded_cache_preserves_subscribed_roots_and_rejects_oversized_snapshots() {
+        let mut snapshots = Snapshots::default();
+        let raw = json!({"objective":"Retain current work","status":"active","tokensUsed":73,"timeUsedSeconds":17,"tokenBudget":12345});
+        snapshots.remember("owned", &raw, |id| id == "owned");
+        for index in 0..600 {
+            snapshots.remember(&format!("child-{index}"), &raw, |id| id == "owned");
+        }
+        assert_eq!(snapshots.0.len(), 512);
+        assert_eq!(snapshots.get("owned").unwrap()["tokenBudget"], 12345);
+        assert!(snapshots.get("child-0").is_none());
+        assert!(snapshots.get("child-599").is_some());
+        snapshots.remember(
+            "oversized",
+            &json!({"objective":"x".repeat(16001),"status":"active"}),
+            |_| false,
+        );
+        assert!(snapshots.get("oversized").is_none());
+        snapshots.remember(
+            "invalid-budget",
+            &json!({"objective":"Bound the cached value","status":"active","tokensUsed":0,"timeUsedSeconds":0,"tokenBudget":["unexpected"]}),
+            |_| false,
+        );
+        assert!(snapshots.get("invalid-budget").is_none());
+        snapshots.observe(
+            &json!({"method":"thread/goal/cleared","params":{"threadId":"owned"}}),
+            |id| id == "owned",
+        );
+        assert_eq!(snapshots.get("owned"), Some(Value::Null));
     }
 }

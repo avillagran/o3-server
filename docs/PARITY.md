@@ -52,6 +52,14 @@ a root goal complete. Golden fixtures execute the nightly's actual parser and go
 normalizers. This block does not close the broader idle-wake/child-continuation,
 provider-driver or shared-migration backlog.
 
+Codex goal notifications received before a resumed thread is subscribed are now
+retained in a bounded cache. Native state takes precedence over a missing or stale
+stored goal, including an explicit clear, without adding goal RPCs to ordinary
+messages or treating unknown children as owned roots. Activation acknowledgements
+also share the notification queue, preventing a queued preparation update from
+overwriting a successful activation after a fast first turn. Restart acceptance
+beyond these boundaries remains part of the native-session backlog.
+
 The thread-read block adds title batches, active family rows and exact-path worktree
 membership. An isolated official nightly 4262 runtime agrees on selection, ordering,
 Unicode trimming and 31 malformed-input wire defects. Families reuse the common shell
