@@ -21,6 +21,10 @@ pub const MIGRATION_HEAD: (i64, &str) = (73, "ActiveTurnItemIndexes");
 pub const PROJECTION_SCHEMA_VERSION: i64 = 2;
 /// Cursor in `statev2.sqlite`: the last event sequence O3 has seen or written.
 const SEEN: &str = "o3SeenSequence";
+/// Version of the O3-to-T3 value mapping (`shape_values`, `t3_shape`). Raising it makes the next
+/// start compare every record again, so rows written under an older mapping are corrected.
+const SHAPE_VERSION: i64 = 3;
+const SHAPED: &str = "o3ShapeVersion";
 /// Bodies read per export transaction, bounded so a run of large tool outputs stays small.
 const BATCH_ROWS: usize = 256;
 const BATCH_BYTES: usize = 8 << 20;
@@ -793,6 +797,17 @@ fn shape_values(kind_name: &str, v: &mut Value) {
         }
         _ => {}
     }
+    // T3 marks only awaited background work; `awaited: false` is spelled by leaving it out.
+    if let Some(tasks) = v
+        .get_mut("pendingBackgroundTasks")
+        .and_then(Value::as_array_mut)
+    {
+        for task in tasks.iter_mut().filter_map(Value::as_object_mut) {
+            if task.get("awaited").is_some_and(|a| a != &Value::Bool(true)) {
+                task.remove("awaited");
+            }
+        }
+    }
     if let Some(usage) = v.get_mut("contextUsage").and_then(Value::as_object_mut) {
         match usage.get("cost") {
             Some(Value::Number(n)) => {
@@ -1514,6 +1529,50 @@ fn adopt(s: &State, t3: &Connection) -> Result<usize> {
     Ok(taken)
 }
 
+/// Events are kept as written, and T3 decodes them again when a client replays a thread, so
+/// payloads written under an older mapping are corrected in place. Values T3 wrote already fit its
+/// schema, so the mapping leaves them as they are. Returns how many events changed.
+fn reshape_events(t3: &Connection) -> Result<usize> {
+    let mut changed = 0;
+    let mut after = 0i64;
+    loop {
+        let rows: Vec<(i64, String, String)> = {
+            let mut q = t3
+                .prepare("SELECT sequence,event_type,payload_json FROM orchestration_events WHERE sequence>? AND aggregate_kind='thread' AND application_event_version=2 ORDER BY sequence LIMIT 2000")
+                .map_err(|e| e.to_string())?;
+            let rows = q
+                .query_map([after], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                .map_err(|e| e.to_string())?;
+            rows.collect::<std::result::Result<_, _>>()
+                .map_err(|e| e.to_string())?
+        };
+        let Some(last) = rows.last().map(|r| r.0) else {
+            return Ok(changed);
+        };
+        after = last;
+        let tx = t3.unchecked_transaction().map_err(|e| e.to_string())?;
+        for (sequence, event_type, payload) in rows {
+            let Ok(mut v) = serde_json::from_str::<Value>(&payload) else {
+                continue;
+            };
+            let Some((kind_name, _)) = event_target(&event_type, &v) else {
+                continue;
+            };
+            let before = v.clone();
+            shape_values(kind_name, &mut v);
+            if v != before {
+                tx.execute(
+                    "UPDATE orchestration_events SET payload_json=? WHERE sequence=?",
+                    params![v.to_string(), sequence],
+                )
+                .map_err(|e| e.to_string())?;
+                changed += 1;
+            }
+        }
+        tx.commit().map_err(|e| e.to_string())?;
+    }
+}
+
 /// Brings O3 up to date with T3's base and returns the open connection for the exporter, which
 /// writes the backlog in the background.
 pub fn start(s: &State) -> Result<Option<Connection>> {
@@ -1527,6 +1586,31 @@ pub fn start(s: &State) -> Result<Option<Connection>> {
         Some(_) => json!({}),
     };
     report["sessions"] = json!(take_sessions(s, &t3)?);
+    let shaped: i64 = t3
+        .query_row("SELECT value FROM o3_sync WHERE name=?", [SHAPED], |r| {
+            r.get(0)
+        })
+        .optional()
+        .map_err(|e| e.to_string())?
+        .unwrap_or(1);
+    if shaped < SHAPE_VERSION {
+        let marked = s
+            .db
+            .lock()
+            .unwrap()
+            .execute(
+                &format!("INSERT OR IGNORE INTO t3_dirty SELECT kind,id,thread_id,0 FROM records WHERE kind IN ({})", kinds_sql()),
+                [],
+            )
+            .map_err(|e| e.to_string())?;
+        report["reshaped"] = json!(marked);
+        report["reshapedEvents"] = json!(reshape_events(&t3)?);
+        t3.execute(
+            "INSERT INTO o3_sync VALUES(?1,?2) ON CONFLICT(name) DO UPDATE SET value=excluded.value",
+            params![SHAPED, SHAPE_VERSION],
+        )
+        .map_err(|e| e.to_string())?;
+    }
     // Sessions are few; the exporter skips the ones T3 already holds as O3 does.
     s.db.lock()
         .unwrap()

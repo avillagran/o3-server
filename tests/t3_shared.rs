@@ -359,6 +359,13 @@ fn runs_o3_numbered_without_seeing_t3_move_after_t3_and_o3_values_fit_t3() {
     }
     put_record(
         &state,
+        "providerThreads",
+        "pt",
+        "t",
+        &json!({"id":"pt","appThreadId":"t","driver":"codex","providerInstanceId":"codex","providerSessionId":null,"ownerNodeId":null,"status":"active","firstRunOrdinal":1,"lastRunOrdinal":1,"updatedAt":"2026-02-01T00:00:00.000Z","pendingBackgroundTasks":[{"kind":"command","taskId":"x","awaited":false}]}),
+    );
+    put_record(
+        &state,
         "providerSessions",
         "session",
         "t",
@@ -400,6 +407,11 @@ fn runs_o3_numbered_without_seeing_t3_move_after_t3_and_o3_values_fit_t3() {
         1
     );
     assert!(checkpoint["nodeId"].is_string() && checkpoint["capturedAt"].is_string());
+    let pt: Value = serde_json::from_str(&one::<String>(&db, "SELECT payload_json FROM orchestration_v2_projection_provider_threads WHERE provider_thread_id='pt'")).unwrap();
+    assert!(
+        pt["pendingBackgroundTasks"][0].get("awaited").is_none(),
+        "{pt}"
+    );
     assert_eq!(
         one::<String>(&db, "SELECT status FROM orchestration_v2_projection_provider_sessions WHERE provider_session_id='session'"),
         "stopped"
@@ -536,6 +548,43 @@ fn a_base_t3_just_created_is_shared_from_o3s_first_start() {
             "SELECT title FROM orchestration_v2_projection_threads WHERE thread_id='t'"
         ),
         "Before T3"
+    );
+    assert_t3_verifies(&db);
+    drop(state);
+    drop(db);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn rows_written_under_an_older_mapping_are_corrected_on_start() {
+    let root = profile();
+    let userdata = root.join("userdata");
+    let db = t3(&userdata);
+    let state = Arc::new(State::open(&userdata).unwrap());
+    o3_server::events::mutate_project(&state, &json!({"type":"project.create","commandId":"p","projectId":"p","title":"Project","workspaceRoot":root})).unwrap();
+    o3_server::events::dispatch(&state, &json!({"type":"thread.create","commandId":"c","threadId":"t","projectId":"p","title":"T","modelSelection":{"instanceId":"codex","model":"test"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
+    let pt = json!({"id":"pt","appThreadId":"t","driver":"codex","providerInstanceId":"codex","providerSessionId":null,"ownerNodeId":null,"status":"active","firstRunOrdinal":1,"lastRunOrdinal":1,"updatedAt":"2026-02-01T00:00:00.000Z","pendingBackgroundTasks":[{"kind":"command","taskId":"x","awaited":false}]});
+    put_record(&state, "providerThreads", "pt", "t", &pt);
+    let shared = t3_shared::start(&state).unwrap().expect("T3 base");
+    exporter_drains(&state, shared);
+    drop(state);
+    // An older O3 wrote the value T3 rejects and recorded mapping version 1.
+    db.execute("UPDATE orchestration_v2_projection_provider_threads SET payload_json=?1 WHERE provider_thread_id='pt'", [pt.to_string()]).unwrap();
+    db.execute("UPDATE orchestration_events SET payload_json=?1 WHERE event_type='provider-thread.updated'", [pt.to_string()]).unwrap();
+    db.execute("UPDATE o3_sync SET value=1 WHERE name='o3ShapeVersion'", [])
+        .unwrap();
+    let state = Arc::new(State::open(&userdata).unwrap());
+    let shared = t3_shared::start(&state).unwrap().expect("T3 base");
+    exporter_drains(&state, shared);
+    let row: Value = serde_json::from_str(&one::<String>(&db, "SELECT payload_json FROM orchestration_v2_projection_provider_threads WHERE provider_thread_id='pt'")).unwrap();
+    assert!(
+        row["pendingBackgroundTasks"][0].get("awaited").is_none(),
+        "{row}"
+    );
+    let event: Value = serde_json::from_str(&one::<String>(&db, "SELECT payload_json FROM orchestration_events WHERE event_type='provider-thread.updated' ORDER BY sequence LIMIT 1")).unwrap();
+    assert!(
+        event["pendingBackgroundTasks"][0].get("awaited").is_none(),
+        "{event}"
     );
     assert_t3_verifies(&db);
     drop(state);
