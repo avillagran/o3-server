@@ -1,0 +1,39 @@
+{
+  "reference": {
+    "tag": "v0.1.8-nightly.20261106.4262",
+    "commit": "c55db3e9c72fdf584f4b54192fb39beb88667b59",
+    "effect": "4.1.2"
+  },
+  "source": {
+    "path": "apps/server/src/device/DeviceActions.ts",
+    "sha256": "a059c2998f10b6ac9e23f5e9b2aa02cefbf18a5172c9ea70eb7365410e86656c"
+  },
+  "latestCoveredCheck": {
+    "tag": "v0.1.8-nightly.20261106.4275",
+    "commit": "6577c6b6185167c0e502fa01f9e8e8f2dee6ff25",
+    "deviceActionsUnchanged": true,
+    "contractOnlyDifference": "DeviceHostStatuses adds optional incompletePlatforms; this block does not implement host discovery."
+  },
+  "fixture": {
+    "path": "tests/fixtures/device-actions.json",
+    "sha256": "5e8e2dde13ec1ffaec06cf2fd8e332a7b72d00113c59a28da12835eb5aeec6ae",
+    "actionTraces": 95,
+    "detailReadings": 37
+  },
+  "implemented": [
+    "Android setLocation/clearLocation, permission grant/revoke/reset with partial-success policy, openUrl, native launch category and terminate.",
+    "POSIX shell argument quoting identical to native for literal app IDs and URLs.",
+    "Native Android unsupported errors for iOS-only controls; typed command error metadata.",
+    "Five concurrent optional detail reads, exact foreground focus expression and native numeric settings coercion."
+  ],
+  "validation": [
+    "Complete pinned DeviceActions module executed with recording runner and exact contracts/Effect; no host/device commands.",
+    "Real RPC client replays 95 native command traces and 37 detail outputs using private synthetic ADB peer.",
+    "Typed error metadata checked separately because the pinned protocol client exposes only rejection messages."
+  ],
+  "limits": [
+    "No actual Android device, emulator, iOS simulator, remote host, EAS or Simlock was controlled in these tests.",
+    "Local ADB targets only; iOS/SSH/EAS/Simlock backends, tool installation and device hub parity remain separate backlog.",
+    "No host Android tests or Gradle commands were executed. All tests and oracle generation run in rootless Podman."
+  ]
+}

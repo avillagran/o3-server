@@ -20,10 +20,10 @@ pub fn available() -> bool {
 fn unavailable(reason: &str) -> Value {
     json!({"_tag":"DeviceToolUnavailableError","reason":reason,"message":reason})
 }
-pub async fn adb(args: &[&str]) -> Result<Vec<u8>, Value> {
+async fn adb_output(args: &[&str]) -> Result<crate::proc::Out, Value> {
     let exe = crate::executable::resolve(Path::new("adb"))
         .ok_or_else(|| unavailable("adb is not installed"))?;
-    let out = crate::proc::run(
+    crate::proc::run(
         exe.to_str().unwrap(),
         Path::new("/"),
         args,
@@ -35,11 +35,146 @@ pub async fn adb(args: &[&str]) -> Result<Vec<u8>, Value> {
         &[],
     )
     .await
-    .map_err(|_| unavailable("adb failed or timed out"))?;
+    .map_err(|_| unavailable("adb failed or timed out"))
+}
+pub async fn adb(args: &[&str]) -> Result<Vec<u8>, Value> {
+    let out = adb_output(args).await?;
     if !out.ok() || out.truncated {
         return Err(unavailable("adb command failed or exceeded output limit"));
     }
     Ok(out.stdout)
+}
+fn action_unavailable(operation: &str) -> Value {
+    json!({"_tag":"DeviceActionUnavailableError","operation":operation,"platform":"android","reason":"unsupported","message":format!("Device {operation} is not supported on android.")})
+}
+fn android_shell_word(value: &str) -> String {
+    if !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"_@%+=:,./-".contains(&byte))
+    {
+        value.into()
+    } else {
+        format!("'{}'", value.replace('\'', "'\\''"))
+    }
+}
+async fn action_adb(serial: &str, args: &[&str], operation: &str) -> Result<Vec<u8>, Value> {
+    let mut command = vec!["-s", serial];
+    command.extend_from_slice(args);
+    let out = adb_output(&command).await?;
+    if !out.ok() || out.truncated {
+        return Err(action_failure(operation, &out));
+    }
+    Ok(out.stdout)
+}
+fn action_failure(operation: &str, out: &crate::proc::Out) -> Value {
+    let cause = json!({"code":out.code,"stdout":out.text(),"stderr":out.stderr});
+    let message = if let Some(code) = out.code {
+        format!("Device {operation} failed: The device command failed (exit code {code}).")
+    } else {
+        format!("Device {operation} failed: The device command failed.")
+    };
+    let mut error = json!({"_tag":"DeviceOperationError","operation":operation,"reason":"command_failed","cause":cause,"message":message});
+    if let Some(code) = out.code {
+        error["exitCode"] = json!(code);
+    }
+    error
+}
+async fn action_shell(serial: &str, args: &[&str], operation: &str) -> Result<Vec<u8>, Value> {
+    // adb joins shell argv verbatim before the Android shell parses it.
+    let words = args
+        .iter()
+        .map(|word| android_shell_word(word))
+        .collect::<Vec<_>>();
+    let mut command = vec!["shell"];
+    command.extend(words.iter().map(String::as_str));
+    action_adb(serial, &command, operation).await
+}
+fn js_number(value: &str) -> f64 {
+    let value = crate::native_goal::trim(value);
+    if value.is_empty() {
+        return 0.0;
+    }
+    let prefix = value.get(..2).unwrap_or("");
+    let radix = match prefix {
+        "0x" | "0X" => 16,
+        "0b" | "0B" => 2,
+        "0o" | "0O" => 8,
+        _ => return value.parse().unwrap_or(f64::NAN),
+    };
+    let digits = &value[2..];
+    if digits.is_empty() {
+        return f64::NAN;
+    }
+    digits
+        .chars()
+        .try_fold(0.0, |number, digit| {
+            digit
+                .to_digit(radix)
+                .map(|digit| number * radix as f64 + digit as f64)
+        })
+        .unwrap_or(f64::NAN)
+}
+fn android_settings(
+    night: Option<&str>,
+    font: Option<&str>,
+    animator: Option<&str>,
+    wifi: Option<&str>,
+    focus: Option<&str>,
+) -> (Value, Value) {
+    let mut settings = json!({});
+    if night.is_some_and(|night| night.contains("yes")) {
+        settings["appearance"] = json!("dark");
+    } else if night.is_some_and(|night| night.contains("no")) {
+        settings["appearance"] = json!("light");
+    }
+    if let Some(scale) = font
+        .filter(|font| !font.is_empty() && *font != "null")
+        .map(js_number)
+        .filter(|scale| scale.is_finite())
+    {
+        settings["textSize"] = json!(if scale <= 0.9 {
+            "small"
+        } else if scale >= 1.25 {
+            "extra-large"
+        } else if scale >= 1.1 {
+            "large"
+        } else {
+            "default"
+        });
+    }
+    if let Some(animator) = animator.filter(|value| *value != "null") {
+        settings["reduceMotion"] = json!(js_number(animator) == 0.0);
+    }
+    if let Some(wifi) = wifi.filter(|value| matches!(*value, "0" | "1")) {
+        settings["networkEnabled"] = json!(wifi == "1");
+    }
+    static FOCUS: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let focused = focus
+        .and_then(|focus| {
+            FOCUS
+                .get_or_init(|| {
+                    regex::Regex::new(
+                        r"m(?:CurrentFocus|FocusedApp)=[A-Za-z0-9_]+\{[^ ]+ u[0-9]+ ([^/ ]+)/",
+                    )
+                    .unwrap()
+                })
+                .captures(focus)
+        })
+        .and_then(|captures| captures.get(1));
+    (
+        settings,
+        focused
+            .map(|id| json!({"id":id.as_str()}))
+            .unwrap_or(Value::Null),
+    )
+}
+fn landscape_native(size: &str) -> bool {
+    static SIZE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    SIZE.get_or_init(|| regex::Regex::new(r"size: ([0-9]+)x([0-9]+)").unwrap())
+        .captures_iter(size)
+        .last()
+        .is_some_and(|size| js_number(&size[1]) > js_number(&size[2]))
 }
 fn local(p: &Value) -> Result<(), Value> {
     if p.get("hostId")
@@ -129,81 +264,38 @@ async fn detail(p: &Value) -> Reply {
                 .await
                 .ok()?
                 .ok()
-                .map(|v| String::from_utf8_lossy(&v).trim().to_owned())
+                .map(|v| crate::native_goal::trim(&String::from_utf8_lossy(&v)).to_owned())
         }
     };
-    let mut settings = json!({});
-    if let Some(night) = read(vec!["shell", "cmd", "uimode", "night"], serial).await {
-        if night.contains("yes") {
-            settings["appearance"] = json!("dark");
-        } else if night.contains("no") {
-            settings["appearance"] = json!("light");
-        }
-    }
-    if let Some(scale) = read(
-        vec!["shell", "settings", "get", "system", "font_scale"],
-        serial,
-    )
-    .await
-    .and_then(|s| s.parse::<f64>().ok())
-    .filter(|n| n.is_finite())
-    {
-        settings["textSize"] = json!(if scale <= 0.9 {
-            "small"
-        } else if scale < 1.1 {
-            "default"
-        } else if scale < 1.25 {
-            "large"
-        } else {
-            "extra-large"
-        });
-    }
-    if let Some(scale) = read(
-        vec![
-            "shell",
-            "settings",
-            "get",
-            "global",
-            "animator_duration_scale",
-        ],
-        serial,
-    )
-    .await
-    .and_then(|s| s.parse::<f64>().ok())
-    .filter(|n| n.is_finite())
-    {
-        settings["reduceMotion"] = json!(scale == 0.0);
-    }
-    if let Some(wifi) = read(
-        vec!["shell", "settings", "get", "global", "wifi_on"],
-        serial,
-    )
-    .await
-    .filter(|s| matches!(s.as_str(), "0" | "1"))
-    {
-        settings["networkEnabled"] = json!(wifi == "1");
-    }
-    let mut foreground = Value::Null;
-    if let Some(focus) = read(vec!["shell", "dumpsys", "window"], serial).await {
-        for line in focus
-            .lines()
-            .filter(|l| l.contains("mCurrentFocus=") || l.contains("mFocusedApp="))
-        {
-            if let Some(id) = line
-                .split_whitespace()
-                .filter_map(|w| w.split_once('/').map(|(id, _)| id))
-                .find(|id| {
-                    !id.is_empty()
-                        && id
-                            .bytes()
-                            .all(|b| b.is_ascii_alphanumeric() || b"._".contains(&b))
-                })
-            {
-                foreground = json!({"id":id});
-                break;
-            }
-        }
-    }
+    let (night, font, animator, wifi, focus) = tokio::join!(
+        read(vec!["shell", "cmd", "uimode", "night"], serial),
+        read(
+            vec!["shell", "settings", "get", "system", "font_scale"],
+            serial
+        ),
+        read(
+            vec![
+                "shell",
+                "settings",
+                "get",
+                "global",
+                "animator_duration_scale"
+            ],
+            serial
+        ),
+        read(
+            vec!["shell", "settings", "get", "global", "wifi_on"],
+            serial
+        ),
+        read(vec!["shell", "dumpsys", "window"], serial),
+    );
+    let (settings, foreground) = android_settings(
+        night.as_deref(),
+        font.as_deref(),
+        animator.as_deref(),
+        wifi.as_deref(),
+        focus.as_deref(),
+    );
     Ok(
         json!({"hostId":"local","deviceId":serial,"settings":settings,"foregroundApp":foreground,"readAt":crate::store::iso(crate::store::now_ms())}),
     )
@@ -296,18 +388,6 @@ async fn call_inner(s: &State, tag: &str, p: &Value) -> Reply {
         "device.detail" => detail(p).await,
         "device.action" => {
             let serial = connected(p).await?;
-            // adb shell joins argv on the remote shell: constrain every dynamic argument.
-            let arg = |key| -> Result<&str, Value> {
-                let v = str_field(p, key)?;
-                if v.len() > 512
-                    || !v
-                        .bytes()
-                        .all(|c| c.is_ascii_alphanumeric() || b"._".contains(&c))
-                {
-                    return Err(invalid(key));
-                }
-                Ok(v)
-            };
             match p["type"].as_str().unwrap_or("") {
                 "setOrientation" => {
                     let mut rotation = match p["value"].as_str() {
@@ -317,62 +397,52 @@ async fn call_inner(s: &State, tag: &str, p: &Value) -> Reply {
                         Some("landscape_right") => 3,
                         _ => return Err(invalid("orientation")),
                     };
-                    let size = adb(&["-s", serial, "shell", "wm", "size"]).await?;
-                    let landscape = String::from_utf8_lossy(&size)
-                        .lines()
-                        .filter_map(|l| l.split_once("size: ").map(|(_, v)| v))
-                        .filter_map(|v| v.split_once('x'))
-                        .filter_map(|(w, h)| {
-                            Some((w.trim().parse::<u32>().ok()?, h.trim().parse::<u32>().ok()?))
-                        })
-                        .next_back()
-                        .is_some_and(|(w, h)| w > h);
+                    let size = action_shell(serial, &["wm", "size"], "orientation")
+                        .await
+                        .ok();
+                    let landscape = size
+                        .as_ref()
+                        .is_some_and(|size| landscape_native(&String::from_utf8_lossy(size)));
                     if landscape {
                         rotation = (rotation + 3) % 4;
                     }
                     if serial.starts_with("emulator-") {
-                        adb(&[
-                            "-s",
+                        action_shell(
                             serial,
-                            "shell",
-                            "settings",
-                            "put",
-                            "system",
-                            "accelerometer_rotation",
-                            "1",
-                        ])
+                            &["settings", "put", "system", "accelerometer_rotation", "1"],
+                            "orientation",
+                        )
                         .await?;
-                        adb(&[
-                            "-s",
+                        action_shell(
                             serial,
-                            "shell",
-                            "cmd",
-                            "window",
-                            "user-rotation",
-                            "free",
-                        ])
+                            &["cmd", "window", "user-rotation", "free"],
+                            "orientation",
+                        )
                         .await?;
-                        adb(&[
-                            "-s",
+                        action_adb(
                             serial,
-                            "emu",
-                            "sensor",
-                            "set",
-                            "acceleration",
-                            ["0:9.81:0", "9.81:0:0", "0:-9.81:0", "-9.81:0:0"][rotation],
-                        ])
+                            &[
+                                "emu",
+                                "sensor",
+                                "set",
+                                "acceleration",
+                                ["0:9.81:0", "9.81:0:0", "0:-9.81:0", "-9.81:0:0"][rotation],
+                            ],
+                            "orientation",
+                        )
                         .await?;
                     } else {
-                        adb(&[
-                            "-s",
+                        action_shell(
                             serial,
-                            "shell",
-                            "cmd",
-                            "window",
-                            "user-rotation",
-                            "lock",
-                            &rotation.to_string(),
-                        ])
+                            &[
+                                "cmd",
+                                "window",
+                                "user-rotation",
+                                "lock",
+                                &rotation.to_string(),
+                            ],
+                            "orientation",
+                        )
                         .await?;
                     }
                 }
@@ -382,7 +452,7 @@ async fn call_inner(s: &State, tag: &str, p: &Value) -> Reply {
                         Some("light") => "no",
                         _ => return Err(invalid("appearance")),
                     };
-                    adb(&["-s", serial, "shell", "cmd", "uimode", "night", value]).await?;
+                    action_shell(serial, &["cmd", "uimode", "night", value], "appearance").await?;
                 }
                 "setTextSize" => {
                     let value = match p["value"].as_str() {
@@ -392,16 +462,11 @@ async fn call_inner(s: &State, tag: &str, p: &Value) -> Reply {
                         Some("extra-large") => "1.3",
                         _ => return Err(invalid("text size")),
                     };
-                    adb(&[
-                        "-s",
+                    action_shell(
                         serial,
-                        "shell",
-                        "settings",
-                        "put",
-                        "system",
-                        "font_scale",
-                        value,
-                    ])
+                        &["settings", "put", "system", "font_scale", value],
+                        "text size",
+                    )
                     .await?;
                 }
                 "setToggle" => {
@@ -411,14 +476,11 @@ async fn call_inner(s: &State, tag: &str, p: &Value) -> Reply {
                     match p["setting"].as_str() {
                         Some("networkEnabled") => {
                             for service in ["wifi", "data"] {
-                                adb(&[
-                                    "-s",
+                                action_shell(
                                     serial,
-                                    "shell",
-                                    "svc",
-                                    service,
-                                    if enabled { "enable" } else { "disable" },
-                                ])
+                                    &["svc", service, if enabled { "enable" } else { "disable" }],
+                                    "network",
+                                )
                                 .await?;
                             }
                         }
@@ -428,29 +490,139 @@ async fn call_inner(s: &State, tag: &str, p: &Value) -> Reply {
                                 "transition_animation_scale",
                                 "window_animation_scale",
                             ] {
-                                adb(&[
-                                    "-s",
+                                action_shell(
                                     serial,
-                                    "shell",
-                                    "settings",
-                                    "put",
-                                    "global",
-                                    key,
-                                    if enabled { "0" } else { "1" },
-                                ])
+                                    &[
+                                        "settings",
+                                        "put",
+                                        "global",
+                                        key,
+                                        if enabled { "0" } else { "1" },
+                                    ],
+                                    "reduce motion",
+                                )
                                 .await?;
                             }
                         }
-                        _ => return Err(unavailable("this Android toggle is unsupported")),
+                        _ => return Err(action_unavailable("setToggle")),
                     }
                 }
+                "setLocation" => {
+                    let number = |key, minimum, maximum| {
+                        p[key]
+                            .as_f64()
+                            .filter(|number| {
+                                number.is_finite() && *number >= minimum && *number <= maximum
+                            })
+                            .map(|number| {
+                                if number == 0.0 {
+                                    "0".to_owned()
+                                } else {
+                                    ryu_js::Buffer::new().format(number).to_owned()
+                                }
+                            })
+                            .ok_or_else(|| invalid(key))
+                    };
+                    let latitude = number("latitude", -90.0, 90.0)?;
+                    let longitude = number("longitude", -180.0, 180.0)?;
+                    action_adb(
+                        serial,
+                        &["emu", "geo", "fix", &longitude, &latitude],
+                        "location",
+                    )
+                    .await?;
+                }
+                "clearLocation" => {}
+                "setPermission" => {
+                    let permissions: &[&str] = match p["permission"].as_str() {
+                        Some("camera") => &["android.permission.CAMERA"],
+                        Some("microphone") => &["android.permission.RECORD_AUDIO"],
+                        Some("photos") => &[
+                            "android.permission.READ_MEDIA_IMAGES",
+                            "android.permission.READ_EXTERNAL_STORAGE",
+                        ],
+                        Some("contacts") => &[
+                            "android.permission.READ_CONTACTS",
+                            "android.permission.WRITE_CONTACTS",
+                        ],
+                        Some("calendar") => &[
+                            "android.permission.READ_CALENDAR",
+                            "android.permission.WRITE_CALENDAR",
+                        ],
+                        Some("location") => &[
+                            "android.permission.ACCESS_FINE_LOCATION",
+                            "android.permission.ACCESS_COARSE_LOCATION",
+                        ],
+                        Some("notifications") => &["android.permission.POST_NOTIFICATIONS"],
+                        Some("motion") => &["android.permission.ACTIVITY_RECOGNITION"],
+                        _ => return Err(action_unavailable("permission")),
+                    };
+                    let verb = match p["decision"].as_str() {
+                        Some("grant") => "grant",
+                        Some("revoke" | "reset") => "revoke",
+                        _ => return Err(invalid("permission decision")),
+                    };
+                    let app = str_field(p, "appId")?;
+                    let mut first_failure = None;
+                    let mut succeeded = false;
+                    for permission in permissions {
+                        match action_shell(serial, &["pm", verb, app, permission], "permission")
+                            .await
+                        {
+                            Ok(_) => succeeded = true,
+                            Err(error) => {
+                                if first_failure.is_none() {
+                                    first_failure = Some(error);
+                                }
+                            }
+                        }
+                    }
+                    if !succeeded {
+                        return Err(first_failure.unwrap());
+                    }
+                }
+                "openUrl" => {
+                    action_shell(
+                        serial,
+                        &[
+                            "am",
+                            "start",
+                            "-a",
+                            "android.intent.action.VIEW",
+                            "-d",
+                            str_field(p, "url")?,
+                        ],
+                        "open url",
+                    )
+                    .await?;
+                }
                 "launchApp" => {
-                    adb(&["-s", serial, "shell", "monkey", "-p", arg("appId")?, "1"]).await?;
+                    action_shell(
+                        serial,
+                        &[
+                            "monkey",
+                            "-p",
+                            str_field(p, "appId")?,
+                            "-c",
+                            "android.intent.category.LAUNCHER",
+                            "1",
+                        ],
+                        "launch",
+                    )
+                    .await?;
                 }
                 "terminateApp" => {
-                    adb(&["-s", serial, "shell", "am", "force-stop", arg("appId")?]).await?;
+                    action_shell(
+                        serial,
+                        &["am", "force-stop", str_field(p, "appId")?],
+                        "terminate",
+                    )
+                    .await?;
                 }
-                _ => return Err(unavailable("this Android action is unsupported")),
+                "setLiquidGlass" | "setColorFilter" | "sendPush" | "shake" => {
+                    return Err(action_unavailable(p["type"].as_str().unwrap()))
+                }
+                _ => return Err(invalid("unknown device action")),
             }
             detail(p).await
         }
@@ -582,4 +754,36 @@ pub(crate) fn recorder(serial: &str) -> Result<tokio::process::Child, std::io::E
         .stderr(std::process::Stdio::null())
         .kill_on_drop(true)
         .spawn()
+}
+
+#[cfg(test)]
+mod native_action_tests {
+    use super::*;
+    #[test]
+    fn source_errors_keep_native_action_metadata_and_messages() {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/device-actions.json")).unwrap();
+        for case in fixture["actionCases"].as_array().unwrap() {
+            let Some(expected) = case["expected"].get("error") else {
+                continue;
+            };
+            let operation = expected["operation"].as_str().unwrap();
+            let error = if expected["_tag"] == "DeviceActionUnavailableError" {
+                action_unavailable(operation)
+            } else {
+                action_failure(
+                    operation,
+                    &crate::proc::Out {
+                        code: Some(1),
+                        stdout: vec![],
+                        stderr: "synthetic command failure".into(),
+                        truncated: false,
+                    },
+                )
+            };
+            for (key, value) in expected.as_object().unwrap() {
+                assert_eq!(&error[key], value, "{}: {key}", case["label"]);
+            }
+        }
+    }
 }
