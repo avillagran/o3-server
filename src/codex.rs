@@ -984,6 +984,13 @@ impl Provider for CodexProvider {
                     Some(&auth),
                     response["accountId"].as_str(),
                 );
+                // The probe read the account under the current credentials; keep that
+                // identity for availability checks until auth.json changes.
+                let seen = probe.auth_seen.lock().unwrap().clone();
+                if let Some((stamp, _)) = seen {
+                    let auth = self.descriptor.lock().unwrap()["auth"].clone();
+                    *self.auth_seen.lock().unwrap() = Some((stamp, auth));
+                }
                 Ok::<_, String>(())
             }
             .await;
