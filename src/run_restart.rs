@@ -259,14 +259,17 @@ pub(crate) fn note_terminal(
     let status = match event {
         ProviderEvent::Interrupted => "interrupted",
         ProviderEvent::Completed => "completed",
-        ProviderEvent::Failed(_) => "failed",
+        ProviderEvent::Failed(_) | ProviderEvent::FailedWithDetails(_) => "failed",
         _ => return Ok(()),
     };
-    let error = if let ProviderEvent::Failed(message) = event {
-        Some(message.chars().take(1000).collect::<String>())
-    } else {
-        None
-    };
+    let error = event.failure_input().map(|input| {
+        crate::provider_failure::make(&input)["message"]
+            .as_str()
+            .unwrap_or("Provider turn failed.")
+            .chars()
+            .take(1000)
+            .collect::<String>()
+    });
     db.execute("UPDATE run_restarts SET terminal_at=?1,terminal_status=?2,error=?5 WHERE run_id=?3 AND old_attempt=?4 AND completed_at IS NULL AND terminal_at IS NULL",params![now_ms(),status,rid,attempt,error]).map_err(|e|e.to_string())?;
     Ok(())
 }

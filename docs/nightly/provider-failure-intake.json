@@ -1,0 +1,81 @@
+{
+  "target": {
+    "nightly": 4275,
+    "commit": "6577c6b6185167c0e502fa01f9e8e8f2dee6ff25"
+  },
+  "sourceBaseline": {
+    "nightly": 4262,
+    "commit": "c55db3e9c72fdf584f4b54192fb39beb88667b59",
+    "coveredFilesUnchangedThroughTarget": true
+  },
+  "sources": [
+    {
+      "path": "packages/provider-core/src/server/failure.ts",
+      "sha256": "5a71e663607209de4cc9a412584e25a32a9a2e39e3f79afb3e5d903208e56d2e"
+    },
+    {
+      "path": "packages/provider-core/src/server/IdAllocator.ts",
+      "sha256": "b25adf8b86789def745b767bbbaecf010b28ad619ba111cf29e15558bbcc1a31"
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/ProviderEventIngestor.ts",
+      "sha256": "d9931f0ea37a146805c91e93acff8e3f6ce0d737cfc881a38bef73f327f7d785"
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/RunExecutionService.ts",
+      "sha256": "151580f487c96759635260872632f0ebe6eff2ded7fab03fae562ee376b142fb"
+    }
+  ],
+  "implemented": [
+    "Structured terminal failure fields and legacy failure strings are normalized before durable publication.",
+    "Atomic terminal error cards use upstream provider-item identity, the latest turn owned by the active attempt, or the source failed-start fallback identity.",
+    "Messages/codes are redacted and bounded to 4096/128 UTF-16 code units without splitting supplementary characters.",
+    "Curated JSON cause chains and source wrapper guidance hide arbitrary defect messages; recognized native goal validation remains actionable.",
+    "Usage-limit class, retryability and valid ISO reset timestamps are retained in cards.",
+    "Confirmed scope OOM overrides only message/code with Killed: out of memory. / oom_kill, preserving the original class.",
+    "Stale attempts and duplicate terminal events cannot publish or replace a terminal card; restart receipts use sanitized failure text.",
+    "The real client timeline renderer recognizes the error card and retains message/class/code."
+  ],
+  "validation": {
+    "sourceFailureGoldens": 243,
+    "sourceTerminalCardGoldens": 8,
+    "effectDependency": "4.1.2",
+    "affectedDefaultLibrary": {
+      "passed": 176,
+      "failed": 0,
+      "ignored": 6
+    },
+    "compatibleClient": {
+      "passed": 3,
+      "failed": 0
+    },
+    "strictClippyDefault": "Passed all targets with warnings denied.",
+    "isolation": "Rootless Podman with source/binaries/dependencies read-only, private tmpfs HOME/state and no network or credentials; source fixture generation is reproducible in the same isolation.",
+    "fullDefault": {
+      "passed": 543,
+      "failed": 0,
+      "ignored": 36,
+      "executables": 96
+    },
+    "fullMinimal": {
+      "passed": 540,
+      "failed": 0,
+      "ignored": 36,
+      "executables": 96
+    },
+    "finalAffectedDefault": {
+      "libraryPassed": 176,
+      "libraryIgnored": 6,
+      "clientPassed": 3
+    },
+    "strictClippy": "All targets, warnings denied, passed in both feature modes.",
+    "routineChecks": "Formatting, diff whitespace, generated compatibility table and all nine nightly-watch checks passed."
+  },
+  "pending": [
+    "Complete provider-specific classification and structured native failure construction across all drivers.",
+    "Retry/recovery card updates and full provider retry lifecycle.",
+    "Exact JavaScript Date.parse handling for non-ISO reset strings; currently canonical RFC3339 and date-only resets are supported.",
+    "forceStopThread, physical session identity/release and the remaining PARITY.md backlog."
+  ],
+  "deployment": "No deployment in this block. The three hosts still run 83ce347."
+}
