@@ -25,11 +25,11 @@ use signals::shield_client_thread_from_sigchld;
 pub fn start(configure: impl FnOnce(&Arc<o3_server::store::State>)) -> Server {
     static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     let dir = std::env::temp_dir().join(format!(
-        "o3-it-{}-{}",
+        "o3-it-{}-{}-{}",
         std::process::id(),
-        COUNTER.fetch_add(1, Ordering::Relaxed)
+        COUNTER.fetch_add(1, Ordering::Relaxed),
+        o3_server::store::random_id().unwrap()
     ));
-    let _ = std::fs::remove_dir_all(&dir);
     let state = Arc::new(o3_server::store::State::open(&dir).unwrap());
     let secret = state.issue_pairing(Some("test"), 60_000).unwrap()["credential"]
         .as_str()

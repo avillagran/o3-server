@@ -1,0 +1,91 @@
+{
+  "reference": {
+    "tag": "v0.1.8-nightly.20261106.4262",
+    "commit": "c55db3e9c72fdf584f4b54192fb39beb88667b59"
+  },
+  "scope": "Provider-native goals and owned Codex automatic goal turns; this is not full headless parity.",
+  "sourceFiles": [
+    {
+      "path": "packages/contracts/src/orchestrationV2.ts",
+      "sha256": "cdcd000b290667b24b7226acfa2754aea79fbc63b754be21c36359738e7357d4"
+    },
+    {
+      "path": "packages/effect-codex-app-server/src/schema.ts",
+      "sha256": "18933b62dc093d4dcde6fda8995612a1cfee576aa77bd58dc258043db276c220"
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts",
+      "sha256": "f3530c34b1334c2aae845ba8dc18028443e643eff735737c0c0f6a9ced7ae7db"
+    },
+    {
+      "path": "apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts",
+      "sha256": "61233a6e9267009f01ad2fc293cd21c9572045f8b754643b2429330588295ae2"
+    },
+    {
+      "path": "packages/provider-core/src/server/failure.ts",
+      "sha256": "5a71e663607209de4cc9a412584e25a32a9a2e39e3f79afb3e5d903208e56d2e"
+    }
+  ],
+  "implemented": [
+    "Codex show/edit/clear/pause/resume/set controls use native APIs, with case-sensitive command prefix, Unicode whitespace and attachment guards.",
+    "Set validates at most 4000 Unicode scalar characters before reading or mutating a native goal, preserving the existing goal on local rejection.",
+    "Set installs a paused goal, starts the first turn with captured model/effort/approval/sandbox/plan settings, then activates the goal; resume uses empty native input.",
+    "Automatic native turns remain within one owning app run and attempt, with distinct terminal provider turns and completed assistant messages.",
+    "The upstream five-second continuation grace pauses an uncontinued active goal before app completion; Stop pauses and interrupts the current native turn or releases an already-ended turn.",
+    "Pending activation does not block Stop; late acknowledgements and orphan starts cannot revive detached work. Goal notifications win over older request snapshots.",
+    "Explicit command provenance is derived from the app message creator. Cleanup pauses are automatic; installed Codex 0.166 and 0.167 interoperate.",
+    "Control-only turns have no native rollback reference and derive their identity from the owning attempt.",
+    "Claude synthetic goal confirmations and Stop-hook feedback update the provider-thread projection. Only a checked successful root completes the goal; child output and failed turns do not.",
+    "Fixed-shape native goal validation errors use upstream actionable wording, and failed goal replacement publishes the last observed cleared/paused state.",
+    "Common test fixtures allocate fresh random paths without recursively deleting a previous tree."
+  ],
+  "validation": {
+    "upstreamGoldenCases": {
+      "commands": 24,
+      "codexGoals": 9,
+      "claudeGoals": 16
+    },
+    "realClientCases": 17,
+    "fullDefault": {
+      "passed": 507,
+      "failed": 0,
+      "ignored": 33
+    },
+    "fullMinimal": {
+      "passed": 504,
+      "failed": 0,
+      "ignored": 33
+    },
+    "finalAffected": {
+      "libraryPassed": 150,
+      "libraryIgnored": 5,
+      "nativeGoalsPassed": 17,
+      "nativeGoalsIgnored": 3
+    },
+    "installed": [
+      {
+        "driver": "codex",
+        "version": "0.166.0",
+        "proof": "Native show/set/pause/resume/complete/clear; isolated credentials/state; passed."
+      },
+      {
+        "driver": "codex",
+        "version": "0.167.0",
+        "proof": "Native controls and two automatic native turns in one app run; isolated credentials/state; passed."
+      },
+      {
+        "driver": "claudeAgent",
+        "model": "haiku",
+        "proof": "Native goal confirmation, checked completion and clear; isolated credentials/state; passed."
+      }
+    ],
+    "strictClippy": "Passed all targets with warnings denied in both feature modes.",
+    "routineChecks": "Formatting, diff whitespace, generated compatibility table, Python/JSON syntax and all nine nightly-watch tests passed."
+  },
+  "pending": [
+    "Complete idle wake and native-child continuation routing, including restart/deletion/usage-limit and historical import/fork interactions.",
+    "Source-wide provider error taxonomy, failure projection and native-control equality outside the covered goal validation shapes.",
+    "Shared-state migration 74-80 acceptance and the full nightly RPC/driver/MCP/auth/HTTP/CLI/resource backlog in PARITY.md."
+  ],
+  "deployment": "Not deployed by this block. All three hosts still run the previously verified background-notification fix 83ce347."
+}

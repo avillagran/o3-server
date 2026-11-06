@@ -390,6 +390,17 @@ pub(crate) fn start(
                 Ok(meta) => selection["o3HandoffBudget"] = meta,
                 Err(error) => selection["o3HandoffError"] = serde_json::json!(error),
             }
+            selection["o3NativeGoal"] = t["activeProviderThreadId"]
+                .as_str()
+                .and_then(|id| crate::events::get(&db, "providerThreads", id).ok())
+                .map(|provider| provider["goal"].clone())
+                .unwrap_or(serde_json::Value::Null);
+            selection["o3GoalCommandOrigin"] = serde_json::json!(if m["createdBy"] == "user" {
+                "user"
+            } else {
+                "automatic"
+            });
+            selection["o3AttemptId"] = r["activeAttemptId"].clone();
             let input = RunInput {
                 native_mcp: None,
                 provider_instance_id: r["providerInstanceId"]
@@ -609,6 +620,7 @@ pub(crate) fn start(
             }
             let flush = !buffered.is_empty()
                 && (streaming == "paragraph"
+                    || matches!(&event, ProviderEvent::Codex(frame) if frame["method"] == "o3/goal-turn-completed")
                     || matches!(
                         event,
                         ProviderEvent::Completed
@@ -959,14 +971,7 @@ fn persist_attempt(
             run["recoveryPending"] = json!(false);
         }
         ProviderEvent::TextDelta(delta) => {
-            let mid = if run["rootNodeId"].as_str().is_some_and(|root| root != rid) {
-                format!(
-                    "assistant-{rid}-{}",
-                    run["activeAttemptId"].as_str().unwrap_or("")
-                )
-            } else {
-                format!("assistant-{rid}")
-            };
+            let mid = assistant_message_id(&run, rid);
             let mut message=get(&tx,"messages",&mid).unwrap_or_else(|_|json!({"id":mid,"threadId":tid,"runId":rid,"nodeId":null,"role":"assistant","text":"","attachments":[],"streaming":true,"createdBy":"agent","creationSource":"web","createdAt":at,"updatedAt":at}));
             message["nodeId"] = run["rootNodeId"].clone();
             message["providerThreadId"] = run["providerThreadId"].clone();
@@ -1030,22 +1035,7 @@ fn persist_attempt(
                 &at,
                 run["status"].as_str().unwrap_or("failed"),
             )?;
-            let mid = if run["rootNodeId"].as_str().is_some_and(|root| root != rid) {
-                format!(
-                    "assistant-{rid}-{}",
-                    run["activeAttemptId"].as_str().unwrap_or("")
-                )
-            } else {
-                format!("assistant-{rid}")
-            };
-            if let Ok(mut message) = get(&tx, "messages", &mid) {
-                message["streaming"] = json!(false);
-                message["updatedAt"] = json!(at);
-                put(&tx, "messages", &mid, tid, &message)?;
-                append(&tx, tid, "message.updated", message.clone(), &thread)?;
-                let item = message_item(&tx, tid, &message)?;
-                append(&tx, tid, "turn-item.updated", item, &thread)?;
-            }
+            finish_assistant_message(&tx, tid, rid, &thread, &run, &at)?;
         }
     }
     if run["errorClass"] == "usage_limit"
@@ -1072,6 +1062,41 @@ fn persist_attempt(
     tx.commit().map_err(|e| e.to_string())?;
     drop(db);
     s.notify();
+    Ok(())
+}
+
+fn assistant_message_id(run: &serde_json::Value, rid: &str) -> String {
+    if let Some(turn) = run["codexGoalMessageSuffix"].as_str() {
+        format!("assistant-{rid}-goal-{turn}")
+    } else if run["rootNodeId"].as_str().is_some_and(|root| root != rid) {
+        format!(
+            "assistant-{rid}-{}",
+            run["activeAttemptId"].as_str().unwrap_or("")
+        )
+    } else {
+        format!("assistant-{rid}")
+    }
+}
+
+pub(crate) fn finish_assistant_message(
+    db: &rusqlite::Connection,
+    tid: &str,
+    rid: &str,
+    thread: &serde_json::Value,
+    run: &serde_json::Value,
+    at: &str,
+) -> Result<(), String> {
+    use crate::events::{append, get, put};
+    use serde_json::json;
+    let mid = assistant_message_id(run, rid);
+    if let Ok(mut message) = get(db, "messages", &mid) {
+        message["streaming"] = json!(false);
+        message["updatedAt"] = json!(at);
+        put(db, "messages", &mid, tid, &message)?;
+        append(db, tid, "message.updated", message.clone(), thread)?;
+        let item = crate::events::message_item(db, tid, &message)?;
+        append(db, tid, "turn-item.updated", item, thread)?;
+    }
     Ok(())
 }
 

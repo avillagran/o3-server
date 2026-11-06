@@ -49,6 +49,7 @@ mod fresh_context;
 pub mod import;
 pub mod keybind;
 pub mod misc;
+mod native_goal;
 pub mod p2;
 pub mod paths;
 pub mod preview;
