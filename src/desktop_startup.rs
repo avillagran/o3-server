@@ -108,9 +108,9 @@ pub async fn wait_for_parent_change(parent: i32, enabled: bool) {
         return;
     }
     loop {
-        tokio::time::sleep(Duration::from_secs(2)).await;
         if parent_id() != parent {
             return;
         }
+        tokio::time::sleep(Duration::from_secs(2)).await;
     }
 }
