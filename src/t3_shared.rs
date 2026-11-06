@@ -259,7 +259,16 @@ pub fn open(dir: &Path) -> Result<Option<Connection>> {
         )
         .optional()
         .map_err(|e| e.to_string())?;
-    if version.is_some_and(|v| v != PROJECTION_SCHEMA_VERSION) {
+    // A base T3 just created says 1 until its first event writes the current version, as O3's
+    // first export then does.
+    let empty: bool = db
+        .query_row(
+            "SELECT NOT EXISTS(SELECT 1 FROM orchestration_v2_projection_threads)",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if version.is_some_and(|v| v != PROJECTION_SCHEMA_VERSION && !(v == 1 && empty)) {
         return Err(format!(
             "T3 projection schema {version:?}, O3 writes {PROJECTION_SCHEMA_VERSION}"
         ));
