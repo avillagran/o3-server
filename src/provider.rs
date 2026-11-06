@@ -401,6 +401,7 @@ pub(crate) fn start(
                 "automatic"
             });
             selection["o3AttemptId"] = r["activeAttemptId"].clone();
+            selection["o3AppThreadId"] = serde_json::json!(tid);
             let input = RunInput {
                 native_mcp: None,
                 provider_instance_id: r["providerInstanceId"]
@@ -593,6 +594,13 @@ pub(crate) fn start(
                 }
                 continue;
             }
+            let event = if matches!(event, ProviderEvent::Failed(_))
+                && s.agent_scopes.oom_killed(&tid).await
+            {
+                ProviderEvent::Failed("Killed: out of memory.".into())
+            } else {
+                event
+            };
             if let ProviderEvent::TextDelta(delta) = event {
                 if buffered.len().saturating_add(delta.len()) > 1024 * 1024 {
                     failure = Some("assistant message exceeds 1 MiB".into());
@@ -735,6 +743,11 @@ pub(crate) fn start(
                     Some("completed" | "interrupted" | "failed" | "cancelled")
                 )
             {
+                let failure = if s.agent_scopes.oom_killed(&tid).await {
+                    Some("Killed: out of memory.".into())
+                } else {
+                    failure
+                };
                 let _ = persist_attempt(
                     &s,
                     &tid,
@@ -1578,6 +1591,7 @@ mod restart_tests {
 /// Instance registry. Each configured identity owns its own native process/session pool.
 /// Changed/removed scopes retire before their replacements admit native work.
 pub struct ConfiguredProviders {
+    agent_scopes: Option<std::sync::Arc<crate::agent_scope::Registry>>,
     pub defaults: std::sync::Arc<dyn Provider>,
     pub directory: std::path::PathBuf,
     instances: std::sync::Mutex<std::collections::BTreeMap<String, Instance>>,
@@ -1599,6 +1613,7 @@ struct Instance {
 impl ConfiguredProviders {
     pub fn new(defaults: std::sync::Arc<dyn Provider>, directory: std::path::PathBuf) -> Self {
         Self {
+            agent_scopes: None,
             defaults,
             directory,
             instances: Default::default(),
@@ -1607,6 +1622,13 @@ impl ConfiguredProviders {
             retired: Default::default(),
             builtin_scopes: Default::default(),
         }
+    }
+    pub fn with_agent_scopes(
+        mut self,
+        registry: std::sync::Arc<crate::agent_scope::Registry>,
+    ) -> Self {
+        self.agent_scopes = Some(registry);
+        self
     }
     fn settings(&self) -> serde_json::Value {
         let current = match std::fs::read(self.directory.join("settings.json")) {
@@ -1741,12 +1763,14 @@ impl ConfiguredProviders {
                 match driver {
                     "codex" => Some(std::sync::Arc::new(
                         crate::codex::CodexProvider::new(binary.clone(), home)
+                            .with_optional_agent_scopes(self.agent_scopes.clone())
                             .with_environment(env)
                             .with_home_setup(setup)
                             .with_launch_args(args.clone()),
                     )),
                     "claudeAgent" => Some(std::sync::Arc::new(
                         crate::claude::ClaudeProvider::new(binary.clone())
+                            .with_optional_agent_scopes(self.agent_scopes.clone())
                             .with_environment(env)
                             .with_launch_args(args.clone()),
                     )),

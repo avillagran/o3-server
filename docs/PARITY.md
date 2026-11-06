@@ -66,3 +66,12 @@ and policy integration with the remaining forge consumers remain open; see
 
 Validation details belong in `CONFORMANCE.md` and the per-block intake files. A green
 suite and an RPC count alone do not establish complete headless behavior.
+
+The native-agent isolation block adds Linux resource scopes, per-profile orphan
+cleanup, OOM diagnosis and shared Codex protection. Source helpers agree on 163
+executed cases, and private peers exercise configured native transports and the
+compatible client's OOM response. A real systemd user manager in a disposable
+container also verifies detached-child cleanup, shared-process protection, a
+kernel OOM at 32 MiB and orphan cleanup across two profiles. Terminal and browser
+launchers, typed failure cards and `forceStopThread` orchestration remain open;
+see [`nightly/agent-scope-intake.json`](nightly/agent-scope-intake.json).

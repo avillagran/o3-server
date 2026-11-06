@@ -68,6 +68,7 @@ enum Release {
     Unload,
 }
 enum Op {
+    AttachAgentThread(String, oneshot::Sender<()>),
     Call(String, Value, Reply),
     Reply(Value),
     Subscribe(String, Route, oneshot::Sender<Result<(), String>>),
@@ -104,6 +105,7 @@ impl Client {
 }
 
 pub struct CodexProvider {
+    agent_scopes: Option<std::sync::Arc<crate::agent_scope::Registry>>,
     executable: PathBuf,
     home: Option<PathBuf>,
     home_setup: Option<std::sync::Arc<crate::provider_home::Setup>>,
@@ -235,6 +237,7 @@ impl CodexProvider {
     }
     pub fn new(executable: PathBuf, home: Option<PathBuf>) -> Self {
         Self {
+            agent_scopes: None,
             executable: crate::executable::resolve(&executable).unwrap_or(executable),
             home,
             home_setup: None,
@@ -255,6 +258,20 @@ impl CodexProvider {
     }
     fn with_actor_scope(mut self, actors: lifetime::Actors) -> Self {
         self.actors = actors;
+        self
+    }
+    pub fn with_agent_scopes(
+        mut self,
+        registry: std::sync::Arc<crate::agent_scope::Registry>,
+    ) -> Self {
+        self.agent_scopes = Some(registry);
+        self
+    }
+    pub(crate) fn with_optional_agent_scopes(
+        mut self,
+        registry: Option<std::sync::Arc<crate::agent_scope::Registry>>,
+    ) -> Self {
+        self.agent_scopes = registry;
         self
     }
     pub fn with_launch_args(mut self, args: Vec<String>) -> Self {
@@ -357,11 +374,14 @@ impl CodexProvider {
         }
     }
     async fn connection(&self) -> Result<Client, String> {
+        self.connection_for(None).await
+    }
+    async fn connection_for(&self, thread: Option<&str>) -> Result<Client, String> {
         let mut guard = self.client.lock().await;
         if let Some(c) = guard.as_ref().filter(|c| !c.0.is_closed()) {
             return Ok(c.clone());
         }
-        let result = self.launch().await;
+        let result = self.launch(thread).await;
         match &result {
             Ok(c) => *guard = Some(c.clone()),
             Err(e) => {
@@ -374,7 +394,7 @@ impl CodexProvider {
         }
         result
     }
-    async fn launch(&self) -> Result<Client, String> {
+    async fn launch(&self, thread: Option<&str>) -> Result<Client, String> {
         let state_home = match &self.home_setup {
             Some(setup) => setup.shared_home().to_owned(),
             None => self
@@ -401,16 +421,20 @@ impl CodexProvider {
         }
         let mut cmd = Command::new(&self.executable);
         cmd.envs(self.environment.iter().cloned());
-        cmd.arg("app-server")
-            .arg("--stdio")
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .kill_on_drop(true);
+        cmd.arg("app-server").arg("--stdio");
         if let Some(home) = &self.home {
             cmd.env("CODEX_HOME", home);
         }
         cmd.args(&self.launch_args);
+        let (mut cmd, agent_scope) = if let Some(registry) = &self.agent_scopes {
+            registry.wrap(cmd, "codex", thread, true, false).await?
+        } else {
+            (cmd, None)
+        };
+        cmd.stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .kill_on_drop(true);
         let child = cmd
             .spawn()
             .map_err(|e| format!("Cannot spawn Codex: {e}"))?;
@@ -418,7 +442,7 @@ impl CodexProvider {
         let (finished, closed) = watch::channel(false);
         let (descriptor, idle_timeout) = (self.descriptor.clone(), self.idle_timeout);
         tokio::spawn(async move {
-            actor(child, rx, descriptor, idle_timeout).await;
+            actor(child, rx, descriptor, idle_timeout, agent_scope).await;
             finished.send_replace(true);
         });
         let c = Client(tx);
@@ -488,8 +512,17 @@ impl CodexProvider {
                 .await?;
             content = crate::provider_input::content(&input, false)?;
         }
-        let mut c = self.connection().await?;
+        let app_thread = input.model_selection["o3AppThreadId"]
+            .as_str()
+            .unwrap_or(&input.thread_id)
+            .to_owned();
+        let mut c = self.connection_for(Some(&app_thread)).await?;
         let response = loop {
+            let (ack, ready) = oneshot::channel();
+            c.0.send(Op::AttachAgentThread(app_thread.clone(), ack))
+                .await
+                .map_err(|_| "Codex closed")?;
+            ready.await.map_err(|_| "Codex closed")?;
             if let Some(context) = &input.native_mcp {
                 let context = context
                     .refresh(&input.cwd, &input.model_selection["options"])
@@ -530,7 +563,7 @@ impl CodexProvider {
                     )
                     .await?;
                     content = crate::provider_input::content(&input, false)?;
-                    c = self.connection().await?;
+                    c = self.connection_for(Some(&app_thread)).await?;
                 }
                 Err(error)
                     if input.native_session_id.is_some()
@@ -544,7 +577,7 @@ impl CodexProvider {
                     )
                     .await?;
                     content = crate::provider_input::content(&input, false)?;
-                    c = self.connection().await?;
+                    c = self.connection_for(Some(&app_thread)).await?;
                 }
                 Err(error) => return Err(error),
             }
@@ -993,6 +1026,7 @@ impl Provider for CodexProvider {
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(async move {
             let discovery = Self::new(self.executable.clone(), self.home.clone())
+                .with_optional_agent_scopes(self.agent_scopes.clone())
                 .with_environment(self.environment.clone())
                 .with_home_setup(self.home_setup.clone())
                 .with_launch_args(self.launch_args.clone())
@@ -1071,6 +1105,7 @@ impl Provider for CodexProvider {
         Box::pin(async move {
             // Quota readers do not keep the inference actor alive between refreshes.
             let probe = Self::new(self.executable.clone(), self.home.clone())
+                .with_optional_agent_scopes(self.agent_scopes.clone())
                 .with_environment(self.environment.clone())
                 .with_home_setup(self.home_setup.clone())
                 .with_launch_args(self.launch_args.clone())
@@ -1200,6 +1235,7 @@ async fn actor(
     mut ops: mpsc::Receiver<Op>,
     descriptor: std::sync::Arc<Mutex<Value>>,
     idle_timeout: std::time::Duration,
+    agent_scope: Option<crate::agent_scope::Lease>,
 ) {
     let mut stdin = child.stdin.take().unwrap();
     let mut reader = BufReader::with_capacity(8192, child.stdout.take().unwrap());
@@ -1226,6 +1262,7 @@ async fn actor(
             op=ops.recv()=>{
                 last_operation=tokio::time::Instant::now();
                 let frame=match op {
+                    Some(Op::AttachAgentThread(thread,ack))=>{if let Some(scope)=&agent_scope {scope.attach(&thread);}let _=ack.send(());continue;},
                     None=>return Ok(()),
                     Some(Op::Subscribe(id,tx,ack))=>{let result=if routes.len()>=32||routes.contains_key(&id){Err("Codex thread already active or capacity reached".into())}else{routes.insert(id,tx);Ok(())};let _=ack.send(result);continue;},
                     Some(Op::Shutdown(ack))=>{shutdown=Some(ack);return Ok(());},
@@ -1365,6 +1402,9 @@ async fn actor(
         context.revoke();
     }
     drop(native_contexts);
+    if let Some(mut scope) = agent_scope {
+        scope.stop().await;
+    }
     if let Some(ack) = shutdown {
         let _ = ack.send(());
     }

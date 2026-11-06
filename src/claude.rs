@@ -63,6 +63,7 @@ fn settings_entrypoint(instance: &[(String, String)]) -> Option<String> {
         .map(str::to_owned)
 }
 pub struct ClaudeProvider {
+    agent_scopes: Option<std::sync::Arc<crate::agent_scope::Registry>>,
     binary: PathBuf,
     idle_timeout: std::time::Duration,
     environment: Vec<(String, String)>,
@@ -71,6 +72,7 @@ pub struct ClaudeProvider {
     sessions: std::sync::Arc<Mutex<HashMap<String, Session>>>,
 }
 struct Session {
+    _agent_scope: Option<crate::agent_scope::Lease>,
     native_mcp: Option<std::sync::Arc<crate::native_mcp::Context>>,
     _mcp_config: Option<PrivateConfig>,
     child: Child,
@@ -119,6 +121,7 @@ impl ClaudeProvider {
     }
     pub fn new(binary: PathBuf) -> Self {
         Self {
+            agent_scopes: None,
             binary,
             idle_timeout: std::time::Duration::from_secs(60),
             environment: Vec::new(),
@@ -129,6 +132,20 @@ impl ClaudeProvider {
     }
     pub fn with_idle_timeout(mut self, timeout: std::time::Duration) -> Self {
         self.idle_timeout = timeout;
+        self
+    }
+    pub fn with_agent_scopes(
+        mut self,
+        registry: std::sync::Arc<crate::agent_scope::Registry>,
+    ) -> Self {
+        self.agent_scopes = Some(registry);
+        self
+    }
+    pub(crate) fn with_optional_agent_scopes(
+        mut self,
+        registry: Option<std::sync::Arc<crate::agent_scope::Registry>>,
+    ) -> Self {
+        self.agent_scopes = registry;
         self
     }
     pub fn with_launch_args(mut self, args: Vec<String>) -> Self {
@@ -184,6 +201,12 @@ impl ClaudeProvider {
             crate::claude_models::compile(&input.model_selection)?;
         let mut cmd = Command::new(&self.binary);
         apply_environment(&mut cmd, &self.environment);
+        cmd.env(
+            "T3CODE_THREAD_ID",
+            input.model_selection["o3AppThreadId"]
+                .as_str()
+                .unwrap_or(&input.thread_id),
+        );
         cmd.args(&self.launch_args);
         cmd.args([
             "-p",
@@ -201,12 +224,7 @@ impl ClaudeProvider {
         .arg(model)
         .arg("--permission-mode")
         .arg(mode(input))
-        .process_group(0)
-        .current_dir(&input.cwd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
+        .current_dir(&input.cwd);
         if input.model_selection["o3ColdCompact"] == true {
             // Build the continuation summary without permitting historical tool replay.
             cmd.args([
@@ -267,10 +285,26 @@ impl ClaudeProvider {
             cmd.arg("--resume").arg(id);
         }
 
+        let (mut cmd, agent_scope) = if let Some(registry) = &self.agent_scopes {
+            let thread = input.model_selection["o3AppThreadId"]
+                .as_str()
+                .unwrap_or(&input.thread_id);
+            registry
+                .wrap(cmd, "claude", Some(thread), false, false)
+                .await?
+        } else {
+            (cmd, None)
+        };
+        cmd.process_group(0)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .kill_on_drop(true);
         let mut child = cmd.spawn().map_err(|e| format!("Claude spawn: {e}"))?;
         let stdin = child.stdin.take().ok_or("Claude stdin missing")?;
         let stdout = BufReader::new(child.stdout.take().ok_or("Claude stdout missing")?);
         let mut s = Session {
+            _agent_scope: agent_scope,
             native_mcp: input.native_mcp.clone(),
             _mcp_config: mcp_config,
             child,
@@ -749,6 +783,9 @@ impl Session {
             }
         }
         let _ = self.child.kill().await;
+        if let Some(mut scope) = self._agent_scope.take() {
+            scope.stop().await;
+        }
     }
     async fn send(&mut self, v: Value) -> Result<(), String> {
         let mut bytes = serde_json::to_vec(&v).map_err(|e| e.to_string())?;
@@ -1211,6 +1248,7 @@ mod tests {
         let pid = child.id().unwrap();
         let stamp = tokio::time::Instant::now();
         let session = Session {
+            _agent_scope: None,
             native_mcp: None,
             _mcp_config: None,
             stdin: child.stdin.take().unwrap(),
@@ -1254,6 +1292,7 @@ mod tests {
             .unwrap();
         let pid = child.id().unwrap();
         let session = Session {
+            _agent_scope: None,
             native_mcp: None,
             _mcp_config: None,
             stdin: child.stdin.take().unwrap(),
@@ -1360,6 +1399,7 @@ mod tests {
             .spawn()
             .unwrap();
         let mut s = Session {
+            _agent_scope: None,
             native_mcp: None,
             _mcp_config: None,
             stdin: child.stdin.take().unwrap(),
@@ -1385,6 +1425,7 @@ mod tests {
             .spawn()
             .unwrap();
         let mut s = Session {
+            _agent_scope: None,
             native_mcp: None,
             _mcp_config: None,
             stdin: child.stdin.take().unwrap(),
