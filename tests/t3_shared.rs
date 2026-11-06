@@ -570,6 +570,7 @@ fn rows_written_under_an_older_mapping_are_corrected_on_start() {
     drop(state);
     // An older O3 wrote the value T3 rejects and recorded mapping version 1.
     db.execute("UPDATE orchestration_v2_projection_provider_threads SET payload_json=?1 WHERE provider_thread_id='pt'", [pt.to_string()]).unwrap();
+    db.execute("UPDATE orchestration_events SET payload_json=?1 WHERE event_type='provider-thread.updated'", [pt.to_string()]).unwrap();
     db.execute("UPDATE o3_sync SET value=1 WHERE name='o3ShapeVersion'", [])
         .unwrap();
     let state = Arc::new(State::open(&userdata).unwrap());
@@ -579,6 +580,11 @@ fn rows_written_under_an_older_mapping_are_corrected_on_start() {
     assert!(
         row["pendingBackgroundTasks"][0].get("awaited").is_none(),
         "{row}"
+    );
+    let event: Value = serde_json::from_str(&one::<String>(&db, "SELECT payload_json FROM orchestration_events WHERE event_type='provider-thread.updated' ORDER BY sequence LIMIT 1")).unwrap();
+    assert!(
+        event["pendingBackgroundTasks"][0].get("awaited").is_none(),
+        "{event}"
     );
     assert_t3_verifies(&db);
     drop(state);
