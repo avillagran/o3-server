@@ -1,5 +1,5 @@
 {
-  "_doc": "Priorities from client-usage.md table surfaces; unused=skip. Done means covered by real Connection tests. Partial notes list known limits.",
+  "_doc": "Historical pinned-client priorities and evidence. Done means covered by real Connection tests, not full current-nightly parity. Unused/skip methods remain in the headless parity scope. Partial notes list known limits; see PARITY.md.",
   "methods": {
     "agentSessions.import": {
       "status": "done",
@@ -157,9 +157,14 @@
       "note": "tests/admin_reads.rs: pages settled top-level threads below the cursor (settledAt desc, id asc), limit 0 returns per-project counts, project filter. Snapshots never omit older settled threads, so capabilities.shellOlderSettled stays false."
     },
     "orchestration.getThreadFamily": {
-      "status": "skip",
-      "priority": "unused",
-      "note": "No client call site in inventory."
+      "status": "partial",
+      "priority": "P2",
+      "note": "tests/thread_reads.rs: active family membership, archived/deleted filtering, deleted anchors, side chats, descendants and ordering match official nightly 4262. Malformed-input wire defects match the official runtime; complete common shell summaries still need full parity."
+    },
+    "orchestration.getThreadTitles": {
+      "status": "partial",
+      "priority": "P2",
+      "note": "tests/thread_reads.rs: archived titles, absent deleted/unknown IDs, duplicates, 35000-ID batches, scopes and Unicode trimming. Output matches official nightly 4262. Malformed-input wire defects match the official runtime in 31 differential cases across the three read schemas."
     },
     "orchestration.getThreadProjection": {
       "status": "done",
@@ -182,9 +187,9 @@
       "note": "tests/admin_reads.rs: reads .js files below $CLAUDE_CONFIG_DIR|~/.claude/projects, 256 KiB cap, T3's typed OrchestrationGetWorkflowScriptError reasons."
     },
     "orchestration.getWorktreeThreadIds": {
-      "status": "skip",
-      "priority": "unused",
-      "note": "No client call site in inventory."
+      "status": "partial",
+      "priority": "P2",
+      "note": "tests/thread_reads.rs: active exact-path membership and ordering match official nightly 4262, including subagents and side chats; requires orchestration:read. Malformed-input wire defects match the official runtime in 31 differential cases across the three read schemas."
     },
     "orchestration.launchThread": {
       "status": "done",
@@ -1019,87 +1024,87 @@
     "review.getBranchCommits": {
       "status": "done",
       "priority": "P2",
-      "note": "Port 4093: commits HEAD desde merge-base (baseRef o rama por defecto), máx. 100, asunto 300 chars, 128 KiB, truncated; repo sin HEAD o fuera de git → vacío; cwd en workspace conocido. tests/vcs_compat.rs."
+      "note": "Nightly 4093: HEAD commits since merge-base (baseRef or default branch), at most 100, 300-character subjects and 128 KiB, with truncation. Missing HEAD or non-Git directory returns empty; cwd must belong to a known workspace. tests/vcs_compat.rs."
     },
     "orchestration.getNativeChildWork": {
       "status": "done",
       "priority": "P2",
-      "note": "Upstream sólo lee hijos nativos de Antigravity y responde {children:[]} para otros drivers; o3 sólo tiene Claude/Codex: misma respuesta. src/additions.rs."
+      "note": "Upstream reads native Antigravity children and returns {children:[]} for other drivers. O3 currently has Claude/Codex and gives the same answer. src/additions.rs."
     },
     "sourceControl.starred": {
       "status": "partial",
       "priority": "P2",
-      "note": "false = la forja no puede responder (sin token de app). Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
+      "note": "False fallback when the forge cannot answer. Forge credential and star reads remain incomplete; no corresponding capability is advertised."
     },
     "sourceControl.appAccess": {
       "status": "partial",
       "priority": "P2",
-      "note": "signed-out: sin driver de sign-in de app, como upstream sin T3CODE_GITHUB_APP_CLIENT_ID. Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
+      "note": "Signed-out fallback without an app sign-in driver. GitHub App device flow remains unimplemented; no corresponding capability is advertised."
     },
     "sourceControl.signInStart": {
       "status": "partial",
       "priority": "P2",
-      "note": "SourceControlSignInError reason=unsupported (texto upstream). Device flow GitHub App pendiente. Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
+      "note": "SourceControlSignInError reason=unsupported with upstream wording. GitHub App device flow remains pending; no corresponding capability is advertised."
     },
     "sourceControl.signInWait": {
       "status": "partial",
       "priority": "P2",
-      "note": "SourceControlSignInError reason=unsupported. Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
+      "note": "SourceControlSignInError reason=unsupported. App sign-in remains pending; no corresponding capability is advertised."
     },
     "sourceControl.signInCancel": {
       "status": "partial",
       "priority": "P2",
-      "note": "SourceControlSignInError reason=unsupported. Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
+      "note": "SourceControlSignInError reason=unsupported. App sign-in remains pending; no corresponding capability is advertised."
     },
     "peerLinks.list": {
       "status": "partial",
       "priority": "P2",
-      "note": "{links:[]}; peer links (OAuth MCP entre entornos) no implementado; capacidad peerLinks no anunciada."
+      "note": "Returns {links:[]}; OAuth MCP links between environments remain unimplemented and peerLinks is not advertised."
     },
     "peerLinks.link": {
       "status": "partial",
       "priority": "P2",
-      "note": "PeerLinkError reason=disabled (texto upstream). Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
+      "note": "PeerLinkError reason=disabled with upstream wording. Peer links remain unimplemented and the capability is not advertised."
     },
     "peerLinks.unlink": {
       "status": "partial",
       "priority": "P2",
-      "note": "PeerLinkError reason=disabled. Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
+      "note": "PeerLinkError reason=disabled. Peer links remain unimplemented and the capability is not advertised."
     },
     "peerLinks.answerRequest": {
       "status": "partial",
       "priority": "P2",
-      "note": "PeerLinkRequestError reason=not_found: o3 no crea tarjetas link_request. Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
+      "note": "PeerLinkRequestError reason=not_found: O3 does not create link_request cards. Peer links remain unimplemented and the capability is not advertised."
     },
     "preview.stopLocalServer": {
       "status": "partial",
       "priority": "P2",
-      "note": "PreviewStopLocalServerError reason=unsupported; falta mapa pid↔puerto y verificación de grupo. Capacidad localServerStop no anunciada."
+      "note": "PreviewStopLocalServerError reason=unsupported. PID-to-port mapping and process-group verification remain pending; localServerStop is not advertised."
     },
     "server.getNpmRelease": {
       "status": "partial",
       "priority": "P2",
-      "note": "ServerNpmReleaseError: o3 no se distribuye por npm ni se autoactualiza. Capacidad npmReleaseLookup no anunciada."
+      "note": "ServerNpmReleaseError: O3 is not distributed through npm and does not update itself. npmReleaseLookup is not advertised."
     },
     "server.prepareTriage": {
       "status": "partial",
       "priority": "P2",
-      "note": "ServerPrepareTriageError: el playbook de triage es interno de T3. Capacidad triage no anunciada."
+      "note": "ServerPrepareTriageError: the triage playbook is internal to T3. The triage capability is not advertised."
     },
     "projects.createFromThread": {
       "status": "partial",
       "priority": "P2",
-      "note": "OrchestrationDispatchCommandError: o3 no tiene hilos sin proyecto (scratch). Capacidad threadProjectFromScratch no anunciada."
+      "note": "OrchestrationDispatchCommandError: converting projectless scratch threads remains unimplemented; threadProjectFromScratch is not advertised."
     },
     "orchestration.forceStopThread": {
       "status": "todo",
       "priority": "P2",
-      "note": "Pendiente: matar grupo del agente, superseded por runId, settle del run. Capacidad threadForceStop no anunciada; hoy RpcNotImplemented."
+      "note": "Pending: terminate the provider process group, supersede by runId and settle the run. threadForceStop is not advertised; currently RpcNotImplemented."
     },
     "device.simlockIdentity": {
       "status": "partial",
       "priority": "P2",
-      "note": "DeviceSimlockIdentityError: gateways Simlock no soportados; no se envía token. Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
+      "note": "DeviceSimlockIdentityError: Simlock gateways remain unsupported; no token is sent and the capability is not advertised."
     }
   },
   "commands": {

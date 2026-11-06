@@ -3487,3 +3487,26 @@ Exact validation and remaining limits: [native-goal-intake.json](nightly/native-
 This block is not a complete headless parity certificate; [PARITY.md](PARITY.md)
 includes every headless surface, methods without a current client caller, the new
 RPCs and the migration80 acceptance backlog.
+## 2026-11-06 — Nightly thread reads
+
+`tests/thread_reads.rs` drives title batches, thread families and worktree membership
+through the real compatible client. Archived threads retain titles; deleted and unknown
+IDs do not. Family selection accepts deleted anchors and includes active forks,
+subagent descendants and side chats, ordered by update time and ID. Worktree selection
+uses the exact stored path. Family summaries and their replay boundary use one SQLite
+read transaction. All three methods require `orchestration:read`.
+
+The opt-in `official_nightly_matches_thread_read_membership_order_and_titles` runs
+against the official 4262 headless release in rootless Podman with no network,
+credentials or writable host mounts. Twelve valid query comparisons and 31 malformed
+input comparisons agree, including complete `Die` exit frames and Unicode whitespace.
+Nine additional comparisons verify scope/decode ordering and permission denials,
+including the upstream legacy `requiredScope` and granular `requiredPermission` pair.
+Regular tests also cover 35000-ID title batches, denied scopes and wire defects.
+
+Run `tools/test-headless-reference /path/to/extracted-nightly` to reproduce the native
+comparison. It compiles on the host and executes the proof in the container. This is
+evidence for the queries' selection, ordering, input decoding and authorization;
+complete common shell summaries and source-wide error taxonomy remain open.
+
+See `nightly/thread-reads-intake.json` and `PARITY.md` for current scope.

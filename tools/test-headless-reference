@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+"""Build Rust acceptance and compare it with the official nightly in rootless Podman."""
+import argparse
+import json
+import os
+import pathlib
+import subprocess
+import uuid
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('reference_root', type=pathlib.Path, help='Extracted nightly directory containing t3')
+parser.add_argument('--test', default='thread_reads')
+options = parser.parse_args()
+root = pathlib.Path(__file__).resolve().parent.parent
+reference = options.reference_root.resolve()
+if not (reference / 't3').is_file():
+    raise SystemExit('Reference root must contain t3')
+node = pathlib.Path(subprocess.check_output(['mise', 'where', 'node'], text=True).strip()).resolve()
+build = subprocess.run(['cargo', 'test', '--locked', '--test', options.test, '--no-run', '--message-format=json'], cwd=root, capture_output=True, text=True)
+if build.returncode:
+    for line in build.stdout.splitlines():
+        diagnostic = json.loads(line).get('message', {})
+        if diagnostic.get('rendered'):
+            print(diagnostic['rendered'], flush=True)
+    print(build.stderr, flush=True)
+    raise SystemExit(build.returncode)
+binary = next(pathlib.Path(v['executable']) for line in build.stdout.splitlines() if (v := json.loads(line)).get('executable') and v.get('target', {}).get('name') == options.test)
+name = 'o3-headless-reference-' + uuid.uuid4().hex
+args = ['podman', 'run', '--rm', '--name', name, '--userns=keep-id', '--user', f'{os.getuid()}:{os.getgid()}', '--read-only', '--tmpfs', '/tmp:rw,exec,size=1g,mode=1777', '--cap-drop=ALL', '--security-opt=no-new-privileges', '--pids-limit=512', '--memory=3g', '--network=none', '--workdir=/tmp']
+for source, destination in [(root, root), (binary.parent, '/test-bin'), (reference, '/reference'), (node, '/native/node')]:
+    args += ['-v', f'{source}:{destination}:ro']
+for key, value in {'HOME': '/tmp/home', 'TMPDIR': '/tmp', 'XDG_CONFIG_HOME': '/tmp/config', 'XDG_DATA_HOME': '/tmp/data', 'XDG_STATE_HOME': '/tmp/state', 'PATH': '/native/node/bin:/usr/bin:/bin', 'O3_HEADLESS_CONTAINER': '1', 'T3_REFERENCE_BIN': '/reference/t3'}.items():
+    args += ['--env', f'{key}={value}']
+args += [os.environ.get('O3_HEADLESS_IMAGE', 'localhost/android-sandbox:latest'), 'sh', '-c', 'set -eu; umask 077; mkdir -p "$HOME"; exec "$1" --ignored --nocapture --test-threads=1', 'headless-reference', f'/test-bin/{binary.name}']
+try:
+    result = subprocess.run(args, cwd=root, timeout=180)
+finally:
+    subprocess.run(['podman', 'stop', '--time', '3', name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+raise SystemExit(result.returncode)
