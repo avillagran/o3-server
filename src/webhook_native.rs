@@ -228,6 +228,9 @@ pub(crate) fn accept(
     query: &str,
     body: &[u8],
 ) -> Response {
+    if s.managed_policy.denial("webhookTasks").is_some() {
+        return Response::error(403, "blocked_by_policy", "blocked_by_policy");
+    }
     if !crate::webhook::admits(s, id, token) {
         return Response::error(404, "not_found", "hook_not_found");
     }
@@ -260,13 +263,6 @@ pub(crate) fn accept(
         let task = get(&db, "scheduledTasks", id).map_err(Error::Persistence)?;
         if task["schedule"]["type"] != "webhook" {
             return Ok(Response::error(404, "not_found", "hook_not_found"));
-        }
-        if task["blockedByPolicy"].is_string() {
-            return Ok(Response::error(
-                403,
-                "blocked_by_policy",
-                "blocked_by_policy",
-            ));
         }
         let credentials = get(&db, "hookCredentials", id).map_err(Error::Persistence)?;
         // Recheck after acquiring the writer: rotation cannot revive a retired URL.

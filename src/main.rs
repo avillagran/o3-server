@@ -19,6 +19,7 @@ Commands:
   auth session revoke ID    Revoke a session
   auth pairing create       Create a one-time pairing credential
   service install           Install the user service
+  shared-profile-readiness  Inspect legacy webhook handover without changing the profile
   --version                 Print the version
 
 The profile comes from T3CODE_HOME (default ~/.t3).
@@ -60,6 +61,9 @@ fn main() -> std::io::Result<()> {
     if args.iter().any(|a| a == "--help" || a == "-h") {
         print!("{USAGE}");
         return Ok(());
+    }
+    if let Some(code) = o3_server::shared_readiness::run_cli(&args) {
+        std::process::exit(code);
     }
     if args.first().map(String::as_str) == Some("__ssh-helper") {
         match args.get(1).map(String::as_str) {
@@ -121,14 +125,22 @@ fn main() -> std::io::Result<()> {
     }
     // Before anything creates o3 files, which would pollute another server's profile.
     o3_server::profile::refuse_foreign_live(Path::new(&dir))?;
+    let policy = match o3_server::managed_policy::Policy::load_server() {
+        Ok(policy) => policy,
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::exit(o3_server::managed_policy::EXIT_CODE);
+        }
+    };
+    let provider_policy = policy.clone();
     let is_auth = args.first().map(String::as_str) == Some("auth");
     let _ownership = if !is_auth {
         Some(o3_server::profile::ownership(&dir)?)
     } else {
         None
     };
-    let mut state =
-        o3_server::store::State::open(Path::new(&dir)).map_err(std::io::Error::other)?;
+    let mut state = o3_server::store::State::open_with_policy(Path::new(&dir), policy)
+        .map_err(std::io::Error::other)?;
     state.asset_profile_root = base.clone();
     if args.first().map(String::as_str) == Some("import") {
         let source =
@@ -258,19 +270,25 @@ fn main() -> std::io::Result<()> {
             state.agent_scopes.enable();
             let codex = Arc::new(
                 o3_server::codex::CodexProvider::default()
-                    .with_agent_scopes(state.agent_scopes.clone()),
+                    .with_agent_scopes(state.agent_scopes.clone())
+                    .with_managed_policy(provider_policy.document.is_some()),
             );
             *state.provider.lock().unwrap() = Some(Arc::new(
                 o3_server::provider::ConfiguredProviders::new(
                     Arc::new(o3_server::provider::Providers {
                         claude: o3_server::claude::ClaudeProvider::discover().map(|provider| {
-                            Arc::new(provider.with_agent_scopes(state.agent_scopes.clone()))
+                            Arc::new(
+                                provider
+                                    .with_agent_scopes(state.agent_scopes.clone())
+                                    .with_managed_policy(provider_policy.document.is_some()),
+                            )
                         }),
                         codex: codex.clone(),
                     }),
                     dir.clone(),
                 )
-                .with_agent_scopes(state.agent_scopes.clone()),
+                .with_agent_scopes(state.agent_scopes.clone())
+                .with_policy(provider_policy.clone()),
             ));
             let mut term =
                 tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;

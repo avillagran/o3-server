@@ -98,6 +98,19 @@ pub(crate) fn launch_prepared(
     if let Some(a) = authority {
         a.check_launch(&s.db.lock().unwrap(), incoming)?;
     }
+    let prepared = if let Some(initial) = incoming.get("initialMessage") {
+        match crate::provider_input::normalize_command_context(initial)? {
+            std::borrow::Cow::Borrowed(_) => std::borrow::Cow::Borrowed(incoming),
+            std::borrow::Cow::Owned(initial) => {
+                let mut command = incoming.clone();
+                command["initialMessage"] = initial;
+                std::borrow::Cow::Owned(command)
+            }
+        }
+    } else {
+        std::borrow::Cow::Borrowed(incoming)
+    };
+    let incoming = prepared.as_ref();
     let _workspace = s
         .worktree_gate
         .try_read()

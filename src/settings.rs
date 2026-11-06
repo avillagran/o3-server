@@ -10,6 +10,9 @@ pub fn auth_descriptor() -> Value {
 }
 pub(crate) type Cache = Option<(Option<(std::time::SystemTime, u64)>, Value)>;
 pub fn read(s: &State) -> Result<Value, String> {
+    s.managed_policy.effective_settings(&read_stored(s)?)
+}
+pub(crate) fn read_stored(s: &State) -> Result<Value, String> {
     let stamp = match std::fs::metadata(s.dir.join("settings.json")) {
         Ok(m) => Some((m.modified().map_err(|e| e.to_string())?, m.len())),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
@@ -22,10 +25,17 @@ pub fn read(s: &State) -> Result<Value, String> {
         }
     }
     let mut v: Value = serde_json::from_str(include_str!("settings-defaults.json")).unwrap();
+    if s.managed_policy.settings_controls()?.is_some() {
+        v = with_native_fields(&v, crate::managed_settings_codec::encoded_defaults());
+    }
     match std::fs::read(s.dir.join("settings.json")) {
         Ok(b) => {
             let stored: Value = serde_json::from_slice(&b).map_err(|e| e.to_string())?;
-            merge(&mut v, &stored);
+            let filled = match s.managed_policy.settings_controls()? {
+                Some(controls) => controls.with_defaults(&stored),
+                None => stored.clone(),
+            };
+            merge(&mut v, &filled);
             // T3 keeps keyed forge literals in private secret slots. Retain their public marker
             // when loading a profile; patch merging still treats that marker as "keep existing".
             if let Some(hosts) = stored["sourceControlHosts"].as_object() {
@@ -42,12 +52,54 @@ pub fn read(s: &State) -> Result<Value, String> {
                 }
             }
         }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            if let Some(controls) = s.managed_policy.settings_controls()? {
+                merge(&mut v, &controls.with_defaults(&json!({})));
+            }
+        }
         Err(e) => return Err(e.to_string()),
+    }
+    if s.managed_policy.settings_controls()?.is_some() {
+        let native = crate::managed_settings_codec::decode_persisted(v.clone())
+            .and_then(crate::managed_settings_codec::encode)
+            .map_err(|_| "Invalid managed settings input")?;
+        v = with_native_fields(&v, native);
     }
     normalize(&mut v, &json!({}))?;
     *cache = Some((stamp, v.clone()));
     Ok(v)
+}
+/// Keep O3 extension keys outside the pinned native schema projection.
+pub(crate) fn with_native_fields(original: &Value, mut native: Value) -> Value {
+    for (key, value) in original.as_object().into_iter().flatten() {
+        if !crate::managed_settings_codec::fields().contains_key(key) {
+            native[key] = value.clone();
+        }
+    }
+    native
+}
+fn strip_defaults(
+    current: &Value,
+    defaults: &Value,
+    is_atomic: &impl Fn(&str) -> bool,
+) -> Option<Value> {
+    if let (Some(current), Some(defaults)) = (current.as_object(), defaults.as_object()) {
+        let mut stripped = serde_json::Map::new();
+        for (key, value) in current {
+            if is_atomic(key) {
+                if Some(value) != defaults.get(key) {
+                    stripped.insert(key.clone(), value.clone());
+                }
+            } else if let Some(value) =
+                strip_defaults(value, defaults.get(key).unwrap_or(&Value::Null), is_atomic)
+            {
+                stripped.insert(key.clone(), value);
+            }
+        }
+        (!stripped.is_empty()).then_some(Value::Object(stripped))
+    } else {
+        (current != defaults).then(|| current.clone())
+    }
 }
 pub fn merge(dst: &mut Value, patch: &Value) {
     if let (Some(d), Some(p)) = (dst.as_object_mut(), patch.as_object()) {
@@ -118,12 +170,25 @@ pub fn get(s: &State) -> Result<Value, String> {
     Ok(v)
 }
 pub fn update(s: &State, p: &Value) -> Result<Value, String> {
+    update_inner(s, p, &mut None)
+}
+pub(crate) fn update_rpc(s: &State, p: &Value) -> Result<Value, Value> {
+    let mut policy_error = None;
+    update_inner(s, p, &mut policy_error).map_err(|message| {
+        let mut error =
+            policy_error.unwrap_or_else(|| json!({"operation":"write","message":message}));
+        error["_tag"] = json!("ServerSettingsError");
+        error["settingsPath"] = json!(s.dir.join("settings.json"));
+        error
+    })
+}
+fn update_inner(s: &State, p: &Value, policy_error: &mut Option<Value>) -> Result<Value, String> {
     let _guard = s.settings_lock.lock().unwrap();
     let patch = p
         .get("patch")
         .filter(|v| v.is_object())
         .ok_or("patch must be an object")?;
-    let mut v = read(s)?;
+    let mut v = read_stored(s)?;
     let previous = v.clone();
     // Preserve sensitive environment values echoed by clients as valueRedacted.
     let mut patch = patch.clone();
@@ -202,7 +267,88 @@ pub fn update(s: &State, p: &Value) -> Result<Value, String> {
     }
     normalize_preferences(&previous, &mut v, &patch)?;
     normalize(&mut v, &patch)?;
-    crate::profile::atomic_json(&s.dir.join("settings.json"), &v).map_err(|e| e.to_string())?;
+    if let Some(controls) = s.managed_policy.settings_controls()? {
+        let current = crate::managed_settings_codec::decode(previous.clone())
+            .map_err(|_| "Invalid current managed settings")?;
+        let next = crate::managed_settings_codec::decode(v.clone())
+            .map_err(|_| "Invalid updated managed settings")?;
+        let decoded_patch = crate::managed_settings_codec::decode_patch(patch.clone())
+            .map_err(|_| "Invalid managed settings patch")?;
+        let vetted = match controls
+            .vet_write(&current, &next, &decoded_patch)
+            .map_err(|_| "Invalid managed settings write")?
+        {
+            crate::managed_settings::VetWrite::Allowed(value) => value,
+            crate::managed_settings::VetWrite::Locked { path } => {
+                let organization = s
+                    .managed_policy
+                    .document
+                    .as_ref()
+                    .unwrap()
+                    .organization
+                    .as_str();
+                let message = format!("{path} is managed by {organization} and cannot be changed.");
+                *policy_error = Some(
+                    json!({"operation":"write-managed-setting","managedSetting":path,"managedBy":organization,"message":message}),
+                );
+                return Err(message);
+            }
+        };
+        v = with_native_fields(
+            &v,
+            crate::managed_settings_codec::encode(vetted)
+                .map_err(|_| "Invalid managed settings encoding")?,
+        );
+    }
+    v = s
+        .managed_policy
+        .vet_provider_write_rpc(&previous, &v)
+        .map_err(|error| {
+            let message = error["message"].as_str().unwrap().to_owned();
+            *policy_error = Some(error);
+            message
+        })?;
+    let persisted = if let Some(controls) = s.managed_policy.settings_controls()? {
+        let decoded = crate::managed_settings_codec::decode(v.clone())
+            .map_err(|_| "Invalid managed settings persistence")?;
+        let defaults = crate::managed_settings_codec::defaults();
+        let is_atomic = |key: &str| {
+            matches!(
+                key,
+                "backgroundActivity"
+                    | "automaticGitFetchInterval"
+                    | "providerHealthRefreshInterval"
+                    | "sourceControlWriterModelSelection"
+                    | "reviewGuideModelSelection"
+                    | "textGenerationModelSelection"
+                    | "fallbackModelSelection"
+                    | "pullRequestMergeMethod"
+            ) || defaults.get(key).is_some_and(Value::is_null)
+        };
+        let stripped = strip_defaults(&decoded, &controls.defaults_value, &is_atomic)
+            .unwrap_or_else(|| json!({}));
+        let raw = match std::fs::read(s.dir.join("settings.json")) {
+            Ok(bytes) => serde_json::from_slice(&bytes).map_err(|error| error.to_string())?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Value::Null,
+            Err(error) => return Err(error.to_string()),
+        };
+        let kept = if controls.has_defaults() {
+            controls
+                .keep_stored(stripped, &decoded, &raw, is_atomic)
+                .map_err(|_| "Invalid managed settings stored defaults")?
+        } else {
+            stripped
+        };
+        with_native_fields(
+            &v,
+            crate::managed_settings_codec::encode_sparse(kept)
+                .map_err(|_| "Invalid managed settings sparse encoding")?,
+        )
+    } else {
+        v.clone()
+    };
+    crate::profile::atomic_json(&s.dir.join("settings.json"), &persisted)
+        .map_err(|e| e.to_string())?;
     s.notify();
     if patch.get("providerInstances").is_some()
         || patch.get("projectSettingsOverrides").is_some()
@@ -220,6 +366,7 @@ pub fn update(s: &State, p: &Value) -> Result<Value, String> {
             });
         }
     }
+    v = s.managed_policy.effective_settings(&v)?;
     redact(&mut v);
     Ok(v)
 }
@@ -251,6 +398,9 @@ pub fn config(s: &State) -> Result<Value, String> {
     let (keybindings, issues) = crate::keybind::resolved(s);
     let mut config = json!({"environment":descriptor(s),"directEndpoints":direct_endpoints(s),"auth":auth_descriptor(),"cwd":std::env::current_dir().unwrap_or_default(),"keybindingsConfigPath":s.dir.join("keybindings.json"),"keybindings":keybindings,"issues":issues,"providers":s.provider.lock().unwrap().as_ref().map(|p|p.config()).unwrap_or_default(),"availableEditors":crate::files::available_editors(),"observability":{"logsDirectoryPath":s.dir.join("logs"),"localTracingEnabled":false,"otlpTracesEnabled":false,"otlpMetricsEnabled":false,"otlpLogsEnabled":false},"settings":get(s)?,"shellResumeCompletionMarker":true,"threadResumeCompletionMarker":true,"shellThreadFamilies":false,"shellOlderSettled":false,"threadSnapshotPagination":false});
     config["settingsSupport"] = json!({"enableAgentBrowserAccess":{"supported":true},"projectAgentBrowserAccessOverrides":{"supported":true}});
+    if let Some(summary) = s.managed_policy.basic_summary() {
+        config["managedPolicy"] = summary;
+    }
     startup_catalog(s, &mut config);
     crate::setup::decorate(s, &mut config);
     Ok(config)

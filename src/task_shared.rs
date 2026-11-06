@@ -352,15 +352,20 @@ fn align_webhook_order(target: &Connection, source: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn canonical_json(text: &str) -> Result<String> {
+    let mut value: Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
+    // Keep the established baseline format even when message contexts retain map order.
+    value.sort_all_objects();
+    Ok(value.to_string())
+}
+
 /// Canonicalize JSON columns so property order or whitespace does not invent task edits.
 fn normalized(table: &Table, mut row: Vec<Value>, legacy: bool) -> Result<Vec<Value>> {
     for (column, field) in table.columns.iter().zip(&mut row) {
         if column.ends_with("_json") {
             let text = field.as_str().ok_or("Task JSON column is not text")?;
             let canonical = match *column {
-                _ if legacy => serde_json::from_str::<Value>(text)
-                    .map_err(|e| e.to_string())?
-                    .to_string(),
+                _ if legacy => canonical_json(text)?,
                 "request_json" => serde_json::to_string(
                     &serde_json::from_str::<crate::webhook_payload::Request>(text)
                         .map_err(|e| e.to_string())?,
@@ -371,9 +376,7 @@ fn normalized(table: &Table, mut row: Vec<Value>, legacy: bool) -> Result<Vec<Va
                         .map_err(|e| e.to_string())?,
                 )
                 .map_err(|e| e.to_string())?,
-                _ => serde_json::from_str::<Value>(text)
-                    .map_err(|e| e.to_string())?
-                    .to_string(),
+                _ => canonical_json(text)?,
             };
             *field = json!(canonical);
         }

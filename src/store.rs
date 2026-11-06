@@ -70,6 +70,7 @@ pub struct State {
     pub settings_lock: Mutex<()>,
     pub launch_lock: Mutex<()>,
     pub(crate) shared_export: Mutex<()>,
+    pub(crate) managed_policy: crate::managed_policy::Policy,
     pub changed: tokio::sync::watch::Sender<u64>,
     pub activity: tokio::sync::watch::Sender<u64>,
     /// Live terminal and command-output sources, with their own wake-up channel.
@@ -169,6 +170,19 @@ impl State {
     }
 
     pub fn open(dir: &Path) -> Result<Self, String> {
+        let policy = crate::managed_policy::Policy::load_server().map_err(|e| e.to_string())?;
+        Self::open_with_policy(dir, policy)
+    }
+
+    /// The executable reads its immutable machine policy once before opening the
+    /// profile. Embedded callers use open unless they already performed that read.
+    pub fn open_with_policy(
+        dir: &Path,
+        policy: crate::managed_policy::Policy,
+    ) -> Result<Self, String> {
+        policy
+            .require_enforced(crate::managed_policy::ENFORCED_FAMILIES)
+            .map_err(|e| e.to_string())?;
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
         let mut db = Connection::open(dir.join("o3.sqlite")).map_err(|e| e.to_string())?;
         profiled(&mut db);
@@ -225,6 +239,7 @@ impl State {
             settings_lock: Mutex::new(()),
             launch_lock: Mutex::new(()),
             shared_export: Mutex::new(()),
+            managed_policy: policy,
             provider: Mutex::new(None),
             active: Mutex::new(std::collections::BTreeMap::new()),
             changed,

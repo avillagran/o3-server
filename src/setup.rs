@@ -219,6 +219,7 @@ struct Driver {
     kind: &'static str, // "claudeAgent" | "codex"
     binary: PathBuf,
     environment: Vec<(String, String)>,
+    managed_policy: bool,
 }
 
 fn instance_id(p: &Value) -> Result<&str, Value> {
@@ -266,6 +267,9 @@ fn driver(s: &State, instance: &str, operation: &str) -> Result<Driver, Value> {
             }
         },
     };
+    if let Some(reason) = s.managed_policy.driver_denial(kind) {
+        return Err(setup_error(instance, operation, &reason));
+    }
     let name = if kind == "claudeAgent" {
         "claude"
     } else {
@@ -277,6 +281,7 @@ fn driver(s: &State, instance: &str, operation: &str) -> Result<Driver, Value> {
         kind,
         binary,
         environment: crate::provider::instance_environment(configured),
+        managed_policy: s.managed_policy.document.is_some(),
     })
 }
 
@@ -449,6 +454,7 @@ async fn auth_start(s: &Arc<State>, p: &Value) -> Reply {
         &["auth", "login"]
     };
     let mut cmd = tokio::process::Command::new(&d.binary);
+    crate::managed_policy::provider_host_environment(&mut cmd, d.managed_policy);
     cmd.envs(d.environment.iter().cloned())
         .args(args)
         .stdin(Stdio::piped())
@@ -636,6 +642,7 @@ async fn verify(d: &Driver) -> bool {
 
 async fn run_quiet(d: &Driver, args: &[&str], timeout: Duration) -> Option<(i32, String)> {
     let mut cmd = tokio::process::Command::new(&d.binary);
+    crate::managed_policy::provider_host_environment(&mut cmd, d.managed_policy);
     cmd.envs(d.environment.iter().cloned());
     cmd.args(args)
         .stdin(Stdio::null())
@@ -1109,7 +1116,18 @@ impl Cursor {
             let d = driver(s, &self.instance, "subscribe");
             let mut state = match d {
                 Ok(d) => {
-                    let version = std::process::Command::new(&d.binary)
+                    let mut command = std::process::Command::new(&d.binary);
+                    if d.managed_policy {
+                        for (name, _) in std::env::vars_os() {
+                            if name
+                                .to_string_lossy()
+                                .eq_ignore_ascii_case("T3CODE_CODEX_LAUNCH_ARGS")
+                            {
+                                command.env_remove(name);
+                            }
+                        }
+                    }
+                    let version = command
                         .envs(d.environment.iter().cloned())
                         .arg("--version")
                         .stdin(Stdio::null())

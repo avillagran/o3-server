@@ -622,7 +622,10 @@ fn old_sorted_hashes_upgrade_without_conflicts_or_losing_local_intent() {
                             rusqlite::types::ValueRef::Text(text) => {
                                 let text = std::str::from_utf8(text).unwrap();
                                 json!(if name.ends_with("_json") {
-                                    serde_json::from_str::<Value>(text).unwrap().to_string()
+                                    let mut old: Value = serde_json::from_str(text).unwrap();
+                                    // Reproduce the pre-ordered-context format explicitly.
+                                    old.sort_all_objects();
+                                    old.to_string()
                                 } else {
                                     text.to_owned()
                                 })

@@ -32,8 +32,12 @@ fn failure(message: &str, task: Option<&str>) -> Value {
 pub fn call(s: &Arc<State>, tag: &str, p: &Value) -> Option<Reply> {
     Some(match tag {
         "scheduledTasks.list" => list_view(s, p["_hideWebhook"] == true),
-        "scheduledTasks.upsert" => upsert(s, p).map(|task| json!({"task":task})),
-        "scheduledTasks.setEnabled" => set_enabled(s, p).map(|task| json!({"task":task})),
+        "scheduledTasks.upsert" => {
+            upsert(s, p).map(|task| json!({"task":s.managed_policy.task_view(task)}))
+        }
+        "scheduledTasks.setEnabled" => {
+            set_enabled(s, p).map(|task| json!({"task":s.managed_policy.task_view(task)}))
+        }
         "scheduledTasks.delete" => delete(s, p).map(|id| json!({"id":id})),
         "scheduledTasks.runNow" => run_now(s, p).map(|task| json!({"task":task})),
         "scheduledTasks.listWebhookDeliveries" => history::list(s, p),
@@ -58,7 +62,7 @@ fn list(s: &State) -> Result<Vec<Value>, Value> {
             serde_json::from_str(&row.map_err(|e| failure(&e.to_string(), None))?)
                 .map_err(|e| failure(&e.to_string(), None))?;
         task["threadMode"] = json!(thread_mode(&task));
-        out.push(task);
+        out.push(s.managed_policy.task_view(task));
     }
     Ok(out)
 }
@@ -363,6 +367,11 @@ fn saved_binding(input: &Value, existing: Option<&Value>, mode: &str) -> Value {
 }
 
 fn upsert(s: &Arc<State>, p: &Value) -> Reply {
+    if p["enabled"] == true && p["schedule"]["type"] == "webhook" {
+        if let Some(reason) = s.managed_policy.denial("webhookTasks") {
+            return Err(failure(&reason, p["id"].as_str()));
+        }
+    }
     validate(p)?;
     let now = now_ms();
     let at = iso(now);
@@ -480,6 +489,11 @@ fn set_enabled(s: &Arc<State>, p: &Value) -> Reply {
     let mut task = get(&db, KIND, id).map_err(|_| failure("Schedule task not found.", Some(id)))?;
     if task["enabled"] == enabled {
         return Ok(task);
+    }
+    if enabled && task["schedule"]["type"] == "webhook" {
+        if let Some(reason) = s.managed_policy.denial("webhookTasks") {
+            return Err(failure(&reason, Some(id)));
+        }
     }
     require_future_once(enabled, &task["schedule"], now_ms(), id)?;
     task["enabled"] = json!(enabled);
@@ -644,6 +658,11 @@ pub(crate) fn fire_prompt_key(
         let db = s.db.lock().unwrap();
         let mut task =
             get(&db, KIND, id).map_err(|_| failure("Schedule task not found.", Some(id)))?;
+        if task["schedule"]["type"] == "webhook" {
+            if let Some(reason) = s.managed_policy.denial("webhookTasks") {
+                return Err(failure(&reason, Some(id)));
+            }
+        }
         // T3 markRunning: subscribers see the run before the launch settles.
         let mut running = task.clone();
         running["lastRunAt"] = json!(iso(started));
@@ -747,11 +766,12 @@ pub(crate) fn fire_webhook(
         if completed {
             return Ok(());
         }
+        let policy_block = s.managed_policy.denial("webhookTasks");
         let blocked = if task["createdAt"] != snapshot["createdAt"] {
             Some("The task was replaced before this delivery ran.")
         } else if task["schedule"]["type"] != "webhook" {
             Some("The task's trigger changed before this delivery ran.")
-        } else if let Some(reason) = task["blockedByPolicy"].as_str() {
+        } else if let Some(reason) = policy_block.as_deref() {
             Some(reason)
         } else if task["enabled"] != true {
             Some("The task was paused before this delivery ran.")

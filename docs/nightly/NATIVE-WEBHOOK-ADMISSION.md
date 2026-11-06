@@ -82,12 +82,48 @@ All tests and oracle generation execute in rootless Podman with read-only inputs
 private temporary state and no external network. The official-runtime acceptance
 uses no provider credentials or inference.
 
+## Legacy profile readiness
+
+`o3-server shared-profile-readiness [--base-dir PROFILE]` inspects
+`PROFILE/userdata/o3.sqlite` before server startup, ownership checks, migrations
+or policy loading. It opens the existing database read-only and counts legacy
+`hook_queue` and `hook_replay` rows in one SQLite snapshot. It never drains a
+queue, expires a claim, reads request payloads or creates a missing database.
+Missing databases with orphaned WAL/SHM files, links, corrupt databases and
+unexpected schema objects fail the check.
+
+The version-1 JSON report contains `legacyWebhookReady`,
+`pendingLegacyDeliveries` and `retainedLegacyReplayClaims`. Exit status 0 means
+the diagnostic succeeded; callers must inspect the report, since retained data
+also returns 0. Invalid arguments and unreadable state return 2. A ready report
+certifies this legacy webhook boundary only, not the entire shared profile.
+
+Every retained replay row blocks handover, even when its stored expiry is in
+the past: the legacy admission path checked key presence without consulting
+that expiry. Draining the queue alone cannot preserve duplicate suppression
+when switching to native T3.
+
+The desktop candidate checks this report before stopping O3 to switch to T3
+on a shared profile, then checks again after O3 stops and before T3 starts.
+Start, stop, restart and switch operations share the local control lock.
+Unverifiable or inconsistent reports refuse the switch. Existing data remains
+intact and O3 remains selectable for reconciliation. Starting T3 outside the
+desktop control path bypasses this guard and is not certified by it.
+
+Seven container integration checks cover absent files, retained deliveries and
+claims, committed WAL snapshots, invalid schemas, links and the real diagnostic
+CLI under foreign profile ownership. Desktop integration checks cover refusal
+before any stop/start effect, malformed reports and work admitted during graceful
+shutdown. A lossless legacy migration remains open because those rows do not
+retain the original native request or task snapshot.
+
 ## Remaining work
 
 Relay proof verification, relay-origin URLs, secret providers and global managed
 policy still need implementation and acceptance. Imported ambiguous preparation
 needs its complete ownership/reconciliation path. Legacy accepted O3 rows retain
-only a rendered prompt and expiry, so ownership must not switch with undrained
-legacy work until a safe compatibility boundary is implemented. Complete due-window,
+only a rendered prompt and expiry. The desktop readiness guard prevents switching
+with retained deliveries or replay claims; lossless migration and launches outside
+that control path still need a compatibility boundary. Complete due-window,
 contention, project/thread movement and platform lifecycle comparisons remain in
 the full parity goal.

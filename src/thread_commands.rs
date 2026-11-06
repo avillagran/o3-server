@@ -208,6 +208,7 @@ pub(crate) fn dispatch_scoped(
     if let Some(authority) = authority {
         authority.check(&tx, c)?;
     }
+    crate::managed_policy::check_command(s, &tx, c)?;
     if let Some(r) = tx
         .query_row(
             "SELECT result FROM receipts WHERE command_id=?",
@@ -453,6 +454,8 @@ fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outco
             if run["threadId"] != tid || run["status"] != "queued" {
                 return Err(format!("Run {rid} is not queued."));
             }
+            let prepared = crate::provider_input::normalize_command_context(c)?;
+            let c = prepared.as_ref();
             let text = c["text"].as_str().ok_or("text required")?;
             let mut m = get(tx, "messages", run["userMessageId"].as_str().unwrap_or(""))?;
             m["text"] = json!(text);
@@ -760,12 +763,14 @@ pub(crate) fn handoff(db: &Connection, tid: &str, ordinal: i64) -> Result<String
         let (kind, body) = row.map_err(|e| e.to_string())?;
         let m: Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
         if kind == "messages" {
-            let mut chunk = format!(
-                "{}: {}\n",
-                m["role"].as_str().unwrap_or("unknown"),
-                m["text"].as_str().unwrap_or("")
-            );
-            if !m["context"].is_null() {
+            let text = m["text"].as_str().unwrap_or("");
+            let text = if m["role"] == "user" {
+                crate::provider_input::historical_text(text, m.get("context"))
+            } else {
+                text.to_owned()
+            };
+            let mut chunk = format!("{}: {}\n", m["role"].as_str().unwrap_or("unknown"), text);
+            if !m["context"].is_null() && m["context"].get("version").is_none() {
                 chunk.push_str(&format!("Historical user context: {}\n", m["context"]));
             }
             retain(chunk);

@@ -104,11 +104,7 @@ fn retry_after(text: &str, now: i64) -> Option<i64> {
 
 fn shared_credential(s: &State, host: &str) -> Result<(Option<String>, bool), ()> {
     use base64::Engine;
-    let raw = match std::fs::read(s.dir.join("settings.json")) {
-        Ok(bytes) => serde_json::from_slice::<Value>(&bytes).map_err(|_| ())?,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => json!({}),
-        Err(_) => return Err(()),
-    };
+    let raw = crate::settings::read(s).map_err(|_| ())?;
     let github = &raw["sourceControlHosts"]["github"];
     let stored = &github["tokens"][host];
     let token = if stored == crate::settings::SENTINEL {
@@ -561,6 +557,40 @@ mod tests {
             Ok((None, true)),
             "a configured app account stays distinct from personal fallback"
         );
+    }
+
+    #[test]
+    fn managed_forge_lock_cannot_resurrect_hidden_private_credentials() {
+        assert!(std::path::Path::new("/run/.containerenv").is_file());
+        let path = std::env::temp_dir().join(format!(
+            "o3-forge-managed-secret-{}",
+            crate::store::random_id().unwrap()
+        ));
+        let policy = crate::managed_policy::Policy::parse(
+            &path.join("machine-policy.json"),
+            &json!({"schemaVersion":1,"organization":"Example Corp","settings":{"sourceControlHosts":{"value":{},"locked":true}}}).to_string(),
+        ).unwrap();
+        // Exercise the consumer before enabling the still-gated Settings family.
+        let mut state = State::open(&path).unwrap();
+        state.managed_policy = policy;
+        let stored = json!({"sourceControlHosts":{"github":{"tokens":{"github.com":crate::settings::SENTINEL},"signIns":{"github.com":"hidden-app-session"}}}}).to_string();
+        std::fs::write(state.dir.join("settings.json"), &stored).unwrap();
+        use base64::Engine;
+        let encode =
+            |text: &str| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(text.as_bytes());
+        let secret = state.dir.join("secrets").join(format!(
+            "source-control-{}-{}-{}.bin",
+            encode("github"),
+            encode("tokens"),
+            encode("github.com")
+        ));
+        std::fs::write(&secret, b"hidden-personal-token").unwrap();
+        assert_eq!(shared_credential(&state, "github.com"), Ok((None, false)));
+        assert_eq!(
+            std::fs::read_to_string(state.dir.join("settings.json")).unwrap(),
+            stored
+        );
+        assert_eq!(std::fs::read(secret).unwrap(), b"hidden-personal-token");
     }
 
     async fn star_request(listener: &tokio::net::TcpListener) -> (tokio::net::TcpStream, String) {

@@ -15,12 +15,18 @@ pub mod native_mcp;
 mod repositories;
 pub mod rpc;
 mod rpc_input;
+pub mod shared_readiness;
 pub mod store;
 
 pub use http::{serve, serve_io};
 pub mod command_output;
 mod command_shared;
+mod composer_context;
 pub mod events;
+pub mod managed_limits;
+pub mod managed_policy;
+mod managed_settings;
+mod managed_settings_codec;
 pub mod ops;
 #[cfg(target_os = "linux")]
 mod process_scope;

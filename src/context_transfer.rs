@@ -232,8 +232,19 @@ pub(crate) fn own_items(db: &Connection, tid: &str, through: i64) -> Result<Vec<
         .map_err(|e| e.to_string())?;
     let mut out = vec![];
     for row in rows {
-        let item: Value =
+        let mut item: Value =
             serde_json::from_str(&row.map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+        if item["type"] == "user_message" && item.get("context").is_none() {
+            if let Some(message_id) = item["messageId"].as_str() {
+                if let Ok(message) = get(db, "messages", message_id) {
+                    if message["threadId"] == item["threadId"] {
+                        if let Some(context) = message.get("context") {
+                            item["context"] = context.clone();
+                        }
+                    }
+                }
+            }
+        }
         out.push(item)
     }
     let attempts = list(db, "attempts", tid)?;
@@ -974,6 +985,41 @@ pub(crate) fn delivery(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn portable_history_recovers_preexisting_native_context_without_rewriting_user_text() {
+        let db = Connection::open_in_memory().unwrap();
+        crate::events::initialize(&db).unwrap();
+        let fixture: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/composer-context.json")).unwrap();
+        let case = fixture["projections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| case["label"] == "kind:terminal")
+            .unwrap();
+        let original = case["input"]["text"].as_str().unwrap();
+        let context = json!({"version":1,"records":case["input"]["records"]});
+        put(
+            &db,
+            "runs",
+            "r",
+            "t",
+            &json!({"id":"r","threadId":"t","ordinal":1,"status":"completed"}),
+        )
+        .unwrap();
+        put(&db,"messages","m","t",&json!({"id":"m","threadId":"t","runId":"r","role":"user","text":original,"context":context})).unwrap();
+        let old_item = json!({"id":"i","messageId":"m","threadId":"t","runId":"r","type":"user_message","text":original,"ordinal":1,"status":"completed"});
+        put(&db, "turnItems", "i", "t", &old_item).unwrap();
+        let items = own_items(&db, "t", 1).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["context"], context);
+        let history = crate::handoff_history::message(&items[0]).unwrap();
+        assert_eq!(history["text"], case["expected"]);
+        assert_eq!(get(&db, "messages", "m").unwrap()["text"], original);
+        assert_eq!(get(&db, "turnItems", "i").unwrap(), old_item);
+        let side = crate::handoff_history::side_chat("t", &items);
+        assert!(side.contains("[Terminal: chosen; ref=terminal]"));
+    }
     #[test]
     fn legacy_fork_sources_upgrade_idempotently_without_inventing_native_anchors() {
         let db = Connection::open_in_memory().unwrap();

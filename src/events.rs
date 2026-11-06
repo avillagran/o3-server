@@ -631,6 +631,7 @@ pub(crate) fn dispatch_prepared(
     if let Some(authority) = authority {
         authority.check(&tx, c)?;
     }
+    crate::managed_policy::check_command(s, &tx, c)?;
     crate::command_shared::check_replay(&tx, cid, c["threadId"].as_str())?;
     if let Some(r) = tx
         .query_row(
@@ -830,6 +831,8 @@ pub(crate) fn dispatch_prepared(
         }
         "message.dispatch" => {
             crate::fresh_context::validate(c)?;
+            let prepared = crate::provider_input::normalize_command_context(c)?;
+            let c = prepared.as_ref();
             let mut resolved = c.clone();
             resolved["dispatchMode"] = delivery_mode(s, &tx, &t, c, authority.is_some())?;
             if c["freshContext"] == true
@@ -1508,6 +1511,9 @@ pub(crate) fn message_item(db: &Connection, tid: &str, m: &Value) -> Result<Valu
         .map_err(|e| e.to_string())?;
     let mut item = json!({"id":id,"threadId":tid,"runId":m["runId"],"nodeId":m["nodeId"],"providerThreadId":m["providerThreadId"],"providerTurnId":m["providerTurnId"],"nativeItemRef":null,"parentItemId":null,"ordinal":ordinal,"status":"completed","title":null,"startedAt":m["createdAt"],"completedAt":m["updatedAt"],"updatedAt":m["updatedAt"],"type":if m["role"]=="user"{"user_message"}else{"assistant_message"},"messageId":m["id"],"text":m["text"],"streaming":m["streaming"],"attachments":m["attachments"]});
     if m["role"] == "user" {
+        if let Some(context) = m.get("context") {
+            item["context"] = context.clone();
+        }
         item.as_object_mut().unwrap().remove("streaming");
         if m["freshContext"] == true
             || get(db, "runs", m["runId"].as_str().unwrap_or(""))
@@ -1718,6 +1724,9 @@ pub(crate) fn stage_message(
     at: &str,
     mcp_origin: bool,
 ) -> Result<(Value, String, bool)> {
+    let prepared = crate::provider_input::normalize_command_context(c)?;
+    let c = prepared.as_ref();
+    crate::managed_policy::check_command(s, tx, c)?;
     let tid = c["threadId"].as_str().ok_or("threadId required")?;
     let cid = c["commandId"].as_str().ok_or("commandId required")?;
     if !matches!(

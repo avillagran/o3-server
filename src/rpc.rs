@@ -159,7 +159,7 @@ fn dispatch(s: &Arc<State>, tag: &str, p: &Value) -> Result<Value, Value> {
     match tag {
         "server.getConfig"=>settings::config(s),
         "server.getSettings"=>return settings::get(s).map_err(|message|json!({"_tag":"ServerSettingsError","settingsPath":s.dir.join("settings.json"),"operation":"read","message":message})),
-        "server.updateSettings"=>return settings::update(s,p).map_err(|message|json!({"_tag":"ServerSettingsError","settingsPath":s.dir.join("settings.json"),"operation":"write","message":message})),
+        "server.updateSettings"=>return settings::update_rpc(s,p),
         "projects.mutate"=>return crate::projects::mutate(s,p).map_err(|message|json!({"_tag":"ProjectMutationError","message":message})),
         "orchestration.launchThread"=>return events::launch(s,p).map_err(|message|json!({"_tag":"OrchestrationV2ThreadLaunchError","commandId":p["commandId"],"projectId":p["projectId"],"message":crate::provider_policy::display_error(message)})),
         "orchestration.dispatchCommand"=>return events::dispatch(s,p).map_err(|m|dispatch_command_error(s,p,m)),

@@ -1,0 +1,387 @@
+{
+  "runtime": "0.1.8-nightly.20261106.4262",
+  "source": "packages/contracts/src/managedPolicy.ts; apps/server/src/policy/ManagedPolicy.ts; packages/shared/src/managedPolicyFile.ts",
+  "scope": "Strict schema, provider pin validation, and webhook/client/runtime/update limit semantics; managed setting value enforcement is separately gated.",
+  "cases": [
+    {
+      "name": "minimal",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\"}",
+      "accepted": true
+    },
+    {
+      "name": "trimmed",
+      "json": "{\"schemaVersion\":1,\"organization\":\"\\ufeff  Example Corp \\u00a0\",\"supportUrl\":\" not-an-https-url \"}",
+      "accepted": true
+    },
+    {
+      "name": "schema-number-one",
+      "json": "{\"schemaVersion\":1.0,\"organization\":\"Example Corp\"}",
+      "accepted": true
+    },
+    {
+      "name": "duplicate-key-last-wins",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Old\",\"organization\":\"Example Corp\"}",
+      "accepted": true
+    },
+    {
+      "name": "schema-zero",
+      "json": "{\"schemaVersion\":0,\"organization\":\"Example Corp\"}",
+      "accepted": false
+    },
+    {
+      "name": "schema-two",
+      "json": "{\"schemaVersion\":2,\"organization\":\"Example Corp\"}",
+      "accepted": false
+    },
+    {
+      "name": "schema-string",
+      "json": "{\"schemaVersion\":\"1\",\"organization\":\"Example Corp\"}",
+      "accepted": false
+    },
+    {
+      "name": "schema-boolean",
+      "json": "{\"schemaVersion\":true,\"organization\":\"Example Corp\"}",
+      "accepted": false
+    },
+    {
+      "name": "schema-null",
+      "json": "{\"schemaVersion\":null,\"organization\":\"Example Corp\"}",
+      "accepted": false
+    },
+    {
+      "name": "blank-organization",
+      "json": "{\"schemaVersion\":1,\"organization\":\"\\ufeff \\t\"}",
+      "accepted": false
+    },
+    {
+      "name": "unknown-root",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"futureRestriction\":false}",
+      "accepted": false
+    },
+    {
+      "name": "unknown-limits",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"futureLimit\":false}}",
+      "accepted": false
+    },
+    {
+      "name": "limits-null",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":null}",
+      "accepted": false
+    },
+    {
+      "name": "support-null",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"supportUrl\":null}",
+      "accepted": false
+    },
+    {
+      "name": "settings-empty",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"settings\":{}}",
+      "accepted": true
+    },
+    {
+      "name": "settings-null",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"settings\":null}",
+      "accepted": false
+    },
+    {
+      "name": "runtime-approval-required",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"maxRuntimeMode\":\"approval-required\"}}",
+      "accepted": true
+    },
+    {
+      "name": "runtime-auto-accept-edits",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"maxRuntimeMode\":\"auto-accept-edits\"}}",
+      "accepted": true
+    },
+    {
+      "name": "runtime-auto",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"maxRuntimeMode\":\"auto\"}}",
+      "accepted": true
+    },
+    {
+      "name": "runtime-full-access",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"maxRuntimeMode\":\"full-access\"}}",
+      "accepted": true
+    },
+    {
+      "name": "runtime-unknown",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"maxRuntimeMode\":\"yolo\"}}",
+      "accepted": false
+    },
+    {
+      "name": "connect-false",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"connect\":false}}",
+      "accepted": true
+    },
+    {
+      "name": "connect-true",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"connect\":true}}",
+      "accepted": true
+    },
+    {
+      "name": "connect-none",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"connect\":null}}",
+      "accepted": false
+    },
+    {
+      "name": "connect-0",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"connect\":0}}",
+      "accepted": false
+    },
+    {
+      "name": "webhookTasks-false",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"webhookTasks\":false}}",
+      "accepted": true
+    },
+    {
+      "name": "webhookTasks-true",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"webhookTasks\":true}}",
+      "accepted": true
+    },
+    {
+      "name": "webhookTasks-none",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"webhookTasks\":null}}",
+      "accepted": false
+    },
+    {
+      "name": "webhookTasks-0",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"webhookTasks\":0}}",
+      "accepted": false
+    },
+    {
+      "name": "telemetry-false",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"telemetry\":false}}",
+      "accepted": true
+    },
+    {
+      "name": "telemetry-true",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"telemetry\":true}}",
+      "accepted": true
+    },
+    {
+      "name": "telemetry-none",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"telemetry\":null}}",
+      "accepted": false
+    },
+    {
+      "name": "telemetry-0",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"telemetry\":0}}",
+      "accepted": false
+    },
+    {
+      "name": "browserCookieImport-false",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"browserCookieImport\":false}}",
+      "accepted": true
+    },
+    {
+      "name": "browserCookieImport-true",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"browserCookieImport\":true}}",
+      "accepted": true
+    },
+    {
+      "name": "browserCookieImport-none",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"browserCookieImport\":null}}",
+      "accepted": false
+    },
+    {
+      "name": "browserCookieImport-0",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"browserCookieImport\":0}}",
+      "accepted": false
+    },
+    {
+      "name": "clients-[]",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"clients\":[]}}",
+      "accepted": false
+    },
+    {
+      "name": "clients-['remote']",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"clients\":[\"remote\"]}}",
+      "accepted": true
+    },
+    {
+      "name": "clients-['desktop', 'local-browser']",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"clients\":[\"desktop\",\"local-browser\"]}}",
+      "accepted": true
+    },
+    {
+      "name": "clients-['remote', 'remote']",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"clients\":[\"remote\",\"remote\"]}}",
+      "accepted": true
+    },
+    {
+      "name": "clients-['unknown']",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"clients\":[\"unknown\"]}}",
+      "accepted": false
+    },
+    {
+      "name": "clients-None",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"clients\":null}}",
+      "accepted": false
+    },
+    {
+      "name": "drivers-[]",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"providers\":{\"allowedDrivers\":[]}}}",
+      "accepted": false
+    },
+    {
+      "name": "drivers-['codex']",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"providers\":{\"allowedDrivers\":[\"codex\"]}}}",
+      "accepted": true
+    },
+    {
+      "name": "drivers-['codex', 'codex']",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"providers\":{\"allowedDrivers\":[\"codex\",\"codex\"]}}}",
+      "accepted": true
+    },
+    {
+      "name": "drivers-['codex ']",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"providers\":{\"allowedDrivers\":[\"codex \"]}}}",
+      "accepted": true
+    },
+    {
+      "name": "drivers-['unknown']",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"providers\":{\"allowedDrivers\":[\"unknown\"]}}}",
+      "accepted": false
+    },
+    {
+      "name": "drivers-None",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"providers\":{\"allowedDrivers\":null}}}",
+      "accepted": false
+    },
+    {
+      "name": "pin-empty",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"providers\":{\"instances\":{\"codex\":{}}}}}",
+      "accepted": false
+    },
+    {
+      "name": "pin-locked",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"providers\":{\"instances\":{\"codex\":{\"locked\":true}}}}}",
+      "accepted": true
+    },
+    {
+      "name": "pin-blank-binary",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"providers\":{\"instances\":{\"codex\":{\"locked\":true,\"binaryPath\":\" \"}}}}}",
+      "accepted": false
+    },
+    {
+      "name": "pin-binary",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"providers\":{\"instances\":{\"codex\":{\"locked\":true,\"binaryPath\":\" /managed/codex \"}}}}}",
+      "accepted": true
+    },
+    {
+      "name": "pin-launch",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"providers\":{\"instances\":{\"codex\":{\"locked\":false,\"launchArgs\":\" -c model_provider=corp \"}}}}}",
+      "accepted": true
+    },
+    {
+      "name": "pin-unsupported-launch",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"providers\":{\"instances\":{\"cursor\":{\"locked\":true,\"launchArgs\":\"--flag\"}}}}}",
+      "accepted": false
+    },
+    {
+      "name": "pin-unsupported-binary",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"providers\":{\"instances\":{\"acpRegistry\":{\"locked\":true,\"binaryPath\":\"managed\"}}}}}",
+      "accepted": false
+    },
+    {
+      "name": "pin-pi-launch",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"providers\":{\"instances\":{\"pi\":{\"locked\":true,\"launchArgs\":\"--flag\"}}}}}",
+      "accepted": true
+    },
+    {
+      "name": "pin-future",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"providers\":{\"instances\":{\"codex\":{\"locked\":true,\"future\":false}}}}}",
+      "accepted": false
+    },
+    {
+      "name": "pin-null-environment",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"providers\":{\"instances\":{\"codex\":{\"locked\":true,\"environment\":null}}}}}",
+      "accepted": false
+    },
+    {
+      "name": "pin-environment",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"providers\":{\"instances\":{\"codex\":{\"locked\":true,\"environment\":[{\"name\":\" _TOKEN \",\"value\":\"\"}]}}}}}",
+      "accepted": true
+    },
+    {
+      "name": "pin-duplicate-environment",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"providers\":{\"instances\":{\"codex\":{\"locked\":true,\"environment\":[{\"name\":\"X\",\"value\":\"a\"},{\"name\":\"X\",\"value\":\"b\"}]}}}}}",
+      "accepted": false
+    },
+    {
+      "name": "pin-case-environment",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"providers\":{\"instances\":{\"codex\":{\"locked\":true,\"environment\":[{\"name\":\"Path\",\"value\":\"a\"},{\"name\":\"PATH\",\"value\":\"b\"}]}}}}}",
+      "accepted": true
+    },
+    {
+      "name": "pin-bad-environment",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"providers\":{\"instances\":{\"codex\":{\"locked\":true,\"environment\":[{\"name\":\"BAD-NAME\",\"value\":\"x\"}]}}}}}",
+      "accepted": false
+    },
+    {
+      "name": "pin-future-environment",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"providers\":{\"instances\":{\"codex\":{\"locked\":true,\"environment\":[{\"name\":\"X\",\"value\":\"x\",\"sensitive\":true}]}}}}}",
+      "accepted": false
+    },
+    {
+      "name": "updates-{'mode': 'off'}",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"updates\":{\"mode\":\"off\"}}}",
+      "accepted": true
+    },
+    {
+      "name": "updates-{'mode': 'auto', 'allowNightly': False}",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"updates\":{\"mode\":\"auto\",\"allowNightly\":false}}}",
+      "accepted": true
+    },
+    {
+      "name": "updates-{'mode': 'auto', 'feedUrl': 'HTTPS://updates.example/feed?token=fixture-only'}",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"updates\":{\"mode\":\"auto\",\"feedUrl\":\"HTTPS://updates.example/feed?token=fixture-only\"}}}",
+      "accepted": true
+    },
+    {
+      "name": "updates-{'mode': 'auto', 'feedUrl': 'http://updates.example'}",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"updates\":{\"mode\":\"auto\",\"feedUrl\":\"http://updates.example\"}}}",
+      "accepted": false
+    },
+    {
+      "name": "updates-{'mode': 'auto', 'feedUrl': 'https:///bad'}",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"updates\":{\"mode\":\"auto\",\"feedUrl\":\"https:///bad\"}}}",
+      "accepted": false
+    },
+    {
+      "name": "updates-{'mode': 'auto', 'feedUrl': 'https://?odd'}",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"updates\":{\"mode\":\"auto\",\"feedUrl\":\"https://?odd\"}}}",
+      "accepted": true
+    },
+    {
+      "name": "updates-{'mode': 'auto', 'allowNightly': None}",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"updates\":{\"mode\":\"auto\",\"allowNightly\":null}}}",
+      "accepted": false
+    },
+    {
+      "name": "updates-{'mode': 'auto', 'future': False}",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"updates\":{\"mode\":\"auto\",\"future\":false}}}",
+      "accepted": false
+    },
+    {
+      "name": "updates-{'mode': 'never'}",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"updates\":{\"mode\":\"never\"}}}",
+      "accepted": false
+    },
+    {
+      "name": "updates-{}",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"limits\":{\"updates\":{}}}",
+      "accepted": false
+    },
+    {
+      "name": "invalid-setting-shape-{'value': False, 'locked': True, 'extra': 1}",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"settings\":{\"confirmThreadDelete\":{\"value\":false,\"locked\":true,\"extra\":1}}}",
+      "accepted": false
+    },
+    {
+      "name": "invalid-setting-shape-{'value': False, 'locked': None}",
+      "json": "{\"schemaVersion\":1,\"organization\":\"Example Corp\",\"settings\":{\"confirmThreadDelete\":{\"value\":false,\"locked\":null}}}",
+      "accepted": false
+    }
+  ]
+}

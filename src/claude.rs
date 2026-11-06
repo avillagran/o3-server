@@ -68,6 +68,7 @@ pub struct ClaudeProvider {
     idle_timeout: std::time::Duration,
     environment: Vec<(String, String)>,
     launch_args: Vec<String>,
+    managed_policy: bool,
     metadata: Mutex<Value>,
     sessions: std::sync::Arc<Mutex<HashMap<String, Session>>>,
 }
@@ -126,6 +127,7 @@ impl ClaudeProvider {
             idle_timeout: std::time::Duration::from_secs(60),
             environment: Vec::new(),
             launch_args: Vec::new(),
+            managed_policy: false,
             metadata: Mutex::new(json!({})),
             sessions: std::sync::Arc::new(Mutex::new(HashMap::new())),
         }
@@ -146,6 +148,10 @@ impl ClaudeProvider {
         registry: Option<std::sync::Arc<crate::agent_scope::Registry>>,
     ) -> Self {
         self.agent_scopes = registry;
+        self
+    }
+    pub fn with_managed_policy(mut self, managed: bool) -> Self {
+        self.managed_policy = managed;
         self
     }
     pub fn with_launch_args(mut self, args: Vec<String>) -> Self {
@@ -200,6 +206,7 @@ impl ClaudeProvider {
         let (model, effort, mut settings, _) =
             crate::claude_models::compile(&input.model_selection)?;
         let mut cmd = Command::new(&self.binary);
+        crate::managed_policy::provider_host_environment(&mut cmd, self.managed_policy);
         apply_environment(&mut cmd, &self.environment);
         cmd.env(
             "T3CODE_THREAD_ID",

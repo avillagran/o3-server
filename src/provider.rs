@@ -276,6 +276,46 @@ pub(crate) fn start(
     rid: String,
     text: String,
 ) {
+    let denied = if s.managed_policy.document.is_some() {
+        let db = s.db.lock().unwrap();
+        let thread = crate::events::get(&db, "thread", &tid).unwrap_or_default();
+        let run = crate::events::get(&db, "runs", &rid).unwrap_or_default();
+        let instance = run["providerInstanceId"]
+            .as_str()
+            .or_else(|| thread["providerInstanceId"].as_str())
+            .unwrap_or("");
+        let mode = run["executionPolicy"]["runtimeMode"]
+            .as_str()
+            .or_else(|| thread["runtimeMode"].as_str())
+            .unwrap_or("full-access");
+        crate::managed_policy::check_command(
+            &s,
+            &db,
+            &serde_json::json!({
+                "type":"message.dispatch","threadId":tid,"runtimeMode":mode,
+                "modelSelection":{"instanceId":instance}
+            }),
+        )
+        .err()
+        .map(|reason| (reason, run["activeAttemptId"].as_str().map(str::to_owned)))
+    } else {
+        None
+    };
+    if let Some((reason, attempt)) = denied {
+        let _ = persist_attempt(
+            &s,
+            &tid,
+            &rid,
+            attempt.as_deref(),
+            ProviderEvent::Failed(reason),
+        );
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(async move {
+                crate::thread_commands::advance(&s, &tid);
+            });
+        }
+        return;
+    }
     if let Err(error) = crate::command_shared::provider_fence(&s, &rid) {
         crate::command_shared::defer_provider(&s, &tid, &rid, &error);
         return;
@@ -1595,6 +1635,7 @@ mod restart_tests {
 /// Instance registry. Each configured identity owns its own native process/session pool.
 /// Changed/removed scopes retire before their replacements admit native work.
 pub struct ConfiguredProviders {
+    policy: crate::managed_policy::Policy,
     agent_scopes: Option<std::sync::Arc<crate::agent_scope::Registry>>,
     pub defaults: std::sync::Arc<dyn Provider>,
     pub directory: std::path::PathBuf,
@@ -1615,9 +1656,14 @@ struct Instance {
     continuation_key: Option<String>,
 }
 impl ConfiguredProviders {
+    pub fn with_policy(mut self, policy: crate::managed_policy::Policy) -> Self {
+        self.policy = policy;
+        self
+    }
     pub fn new(defaults: std::sync::Arc<dyn Provider>, directory: std::path::PathBuf) -> Self {
         Self {
             agent_scopes: None,
+            policy: crate::managed_policy::Policy::unmanaged(std::path::PathBuf::new()),
             defaults,
             directory,
             instances: Default::default(),
@@ -1646,7 +1692,29 @@ impl ConfiguredProviders {
         if let Some(current) = current {
             *last = current;
         }
-        last.clone()
+        let mut settings = self.policy.effective_settings(&last).unwrap_or_else(|_| {
+            self.policy.effective_settings(&serde_json::json!({})).unwrap_or_else(|_| serde_json::json!({"providerInstances":{"codex":{"driver":"codex","enabled":false},"claudeAgent":{"driver":"claudeAgent","enabled":false}}}))
+        });
+        if self.policy.document.is_some() {
+            if !settings["providerInstances"].is_object() {
+                settings["providerInstances"] = serde_json::json!({});
+            }
+            for driver in ["codex", "claudeAgent"] {
+                settings["providerInstances"]
+                    .as_object_mut()
+                    .unwrap()
+                    .entry(driver)
+                    .or_insert_with(|| serde_json::json!({"driver":driver}));
+            }
+        }
+        settings
+    }
+    fn driver_denial(&self, instance: &str, settings: &serde_json::Value) -> Option<String> {
+        let id = crate::provider_policy::configured_id(settings, instance);
+        let driver = settings["providerInstances"][id]["driver"]
+            .as_str()
+            .unwrap_or(id);
+        self.policy.driver_denial(driver)
     }
     fn builtin_snapshot(&self) -> (Vec<String>, crate::provider_lifetime::Scopes) {
         let instances = self.instances.lock().unwrap();
@@ -1747,7 +1815,10 @@ impl ConfiguredProviders {
                 driver
             };
             let binary = instance_binary(entry, name);
-            let resolved = crate::provider_home::resolve(entry);
+            let resolved = match self.policy.driver_denial(driver) {
+                Some(reason) => Err(reason),
+                None => crate::provider_home::resolve(entry),
+            };
             let preparation_error = resolved.as_ref().err().cloned();
             let layout = resolved.ok().flatten();
             let continuation_key = layout.as_ref().map(|home| home.continuation_key());
@@ -1770,13 +1841,15 @@ impl ConfiguredProviders {
                             .with_optional_agent_scopes(self.agent_scopes.clone())
                             .with_environment(env)
                             .with_home_setup(setup)
-                            .with_launch_args(args.clone()),
+                            .with_launch_args(args.clone())
+                            .with_managed_policy(self.policy.document.is_some()),
                     )),
                     "claudeAgent" => Some(std::sync::Arc::new(
                         crate::claude::ClaudeProvider::new(binary.clone())
                             .with_optional_agent_scopes(self.agent_scopes.clone())
                             .with_environment(env)
-                            .with_launch_args(args.clone()),
+                            .with_launch_args(args.clone())
+                            .with_managed_policy(self.policy.document.is_some()),
                     )),
                     _ => None,
                 }
@@ -2066,7 +2139,10 @@ impl Provider for ConfiguredProviders {
         control: mpsc::Receiver<ProviderControl>,
         cancel: watch::Receiver<bool>,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
-        self.sync();
+        let settings = self.sync();
+        if let Some(reason) = self.driver_denial(&input.provider_instance_id, &settings) {
+            return Box::pin(async move { Err(reason) });
+        }
         let selected = {
             let instances = self.instances.lock().unwrap();
             instances
