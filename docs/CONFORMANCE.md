@@ -3625,6 +3625,42 @@ out of order. The internal acknowledgement never reaches the public event stream
 This evidence covers the subscription and activation boundaries. It does not
 certify the complete idle-wake, automatic-turn recovery or cross-process handover
 lifecycle, and introduces no deployment.
+
+## 2026-11-06 — Structured terminal provider failures
+
+Failed turns previously retained an error string without the terminal error card
+that current clients render. The supervisor now accepts structured failure fields
+and publishes one error turn item in the same transaction as terminal state.
+Legacy failure strings pass through the common bounded redactor too. Card IDs use
+the upstream provider-item derivation and the owning native turn, or the upstream
+attempt-derived failed-start identity when no native turn was admitted.
+
+Normalization retains class, code, retryability and valid ISO usage reset instants.
+Messages and codes are bounded by UTF-16 length without splitting supplementary
+characters. Redaction removes URL credentials/query/fragment, auth headers, secret
+fields, unsafe controls and recognized token shapes. Unknown defect messages are
+hidden when a structured cause is supplied; curated domain errors and provider
+wrapper guidance use the pinned source wording. Existing adapters that supply an
+explicit string retain their redacted text; their complete typed classification
+remains a separate task.
+
+`tools/generate-provider-failure-fixtures.mjs` executes the original failure module
+with its real Effect dependency and the source ID derivation. Its 243 normalization
+cases and eight terminal cards cover curated errors, redaction boundaries, Unicode,
+lengths, usage-reset fields and startup identity. The expanded comparison found a
+real distinction between ECMAScript `/gu` and `/giu` word boundaries for token
+redaction, which is preserved in the Rust implementation.
+
+Compatible-client checks exercise failed startup, a native-turn failure and a
+usage-limit card, including duplicate terminal delivery, visible-item projection
+and the actual timeline renderer. A transaction-level regression rejects stale
+attempt failures and prevents a second terminal from replacing the first card.
+The existing confirmed-OOM transport case also checks `oom_kill` and the original
+failure class. OOM diagnosis uses the previously validated scope/cgroup mechanism;
+this block introduces no new host memory-pressure experiment.
+
+Exact evidence and remaining limits are in
+[`provider-failure-intake.json`](nightly/provider-failure-intake.json).
 This block is not a complete headless parity certificate; [PARITY.md](PARITY.md)
 includes every headless surface, methods without a current client caller, the new
 RPCs and the migration80 acceptance backlog.

@@ -1473,6 +1473,18 @@ mod tests {
                 .iter()
                 .any(|run| run["status"] == "failed" && run["error"] == "Killed: out of memory.")
         }));
+        let projection = client
+            .rpc("orchestration.getThreadProjection", json!({"threadId":"t"}))
+            .unwrap();
+        let card = projection["turnItems"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["type"] == "error")
+            .expect("confirmed OOM must publish a terminal failure card");
+        assert_eq!(card["failure"]["code"], "oom_kill");
+        assert_eq!(card["failure"]["message"], "Killed: out of memory.");
+        assert_eq!(card["failure"]["class"], "unknown");
     }
 
     #[tokio::test]

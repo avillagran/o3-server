@@ -156,6 +156,7 @@ pub(crate) async fn bounded(s: &State, input: RunInput) -> Option<String> {
                     return (!title.is_empty()).then_some(title);
                 }
                 ProviderEvent::Failed(_)
+                | ProviderEvent::FailedWithDetails(_)
                 | ProviderEvent::Interrupted
                 | ProviderEvent::ApprovalRequest { .. } => return None,
                 ProviderEvent::Native(v) if v["type"] == "permission" => return None,
