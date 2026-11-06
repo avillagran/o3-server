@@ -11,7 +11,22 @@ pub fn auth_descriptor() -> Value {
 pub fn auth_descriptor_for(state: &State) -> Value {
     let mut descriptor = auth_descriptor();
     descriptor["policy"] = serde_json::to_value(state.auth_policy()).unwrap();
-    descriptor["bootstrapMethods"] = json!(["one-time-token"]);
+    descriptor["bootstrapMethods"] = if state
+        .listener_auth
+        .get()
+        .is_some_and(|listener| listener.desktop)
+    {
+        if matches!(
+            state.auth_policy(),
+            crate::managed_limits::AuthPolicy::Remote
+        ) {
+            json!(["desktop-bootstrap", "one-time-token"])
+        } else {
+            json!(["desktop-bootstrap"])
+        }
+    } else {
+        json!(["one-time-token"])
+    };
     descriptor
 }
 pub(crate) type Cache = Option<(Option<(std::time::SystemTime, u64)>, Value)>;

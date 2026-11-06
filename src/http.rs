@@ -86,6 +86,7 @@ async fn body(request: Request<Incoming>) -> Option<Bytes> {
 /// `POST /oauth/token`: RFC 8693 exchange of a pairing secret for a bearer session.
 async fn token(state: &State, request: Request<Incoming>) -> Reply {
     let peer = request.extensions().get::<std::net::IpAddr>().copied();
+    let proof_requested = request.headers().contains_key("dpop");
     {
         let mut window = state.http.token_window.lock().unwrap();
         if window.0.elapsed() >= std::time::Duration::from_secs(1) {
@@ -103,10 +104,12 @@ async fn token(state: &State, request: Request<Incoming>) -> Reply {
         );
     };
     let mut credential = None;
+    let mut requested_scope = None;
     let mut client = json!({});
     for (name, value) in url::form_urlencoded::parse(&form) {
         match name.as_ref() {
             "subject_token" => credential = Some(value.into_owned()),
+            "scope" => requested_scope = Some(value.into_owned()),
             "client_label" | "client_device_type" | "client_os" => {
                 client[name.as_ref()] = value.as_ref().into()
             }
@@ -119,9 +122,30 @@ async fn token(state: &State, request: Request<Incoming>) -> Reply {
             r#"{"code":"invalid_request"}"#.into(),
         );
     };
-    match state.exchange_pairing_from(&credential, &client, peer) {
+    let requested = match requested_scope
+        .as_deref()
+        .map(crate::desktop_auth::parse_requested_scopes)
+    {
+        Some(None) => {
+            return json_reply(
+                StatusCode::BAD_REQUEST,
+                json!({"code":"invalid_scope"}).to_string(),
+            )
+        }
+        Some(Some(scopes)) => Some(scopes),
+        None => None,
+    };
+    // Only bearer sessions are advertised. Never silently downgrade a proof-bound exchange.
+    if proof_requested {
+        return unauthorized();
+    }
+    match state.exchange_pairing_from_scoped(&credential, &client, peer, requested.as_deref()) {
         Ok(Some(result)) => json_reply(StatusCode::OK, result.to_string()),
         Ok(None) => unauthorized(),
+        Err(crate::desktop_auth::ExchangeError::ScopeNotGranted) => json_reply(
+            StatusCode::BAD_REQUEST,
+            json!({"code":"scope_not_granted"}).to_string(),
+        ),
         Err(_) => json_reply(
             StatusCode::INTERNAL_SERVER_ERROR,
             r#"{"code":"internal_error"}"#.into(),

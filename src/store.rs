@@ -73,7 +73,7 @@ pub struct State {
     pub launch_lock: Mutex<()>,
     pub(crate) shared_export: Mutex<()>,
     pub(crate) managed_policy: crate::managed_policy::Policy,
-    pub(crate) listener_auth: std::sync::OnceLock<crate::managed_limits::AuthPolicy>,
+    pub(crate) listener_auth: std::sync::OnceLock<crate::desktop_auth::Listener>,
     pub changed: tokio::sync::watch::Sender<u64>,
     pub activity: tokio::sync::watch::Sender<u64>,
     /// Live terminal and command-output sources, with their own wake-up channel.
@@ -319,14 +319,12 @@ impl State {
 
     /// Listener classification is fixed before request handling begins.
     pub fn configure_web_auth(&self, host: Option<&str>) -> Result<(), String> {
-        self.listener_auth
-            .set(crate::managed_clients::web_auth_policy(host))
-            .map_err(|_| "Listener authentication is already configured".into())
+        self.configure_listener_auth(host, false, None, None)
     }
     pub fn auth_policy(&self) -> crate::managed_limits::AuthPolicy {
         self.listener_auth
             .get()
-            .copied()
+            .map(|listener| listener.policy)
             .unwrap_or(crate::managed_limits::AuthPolicy::LocalBrowser)
     }
     /// Revoke only the native link identities the immutable machine policy disallows.
@@ -439,10 +437,33 @@ impl State {
         client: &Value,
         peer: Option<std::net::IpAddr>,
     ) -> Result<Option<Value>, String> {
+        self.exchange_pairing_from_scoped(credential, client, peer, None)
+            .map_err(|error| match error {
+                crate::desktop_auth::ExchangeError::ScopeNotGranted => {
+                    "The requested authentication scope was not granted".into()
+                }
+                crate::desktop_auth::ExchangeError::Internal(error) => error,
+            })
+    }
+    pub(crate) fn exchange_pairing_from_scoped(
+        &self,
+        credential: &str,
+        client: &Value,
+        peer: Option<std::net::IpAddr>,
+        requested: Option<&[String]>,
+    ) -> Result<Option<Value>, crate::desktop_auth::ExchangeError> {
         if !self.managed_policy.allows_remote()
             && !peer.is_some_and(crate::managed_clients::local_peer)
         {
             return Ok(None);
+        }
+        match self.exchange_desktop(credential, client, peer, requested)? {
+            crate::desktop_auth::Exchange::Session(session) => return Ok(Some(session)),
+            crate::desktop_auth::Exchange::Rejected => return Ok(None),
+            crate::desktop_auth::Exchange::ScopeNotGranted => {
+                return Err(crate::desktop_auth::ExchangeError::ScopeNotGranted)
+            }
+            crate::desktop_auth::Exchange::Unmatched => {}
         }
         let now = now_ms();
         let db = self.db.lock().unwrap();
@@ -453,6 +474,14 @@ impl State {
             return Ok(None);
         }
 
+        if let Some(requested) = requested {
+            let granted:Option<String> = db.query_row("SELECT scopes FROM auth_pairing_links WHERE credential=? AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>?", params![credential,now],|row|row.get(0)).optional().map_err(|error|error.to_string())?;
+            if granted.is_some_and(|granted| {
+                crate::desktop_auth::select_scopes(&granted, Some(requested)).is_none()
+            }) {
+                return Err(crate::desktop_auth::ExchangeError::ScopeNotGranted);
+            }
+        }
         let grant: Option<(String, String, Option<String>)> = db.query_row(
             "UPDATE auth_pairing_links SET consumed_at=?1 WHERE credential=?2 AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>?1 RETURNING scopes,subject,label",
             params![now, credential], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
@@ -460,6 +489,8 @@ impl State {
         let Some((scopes, subject, label)) = grant else {
             return Ok(None);
         };
+        let scopes = crate::desktop_auth::select_scopes(&scopes, requested)
+            .ok_or(crate::desktop_auth::ExchangeError::ScopeNotGranted)?;
         let mut client = client.clone();
         if !client.is_object() {
             client = json!({});

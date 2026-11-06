@@ -2,10 +2,10 @@
 
 Reference: nightly 4288, `32a0531748c44b25072d7495ce0b9bd7e9450a87`.
 
-This checkpoint supplies the envelope codec, inherited-descriptor reader, rotating
-token verifier and process-local desktop grant store. Startup configuration,
-OAuth exchange, launcher ownership/watch and desktop launcher integration remain
-pending. These modules do not advertise a completed desktop authentication flow.
+The foundation supplies the envelope codec, inherited-descriptor reader, rotating
+token verifier and process-local desktop grant store. The following startup and
+bearer integration is a separate checkpoint; full desktop authentication and the
+client-side launcher remain incomplete.
 
 `tools/generate-desktop-bootstrap-fixtures.mjs` executes the native envelope
 schema and token module, then imports the complete native bootstrap reader with
@@ -42,6 +42,43 @@ Credentials have no serialization or debug implementation. Envelopes have no
 serialization implementation and redact their debug representation. Production
 callers must keep these values out of configuration projections, journals,
 pairing tables and diagnostics.
+
+## Startup and bearer integration
+
+`--bootstrap-fd` takes precedence over `T3CODE_BOOTSTRAP_FD`. The first envelope is
+read before profile discovery or persistent state creation. CLI and environment
+mode, host, port and home override their envelope defaults. Explicit web mode
+still accepts the provided desktop seed, matching the native grant store's
+independence from the advertised bootstrap methods. Help, version, diagnostics,
+auth/import/service commands and the private SSH helper bypass envelope intake.
+
+Listener mode and process-local credentials are installed together. The actual
+OAuth HTTP route accepts reusable legacy or rotating desktop credentials and
+atomically replaces active desktop bearer sessions. Unrelated subjects remain
+valid; the seed is never inserted into the pairing-link table. Trusted-peer
+managed-policy checks still precede this exchange. Requested scopes use the
+complete native OAuth parser and actual grant-scope schema as a 398-case oracle.
+Issued scopes preserve requested order, remove duplicates and intersect the
+grant. Rejected scopes do not spend ordinary one-time pairing links or revoke
+the current desktop session. Until proof-bound issuance is implemented, a DPoP
+header is rejected rather than silently producing a bearer credential.
+Native cookie/DPoP issuance,
+the complete OAuth parameter/error taxonomy and all client-policy consumers
+remain separate work; the descriptor does not advertise unimplemented session
+methods.
+
+On Unix, startup captures the launcher parent before envelope intake. A desktop
+server with an envelope and parent greater than one checks every two seconds and
+shuts down on any parent change, including subreaper adoption. The shutdown fence
+is entered before transports close, preserving durable runs. The physical test
+starts a real private launcher/server pair, replaces the parent and checks both
+runtime-registration removal and actual process exit using a stable pidfd.
+
+Browser/telemetry/control channels, resource monitoring, OTLP and bootstrap-driven
+Tailscale Serve still need dedicated consumers. Requests for those channels fail
+explicitly before profile creation. Existing headless service launches are not
+silently relabeled as desktop-managed processes. The client must implement the
+real inherited-FD launcher flow before that integration can be claimed.
 
 Run Rust comparisons through `tools/test-scheduled-modes --unit-filter
 desktop_bootstrap`, with `--default-features` for the other feature mode. Native

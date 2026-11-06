@@ -44,6 +44,7 @@ fn ttl(s: &str) -> std::io::Result<i64> {
         .ok_or_else(|| std::io::Error::other("invalid TTL"))
 }
 fn main() -> std::io::Result<()> {
+    let launcher_parent = o3_server::desktop_startup::parent_id();
     o3_server::heap::configure();
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.first().is_some_and(|s| s == "__document-text") {
@@ -113,7 +114,46 @@ fn main() -> std::io::Result<()> {
     {
         return o3_server::bridge::cli(&args);
     }
-    let base = o3_server::profile::base_dir(&args)?;
+    let is_serving = args
+        .first()
+        .is_none_or(|arg| matches!(arg.as_str(), "serve" | "start") || arg.starts_with('-'));
+    let startup = if is_serving {
+        Some(
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?
+                .block_on(o3_server::desktop_startup::Startup::read(&args))?,
+        )
+    } else {
+        None
+    };
+    let bootstrap = startup
+        .as_ref()
+        .and_then(|startup| startup.envelope.as_ref());
+    let desktop_mode = startup.as_ref().is_some_and(|startup| startup.desktop);
+    let watch_launcher = startup
+        .as_ref()
+        .is_some_and(|startup| startup.parent_watch_enabled(launcher_parent));
+    let mut profile_args = args.clone();
+    let explicit_home = option(&args, "--base-dir")
+        .map(str::to_owned)
+        .or_else(|| std::env::var("T3CODE_HOME").ok());
+    if explicit_home
+        .as_deref()
+        .is_none_or(|home| home.trim().is_empty())
+    {
+        if let Some(home) = bootstrap.and_then(|bootstrap| bootstrap.home()) {
+            if let Some(index) = profile_args
+                .windows(2)
+                .position(|pair| pair[0] == "--base-dir")
+            {
+                profile_args[index + 1] = home.into();
+            } else {
+                profile_args.extend(["--base-dir".into(), home.into()]);
+            }
+        }
+    }
+    let base = o3_server::profile::base_dir(&profile_args)?;
     let dir = base.join("userdata");
     if args.starts_with(&["service".into(), "install".into()]) {
         return o3_server::service::install(&base, args.iter().any(|s| s == "--dry-run"));
@@ -134,19 +174,20 @@ fn main() -> std::io::Result<()> {
     };
     let provider_policy = policy.clone();
     let is_auth = args.first().map(String::as_str) == Some("auth");
-    let is_serving = !is_auth && args.first().map(String::as_str) != Some("import");
     let port = option(&args, "--port")
         .map(str::to_owned)
         .or_else(|| std::env::var("T3CODE_PORT").ok())
+        .or_else(|| bootstrap.map(|bootstrap| bootstrap.port().to_string()))
         .unwrap_or("3773".into());
     let mut host = option(&args, "--host")
         .map(str::to_owned)
         .or_else(|| std::env::var("T3CODE_HOST").ok())
+        .or_else(|| bootstrap.map(|bootstrap| bootstrap.host().to_owned()))
         .unwrap_or("127.0.0.1".into());
     if is_serving {
         let port_number: u16 = port.parse().map_err(std::io::Error::other)?;
         let reachability = o3_server::managed_limits::Reachability {
-            auth_policy: o3_server::managed_clients::web_auth_policy(Some(&host)),
+            auth_policy: o3_server::desktop_startup::auth_policy(Some(&host), desktop_mode),
             host: Some(host.clone()),
             tailscale_serve_enabled: false,
             private_network_only: None,
@@ -189,7 +230,14 @@ fn main() -> std::io::Result<()> {
     state.asset_profile_root = base.clone();
     if is_serving {
         state
-            .configure_web_auth(Some(&host))
+            .configure_listener_auth(
+                Some(&host),
+                desktop_mode,
+                bootstrap.map(|bootstrap| bootstrap.token().to_owned()),
+                bootstrap
+                    .and_then(|bootstrap| bootstrap.secret())
+                    .map(str::to_owned),
+            )
             .map_err(std::io::Error::other)?;
     }
     if args.first().map(String::as_str) == Some("import") {
@@ -415,6 +463,7 @@ fn main() -> std::io::Result<()> {
                 result=&mut serving=>result.map_err(std::io::Error::other)?,
                 _=interrupt.recv()=>Ok(()),
                 _=term.recv()=>Ok(()),
+                _=o3_server::desktop_startup::wait_for_parent_change(launcher_parent,watch_launcher)=>Ok(()),
             };
             state.begin_shutdown();
             if !serving.is_finished() {
