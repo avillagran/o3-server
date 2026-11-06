@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Compile scheduled-task and integrated goal regressions on the host and run them without host writes in Podman."""
 import argparse
+import fcntl
 import json
 import os
 import pathlib
@@ -16,6 +17,7 @@ selection.add_argument("--integration")
 selection.add_argument("--all-tests",action="store_true")
 parser.add_argument("--resume-from", help="With --all-tests, resume at an exact binary filename from retained evidence")
 parser.add_argument("--resume-manifest", type=pathlib.Path, help="Retained result.json supplying the original compiled binary order")
+parser.add_argument("--compile-lock", type=pathlib.Path, help="Serialize compilation while allowing isolated test execution to run independently")
 options=parser.parse_args()
 if (options.resume_from or options.resume_manifest) and not (options.all_tests and options.resume_from and options.resume_manifest):
     parser.error("resume requires --all-tests, --resume-from and --resume-manifest")
@@ -24,7 +26,16 @@ env = dict(os.environ)
 env.setdefault('CARGO_TARGET_DIR', '/var/tmp/o3-server/fresh-context-target')
 env.setdefault('CARGO_BUILD_JOBS', '2')
 targets = [] if options.all_tests else ['--test', options.integration] if options.integration else ['--lib'] if options.unit_filter else ['--lib', '--test', 'scheduled_modes', '--test', 'ops', '--test', 'native_goals', '--test', 'p2_webhook', '--test', 'mcp_launch']
-build = subprocess.run(['cargo', 'test', '--locked', *([] if options.default_features else ['--no-default-features']), *targets, '--no-run', '--message-format=json'], cwd=root, env=env, capture_output=True, text=True)
+compile_lock = None
+try:
+    if options.compile_lock:
+        options.compile_lock.parent.mkdir(parents=True, exist_ok=True)
+        compile_lock = options.compile_lock.open('a')
+        fcntl.flock(compile_lock.fileno(), fcntl.LOCK_EX)
+    build = subprocess.run(['cargo', 'test', '--locked', *([] if options.default_features else ['--no-default-features']), *targets, '--no-run', '--message-format=json'], cwd=root, env=env, capture_output=True, text=True)
+finally:
+    if compile_lock:
+        compile_lock.close()
 if build.returncode:
     for line in build.stdout.splitlines():
         diagnostic = json.loads(line).get("message", {})
