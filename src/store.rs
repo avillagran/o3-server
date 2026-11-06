@@ -199,10 +199,12 @@ impl State {
         let label = std::env::var("O3_LABEL").unwrap_or_else(|_| "o3-server".into());
         let (changed, _) = tokio::sync::watch::channel(0);
         crate::events::initialize(&db)?;
+        let agent_scopes = crate::agent_scope::Registry::new(dir);
         let streams = crate::streams::Hub::new();
+        streams.terminals.set_agent_scopes(agent_scopes.clone());
         streams.terminals.restore(&dir.join("terminal-history"))?;
         Ok(Self {
-            agent_scopes: crate::agent_scope::Registry::new(dir),
+            agent_scopes,
             forge: Default::default(),
             rollback_pending: std::sync::atomic::AtomicBool::new(false),
             http: crate::http::Limits::default(),

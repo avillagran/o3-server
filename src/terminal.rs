@@ -713,6 +713,7 @@ async fn pump(
 // ---------------------------------------------------------------- manager
 
 pub struct Manager {
+    agent_scopes: std::sync::OnceLock<Arc<crate::agent_scope::Registry>>,
     sessions: Mutex<HashMap<(String, String), Arc<Session>>>,
     closed: Mutex<HashSet<(String, String)>>,
     global: Arc<Mutex<Ring>>,
@@ -899,6 +900,7 @@ fn spawn_env(runtime: &Option<BTreeMap<String, String>>) -> Vec<(String, String)
 impl Manager {
     pub fn new(notify: Notifier) -> Arc<Self> {
         Arc::new(Self {
+            agent_scopes: Default::default(),
             sessions: Mutex::default(),
             closed: Mutex::default(),
             global: Arc::default(),
@@ -908,6 +910,9 @@ impl Manager {
             poller: std::sync::atomic::AtomicBool::new(false),
             history_dir: Mutex::new(None),
         })
+    }
+    pub(crate) fn set_agent_scopes(&self, registry: Arc<crate::agent_scope::Registry>) {
+        let _ = self.agent_scopes.set(registry);
     }
     /// Restore bounded snapshots only: processes and environment are never resurrected.
     pub fn restore(&self, dir: &Path) -> Result<(), String> {
@@ -1045,7 +1050,16 @@ impl Manager {
         }
     }
 
-    fn start_session(self: &Arc<Self>, sess: &Arc<Session>, cols: u16, rows: u16, restarted: bool) {
+    async fn start_session(
+        self: &Arc<Self>,
+        sess: &Arc<Session>,
+        cols: u16,
+        rows: u16,
+        restarted: bool,
+    ) {
+        if let Some(registry) = self.agent_scopes.get() {
+            registry.initialize().await;
+        }
         let mut st = sess.st.lock().unwrap();
         Session::stop_process(&mut st);
         st.status = "starting";
@@ -1071,7 +1085,14 @@ impl Manager {
         let mut last_error = String::new();
         let mut spawned = None;
         for shell in &candidates {
-            match pty::spawn_with_scope(shell, Path::new(&st.cwd), &env, cols, rows, st.scoped) {
+            let launch = self.agent_scopes.get().map_or_else(
+                || Ok(crate::agent_scope::TerminalCommand::plain(shell, &env)),
+                |registry| registry.terminal_command(shell, Path::new(&st.cwd), &env),
+            );
+            let launch = launch.map_err(std::io::Error::other).and_then(|launch| {
+                pty::spawn_prepared(&launch, Path::new(&st.cwd), cols, rows, st.scoped)
+            });
+            match launch {
                 Ok(p) => {
                     st.shell_program = shell.clone();
                     spawned = Some(p);
@@ -1127,7 +1148,7 @@ impl Manager {
     }
 
     /// `terminal.open`: start, or reconcile with, the session named by the input.
-    fn open_locked(self: &Arc<Self>, l: &Launch) -> Result<Arc<Session>, Value> {
+    async fn open_locked(self: &Arc<Self>, l: &Launch) -> Result<Arc<Session>, Value> {
         check_cwd(&l.cwd)?;
         let key = (l.thread.clone(), l.terminal.clone());
         let Some(live) = self.get(&key) else {
@@ -1145,7 +1166,7 @@ impl Manager {
                 .insert(key.clone(), sess.clone());
             self.closed.lock().unwrap().remove(&key);
             self.evict_inactive();
-            self.start_session(&sess, cols, rows, false);
+            self.start_session(&sess, cols, rows, false).await;
             return Ok(sess);
         };
         let (cols, rows, restart) = {
@@ -1186,13 +1207,13 @@ impl Manager {
             }
         };
         if restart {
-            self.start_session(&live, cols, rows, false);
+            self.start_session(&live, cols, rows, false).await;
         }
         Ok(live)
     }
 
     /// `terminal.attach`: the session to stream, `None` when it was closed and the client only resumes.
-    fn attach_locked(
+    async fn attach_locked(
         self: &Arc<Self>,
         s: &State,
         p: &Value,
@@ -1217,11 +1238,11 @@ impl Manager {
             if l.cwd.is_empty() {
                 return Err(lookup_error(&key.0, &key.1));
             }
-            return self.open_locked(&l).map(Some);
+            return self.open_locked(&l).await.map(Some);
         };
         let stopped = session.st.lock().unwrap().proc.is_none();
         if !resume && stopped && !l.cwd.is_empty() && restart_if_stopped {
-            return self.open_locked(&l).map(Some);
+            return self.open_locked(&l).await.map(Some);
         }
         let mut st = session.st.lock().unwrap();
         let target = (l.cols.unwrap_or(st.cols), l.rows.unwrap_or(st.rows));
@@ -1369,7 +1390,7 @@ pub async fn call(s: &Arc<State>, tag: &str, p: &Value) -> Result<Value, Value> 
             {
                 return Err(invalid("The thread was deleted."));
             }
-            let sess = m.open_locked(&l)?;
+            let sess = m.open_locked(&l).await?;
             Ok(sess.snapshot())
         }
         "terminal.write" => {
@@ -1466,7 +1487,8 @@ pub async fn call(s: &Arc<State>, tag: &str, p: &Value) -> Result<Value, Value> 
                 st.history.clear();
                 st.pending_ctl.clear();
             }
-            m.start_session(&sess, l.cols.unwrap(), l.rows.unwrap(), true);
+            m.start_session(&sess, l.cols.unwrap(), l.rows.unwrap(), true)
+                .await;
             Ok(sess.snapshot())
         }
         "terminal.close" => {
@@ -1545,7 +1567,7 @@ async fn begin_project_script(
         let sequence = manager
             .get(&(launch.thread.clone(), launch.terminal.clone()))
             .map_or(0, |session| session.st.lock().unwrap().seq);
-        (manager.open_locked(&launch)?, sequence)
+        (manager.open_locked(&launch).await?, sequence)
     };
     let generation = session.st.lock().unwrap().gen;
     let token = if observe {
@@ -1954,7 +1976,7 @@ pub async fn open_stream(s: &Arc<State>, tag: &str, p: &Value) -> Result<Cursor,
             cursor.key = key.clone();
             let _guard = m.lifecycle.lock().await;
             let session = if kind == Kind::Attach {
-                m.attach_locked(s, p, p["resume"] == true)?
+                m.attach_locked(s, p, p["resume"] == true).await?
             } else {
                 Some(m.require(&key)?)
             };
