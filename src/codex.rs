@@ -110,6 +110,30 @@ pub struct CodexProvider {
     client: tokio::sync::Mutex<Option<Client>>,
     actors: lifetime::Actors,
     descriptor: std::sync::Arc<Mutex<Value>>,
+    /// The auth the app-server last reported, with the auth.json timestamp it was read under.
+    auth_seen: Mutex<Option<(Option<std::time::SystemTime>, Value)>>,
+}
+/// Modification time of the credentials file; a sign-in or sign-out rewrites or removes it.
+fn auth_stamp(home: Option<&std::path::Path>) -> Option<std::time::SystemTime> {
+    codex_home(home)
+        .and_then(|d| std::fs::metadata(d.join("auth.json")).ok())
+        .and_then(|m| m.modified().ok())
+}
+/// Writes the `account/read` result into the provider descriptor's auth and status.
+fn apply_auth(d: &mut Value, auth: &Value) {
+    let authenticated = !auth["account"].is_null() || auth["requiresOpenaiAuth"] == false;
+    d["auth"] = json!({"status":if authenticated{"authenticated"}else{"unauthenticated"}});
+    for key in ["email", "workspaceId"] {
+        if let Some(value) = auth["account"].get(key).filter(|v| v.is_string()) {
+            d["auth"][key] = value.clone();
+        }
+    }
+    d["status"] = json!(if authenticated { "ready" } else { "warning" });
+    d["message"] = json!(if authenticated {
+        "Codex app-server initialized"
+    } else {
+        "Codex requires authentication"
+    });
 }
 fn codex_home(home: Option<&std::path::Path>) -> Option<PathBuf> {
     home.map(PathBuf::from)
@@ -201,6 +225,11 @@ impl Default for CodexProvider {
     }
 }
 impl CodexProvider {
+    /// Records the descriptor's current auth against the credentials file it was read under.
+    fn remember_auth(&self) {
+        let auth = self.descriptor.lock().unwrap()["auth"].clone();
+        *self.auth_seen.lock().unwrap() = Some((auth_stamp(self.home.as_deref()), auth));
+    }
     pub fn new(executable: PathBuf, home: Option<PathBuf>) -> Self {
         Self {
             executable: crate::executable::resolve(&executable).unwrap_or(executable),
@@ -210,6 +239,7 @@ impl CodexProvider {
             launch_args: Vec::new(),
             idle_timeout: std::time::Duration::from_secs(60),
             client: tokio::sync::Mutex::new(None),
+            auth_seen: Mutex::new(None),
             actors: Default::default(),
             descriptor: std::sync::Arc::new(Mutex::new(json!({
                 "instanceId":"codex", "driver":"codex", "displayName":"Codex", "enabled":true,
@@ -240,13 +270,21 @@ impl CodexProvider {
         self
     }
     pub async fn probe(&self) -> Result<(), String> {
-        if self
+        let live = self
             .client
             .lock()
             .await
             .as_ref()
-            .is_some_and(|c| !c.0.is_closed())
-        {
+            .filter(|c| !c.0.is_closed())
+            .cloned();
+        if let Some(c) = live {
+            // A running app-server keeps the account it read at startup; ask again so a
+            // sign-in or sign-out made since then shows up without restarting Codex.
+            let auth = c
+                .call("account/read", json!({"refreshToken":false}))
+                .await?;
+            apply_auth(&mut self.descriptor.lock().unwrap(), &auth);
+            self.remember_auth();
             return Ok(());
         }
         if let Some(setup) = &self.home_setup {
@@ -274,11 +312,22 @@ impl CodexProvider {
                 (true, false) => "warning",
             }
         );
-        // Retained limits belong to the last verified identity. A lightweight
-        // availability check must not strip that identity from the observation.
-        if d["usageLimits"].is_null() {
-            d["auth"] = json!({"status":"unknown"});
-        }
+        // Without a running app-server, the credentials file stands in for the account:
+        // keep what the app-server last reported while auth.json is unchanged, report a
+        // fresh sign-in once it changes, and signed out once it is gone. The first turn's
+        // app-server reads the account again. Retained limits belong to the last verified
+        // identity, so an availability check keeps it while the credentials are unchanged.
+        let stamp = auth_stamp(self.home.as_deref());
+        let seen = self.auth_seen.lock().unwrap().clone();
+        let verified = (!d["usageLimits"].is_null() && d["auth"]["status"] == "authenticated")
+            .then(|| d["auth"].clone());
+        d["auth"] = match seen {
+            Some((at, auth)) if at == stamp => auth,
+            _ if credentials_present(self.home.as_deref()) => {
+                verified.unwrap_or_else(|| json!({"status":"authenticated"}))
+            }
+            _ => json!({"status":"unauthenticated"}),
+        };
         d["message"] = json!(if installed {
             "Codex available; starts on first turn, authentication checked then"
         } else {
@@ -386,19 +435,9 @@ impl CodexProvider {
             .as_str()
             .and_then(|a| a.split('/').nth(1))
             .and_then(|a| a.split_whitespace().next()));
-        let authenticated = !auth["account"].is_null() || auth["requiresOpenaiAuth"] == false;
-        d["auth"] = json!({"status":if authenticated{"authenticated"}else{"unauthenticated"}});
-        for key in ["email", "workspaceId"] {
-            if let Some(value) = auth["account"].get(key).filter(|v| v.is_string()) {
-                d["auth"][key] = value.clone();
-            }
-        }
-        d["status"] = json!(if authenticated { "ready" } else { "warning" });
-        d["message"] = json!(if authenticated {
-            "Codex app-server initialized"
-        } else {
-            "Codex requires authentication"
-        });
+        apply_auth(&mut d, &auth);
+        *self.auth_seen.lock().unwrap() =
+            Some((auth_stamp(self.home.as_deref()), d["auth"].clone()));
         d["checkedAt"] = json!(crate::store::iso(crate::store::now_ms()));
         d["models"]=json!(models["data"].as_array().unwrap_or(&vec![]).iter().map(|m|json!({"slug":m["model"],"name":m["displayName"],"isCustom":false,"isDefault":m["isDefault"],"capabilities":model_capabilities(m)})).collect::<Vec<_>>());
         Ok(c)
@@ -945,6 +984,13 @@ impl Provider for CodexProvider {
                     Some(&auth),
                     response["accountId"].as_str(),
                 );
+                // The probe read the account under the current credentials; keep that
+                // identity for availability checks until auth.json changes.
+                let seen = probe.auth_seen.lock().unwrap().clone();
+                if let Some((stamp, _)) = seen {
+                    let auth = self.descriptor.lock().unwrap()["auth"].clone();
+                    *self.auth_seen.lock().unwrap() = Some((stamp, auth));
+                }
                 Ok::<_, String>(())
             }
             .await;
@@ -1463,9 +1509,11 @@ mod tests {
         // HOME and OPENAI_API_KEY can sign a developer in, so only assert the file-based branch.
         if std::env::var_os("OPENAI_API_KEY").is_none() {
             assert_eq!(provider.config()[0]["status"], "warning");
+            assert_eq!(provider.config()[0]["auth"]["status"], "unauthenticated");
         }
         std::fs::write(dir.join("auth.json"), "{}").unwrap();
         provider.probe().await.unwrap();
+        assert_eq!(provider.config()[0]["auth"]["status"], "authenticated");
         assert!(
             provider.client.lock().await.is_none(),
             "readiness spawned app-server"
@@ -1475,6 +1523,38 @@ mod tests {
         assert_eq!(config[0]["status"], "ready");
         // The real client rule: only `ready` providers offer their models.
         assert_eq!(config[0]["models"][0]["slug"], "a");
+    }
+    #[tokio::test]
+    async fn sign_in_after_an_unauthenticated_read_shows_without_spawning() {
+        let dir = std::env::temp_dir().join(format!("o3-codex-resign-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("auth.json"), "{}").unwrap();
+        let script =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/codex/mock-server.py");
+        let provider = CodexProvider::new(script, Some(dir.clone()));
+        // The app-server read the account while auth.json was being replaced by a login.
+        *provider.auth_seen.lock().unwrap() =
+            Some((auth_stamp(Some(&dir)), json!({"status":"unauthenticated"})));
+        provider.probe().await.unwrap();
+        assert_eq!(provider.config()[0]["auth"]["status"], "unauthenticated");
+        // The login finishes and rewrites the credentials file.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(dir.join("auth.json"), "{\"tokens\":{}}").unwrap();
+        provider.probe().await.unwrap();
+        let signed_in = provider.config()[0]["auth"]["status"].clone();
+        assert!(
+            provider.client.lock().await.is_none(),
+            "probe spawned app-server"
+        );
+        // Signing out removes the file.
+        std::fs::remove_file(dir.join("auth.json")).unwrap();
+        provider.probe().await.unwrap();
+        let signed_out = provider.config()[0]["auth"]["status"].clone();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(signed_in, "authenticated");
+        if std::env::var_os("OPENAI_API_KEY").is_none() {
+            assert_eq!(signed_out, "unauthenticated");
+        }
     }
     #[test]
     fn models_come_from_the_cache_without_spawning() {
