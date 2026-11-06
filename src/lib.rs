@@ -35,6 +35,7 @@ pub mod provider;
 mod provider_failure;
 mod provider_policy;
 pub mod pty;
+mod relay_origin;
 pub mod routes;
 pub mod scheduled;
 pub mod scopes;

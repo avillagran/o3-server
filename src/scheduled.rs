@@ -32,24 +32,28 @@ fn failure(message: &str, task: Option<&str>) -> Value {
 pub fn call(s: &Arc<State>, tag: &str, p: &Value) -> Option<Reply> {
     Some(match tag {
         "scheduledTasks.list" => list_view(s, p["_hideWebhook"] == true),
-        "scheduledTasks.upsert" => {
-            upsert(s, p).map(|task| json!({"task":s.managed_policy.task_view(task)}))
-        }
+        "scheduledTasks.upsert" => upsert(s, p).map(|task| json!({"task":present(s, task)})),
         "scheduledTasks.setEnabled" => {
-            set_enabled(s, p).map(|task| json!({"task":s.managed_policy.task_view(task)}))
+            set_enabled(s, p).map(|task| json!({"task":present(s, task)}))
         }
         "scheduledTasks.delete" => delete(s, p).map(|id| json!({"id":id})),
-        "scheduledTasks.runNow" => run_now(s, p).map(|task| json!({"task":task})),
+        "scheduledTasks.runNow" => run_now(s, p).map(|task| json!({"task":present(s, task)})),
         "scheduledTasks.listWebhookDeliveries" => history::list(s, p),
         "scheduledTasks.getWebhookDelivery" => history::get(s, p),
         "scheduledTasks.rotateWebhookToken" => {
-            rotate_webhook_token(s, p).map(|task| json!({"task":task}))
+            rotate_webhook_token(s, p).map(|task| json!({"task":present(s, task)}))
         }
         _ => return None,
     })
 }
 
+fn present(s: &State, task: Value) -> Value {
+    let base = crate::relay_origin::from_private_directory(&s.dir);
+    crate::relay_origin::decorate(s.managed_policy.task_view(task), base.as_deref())
+}
+
 fn list(s: &State) -> Result<Vec<Value>, Value> {
+    let base = crate::relay_origin::from_private_directory(&s.dir);
     let db = s.db.lock().unwrap();
     // T3 listRows: newest first, then task id.
     let mut q = db.prepare("SELECT body FROM records WHERE kind=? ORDER BY json_extract(body,'$.createdAt') DESC, id ASC").map_err(|e| failure(&e.to_string(), None))?;
@@ -62,7 +66,10 @@ fn list(s: &State) -> Result<Vec<Value>, Value> {
             serde_json::from_str(&row.map_err(|e| failure(&e.to_string(), None))?)
                 .map_err(|e| failure(&e.to_string(), None))?;
         task["threadMode"] = json!(thread_mode(&task));
-        out.push(s.managed_policy.task_view(task));
+        out.push(crate::relay_origin::decorate(
+            s.managed_policy.task_view(task),
+            base.as_deref(),
+        ));
     }
     Ok(out)
 }
