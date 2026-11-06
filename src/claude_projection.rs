@@ -82,7 +82,37 @@ pub(crate) fn persist(
         format!("claude-turn-{aid}")
     };
     match f["type"].as_str().unwrap_or("") {
+        "goal_message" | "goal_checked" => {
+            if let Some(id) = t["activeProviderThreadId"].as_str() {
+                let Ok(provider) = get(db, "providerThreads", id) else {
+                    return Ok(());
+                };
+                if f["type"] == "goal_checked" {
+                    if provider["goal"]["status"] == "active" {
+                        run["claudeGoalChecked"] = json!(true);
+                    }
+                } else if let Some(goal) =
+                    crate::native_goal::claude(&provider["goal"], &f["message"])
+                {
+                    crate::native_goal::publish(
+                        db,
+                        tid,
+                        t,
+                        provider["nativeThreadRef"]["nativeId"]
+                            .as_str()
+                            .unwrap_or(""),
+                        goal,
+                        at,
+                    )?;
+                }
+            }
+        }
         "session" => {
+            run["claudeGoalChecked"] = json!(false);
+            run["claudeTerminalReason"] = Value::Null;
+            if let Some(run) = run.as_object_mut() {
+                run.remove("codexGoalMessageSuffix");
+            }
             let native = f["session_id"].as_str().ok_or("session id missing")?;
             crate::native_recovery::bound(db, run, native)?;
             let owned = t["activeProviderThreadId"]
@@ -423,6 +453,7 @@ pub(crate) fn persist(
             append(db, tid, "thread.metadata-updated", t.clone(), t)?;
         }
         "usage" => {
+            run["claudeTerminalReason"] = f["terminal_reason"].clone();
             // Store only the current result's accounting, never the CLI transcript.
             put(db, "claudeUsage", rid, tid, f)?;
             if let Ok(mut turn) = get(db, "providerTurns", &turn_id) {
@@ -469,6 +500,36 @@ pub(crate) fn finish(
     status: &str,
 ) -> Result<(), String> {
     let run = get(db, "runs", rid).unwrap_or_default();
+    if status == "completed"
+        && run["claudeGoalChecked"] == true
+        && (run["claudeTerminalReason"].is_null() || run["claudeTerminalReason"] == "completed")
+    {
+        if let Some(id) = t["activeProviderThreadId"].as_str() {
+            if let Ok(provider) = get(db, "providerThreads", id) {
+                if provider["goal"]["status"] == "active"
+                    && provider["pendingBackgroundTasks"]
+                        .as_array()
+                        .is_none_or(|tasks| tasks.is_empty())
+                {
+                    let mut goal =
+                        json!({"objective":provider["goal"]["objective"],"status":"complete"});
+                    if let Some(checks) = provider["goal"].get("checks") {
+                        goal["checks"] = checks.clone();
+                    }
+                    crate::native_goal::publish(
+                        db,
+                        tid,
+                        t,
+                        provider["nativeThreadRef"]["nativeId"]
+                            .as_str()
+                            .unwrap_or(""),
+                        goal,
+                        at,
+                    )?;
+                }
+            }
+        }
+    }
     let aid = run["activeAttemptId"]
         .as_str()
         .map(str::to_owned)

@@ -3452,3 +3452,38 @@ The protocol-client background, legacy identity, restart and interrupt cases pas
 This corrects premature settlement during an owned run. It does not establish complete
 idle-session wake routing or native goal projection parity, and does not replay failed
 commands or infer that all provider errors are safe to retry.
+
+
+## 2026-11-06 — Provider-native goals and owned automatic turns
+
+Reference: nightly4262, `c55db3e9c72fdf584f4b54192fb39beb88667b59`.
+The Codex adapter previously submitted `/goal` as ordinary inference text and
+closed a successful native turn without owning the next automatic goal turn.
+
+Control-only commands now use native goal APIs and synthetic provider turns with
+no native rollback reference. Set validates the 4000-character Unicode objective
+limit before changing the current goal, installs it paused, starts with the run's
+captured execution settings, and activates only afterward. Resume uses empty native
+input. Goal turns remain one app run while their provider turns and messages close
+separately. The five-second continuation grace pauses a goal before releasing its
+run. Stop can proceed while activation is pending; later acknowledgements and native
+orphan turns are fenced and stopped. Request responses cannot overwrite newer goal
+notifications. Explicit user provenance is kept for Codex0.167 compatibility.
+
+Claude acknowledgements and synthetic Stop-hook feedback update the goal projection.
+A successful checked root can complete the goal. Child output, unverified command
+acknowledgements, failed turns and non-completion terminal reasons cannot do so.
+
+`tools/generate-native-goal-fixtures.mjs` executes 49 cases through the pinned
+upstream parser and goal normalizers. `tests/native_goals.rs` drives the real
+Connection through control commands, fast completion, automatic continuation,
+Stop/activation races, late orphan starts, cleared goals, resume, rollback references,
+Unicode objective limits and failed replacements. Installed Codex0.166/0.167 and
+Claude Haiku have separate isolated-state proofs. The installed Codex continuation
+proof requires PHASE_ONE and PHASE_TWO in separate native turns within one app run,
+with terminal assistant messages and a completed native goal.
+
+Exact validation and remaining limits: [native-goal-intake.json](nightly/native-goal-intake.json).
+This block is not a complete headless parity certificate; [PARITY.md](PARITY.md)
+includes every headless surface, methods without a current client caller, the new
+RPCs and the migration80 acceptance backlog.

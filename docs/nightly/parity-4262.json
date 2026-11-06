@@ -1,0 +1,1107 @@
+{
+  "reference": {
+    "tag": "v0.1.8-nightly.20261106.4262",
+    "commit": "c55db3e9c72fdf584f4b54192fb39beb88667b59",
+    "publishedAt": "2026-11-06T07:48:27Z",
+    "url": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.8-nightly.20261106.4262"
+  },
+  "scope": "All headless protocol and observable behavior; unused methods remain in scope. Source discovery is not behavioral certification.",
+  "publicMethodCount": 211,
+  "untrackedMethods": [
+    "orchestration.getThreadTitles",
+    "sourceControl.star"
+  ],
+  "sharedState": {
+    "acceptedO3Migration": 73,
+    "referenceMigration": 80,
+    "pendingMigrations": [
+      "074_ExcludeAttachmentPlaceholdersFromSearch.ts",
+      "075_SubagentDeliveryState.ts",
+      "076_ProjectionProjectsPinArchive.ts",
+      "077_RepairBooleanSettledOverride.ts",
+      "078_DropOrchestrationEventCorrelationIndex.ts",
+      "079_DelegatedRecoveryIndexes.ts",
+      "080_ScheduledTaskThreadMode.ts"
+    ],
+    "status": "requires isolated migration and reducer acceptance"
+  },
+  "methods": [
+    {
+      "name": "agentSessions.import",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "agentSessions.scan",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "assets.createUrl",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "assets.persistChatAttachments",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "attachments.createUploadUrl",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "attachments.delete",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "cloud.getRelayClientStatus",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "cloud.installRelayClient",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "device.action",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "device.close",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "device.configure",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "device.detail",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "device.easAccount",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "device.list",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "device.open",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "device.shutdown",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "device.simlockIdentity",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "device.testHost",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "filesystem.browse",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "filesystem.getMetadata",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "git.preparePullRequestThread",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "git.resolvePullRequest",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "git.runStackedAction",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "guestShare.create",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "mcpApps.callTool",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "mcpApps.readResource",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "mcpApps.toolInfo",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "mcpApps.updateModelContext",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "orchestration.dispatchCommand",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "orchestration.forceStopThread",
+      "legacyStatus": "todo",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "orchestration.getArchivedShellSnapshot",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "orchestration.getFullThreadDiff",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "orchestration.getNativeChildWork",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "orchestration.getOlderSettledThreads",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "orchestration.getThreadFamily",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "orchestration.getThreadProjection",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "orchestration.getThreadTitles",
+      "legacyStatus": "untracked",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "orchestration.getTurnDiff",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "orchestration.getTurnItem",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "orchestration.getWorkflowScript",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "orchestration.getWorktreeThreadIds",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "orchestration.launchThread",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "orchestration.searchThread",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "orchestration.searchThreadStream",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "orchestration.searchThreads",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "orchestration.stopWorkflow",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "orchestration.subscribeCommandOutput",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "orchestration.subscribeShell",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "orchestration.subscribeThread",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "peerLinks.answerRequest",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "peerLinks.link",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "peerLinks.list",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "peerLinks.unlink",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "preview.adjust",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "preview.clearProfile",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "preview.close",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "preview.list",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "preview.open",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "preview.reportProfiles",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "preview.reportStatus",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "preview.resize",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "preview.stopLocalServer",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "projectClone.cancel",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "projectClone.retry",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "projectClone.start",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "projects.createFromThread",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "projects.createNew",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "projects.ensureScratch",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "projects.listEntries",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "projects.listIgnoredFiles",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "projects.mutate",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "projects.readFile",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "projects.searchContents",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "projects.searchEntries",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "projects.writeFile",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "provider.auth.cancel",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "provider.auth.complete",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "provider.auth.logout",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "provider.auth.respond",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "provider.auth.start",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "provider.auth.subscribe",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "provider.chatgpt.handoff.subscribe",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "provider.chatgpt.import-profile",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "provider.chatgpt.reconnect-profile",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "provider.consumeResetCredit",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "provider.install.cancel",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "provider.install.remove",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "provider.install.start",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "provider.install.subscribe",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "provider.uploadFeedback",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.activity",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.changeBreakdown",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.checks",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.comment",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.detail",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.diffFileContents",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.filesViewed",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.filterOptions",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.generateReviewGuide",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.invalidate",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.labelCandidates",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.linkedThreads",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.list",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.listStats",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.preview",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.replyToThread",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.reportState",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.requestReviewers",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.reviewGuide",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.reviewerCandidates",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.routing",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.routingIdentity",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.runAction",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.setFilesViewed",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.setLabels",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.setReaction",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.setThreadResolution",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.stack",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.submitReview",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.subscribeRefreshes",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.summary",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.threadComments",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.update",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "pullRequests.updateComment",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "review.getBranchCommits",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "review.getDiffFileContents",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "review.getDiffPreview",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "scheduledTasks.delete",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "scheduledTasks.getWebhookDelivery",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "scheduledTasks.listWebhookDeliveries",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "scheduledTasks.rotateWebhookToken",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "scheduledTasks.runNow",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "scheduledTasks.setEnabled",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "scheduledTasks.subscribe",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "scheduledTasks.upsert",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "secrets.answerRequest",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.acceptAcpRegistryUrlAuth",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.checkOtlpEndpoint",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.commitDesktopUpdate",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.deleteAcpRegistrySession",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.disableAcpRegistryProvider",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.discoverSourceControl",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.getConfig",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.getDatabaseStorage",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.getHostResources",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.getNpmRelease",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.getProcessDiagnostics",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.getProcessResourceHistory",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.getResourceTelemetryHistory",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.getStorageCleanupReport",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.getTraceDiagnostics",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.getUsageSummary",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.importAcpRegistrySession",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.listAcpRegistryProviders",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.listAcpRegistrySessions",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.logoutAcpRegistry",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.prepareAcpRegistryAgent",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.prepareTriage",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.probe",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.refreshProviders",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.refreshUsageRates",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.removeKeybinding",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.reportClientActivity",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.retryResourceTelemetry",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.runStorageCleanup",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.searchAcpRegistry",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.setAcpRegistryProvider",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.signalProcess",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.uninstallAcpRegistryManagedBinary",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.updateProvider",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.updateServer",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.updateServerWithProgress",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.updateSettings",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "server.upsertKeybinding",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "shell.openInEditor",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "sourceControl.appAccess",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "sourceControl.cloneRepository",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "sourceControl.lookupRepository",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "sourceControl.publishRepository",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "sourceControl.signInCancel",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "sourceControl.signInStart",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "sourceControl.signInWait",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "sourceControl.star",
+      "legacyStatus": "untracked",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "sourceControl.starred",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "subscribeAuthAccess",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "subscribeDeviceState",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "subscribeDiscoveredLocalServers",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "subscribePreviewEvents",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "subscribeProjectClones",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "subscribeResourceTelemetry",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "subscribeServerConfig",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "subscribeServerLifecycle",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "subscribeTerminalMetadata",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "subscribeVcsStatus",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "subscribeWorktreeSetup",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "terminal.attach",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "terminal.clear",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "terminal.close",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "terminal.observe",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "terminal.open",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "terminal.resize",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "terminal.write",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "vcs.createRef",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "vcs.createWorktree",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "vcs.init",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "vcs.listRefs",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "vcs.pull",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "vcs.refreshStatus",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "vcs.removeWorktree",
+      "legacyStatus": "skip",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "vcs.switchRef",
+      "legacyStatus": "done",
+      "nightly4262Status": "requires behavioral comparison"
+    },
+    {
+      "name": "worktreeSetup.cancel",
+      "legacyStatus": "partial",
+      "nightly4262Status": "requires behavioral comparison"
+    }
+  ],
+  "legacyMethodsNotDiscovered": [
+    "orchestration.subscribeArchivedShell",
+    "preview.navigate",
+    "preview.refresh",
+    "provider.codex.auth-callback.subscribe",
+    "scheduledTasks.list",
+    "server.getBackgroundPolicy",
+    "server.getSettings",
+    "server.reportHostPowerState",
+    "subscribeBackgroundPolicy",
+    "subscribeTerminalEvents",
+    "terminal.restart"
+  ],
+  "nextBlocks": [
+    "native goal lifecycle and ownership",
+    "shared migration 74-80 acceptance",
+    "new and partially implemented public RPCs",
+    "idle wake and native child continuation routing",
+    "all provider drivers and registry scopes",
+    "MCP secrets and cross-thread delivery",
+    "HTTP/CLI/auth/stream and resource conformance"
+  ]
+}

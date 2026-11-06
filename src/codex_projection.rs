@@ -94,6 +94,24 @@ pub(crate) fn persist(
     let id = format!("codex-item-{root}-{native_item}");
     let mut base = json!({"id":id,"threadId":tid,"runId":rid,"nodeId":root,"providerThreadId":pt,"providerTurnId":pv,"nativeItemRef":{"driver":"codex","nativeId":native_item,"strength":"strong"},"parentItemId":null,"ordinal":db.query_row("SELECT coalesce(max(json_extract(body,'$.ordinal')),-1)+1 FROM records WHERE kind='turnItems' AND thread_id=?",[tid],|r|r.get::<_,i64>(0)).map_err(|e|e.to_string())?,"status":"running","title":null,"startedAt":at,"completedAt":null,"updatedAt":at});
     match method {
+        "o3/goal" => {
+            crate::native_goal::publish(db, tid, thread, native_thread, p["goal"].clone(), at)?
+        }
+        "o3/goal-turn-completed" => {
+            if let Ok(mut turn) = get(db, "providerTurns", &pv) {
+                turn["status"] = json!("completed");
+                turn["completedAt"] = json!(at);
+                record(
+                    db,
+                    tid,
+                    thread,
+                    "providerTurns",
+                    "provider-turn.updated",
+                    turn,
+                )?;
+            }
+            crate::provider::finish_assistant_message(db, tid, rid, thread, run, at)?;
+        }
         "o3/binding" => {
             crate::native_recovery::bound(db, run, native_thread)?;
             let mut t = thread.clone();
@@ -132,17 +150,24 @@ pub(crate) fn persist(
             }
         }
         "turn/started" => {
+            if p["o3GoalTurn"] == true {
+                run["codexGoalMessageSuffix"] = json!(native_turn);
+            } else if let Some(run) = run.as_object_mut() {
+                run.remove("codexGoalMessageSuffix");
+            }
             let turn_ordinal=get(db,"providerTurns",&pv).ok().and_then(|v|v["ordinal"].as_i64()).unwrap_or(db.query_row("SELECT coalesce(max(json_extract(body,'$.ordinal')),0)+1 FROM records WHERE kind='providerTurns' AND thread_id=?1 AND json_extract(body,'$.providerThreadId')=?2",rusqlite::params![tid,pt],|r|r.get::<_,i64>(0)).map_err(|e|e.to_string())?);
             run["status"] = json!("running");
             run["rootNodeId"] = json!(root);
             run["codexProviderTurnId"] = json!(pv);
             run["activeAttemptId"] = json!(aid);
-            run["startedAt"] = json!(at);
+            if run["startedAt"].is_null() {
+                run["startedAt"] = json!(at);
+            }
             for (kind, event, v) in [
                 (
                     "providerTurns",
                     "provider-turn.updated",
-                    json!({"id":pv,"providerThreadId":pt,"nodeId":root,"runAttemptId":aid,"ordinal":turn_ordinal,"nativeTurnRef":{"driver":"codex","nativeId":native_turn,"strength":"strong"},"status":"running","startedAt":at,"completedAt":null}),
+                    json!({"id":pv,"providerThreadId":pt,"nodeId":root,"runAttemptId":aid,"ordinal":turn_ordinal,"nativeTurnRef":if p["o3GoalCommand"] == true {Value::Null}else{json!({"driver":"codex","nativeId":native_turn,"strength":"strong"})},"status":"running","startedAt":at,"completedAt":null}),
                 ),
                 (
                     "nodes",

@@ -978,6 +978,29 @@ fn decode_with_continuation(v: &Value, awaiting_continuation: bool) -> Vec<Provi
             out.push(ProviderEvent::Native(json!({"type":"task","frame":v})))
         }
         "assistant" | "user" => {
+            if v["parent_tool_use_id"].is_null() {
+                if v["type"] == "assistant" && v["message"]["model"] != "<synthetic>" {
+                    out.push(ProviderEvent::Native(json!({"type":"goal_checked"})));
+                } else if v["message"]["model"] == "<synthetic>"
+                    || (v["type"] == "user" && v["isSynthetic"] == true)
+                {
+                    let text = crate::native_goal::claude_text(v);
+                    if crate::native_goal::trim(&text).starts_with("Goal ")
+                        || crate::native_goal::trim(&text).starts_with("No goal set")
+                        || text.starts_with("Stop hook feedback:\n[")
+                    {
+                        out.push(ProviderEvent::Native(
+                            json!({"type":"goal_message","message":v}),
+                        ));
+                        if v["type"] == "assistant"
+                            && (crate::native_goal::trim(&text).starts_with("Goal active: ")
+                                || crate::native_goal::trim(&text).starts_with("No goal set"))
+                        {
+                            out.push(ProviderEvent::TextDelta(text));
+                        }
+                    }
+                }
+            }
             if let Some(content) = v["message"]["content"].as_array() {
                 for block in content {
                     if matches!(block["type"].as_str(), Some("tool_use" | "tool_result")) {
@@ -1035,7 +1058,7 @@ fn decode_with_continuation(v: &Value, awaiting_continuation: bool) -> Vec<Provi
             {
                 return out;
             }
-            out.push(ProviderEvent::Native(json!({"type":"usage","usage":v["usage"],"modelUsage":v["modelUsage"],"cost":v["total_cost_usd"],"session_id":v["session_id"],"origin":v["origin"],"num_turns":v["num_turns"],"subtype":v["subtype"]})));
+            out.push(ProviderEvent::Native(json!({"type":"usage","usage":v["usage"],"modelUsage":v["modelUsage"],"cost":v["total_cost_usd"],"session_id":v["session_id"],"origin":v["origin"],"num_turns":v["num_turns"],"subtype":v["subtype"],"terminal_reason":v["terminal_reason"]})));
             out.push(if v["is_error"] == true || v["subtype"] != "success" {
                 ProviderEvent::Failed(v["result"].as_str().unwrap_or("Claude turn failed").into())
             } else {
