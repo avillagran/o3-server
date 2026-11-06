@@ -81,7 +81,7 @@ cleanup, OOM diagnosis and shared Codex protection. Source helpers agree on 163
 executed cases, and private peers exercise configured native transports and the
 compatible client's OOM response. A real systemd user manager in a disposable
 container also verifies detached-child cleanup, shared-process protection, a
-kernel OOM at 32 MiB and orphan cleanup across two profiles. Typed failure cards and `forceStopThread` orchestration remain open;
+kernel OOM at 32 MiB and orphan cleanup across two profiles. `forceStopThread` orchestration remains open;
 see [`nightly/agent-scope-intake.json`](nightly/agent-scope-intake.json).
 
 The server-browser launcher now uses that registry too. The real systemd case
@@ -103,11 +103,27 @@ project changes, queued bound sends, task provenance and guarded completion.
 [Evidence and remaining limitations](nightly/SCHEDULED-TASK-MODES.md) distinguish
 native runtime checks from source-function and peer regressions. Definition edits
 now pass O3 → T3 subscription → O3 handover with native ledger rows preserved;
-webhook ingress/dispatch, legacy accepted-work migration and the rest of the
-service lifecycle remain open. This block is not certification of every
+new webhook ingress/dispatch now uses the native adapter and shared admission
+barriers. Legacy accepted-work ownership, ambiguous native preparation, relay,
+managed policy and the rest of the service lifecycle remain open. This block is not certification of every
 scheduled-task method in the inventory.
 
 Native webhook receipt list/detail reads now preserve outcome opt-in, pending
 window flags and equal-time insertion order across handover. Local endpoint
 token rotation preserves signing credentials and accepted work; relay-derived
 endpoint URLs remain open. [Evidence and limits](nightly/WEBHOOK-HISTORY.md).
+
+## Structured provider failures
+
+Failed turns now publish a structured terminal error card with upstream identity,
+bounded and redacted messages/codes, class, retryability and optional usage reset.
+Confirmed OOM changes the message and code while retaining the failure class.
+The real client renders the card; stale attempts and duplicate terminal events
+cannot replace it. Provider-specific classification, retries and the remaining
+session lifecycle are still open; see
+[`nightly/provider-failure-intake.json`](nightly/provider-failure-intake.json).
+
+The native webhook adapter and pre-provider process-bound claim have dedicated
+[admission evidence](nightly/NATIVE-WEBHOOK-ADMISSION.md). Real official-runtime
+replay and crash handover do not create a second run or provider turn. These
+checks do not establish full scheduler or global nightly parity.

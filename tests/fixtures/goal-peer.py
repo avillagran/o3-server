@@ -135,7 +135,7 @@ for line in sys.stdin:
                 send({'id':request,'error':{'code':-32602,'message':'Fixture thread is not stored'}})
                 continue
             saved = json.loads(marker.read_text())
-            threads[tid] = {'root':root, 'goal':saved.get('goal'), 'running':None, 'initial_turns':1, 'automatic_turns':0, 'resumed_goal':True}
+            threads[tid] = {'root':root, 'goal':saved.get('goal'), 'running':None, 'initial_turns':saved.get('initialTurns',1), 'automatic_turns':0, 'resumed_goal':True}
             notification_thread = saved.get('notificationThreadId', tid)
             if notification_thread != tid:
                 threads[notification_thread] = {'root':root, 'goal':saved['notificationGoal'], 'running':'unowned-child-turn', 'initial_turns':0,'automatic_turns':0}
