@@ -53,6 +53,7 @@ pub mod paths;
 pub mod preview;
 pub mod proc;
 pub mod projects;
+mod provider_frames;
 pub mod pullreq;
 pub mod recovery;
 pub mod review;

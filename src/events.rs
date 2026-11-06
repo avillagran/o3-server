@@ -426,7 +426,7 @@ pub fn history(s: &State, tid: &str, cursor: &str) -> Result<Value> {
     let anchor: i64 = cursor.parse().map_err(|_| "invalid history cursor")?;
     let db = s.reader.lock().unwrap();
     get(&db, "thread", tid)?;
-    let (lower, more) = crate::snapshot::boundary(&db, tid, anchor)?;
+    let (lower, more) = crate::snapshot::boundary(&db, tid, anchor, 20)?;
     let mut q=db.prepare("SELECT body FROM records WHERE kind='visibleTurnItems' AND thread_id=? AND rowid<? AND rowid>=? ORDER BY rowid DESC").map_err(|e|e.to_string())?;
     let rows = q
         .query_map(params![tid, anchor, lower], |r| r.get::<_, String>(0))
