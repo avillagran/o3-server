@@ -72,6 +72,7 @@ pub mod terminal;
 pub mod thread_commands;
 pub mod threadq;
 pub mod vcs;
+mod webhook_payload;
 pub mod workspace;
 mod workspace_transition;
 mod worktree_handoff;

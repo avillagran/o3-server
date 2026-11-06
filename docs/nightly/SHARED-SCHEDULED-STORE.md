@@ -79,6 +79,10 @@ pending snapshots/member IDs, replay keys/expiry and relay-deduplication rows ar
 synchronized. The public task never includes the signing secret. Updates use
 UPSERT rather than REPLACE so task edits do not cascade-delete pending work.
 Pending windows can exchange their unique coalescing keys inside a transaction.
+Request and receipt-header JSON bytes are retained; their comparison hashes
+preserve header order because it affects rendered request text. See
+[native webhook payload semantics](WEBHOOK-PAYLOAD.md) for the renderer and its
+separate ingress/worker limits.
 
 Local imports commit before the native baseline. A native commit failure can
 therefore replay an already committed local import safely; it cannot acknowledge

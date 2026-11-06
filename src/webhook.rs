@@ -71,7 +71,48 @@ pub fn validate(s: &Value) -> Result<(), &'static str> {
     Ok(())
 }
 pub(crate) fn initialize(db: &Connection) -> Result<(), String> {
-    db.execute_batch("CREATE TABLE IF NOT EXISTS hook_queue(id TEXT PRIMARY KEY,task TEXT NOT NULL,coalesce TEXT NOT NULL,due INTEGER NOT NULL,expires INTEGER NOT NULL,prompt TEXT NOT NULL); CREATE INDEX IF NOT EXISTS hook_queue_due ON hook_queue(due); CREATE TABLE IF NOT EXISTS hook_replay(task TEXT NOT NULL,key TEXT NOT NULL,expires INTEGER NOT NULL,PRIMARY KEY(task,key));").map_err(|e|e.to_string())
+    db.execute_batch("CREATE TABLE IF NOT EXISTS hook_queue(id TEXT PRIMARY KEY,task TEXT NOT NULL,coalesce TEXT NOT NULL,due INTEGER NOT NULL,expires INTEGER NOT NULL,prompt TEXT NOT NULL); CREATE INDEX IF NOT EXISTS hook_queue_due ON hook_queue(due); CREATE TABLE IF NOT EXISTS hook_replay(task TEXT NOT NULL,key TEXT NOT NULL,expires INTEGER NOT NULL,PRIMARY KEY(task,key));").map_err(|e|e.to_string())?;
+    let done: bool = db
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='hook_coalesce_sha256_v1')",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if done {
+        return Ok(());
+    }
+    db.execute_batch("SAVEPOINT hook_coalesce_upgrade; CREATE TABLE hook_coalesce_sha256_v1(done INTEGER NOT NULL);").map_err(|e|e.to_string())?;
+    let result = (|| -> Result<(), String> {
+        let mut query = db
+            .prepare("SELECT id,coalesce FROM hook_queue WHERE coalesce!=''")
+            .map_err(|e| e.to_string())?;
+        let rows = query
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        drop(query);
+        for (id, key) in rows {
+            db.execute(
+                "UPDATE hook_queue SET coalesce=?1 WHERE id=?2",
+                params![hex(&Sha256::digest(key.as_bytes())), id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        db.execute("INSERT INTO hook_coalesce_sha256_v1 VALUES(1)", [])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })();
+    let end = if result.is_ok() {
+        "RELEASE hook_coalesce_upgrade"
+    } else {
+        "ROLLBACK TO hook_coalesce_upgrade; RELEASE hook_coalesce_upgrade"
+    };
+    db.execute_batch(end).map_err(|e| e.to_string())?;
+    result
 }
 pub fn prepare(db: &Connection, id: &str, task: &mut Value) -> Result<(), String> {
     if task["schedule"]["type"] != "webhook" {
@@ -139,69 +180,6 @@ pub fn encode_component(text: &str) -> String {
     out
 }
 
-fn text(v: &Value) -> String {
-    match v {
-        Value::String(s) => s.clone(),
-        Value::Null => String::new(),
-        v => v.to_string(),
-    }
-}
-fn resolve(root: &Value, path: &str) -> Value {
-    path.split('.').fold(root.clone(), |v, k| {
-        if let Ok(n) = k.parse::<usize>() {
-            v.get(n).cloned().unwrap_or(Value::Null)
-        } else {
-            v.get(k).cloned().unwrap_or(Value::Null)
-        }
-    })
-}
-fn render(template: &str, root: &Value, framed: bool) -> String {
-    let mut out = String::new();
-    let mut rest = template;
-    while let Some((before, tail)) = rest.split_once("{{") {
-        out.push_str(before);
-        let Some((path, after)) = tail.split_once("}}") else {
-            out.push_str("{{");
-            rest = tail;
-            break;
-        };
-        let value = text(&resolve(root, path.trim()));
-        if framed {
-            out.push_str("<webhook-data>");
-            out.push_str(
-                &value
-                    .replace('@', "@\u{2060}")
-                    .replace('$', "$\u{2060}")
-                    .replace('/', "/\u{2060}")
-                    .replace("t3-context", "t3\u{2060}-context")
-                    .replace("webhook-data", "webhook\u{2060}-data"),
-            );
-            out.push_str("</webhook-data>");
-        } else {
-            out.push_str(&value);
-        }
-        rest = after;
-        if out.len() > 64 * 1024 {
-            return String::new();
-        }
-    }
-    out.push_str(rest);
-    out
-}
-fn matches(f: &Value, root: &Value) -> bool {
-    let v = resolve(root, f["path"].as_str().unwrap_or(""));
-    let t = text(&v);
-    match f["op"].as_str().unwrap_or("") {
-        "exists" => !v.is_null(),
-        "equals" => !v.is_null() && t == text(&f["value"]),
-        "notEquals" => !v.is_null() && t != text(&f["value"]),
-        "startsWith" => !v.is_null() && t.starts_with(&text(&f["value"])),
-        "in" => f["value"]
-            .as_array()
-            .is_some_and(|a| a.iter().any(|v| text(v) == t)),
-        _ => false,
-    }
-}
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -230,7 +208,7 @@ pub fn accept(
     id: &str,
     token: &str,
     headers: &hyper::HeaderMap,
-    _query: &str,
+    query: &str,
     body: &[u8],
 ) -> (u16, &'static str) {
     let reader = s.reader.lock().unwrap();
@@ -306,11 +284,24 @@ pub fn accept(
         return (409, "definition_changed");
     }
     let replay = hex(&Sha256::digest(body));
-    let body: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
-    let root = json!({"body":body});
+    let payload = crate::webhook_payload::Request {
+        method: "POST".into(),
+        path: format!("/api/hooks/{}/{token}", encode_component(id)),
+        query: query.into(),
+        headers: headers
+            .iter()
+            .map(|(name, value)| {
+                (
+                    name.as_str().to_owned(),
+                    String::from_utf8_lossy(value.as_bytes()).into_owned(),
+                )
+            })
+            .collect(),
+        body_text: String::from_utf8_lossy(body).into_owned(),
+    };
     if task["schedule"]["filters"]
         .as_array()
-        .is_some_and(|a| a.iter().any(|f| !matches(f, &root)))
+        .is_some_and(|filters| payload.failed_filter(filters).is_some())
     {
         return (202, "filtered");
     }
@@ -349,13 +340,7 @@ pub fn accept(
     {
         return (429, "queue_full");
     }
-    let coalesce = dedupe["coalesceKey"]
-        .as_str()
-        .map(|t| render(t, &root, false))
-        .unwrap_or_default();
-    if coalesce.len() > 4096 {
-        return (400, "invalid_key");
-    }
+    let coalesce = payload.dedupe_key(dedupe["coalesceKey"].as_str());
     let pending = if coalesce.is_empty() {
         None
     } else {
@@ -368,17 +353,29 @@ pub fn accept(
         .ok()
         .flatten()
     };
-    let job = pending.unwrap_or_else(|| random_id().unwrap_or_default());
+    let job = match pending {
+        Some(job) => job,
+        None => match random_id() {
+            Ok(job) => job,
+            Err(_) => return (503, "error"),
+        },
+    };
     let delay = if coalesce.is_empty() {
         0
     } else {
-        dedupe["coalesceWindowSeconds"].as_i64().unwrap_or(60) * 1000
+        dedupe["coalesceWindowSeconds"].as_i64().unwrap_or(120) * 1000
     };
     let age = task["schedule"]["maxDeliveryAgeMinutes"]
         .as_i64()
         .unwrap_or(60)
         * 60000;
-    let prompt = render(task["prompt"].as_str().unwrap_or(""), &root, true);
+    let Ok(frame) = random_id() else {
+        return (503, "error");
+    };
+    let frame = frame.replace('-', "");
+    let prompt = payload
+        .render(task["prompt"].as_str().unwrap_or(""), &frame[..12], false)
+        .prompt;
     if prompt.is_empty() || prompt.len() > 64 * 1024 {
         return (400, "invalid_prompt");
     }
@@ -519,6 +516,61 @@ mod definition_tests {
         assert_eq!(
             encode_component("scheduled-task:a b/ñ"),
             "scheduled-task%3Aa%20b%2F%C3%B1"
+        );
+    }
+    #[test]
+    fn old_coalescing_keys_upgrade_once_without_changing_accepted_work() {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch("CREATE TABLE hook_queue(id TEXT PRIMARY KEY,task TEXT NOT NULL,coalesce TEXT NOT NULL,due INTEGER NOT NULL,expires INTEGER NOT NULL,prompt TEXT NOT NULL); INSERT INTO hook_queue VALUES('job','task','existing-group',123,456,'Already rendered prompt');").unwrap();
+        initialize(&db).unwrap();
+        let row: (String, i64, i64, String) = db
+            .query_row(
+                "SELECT coalesce,due,expires,prompt FROM hook_queue WHERE id='job'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            row,
+            (
+                hex(&Sha256::digest(b"existing-group")),
+                123,
+                456,
+                "Already rendered prompt".into()
+            )
+        );
+        initialize(&db).unwrap();
+        assert_eq!(
+            db.query_row(
+                "SELECT coalesce FROM hook_queue WHERE id='job'",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+            row.0
+        );
+    }
+    #[test]
+    fn failed_key_upgrade_retains_original_rows_and_does_not_mark_success() {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch("CREATE TABLE hook_queue(id TEXT PRIMARY KEY,task TEXT NOT NULL,coalesce TEXT NOT NULL,due INTEGER NOT NULL,expires INTEGER NOT NULL,prompt TEXT NOT NULL); INSERT INTO hook_queue VALUES('job','task','existing-group',123,456,'Already rendered prompt'); CREATE TRIGGER refuse_key BEFORE UPDATE ON hook_queue BEGIN SELECT RAISE(ABORT,'fixture write failure'); END;").unwrap();
+        assert!(initialize(&db)
+            .unwrap_err()
+            .contains("fixture write failure"));
+        assert_eq!(
+            db.query_row("SELECT coalesce FROM hook_queue", [], |row| row
+                .get::<_, String>(0))
+                .unwrap(),
+            "existing-group"
+        );
+        assert_eq!(
+            db.query_row(
+                "SELECT count(*) FROM sqlite_master WHERE name='hook_coalesce_sha256_v1'",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0
         );
     }
 }

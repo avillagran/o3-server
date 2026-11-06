@@ -408,3 +408,55 @@ fn background_exporter_observes_task_only_notifications() {
     }
     exporter.finish();
 }
+
+#[test]
+fn native_request_bytes_and_header_order_survive_handover_and_order_only_edits() {
+    let (_dir, s, native) = profile();
+    let first = r#"{"method":"POST","path":"/api/hooks/signed/synthetic-token-signed","query":"","headers":{"x-event":"opened","content-type":"application/json"},"bodyText":"{\"action\":\"second\"}"}"#;
+    let second = r#"{"method":"POST","path":"/api/hooks/signed/synthetic-token-signed","query":"","headers":{"content-type":"application/json","x-event":"opened"},"bodyText":"{\"action\":\"second\"}"}"#;
+    native
+        .execute(
+            "UPDATE scheduled_task_webhook_pending SET request_json=?1",
+            [first],
+        )
+        .unwrap();
+    drop(start(&s));
+    assert_eq!(
+        text(
+            &s.db.lock().unwrap(),
+            "SELECT request_json FROM scheduled_task_webhook_pending"
+        ),
+        first
+    );
+    native
+        .execute(
+            "UPDATE scheduled_task_webhook_pending SET request_json=?1",
+            [second],
+        )
+        .unwrap();
+    let mut shared = start(&s);
+    assert_eq!(
+        text(
+            &s.db.lock().unwrap(),
+            "SELECT request_json FROM scheduled_task_webhook_pending"
+        ),
+        second
+    );
+    s.db.lock()
+        .unwrap()
+        .execute(
+            "UPDATE scheduled_task_webhook_pending SET request_json=?1",
+            [first],
+        )
+        .unwrap();
+    t3_shared::export(&s, &mut shared).unwrap();
+    assert_eq!(
+        text(
+            &native,
+            "SELECT request_json FROM scheduled_task_webhook_pending"
+        ),
+        first
+    );
+    assert_eq!(count(&native, "scheduled_task_webhook_pending"), 1);
+    assert_eq!(count(&native, "scheduled_task_webhook_replay_keys"), 2);
+}

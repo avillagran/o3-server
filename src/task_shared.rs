@@ -256,10 +256,23 @@ fn keys(db: &Connection, table: &Table, local: bool) -> Result<BTreeSet<String>>
 fn normalized(table: &Table, mut row: Vec<Value>) -> Result<Vec<Value>> {
     for (column, field) in table.columns.iter().zip(&mut row) {
         if column.ends_with("_json") {
-            let value: Value =
-                serde_json::from_str(field.as_str().ok_or("Task JSON column is not text")?)
-                    .map_err(|e| e.to_string())?;
-            *field = json!(value.to_string());
+            let text = field.as_str().ok_or("Task JSON column is not text")?;
+            let canonical = match *column {
+                "request_json" => serde_json::to_string(
+                    &serde_json::from_str::<crate::webhook_payload::Request>(text)
+                        .map_err(|e| e.to_string())?,
+                )
+                .map_err(|e| e.to_string())?,
+                "headers_json" => serde_json::to_string(
+                    &serde_json::from_str::<indexmap::IndexMap<String, String>>(text)
+                        .map_err(|e| e.to_string())?,
+                )
+                .map_err(|e| e.to_string())?,
+                _ => serde_json::from_str::<Value>(text)
+                    .map_err(|e| e.to_string())?
+                    .to_string(),
+            };
+            *field = json!(canonical);
         }
     }
     Ok(row)
@@ -323,7 +336,7 @@ fn local_task(db: &Connection, key: &str) -> Result<Option<Vec<Value>>> {
             value
         })
         .collect();
-    normalized(&TABLES[0], row).map(Some)
+    Ok(Some(row))
 }
 
 fn row(db: &Connection, table: &Table, key: &str, local: bool) -> Result<Option<Vec<Value>>> {
@@ -365,11 +378,16 @@ fn row(db: &Connection, table: &Table, key: &str, local: bool) -> Result<Option<
         })
         .optional()
         .map_err(|e| e.to_string())?;
-    found.map(|r| normalized(table, r)).transpose()
+    Ok(found)
 }
-fn fingerprint(row: Option<&Vec<Value>>) -> Option<String> {
-    row.map(|r| format!("{:x}", Sha256::digest(serde_json::to_vec(r).unwrap())))
+fn fingerprint(table: &Table, row: Option<&Vec<Value>>) -> Result<Option<String>> {
+    row.map(|row| {
+        normalized(table, row.clone())
+            .map(|row| format!("{:x}", Sha256::digest(serde_json::to_vec(&row).unwrap())))
+    })
+    .transpose()
 }
+
 fn baseline(db: &Connection, table: &Table, key: &str) -> Result<Option<String>> {
     db.query_row(
         "SELECT row_hash FROM o3_task_baseline WHERE table_name=?1 AND row_key=?2",
@@ -496,9 +514,9 @@ fn import_plan(local: &Connection, native: &Connection) -> Result<Vec<(usize, St
         let mut all = keys(native, table, false)?;
         all.extend(baseline_keys(native, table)?);
         for key in all {
-            let remote = fingerprint(row(native, table, &key, false)?.as_ref());
+            let remote = fingerprint(table, row(native, table, &key, false)?.as_ref())?;
             let old = baseline(native, table, &key)?;
-            let ours = fingerprint(row(local, table, &key, true)?.as_ref());
+            let ours = fingerprint(table, row(local, table, &key, true)?.as_ref())?;
             if remote == old && !first {
                 continue;
             }
@@ -526,8 +544,8 @@ fn export_rows(local: &Connection, native: &Connection) -> Result<usize> {
         all.extend(baseline_keys(native, table)?);
         for key in all {
             let ours = row(local, table, &key, true)?;
-            let hash = fingerprint(ours.as_ref());
-            let remote = fingerprint(row(native, table, &key, false)?.as_ref());
+            let hash = fingerprint(table, ours.as_ref())?;
+            let remote = fingerprint(table, row(native, table, &key, false)?.as_ref())?;
             let old = baseline(native, table, &key)?;
             if remote != old && remote != hash {
                 return Err(format!(
