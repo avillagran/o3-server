@@ -73,6 +73,9 @@ shuts down on any parent change, including subreaper adoption. The shutdown fenc
 is entered before transports close, preserving durable runs. The physical test
 starts a real private launcher/server pair, replaces the parent and checks both
 runtime-registration removal and actual process exit using a stable pidfd.
+Closing the launcher's stderr pipe while it remains alive must not end the
+server. Serving diagnostics ignore broken-pipe writes, with a physical test
+closing the pipe before supplying the envelope to avoid a startup race.
 
 Browser/telemetry/control channels, resource monitoring, OTLP and bootstrap-driven
 Tailscale Serve still need dedicated consumers. Requests for those channels fail

@@ -2,6 +2,15 @@
 use crate::desktop_bootstrap::Envelope;
 use std::{io, time::Duration};
 
+/// A launcher may close its log pipe while remaining alive; this must not end its server.
+pub fn log_stderr(message: impl std::fmt::Display) -> io::Result<()> {
+    use io::Write;
+    match writeln!(io::stderr().lock(), "{message}") {
+        Err(error) if error.kind() == io::ErrorKind::BrokenPipe => Ok(()),
+        result => result,
+    }
+}
+
 pub fn auth_policy(host: Option<&str>, desktop: bool) -> crate::managed_limits::AuthPolicy {
     let web = crate::managed_clients::web_auth_policy(host);
     if desktop && matches!(web, crate::managed_limits::AuthPolicy::LocalBrowser) {

@@ -90,13 +90,9 @@ fn ready(server: &mut Server, home: &Path) -> Value {
         }
         if let Some(status) = server.0.try_wait().unwrap() {
             let mut error = String::new();
-            server
-                .0
-                .stderr
-                .take()
-                .unwrap()
-                .read_to_string(&mut error)
-                .unwrap();
+            if let Some(mut stderr) = server.0.stderr.take() {
+                stderr.read_to_string(&mut error).unwrap();
+            }
             panic!("owned server exited {status}: {error}");
         }
         assert!(
@@ -220,6 +216,26 @@ fn incomplete_bootstrap_options_fail_without_profile_effects() {
         assert!(error.contains(flag));
         assert!(!home.exists());
     }
+}
+
+#[test]
+fn a_closed_launcher_log_pipe_does_not_end_the_owned_server() {
+    let root = directory();
+    let home = root.join("home");
+    let mut command = command();
+    command.args(["--bootstrap-fd", "0"]).stdin(Stdio::piped());
+    let mut server = Server(command.spawn().unwrap());
+    // Close logging before providing the envelope, so startup cannot win this race.
+    drop(server.0.stderr.take());
+    let mut input = server.0.stdin.take().unwrap();
+    writeln!(input, "{}", envelope(&home)).unwrap();
+    drop(input);
+    let runtime = ready(&mut server, &home);
+    let (status, session) = request(&runtime, "/api/auth/session", None);
+    assert_eq!(status, 200);
+    assert_eq!(session["auth"]["policy"], "desktop-managed-local");
+    assert!(server.0.try_wait().unwrap().is_none());
+    server.stop();
 }
 
 #[cfg(target_os = "linux")]

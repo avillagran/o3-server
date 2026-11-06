@@ -392,12 +392,12 @@ fn main() -> std::io::Result<()> {
             ))
             .await?;
             let _guard = o3_server::profile::RuntimeGuard::write(&dir, listener.local_addr()?)?;
-            eprintln!("o3-server listening on {}", listener.local_addr()?);
+            o3_server::desktop_startup::log_stderr(format_args!("o3-server listening on {}", listener.local_addr()?))?;
             // T3's base must be taken in before the first client reads.
             let shared = match o3_server::t3_shared::start(&state) {
                 Ok(shared) => shared,
                 Err(e) => {
-                    eprintln!("T3 shared base not written: {e}");
+                    o3_server::desktop_startup::log_stderr(format_args!("T3 shared base not written: {e}"))?;
                     None
                 }
             };
@@ -417,7 +417,7 @@ fn main() -> std::io::Result<()> {
                     .discover(std::env::current_dir().unwrap_or_else(|_| probe_state.dir.clone()))
                     .await
                 {
-                    eprintln!("Codex unavailable: {e}");
+                    let _ = o3_server::desktop_startup::log_stderr(format_args!("Codex unavailable: {e}"));
                 }
                 probe_state.notify();
             });
