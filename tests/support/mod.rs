@@ -204,55 +204,79 @@ pub fn wait_for(within: Duration, mut condition: impl FnMut() -> bool) -> bool {
 
 /// One RPC over a raw websocket, returning the whole `Exit` frame (the client library reports only error tags).
 pub fn raw_exit(server: &Server, tag: &str, payload: Value) -> Value {
-    use futures_util::{SinkExt, StreamExt};
-    use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
-    let secret = server.state.issue_pairing(Some("raw"), 60_000).unwrap()["credential"]
-        .as_str()
+    RawClient::pair(server).exit(tag, payload)
+}
+
+/// Reuses a private bearer for wire comparisons without repeatedly spending pairing grants.
+pub struct RawClient {
+    base: String,
+    token: String,
+}
+
+impl RawClient {
+    pub fn bearer(base: &str, token: &str) -> Self {
+        Self {
+            base: base.into(),
+            token: token.into(),
+        }
+    }
+
+    pub fn pair(server: &Server) -> Self {
+        let secret = server.state.issue_pairing(Some("raw"), 60_000).unwrap()["credential"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let token = pair_bearer(
+            &server.base,
+            &secret,
+            None,
+            &PairingClient::default(),
+            &ConnectionOptions::default(),
+        )
         .unwrap()
-        .to_owned();
-    let token = pair_bearer(
-        &server.base,
-        &secret,
-        None,
-        &PairingClient::default(),
-        &ConnectionOptions::default(),
-    )
-    .unwrap()
-    .access_token
-    .to_string();
-    let addr = server.base.trim_start_matches("http://").to_owned();
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(async move {
-            let tcp = tokio::net::TcpStream::connect(&addr).await.unwrap();
-            let mut request = format!("ws://{addr}/ws?orchestrationProtocol=2")
-                .into_client_request()
-                .unwrap();
-            request
-                .headers_mut()
-                .insert("Authorization", format!("Bearer {token}").parse().unwrap());
-            let (mut ws, _) = tokio_tungstenite::client_async(request, tcp).await.unwrap();
-            ws.send(Message::Text(
-                json!({"_tag":"Request","id":"r","tag":tag,"payload":payload,"headers":[]})
-                    .to_string()
-                    .into(),
-            ))
-            .await
-            .unwrap();
-            loop {
-                let m = tokio::time::timeout(Duration::from_secs(10), ws.next())
-                    .await
-                    .expect("exit frame")
-                    .unwrap()
+        .access_token
+        .to_string();
+        Self::bearer(&server.base, &token)
+    }
+
+    pub fn exit(&self, tag: &str, payload: Value) -> Value {
+        use futures_util::{SinkExt, StreamExt};
+        use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
+        let addr = self.base.trim_start_matches("http://").to_owned();
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async move {
+                let tcp = tokio::net::TcpStream::connect(&addr).await.unwrap();
+                let mut request = format!("ws://{addr}/ws?orchestrationProtocol=2")
+                    .into_client_request()
                     .unwrap();
-                let v: Value = serde_json::from_str(m.to_text().unwrap()).unwrap();
-                if v["_tag"] == "Exit" {
-                    return v;
+                request.headers_mut().insert(
+                    "Authorization",
+                    format!("Bearer {}", self.token).parse().unwrap(),
+                );
+                let (mut ws, _) = tokio_tungstenite::client_async(request, tcp).await.unwrap();
+                ws.send(Message::Text(
+                    json!({"_tag":"Request","id":"r","tag":tag,"payload":payload,"headers":[]})
+                        .to_string()
+                        .into(),
+                ))
+                .await
+                .unwrap();
+                loop {
+                    let m = tokio::time::timeout(Duration::from_secs(10), ws.next())
+                        .await
+                        .expect("exit frame")
+                        .unwrap()
+                        .unwrap();
+                    let v: Value = serde_json::from_str(m.to_text().unwrap()).unwrap();
+                    if v["_tag"] == "Exit" {
+                        return v;
+                    }
                 }
-            }
-        })
+            })
+    }
 }
 
 pub struct Connected(

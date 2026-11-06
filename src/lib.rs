@@ -14,6 +14,7 @@ mod mcp_tools;
 pub mod native_mcp;
 mod repositories;
 pub mod rpc;
+mod rpc_input;
 pub mod store;
 
 pub use http::{serve, serve_io};

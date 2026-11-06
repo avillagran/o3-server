@@ -37,6 +37,7 @@ pub fn required(tag: &str) -> Option<&'static str> {
         "orchestration.getOlderSettledThreads" => Some("orchestration:read"),
         "orchestration.getThreadFamily" => Some("orchestration:read"),
         "orchestration.getThreadProjection" => Some("orchestration:read"),
+        "orchestration.getThreadTitles" => Some("orchestration:read"),
         "orchestration.getTurnDiff" => Some("orchestration:read"),
         "orchestration.getTurnItem" => Some("orchestration:read"),
         "orchestration.getWorkflowScript" => Some("orchestration:read"),

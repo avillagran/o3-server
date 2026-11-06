@@ -72,8 +72,19 @@ pub fn authorize(session: &Value, tag: &str, p: &Value) -> Result<(), Value> {
         {
             Ok(())
         } else {
+            let legacy_scope = match scope {
+                "filesystem:read" | "diagnostics:read" => "orchestration:read",
+                "settings:write"
+                | "providers:manage"
+                | "environment:maintain"
+                | "preview:operate"
+                | "source-control:write"
+                | "filesystem:write" => "orchestration:operate",
+                "terminal:read" => "terminal:operate",
+                scope => scope,
+            };
             Err(
-                json!({"_tag":"EnvironmentAuthorizationError","message":format!("The authenticated token is missing required scope: {scope}."),"requiredScope":scope}),
+                json!({"_tag":"EnvironmentAuthorizationError","message":format!("The authenticated token is missing required scope: {scope}."),"requiredScope":legacy_scope,"requiredPermission":scope}),
             )
         }
     };
@@ -416,6 +427,14 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                                 "Eof"=>eof=true,
                                 "Request" if !eof=>{
                                     let tag=frame["tag"].as_str().unwrap_or("");let p=&frame["payload"];
+                                    let decoded=match crate::rpc_input::decode(tag,p) {
+                                        Ok(decoded)=>decoded,
+                                        Err(defect)=>{
+                                            if send(&mut ws,json!({"_tag":"Exit","requestId":id,"exit":{"_tag":"Failure","cause":[{"_tag":"Die","defect":defect}]}})).await.is_err(){return}
+                                            continue;
+                                        }
+                                    };
+                                    let p=decoded.as_ref().unwrap_or(p);
                                     if let Err(e)=authorize(&session,tag,p){if send(&mut ws,exit(&id,Err(e))).await.is_err(){return}continue;}
                                     // T3 strips task webhooks for sessions without operate; never trust a client flag.
                                     let task_view;let p=if matches!(tag,"scheduledTasks.list"|"scheduledTasks.subscribe") {let mut v=p.clone();if !v.is_object(){v=json!({});}v["_hideWebhook"]=json!(authorize(&session,"scheduledTasks.upsert",&Value::Null).is_err());task_view=v;&task_view}else{p};

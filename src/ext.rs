@@ -39,6 +39,9 @@ pub fn handles(tag: &str) -> bool {
                 | "orchestration.getArchivedShellSnapshot"
                 | "orchestration.getTurnItem"
                 | "orchestration.getThreadProjection"
+                | "orchestration.getThreadTitles"
+                | "orchestration.getThreadFamily"
+                | "orchestration.getWorktreeThreadIds"
         )
 }
 
@@ -74,6 +77,9 @@ pub async fn call(s: &Arc<State>, tag: &str, p: Value) -> Result<Value, Value> {
         "orchestration.getArchivedShellSnapshot" => threadq::archived_shell(s),
         "orchestration.getTurnItem" => threadq::turn_item(s, &p),
         "orchestration.getThreadProjection" => threadq::thread_projection(s, &p),
+        "orchestration.getThreadTitles" => threadq::thread_titles(s, &p),
+        "orchestration.getThreadFamily" => threadq::thread_family(s, &p),
+        "orchestration.getWorktreeThreadIds" => threadq::worktree_threads(s, &p),
         _ if crate::additions::handles(tag) => crate::additions::call(tag, &p),
         _ if crate::p2::handles(tag) => crate::p2::call(s, tag, p).await,
         _ => Err(

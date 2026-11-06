@@ -1,8 +1,8 @@
 # Headless nightly parity
 
-The active target is T3 Code headless nightly **4262**, commit
-`c55db3e9c72fdf584f4b54192fb39beb88667b59`, published on 2026-11-06.
-[Upstream release](https://github.com/pingdotgg/t3code/releases/tag/v0.1.8-nightly.20261106.4262).
+The active target is T3 Code headless nightly **4275**, commit
+`6577c6b6185167c0e502fa01f9e8e8f2dee6ff25`, published on 2026-11-06.
+[Upstream release](https://github.com/pingdotgg/t3code/releases/tag/v0.1.8-nightly.20261106.4275).
 The implementation is not yet a complete 1:1 replacement.
 
 The scope includes every headless RPC, command, HTTP/CLI surface, authentication
@@ -17,7 +17,13 @@ server behavior supporting those clients remains in scope.
 [`nightly/parity-4262.json`](nightly/parity-4262.json) inventories 211 discovered
 public method names and records existing method statuses as historical evidence,
 not certification against this nightly. The source adds two previously untracked
-methods: `orchestration.getThreadTitles` and `sourceControl.star`.
+methods: `orchestration.getThreadTitles` and `sourceControl.star`. The title method
+is now tracked and implemented; the star method remains untracked.
+
+[`nightly/drift-4275.json`](nightly/drift-4275.json) records the next intake. Goal,
+thread-read and RPC authorization source is unchanged from 4262. Device discovery,
+Antigravity identification and CLI/service-launch changes require their own comparison;
+existing 4262 runtime evidence does not certify those surfaces.
 
 The reference's shared database has migration head 80. Live O3 profiles are accepted
 through migration 73. Supporting migrations 74–80 requires isolated native-T3 migration,
@@ -44,6 +50,12 @@ feedback update the provider-thread goal; child output and failed turns cannot m
 a root goal complete. Golden fixtures execute the nightly's actual parser and goal
 normalizers. This block does not close the broader idle-wake/child-continuation,
 provider-driver or shared-migration backlog.
+
+The thread-read block adds title batches, active family rows and exact-path worktree
+membership. An isolated official nightly 4262 runtime agrees on selection, ordering,
+Unicode trimming and 31 malformed-input wire defects. Families reuse the common shell
+projection, whose complete field fidelity remains a separate task. The full headless
+goal remains active after either block.
 
 Validation details belong in `CONFORMANCE.md` and the per-block intake files. A green
 suite and an RPC count alone do not establish complete headless behavior.
