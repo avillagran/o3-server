@@ -1,15 +1,15 @@
 //! Direct Claude Code stream-json transport. No transcript cache or Node bridge.
 use crate::provider::{Provider, ProviderControl, ProviderEvent, RunInput};
+use crate::provider_frames::{Frame, FrameBuffer, FrameError, MAX_FRAME};
 use serde_json::{json, Value};
 use std::{
     collections::HashMap, future::Future, path::PathBuf, pin::Pin, process::Stdio, sync::Mutex,
 };
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncWriteExt, BufReader},
     process::{Child, ChildStdin, ChildStdout, Command},
     sync::{mpsc, watch},
 };
-const MAX_FRAME: usize = 1024 * 1024;
 const MAX_SESSIONS: usize = 16;
 /// A Claude Code session that launched this server exports these. A child spawned with them
 /// joins that session (id, messaging socket/token, effort). Upstream 47f2c8d29.
@@ -76,7 +76,7 @@ struct Session {
     child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
-    buffer: Vec<u8>,
+    buffer: FrameBuffer,
     native: String,
     cwd: PathBuf,
     options: Value,
@@ -276,7 +276,7 @@ impl ClaudeProvider {
             child,
             stdin,
             stdout,
-            buffer: Vec::new(),
+            buffer: FrameBuffer::default(),
             native: input
                 .native_session_id
                 .clone()
@@ -759,30 +759,17 @@ impl Session {
     async fn prompt(&mut self, text: &str) -> Result<(), String> {
         self.send(json!({"type":"user","message":{"role":"user","content":[{"type":"text","text":text}]},"parent_tool_use_id":null,"session_id":self.native})).await
     }
-    // fill_buf is cancellation safe; the partial frame survives select! cancellation.
+    // Cancellation safe; the partial frame survives select! cancellation. A frame above the
+    // buffering limit is drained and surfaced as `o3_oversized_frame` so the turn continues.
     async fn frame(&mut self) -> Result<Value, String> {
-        loop {
-            let bytes = self.stdout.fill_buf().await.map_err(|e| e.to_string())?;
-            if bytes.is_empty() {
-                return Err("Claude stdout closed".into());
+        match self.buffer.next(&mut self.stdout, MAX_FRAME).await {
+            Ok(Some(Frame::Json(v, _))) => Ok(v),
+            Ok(Some(Frame::Oversized(bytes))) => {
+                Ok(json!({"type":"o3_oversized_frame","bytes":bytes}))
             }
-            let n = bytes
-                .iter()
-                .position(|b| *b == b'\n')
-                .map(|n| n + 1)
-                .unwrap_or(bytes.len());
-            if self.buffer.len() + n > MAX_FRAME {
-                return Err("Claude frame exceeds 1 MiB".into());
-            }
-            let done = bytes[n - 1] == b'\n';
-            self.buffer.extend_from_slice(&bytes[..n]);
-            self.stdout.consume(n);
-            if done {
-                let v = serde_json::from_slice(&self.buffer)
-                    .map_err(|e| format!("Claude invalid JSON: {e}"));
-                self.buffer.clear();
-                return v;
-            }
+            Ok(None) | Err(FrameError::Truncated) => Err("Claude stdout closed".into()),
+            Err(FrameError::Io(e)) => Err(e),
+            Err(FrameError::Json(e)) => Err(format!("Claude invalid JSON: {e}")),
         }
     }
 }
@@ -981,6 +968,10 @@ pub(crate) fn decode(v: &Value) -> Vec<ProviderEvent> {
             if let Some(content) = v["message"]["content"].as_array() {
                 for block in content {
                     if matches!(block["type"].as_str(), Some("tool_use" | "tool_result")) {
+                        let mut block = block.clone();
+                        if block["type"] == "tool_result" {
+                            crate::provider_frames::redact_inline_binary(&mut block["content"]);
+                        }
                         out.push(ProviderEvent::Native(json!({"type":"tool","block":block,"parent_tool_use_id":v["parent_tool_use_id"]})));
                         if block["type"] == "tool_use" && block["name"] == "Bash" {
                             out.push(ProviderEvent::Command(
@@ -1187,7 +1178,7 @@ mod tests {
             stdin: child.stdin.take().unwrap(),
             stdout: BufReader::new(child.stdout.take().unwrap()),
             child,
-            buffer: vec![],
+            buffer: FrameBuffer::default(),
             native: "fixture".into(),
             cwd: PathBuf::new(),
             options: Value::Null,
@@ -1230,7 +1221,7 @@ mod tests {
             stdin: child.stdin.take().unwrap(),
             stdout: BufReader::new(child.stdout.take().unwrap()),
             child,
-            buffer: vec![],
+            buffer: FrameBuffer::default(),
             native: "conversation".into(),
             cwd: PathBuf::new(),
             options: Value::Null,
@@ -1322,7 +1313,7 @@ mod tests {
         );
     }
     #[tokio::test]
-    async fn oversized_and_malformed_frames_fail_bounded() {
+    async fn oversized_frames_are_skipped_and_malformed_frames_fail() {
         let mut child = Command::new("sh")
             .args(["-c", "printf 'not-json\\n'"])
             .stdin(Stdio::piped())
@@ -1336,7 +1327,7 @@ mod tests {
             stdin: child.stdin.take().unwrap(),
             stdout: BufReader::new(child.stdout.take().unwrap()),
             child,
-            buffer: vec![],
+            buffer: FrameBuffer::default(),
             native: String::new(),
             cwd: PathBuf::new(),
             options: Value::Null,
@@ -1346,7 +1337,10 @@ mod tests {
         assert!(s.frame().await.unwrap_err().contains("invalid JSON"));
         let _ = s.child.wait().await;
         let mut child = Command::new("sh")
-            .args(["-c", "head -c 1048577 /dev/zero"])
+            .args([
+                "-c",
+                "head -c 67108865 /dev/zero; printf '\\n{\"type\":\"result\"}\\n'",
+            ])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .kill_on_drop(true)
@@ -1358,16 +1352,41 @@ mod tests {
             stdin: child.stdin.take().unwrap(),
             stdout: BufReader::new(child.stdout.take().unwrap()),
             child,
-            buffer: vec![],
+            buffer: FrameBuffer::default(),
             native: String::new(),
             cwd: PathBuf::new(),
             options: Value::Null,
             browser: false,
             idle_since: tokio::time::Instant::now(),
         };
-        assert!(s.frame().await.unwrap_err().contains("exceeds"));
+        let skipped = s.frame().await.unwrap();
+        assert_eq!(skipped["type"], "o3_oversized_frame");
+        assert_eq!(skipped["bytes"], MAX_FRAME + 2);
         assert!(s.buffer.len() <= MAX_FRAME);
+        assert_eq!(s.frame().await.unwrap()["type"], "result");
         s.stop().await;
+    }
+    #[test]
+    fn tool_result_images_are_not_forwarded_as_base64() {
+        let data = "A".repeat(4 * 1024 * 1024);
+        let frame = json!({"type":"user","parent_tool_use_id":null,"message":{"role":"user","content":[
+            {"type":"tool_result","tool_use_id":"read","content":[
+                {"type":"image","source":{"type":"base64","media_type":"image/png","data":data}}
+            ]}
+        ]}});
+        let events = decode(&frame);
+        let tool = events
+            .iter()
+            .find_map(|e| match e {
+                ProviderEvent::Native(v) if v["type"] == "tool" => Some(v),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(
+            tool["block"]["content"][0]["source"]["data"],
+            "[omitted 4194304 bytes of base64 data]"
+        );
+        assert!(serde_json::to_vec(tool).unwrap().len() < 4096);
     }
     #[test]
     fn observed_steering_and_interrupt_boundaries() {
