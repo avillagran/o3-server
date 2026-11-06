@@ -19,7 +19,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install video decoder required by device stream regression
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+        timeout-minutes: 5
+        run: |
+          if command -v ffmpeg >/dev/null 2>&1; then
+            exit 0
+          fi
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o DPkg::Lock::Timeout=60 update
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o DPkg::Lock::Timeout=60 install -y --no-install-recommends ffmpeg
       - run: mkdir -p "$TMPDIR"
       - run: rustup component add rustfmt clippy
       - run: cargo fmt --check
