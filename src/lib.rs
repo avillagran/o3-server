@@ -115,6 +115,9 @@ mod settlement;
 pub mod heap;
 
 pub mod device;
+pub mod device_native_client;
+pub mod device_native_hub;
+pub mod device_native_state;
 
 mod background;
 
