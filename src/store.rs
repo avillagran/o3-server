@@ -69,6 +69,7 @@ pub struct State {
     >,
     pub settings_lock: Mutex<()>,
     pub launch_lock: Mutex<()>,
+    pub(crate) shared_export: Mutex<()>,
     pub changed: tokio::sync::watch::Sender<u64>,
     pub activity: tokio::sync::watch::Sender<u64>,
     /// Live terminal and command-output sources, with their own wake-up channel.
@@ -223,6 +224,7 @@ impl State {
             bridge_endpoints: Mutex::new(Vec::new()),
             settings_lock: Mutex::new(()),
             launch_lock: Mutex::new(()),
+            shared_export: Mutex::new(()),
             provider: Mutex::new(None),
             active: Mutex::new(std::collections::BTreeMap::new()),
             changed,

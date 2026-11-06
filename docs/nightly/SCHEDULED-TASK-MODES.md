@@ -104,9 +104,10 @@ requirements are documented in [SHARED-SCHEDULED-STORE.md](SHARED-SCHEDULED-STOR
 
 - Diagnose the reference's intermittent rapid-follow-up answers; avoid treating
   a successful repeat or a guessed cause as resolution.
-- Native webhook ingress/dispatch, completion recovery and lossless migration of
-  old accepted O3 work. Definitions and native ledger rows now pass bidirectional
-  storage checks; preserved pending rows alone do not prove execution handover.
+- The native ingress/worker and admission/effect handover now have a dedicated
+  adapter and runtime evidence in [NATIVE-WEBHOOK-ADMISSION.md](NATIVE-WEBHOOK-ADMISSION.md).
+  Ambiguous imported preparation and old accepted O3 work still need safe
+  ownership/reconciliation boundaries.
 - Complete service lifecycle comparison, including thread/project moves,
   timer/manual/webhook contention, restart recovery, managed policy and failures.
 - The live desktop composer, remaining RPCs/drivers and full platform audit.

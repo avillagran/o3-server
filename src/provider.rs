@@ -276,6 +276,10 @@ pub(crate) fn start(
     rid: String,
     text: String,
 ) {
+    if let Err(error) = crate::command_shared::provider_fence(&s, &rid) {
+        crate::command_shared::defer_provider(&s, &tid, &rid, &error);
+        return;
+    }
     let Some(provider) = s.provider.lock().unwrap().clone() else {
         return;
     };

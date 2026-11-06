@@ -27,11 +27,6 @@ pub(crate) struct Limits {
     peers: std::sync::Mutex<
         std::collections::HashMap<std::net::IpAddr, std::sync::Weak<tokio::sync::Semaphore>>,
     >,
-    hook_window: std::sync::Mutex<(
-        std::time::Instant,
-        usize,
-        std::collections::HashMap<std::net::IpAddr, usize>,
-    )>,
     token_window: std::sync::Mutex<(std::time::Instant, usize)>,
 }
 impl Default for Limits {
@@ -39,7 +34,6 @@ impl Default for Limits {
         Self {
             connections: Arc::new(tokio::sync::Semaphore::new(128)),
             peers: Default::default(),
-            hook_window: std::sync::Mutex::new((std::time::Instant::now(), 0, Default::default())),
             token_window: std::sync::Mutex::new((std::time::Instant::now(), 0)),
         }
     }
@@ -214,64 +208,74 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
             StatusCode::OK,
             crate::settings::descriptor(&state).to_string(),
         ),
-        (Method::POST, p) if p.starts_with("/api/hooks/") => {
+        (Method::GET | Method::POST | Method::PUT | Method::PATCH | Method::HEAD, p)
+            if p.starts_with("/api/hooks/") =>
+        {
             let parts: Vec<_> = p.trim_start_matches("/api/hooks/").split('/').collect();
-            if parts.len() != 2 {
-                return Ok(json_reply(StatusCode::NOT_FOUND, "{}".into()));
-            }
-            let Some(id) = crate::assets::percent_decode(parts[0]) else {
+            let Some(id) = parts
+                .first()
+                .filter(|_| parts.len() == 2)
+                .and_then(|id| crate::assets::percent_decode(id))
+            else {
                 return Ok(json_reply(StatusCode::NOT_FOUND, "{}".into()));
             };
             let token = parts[1].to_owned();
-            // Every rejection looks the same and costs one keyed lookup: no body is read
-            // without the hook's token, so unauthenticated traffic cannot crowd out its sender.
-            let check_state = state.clone();
-            let (check_id, check_token) = (id.clone(), token.clone());
-            if !tokio::task::spawn_blocking(move || {
-                crate::webhook::admits(&check_state, &check_id, &check_token)
-            })
-            .await
-            .unwrap_or(false)
+            let method = request.method().as_str().to_owned();
+            let response = if method == "HEAD" {
+                crate::webhook_native::Response::error(
+                    405,
+                    "method_not_allowed",
+                    "method_not_allowed",
+                )
+            } else if request
+                .headers()
+                .get("content-length")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.parse::<u64>().ok())
+                .is_some_and(|size| size > 1024 * 1024)
             {
-                return Ok(json_reply(StatusCode::NOT_FOUND, "{}".into()));
-            }
-            {
-                let mut window = state.http.hook_window.lock().unwrap();
-                if window.0.elapsed() >= std::time::Duration::from_secs(1) {
-                    *window = (std::time::Instant::now(), 0, Default::default());
+                crate::webhook_native::Response::error(413, "body_too_large", "body_too_large")
+            } else {
+                let headers = request.headers().clone();
+                let query = request.uri().query().unwrap_or("").to_owned();
+                match tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    Limited::new(request.into_body(), 1024 * 1024).collect(),
+                )
+                .await
+                {
+                    Ok(Ok(bytes)) => {
+                        let bytes = bytes.to_bytes();
+                        tokio::task::spawn_blocking(move || {
+                            crate::webhook_native::accept(
+                                &state, &id, &token, &method, &headers, &query, &bytes,
+                            )
+                        })
+                        .await
+                        .unwrap_or_else(|_| {
+                            crate::webhook_native::Response::error(500, "error", "internal_error")
+                        })
+                    }
+                    _ => crate::webhook_native::Response::error(
+                        413,
+                        "body_too_large",
+                        "body_too_large_or_unreadable",
+                    ),
                 }
-                if window.1 >= 60 {
-                    return Ok(json_reply(StatusCode::TOO_MANY_REQUESTS, "{}".into()));
-                }
-                window.1 += 1;
-            }
-            let headers = request.headers().clone();
-            let query = request.uri().query().unwrap_or("").to_owned();
-            let bytes = tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                Limited::new(request.into_body(), 1024 * 1024).collect(),
-            )
-            .await;
-            let Ok(Ok(bytes)) = bytes else {
-                return Ok(json_reply(StatusCode::PAYLOAD_TOO_LARGE, "{}".into()));
             };
-            let bytes = bytes.to_bytes();
-            let result = tokio::task::spawn_blocking(move || {
-                crate::webhook::accept(&state, &id, &token, &headers, &query, &bytes)
-            })
-            .await
-            .unwrap_or((503, "error"));
-            if result.0 == 404 {
-                return Ok(json_reply(StatusCode::NOT_FOUND, "{}".into()));
-            }
-            let mut response = json_reply(
-                StatusCode::from_u16(result.0).unwrap(),
-                json!({"outcome":result.1}).to_string(),
+            let mut reply = json_reply(
+                StatusCode::from_u16(response.status).unwrap(),
+                response.body.to_string(),
             );
-            response
+            reply
                 .headers_mut()
-                .insert("x-t3-hook-outcome", result.1.parse().unwrap());
-            response
+                .insert("x-t3-hook-outcome", response.outcome.parse().unwrap());
+            if response.status == 405 {
+                reply
+                    .headers_mut()
+                    .insert("allow", "GET, POST, PUT, PATCH".parse().unwrap());
+            }
+            reply
         }
         (Method::POST, "/oauth/token") => token(&state, request).await,
         (Method::POST, p) if p.starts_with(crate::assets::UPLOAD_PREFIX) => {

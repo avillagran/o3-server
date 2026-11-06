@@ -43,6 +43,7 @@ fn change_selection(
 
 pub fn initialize(db: &Connection) -> Result<()> {
     db.execute_batch("CREATE TABLE IF NOT EXISTS records(kind TEXT NOT NULL,id TEXT NOT NULL,thread_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(kind,id)); CREATE INDEX IF NOT EXISTS records_thread ON records(thread_id,kind); CREATE TABLE IF NOT EXISTS events(sequence INTEGER PRIMARY KEY AUTOINCREMENT,thread_id TEXT NOT NULL,body TEXT NOT NULL,shell TEXT); CREATE TABLE IF NOT EXISTS receipts(command_id TEXT PRIMARY KEY,result TEXT NOT NULL);").map_err(|e|e.to_string())?;
+    crate::command_shared::initialize(db)?;
     // Subscription cursors: per-thread and shell event seeks (see `next`).
     db.execute_batch("CREATE INDEX IF NOT EXISTS events_thread_sequence ON events(thread_id,sequence); CREATE INDEX IF NOT EXISTS events_shell_sequence ON events(sequence) WHERE shell IS NOT NULL;").map_err(|e|e.to_string())?;
     // The partial index finds the latest user without reading assistant bodies.
@@ -630,6 +631,7 @@ pub(crate) fn dispatch_prepared(
     if let Some(authority) = authority {
         authority.check(&tx, c)?;
     }
+    crate::command_shared::check_replay(&tx, cid, c["threadId"].as_str())?;
     if let Some(r) = tx
         .query_row(
             "SELECT result FROM receipts WHERE command_id=?",
@@ -640,11 +642,15 @@ pub(crate) fn dispatch_prepared(
         .map_err(|e| e.to_string())?
     {
         let result = serde_json::from_str(&r).map_err(|e| e.to_string())?;
-        return if authority.is_some() {
+        let result = if authority.is_some() {
             crate::mcp_access::replay_reply(&tx, c, result)
         } else {
             Ok(result)
-        };
+        }?;
+        drop(tx);
+        drop(db);
+        crate::command_shared::ensure_exported(s, Some(cid))?;
+        return Ok(result);
     }
     let resolved;
     let c = if authority.is_some() && c["type"] == "run.interrupt" {
@@ -988,6 +994,12 @@ pub(crate) fn dispatch_prepared(
             };
             tx.commit().map_err(|e| e.to_string())?;
             drop(db);
+            if let Err(error) = crate::command_shared::ensure_exported(s, Some(cid)) {
+                if c["dispatchMode"]["type"] != "defer_start" && !queued {
+                    crate::command_shared::defer_provider(s, tid, &run_id, &error);
+                }
+                return Err(error);
+            }
             s.notify();
             if c["dispatchMode"]["type"] != "defer_start" && !queued {
                 crate::provider::start(
@@ -1246,6 +1258,7 @@ pub(crate) fn dispatch_prepared(
     let seq = append(&tx, tid, event, t.clone(), &t)?;
     let result = json!({"sequence":seq});
     crate::outbox::stage(&tx, c)?;
+    crate::command_shared::admit(&tx, cid, tid, kind, &at, seq, (None, None))?;
     tx.execute(
         "INSERT INTO receipts VALUES(?,?)",
         params![cid, result.to_string()],
@@ -1253,6 +1266,9 @@ pub(crate) fn dispatch_prepared(
     .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
     drop(db);
+    if kind == "thread.create" {
+        crate::command_shared::ensure_exported(s, Some(cid))?;
+    }
     if kind == "thread.metadata.update" && c.get("worktreePath").is_some() {
         // The worker uses the durable outbox to distinguish a real change from a no-op.
         if crate::workspace_transition::pending(&s.db.lock().unwrap(), tid)? {
@@ -1904,6 +1920,15 @@ pub(crate) fn stage_message(
     let seq = append(tx, tid, "run.created", run, t)?;
     let result = json!({"sequence":seq});
     crate::outbox::stage(tx, c)?;
+    crate::command_shared::admit(
+        tx,
+        cid,
+        tid,
+        "message.dispatch",
+        at,
+        seq,
+        (Some(&run_id), Some(mid)),
+    )?;
     tx.execute(
         "INSERT INTO receipts VALUES(?,?)",
         params![cid, result.to_string()],

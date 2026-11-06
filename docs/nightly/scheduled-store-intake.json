@@ -23,7 +23,7 @@
       "sha256": "9da228d2dd53572ef38ed6ce864b9b939db41fc5edf33a662f78c072ee5a14cf"
     }
   ],
-  "status": "Definition handover and native ledger preservation implemented; native ingress/dispatch and legacy accepted-work migration remain open",
+  "status": "Definitions and native ledger handover implemented; new admission/dispatch uses the native adapter; legacy work, policy, relay and ambiguous preparation remain open",
   "scenario": {
     "providerCredentials": false,
     "network": "none",
@@ -61,8 +61,6 @@
   ],
   "notProven": [
     "relay ingestion and verification",
-    "due-window dispatch and completion in O3",
-    "new O3 ingress through the native webhook ledger",
     "lossless migration of legacy accepted O3 work",
     "cross-process crash recovery",
     "global nightly parity"
@@ -71,5 +69,6 @@
     "path": "tests/fixtures/t3-task-store-4262.json",
     "sha256": "eb858f608179522114c249f31406d64dea45603bea01f742ae4d87b8da3b91b2",
     "redaction": "Explicit placeholder endpoint tokens and delivery IDs; fixed timestamps; future deadlines moved to 2100"
-  }
+  },
+  "executionEvidence": "NATIVE-WEBHOOK-ADMISSION.md"
 }

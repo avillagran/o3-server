@@ -30,9 +30,9 @@
     "filteredTasksRejected": 0
   },
   "limits": [
-    "Legacy ingress/worker still use hook_queue/hook_replay and create no native receipt rows.",
-    "Relay origin URL resolution, native command receipts and accepted legacy work remain open.",
-    "This is not full scheduled-task or global nightly parity."
+    "New deliveries use the native admission/worker adapter; legacy accepted work still needs a safe ownership boundary.",
+    "Relay origin URL resolution, secret providers, global policy and ambiguous imported preparation remain open.",
+    "See NATIVE-WEBHOOK-ADMISSION.md for command receipts, effect barriers and their evidence; not full scheduled-task/global parity."
   ],
   "latestCoveredSourceCheck": {
     "tag": "v0.1.8-nightly.20261106.4275",

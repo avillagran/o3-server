@@ -19,6 +19,7 @@ pub mod store;
 
 pub use http::{serve, serve_io};
 pub mod command_output;
+mod command_shared;
 pub mod events;
 pub mod ops;
 #[cfg(target_os = "linux")]
@@ -73,6 +74,8 @@ pub mod terminal;
 pub mod thread_commands;
 pub mod threadq;
 pub mod vcs;
+mod webhook_dedupe;
+mod webhook_native;
 mod webhook_payload;
 pub mod workspace;
 mod workspace_transition;

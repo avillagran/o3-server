@@ -59,6 +59,7 @@ async fn g(
     }
 }
 pub(crate) async fn run(s: &Arc<State>, id: &str) -> Result<()> {
+    crate::command_shared::preparation_fence(s, id)?;
     let deferred_cleanup =
         s.db.lock()
             .unwrap()

@@ -24,7 +24,9 @@ pub fn recover(db: &mut Connection) -> Result<(), String> {
             serde_json::from_str(&body).map_err(|e| e.to_string())?
         };
         if kind == "runs"
-            && (crate::run_restart::pending(&tx, &id)? || crate::thread_launch::pending(&tx, &id)?)
+            && (crate::run_restart::pending(&tx, &id)?
+                || crate::thread_launch::pending(&tx, &id)?
+                || crate::command_shared::holds_unstarted(&tx, &id)?)
         {
             continue;
         }
@@ -184,6 +186,7 @@ pub fn resume(state: &std::sync::Arc<crate::store::State>) -> Result<(), String>
         crate::provider::start(state.clone(), tid, rid,
             "The server restarted during your previous turn. Continue the interrupted task using this native session's history. Inspect current state before acting: previous tools may already have executed. Do not repeat completed work. Any old approval or question was cancelled; request fresh authorization or ask again where necessary.".into());
     }
+    crate::command_shared::resume_queues(state)?;
     Ok(())
 }
 

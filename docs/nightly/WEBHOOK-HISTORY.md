@@ -70,10 +70,10 @@ no network and no provider credentials.
 
 ## Remaining work
 
-The legacy ingress and worker still use their private queue and replay policy.
-They do not create native receipt rows. Native ingress receipts/status IDs,
-pending dispatch/completion, command-receipt handover, accepted legacy work,
-relay verification and origin-derived endpoint URLs remain separate work.
-Token rotation currently returns a local path with `url: null`; it does not
-implement relay-origin resolution. This block does not certify the complete
-scheduled-task service or global nightly parity.
+New deliveries now use the native admission/worker adapter described in
+[NATIVE-WEBHOOK-ADMISSION.md](NATIVE-WEBHOOK-ADMISSION.md), including command
+receipts and a durable pre-provider claim. Previously accepted legacy work retains
+its private queue and still needs a safe ownership boundary. Relay verification,
+secret providers and global policy remain open. Token rotation returns a local
+path with `url: null`; relay-origin resolution remains separate. This does not
+certify the complete scheduled-task service or global nightly parity.

@@ -417,7 +417,7 @@ fn upsert(s: &Arc<State>, p: &Value) -> Reply {
         let sig = &p["schedule"]["signature"];
         let mut next = json!({"type":"webhook","signature":Value::Null,"maxDeliveryAgeMinutes":p["schedule"]["maxDeliveryAgeMinutes"].clone()});
         if sig.is_object() {
-            let mut stored = json!({"header":sig["header"].as_str().map(str::to_lowercase),"encoding":sig["encoding"],"prefix":sig["prefix"]});
+            let mut stored = json!({"header":sig["header"].as_str().map(|header| header.trim_matches(crate::webhook_payload::js_space).to_lowercase()),"encoding":sig["encoding"],"prefix":sig["prefix"]});
             if let Some(secret) = sig.get("secret") {
                 stored["secret"] = secret.clone();
             }
@@ -665,8 +665,26 @@ pub(crate) fn fire_prompt_key(
     let message = job
         .map(|j| format!("webhook-{j}"))
         .unwrap_or_else(|| format!("scheduled-{id}-{number}"));
-    let mode = thread_mode(&task).to_owned();
-    let outcome = match task["threadId"].as_str() {
+    let outcome = dispatch_task(s, &task, &cid, &message);
+    let now = now_ms();
+    let mut db = s.db.lock().unwrap();
+    let tx = db
+        .transaction()
+        .map_err(|e| failure(&e.to_string(), Some(id)))?;
+    let task = record_outcome(&tx, &task, &outcome, started, now)?;
+    tx.commit().map_err(|e| failure(&e.to_string(), Some(id)))?;
+    drop(db);
+    s.streams.ops.wake_scheduler();
+    if job.is_some() {
+        outcome.map_err(|e| failure(&e, Some(id)))?;
+    }
+    Ok(task)
+}
+
+fn dispatch_task(s: &Arc<State>, task: &Value, cid: &str, message: &str) -> Result<String, String> {
+    let id = task["id"].as_str().ok_or("Task identity missing")?;
+    let mode = thread_mode(task).to_owned();
+    match task["threadId"].as_str() {
         Some(thread) => {
             let target = get(&s.db.lock().unwrap(), "thread", thread);
             match target {
@@ -682,20 +700,130 @@ pub(crate) fn fire_prompt_key(
         }
         None => crate::events::launch(s, &json!({"commandId":cid,"projectId":task["projectId"],"title":task["title"],"modelSelection":task["modelSelection"],"runtimeMode":task["runtimeMode"],"interactionMode":task["interactionMode"],"workspaceStrategy":task["workspaceStrategy"],"createdBy":task["createdBy"],"creationSource":task["creationSource"],"initialMessage":{"messageId":message,"scheduledTaskId":id,"text":task["prompt"],"attachments":[]}}))
             .and_then(|result| result["threadId"].as_str().map(str::to_owned).ok_or_else(|| "Launched thread has no identity".into())),
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct WebhookFailure {
+    pub message: String,
+    /// Accepted work owns its replay claims even if completion bookkeeping fails.
+    pub started: bool,
+}
+
+pub(crate) fn fire_webhook(
+    s: &Arc<State>,
+    snapshot: &Value,
+    delivery: &str,
+    prompt: &str,
+) -> Result<(), WebhookFailure> {
+    use rusqlite::{params, OptionalExtension};
+    let fail = |message: &str, started| WebhookFailure {
+        message: message.into(),
+        started,
     };
+    let id = snapshot["id"]
+        .as_str()
+        .ok_or_else(|| fail("The pending webhook payload could not be prepared.", false))?;
+    if !s
+        .streams
+        .ops
+        .scheduled_runs
+        .lock()
+        .unwrap()
+        .insert(id.into())
+    {
+        return Err(fail("Schedule task is already running.", false));
+    }
+    let _active = ActiveTask { state: s, id };
+    let started = now_ms();
+    let mut task = {
+        let mut db = s.db.lock().unwrap();
+        let tx = db
+            .transaction()
+            .map_err(|_| fail("Could not start webhook run.", false))?;
+        let mut task = get(&tx, KIND, id)
+            .map_err(|_| fail("The task was deleted before this delivery ran.", false))?;
+        let completed=tx.query_row("SELECT 1 FROM scheduled_task_webhook_pending WHERE delivery_id=?1 AND state='completed'",[delivery],|_|Ok(())).optional().map_err(|_|fail("Could not start webhook run.",false))?.is_some();
+        if completed {
+            return Ok(());
+        }
+        let blocked = if task["createdAt"] != snapshot["createdAt"] {
+            Some("The task was replaced before this delivery ran.")
+        } else if task["schedule"]["type"] != "webhook" {
+            Some("The task's trigger changed before this delivery ran.")
+        } else if let Some(reason) = task["blockedByPolicy"].as_str() {
+            Some(reason)
+        } else if task["enabled"] != true {
+            Some("The task was paused before this delivery ran.")
+        } else {
+            None
+        };
+        if let Some(reason) = blocked {
+            return Err(fail(reason, false));
+        }
+        task["lastRunAt"] = json!(iso(started));
+        task["lastRunStatus"] = json!("running");
+        task["lastRunError"] = Value::Null;
+        task["updatedAt"] = json!(iso(started));
+        let write = || -> Result<(), String> {
+            put(&tx, KIND, id, "", &task)?;
+            put(
+                &tx,
+                "scheduledTaskNative",
+                id,
+                "",
+                &json!({"lastRunWebhookDeliveryId":delivery}),
+            )?;
+            tx.execute(
+                "UPDATE scheduled_task_webhook_pending SET state='running' WHERE delivery_id=?1",
+                [delivery],
+            )
+            .map_err(|e| e.to_string())?;
+            Ok(())
+        };
+        write().map_err(|_| fail("Could not start webhook run.", false))?;
+        tx.commit()
+            .map_err(|_| fail("Could not start webhook run.", false))?;
+        task
+    };
+    s.streams.ops.wake_scheduler();
+    task["prompt"] = json!(prompt);
+    let cid = format!("scheduled-task:{id}:webhook:{delivery}");
+    let message = format!("scheduled-task-message:{id}:webhook:{delivery}");
+    let outcome = dispatch_task(s, &task, &cid, &message);
+    if let Err(error) = &outcome {
+        if error.starts_with("shared_admission_recovery_required:") {
+            return Err(fail(error, true));
+        }
+    }
+
+    let accepted = outcome.is_ok();
     let now = now_ms();
     let mut db = s.db.lock().unwrap();
     let tx = db
         .transaction()
-        .map_err(|e| failure(&e.to_string(), Some(id)))?;
-    let task = record_outcome(&tx, &task, &outcome, started, now)?;
-    tx.commit().map_err(|e| failure(&e.to_string(), Some(id)))?;
+        .map_err(|_| fail("Could not record webhook completion.", accepted))?;
+    let counted=tx.execute("UPDATE scheduled_task_webhook_pending SET state=?1 WHERE delivery_id=?2 AND state NOT IN ('completed','failed')",params![if accepted{"completed"}else{"failed"},delivery]).map_err(|_|fail("Could not record webhook completion.",accepted))?;
+    let exists = tx
+        .query_row(
+            "SELECT 1 FROM scheduled_task_webhook_pending WHERE delivery_id=?1",
+            [delivery],
+            |_| Ok(()),
+        )
+        .optional()
+        .map_err(|_| fail("Could not record webhook completion.", accepted))?
+        .is_some();
+    if counted > 0 || !exists {
+        record_outcome(&tx, &task, &outcome, started, now)
+            .map_err(|_| fail("Could not record webhook completion.", accepted))?;
+    }
+    tx.commit()
+        .map_err(|_| fail("Could not record webhook completion.", accepted))?;
     drop(db);
     s.streams.ops.wake_scheduler();
-    if job.is_some() {
-        outcome.map_err(|e| failure(&e, Some(id)))?;
-    }
-    Ok(task)
+    outcome
+        .map(|_| ())
+        .map_err(|_| fail("The run failed to start.", false))
 }
 
 /// Finish only the admitted task row, even if a first binding or concurrent edit changed it.
@@ -791,6 +919,9 @@ fn due(s: &State, now: i64) -> (Vec<String>, Option<i64>) {
         if let Some(at) = crate::webhook::next_due(s) {
             soonest = Some(soonest.map_or(at, |v| v.min(at)));
         }
+        if let Some(at) = crate::webhook_native::next_due(s) {
+            soonest = Some(soonest.map_or(at, |v| v.min(at)));
+        }
     }
     (ready, soonest)
 }
@@ -862,6 +993,7 @@ pub fn ensure_started(s: &Arc<State>) {
             let (ready, soonest) = due(&s, now_ms());
             if soonest.is_some_and(|at| at <= now_ms()) {
                 crate::webhook::tick(&s);
+                crate::webhook_native::tick(&s);
             }
             let limited = crate::limits::tick(&s);
             let soonest = match (soonest, limited) {

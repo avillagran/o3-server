@@ -15,6 +15,7 @@ This replaces the 2026-10-31 rule "T3's database is never written" (`ARCHITECTUR
 | Settings, keybindings, connection catalog, attachments | Same files. |
 | Thread history | `src/t3_shared.rs`: O3 writes every change into `statev2.sqlite` and takes in what T3 wrote. |
 | Client sessions | O3 mirrors the sessions it issues or revokes into T3's `auth_sessions` and, at start, takes in T3's live sessions and revocations, so a client paired with either server is accepted by the other (tokens are signed with the shared key). |
+| Accepted creation and new-message commands | `src/command_shared.rs` mirrors proven `thread.create` and new-run `message.dispatch` receipts and their original command-linked creation events. Provider entry waits for a native process-bound start claim. See [Shared command admissions](nightly/SHARED-COMMAND-ADMISSIONS.md) for scope and recovery limits. |
 
 Only one server owns a profile at a time (`profile::refuse_live`, the ownership lock and port 3773).
 That is what lets the two directions below run without coordination.
@@ -71,7 +72,8 @@ incomplete; see [the task storage boundary](nightly/SHARED-SCHEDULED-STORE.md).
 ## What stays O3's own
 
 O3-only data with no T3 table (usage ledger, background and Claude tasks, MCP claims, control outbox,
-`visibleTurnItems`, receipts) stays in `userdata/o3.sqlite` beside `statev2.sqlite`.
+`visibleTurnItems`, legacy or unsupported command receipts) stays in `userdata/o3.sqlite` beside
+`statev2.sqlite`.
 
 ## Verification
 

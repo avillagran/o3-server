@@ -5,6 +5,12 @@ use rusqlite::{params, params_from_iter, Connection};
 use serde_json::{json, Value};
 
 fn seed(state: &std::sync::Arc<State>) {
+    // This fixture deliberately mutates pending states; a live timer must not drain it.
+    state
+        .streams
+        .ops
+        .scheduler
+        .store(true, std::sync::atomic::Ordering::SeqCst);
     let db = Connection::open(t3_shared::database(&state.dir)).unwrap();
     db.execute_batch(include_str!("fixtures/t3-statev2-80.sql"))
         .unwrap();

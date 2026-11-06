@@ -1,6 +1,5 @@
 //! Opt-in native acceptance. Only the rootless container runner may execute this test.
-#[path = "support/signals.rs"]
-mod signals;
+mod support;
 use o3_server::{claude::ClaudeProvider, codex::CodexProvider, provider::Providers, store::State};
 use serde_json::{json, Value};
 use std::{
@@ -8,6 +7,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+use support::signals;
 use t3_protocol::{pair_bearer, Connection, ConnectionOptions, PairingClient};
 
 fn projection(c: &Connection) -> Value {
@@ -630,6 +630,22 @@ fn official_scheduled_store_retains_pending_coalescence_and_replay() {
     let workspace = profile.join("workspace");
     std::fs::create_dir_all(&workspace).unwrap();
     client.rpc("projects.mutate", json!({"type":"project.create","commandId":"store-project","projectId":"p","title":"Synthetic scheduled store","workspaceRoot":workspace})).unwrap();
+    let native_http = webhook_http_probe(&client, &base);
+    let probe = support::start(|_| {});
+    let probe_client = probe.connect();
+    probe_client.rpc("projects.mutate",json!({"type":"project.create","commandId":"probe-project","projectId":"p","title":"Synthetic probe","workspaceRoot":workspace})).unwrap();
+    let o3_http = webhook_http_probe(&probe_client, &probe.base);
+    assert_eq!(
+        o3_http, native_http,
+        "Native HTTP/receipt behavior diverged"
+    );
+    std::fs::write(
+        output.join("native-http-comparison.json"),
+        serde_json::to_vec_pretty(&native_http).unwrap(),
+    )
+    .unwrap();
+    drop(probe_client);
+    drop(probe);
     let mut input = json!({"id":"continue","title":"Synthetic task","prompt":"No inference in this fixture","enabled":false,"schedule":{"type":"interval","everyMs":60000},"projectId":"p","threadMode":"continue","workspaceStrategy":{"type":"root"},"modelSelection":{"instanceId":"claudeAgent","model":"haiku"},"runtimeMode":"approval-required","interactionMode":"default","createdBy":"agent","creationSource":"server"});
     client.rpc("scheduledTasks.upsert", input.clone()).unwrap();
     input["id"] = json!("fresh");
@@ -1053,6 +1069,104 @@ fn official_scheduled_store_retains_pending_coalescence_and_replay() {
     .unwrap();
     std::fs::write(output.join("scheduled-store-result.json"), serde_json::to_vec_pretty(&json!({"reference":"v0.1.8-nightly.20261106.4262","tasks":4,"pending":1,"coalescedDeliveryIds":2,"replayKeys":2,"nativeTurns":0,"providerCredentials":false,"retainedAfterRestart":true,"exportContainsTaskTablesOnly":true,"o3TaskEditReadByT3Subscription":true,"nativeTaskEditReadByO3":true,"pendingPreservedAcrossHandover":true,"receiptReadComparisonsPerHandover":receipt_checks.len(),"o3RotatedTokensReadByT3":rotated_tasks.len(),"nativeRotationReadByO3":true})).unwrap()).unwrap();
     println!("SCHEDULED_STORE_REFERENCE_PASS: task modes, pending snapshot, latest coalesced request and replay retained without inference");
+}
+
+/// Temporary hooks never become due and the oversized prompt never reaches a provider.
+fn webhook_http_probe(client: &Connection, base: &str) -> Value {
+    use std::io::{Read, Write};
+    let mut input = json!({"id":"http-probe","title":"HTTP probe","prompt":"{{request}}","enabled":true,"schedule":{"type":"webhook","filters":[{"path":"headers.x-event","op":"equals","value":"accept"}]},"projectId":"p","threadMode":"new_thread","workspaceStrategy":{"type":"root"},"modelSelection":{"instanceId":"claudeAgent","model":"haiku"},"runtimeMode":"approval-required","interactionMode":"default"});
+    let hook = client.rpc("scheduledTasks.upsert", input.clone()).unwrap()["task"].clone();
+    let path = hook["webhook"]["path"].as_str().unwrap().to_owned();
+    let call = |method: &str, path: &str, body: &str, event: &str| -> Value {
+        let mut stream =
+            std::net::TcpStream::connect(base.trim().trim_start_matches("http://")).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        write!(stream,"{method} {path} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\nAuthorization: synthetic-value\r\nX-Event: {event}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).unwrap();
+        let status: u16 = response.split_whitespace().nth(1).unwrap().parse().unwrap();
+        let (headers, body) = response.split_once("\r\n\r\n").unwrap();
+        let outcome = headers
+            .lines()
+            .find_map(|line| {
+                let (key, value) = line.split_once(':')?;
+                key.eq_ignore_ascii_case("x-t3-hook-outcome")
+                    .then(|| value.trim())
+            })
+            .unwrap_or("");
+        let mut body: Value = if body.is_empty() {
+            Value::Null
+        } else {
+            serde_json::from_str(body).unwrap()
+        };
+        if body["deliveryId"].is_string() {
+            body["deliveryId"] = json!("delivery:synthetic");
+        }
+        json!({"status":status,"outcome":outcome,"body":body})
+    };
+    let mut responses = vec![call(
+        "POST",
+        &path,
+        &json!({"text":"x".repeat(121000)}).to_string(),
+        "accept",
+    )];
+    assert_eq!(responses[0]["outcome"], "prompt_too_long");
+    input["schedule"]["dedupe"] = json!({"replayKey":"{{body.id}}","coalesceKey":"{{query.group}}","coalesceWindowSeconds":3600});
+    client.rpc("scheduledTasks.upsert", input).unwrap();
+    for (index, method) in ["GET", "POST", "PUT", "PATCH"].into_iter().enumerate() {
+        responses.push(call(
+            method,
+            &format!("{path}?group=batch&token=synthetic"),
+            &json!({"id":format!("method-{index}"),"text":"latest"}).to_string(),
+            "accept",
+        ));
+    }
+    responses.push(call(
+        "POST",
+        &format!("{path}?group=batch"),
+        r#"{"id":"method-0","text":"duplicate"}"#,
+        "accept",
+    ));
+    responses.push(call("POST", &path, r#"{"text":"filtered"}"#, "reject"));
+    responses.push(call("HEAD", &path, "", "accept"));
+    client
+        .rpc(
+            "scheduledTasks.setEnabled",
+            json!({"id":"http-probe","enabled":false}),
+        )
+        .unwrap();
+    responses.push(call("POST", &path, "{}", "accept"));
+    let wrong = format!("{}/wrong", path.rsplit_once('/').unwrap().0);
+    responses.push(call("POST", &wrong, "{}", "accept"));
+    let summaries = client
+        .rpc(
+            "scheduledTasks.listWebhookDeliveries",
+            json!({"id":"http-probe","acceptAnyOutcome":true}),
+        )
+        .unwrap();
+    let mut details = vec![];
+    let nonce = regex::Regex::new(r"[0-9a-f]{12}").unwrap();
+    for row in summaries["deliveries"].as_array().unwrap() {
+        let mut detail = client
+            .rpc(
+                "scheduledTasks.getWebhookDelivery",
+                json!({"id":"http-probe","deliveryId":row["id"],"acceptAnyOutcome":true}),
+            )
+            .unwrap()["delivery"]
+            .clone();
+        detail.as_object_mut().unwrap().remove("id");
+        detail.as_object_mut().unwrap().remove("receivedAt");
+        if let Some(prompt) = detail["renderedPrompt"].as_str() {
+            detail["renderedPrompt"] = json!(nonce.replace_all(prompt, "012345abcdef").as_ref());
+        }
+        details.push(detail);
+    }
+    client
+        .rpc("scheduledTasks.delete", json!({"id":"http-probe"}))
+        .unwrap();
+    json!({"responses":responses,"deliveries":details})
 }
 
 #[test]

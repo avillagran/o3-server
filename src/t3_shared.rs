@@ -387,6 +387,7 @@ fn append_thread_event(
     event_type: &str,
     v: &Value,
     at: &str,
+    command: Option<&str>,
 ) -> Result<i64> {
     let mut metadata = Map::new();
     for field in ["runId", "nodeId", "driver", "providerInstanceId"] {
@@ -396,9 +397,9 @@ fn append_thread_event(
     }
     tx.query_row(
         "INSERT INTO orchestration_events(event_id,aggregate_kind,stream_id,stream_version,event_type,occurred_at,command_id,causation_event_id,correlation_id,actor_kind,payload_json,metadata_json,application_event_version)
-         VALUES(?1,'thread',?2,coalesce((SELECT max(stream_version)+1 FROM orchestration_events WHERE aggregate_kind='thread' AND stream_id=?2),0),?3,?4,NULL,NULL,NULL,'server',?5,?6,2)
+         VALUES(?1,'thread',?2,coalesce((SELECT max(stream_version)+1 FROM orchestration_events WHERE aggregate_kind='thread' AND stream_id=?2),0),?3,?4,?7,NULL,NULL,'server',?5,?6,2)
          RETURNING sequence",
-        params![random_id()?, tid, event_type, at, v.to_string(), Value::Object(metadata).to_string()],
+        params![random_id()?, tid, event_type, at, v.to_string(), Value::Object(metadata).to_string(),command],
         |r| r.get(0),
     )
     .map_err(|e| e.to_string())
@@ -619,7 +620,13 @@ fn project_row(
 }
 
 /// Writes one O3 record to T3 when T3's row differs. Returns the event sequence it appended.
-fn export_record(tx: &Transaction, k: &Kind, tid: &str, v: &Value) -> Result<Option<i64>> {
+fn export_record(
+    tx: &Transaction,
+    k: &Kind,
+    tid: &str,
+    v: &Value,
+    admission: Option<&(String, Value)>,
+) -> Result<Option<i64>> {
     let id = required(v, "id")?;
     let existing = payload_row(tx, k, &id)?
         .map(|s| serde_json::from_str::<Value>(&s).map_err(|e| e.to_string()))
@@ -661,7 +668,25 @@ fn export_record(tx: &Transaction, k: &Kind, tid: &str, v: &Value) -> Result<Opt
         k.updated
     };
     let at = occurred_at(v);
-    let sequence = append_thread_event(tx, stream, event_type, v, &at)?;
+    let sequence = if let Some((cid, original)) =
+        admission.filter(|_| created || event_type == "thread.created")
+    {
+        let first = append_thread_event(
+            tx,
+            stream,
+            event_type,
+            original,
+            &occurred_at(original),
+            Some(cid),
+        )?;
+        if original != v {
+            append_thread_event(tx, stream, k.updated, v, &at, None)?
+        } else {
+            first
+        }
+    } else {
+        append_thread_event(tx, stream, event_type, v, &at, None)?
+    };
     project_row(tx, k, stream, v, existing.as_ref(), created)?;
     if k.kind != "thread" {
         // T3 stamps the thread with every non-thread event; never move it backwards.
@@ -1068,6 +1093,7 @@ struct Dirty {
     thread_id: String,
     version: i64,
     body: Option<Value>,
+    admission: Option<(String, Value)>,
 }
 
 /// O3's own checkpoints predate the shared base and lack fields T3's schema requires. Fill them from
@@ -1132,6 +1158,7 @@ fn t3_shape(db: &Connection, kind_name: &str, mut v: Value) -> Value {
 
 /// Exports every marked record. Returns how many were written to T3.
 pub fn export(s: &State, t3: &mut Connection) -> Result<usize> {
+    let _serial = s.shared_export.lock().unwrap();
     let mut written = crate::task_shared::export(s, t3)?;
     let mut after = 0i64;
     loop {
@@ -1171,6 +1198,7 @@ pub fn export(s: &State, t3: &mut Connection) -> Result<usize> {
                         thread_id,
                         version,
                         body,
+                        admission: None,
                     });
                     continue;
                 }
@@ -1182,18 +1210,30 @@ pub fn export(s: &State, t3: &mut Connection) -> Result<usize> {
                     }
                     None => None,
                 };
+                let needs_admission = if let Some(mapping) = self::kind(&kind) {
+                    payload_row(t3,mapping,&id)?.is_none() || kind=="thread" && !t3.query_row("SELECT EXISTS(SELECT 1 FROM orchestration_events WHERE aggregate_kind='thread' AND stream_id=?1 AND event_type='thread.created' AND application_event_version=2)",[&id],|row|row.get::<_,bool>(0)).map_err(|e|e.to_string())?
+                } else {
+                    false
+                };
+                let admission = if needs_admission {
+                    crate::command_shared::creation(&db, &kind, &id)?
+                        .map(|(cid, payload)| (cid, t3_shape(&db, &kind, payload)))
+                } else {
+                    None
+                };
                 batch.push(Dirty {
                     kind,
                     id,
                     thread_id,
                     version,
                     body,
+                    admission,
                 });
             }
             batch
         };
         if batch.is_empty() {
-            return Ok(written);
+            return Ok(written + crate::command_shared::export(s, t3)?);
         }
         let mut rejects = Vec::new();
         let tx = t3
@@ -1213,7 +1253,8 @@ pub fn export(s: &State, t3: &mut Connection) -> Result<usize> {
                     export_session(&tx, v).map(|written| written.then_some(None))
                 } else {
                     let k = kind(&item.kind).ok_or("unknown kind")?;
-                    export_record(&tx, k, &item.thread_id, v).map(|written| written.map(Some))
+                    export_record(&tx, k, &item.thread_id, v, item.admission.as_ref())
+                        .map(|written| written.map(Some))
                 };
                 let end = if result.is_ok() {
                     "RELEASE o3_record"
@@ -1658,6 +1699,7 @@ pub fn start(s: &State) -> Result<Option<Connection>> {
         Some(_) => json!({}),
     };
     report["sessions"] = json!(take_sessions(s, &t3)?);
+    report["commandReceipts"] = json!(crate::command_shared::import(s, &t3)?);
     report["taskRows"] = json!(crate::task_shared::start(s, &mut t3)?);
     // Migration 76 adds fields older exporters could not persist. Revisit local project intent
     // once after T3 upgrades its database, even if the old exporter already recorded a rejection.

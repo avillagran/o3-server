@@ -1,7 +1,9 @@
 //! Signed inbound hooks on the ordinary listener. No payload/secret logging or network delivery.
+#[cfg(test)]
+use crate::store::random_id;
 use crate::{
     events::{get, put},
-    store::{now_ms, random_id, State},
+    store::{now_ms, State},
 };
 use hmac::{Hmac, Mac};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -9,6 +11,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
+#[cfg(test)]
 fn signed_template(template: &str) -> bool {
     let mut rest = template;
     while let Some((_, tail)) = rest.split_once("{{") {
@@ -24,14 +27,15 @@ fn signed_template(template: &str) -> bool {
 }
 pub fn validate(s: &Value) -> Result<(), &'static str> {
     let sig = &s["signature"];
-    if sig["header"].as_str().is_none_or(|h| {
-        h.is_empty() || h.len() > 256 || h.parse::<hyper::header::HeaderName>().is_err()
-    }) || !matches!(sig["encoding"].as_str(), Some("hex" | "base64"))
-        || sig["prefix"]
-            .as_str()
-            .is_none_or(|p| p.len() > 256 || p.chars().any(char::is_control))
+    if !sig.is_null()
+        && (!sig.is_object()
+            || sig["header"]
+                .as_str()
+                .is_none_or(|h| h.trim_matches(crate::webhook_payload::js_space).is_empty())
+            || !matches!(sig["encoding"].as_str(), Some("hex" | "base64"))
+            || !sig["prefix"].is_string())
     {
-        return Err("Webhook requires a signature header, encoding and prefix");
+        return Err("invalid webhook signature");
     }
     if sig.get("secretRef").is_some() {
         return Err("Webhook secretRef is unavailable; supply a signing secret");
@@ -41,34 +45,62 @@ pub fn validate(s: &Value) -> Result<(), &'static str> {
     {
         return Err("invalid delivery age");
     }
-    if s["filters"].as_array().is_some_and(|a| {
-        a.len() > 32
-            || a.iter().any(|f| {
-                !matches!(
-                    f["op"].as_str(),
-                    Some("exists" | "equals" | "notEquals" | "in" | "startsWith")
-                ) || f["path"]
-                    .as_str()
-                    .is_none_or(|p| p.len() > 1024 || !matches!(p.split('.').next(), Some("body")))
+    if let Some(filters) = s.get("filters") {
+        let Some(filters) = filters.as_array() else {
+            return Err("invalid webhook filters");
+        };
+        if filters.len() > 16
+            || filters.iter().any(|f| {
+                let valid_path = f["path"].as_str().is_some_and(|p| {
+                    matches!(p.split('.').next(), Some("body" | "headers" | "query"))
+                });
+                let valid_value = match f["op"].as_str() {
+                    Some("exists") => true,
+                    Some("equals" | "notEquals" | "startsWith") => f["value"].is_string(),
+                    Some("in") => f["value"].as_array().is_some_and(|a| {
+                        !a.is_empty()
+                            && a.iter().all(|v| {
+                                v.as_str().is_some_and(|s| {
+                                    !s.is_empty()
+                                        && !s.contains(',')
+                                        && s.trim_matches(crate::webhook_payload::js_space) == s
+                                })
+                            })
+                    }),
+                    _ => false,
+                };
+                !valid_path || !valid_value
             })
-    }) {
-        return Err("invalid webhook filters");
-    }
-    if s["dedupe"]
-        .get("coalesceWindowSeconds")
-        .is_some_and(|v| v.as_u64().is_none_or(|n| !(10..=3600).contains(&n)))
-    {
-        return Err("invalid coalesce window");
-    }
-    for key in ["replayKey", "coalesceKey"] {
-        if s["dedupe"][key]
-            .as_str()
-            .is_some_and(|t| !signed_template(t))
         {
-            return Err("webhook templates require signed body fields");
+            return Err("invalid webhook filters");
+        }
+    }
+    if let Some(dedupe) = s.get("dedupe") {
+        if !dedupe.is_object()
+            || dedupe
+                .get("coalesceWindowSeconds")
+                .is_some_and(|v| v.as_u64().is_none_or(|n| !(10..=3600).contains(&n)))
+        {
+            return Err("invalid coalesce window");
+        }
+        for key in ["replayKey", "coalesceKey"] {
+            if let Some(template) = dedupe.get(key) {
+                if !template.as_str().is_some_and(dedupe_template) {
+                    return Err("invalid webhook dedupe template");
+                }
+            }
         }
     }
     Ok(())
+}
+pub(crate) fn dedupe_template(template: &str) -> bool {
+    static PATTERN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let regex=PATTERN.get_or_init(||{
+        let space=r"\t\n\x0b\x0c\r \u{00a0}\u{1680}\u{2000}-\u{200a}\u{2028}\u{2029}\u{202f}\u{205f}\u{3000}\u{feff}";
+        regex::Regex::new(&format!(r"\{{\{{[{space}]*(?:(?:body|headers|query)(?:\.[^{{}}.{space}]+)*|request)[{space}]*\}}\}}" )).unwrap()
+    });
+    let remainder = regex.replace_all(template, "");
+    regex.is_match(template) && !remainder.contains("{{") && !remainder.contains("}}")
 }
 pub(crate) fn initialize(db: &Connection) -> Result<(), String> {
     db.execute_batch("CREATE TABLE IF NOT EXISTS hook_queue(id TEXT PRIMARY KEY,task TEXT NOT NULL,coalesce TEXT NOT NULL,due INTEGER NOT NULL,expires INTEGER NOT NULL,prompt TEXT NOT NULL); CREATE INDEX IF NOT EXISTS hook_queue_due ON hook_queue(due); CREATE TABLE IF NOT EXISTS hook_replay(task TEXT NOT NULL,key TEXT NOT NULL,expires INTEGER NOT NULL,PRIMARY KEY(task,key));").map_err(|e|e.to_string())?;
@@ -119,17 +151,22 @@ pub fn prepare(db: &Connection, id: &str, task: &mut Value) -> Result<(), String
         return Ok(());
     }
     validate(&task["schedule"])?;
-    if !signed_template(task["prompt"].as_str().unwrap_or("")) {
-        return Err("webhook prompt requires signed body fields".into());
-    }
     initialize(db)?;
     let old = get(db, "hookCredentials", id).unwrap_or(Value::Null);
-    let secret = task["schedule"]["signature"]["secret"]
-        .as_str()
-        .or_else(|| old["secret"].as_str())
-        .filter(|v| !v.is_empty() && v.len() <= 4096)
-        .ok_or("Webhook requires a signing secret")?
-        .to_owned();
+    let signed = task["schedule"]["signature"].is_object();
+    let secret = if signed {
+        Some(
+            task["schedule"]["signature"]["secret"]
+                .as_str()
+                .map(|s| s.trim_matches(crate::webhook_payload::js_space))
+                .or_else(|| old["secret"].as_str())
+                .filter(|s| !s.is_empty())
+                .ok_or("A webhook signature check needs a signing secret.")?
+                .to_owned(),
+        )
+    } else {
+        None
+    };
     let token = old["token"]
         .as_str()
         .map(str::to_owned)
@@ -141,15 +178,14 @@ pub fn prepare(db: &Connection, id: &str, task: &mut Value) -> Result<(), String
         "",
         &json!({"secret":secret,"token":token}),
     )?;
-    task["schedule"]["signature"]
-        .as_object_mut()
-        .ok_or("signature required")?
-        .remove("secret");
-    // T3 `webhookPath`: `encodeURIComponent(taskId)`, since ids look like `scheduled-task:<id>`.
-    task["webhook"] = json!({"path":format!("/api/hooks/{}/{token}", encode_component(id)),"url":null,"hasSecret":true});
+    if let Some(signature) = task["schedule"]["signature"].as_object_mut() {
+        signature.remove("secret");
+    }
+    task["webhook"] = json!({"path":format!("/api/hooks/{}/{token}",encode_component(id)),"url":null,"hasSecret":secret.is_some()});
     Ok(())
 }
 /// A task without the fields its runs write, for comparing definitions.
+#[cfg(test)]
 fn definition(task: &Value) -> Value {
     let mut t = task.clone();
     if let Some(m) = t.as_object_mut() {
@@ -209,6 +245,7 @@ pub fn admits(s: &State, id: &str, token: &str) -> bool {
             .verify_slice(&candidate.finalize().into_bytes())
             .is_ok()
 }
+#[cfg(test)]
 pub fn accept(
     s: &State,
     id: &str,

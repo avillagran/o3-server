@@ -5,11 +5,10 @@ travel with migration-80 shared profiles. O3 imports native edits and deletions
 even when the thread-event sequence has not advanced. Its task edits export back
 to the native tables without inventing orchestration events.
 
-Webhook execution handover remains incomplete: O3's existing ingress and worker
-still use its private legacy queue, while imported native pending rows are
-preserved for the next owner. The new ingress/dispatch adapter and lossless
-legacy-work migration are still required before using this draft for due webhook
-work. No additional shared-task capability is advertised.
+New ingress and dispatch now use the native ledger, with shared admission/effect
+barriers. See [NATIVE-WEBHOOK-ADMISSION.md](NATIVE-WEBHOOK-ADMISSION.md) for runtime
+proofs and the remaining ambiguous-preparation, relay, policy and legacy-work
+boundaries. No additional shared-task capability is advertised.
 
 The reference proof is pinned to official nightly 4262, commit `c55db3e9`, with
 the release digest and source hashes in `scheduled-store-intake.json`. Nightly
@@ -106,13 +105,14 @@ retain their separate schema-73 and schema-80 coverage.
 
 ## Still required
 
-Dispatch/completion recovery and new O3 ingress still require the native ledger
-adapter. The current private O3 queue
-stores a rendered prompt and expiry, which cannot reconstruct the original
-native task/request snapshot. Existing accepted work needs a lossless migration
-or an explicit compatibility boundary before ownership can change.
+The native adapter now handles new O3 ingress and pending dispatch/completion;
+its separate evidence and remaining limits are in
+[NATIVE-WEBHOOK-ADMISSION.md](NATIVE-WEBHOOK-ADMISSION.md). The legacy queue stores
+only a rendered prompt and expiry, which cannot reconstruct the original native
+task/request snapshot. Existing accepted work needs a safe compatibility boundary
+before ownership can change.
 
-Still required: due and expired windows, edits while queued, dispatch crash
-recovery, successful and failed completion, relay ingestion and policy behavior.
-Preserving a relay row does not prove relay ingestion or verification. The desktop composer
-and the remaining platform inventory retain their separate acceptance gaps.
+Still required: complete due-window/contention/movement comparisons, ambiguous
+imported preparation, relay ingestion, secret providers and global managed policy.
+Preserving a relay row does not prove relay ingestion or verification. The desktop
+composer and remaining platform inventory retain separate acceptance gaps.

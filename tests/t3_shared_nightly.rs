@@ -274,7 +274,21 @@ fn nightly_search_triggers_exclude_attachment_placeholders_on_export() {
         let message = json!({"id":id,"threadId":"t","runId":null,"nodeId":null,"role":"user","createdBy":"user","text":text,"attachments":[],"streaming":false,"createdAt":"2026-11-06T12:00:00.000Z","updatedAt":"2026-11-06T12:00:00.000Z"});
         put(&state.db.lock().unwrap(), "messages", id, "t", &message).unwrap();
     }
-    assert_eq!(t3_shared::export(&state, &mut shared).unwrap(), 5);
+    t3_shared::export(&state, &mut shared).unwrap();
+    for (table, expected) in [
+        ("projection_projects", 1),
+        ("orchestration_v2_projection_threads", 1),
+        ("orchestration_v2_projection_messages", 3),
+    ] {
+        assert_eq!(
+            shared
+                .query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            expected
+        );
+    }
+    assert_eq!(t3_shared::export(&state, &mut shared).unwrap(), 0);
     assert_eq!(
         shared
             .query_row(
