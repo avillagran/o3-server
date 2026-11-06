@@ -65,6 +65,22 @@ evidence; their cause is unproven, and one successful run is not a stability
 certification. Per-stage projections and selected synthetic native transcript
 text are captured for diagnosis without copying provider credential files.
 
+## Webhook recovery correction
+
+The full CI matrix exposed concurrent workers reclaiming the same persisted
+webhook claim while one worker was still dispatching it. The second worker hit
+the task admission reservation and postponed a delivery that had already been
+admitted. A per-delivery owner now excludes live work from both claims and due
+wakeups. Releasing that owner wakes the scheduler; a persisted claim with no live
+owner remains immediately recoverable after interruption. Only a selected job's
+prompt is read, avoiding payload scans through other workers' claims.
+
+The existing crash/receipt regression reproduced the failure before the fix and
+passes afterward. A second regression verifies live ownership, release and
+recovery directly. Both are now included in the routine container runner;
+`--unit-filter webhook::crash_tests` executes them without rebuilding unrelated
+integration binaries.
+
 ## Still open
 
 - Diagnose the reference's intermittent rapid-follow-up answers; avoid treating

@@ -17,7 +17,11 @@
     "nativeGoalOptInsIgnoredPerConfiguration": 3,
     "sharedHistoryPassed": 14,
     "clippyMinimal": "passed",
-    "clippyDefault": "passed"
+    "clippyDefault": "passed",
+    "webhookCrashAndOwnershipCases": 2,
+    "webhookRecoveryMinimal": "passed",
+    "webhookRecoveryDefault": "passed",
+    "fullCi": "previous head failed concurrent webhook recovery; fixed, exact-head matrix pending"
   },
   "native": {
     "claudeVersion": "2.1.318",

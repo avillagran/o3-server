@@ -387,38 +387,80 @@ pub fn accept(
     (202, "accepted")
 }
 pub fn next_due(s: &State) -> Option<i64> {
-    s.db.lock()
-        .unwrap()
+    let db = s.db.lock().unwrap();
+    let active = s.streams.ops.hook_runs.lock().unwrap();
+    let mut q = db
+        .prepare("SELECT id,CASE WHEN due=9223372036854775807 THEN 0 ELSE due END FROM hook_queue")
+        .ok()?;
+    let rows = q
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .ok()?;
+    rows.filter_map(Result::ok)
+        .filter(|(id, _)| !active.contains(id))
+        .map(|(_, due)| due)
+        .min()
+}
+
+/// A persisted claim without an in-process owner is recoverable; a live owner is exclusive.
+struct ActiveHook<'a> {
+    state: &'a State,
+    id: String,
+}
+impl Drop for ActiveHook<'_> {
+    fn drop(&mut self) {
+        self.state
+            .streams
+            .ops
+            .hook_runs
+            .lock()
+            .unwrap()
+            .remove(&self.id);
+        self.state.streams.ops.scheduler_wake.notify_one();
+    }
+}
+type QueuedHook = (String, String, i64, String);
+fn claim_next(s: &State) -> Option<QueuedHook> {
+    let db = s.db.lock().unwrap();
+    let mut active = s.streams.ops.hook_runs.lock().unwrap();
+    let mut q=db.prepare("SELECT id,task,expires FROM hook_queue WHERE due<=?1 OR due=9223372036854775807 ORDER BY due,id").ok()?;
+    let rows = q
+        .query_map([now_ms()], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })
+        .ok()?;
+    let job = rows
+        .filter_map(Result::ok)
+        .find(|job| !active.contains(&job.0))?;
+    // Read the potentially large prompt only for the selected job, not other workers' claims.
+    let prompt = db
         .query_row(
-            "SELECT min(CASE WHEN due=9223372036854775807 THEN 0 ELSE due END) FROM hook_queue",
-            [],
-            |r| r.get(0),
+            "SELECT prompt FROM hook_queue WHERE id=?1",
+            [&job.0],
+            |row| row.get::<_, String>(0),
         )
-        .ok()
-        .flatten()
+        .ok()?;
+    db.execute(
+        "UPDATE hook_queue SET due=9223372036854775807 WHERE id=?1",
+        [&job.0],
+    )
+    .ok()?;
+    active.insert(job.0.clone());
+    Some((job.0, job.1, job.2, prompt))
 }
 pub fn tick(s: &Arc<State>) {
     for _ in 0..8 {
-        let job = {
-            let db = s.db.lock().unwrap();
-            let v=db.query_row("SELECT id,task,expires,prompt FROM hook_queue WHERE due<=? OR due=9223372036854775807 ORDER BY due LIMIT 1",[now_ms()],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,i64>(2)?,r.get::<_,String>(3)?))).optional().ok().flatten();
-            if let Some((id, _, _, _)) = &v {
-                // Freeze the prompt while dispatching. A new coalesced delivery gets
-                // its own job; a crash leaves this claim eligible for receipt replay.
-                if db
-                    .execute(
-                        "UPDATE hook_queue SET due=9223372036854775807 WHERE id=?",
-                        [id],
-                    )
-                    .is_err()
-                {
-                    return;
-                }
-            }
-            v
-        };
-        let Some((id, task, expires, prompt)) = job else {
+        let Some((id, task, expires, prompt)) = claim_next(s) else {
             return;
+        };
+        let _claim = ActiveHook {
+            state: s,
+            id: id.clone(),
         };
         #[cfg(test)]
         if crash_tests::stop(s, "claim") {
@@ -493,6 +535,43 @@ mod crash_tests {
             .is_some_and(|(p, at)| p == &s.dir && *at == stage)
     }
     #[test]
+    fn live_claim_is_exclusive_and_an_abandoned_claim_is_immediately_recoverable() {
+        let dir = std::env::temp_dir().join(format!("o3-hook-owner-{}", random_id().unwrap()));
+        let state = State::open(&dir).unwrap();
+        {
+            let db = state.db.lock().unwrap();
+            initialize(&db).unwrap();
+            db.execute(
+                "INSERT INTO hook_queue VALUES('job','task','',0,?1,'synthetic prompt')",
+                [now_ms() + 60000],
+            )
+            .unwrap();
+        }
+        let first = claim_next(&state).unwrap();
+        let owner = ActiveHook {
+            state: &state,
+            id: first.0.clone(),
+        };
+        assert_eq!(first.0, "job");
+        assert!(
+            claim_next(&state).is_none(),
+            "a second worker must not claim live work"
+        );
+        assert!(
+            next_due(&state).is_none(),
+            "a live owner is not a recovery candidate"
+        );
+        drop(owner);
+        assert_eq!(next_due(&state), Some(0));
+        let recovered = claim_next(&state).unwrap();
+        let _owner = ActiveHook {
+            state: &state,
+            id: recovered.0.clone(),
+        };
+        assert_eq!(recovered, first);
+        assert!(claim_next(&state).is_none());
+    }
+    #[test]
     fn durable_claim_and_receipt_survive_interrupted_dispatch_once() {
         use t3_protocol::api::{
             orchestration,
@@ -537,9 +616,10 @@ mod crash_tests {
             runtime.block_on(async {
                 tick(&s.state);
             });
+            let due = next_due(&s.state);
             assert!(
-                next_due(&s.state).is_some_and(|due| due <= now_ms()),
-                "interrupted claims must be scheduled immediately on recovery"
+                due.is_some_and(|due| due <= now_ms()),
+                "interrupted claim at {stage} must be immediately recoverable, got {due:?}"
             );
             assert_eq!(
                 s.state
