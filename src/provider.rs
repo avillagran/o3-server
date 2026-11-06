@@ -291,6 +291,9 @@ pub(crate) fn start(
     rid: String,
     text: String,
 ) {
+    if s.shutting_down.load(std::sync::atomic::Ordering::Acquire) {
+        return;
+    }
     let Some(provider) = s.provider.lock().unwrap().clone() else {
         return;
     };
@@ -867,6 +870,9 @@ pub(crate) fn persist_attempt(
     expected: Option<&str>,
     event: ProviderEvent,
 ) -> Result<(), String> {
+    if s.shutting_down.load(std::sync::atomic::Ordering::Acquire) {
+        return Ok(());
+    }
     if let ProviderEvent::NativeRecoveryReleased { id, reply } = event {
         let result = crate::native_recovery::release(s, tid, rid, expected, &id);
         let _ = reply.send(result.clone());
@@ -949,6 +955,9 @@ pub(crate) fn persist_attempt(
     }
     let settings = crate::settings::read(s)?;
     let mut db = s.db.lock().unwrap();
+    if s.shutting_down.load(std::sync::atomic::Ordering::Acquire) {
+        return Ok(());
+    }
     let tx = db.transaction().map_err(|e| e.to_string())?;
     let mut thread = get(&tx, "thread", tid)?;
     let mut run = get(&tx, "runs", rid)?;

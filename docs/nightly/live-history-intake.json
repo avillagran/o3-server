@@ -10,8 +10,18 @@
   ],
   "affectedValidation": {
     "isolation": "Dedicated /var/tmp/o3-server/live-history-target; Rust tests run in rootless Podman with read-only source/binaries and private state. Shared cross-checkout build artifacts are not accepted as evidence.",
-    "default": {"libraryPassed":176,"libraryIgnored":6,"liveHistoryPassed":1,"serverUpgradePassed":1},
-    "minimal": {"libraryPassed":176,"libraryIgnored":6,"liveHistoryPassed":1,"serverUpgradePassed":1},
+    "default": {
+      "libraryPassed": 176,
+      "libraryIgnored": 6,
+      "liveHistoryPassed": 1,
+      "serverUpgradePassed": 1
+    },
+    "minimal": {
+      "libraryPassed": 176,
+      "libraryIgnored": 6,
+      "liveHistoryPassed": 1,
+      "serverUpgradePassed": 1
+    },
     "historyCases": "Plain and compact real-client snapshots with600 tools, older answer and changed logical position, followed by complete duplicate-free pagination.",
     "upgrade": "Real server process SIGKILL/restart, replacement binding acknowledgement, same app run, persisted native objective/budget/usage and automatic completion; no goal-control RPCs.",
     "installedCodexProbe": "Codex0.167 with private offline loopback provider: automatic turn on resume and a subsequent explicit turn/start accepted. No user credentials, user history or successful inference."
@@ -20,5 +30,5 @@
     "Complete native opaque cursor, snapshot-anchoring and deferred-work parity.",
     "Full driver/session/idle-wake parity and remaining PARITY.md inventory."
   ],
-  "deployment": "Not installed by this commit. Verified old executables are83ce347 on NODE and M2. Intel192.168.1.70 is currently unreachable."
+  "deployment": "2026-11-06:445f545 installed and verified on NODE and M2. NODE real HTTP snapshots retain assistant answers and active goals for both reported threads; both executions returned to running. Environment identities retained and shared-state rejections zero. Intel remains unreachable; the shutdown receipt fence is a separate pending change."
 }
