@@ -45,6 +45,8 @@ pub fn initialize(db: &Connection) -> Result<()> {
     db.execute_batch("CREATE TABLE IF NOT EXISTS records(kind TEXT NOT NULL,id TEXT NOT NULL,thread_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(kind,id)); CREATE INDEX IF NOT EXISTS records_thread ON records(thread_id,kind); CREATE TABLE IF NOT EXISTS events(sequence INTEGER PRIMARY KEY AUTOINCREMENT,thread_id TEXT NOT NULL,body TEXT NOT NULL,shell TEXT); CREATE TABLE IF NOT EXISTS receipts(command_id TEXT PRIMARY KEY,result TEXT NOT NULL);").map_err(|e|e.to_string())?;
     // Subscription cursors: per-thread and shell event seeks (see `next`).
     db.execute_batch("CREATE INDEX IF NOT EXISTS events_thread_sequence ON events(thread_id,sequence); CREATE INDEX IF NOT EXISTS events_shell_sequence ON events(sequence) WHERE shell IS NOT NULL;").map_err(|e|e.to_string())?;
+    // Visible windows follow logical positions, including updated older rows.
+    db.execute_batch("CREATE INDEX IF NOT EXISTS records_visible_position ON records(thread_id,coalesce(json_extract(body,'$.position'),json_extract(body,'$.item.ordinal'),0)) WHERE kind='visibleTurnItems';").map_err(|e|e.to_string())?;
     // The partial index finds the latest user without reading assistant bodies.
     db.execute_batch("CREATE INDEX IF NOT EXISTS records_turn_ordinal ON records(thread_id,json_extract(body,'$.ordinal')) WHERE kind='turnItems'; CREATE INDEX IF NOT EXISTS records_user_message ON records(thread_id) WHERE kind='messages' AND json_extract(body,'$.role')='user';").map_err(|e|e.to_string())?;
     repair_boolean_settled_override(db)?;
@@ -426,10 +428,13 @@ pub fn history(s: &State, tid: &str, cursor: &str) -> Result<Value> {
     let anchor: i64 = cursor.parse().map_err(|_| "invalid history cursor")?;
     let db = s.reader.lock().unwrap();
     get(&db, "thread", tid)?;
-    let (lower, more) = crate::snapshot::boundary(&db, tid, anchor, 20)?;
-    let mut q=db.prepare("SELECT body FROM records WHERE kind='visibleTurnItems' AND thread_id=? AND rowid<? AND rowid>=? ORDER BY rowid DESC").map_err(|e|e.to_string())?;
+    let window = crate::snapshot::window(&db, tid, anchor, 20)?;
+    let selected = serde_json::to_string(&window.ids).map_err(|e| e.to_string())?;
+    let lower = window.ids.last().copied().unwrap_or(0);
+    let more = window.more;
+    let mut q=db.prepare("SELECT body FROM records WHERE kind='visibleTurnItems' AND thread_id=? AND rowid IN (SELECT value FROM json_each(?)) ORDER BY coalesce(json_extract(body,'$.position'),json_extract(body,'$.item.ordinal'),0) DESC,rowid DESC").map_err(|e|e.to_string())?;
     let rows = q
-        .query_map(params![tid, anchor, lower], |r| r.get::<_, String>(0))
+        .query_map(params![tid, selected], |r| r.get::<_, String>(0))
         .map_err(|e| e.to_string())?;
     let mut items = Vec::new();
     for row in rows {

@@ -3661,6 +3661,39 @@ this block introduces no new host memory-pressure experiment.
 
 Exact evidence and remaining limits are in
 [`provider-failure-intake.json`](nightly/provider-failure-intake.json).
+
+## 2026-11-06 — Live conversation visibility and upgrade continuation
+
+A long-running thread could reopen with only its older-history control and a
+collapsed tools group. Its answer was still stored. The bounded reader selected
+physical SQLite row ages and omitted messages outside that selection, including
+the answer still growing in the active run.
+
+The window now follows canonical visible positions and retains the exact selected
+row IDs across messages, items, compact bodies and older pages. An index supports
+the position ordering; only IDs are sorted before bounded payloads are read. As in
+the pinned ProjectionStore, messages belonging to queued, preparing, starting,
+running or waiting runs remain available independently of the visible tool page.
+The existing 75/500-row policy, byte budget and legacy numeric cursor interface
+remain in place; the complete native cursor/deferred-work protocol remains open.
+
+The compatible client exercises plain and compact HTTP snapshots after 600 tools,
+with the streaming answer both outside the page and updated to a later logical
+position. Every command and the answer remains reachable through older pages.
+A separate test kills and restarts the actual server binary on a private legacy
+profile: the native goal, objective, usage and budget survive in the same app run,
+and an automatic native turn completes it without goal-control RPCs. The test
+waits for the replacement binding, so stale state cannot satisfy restart readiness.
+
+An installed Codex0.167 offline protocol probe also starts an automatic turn while
+resuming an active goal and accepts a subsequent explicit turn start. It uses a
+private local HTTP failure peer, no credentials and no external network.
+
+Validation uses a dedicated Cargo target directory. A shared target reused a
+different checkout's library after the red-baseline build; those mixed artifacts
+were discarded as evidence. The isolated candidate passes the affected library
+and both client/server regressions in both feature modes. Full CI and installation
+evidence are tracked separately; passing a checkout is not an installed fix.
 This block is not a complete headless parity certificate; [PARITY.md](PARITY.md)
 includes every headless surface, methods without a current client caller, the new
 RPCs and the migration80 acceptance backlog.

@@ -1,0 +1,24 @@
+{
+  "target": "T3 Code nightly4275,6577c6b6185167c0e502fa01f9e8e8f2dee6ff25",
+  "reference": "Nightly4262 ProjectionStore.readCanonicalProjection message cohort and retainedWindowRows position ordering; threadHistoryPaging policy.",
+  "problem": "A bounded tool-heavy snapshot discarded the stored streaming answer and its originating message, leaving the older-history control and collapsed tool activity.",
+  "implemented": [
+    "Select visible windows by canonical position/ordinal and retain selected row identities across every transcript representation and older-history page.",
+    "Keep messages for queued/preparing/starting/running/waiting runs, matching the upstream active-run message cohort.",
+    "Index logical visible positions and sort IDs before reading bounded payloads.",
+    "Retain the existing numeric cursor interface and75/500-row and1MiB selection policy."
+  ],
+  "affectedValidation": {
+    "isolation": "Dedicated /var/tmp/o3-server/live-history-target; Rust tests run in rootless Podman with read-only source/binaries and private state. Shared cross-checkout build artifacts are not accepted as evidence.",
+    "default": {"libraryPassed":176,"libraryIgnored":6,"liveHistoryPassed":1,"serverUpgradePassed":1},
+    "minimal": {"libraryPassed":176,"libraryIgnored":6,"liveHistoryPassed":1,"serverUpgradePassed":1},
+    "historyCases": "Plain and compact real-client snapshots with600 tools, older answer and changed logical position, followed by complete duplicate-free pagination.",
+    "upgrade": "Real server process SIGKILL/restart, replacement binding acknowledgement, same app run, persisted native objective/budget/usage and automatic completion; no goal-control RPCs.",
+    "installedCodexProbe": "Codex0.167 with private offline loopback provider: automatic turn on resume and a subsequent explicit turn/start accepted. No user credentials, user history or successful inference."
+  },
+  "remaining": [
+    "Complete native opaque cursor, snapshot-anchoring and deferred-work parity.",
+    "Full driver/session/idle-wake parity and remaining PARITY.md inventory."
+  ],
+  "deployment": "Not installed by this commit. Verified old executables are83ce347 on NODE and M2. Intel192.168.1.70 is currently unreachable."
+}

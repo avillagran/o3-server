@@ -106,12 +106,14 @@ fn write_snapshot(
             compact_record(&mut thread, &mut ids);
         }
         // Bound all transcript representations to the same visible window.
-        let anchor = if opts.bounded {
-            boundary(db, tid, i64::MAX, 10)?.0
+        let window = if opts.bounded {
+            window(db, tid, i64::MAX, 10)?
         } else {
-            0
+            Window::default()
         };
-        let more=anchor>0 && db.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='visibleTurnItems' AND thread_id=? AND rowid<?)",params![tid,anchor],|r|r.get::<_,bool>(0)).map_err(|e|e.to_string())?;
+        let anchor = window.ids.last().copied().unwrap_or(0);
+        let more = window.more;
+        let selected = serde_json::to_string(&window.ids).map_err(|e| e.to_string())?;
         raw(out, "{")?;
         if rpc {
             raw(out, "\"kind\":\"snapshot\",")?;
@@ -128,10 +130,10 @@ fn write_snapshot(
         // one EXISTS per item.
         let visible_ids: std::collections::HashSet<String> = if opts.compact_items {
             let mut q = db
-                .prepare("SELECT json_extract(body,'$.item.id') FROM records WHERE kind='visibleTurnItems' AND thread_id=? AND rowid>=?")
+                .prepare("SELECT json_extract(body,'$.item.id') FROM records WHERE kind='visibleTurnItems' AND thread_id=? AND rowid IN (SELECT value FROM json_each(?))")
                 .map_err(|e| e.to_string())?;
             let ids = q
-                .query_map(params![tid, anchor], |r| r.get::<_, Option<String>>(0))
+                .query_map(params![tid, selected], |r| r.get::<_, Option<String>>(0))
                 .map_err(|e| e.to_string())?
                 .filter_map(|r| r.ok().flatten())
                 .collect();
@@ -142,17 +144,25 @@ fn write_snapshot(
         for kind in KINDS {
             raw(out, &format!(",\"{kind}\":["))?;
             let transcript = matches!(*kind, "messages" | "turnItems" | "visibleTurnItems");
-            // Raw records corresponding to visible items are selected by their IDs, not rowid.
-            let sql = if opts.bounded && transcript && *kind != "visibleTurnItems" {
-                "SELECT body FROM records r WHERE kind=?1 AND thread_id=?2 AND (id IN (SELECT json_extract(body,CASE WHEN ?1='messages' THEN '$.item.messageId' ELSE '$.item.id' END) FROM records WHERE kind='visibleTurnItems' AND thread_id=?2 AND rowid>=?3)) ORDER BY rowid"
+            // Select by canonical visible positions, independently of physical row age.
+            let sql = if opts.bounded && transcript {
+                if *kind == "visibleTurnItems" {
+                    "SELECT body FROM records WHERE kind=?1 AND thread_id=?2 AND rowid IN (SELECT value FROM json_each(?3)) ORDER BY coalesce(json_extract(body,'$.position'),json_extract(body,'$.item.ordinal'),0),rowid"
+                } else if *kind == "messages" {
+                    // Nightly keeps every message belonging to an active run,
+                    // even when its original turn item is outside the tool page.
+                    "SELECT body FROM records r WHERE kind=?1 AND thread_id=?2 AND (id IN (SELECT json_extract(body,'$.item.messageId') FROM records WHERE kind='visibleTurnItems' AND thread_id=?2 AND rowid IN (SELECT value FROM json_each(?3))) OR json_extract(r.body,'$.runId') IN (SELECT id FROM records WHERE kind='runs' AND thread_id=?2 AND json_extract(body,'$.status') IN ('queued','preparing','starting','running','waiting'))) ORDER BY json_extract(body,'$.createdAt'),id"
+                } else {
+                    "SELECT body FROM records r WHERE kind=?1 AND thread_id=?2 AND id IN (SELECT json_extract(body,CASE WHEN ?1='messages' THEN '$.item.messageId' ELSE '$.item.id' END) FROM records WHERE kind='visibleTurnItems' AND thread_id=?2 AND rowid IN (SELECT value FROM json_each(?3))) ORDER BY rowid"
+                }
             } else {
-                "SELECT body FROM records WHERE kind=?1 AND thread_id=?2 AND (?4=0 OR rowid>=?3) ORDER BY rowid"
+                "SELECT body FROM records WHERE kind=?1 AND thread_id=?2 ORDER BY rowid"
             };
             let mut q = db.prepare(sql).map_err(|e| e.to_string())?;
-            let mut rows = if sql.contains("?4") {
-                q.query(params![kind, tid, anchor, opts.bounded && transcript])
+            let mut rows = if opts.bounded && transcript {
+                q.query(params![kind, tid, selected])
             } else {
-                q.query(params![kind, tid, anchor])
+                q.query(params![kind, tid])
             }
             .map_err(|e| e.to_string())?;
             let mut first = true;
@@ -260,22 +270,42 @@ fn write_snapshot(
 /// turn keeps up to `max_turns` user turns and 500 entries, so ordinary turns stay whole.
 /// A page inside one turn longer than that (no user turn selected) keeps the newest 75
 /// entries. Every page stops at 1 MiB and admits at least one entry. Returns the oldest
-/// selected rowid and whether older entries remain.
-pub(crate) fn boundary(
+/// selected row IDs in reverse logical order and whether older entries remain.
+#[derive(Default)]
+pub(crate) struct Window {
+    pub ids: Vec<i64>,
+    pub more: bool,
+}
+pub(crate) fn window(
     db: &Connection,
     tid: &str,
     before: i64,
     max_turns: usize,
-) -> Result<(i64, bool), String> {
+) -> Result<Window, String> {
     const MAX_ITEMS: usize = 75;
     const MAX_TURN_ITEMS: usize = 500;
     const MAX_BYTES: usize = 1024 * 1024;
-    let mut q=db.prepare("SELECT rowid,body FROM records WHERE kind='visibleTurnItems' AND thread_id=? AND rowid<? ORDER BY rowid DESC").map_err(|e|e.to_string())?;
-    let mut rows = q.query(params![tid, before]).map_err(|e| e.to_string())?;
+    use rusqlite::OptionalExtension;
+    let before_position = if before == i64::MAX {
+        i64::MAX
+    } else {
+        db.query_row("SELECT coalesce(json_extract(body,'$.position'),json_extract(body,'$.item.ordinal'),0) FROM records WHERE kind='visibleTurnItems' AND thread_id=? AND rowid=?",params![tid,before],|row|row.get::<_,i64>(0)).optional().map_err(|e|e.to_string())?.ok_or("invalid history cursor")?
+    };
+    // Sort IDs only; payloads are fetched after the fixed row limit.
+    let mut q=db.prepare("SELECT rowid FROM records WHERE kind='visibleTurnItems' AND thread_id=?1 AND (coalesce(json_extract(body,'$.position'),json_extract(body,'$.item.ordinal'),0)<?2 OR (coalesce(json_extract(body,'$.position'),json_extract(body,'$.item.ordinal'),0)=?2 AND rowid<?3)) ORDER BY coalesce(json_extract(body,'$.position'),json_extract(body,'$.item.ordinal'),0) DESC,rowid DESC LIMIT 501").map_err(|e|e.to_string())?;
+    let rows = q
+        .query_map(params![tid, before_position, before], |row| {
+            row.get::<_, i64>(0)
+        })
+        .map_err(|e| e.to_string())?;
     let (mut ids, mut turns, mut bytes, mut more) = (Vec::new(), 0, 0, false);
-    while let Some(row) = rows.next().map_err(|e| e.to_string())? {
-        let id: i64 = row.get(0).map_err(|e| e.to_string())?;
-        let b: String = row.get(1).map_err(|e| e.to_string())?;
+    for row in rows {
+        let id = row.map_err(|e| e.to_string())?;
+        let b: String = db
+            .query_row("SELECT body FROM records WHERE rowid=?", [id], |row| {
+                row.get(0)
+            })
+            .map_err(|e| e.to_string())?;
         if !ids.is_empty()
             && (ids.len() >= MAX_TURN_ITEMS || turns >= max_turns || bytes + b.len() > MAX_BYTES)
         {
@@ -293,7 +323,7 @@ pub(crate) fn boundary(
         ids.truncate(MAX_ITEMS);
         more = true;
     }
-    Ok((ids.last().copied().unwrap_or(0), more))
+    Ok(Window { ids, more })
 }
 
 fn compact_record(v: &mut Value, ids: &mut std::collections::BTreeMap<String, usize>) {
@@ -343,15 +373,8 @@ mod tests {
         db
     }
     fn selected(db: &Connection, max_turns: usize) -> (usize, bool) {
-        let (anchor, more) = boundary(db, "t", i64::MAX, max_turns).unwrap();
-        let n: i64 = db
-            .query_row(
-                "SELECT count(*) FROM records WHERE rowid>=?",
-                [anchor],
-                |r| r.get(0),
-            )
-            .unwrap();
-        (n as usize, more)
+        let window = window(db, "t", i64::MAX, max_turns).unwrap();
+        (window.ids.len(), window.more)
     }
 
     #[test]
