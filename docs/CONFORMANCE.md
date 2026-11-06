@@ -3593,6 +3593,38 @@ proof requires PHASE_ONE and PHASE_TWO in separate native turns within one app r
 with terminal assistant messages and a completed native goal.
 
 Exact validation and remaining limits: [native-goal-intake.json](nightly/native-goal-intake.json).
+
+### Resume notifications and activation ordering
+
+Installed Codex 0.167 omits goals from `thread/resume`'s thread object and can emit
+`thread/goal/updated` separately while resuming an active objective. A private
+offline container probe preserved the objective and token budget across a native
+process restart, confirming that the notification is authoritative. It used an
+empty native home, no credentials and no network; no successful inference was
+required.
+
+The actor now retains normalized goal notifications before subscription, including
+explicit clears. The cache has 512 entries, bounds native IDs and objectives,
+rejects malformed budgets and protects currently subscribed entries from eviction.
+RPC snapshots remain fenced by the notification version. The provider publishes
+the observed state after binding and uses it for automatic-turn ownership. Unknown
+native children do not become owned root conversations.
+
+Three compatible-client regressions cover a missing legacy goal on resumed active
+work, a native clear overriding stale active state, and an unrelated child whose
+goal must neither be adopted nor paused. The active-resume regression fails on
+the preceding implementation: its app run completes while its goal remains null.
+All three assert that ordinary messages issue no native goal-control RPCs.
+
+A separate actor regression stalls the consumer until activation succeeds, then
+checks the preparation notification, fast first-turn completion, active update
+and acknowledgement in exact wire order. Successful activation enters the same
+bounded route; its oneshot reports errors and deadlines without applying success
+out of order. The internal acknowledgement never reaches the public event stream.
+
+This evidence covers the subscription and activation boundaries. It does not
+certify the complete idle-wake, automatic-turn recovery or cross-process handover
+lifecycle, and introduces no deployment.
 This block is not a complete headless parity certificate; [PARITY.md](PARITY.md)
 includes every headless surface, methods without a current client caller, the new
 RPCs and the migration80 acceptance backlog.

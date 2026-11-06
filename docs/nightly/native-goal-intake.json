@@ -33,6 +33,8 @@
     "Automatic native turns remain within one owning app run and attempt, with distinct terminal provider turns and completed assistant messages.",
     "The upstream five-second continuation grace pauses an uncontinued active goal before app completion; Stop pauses and interrupts the current native turn or releases an already-ended turn.",
     "Pending activation does not block Stop; late acknowledgements and orphan starts cannot revive detached work. Goal notifications win over older request snapshots.",
+    "Activation acknowledgements enter the same bounded per-thread queue as native notifications, preserving wire order when a fast first turn finishes before the consumer drains the preparation's paused update.",
+    "Bounded native goal snapshots survive notifications before resume subscription; observed updates and clears override missing or stale projections without extra goal RPCs on ordinary messages. Unknown children do not become owned roots.",
     "Explicit command provenance is derived from the app message creator. Cleanup pauses are automatic; installed Codex 0.166 and 0.167 interoperate.",
     "Control-only turns have no native rollback reference and derive their identity from the owning attempt.",
     "Claude synthetic goal confirmations and Stop-hook feedback update the provider-thread projection. Only a checked successful root completes the goal; child output and failed turns do not.",
@@ -62,6 +64,17 @@
       "nativeGoalsPassed": 17,
       "nativeGoalsIgnored": 3
     },
+    "activationOrderingRegression": {
+      "trigger": "CI 42261876304: a fast first turn and a queued preparation notification raced the activation reply.",
+      "proof": "The real actor acknowledges activation while the consumer is deliberately stalled, then the consumer verifies paused preparation, first-turn completion, active update and activation acknowledgement in wire order.",
+      "defaultNativeGoalsPassed": 17,
+      "minimalNativeGoalsPassed": 17,
+      "nativeGoalsIgnoredPerMode": 3,
+      "minimalCodexPassed": 16,
+      "defaultCodexPassed": 16,
+      "codexIgnoredPerMode": 1,
+      "isolation": "Rootless Podman; source and binaries read-only, private tmpfs HOME/state, no network or provider credentials."
+    },
     "installed": [
       {
         "driver": "codex",
@@ -80,7 +93,50 @@
       }
     ],
     "strictClippy": "Passed all targets with warnings denied in both feature modes.",
-    "routineChecks": "Formatting, diff whitespace, generated compatibility table, Python/JSON syntax and all nine nightly-watch tests passed."
+    "routineChecks": "Formatting, diff whitespace, generated compatibility table, Python/JSON syntax and all nine nightly-watch tests passed.",
+    "resumeSubscriptionRegression": {
+      "baseline": "Before the cache, the real compatible-client active-resume case completes its app run with a null projected goal.",
+      "cases": [
+        "Resumed active goal with missing legacy projection retains objective, usage, budget and automatic turns.",
+        "Native goal clear overrides stale active projection before starting work.",
+        "Unknown native child goal is neither adopted nor paused as a root."
+      ],
+      "bounds": "512 cached normalized goals; subscribed entries protected, IDs at most 512 bytes, objectives at most 16000 UTF-8 bytes, malformed budgets rejected.",
+      "nativeProbe": {
+        "driver": "codex",
+        "version": "0.167.0",
+        "threadResponseContainsGoal": false,
+        "activeResumeNotification": "thread/goal/updated",
+        "objectivePreserved": true,
+        "tokenBudgetPreserved": true,
+        "isolation": "Rootless read-only Podman, private HOME and CODEX_HOME, no network or credentials; failed offline turn persists native history without successful inference."
+      },
+      "combinedAffectedDefault": {
+        "libraryPassed": 174,
+        "libraryIgnored": 6,
+        "nativeGoalsPassed": 20,
+        "nativeGoalsIgnored": 3
+      },
+      "fullDefault": {
+        "passed": 538,
+        "failed": 0,
+        "ignored": 36,
+        "executables": 95
+      },
+      "fullMinimal": {
+        "passed": 535,
+        "failed": 0,
+        "ignored": 36,
+        "executables": 95
+      },
+      "finalAffectedDefault": {
+        "libraryPassed": 174,
+        "libraryIgnored": 6,
+        "nativeGoalsPassed": 20,
+        "nativeGoalsIgnored": 3
+      },
+      "staticChecks": "Strict Clippy all targets in both feature modes, formatting, diff whitespace and generated compatibility table passed; all nine nightly-watch checks passed in a read-only rootless container."
+    }
   },
   "pending": [
     "Complete idle wake and native-child continuation routing, including restart/deletion/usage-limit and historical import/fork interactions.",

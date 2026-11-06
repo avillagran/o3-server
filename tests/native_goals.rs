@@ -70,6 +70,45 @@ impl Fixture {
     fn send(&self, id: &str, text: &str) {
         self.client.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":id,"messageId":id,"threadId":"t","text":text,"attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
     }
+    fn replace_native_process(&self, marker: Value, legacy_goal: bool, stale_goal: Option<Value>) {
+        let old = self.server.state.provider.lock().unwrap().take().unwrap();
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(old.dispose())
+            .unwrap();
+        if legacy_goal || stale_goal.is_some() {
+            let projection = self.projection();
+            let db = self.server.state.db.lock().unwrap();
+            let id = projection["providerThreads"][0]["id"].as_str().unwrap();
+            let body: String = db
+                .query_row(
+                    "SELECT body FROM records WHERE kind='providerThreads' AND id=?",
+                    [id],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            let mut provider: Value = serde_json::from_str(&body).unwrap();
+            if legacy_goal {
+                provider.as_object_mut().unwrap().remove("goal");
+            }
+            if let Some(goal) = stale_goal {
+                provider["goal"] = goal;
+            }
+            db.execute(
+                "UPDATE records SET body=?1 WHERE kind='providerThreads' AND id=?2",
+                rusqlite::params![provider.to_string(), id],
+            )
+            .unwrap();
+        }
+        std::fs::write(self.root.join("resume-goal.json"), marker.to_string()).unwrap();
+        *self.server.state.provider.lock().unwrap() =
+            Some(Arc::new(o3_server::provider::ConfiguredProviders::new(
+                Arc::new(o3_server::provider::ScriptedProvider),
+                self.server.dir.clone(),
+            )));
+    }
     fn projection(&self) -> Value {
         self.client
             .rpc("orchestration.getThreadProjection", json!({"threadId":"t"}))
@@ -135,6 +174,70 @@ impl Drop for Fixture {
             .block_on(provider.dispose())
             .unwrap();
     }
+}
+
+#[test]
+fn resumed_active_goal_notification_before_subscription_preserves_legacy_goal_and_automatic_turns()
+{
+    let f = Fixture::new();
+    f.send("seed", "Create native history");
+    f.done();
+    let native = json!({"objective":"Preserve the existing goal","status":"active","tokensUsed":73,"timeUsedSeconds":17,"tokenBudget":12345});
+    f.replace_native_process(json!({"goal":native}), true, None);
+    f.send("resume", "Continue after the server update");
+    f.wait(|| {
+        f.goal()["status"] == "active"
+            && f.trace()
+                .iter()
+                .filter(|entry| entry["method"] == "turn/start")
+                .count()
+                == 2
+    });
+    assert_eq!(f.goal()["objective"], "Preserve the existing goal");
+    assert_eq!(f.goal()["tokensUsed"], 73);
+    assert_eq!(f.goal()["tokenBudget"], 12345);
+    std::fs::write(f.root.join("next"), "").unwrap();
+    f.done();
+    assert_eq!(f.goal()["status"], "complete");
+    assert_eq!(f.projection()["runs"].as_array().unwrap().len(), 2);
+    assert!(!f.trace().iter().any(|entry| entry["method"]
+        .as_str()
+        .is_some_and(|method| method.starts_with("thread/goal/"))));
+}
+
+#[test]
+fn resumed_goal_clear_overrides_stale_active_projection_before_starting_work() {
+    let f = Fixture::new();
+    f.send("seed", "Create native history");
+    f.done();
+    f.replace_native_process(json!({"goal":null,"notification":"cleared"}),false,Some(json!({"objective":"Stale projection","status":"active","tokensUsed":0,"timeUsedSeconds":0})));
+    f.send("resume", "Continue with no goal");
+    assert!(support::wait_for(Duration::from_secs(3), || f
+        .goal()
+        .is_null()
+        && f.projection()["runs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|run| run["status"] == "completed")));
+    f.done();
+    assert!(!f.trace().iter().any(|entry| entry["method"]
+        .as_str()
+        .is_some_and(|method| method.starts_with("thread/goal/"))));
+}
+
+#[test]
+fn unknown_child_goal_before_resume_is_not_adopted_or_paused_as_a_root() {
+    let f = Fixture::new();
+    f.send("seed", "Create native history");
+    f.done();
+    f.replace_native_process(json!({"goal":null,"notificationThreadId":"unowned-native-child","notificationGoal":{"objective":"Child work","status":"active","tokensUsed":0,"timeUsedSeconds":0}}),true,None);
+    f.send("resume", "Continue the root conversation");
+    f.done();
+    assert!(f.goal().is_null());
+    assert!(!f.trace().iter().any(|entry| entry["method"]
+        .as_str()
+        .is_some_and(|method| method.starts_with("thread/goal/"))));
 }
 
 #[test]

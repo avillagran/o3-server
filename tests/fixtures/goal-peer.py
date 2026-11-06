@@ -128,6 +128,25 @@ for line in sys.stdin:
             sequence += 1
             tid = 'native-' + str(sequence)
             threads[tid] = {'root': pathlib.Path(params['cwd']), 'goal': None, 'running': None, 'initial_turns':0, 'automatic_turns':0}
+        elif tid not in threads:
+            root = pathlib.Path(params['cwd'])
+            marker = root / 'resume-goal.json'
+            if not marker.exists():
+                send({'id':request,'error':{'code':-32602,'message':'Fixture thread is not stored'}})
+                continue
+            saved = json.loads(marker.read_text())
+            threads[tid] = {'root':root, 'goal':saved.get('goal'), 'running':None, 'initial_turns':1, 'automatic_turns':0, 'resumed_goal':True}
+            notification_thread = saved.get('notificationThreadId', tid)
+            if notification_thread != tid:
+                threads[notification_thread] = {'root':root, 'goal':saved['notificationGoal'], 'running':'unowned-child-turn', 'initial_turns':0,'automatic_turns':0}
+            # A real0.167 resume emits goal state outside the thread response.
+            # Put it before the reply to exercise the subscription boundary.
+            if saved.get('notification') == 'cleared':
+                notify('thread/goal/cleared', notification_thread)
+            else:
+                notify('thread/goal/updated', notification_thread, goal=saved.get('notificationGoal', saved.get('goal')))
+            if notification_thread != tid:
+                notify('turn/started', notification_thread, turn={'id':'unowned-child-turn','status':'inProgress'})
         result = {'thread': {'id': tid}}
     elif method == 'thread/goal/get':
         result = {'goal': threads[tid]['goal']}
@@ -177,6 +196,8 @@ for line in sys.stdin:
         started(tid, turn)
         notify('item/agentMessage/delta', tid, turnId=turn, itemId='first', delta='FIRST\n\n')
         completed(tid, turn)
+        if state.pop('resumed_goal', False) and state['goal'] and state['goal']['status'] == 'active':
+            threading.Thread(target=next_turn, args=(tid,), daemon=True).start()
         continue
     elif method == 'turn/interrupt':
         turn = params['turnId']

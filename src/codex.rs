@@ -62,6 +62,11 @@ impl Inbox {
 }
 type Reply = oneshot::Sender<Result<Value, String>>;
 #[derive(Clone, Copy)]
+enum ReplyOrder {
+    Independent,
+    GoalActivation,
+}
+#[derive(Clone, Copy)]
 enum Release {
     Revoke,
     Finalize,
@@ -69,9 +74,13 @@ enum Release {
 }
 enum Op {
     AttachAgentThread(String, oneshot::Sender<()>),
-    Call(String, Value, Reply),
+    Call(String, Value, Reply, ReplyOrder),
     Reply(Value),
-    Subscribe(String, Route, oneshot::Sender<Result<(), String>>),
+    Subscribe(
+        String,
+        Route,
+        oneshot::Sender<Result<Option<Value>, String>>,
+    ),
     Unsubscribe(String),
     WatchGoal(String, bool),
     Shutdown(oneshot::Sender<()>),
@@ -94,7 +103,7 @@ impl Client {
     async fn call(&self, method: &str, params: Value) -> Result<Value, String> {
         let (tx, rx) = oneshot::channel();
         self.0
-            .send(Op::Call(method.into(), params, tx))
+            .send(Op::Call(method.into(), params, tx, ReplyOrder::Independent))
             .await
             .map_err(|_| "Codex process closed")?;
         tokio::time::timeout(std::time::Duration::from_secs(30), rx)
@@ -621,29 +630,30 @@ impl CodexProvider {
         c.0.send(Op::Subscribe(tid.clone(), tx, ack))
             .await
             .map_err(|_| "Codex closed")?;
-        ready.await.map_err(|_| "Codex closed")??;
+        let observed_goal = ready.await.map_err(|_| "Codex closed")??;
         let mut active_turn = None;
         let mut terminal_received = false;
         let goal_command = crate::native_goal::parse(&input.text, &input.attachments);
-        let mut goal = goals::State::new(
-            if input.native_session_id.as_deref() == Some(tid.as_str()) {
-                input.model_selection["o3NativeGoal"].clone()
-            } else {
-                Value::Null
-            },
-        );
+        let mut goal = goals::State::new(if let Some(goal) = &observed_goal {
+            goal.clone()
+        } else if input.native_session_id.as_deref() == Some(tid.as_str()) {
+            input.model_selection["o3NativeGoal"].clone()
+        } else {
+            Value::Null
+        });
         goal.origin = if input.model_selection["o3GoalCommandOrigin"] == "user" {
             "user"
         } else {
             "automatic"
         };
-        if !goal.current.is_null() {
+        if observed_goal.is_some() || !goal.current.is_null() {
             c.0.send(Op::WatchGoal(tid.clone(), goal.active()))
                 .await
                 .map_err(|_| "Codex closed")?;
         }
         let result=async {
             output.send(ProviderEvent::Codex(json!({"method":"o3/binding","params":{"threadId":tid,"cwd":input.cwd}}))).await.map_err(|_|"receiver closed")?;
+            if observed_goal.as_ref().is_some_and(|observed|observed!=&input.model_selection["o3NativeGoal"]) {goal.publish(&output,&tid).await?;}
             if let Some(command) = &goal_command {
                 if let Some(reply) = goal.prepare(&c, &tid, command, &output).await? {
                     output.send(ProviderEvent::Codex(json!({"method":"turn/started","params":{"threadId":tid,"o3GoalCommand":true,"turn":{"id":format!("goal-command:{}",input.model_selection["o3AttemptId"].as_str().unwrap_or(&input.run_id))}}}))).await.map_err(|_|"receiver closed")?;
@@ -696,7 +706,7 @@ impl CodexProvider {
             let mut activation = None;
             if goal.managed {
                 let (reply, response) = oneshot::channel();
-                c.0.send(Op::Call("thread/goal/set".into(),json!({"threadId":tid,"status":"active","origin":goal.origin}),reply)).await.map_err(|_|"Codex closed")?;
+                c.0.send(Op::Call("thread/goal/set".into(),json!({"threadId":tid,"status":"active","origin":goal.origin}),reply,ReplyOrder::GoalActivation)).await.map_err(|_|"Codex closed")?;
                 activation=Some(response);
             }
             let activation_deadline=tokio::time::Instant::now()+std::time::Duration::from_secs(30);
@@ -713,13 +723,8 @@ impl CodexProvider {
                     _=output.closed()=> { let _=c.call("turn/interrupt",json!({"threadId":tid,"turnId":turn})).await; return Ok(()); },
                     _=cancel.changed()=>continue,
                     response=async {activation.as_mut().unwrap().await}, if activation.is_some()=>{
-                        let response=response.map_err(|_|"Codex activation channel closed")?.map_err(goals::rejection)?;
+                        response.map_err(|_|"Codex activation channel closed")?.map_err(goals::rejection)?;
                         activation=None;
-                        goal.activated(&response, &tid, &output).await?;
-                        if terminal.is_some() && owned.is_empty() {
-                            if goal.active() {goal_deadline=Some(terminal_at.unwrap_or_else(tokio::time::Instant::now)+std::time::Duration::from_secs(5));}
-                            else {terminal_received=true;output.send(terminal.take().unwrap()).await.map_err(|_|"receiver closed")?;return Ok(());}
-                        }
                     },
                     _=tokio::time::sleep_until(activation_deadline), if activation.is_some()=>return Err("Codex goal activation timed out".into()),
                     _=async { tokio::time::sleep_until(goal_deadline.unwrap()).await }, if goal_deadline.is_some()=>{
@@ -756,6 +761,16 @@ impl CodexProvider {
                     },
                     frame=frames.recv()=>{
                         let mut frame=frame.ok_or("Codex notification channel closed or overflowed")?;
+                        // The actor queues this acknowledgement in wire order. A separate
+                        // oneshot can overtake the preparation's older paused notification.
+                        if frame["method"]=="o3/goal-activated" {
+                            goal.activated(&frame["params"]["result"], &tid, &output).await?;
+                            if terminal.is_some() && owned.is_empty() {
+                                if goal.active() {goal_deadline=Some(terminal_at.unwrap_or_else(tokio::time::Instant::now)+std::time::Duration::from_secs(5));}
+                                else {terminal_received=true;output.send(terminal.take().unwrap()).await.map_err(|_|"receiver closed")?;return Ok(());}
+                            }
+                            continue;
+                        }
                         if goal.observe(&frame, &output, &tid).await? {
                             if !goal.active() && !goal.managed && terminal.is_some() && owned.is_empty() {
                                 terminal_received=true;
@@ -1239,7 +1254,7 @@ async fn actor(
 ) {
     let mut stdin = child.stdin.take().unwrap();
     let mut reader = BufReader::with_capacity(8192, child.stdout.take().unwrap());
-    let mut calls = HashMap::<u64, (String, Option<String>, Reply)>::new();
+    let mut calls = HashMap::<u64, (String, Option<String>, Reply, ReplyOrder)>::new();
     let mut unloaded = std::collections::HashSet::<String>::new();
     let mut closing = HashMap::<String, Vec<oneshot::Sender<Result<(), String>>>>::new();
     let mut native_contexts = HashMap::<String, std::sync::Arc<crate::native_mcp::Context>>::new();
@@ -1249,6 +1264,7 @@ async fn actor(
     let mut goal_versions = HashMap::<String, u64>::new();
     let mut goal_requests = HashMap::<u64, u64>::new();
     let mut desired_goals = HashMap::<String, bool>::new();
+    let mut goal_snapshots = goals::Snapshots::default();
     let mut next = 0u64;
     let mut buffer = FrameBuffer::default();
     let mut shutdown = None;
@@ -1264,7 +1280,7 @@ async fn actor(
                 let frame=match op {
                     Some(Op::AttachAgentThread(thread,ack))=>{if let Some(scope)=&agent_scope {scope.attach(&thread);}let _=ack.send(());continue;},
                     None=>return Ok(()),
-                    Some(Op::Subscribe(id,tx,ack))=>{let result=if routes.len()>=32||routes.contains_key(&id){Err("Codex thread already active or capacity reached".into())}else{routes.insert(id,tx);Ok(())};let _=ack.send(result);continue;},
+                    Some(Op::Subscribe(id,tx,ack))=>{let result=if routes.len()>=32||routes.contains_key(&id){Err("Codex thread already active or capacity reached".into())}else{let goal=goal_snapshots.get(&id);routes.insert(id,tx);Ok(goal)};let _=ack.send(result);continue;},
                     Some(Op::Shutdown(ack))=>{shutdown=Some(ack);return Ok(());},
                     Some(Op::WaitForClose(id,ack))=>{
                         closing.retain(|_, waiters| {waiters.retain(|w| !w.is_closed()); !waiters.is_empty()});
@@ -1280,7 +1296,7 @@ async fn actor(
                         }
                         continue;
                     },
-                    Some(Op::WatchGoal(id,active))=>{desired_goals.insert(id.clone(),active);root_goals.insert(id,active);continue;},
+                    Some(Op::WatchGoal(id,active))=>{let active=goal_snapshots.get(&id).map(|goal|goal["status"]=="active").unwrap_or(active);desired_goals.insert(id.clone(),active);root_goals.insert(id,active);continue;},
                     Some(Op::ReleaseMcp(key,native,release,ack))=>{
                         let mut ids:Vec<_>=native_contexts.iter().filter(|(_,c)|c.thread_key()==key).map(|(id,_)|id.clone()).collect();
                         if let Some(id)=native {
@@ -1295,7 +1311,7 @@ async fn actor(
                     },
                     Some(Op::RetainMcp(id,context,ack))=>{unloaded.remove(&id);let result=if native_contexts.len()>=256 && !native_contexts.contains_key(&id){Err("Codex MCP session capacity reached".into())}else{if let Some(old)=native_contexts.insert(id,context.clone()){if old.id()!=context.id(){old.revoke();}}Ok(())};let _=ack.send(result);continue;},
                     Some(Op::Reply(frame))=>frame,
-                    Some(Op::Call(method,params,reply))=>{
+                    Some(Op::Call(method,params,reply,ordered_goal_activation))=>{
                         if calls.len()>=32 {let _=reply.send(Err("Codex RPC capacity reached".into()));continue;}
                         if method.starts_with("thread/goal/") {if let Some(id)=params["threadId"].as_str(){root_goals.entry(id.into()).or_insert(false);}}
                         next+=1;
@@ -1306,7 +1322,7 @@ async fn actor(
                                 if method=="thread/goal/clear" {desired_goals.insert(tid.into(),false);}
                             }
                         }
-                        calls.insert(next,(method.clone(),params["threadId"].as_str().map(str::to_owned),reply));json!({"id":next,"method":method,"params":params})
+                        calls.insert(next,(method.clone(),params["threadId"].as_str().map(str::to_owned),reply,ordered_goal_activation));json!({"id":next,"method":method,"params":params})
                     }
                 };
                 let bytes=serde_json::to_vec(&frame).map_err(|e|e.to_string())?;
@@ -1317,12 +1333,15 @@ async fn actor(
                 let (frame,size)=frame?.ok_or("Codex stdout closed")?;
                 if frame.get("method").is_none(){
                     if let Some(id)=frame["id"].as_u64(){
-                        if let Some((method,native,reply))=calls.remove(&id){
+                        if let Some((method,native,reply,ordered_goal_activation))=calls.remove(&id){
                             let response=if frame.get("error").is_some(){Err(frame["error"].to_string())}else{Ok(frame["result"].clone())};
                             let observed_version = goal_requests.remove(&id);
                             if method.starts_with("thread/goal/") {
                                 if let (Some(native),Ok(result))=(&native,&response) {
-                                    if observed_version==Some(*goal_versions.get(native).unwrap_or(&0)) {root_goals.insert(native.clone(),result["goal"]["status"]=="active");}
+                                    if observed_version==Some(*goal_versions.get(native).unwrap_or(&0)) {
+                                        root_goals.insert(native.clone(),result["goal"]["status"]=="active");
+                                        goal_snapshots.remember(native,if method=="thread/goal/clear" {&Value::Null}else{&result["goal"]},|id|routes.contains_key(id));
+                                    }
                                     // A cancelled activation may acknowledge after Stop's pause.
                                     // Reassert the later intent instead of reviving orphan work.
                                     if method=="thread/goal/set" && result["goal"]["status"]=="active" && desired_goals.get(native)==Some(&false) {
@@ -1330,9 +1349,16 @@ async fn actor(
                                     }
                                 }
                             }
+                            if matches!(ordered_goal_activation,ReplyOrder::GoalActivation) {
+                                if let (Some(native),Ok(result))=(&native,&response) {
+                                    let frame=json!({"method":"o3/goal-activated","params":{"threadId":native,"result":result}});
+                                    let size=serde_json::to_vec(&frame).map_err(|e|e.to_string())?.len();
+                                    if routes.get(native).is_some_and(|route|!route.push(frame,size)){routes.remove(native);}
+                                }
+                            }
                             if let Err(Ok(response))=reply.send(response){
                                 if matches!(method.as_str(),"thread/start"|"thread/resume"|"thread/fork"){
-                                    if let Some(tid)=response["thread"]["id"].as_str().filter(|id|!routes.contains_key(*id)&&(!native_contexts.contains_key(*id)||unloaded.contains(*id))&&!calls.values().any(|(m,n,r)|m=="thread/resume"&&n.as_deref()==Some(*id)&&!r.is_closed())){
+                                    if let Some(tid)=response["thread"]["id"].as_str().filter(|id|!routes.contains_key(*id)&&(!native_contexts.contains_key(*id)||unloaded.contains(*id))&&!calls.values().any(|(m,n,r,_)|m=="thread/resume"&&n.as_deref()==Some(*id)&&!r.is_closed())){
                                         // Cancellation can precede the binding acknowledgement. Unload the
                                         // orphan after learning its ID, without touching sibling threads.
                                         let bytes=serde_json::to_vec(&json!({"id":format!("o3-dispose:{id}"),"method":"thread/unsubscribe","params":{"threadId":tid}})).map_err(|e|e.to_string())?;
@@ -1349,6 +1375,7 @@ async fn actor(
                         if let Some(waiters)=closing.remove(id){for waiter in waiters{let _=waiter.send(Ok(()));}}
                     }
                 }
+                goal_snapshots.observe(&frame,|id|routes.contains_key(id));
                 if frame["method"]=="account/rateLimits/updated" {publish_usage(&mut descriptor.lock().unwrap(), &frame["params"]["rateLimits"], None, frame["params"]["accountId"].as_str());}
                 let tid=frame["params"]["threadId"].as_str();
                 if let Some(tid)=tid {
@@ -1393,7 +1420,7 @@ async fn actor(
         }
         d["message"] = json!(reason);
     }
-    for (_, (_, _, reply)) in calls {
+    for (_, (_, _, reply, _)) in calls {
         let _ = reply.send(Err(reason.clone()));
     }
     let _ = child.kill().await;
@@ -1510,6 +1537,94 @@ fn command_events(frame: &Value, rid: &str) -> Vec<crate::command_output::Comman
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn goal_activation_ack_stays_after_queued_preparation_notifications() {
+        let root = std::env::temp_dir().join(format!(
+            "o3-goal-order-{}",
+            crate::store::random_id().unwrap()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("no-next"), "").unwrap();
+        let provider = CodexProvider::new(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/goal-peer.py"),
+            None,
+        );
+        let client = provider.connection().await.unwrap();
+        let thread = client
+            .call("thread/start", json!({"cwd":root}))
+            .await
+            .unwrap();
+        let tid = thread["thread"]["id"].as_str().unwrap();
+        let (route, mut inbox) = Inbox::pair();
+        let (ack, ready) = oneshot::channel();
+        client
+            .0
+            .send(Op::Subscribe(tid.into(), route, ack))
+            .await
+            .unwrap();
+        ready.await.unwrap().unwrap();
+        let prepared = client.call("thread/goal/set", json!({"threadId":tid,"objective":"Finish the work","status":"paused","origin":"user"})).await.unwrap();
+        client
+            .call("turn/start", json!({"threadId":tid}))
+            .await
+            .unwrap();
+        let (ack, ready) = oneshot::channel();
+        client
+            .0
+            .send(Op::Call(
+                "thread/goal/set".into(),
+                json!({"threadId":tid,"status":"active","origin":"user"}),
+                ack,
+                ReplyOrder::GoalActivation,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(ready.await.unwrap().unwrap()["goal"]["status"], "active");
+
+        // Consume nothing until the acknowledgement is ready, forcing the queue
+        // to retain the older paused update and the fast first turn's completion.
+        let (output, mut events) = mpsc::channel(16);
+        let mut goal = goals::State::new(prepared["goal"].clone());
+        goal.managed = true;
+        let mut methods = vec![];
+        loop {
+            let frame = tokio::time::timeout(std::time::Duration::from_secs(5), inbox.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            let method = frame["method"].as_str().unwrap().to_owned();
+            methods.push(method.clone());
+            if method == "o3/goal-activated" {
+                goal.activated(&frame["params"]["result"], tid, &output)
+                    .await
+                    .unwrap();
+                break;
+            }
+            goal.observe(&frame, &output, tid).await.unwrap();
+            if method == "turn/completed" {
+                assert!(goal.managed, "preparation must not end native ownership");
+            }
+        }
+        assert_eq!(
+            methods,
+            [
+                "thread/goal/updated",
+                "turn/started",
+                "item/agentMessage/delta",
+                "turn/completed",
+                "thread/goal/updated",
+                "o3/goal-activated"
+            ]
+        );
+        assert!(goal.active());
+        assert!(!goal.managed);
+        while let Ok(event) = events.try_recv() {
+            if let ProviderEvent::Codex(frame) = event {
+                assert_eq!(frame["params"]["goal"]["status"], "active");
+            }
+        }
+        provider.shutdown().await;
+    }
     #[tokio::test]
     async fn quota_probe_retains_verified_account_identity_without_retaining_actor() {
         let executable = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
