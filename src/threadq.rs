@@ -312,6 +312,88 @@ pub fn search_threads(s: &State, p: &Value) -> Reply {
 
 // ------------------------------------------------------------------ simple reads
 
+pub fn thread_titles(s: &State, p: &Value) -> Reply {
+    let result = (|| -> Result<Value, String> {
+        let ids = p["threadIds"]
+            .as_array()
+            .ok_or("threadIds must be an array")?;
+        let ids = ids
+            .iter()
+            .map(|id| {
+                id.as_str()
+                    .map(crate::native_goal::trim)
+                    .filter(|id| !id.is_empty())
+                    .ok_or("threadIds must contain nonempty strings")
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if ids.is_empty() {
+            return Ok(json!({}));
+        }
+        let db = s.reader.lock().unwrap();
+        // One bound JSON array avoids SQLite's variable limit for large title batches.
+        let mut q = db.prepare("SELECT id,json_extract(body,'$.title') FROM records WHERE kind='thread' AND json_extract(body,'$.deletedAt') IS NULL AND id IN (SELECT value FROM json_each(?))").map_err(|e|e.to_string())?;
+        let rows = q
+            .query_map([json!(ids).to_string()], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })
+            .map_err(|e| e.to_string())?;
+        let mut titles = serde_json::Map::new();
+        for row in rows {
+            let (id, title) = row.map_err(|e| e.to_string())?;
+            titles.insert(id, json!(title));
+        }
+        Ok(Value::Object(titles))
+    })();
+    result.map_err(|cause| json!({"_tag":"OrchestrationV2GetShellSnapshotError","message":"Failed to load thread titles","cause":cause}))
+}
+
+pub fn thread_family(s: &State, p: &Value) -> Reply {
+    omittable_shell_rows(s, &p["threadId"], true)
+}
+
+pub fn worktree_threads(s: &State, p: &Value) -> Reply {
+    let rows = omittable_shell_rows(s, &p["worktreePath"], false)?;
+    Ok(
+        json!({"threadIds": rows["threads"].as_array().unwrap().iter().map(|t|&t["id"]).collect::<Vec<_>>()}),
+    )
+}
+
+fn omittable_shell_rows(s: &State, value: &Value, family: bool) -> Reply {
+    let result = (|| -> Result<Value, String> {
+        let value = value
+            .as_str()
+            .map(crate::native_goal::trim)
+            .filter(|v| !v.is_empty())
+            .ok_or("A nonempty string is required")?;
+        let db = s.reader.lock().unwrap();
+        // The boundary and summaries must describe the same committed view.
+        let tx = db.unchecked_transaction().map_err(|e| e.to_string())?;
+        let sequence = events::sequence(&tx)?;
+        let condition = if family {
+            "json_extract(body,'$.lineage.rootThreadId')=(SELECT json_extract(body,'$.lineage.rootThreadId') FROM records WHERE kind='thread' AND id=?)"
+        } else {
+            "json_extract(body,'$.worktreePath')=?"
+        };
+        let mut q = tx.prepare(&format!("SELECT body FROM records WHERE kind='thread' AND json_extract(body,'$.deletedAt') IS NULL AND json_extract(body,'$.archivedAt') IS NULL AND {condition} ORDER BY json_extract(body,'$.updatedAt'),id")).map_err(|e|e.to_string())?;
+        let rows = q
+            .query_map([value], |r| r.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        let mut threads = Vec::new();
+        for row in rows {
+            let thread: Value = serde_json::from_str(&row.map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+            threads.push(events::shell_thread(&tx, &thread)?);
+        }
+        Ok(json!({"snapshotSequence":sequence,"threads":threads}))
+    })();
+    let message = if family {
+        "Failed to load the thread family"
+    } else {
+        "Failed to load the worktree's threads"
+    };
+    result.map_err(|cause| json!({"_tag":"OrchestrationV2GetShellSnapshotError","message":message,"cause":cause}))
+}
+
 pub fn archived_shell(s: &State) -> Reply {
     let db = s.reader.lock().unwrap();
     let result = (|| -> Result<Value, String> {

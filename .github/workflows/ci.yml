@@ -21,7 +21,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install test runtime dependencies inside the disposable container
-        run: apt-get update && apt-get install -y --no-install-recommends ffmpeg python3 git openssh-client procps nodejs
+        timeout-minutes: 5
+        run: |
+          missing=0
+          for executable in ffmpeg python3 git ssh ps node curl; do
+            command -v "$executable" >/dev/null 2>&1 || missing=1
+          done
+          if [ "$missing" = 0 ]; then
+            exit 0
+          fi
+          apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o DPkg::Lock::Timeout=60 update
+          apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o DPkg::Lock::Timeout=60 install -y --no-install-recommends ffmpeg python3 git openssh-client procps nodejs curl
       - name: Verify container isolation before executing tests
         run: test -f /.dockerenv
       - name: Verify the checked-out repository from the job container

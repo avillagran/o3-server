@@ -8,7 +8,6 @@
   "scope": "All headless protocol and observable behavior; unused methods remain in scope. Source discovery is not behavioral certification.",
   "publicMethodCount": 211,
   "untrackedMethods": [
-    "orchestration.getThreadTitles",
     "sourceControl.star"
   ],
   "sharedState": {
@@ -195,7 +194,8 @@
     {
       "name": "orchestration.getThreadFamily",
       "legacyStatus": "skip",
-      "nightly4262Status": "requires behavioral comparison"
+      "nightly4262Status": "selection, ordering and input defects match official runtime; full shell/error taxonomy review pending",
+      "evidence": "tests/thread_reads.rs; tools/test-headless-reference"
     },
     {
       "name": "orchestration.getThreadProjection",
@@ -205,7 +205,8 @@
     {
       "name": "orchestration.getThreadTitles",
       "legacyStatus": "untracked",
-      "nightly4262Status": "requires behavioral comparison"
+      "nightly4262Status": "selection, ordering and input defects match official runtime; full shell/error taxonomy review pending",
+      "evidence": "tests/thread_reads.rs; tools/test-headless-reference"
     },
     {
       "name": "orchestration.getTurnDiff",
@@ -225,7 +226,8 @@
     {
       "name": "orchestration.getWorktreeThreadIds",
       "legacyStatus": "skip",
-      "nightly4262Status": "requires behavioral comparison"
+      "nightly4262Status": "selection, ordering and input defects match official runtime; full shell/error taxonomy review pending",
+      "evidence": "tests/thread_reads.rs; tools/test-headless-reference"
     },
     {
       "name": "orchestration.launchThread",

@@ -1,0 +1,22 @@
+{
+  "reference": {
+    "tag": "v0.1.8-nightly.20261106.4275",
+    "commit": "6577c6b6185167c0e502fa01f9e8e8f2dee6ff25",
+    "publishedAt": "2026-11-06T14:24:23Z"
+  },
+  "previous": "c55db3e9c72fdf584f4b54192fb39beb88667b59",
+  "changedFiles": 53,
+  "unchangedCoveredSource": [
+    "apps/server/src/orchestration-v2/ProjectionStore.ts",
+    "apps/server/src/orchestration-v2/Adapters",
+    "apps/server/src/auth/RpcAuthorization.ts",
+    "packages/contracts/src/orchestrationV2.ts",
+    "packages/contracts/src/auth.ts"
+  ],
+  "newHeadlessWork": [
+    "Device discovery retains previously listed devices when an individual platform discovery fails; host status carries incompletePlatforms.",
+    "Antigravity ACP 1.5.1+ uses t3-code client identification; older releases retain the compatible zed identification.",
+    "CLI and background service launcher split bootstrap from the full command graph and preserve fast-path worker dispatch and error reporting."
+  ],
+  "status": "Source intake only. Existing 4262 runtime evidence remains scoped to its actual comparisons; complete 4275 headless parity is not certified."
+}

@@ -1,6 +1,6 @@
 {
   "_doc": "RPCs added upstream after the pinned 3726 contract. Scopes from apps/server/src/auth/RpcAuthorization.ts and packages/contracts/src/clientRpcPermissions.ts at the commit below. The 3726 contract stays the validated reference; these are additive.",
-  "contract": "t3code@84537c4dd (nightly 4093)",
+  "contract": "t3code@c55db3e9c (nightly 4262)",
   "methods": {
     "device.simlockIdentity": {
       "dynamic": false,
@@ -13,6 +13,11 @@
       "stream": false
     },
     "orchestration.getNativeChildWork": {
+      "dynamic": false,
+      "scope": "orchestration:read",
+      "stream": false
+    },
+    "orchestration.getThreadTitles": {
       "dynamic": false,
       "scope": "orchestration:read",
       "stream": false
