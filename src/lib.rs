@@ -33,6 +33,7 @@ pub mod scopes;
 pub mod service;
 pub mod settings;
 
+pub mod agent_scope;
 pub mod assets;
 pub mod body;
 #[cfg(feature = "bridge")]

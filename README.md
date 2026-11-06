@@ -112,6 +112,11 @@ those limits. Tests that require credentials, hardware or an official reference
 remain opt-in and use the dedicated isolated runners documented in `docs/nightly/`.
 
 
+`tools/test-agent-systemd` runs the opt-in native scope lifecycle in a separate
+rootless container with its own systemd user manager and private cgroups. It
+verifies detached descendants, shared-process protection, profile orphan cleanup
+and an OOM fixture capped at 32 MiB. No host service manager or bus is mounted.
+
 ## Try it beside T3 (pilot)
 
 `tools/pilot` runs o3-server next to your running T3 without touching it: its own port (chosen by

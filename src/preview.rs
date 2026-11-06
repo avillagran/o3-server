@@ -335,7 +335,7 @@ pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
         };
         m.browser
             .open(
-                &s.dir,
+                s,
                 str_field(p, "threadId")?,
                 &tab,
                 p["profileId"].as_str().unwrap_or("default"),

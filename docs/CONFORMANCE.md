@@ -1,5 +1,61 @@
 # Conformance evidence
 
+## Server-browser resource scopes, 2026-11-06
+
+Server browsers now use the profile registry and the upstream unowned collecting
+scope policy. Scope preparation precedes CDP descriptor allocation; the duplicate
+uses an owned file descriptor on every failure path. The actor waits for scope
+cleanup before reporting completion. Human and agent previews reuse the same
+launcher and shared browser profiles retain their process until the final tab closes.
+
+Nine affected compatible-client cases pass in each feature mode, along with
+strict Clippy. The real systemd opt-in case also passes in both modes: descriptors
+3/4 carry CDP commands and screenshot replies through systemd-run, the process
+has OOM score800 and belongs to the expected profile slice, closing one tab
+preserves a sibling, and final shutdown reaps the browser process. This uses a
+private Python CDP peer, not an actual Chromium renderer. Upstream ServerBrowser
+source is unchanged between4262 and4275. No host deployment occurred.
+
+## Native agent resource scopes, 2026-11-06
+
+The headless server enables one per-profile Linux registry for native Claude and
+Codex processes, including configured instances and auxiliary discovery/quota
+actors. Embedded hosts opt in explicitly. The registry mirrors nightly 4275's
+systemd scope discovery, owned-slice hash, orphan cleanup, memory headroom,
+CPU/IO/task weights, OOMPolicy fallback, scope tracking, delayed OOM diagnosis and
+stop/kill guards. Child OOM adjustment uses only async-signal-safe syscalls before
+exec; it does not add a shell wrapper. Adapter shutdown awaits scope cleanup.
+Codex actors retain shared ownership and cannot be killed for one thread. Joining
+an existing actor clears stale ownership from another session; an old lease cannot
+clear its replacement. Claude descendants receive the trusted app thread ID.
+
+The six scoped upstream files are unchanged between 4262 and 4275. Executing the
+actual upstream helpers produced **163 cases** for profile hashes, memory limits
+and scope classification. Fourteen container checks cover lifecycle/races,
+fallbacks, configured Claude/Codex transports and the real compatible client's
+confirmed OOM message. The complete suites passed **531 default / 528 minimal**,
+no failures, 35 opt-in tests ignored per mode, before adding the dedicated native
+systemd opt-in case.
+
+`tools/test-agent-systemd` compiles that additional case and runs it in a disposable
+rootless container with a real systemd user manager, private PID/cgroup namespaces,
+a read-only root and binary mount, no network or host bus, and a 768 MiB outer
+memory limit. It verifies detached `setsid` descendants are reaped after parent
+exit, `cgroup.kill` terminates the owned tree, shared processes survive a per-thread
+kill request, an asserted 32 MiB kernel memory cap produces a sticky OOM result,
+and restarted-profile cleanup preserves another profile. The container is removed
+after success or failure. The initial OOM fixture timed out with a separate 24 MiB
+throttling limit; the final fixture disables its own throttling and checks the
+kernel hard cap before allocation. Production headroom limits remain unchanged.
+
+The native case and all fourteen affected checks passed in both feature modes;
+strict Clippy also passed in both modes. This is resource/lifecycle acceptance, not an
+installed authenticated inference comparison. Public `forceStopThread`, PTY and
+browser scope integration, and complete typed failure cards (including `oom_kill`)
+remain open; the run currently exposes the confirmed OOM message. No live host
+was deployed or had its service manager altered. See
+[`nightly/agent-scope-intake.json`](nightly/agent-scope-intake.json).
+
 ## Rust test isolation, 2026-11-06
 
 `tools/test-rust-sandbox` compiles with Cargo on the host, then executes every

@@ -255,15 +255,23 @@ fn main() -> std::io::Result<()> {
         .block_on(async {
             #[cfg(feature = "memory-diagnostics")]
             memory::start();
-            let codex = Arc::new(o3_server::codex::CodexProvider::default());
-            *state.provider.lock().unwrap() =
-                Some(Arc::new(o3_server::provider::ConfiguredProviders::new(
+            state.agent_scopes.enable();
+            let codex = Arc::new(
+                o3_server::codex::CodexProvider::default()
+                    .with_agent_scopes(state.agent_scopes.clone()),
+            );
+            *state.provider.lock().unwrap() = Some(Arc::new(
+                o3_server::provider::ConfiguredProviders::new(
                     Arc::new(o3_server::provider::Providers {
-                        claude: o3_server::claude::ClaudeProvider::discover().map(Arc::new),
+                        claude: o3_server::claude::ClaudeProvider::discover().map(|provider| {
+                            Arc::new(provider.with_agent_scopes(state.agent_scopes.clone()))
+                        }),
                         codex: codex.clone(),
                     }),
                     dir.clone(),
-                )));
+                )
+                .with_agent_scopes(state.agent_scopes.clone()),
+            ));
             let mut term =
                 tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
             let mut interrupt =
