@@ -514,3 +514,31 @@ fn sessions_issued_by_either_server_are_accepted_by_the_other() {
     drop(db);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn a_base_t3_just_created_is_shared_from_o3s_first_start() {
+    let root = profile();
+    let userdata = root.join("userdata");
+    let db = t3(&userdata);
+    db.execute(
+        "INSERT INTO orchestration_v2_projection_metadata VALUES('thread-projections',1,0,'2026-01-01T00:00:00.000Z')",
+        [],
+    )
+    .unwrap();
+    let state = Arc::new(State::open(&userdata).unwrap());
+    o3_server::events::mutate_project(&state, &json!({"type":"project.create","commandId":"p","projectId":"p","title":"Project","workspaceRoot":root})).unwrap();
+    o3_server::events::dispatch(&state, &json!({"type":"thread.create","commandId":"c","threadId":"t","projectId":"p","title":"Before T3","modelSelection":{"instanceId":"codex","model":"test"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
+    let shared = t3_shared::start(&state).unwrap().expect("T3 base");
+    exporter_drains(&state, shared);
+    assert_eq!(
+        one::<String>(
+            &db,
+            "SELECT title FROM orchestration_v2_projection_threads WHERE thread_id='t'"
+        ),
+        "Before T3"
+    );
+    assert_t3_verifies(&db);
+    drop(state);
+    drop(db);
+    std::fs::remove_dir_all(root).unwrap();
+}
