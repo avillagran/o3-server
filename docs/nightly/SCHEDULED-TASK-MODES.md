@@ -99,6 +99,9 @@ reported as equivalent checkout contents.
 
 ## Still open
 
+The credential-free official-runtime store proof and the remaining handover
+requirements are documented in [SHARED-SCHEDULED-STORE.md](SHARED-SCHEDULED-STORE.md).
+
 - Diagnose the reference's intermittent rapid-follow-up answers; avoid treating
   a successful repeat or a guessed cause as resolution.
 - Bidirectional scheduled-task definitions, webhook credentials and pending

@@ -123,6 +123,7 @@ fn start_reference(
         .unwrap();
     let mut process = ReferenceProcess(child);
     let base = format!("http://127.0.0.1:{port}");
+    std::fs::write(evidence.join("reference-address.txt"), &base).unwrap();
     let deadline = Instant::now() + Duration::from_secs(120);
     loop {
         if t3_protocol::fetch_descriptor(&base).is_ok() {
@@ -606,6 +607,219 @@ fn scheduled_tasks_native_conversation_modes() {
     }
     std::fs::write(output.join("scheduled-result.json"),serde_json::to_vec_pretty(&json!({"engine":engine,"nativeTurns":6,"firstRunBinds":true,"continuesSameSession":true,"freshSessionForgets":true,"boundProviderPreserved":true,"newThreadRunsUnbound":true,"taskMessageProvenance":true,"oldHistoryVisible":true})).unwrap()).unwrap();
     println!("SCHEDULED_NATIVE_ACCEPTANCE_PASS: bound continuation, fresh-session forgetting, provider selection, new-thread isolation and task provenance");
+}
+
+#[test]
+#[ignore = "official task persistence without inference; use tools/live-fresh-context --scheduled-store --reference-root <release>"]
+fn official_scheduled_store_retains_pending_coalescence_and_replay() {
+    use std::io::{Read, Write};
+    assert_eq!(
+        std::env::var("O3_FRESH_CONTEXT_CONTAINER").as_deref(),
+        Ok("1")
+    );
+    assert!(std::path::Path::new("/run/.containerenv").is_file());
+    // This scenario must never inherit provider authentication or start a native turn.
+    assert!(!PathBuf::from("/input/claude.json").exists());
+    assert!(!PathBuf::from("/input/codex.json").exists());
+    let output = PathBuf::from(std::env::var("O3_FRESH_CONTEXT_EVIDENCE").unwrap());
+    assert_eq!(output, PathBuf::from("/evidence"));
+    let profile = PathBuf::from("/tmp/scheduled-store-reference");
+    let binary = std::env::var("O3_FRESH_CONTEXT_REFERENCE").unwrap();
+    let (client, process) = start_reference(&binary, &profile, &output);
+    let base = std::fs::read_to_string(output.join("reference-address.txt")).unwrap();
+    let workspace = profile.join("workspace");
+    std::fs::create_dir_all(&workspace).unwrap();
+    client.rpc("projects.mutate", json!({"type":"project.create","commandId":"store-project","projectId":"p","title":"Synthetic scheduled store","workspaceRoot":workspace})).unwrap();
+    let mut input = json!({"id":"continue","title":"Synthetic task","prompt":"No inference in this fixture","enabled":false,"schedule":{"type":"interval","everyMs":60000},"projectId":"p","threadMode":"continue","workspaceStrategy":{"type":"root"},"modelSelection":{"instanceId":"claudeAgent","model":"haiku"},"runtimeMode":"approval-required","interactionMode":"default","createdBy":"agent","creationSource":"server"});
+    client.rpc("scheduledTasks.upsert", input.clone()).unwrap();
+    input["id"] = json!("fresh");
+    input["threadMode"] = json!("fresh_session");
+    client.rpc("scheduledTasks.upsert", input.clone()).unwrap();
+    input["id"] = json!("unsigned");
+    input["threadMode"] = json!("new_thread");
+    input["schedule"] = json!({"type":"webhook"});
+    client.rpc("scheduledTasks.upsert", input.clone()).unwrap();
+    input["id"] = json!("signed");
+    input["enabled"] = json!(true);
+    input["prompt"] = json!("Inspect {{body.action}}");
+    input["schedule"] = json!({"type":"webhook","signature":{"header":"x-hub-signature-256","encoding":"hex","prefix":"sha256=","secret":"synthetic-store-key"},"dedupe":{"replayKey":"{{body.id}}","coalesceKey":"{{body.group}}","coalesceWindowSeconds":3600},"maxDeliveryAgeMinutes":120});
+    let signed = client.rpc("scheduledTasks.upsert", input).unwrap()["task"].clone();
+    assert_eq!(signed["webhook"]["hasSecret"], true);
+    let path = signed["webhook"]["path"].as_str().unwrap();
+    let post = |body: &str| {
+        use hmac::{Hmac, Mac};
+        let mut mac = Hmac::<sha2::Sha256>::new_from_slice(b"synthetic-store-key").unwrap();
+        mac.update(body.as_bytes());
+        let signature = mac
+            .finalize()
+            .into_bytes()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let mut stream = std::net::TcpStream::connect(base.trim_start_matches("http://")).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        write!(stream,"POST {path}?fixture=store HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\nX-Hub-Signature-256: sha256={signature}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).unwrap();
+        assert!(response.starts_with("HTTP/1.1 202"), "{response}");
+        response
+    };
+    let first = r#"{"id":"one","group":"batch","action":"first"}"#;
+    let second = r#"{"id":"two","group":"batch","action":"second"}"#;
+    assert!(post(first).contains("accepted"));
+    assert!(post(second).contains("coalesced"));
+    assert!(post(first).contains("duplicate"));
+    drop(client);
+    drop(process);
+    let source = rusqlite::Connection::open(profile.join("userdata/statev2.sqlite")).unwrap();
+    let mut snapshot = serde_json::Map::new();
+    for table in [
+        "scheduled_tasks",
+        "scheduled_task_webhook_deliveries",
+        "scheduled_task_webhook_pending",
+        "scheduled_task_webhook_replay_keys",
+        "scheduled_task_webhook_relay_deliveries",
+    ] {
+        let mut query = source
+            .prepare(&format!("SELECT * FROM {table} ORDER BY 1"))
+            .unwrap();
+        let names = query
+            .column_names()
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect::<Vec<_>>();
+        let rows = query
+            .query_map([], |row| {
+                let mut value = serde_json::Map::new();
+                for (index, name) in names.iter().enumerate() {
+                    let field = match row.get_ref(index)? {
+                        rusqlite::types::ValueRef::Null => Value::Null,
+                        rusqlite::types::ValueRef::Integer(n) => json!(n),
+                        rusqlite::types::ValueRef::Text(text) => {
+                            json!(std::str::from_utf8(text).unwrap())
+                        }
+                        other => panic!("Unexpected synthetic store value: {other:?}"),
+                    };
+                    value.insert(name.clone(), field);
+                }
+                Ok(Value::Object(value))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        snapshot.insert(table.to_owned(), json!(rows));
+    }
+    let snapshot = Value::Object(snapshot);
+    let tasks = snapshot["scheduled_tasks"].as_array().unwrap();
+    assert_eq!(tasks.len(), 4);
+    assert!(tasks
+        .iter()
+        .all(|task| task["run_count"] == 0 && task["last_run_at"].is_null()));
+    assert_eq!(
+        snapshot["scheduled_task_webhook_pending"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let pending = &snapshot["scheduled_task_webhook_pending"][0];
+    assert_eq!(pending["state"], "pending");
+    assert!(pending["due_at"].as_i64().unwrap() > o3_server::store::now_ms() + 3_500_000);
+    let task: Value = serde_json::from_str(pending["task_json"].as_str().unwrap()).unwrap();
+    let request: Value = serde_json::from_str(pending["request_json"].as_str().unwrap()).unwrap();
+    let deliveries: Value =
+        serde_json::from_str(pending["delivery_ids_json"].as_str().unwrap()).unwrap();
+    assert_eq!(task["id"], "signed");
+    assert_eq!(request["bodyText"], second);
+    assert_eq!(deliveries.as_array().unwrap().len(), 2);
+    assert_eq!(
+        snapshot["scheduled_task_webhook_replay_keys"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    let count: i64 = source
+        .query_row(
+            "SELECT count(*) FROM orchestration_v2_projection_runs",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 0, "Store fixture must not start inference");
+    // Restart the actual runtime without delivering the future pending window.
+    let (client, process) = start_reference(&binary, &profile, &output);
+    let restarted = rusqlite::Connection::open(profile.join("userdata/statev2.sqlite")).unwrap();
+    let retained: (String, String, String, i64, String) = restarted.query_row(
+        "SELECT task_json,request_json,delivery_ids_json,due_at,state FROM scheduled_task_webhook_pending",
+        [], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?)),
+    ).unwrap();
+    assert_eq!(retained.0, pending["task_json"].as_str().unwrap());
+    assert_eq!(retained.1, pending["request_json"].as_str().unwrap());
+    assert_eq!(retained.2, pending["delivery_ids_json"].as_str().unwrap());
+    assert_eq!(retained.3, pending["due_at"].as_i64().unwrap());
+    assert_eq!(retained.4, "pending");
+    let replay_count: i64 = restarted
+        .query_row(
+            "SELECT count(*) FROM scheduled_task_webhook_replay_keys",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(replay_count, 2);
+    let runs: i64 = restarted
+        .query_row(
+            "SELECT count(*) FROM orchestration_v2_projection_runs",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(runs, 0);
+    drop(restarted);
+    drop(client);
+    drop(process);
+    // Export only synthetic task tables into an empty, pinned schema. Authentication,
+    // pairing sessions, runtime logs and other profile data are never copied here.
+    let mut sanitized = rusqlite::Connection::open(output.join("scheduled-store.sqlite")).unwrap();
+    sanitized
+        .execute_batch(include_str!("fixtures/t3-statev2-80.sql"))
+        .unwrap();
+    let tx = sanitized.transaction().unwrap();
+    for table in [
+        "scheduled_tasks",
+        "scheduled_task_webhook_deliveries",
+        "scheduled_task_webhook_pending",
+        "scheduled_task_webhook_replay_keys",
+        "scheduled_task_webhook_relay_deliveries",
+    ] {
+        let rows = &snapshot[table];
+        for row in rows.as_array().unwrap() {
+            let row = row.as_object().unwrap();
+            let columns = row.keys().cloned().collect::<Vec<_>>().join(",");
+            let placeholders = vec!["?"; row.len()].join(",");
+            let values = row.values().map(|field| match field {
+                Value::Null => rusqlite::types::Value::Null,
+                Value::String(s) => rusqlite::types::Value::Text(s.clone()),
+                Value::Number(n) => rusqlite::types::Value::Integer(n.as_i64().unwrap()),
+                other => panic!("Unexpected store fixture field: {other:?}"),
+            });
+            tx.execute(
+                &format!("INSERT INTO {table} ({columns}) VALUES ({placeholders})"),
+                rusqlite::params_from_iter(values),
+            )
+            .unwrap();
+        }
+    }
+    tx.commit().unwrap();
+    std::fs::write(
+        output.join("scheduled-store.json"),
+        serde_json::to_vec_pretty(&snapshot).unwrap(),
+    )
+    .unwrap();
+    std::fs::write(output.join("scheduled-store-result.json"), serde_json::to_vec_pretty(&json!({"reference":"v0.1.8-nightly.20261106.4262","tasks":4,"pending":1,"coalescedDeliveryIds":2,"replayKeys":2,"nativeTurns":0,"providerCredentials":false,"retainedAfterRestart":true,"exportContainsTaskTablesOnly":true})).unwrap()).unwrap();
+    println!("SCHEDULED_STORE_REFERENCE_PASS: task modes, pending snapshot, latest coalesced request and replay retained without inference");
 }
 
 #[test]
