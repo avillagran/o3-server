@@ -55,6 +55,7 @@ pub fn initialize(db: &Connection) -> Result<()> {
     crate::workspace_transition::initialize(db)?;
     crate::native_recovery::initialize(db)?;
     crate::provider_switch::initialize(db)?;
+    crate::fresh_context::initialize(db)?;
     crate::context_transfer::initialize(db)?;
     crate::threadq::initialize(db)?;
     crate::t3_shared::initialize(db)
@@ -794,10 +795,20 @@ pub(crate) fn dispatch_prepared(
             }
         }
         "message.dispatch" => {
+            crate::fresh_context::validate(c)?;
             let mut resolved = c.clone();
             resolved["dispatchMode"] = delivery_mode(s, &tx, &t, c, authority.is_some())?;
+            if c["freshContext"] == true
+                && matches!(
+                    resolved["dispatchMode"]["type"].as_str(),
+                    Some("steer_active" | "restart_active")
+                )
+            {
+                resolved["dispatchMode"] = json!({"type":"queue_after_active"});
+            }
             resolve_steering_restart(s, &tx, &t, &mut resolved)?;
             if authority.is_some()
+                && c["freshContext"] != true
                 && c["deliveryIntent"] == "steer"
                 && !matches!(
                     resolved["dispatchMode"]["type"].as_str(),
@@ -849,7 +860,15 @@ pub(crate) fn dispatch_prepared(
                     &t["modelSelection"],
                     selection,
                 );
-                change_selection(s, &tx, &mut t, c, selection)?;
+                if c["freshContext"] == true {
+                    if !selection["instanceId"].is_string()
+                        || !selection["model"].as_str().is_some_and(|m| !m.is_empty())
+                    {
+                        return Err("invalid model selection".into());
+                    }
+                } else {
+                    change_selection(s, &tx, &mut t, c, selection)?;
+                }
                 if changed && c["dispatchMode"]["type"] == "steer_active" {
                     t["updatedAt"] = json!(at);
                     put(&tx, "thread", tid, tid, &t)?;
@@ -1446,6 +1465,12 @@ pub(crate) fn message_item(db: &Connection, tid: &str, m: &Value) -> Result<Valu
     let mut item = json!({"id":id,"threadId":tid,"runId":m["runId"],"nodeId":m["nodeId"],"providerThreadId":m["providerThreadId"],"providerTurnId":m["providerTurnId"],"nativeItemRef":null,"parentItemId":null,"ordinal":ordinal,"status":"completed","title":null,"startedAt":m["createdAt"],"completedAt":m["updatedAt"],"updatedAt":m["updatedAt"],"type":if m["role"]=="user"{"user_message"}else{"assistant_message"},"messageId":m["id"],"text":m["text"],"streaming":m["streaming"],"attachments":m["attachments"]});
     if m["role"] == "user" {
         item.as_object_mut().unwrap().remove("streaming");
+        if m["freshContext"] == true
+            || get(db, "runs", m["runId"].as_str().unwrap_or(""))
+                .is_ok_and(|r| r["freshContext"] == true)
+        {
+            item["freshContext"] = json!(true);
+        }
         item["createdBy"] = m.get("createdBy").cloned().unwrap_or(json!("user"));
         item["creationSource"] = m.get("creationSource").cloned().unwrap_or(json!("web"));
         if let Some(sender) = m.get("senderThreadId") {
@@ -1511,6 +1536,20 @@ fn resolve_steering_restart(s: &State, db: &Connection, t: &Value, c: &mut Value
     Ok(())
 }
 fn delivery_mode(s: &State, db: &Connection, t: &Value, c: &Value, mcp: bool) -> Result<Value> {
+    if c.get("deliveryIntent")
+        .is_some_and(|v| !matches!(v.as_str(), Some("auto" | "steer" | "restart")))
+    {
+        return Err("invalid delivery intent".into());
+    }
+    if c["freshContext"] == true
+        && (c["deliveryIntent"].is_string()
+            || matches!(
+                c["dispatchMode"]["type"].as_str(),
+                Some("steer_active" | "restart_active")
+            ))
+    {
+        return Ok(json!({"type":"queue_after_active"}));
+    }
     let Some(intent) = c.get("deliveryIntent") else {
         return Ok(c["dispatchMode"].clone());
     };
@@ -1616,6 +1655,7 @@ pub(crate) fn stage_message(
     ) {
         return Err("dispatch mode is not implemented".into());
     }
+    crate::fresh_context::validate(c)?;
     let mode = c["dispatchMode"]["type"].as_str();
     if s.active.lock().unwrap().len() >= 32 {
         return Err("active run limit reached".into());
@@ -1719,7 +1759,20 @@ pub(crate) fn stage_message(
             |r| r.get(0),
         )
         .map_err(|e| e.to_string())?;
-    let mut run = json!({"id":run_id,"threadId":tid,"ordinal":ordinal,"providerInstanceId":t["providerInstanceId"],"modelSelection":t["modelSelection"],"providerThreadId":null,"userMessageId":mid,"rootNodeId":null,"activeAttemptId":null,"status":"preparing","queuePosition":null,"requestedAt":at,"startedAt":null,"completedAt":null,"checkpointId":null,"contextHandoffId":null,"executionRequested":c["dispatchMode"]["type"]!="defer_start"});
+    let selection = if c["freshContext"] == true {
+        c.get("modelSelection").unwrap_or(&t["modelSelection"])
+    } else {
+        &t["modelSelection"]
+    };
+    let instance = if c["freshContext"] == true && c.get("modelSelection").is_some() {
+        &selection["instanceId"]
+    } else {
+        &t["providerInstanceId"]
+    };
+    let mut run = json!({"id":run_id,"threadId":tid,"ordinal":ordinal,"providerInstanceId":instance,"modelSelection":selection,"providerThreadId":null,"userMessageId":mid,"rootNodeId":null,"activeAttemptId":null,"status":"preparing","queuePosition":null,"requestedAt":at,"startedAt":null,"completedAt":null,"checkpointId":null,"contextHandoffId":null,"executionRequested":c["dispatchMode"]["type"]!="defer_start"});
+    if c["freshContext"] == true {
+        run["freshContext"] = json!(true);
+    }
     if queued {
         run["status"] = json!("queued");
         run["executionRequested"] = json!(true);
@@ -1733,6 +1786,9 @@ pub(crate) fn stage_message(
     put(tx, "thread", tid, tid, t)?;
     let mut item_message = m.clone();
     item_message["providerThreadId"] = run["providerThreadId"].clone();
+    if run["freshContext"] == true {
+        item_message["freshContext"] = json!(true);
+    }
     if queued {
         item_message["inputIntent"] = json!("queued_turn");
     }

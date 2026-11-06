@@ -45,6 +45,7 @@ mod codex_projection;
 mod content_search;
 pub mod ext;
 pub mod files;
+mod fresh_context;
 pub mod import;
 pub mod keybind;
 pub mod misc;

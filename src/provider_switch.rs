@@ -322,6 +322,71 @@ fn source_run(r: &Value) -> bool {
         Some("completed" | "failed" | "interrupted")
     ) && r["contextDiscarded"] != true
 }
+/// A reset never reuses an old native row, even for the same provider/account.
+fn fresh_session(
+    s: &State,
+    db: &Connection,
+    thread: &mut Value,
+    run: &Value,
+    at: &str,
+) -> Result<()> {
+    let tid = thread["id"].as_str().ok_or("thread id missing")?.to_owned();
+    if thread["providerGeneration"] == run["id"]
+        && current(db, thread)?.is_some_and(|pt| pt["firstRunOrdinal"] == run["ordinal"])
+    {
+        return Ok(());
+    }
+    let threads = list(db, "providerThreads", &tid)?;
+    for pt in &threads {
+        if (pt["ownerNodeId"].is_null() || pt["id"] == thread["activeProviderThreadId"])
+            && crate::native_recovery::background_work(db, &tid, pt)?
+        {
+            return Err("The current session is still running background agents or commands; wait for them or press Stop before starting a fresh session.".into());
+        }
+    }
+    let sessions = list(db, "providerSessions", &tid)?
+        .into_iter()
+        .filter(|session| !matches!(session["status"].as_str(), Some("stopped" | "error")))
+        .filter_map(|s| s["id"].as_str().map(str::to_owned))
+        .collect::<Vec<_>>();
+    crate::fresh_context::remember(db, thread, run)?;
+    stage_sessions(db, thread, &sessions)?;
+    if let Some(active) = current(db, thread)? {
+        stage(db, thread, &active)?;
+    } else if let Some(native) = crate::projection::native_id(db, thread) {
+        stage_payload(
+            db,
+            thread,
+            json!({"providerInstanceId":thread["providerInstanceId"],"providerThreadId":null,"providerSessionId":null,"nativeId":native,"key":format!("{}:{}",tid,thread["providerGeneration"].as_str().unwrap_or("")),"driver":crate::provider_input::driver(s,&thread["providerInstanceId"])?}),
+        )?;
+    }
+    db.execute("UPDATE provider_switches SET payload=json_set(payload,'$.detachReason','Starting a fresh session.') WHERE thread_id=? AND released_at IS NULL",[&tid]).map_err(|e|e.to_string())?;
+    db.execute(
+        "DELETE FROM provider_selection_plans WHERE thread_id=?",
+        [&tid],
+    )
+    .map_err(|e| e.to_string())?;
+    thread["providerGeneration"] = run["id"].clone();
+    for key in [
+        "activeProviderThreadId",
+        "codexNativeThreadId",
+        "nativeForkSource",
+        "nativeForkLastTurnId",
+        "nativeForkTransferId",
+        "providerHandoff",
+        "providerHandoffAttachments",
+        "inheritedProviderContext",
+        "inheritedProviderAttachments",
+    ] {
+        thread[key] = Value::Null;
+    }
+    thread["providerInstanceId"] = run["providerInstanceId"].clone();
+    thread["modelSelection"] = run["modelSelection"].clone();
+    thread["updatedAt"] = json!(at);
+    put(db, "thread", &tid, &tid, thread)?;
+    append(db, &tid, "thread.metadata-updated", thread.clone(), thread)?;
+    Ok(())
+}
 pub(crate) fn admit(
     s: &State,
     db: &Connection,
@@ -329,6 +394,10 @@ pub(crate) fn admit(
     run: &mut Value,
     at: &str,
 ) -> Result<()> {
+    crate::fresh_context::restore_cancelled(db, thread)?;
+    if run["freshContext"] == true {
+        return fresh_session(s, db, thread, run, at);
+    }
     // A queued message keeps the model it recorded, even if idle metadata changed later.
     if run["modelSelection"]["instanceId"].is_string()
         && (thread["providerInstanceId"] != run["providerInstanceId"]
@@ -541,6 +610,8 @@ fn move_binding(
         && active["driver"] == target_identity.0
         && source_identity == target_identity;
     stage(db, thread, active)?;
+    let boundary =
+        crate::fresh_context::boundary(db, &tid, run["ordinal"].as_i64().unwrap_or(i64::MAX))?;
     let all = list(db, "providerThreads", &tid)?;
     let mut candidates = all
         .iter()
@@ -548,6 +619,10 @@ fn move_binding(
             pt["providerInstanceId"] == target
                 && pt["id"] != active["id"]
                 && pt["appThreadId"] == tid
+                && (boundary == 0
+                    || pt["firstRunOrdinal"]
+                        .as_i64()
+                        .is_some_and(|first| first >= boundary))
                 && pt["ownerNodeId"].is_null()
         })
         .collect::<Vec<_>>();
@@ -609,6 +684,9 @@ fn move_binding(
         .iter()
         .filter(|r| {
             !compatible
+                && r["ordinal"]
+                    .as_i64()
+                    .is_some_and(|ordinal| ordinal >= boundary)
                 && (source_run(r) || context.source.is_some_and(|source| source["id"] == r["id"]))
                 && r["ordinal"].as_i64().is_some_and(|ordinal| {
                     ordinal > since
@@ -819,7 +897,7 @@ pub(crate) async fn release_pending(
                     &tx,
                     tid,
                     "provider-session.detached",
-                    json!({"providerSessionId":session,"detachedAt":at,"reason":"Provider switched."}),
+                    json!({"providerSessionId":session,"detachedAt":at,"reason":p["detachReason"].as_str().unwrap_or("Provider switched.")}),
                     &thread,
                 )?;
                 tx.execute("UPDATE events SET body=json_set(body,'$.driver',?1,'$.providerInstanceId',?2) WHERE sequence=?3",params![p["driver"].as_str(),p["providerInstanceId"].as_str(),sequence]).map_err(|e|e.to_string())?;

@@ -22,6 +22,7 @@ pub(crate) fn handoff_id(db: &Connection, run: &Value) -> Result<Option<String>>
         |r| r.get(0),
     )
     .optional()
+    .map(|id: Option<String>| id.filter(|id| !id.is_empty()))
     .map_err(|e| e.to_string())
 }
 fn reply(db: &Connection, thread: &Value, run: &Value, mut budget: Value) -> Result<Value> {
@@ -125,17 +126,27 @@ pub(crate) fn prepare(
     let has_background =
         matches!(reason, NativeRecoveryReason::HandoffBudget) && background_work(&tx, tid, &pt)?;
     let at = iso(now_ms());
-    let id = if matches!(reason, NativeRecoveryReason::ForkFailed) {
+    let id = if run["freshContext"] == true {
+        None
+    } else if matches!(reason, NativeRecoveryReason::ForkFailed) {
         if !thread["nativeForkTransferId"].is_string() {
             return Err("Native fork fallback has no pending transfer".into());
         }
-        context_transfer::portable_fork_fallback(s, &tx, &mut thread, &mut run, &at)?
+        Some(context_transfer::portable_fork_fallback(
+            s,
+            &tx,
+            &mut thread,
+            &mut run,
+            &at,
+        )?)
     } else {
-        let items = fork_items(&tx, tid, run["ordinal"].as_i64().unwrap_or(1) - 1)?;
+        let through = run["ordinal"].as_i64().unwrap_or(1) - 1;
+        let boundary = crate::fresh_context::boundary(&tx, tid, through)?.max(1);
+        let items = fork_items(&tx, tid, through)?;
 
         let coverage = history::coverage(
             tid,
-            1,
+            boundary,
             (run["ordinal"].as_i64().unwrap_or(1) - 1).max(1),
             &items,
         );
@@ -147,14 +158,14 @@ pub(crate) fn prepare(
         let id = random_id()?;
         let transfer_id = random_id()?;
         let at = iso(now_ms());
-        let h = json!({"id":id,"transferId":transfer_id,"threadId":tid,"targetRunId":rid,"fromProviderThreadIds":[ptid],"toProviderThreadId":ptid,"coveredRunOrdinals":{"from":1,"to":(run["ordinal"].as_i64().unwrap_or(1)-1).max(1)},"strategy":"full_thread_summary","status":"ready","summaryMessageId":null,"summaryText":history::render(selected["messages"].as_array().unwrap(),selected["context"].as_str().unwrap()),"history":{"messages":selected["messages"],"coverage":coverage,"omittedItems":selected["omittedItems"],"omittedItemIds":selected["omittedItemIds"]},"createdByProviderInstanceId":null,"createdAt":at,"updatedAt":at});
+        let h = json!({"id":id,"transferId":transfer_id,"threadId":tid,"targetRunId":rid,"fromProviderThreadIds":[ptid],"toProviderThreadId":ptid,"coveredRunOrdinals":{"from":boundary,"to":(run["ordinal"].as_i64().unwrap_or(1)-1).max(1)},"strategy":"full_thread_summary","status":"ready","summaryMessageId":null,"summaryText":history::render(selected["messages"].as_array().unwrap(),selected["context"].as_str().unwrap()),"history":{"messages":selected["messages"],"coverage":coverage,"omittedItems":selected["omittedItems"],"omittedItemIds":selected["omittedItemIds"]},"createdByProviderInstanceId":null,"createdAt":at,"updatedAt":at});
 
         put(&tx, "contextHandoffs", &id, tid, &h)?;
         append(&tx, tid, "context-handoff.updated", h, &thread)?;
         let transfer = json!({"id":transfer_id,"type":"provider_handoff","sourceThreadId":tid,"targetThreadId":tid,"sourcePoint":{"threadId":tid},"basePoint":null,"sourceProviderInstanceId":pt["providerInstanceId"],"targetProviderInstanceId":run["providerInstanceId"],"targetRunId":rid,"status":"resolved_portable","resolution":{"strategy":"portable_context","contextHandoffId":id},"createdBy":"system","error":null,"createdAt":at,"updatedAt":at,"consumedAt":null});
         put(&tx, "contextTransfers", &transfer_id, tid, &transfer)?;
         append(&tx, tid, "context-transfer.updated", transfer, &thread)?;
-        id
+        Some(id)
     };
     pt["nativeThreadRef"] = Value::Null;
     pt["nativeConversationHeadRef"] = Value::Null;
@@ -168,10 +179,12 @@ pub(crate) fn prepare(
     if pt["handoffIds"].is_null() {
         pt["handoffIds"] = json!([]);
     }
-    pt["handoffIds"]
-        .as_array_mut()
-        .ok_or("provider handoff ids missing")?
-        .push(json!(id));
+    if let Some(id) = &id {
+        pt["handoffIds"]
+            .as_array_mut()
+            .ok_or("provider handoff ids missing")?
+            .push(json!(id));
+    }
     put(&tx, "providerThreads", ptid, tid, &pt)?;
     append(&tx, tid, "provider-thread.updated", pt, &thread)?;
     thread["codexNativeThreadId"] = Value::Null;
@@ -188,7 +201,7 @@ pub(crate) fn prepare(
         tid,
         thread["providerGeneration"].as_str().unwrap_or("")
     );
-    tx.execute("INSERT INTO native_recoveries(id,run_id,attempt_id,thread_id,provider_thread_id,old_native,provider_instance_id,pool_key,reason,handoff_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",params![recovery_id,rid,aid,tid,ptid,previous,run["providerInstanceId"].as_str(),pool_key,reason.label(),id,at]).map_err(|e|e.to_string())?;
+    tx.execute("INSERT INTO native_recoveries(id,run_id,attempt_id,thread_id,provider_thread_id,old_native,provider_instance_id,pool_key,reason,handoff_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",params![recovery_id,rid,aid,tid,ptid,previous,run["providerInstanceId"].as_str(),pool_key,reason.label(),id.as_deref().unwrap_or(""),at]).map_err(|e|e.to_string())?;
     let mut result = reply(&tx, &thread, &run, budget)?;
     result["id"] = json!(recovery_id);
     if matches!(reason, NativeRecoveryReason::HandoffBudget) {

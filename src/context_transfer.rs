@@ -225,9 +225,10 @@ fn save_transfer(db: &Connection, thread: &Value, transfer: Value) -> Result<i64
     append(db, &tid, "context-transfer.updated", transfer, thread)
 }
 pub(crate) fn own_items(db: &Connection, tid: &str, through: i64) -> Result<Vec<Value>> {
-    let mut q=db.prepare("SELECT i.body FROM records i LEFT JOIN records r ON r.kind='runs' AND r.id=json_extract(i.body,'$.runId') WHERE i.kind='turnItems' AND i.thread_id=?1 AND (json_extract(i.body,'$.runId') IS NULL OR (json_extract(r.body,'$.ordinal')<=?2 AND coalesce(json_extract(r.body,'$.contextDiscarded'),0)=0 AND json_extract(r.body,'$.status')!='rolled_back' AND NOT(json_extract(r.body,'$.status')='cancelled' AND json_extract(i.body,'$.type')='user_message' AND coalesce(json_extract(i.body,'$.inputIntent'),'')='queued_turn'))) ORDER BY r.rowid,json_extract(i.body,'$.ordinal'),i.rowid").map_err(|e|e.to_string())?;
+    let boundary = crate::fresh_context::boundary(db, tid, through)?;
+    let mut q=db.prepare("SELECT i.body FROM records i LEFT JOIN records r ON r.kind='runs' AND r.id=json_extract(i.body,'$.runId') WHERE i.kind='turnItems' AND i.thread_id=?1 AND ((json_extract(i.body,'$.runId') IS NULL AND ?3=0) OR (json_extract(r.body,'$.ordinal')>=?3 AND json_extract(r.body,'$.ordinal')<=?2 AND coalesce(json_extract(r.body,'$.contextDiscarded'),0)=0 AND json_extract(r.body,'$.status')!='rolled_back' AND NOT(json_extract(r.body,'$.status')='cancelled' AND json_extract(i.body,'$.type')='user_message' AND coalesce(json_extract(i.body,'$.inputIntent'),'')='queued_turn'))) ORDER BY r.rowid,json_extract(i.body,'$.ordinal'),i.rowid").map_err(|e|e.to_string())?;
     let rows = q
-        .query_map(params![tid, through], |r| r.get::<_, String>(0))
+        .query_map(params![tid, through, boundary], |r| r.get::<_, String>(0))
         .map_err(|e| e.to_string())?;
     let mut out = vec![];
     for row in rows {
@@ -254,6 +255,9 @@ pub(crate) fn own_items(db: &Connection, tid: &str, through: i64) -> Result<Vec<
 }
 pub(crate) fn fork_items(db: &Connection, tid: &str, through: i64) -> Result<Vec<Value>> {
     let mut segments = vec![own_items(db, tid, through)?];
+    if crate::fresh_context::boundary(db, tid, through)? > 0 {
+        return Ok(segments.remove(0));
+    }
     let mut thread = get(db, "thread", tid)?;
     let mut seen = std::collections::HashSet::from([tid.to_owned()]);
     while thread["forkedFrom"]["type"] == "run" && thread["lineage"]["sideChat"] != true {
@@ -274,6 +278,9 @@ pub(crate) fn fork_items(db: &Connection, tid: &str, through: i64) -> Result<Vec
             break;
         };
         segments.insert(0, own_items(db, sid, run["ordinal"].as_i64().unwrap_or(0))?);
+        if crate::fresh_context::boundary(db, sid, run["ordinal"].as_i64().unwrap_or(0))? > 0 {
+            break;
+        }
         thread = source;
     }
     Ok(segments.into_iter().flatten().collect())
@@ -342,6 +349,19 @@ fn admit_inner(
         .ok_or("thread id required")?
         .to_owned();
     let transfers = list(db, "contextTransfers", &tid)?;
+    if run["freshContext"] == true {
+        if transfers.iter().any(|t| {
+            t["targetThreadId"] == tid
+                && t["status"] == "pending"
+                && matches!(t["type"].as_str(), Some("fork" | "merge_back"))
+        }) {
+            return Err(
+                "A fresh session cannot start while a fork or merge is still being applied.".into(),
+            );
+        }
+        return Ok(());
+    }
+
     let merges = transfers
         .iter()
         .filter(|t| {
@@ -660,6 +680,18 @@ pub(crate) fn input(db: &Connection, thread: &Value, run: &Value) -> Result<Valu
     let tid = thread["id"].as_str().unwrap_or("");
     let mut all = list(db, "contextHandoffs", tid)?;
     let runs = list(db, "runs", tid)?;
+    let boundary = if run["freshContext"] == true {
+        run["ordinal"].as_i64().unwrap_or(0)
+    } else {
+        crate::fresh_context::boundary(db, tid, run["ordinal"].as_i64().unwrap_or(i64::MAX))?
+    };
+    all.retain(|h| {
+        boundary == 0
+            || runs.iter().any(|r| {
+                r["id"] == h["targetRunId"] && r["ordinal"].as_i64().is_some_and(|o| o >= boundary)
+            })
+    });
+
     let Some(ptid) = run["providerThreadId"].as_str() else {
         // Legacy active-recovery runs predate app-owned provider rows.
         return Ok(json!({"handoffs":[],"deliveredItemIds":[]}));

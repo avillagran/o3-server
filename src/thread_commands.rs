@@ -675,14 +675,19 @@ pub(crate) fn capture_handoff(
     ordinal: i64,
 ) -> Result<()> {
     t["providerHandoff"] = json!(handoff(db, tid, ordinal)?);
-    let mut media = t["inheritedProviderAttachments"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default();
-    let mut q = db.prepare("SELECT m.body FROM records m JOIN records r ON r.kind='runs' AND r.id=json_extract(m.body,'$.runId') WHERE m.kind='messages' AND m.thread_id=? AND json_extract(r.body,'$.ordinal')<=? AND coalesce(json_extract(r.body,'$.contextDiscarded'),0)=0 ORDER BY r.rowid,m.rowid").map_err(|e|e.to_string())?;
+    let boundary = crate::fresh_context::boundary(db, tid, ordinal)?;
+    let mut media = if boundary > 0 {
+        Value::Null
+    } else {
+        t["inheritedProviderAttachments"].clone()
+    }
+    .as_array()
+    .cloned()
+    .unwrap_or_default();
+    let mut q = db.prepare("SELECT m.body FROM records m JOIN records r ON r.kind='runs' AND r.id=json_extract(m.body,'$.runId') WHERE m.kind='messages' AND m.thread_id=? AND json_extract(r.body,'$.ordinal')<=? AND json_extract(r.body,'$.ordinal')>=? AND coalesce(json_extract(r.body,'$.contextDiscarded'),0)=0 ORDER BY r.rowid,m.rowid").map_err(|e|e.to_string())?;
     let mut truncated = false;
     for row in q
-        .query_map(params![tid, ordinal], |r| r.get::<_, String>(0))
+        .query_map(params![tid, ordinal, boundary], |r| r.get::<_, String>(0))
         .map_err(|e| e.to_string())?
     {
         let m: Value =
@@ -736,14 +741,18 @@ pub(crate) fn handoff(db: &Connection, tid: &str, ordinal: i64) -> Result<String
             truncated = true;
         }
     };
+    let boundary = crate::fresh_context::boundary(db, tid, ordinal)?;
     if let Ok(thread) = get(db, "thread", tid) {
-        if let Some(inherited) = thread["inheritedProviderContext"].as_str() {
+        if let Some(inherited) = thread["inheritedProviderContext"]
+            .as_str()
+            .filter(|_| boundary == 0)
+        {
             retain(inherited.to_owned());
         }
     }
-    let mut q = db.prepare("SELECT m.kind,m.body FROM records m JOIN records r ON r.kind='runs' AND r.id=json_extract(m.body,'$.runId') WHERE m.kind IN ('messages','turnItems') AND m.thread_id=? AND json_extract(r.body,'$.ordinal')<=? AND coalesce(json_extract(r.body,'$.contextDiscarded'),0)=0 ORDER BY json_extract(r.body,'$.ordinal'),m.rowid").map_err(|e|e.to_string())?;
+    let mut q = db.prepare("SELECT m.kind,m.body FROM records m JOIN records r ON r.kind='runs' AND r.id=json_extract(m.body,'$.runId') WHERE m.kind IN ('messages','turnItems') AND m.thread_id=? AND json_extract(r.body,'$.ordinal')<=? AND json_extract(r.body,'$.ordinal')>=? AND coalesce(json_extract(r.body,'$.contextDiscarded'),0)=0 ORDER BY json_extract(r.body,'$.ordinal'),m.rowid").map_err(|e|e.to_string())?;
     let rows = q
-        .query_map(params![tid, ordinal], |r| {
+        .query_map(params![tid, ordinal, boundary], |r| {
             Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
         })
         .map_err(|e| e.to_string())?;
