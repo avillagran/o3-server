@@ -191,6 +191,7 @@ pub fn required(tag: &str) -> Option<&'static str> {
         "sourceControl.signInCancel" => Some("settings:write"),
         "sourceControl.signInStart" => Some("settings:write"),
         "sourceControl.signInWait" => Some("settings:write"),
+        "sourceControl.star" => Some("source-control:write"),
         "sourceControl.starred" => Some("orchestration:read"),
         "subscribeAuthAccess" => Some("access:read"),
         "subscribeBackgroundPolicy" => Some("orchestration:read"),

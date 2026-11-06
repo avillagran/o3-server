@@ -13,6 +13,8 @@ pub fn handles(tag: &str) -> bool {
             tag,
             "projects.mutate"
                 | "sourceControl.cloneRepository"
+                | "sourceControl.starred"
+                | "sourceControl.star"
                 | "attachments.createUploadUrl"
                 | "attachments.delete"
                 | "assets.createUrl"
@@ -51,6 +53,8 @@ pub async fn call(s: &Arc<State>, tag: &str, p: Value) -> Result<Value, Value> {
             |message| serde_json::json!({"_tag":"ProjectMutationError","message":message}),
         ),
         "sourceControl.cloneRepository" => crate::repositories::clone(s, &p, None).await,
+        "sourceControl.starred" => Ok(crate::forge::star(s, &p, false).await),
+        "sourceControl.star" => Ok(crate::forge::star(s, &p, true).await),
         "attachments.createUploadUrl" => assets::create_upload_url(s, &p),
         "attachments.delete" => assets::delete_attachment(s, &p),
         "assets.createUrl" => assets::create_url_async(s, &p).await,

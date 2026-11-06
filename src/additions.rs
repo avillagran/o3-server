@@ -8,7 +8,6 @@ pub fn handles(tag: &str) -> bool {
     matches!(
         tag,
         "orchestration.getNativeChildWork"
-            | "sourceControl.starred"
             | "sourceControl.appAccess"
             | "sourceControl.signInStart"
             | "sourceControl.signInWait"
@@ -32,8 +31,6 @@ pub fn call(tag: &str, p: &Value) -> Result<Value, Value> {
         // Only provider-native (Antigravity) subagents have readable child work upstream; every
         // other driver answers with no children. o3 has no such driver.
         "orchestration.getNativeChildWork" => Ok(json!({"children":[]})),
-        // Upstream answers false when the forge cannot say; o3 has no forge app token.
-        "sourceControl.starred" => Ok(json!(false)),
         // Without an app sign-in driver upstream reports signed-out.
         "sourceControl.appAccess" => Ok(json!({"status":"signed-out"})),
         "sourceControl.signInStart" | "sourceControl.signInWait" | "sourceControl.signInCancel" => {

@@ -1034,7 +1034,7 @@
     "sourceControl.starred": {
       "status": "partial",
       "priority": "P2",
-      "note": "False fallback when the forge cannot answer. Forge credential and star reads remain incomplete; no corresponding capability is advertised."
+      "note": "Personal GitHub star state uses native GET/PUT and only 204 means success. Real compatible client plus local HTTP exercise read/star/read; 83 upstream helper cases and 22 official-runtime fallback/input/scope comparisons. Host-selected literal, environment, gh and native private token slots are supported; app sign-in, secret-provider resolution and integration with other forge consumers remain partial."
     },
     "sourceControl.appAccess": {
       "status": "partial",
@@ -1105,6 +1105,11 @@
       "status": "partial",
       "priority": "P2",
       "note": "DeviceSimlockIdentityError: Simlock gateways remain unsupported; no token is sent and the capability is not advertised."
+    },
+    "sourceControl.star": {
+      "status": "partial",
+      "priority": "P2",
+      "note": "Personal GitHub star state uses native GET/PUT and only 204 means success. Real compatible client plus local HTTP exercise read/star/read; 83 upstream helper cases and 22 official-runtime fallback/input/scope comparisons. Host-selected literal, environment, gh and native private token slots are supported; app sign-in, secret-provider resolution and integration with other forge consumers remain partial. Requires source-control:write; reads require orchestration:read."
     }
   },
   "commands": {

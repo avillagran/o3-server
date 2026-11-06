@@ -26,6 +26,21 @@ pub fn read(s: &State) -> Result<Value, String> {
         Ok(b) => {
             let stored: Value = serde_json::from_slice(&b).map_err(|e| e.to_string())?;
             merge(&mut v, &stored);
+            // T3 keeps keyed forge literals in private secret slots. Retain their public marker
+            // when loading a profile; patch merging still treats that marker as "keep existing".
+            if let Some(hosts) = stored["sourceControlHosts"].as_object() {
+                for (kind, settings) in hosts {
+                    for field in ["tokens", "signIns"] {
+                        if let Some(entries) = settings[field].as_object() {
+                            for (host, value) in entries {
+                                if value == SENTINEL {
+                                    v["sourceControlHosts"][kind][field][host] = json!(SENTINEL);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => return Err(e.to_string()),
@@ -72,7 +87,17 @@ pub fn redact(v: &mut Value) {
                 m.insert("valueRedacted".into(), json!(true));
             }
             for (k, v) in m {
-                if sensitive(k) {
+                if matches!(k.as_str(), "tokens" | "signIns") {
+                    if let Some(entries) = v.as_object_mut() {
+                        for value in entries.values_mut() {
+                            if value.is_string() {
+                                redact_secret(value);
+                            } else {
+                                redact(value);
+                            }
+                        }
+                    }
+                } else if sensitive(k) {
                     redact_secret(v);
                 } else {
                     redact(v)

@@ -17,8 +17,8 @@ server behavior supporting those clients remains in scope.
 [`nightly/parity-4262.json`](nightly/parity-4262.json) inventories 211 discovered
 public method names and records existing method statuses as historical evidence,
 not certification against this nightly. The source adds two previously untracked
-methods: `orchestration.getThreadTitles` and `sourceControl.star`. The title method
-is now tracked and implemented; the star method remains untracked.
+methods: `orchestration.getThreadTitles` and `sourceControl.star`. Both are now
+tracked and implemented in their documented scope.
 
 [`nightly/drift-4275.json`](nightly/drift-4275.json) records the next intake. Goal,
 thread-read and RPC authorization source is unchanged from 4262. Device discovery,
@@ -56,6 +56,13 @@ membership. An isolated official nightly 4262 runtime agrees on selection, order
 Unicode trimming and 31 malformed-input wire defects. Families reuse the common shell
 projection, whose complete field fidelity remains a separate task. The full headless
 goal remains active after either block.
+
+The forge-star block provides personal GitHub GET/PUT operations, host-scoped
+credentials, native private token slots and quota protection. The real compatible
+client exercises read/star/read against private HTTP, while the official runtime
+matches fallback, decoding and permission responses. App sign-in, secret providers
+and policy integration with the remaining forge consumers remain open; see
+[`nightly/forge-star-intake.json`](nightly/forge-star-intake.json).
 
 Validation details belong in `CONFORMANCE.md` and the per-block intake files. A green
 suite and an RPC count alone do not establish complete headless behavior.

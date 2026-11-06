@@ -3510,3 +3510,21 @@ evidence for the queries' selection, ordering, input decoding and authorization;
 complete common shell summaries and source-wide error taxonomy remain open.
 
 See `nightly/thread-reads-intake.json` and `PARITY.md` for current scope.
+## 2026-11-06 — Personal GitHub star operations
+
+`src/forge.rs` and `tests/forge.rs` cover star reads and mutations with real HTTP
+and the compatible RPC client. A private loopback fixture proves read/404, PUT/204
+and read/204 without external mutations. Only HTTP 204 succeeds. Header, quota reserve,
+credential boundary and pause cases use actual requests. Local port-discovery probes
+receive 404 without consuming a prepared forge response.
+
+Eighty-three cases execute the upstream's host, path, API-root, environment-token and
+private-slot naming helpers. Twenty-two comparisons with the official 4262 runtime
+cover unsupported/disabled cases, malformed-input wire defects and read-only scopes;
+their source is unchanged in 4275. Native token placeholders load from T3's private
+`.bin` slot, keyed literals are redacted, and settings round trips preserve them.
+
+GitHub App sign-in, secret-provider resolution, source-wide secret persistence and
+credential/quota integration with other forge consumers are still partial. No real
+GitHub repository is starred by these tests. Evidence and remaining limits live in
+`nightly/forge-star-intake.json`; this block does not certify full headless parity.
