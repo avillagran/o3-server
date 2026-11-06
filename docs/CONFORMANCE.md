@@ -1,5 +1,32 @@
 # Conformance evidence
 
+## Rust test isolation, 2026-11-06
+
+`tools/test-rust-sandbox` compiles with Cargo on the host, then executes every
+native test binary in rootless Podman. The source checkout, Git metadata, test
+binaries and private Node installation are read-only mounts; the container root
+is read-only, external networking is disabled and all fixture writes stay in
+private temporary filesystems. The runner checks mount flags before executing
+tests, forwards Cargo name filters, limits memory/processes and stops its own
+container on completion or interruption. The local derived image adds ffmpeg to
+`localhost/android-sandbox:latest`; it is not published.
+
+Both complete configurations passed: **517 default / 514 minimal**, no failures,
+35 opt-in tests ignored per configuration, 95 executable groups each. The
+managed-provider fixture still exercises installation through its private npm
+peer; Node comes from a read-only runtime mount. A process-parent death regression
+also passed independently in the container. The runner does not supply real
+credentials, hardware, an official nightly or network access to ignored tests.
+
+Test portability fixes use the configured temporary directory and let a pure
+process-parent fixture run without Node. The differential harness no longer
+recursively removes old profiles by matching broad prefixes in a shared host
+directory; its parent-death fixture removes only its own pid file and empty
+directory. CI also executes Rust checks inside a disposable job container,
+using the container configuration already validated by the parallel fresh-context
+branch. This block changes verification infrastructure, not nightly feature
+coverage or any deployed host.
+
 This is a partial operational checkpoint, not a full interchangeability certificate.
 The owner reprioritized startup memory and P0 operation; unresolved work is listed below.
 

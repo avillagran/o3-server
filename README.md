@@ -85,10 +85,26 @@ is pushed; `o3-server --version` prints that version.
 
 ```sh
 cargo build --release -j 4
-cargo test -j 4
+tools/test-rust-sandbox -- -j 4
 ```
 
 Keep build output off tmpfs, for example `CARGO_TARGET_DIR=/var/tmp/o3-build/main`.
+The test runner compiles on the host and runs the test executables in rootless
+Podman with no external network or writable host mounts. It requires Podman,
+a private Node installation and the local `localhost/android-sandbox:latest`
+base image. Its derived image adds ffmpeg for video decoder regressions.
+
+```sh
+tools/test-rust-sandbox -- --no-default-features -j 4
+tools/test-rust-sandbox -- --test native_goals stop_during_automatic_goal_turn
+```
+
+Sources, binaries, Git metadata and the Node runtime are mounted read-only;
+test profiles and subprocess fixtures live in the container's temporary filesystems.
+The container has a 6 GiB memory limit and four test workers by default. Set
+`--memory` or `--test-threads` before `--` to adjust them. Tests that require
+credentials, hardware or an official reference remain opt-in and need their
+dedicated isolated runners.
 
 ## Try it beside T3 (pilot)
 
