@@ -271,7 +271,17 @@ fn main() -> std::io::Result<()> {
             let listener = tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
             let _guard = o3_server::profile::RuntimeGuard::write(&dir, listener.local_addr()?)?;
             eprintln!("o3-server listening on {}", listener.local_addr()?);
+            // T3's base must be taken in before the first client reads.
+            let shared = match o3_server::t3_shared::start(&state) {
+                Ok(shared) => shared,
+                Err(e) => {
+                    eprintln!("T3 shared base not written: {e}");
+                    None
+                }
+            };
             let state = Arc::new(state);
+            let exporter =
+                shared.map(|t3| o3_server::t3_shared::Exporter::spawn(state.clone(), t3));
             let probe = state.provider.lock().unwrap().clone().unwrap();
             let probe_state = state.clone();
             let probe_task = tokio::spawn(async move {
@@ -343,6 +353,9 @@ fn main() -> std::io::Result<()> {
             let _ = probe_task.await;
             o3_server::preview::shutdown(&state).await;
             codex.shutdown().await;
+            if let Some(exporter) = exporter {
+                exporter.finish();
+            }
             result
         })
 }
