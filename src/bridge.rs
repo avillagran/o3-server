@@ -254,7 +254,7 @@ pub fn cli(args: &[String]) -> std::io::Result<()> {
 mod managed_client_tests {
     use super::*;
     fn state(limits: serde_json::Value) -> Arc<State> {
-        assert!(Path::new("/run/.containerenv").is_file());
+        crate::test_sandbox::assert_isolated();
         let dir = std::env::temp_dir().join(format!(
             "managed-bridge-{}",
             crate::store::random_id().unwrap()
