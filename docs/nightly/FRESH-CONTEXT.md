@@ -105,8 +105,16 @@ directory is writable. The runner stops only its own uniquely named container.
 Eight real turns with Claude Code 2.1.318 (Haiku) and Codex 0.167.0
 (`gpt-6.1-sol`) prove original-context recall, forgetting after each reset, new
 context continuity, post-reset provider switching, changed native identities and
-retained visible history. The final run passed after applying the upstream
-multi-thread session policy.
+retained visible history. The final O3 run passed after applying the upstream
+multi-thread session policy. The identical eight-turn scenario also passed against
+the official T3 4262 Linux binary inside the same container boundary. All seven
+behavioral results match. Its migration-80 database has 109 public records and
+264 events, all accepted by the exact contracts with zero rejections.
+
+The official archive SHA-256 was verified against its GitHub release digest:
+`5df94ca15c4f68f749fa5540fbb9d5ca879ca8750ac43dd2704f6a18899ed6d5`.
+The reference uses an isolated profile and disposable authentication session;
+neither server runs against a live user database.
 
 The same native evidence was exported into a disposable copy of the T3
 migration-73 schema through the guarded `t3_shared::open` and real exporter:
@@ -132,6 +140,8 @@ Reproduction:
 node tools/generate-fresh-context-fixtures.mjs /path/to/t3code
 # Rootless container, real short native turns:
 tools/live-fresh-context
+# Same scenario against the extracted official reference package:
+tools/live-fresh-context --reference-root /path/to/t3-0.1.8-nightly.20261106.4262-linux-x64
 # Credential-free, network-disabled container, using that run's synthetic DB:
 tools/live-fresh-context --export-database /path/to/evidence/o3.sqlite
 T3_CONTRACTS=/path/to/t3code-4262/packages/contracts AFTER_SEQUENCE=0 \
@@ -141,8 +151,6 @@ T3_CONTRACTS=/path/to/t3code-4262/packages/contracts AFTER_SEQUENCE=0 \
 ## Remaining integration
 
 
-- Compare a complete run against the native T3 4262 server runtime, beyond the
-  source-function differential and native-schema checks already performed.
 - Validate migrations 74–80 and bidirectional runtime handover on a disposable
   profile before advancing `MIGRATION_HEAD`.
 - Verify the O3 desktop composer against the enabled candidate. The desktop work is on

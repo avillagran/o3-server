@@ -24,7 +24,16 @@
     "sourceFunctionsExecuted": true,
     "boundaryCases": 32,
     "providerThreadCases": 12,
-    "sessionReleaseCases": 16
+    "sessionReleaseCases": 16,
+    "nativeReferenceRuntime": {
+      "version": "v0.1.8-nightly.20261106.4262",
+      "archiveSha256": "5df94ca15c4f68f749fa5540fbb9d5ca879ca8750ac43dd2704f6a18899ed6d5",
+      "turns": 8,
+      "behavioralResultsMatch": true,
+      "publicRecordsValidated": 109,
+      "eventsValidated": 264,
+      "schemaRejections": 0
+    }
   },
   "sharedState": {
     "acceptedMigrationHead": 73,
@@ -44,7 +53,6 @@
     "validator-fails-on-rejected-data"
   ],
   "remaining": [
-    "native-T3-runtime-comparison",
     "migration-74-through-80-acceptance",
     "desktop-composer-live-server-check",
     "scheduled-task-session-execution",

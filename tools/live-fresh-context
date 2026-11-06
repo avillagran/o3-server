@@ -2,7 +2,9 @@
 """Build acceptance without running it on the host, then execute in rootless podman."""
 import argparse, json, os, pathlib, subprocess, tempfile, uuid
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument("--export-database", type=pathlib.Path)
+mode = parser.add_mutually_exclusive_group()
+mode.add_argument("--export-database", type=pathlib.Path)
+mode.add_argument("--reference-root", type=pathlib.Path)
 options = parser.parse_args()
 root = pathlib.Path(__file__).resolve().parent.parent
 build_env = dict(os.environ)
@@ -25,6 +27,13 @@ else:
         if not source.is_file():
             raise SystemExit(f'Missing native authentication file: {source}')
     native_mounts=[(claude,'/native/claude'),(codex,'/native/codex'),*credentials]
+    if options.reference_root:
+        reference=options.reference_root.resolve()
+        if not (reference/'t3').is_file():
+            raise SystemExit('Reference root must contain the extracted t3 binary')
+        node=pathlib.Path(subprocess.check_output(['mise','where','node'],text=True).strip()).resolve()
+        native_mounts += [(reference,'/reference'),(node,'/native/node')]
+
 state = pathlib.Path(tempfile.mkdtemp(prefix='o3-fresh-native-', dir='/var/tmp'))
 evidence = state / 'evidence'
 evidence.mkdir(mode=0o700)
@@ -33,8 +42,10 @@ args = ['podman', 'run', '--rm', '--name', name, '--userns=keep-id', '--user', f
 for source, target in [(root, root), (binary.parent, '/test-bin'), *native_mounts]:
     args += ['-v', f'{source}:{target}:ro']
 args += ['-v', f'{evidence}:/evidence:rw']
-for key, value in {'HOME':'/tmp/home', 'CLAUDE_CONFIG_DIR':'/tmp/home/.claude', 'CODEX_HOME':'/tmp/home/.codex', 'T3CODE_HOME':'/tmp/home/t3', 'XDG_CONFIG_HOME':'/tmp/home/config', 'XDG_DATA_HOME':'/tmp/home/data', 'XDG_STATE_HOME':'/tmp/home/state', 'PATH':'/native/claude:/native/codex/bin:/usr/local/bin:/usr/bin:/bin', 'O3_FRESH_CONTEXT_CONTAINER':'1', 'O3_FRESH_CONTEXT_EVIDENCE':'/evidence'}.items():
+for key, value in {'HOME':'/tmp/home', 'CLAUDE_CONFIG_DIR':'/tmp/home/.claude', 'CODEX_HOME':'/tmp/home/.codex', 'T3CODE_HOME':'/tmp/home/t3', 'XDG_CONFIG_HOME':'/tmp/home/config', 'XDG_DATA_HOME':'/tmp/home/data', 'XDG_STATE_HOME':'/tmp/home/state', 'PATH':'/native/claude:/native/codex/bin:/native/node/bin:/usr/local/bin:/usr/bin:/bin', 'O3_FRESH_CONTEXT_CONTAINER':'1', 'O3_FRESH_CONTEXT_EVIDENCE':'/evidence'}.items():
     args += ['--env', f'{key}={value}']
+if options.reference_root:
+    args += ['--env','O3_FRESH_CONTEXT_REFERENCE=/reference/t3']
 test_name='shared_native_projection_export' if options.export_database else 'native_resets_forget_prior_context_but_keep_history_and_new_continuations'
 setup='set -eu; umask 077; mkdir -p "$HOME/.claude" "$HOME/.codex"; '
 if not options.export_database:

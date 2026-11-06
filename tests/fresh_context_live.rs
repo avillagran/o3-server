@@ -15,7 +15,7 @@ fn projection(c: &Connection) -> Value {
         .unwrap()
 }
 fn run(c: &Connection, id: &str, instance: &str, model: &str, text: &str, fresh: bool) -> Value {
-    c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":id,"threadId":"t","messageId":id,"modelSelection":{"instanceId":instance,"model":model},"text":text,"attachments":[],"freshContext":fresh,"dispatchMode":{"type":"queue_after_active"}})).unwrap();
+    c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","createdBy":"user","creationSource":"web","commandId":id,"threadId":"t","messageId":id,"modelSelection":{"instanceId":instance,"model":model},"text":text,"attachments":[],"freshContext":fresh,"dispatchMode":{"type":"queue_after_active"}})).unwrap();
     let deadline = Instant::now() + Duration::from_secs(100);
     loop {
         let p = projection(c);
@@ -71,6 +71,79 @@ fn native(p: &Value, id: &str) -> String {
         .unwrap()
         .into()
 }
+
+struct ReferenceProcess(std::process::Child);
+impl Drop for ReferenceProcess {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+fn start_reference(
+    binary: &str,
+    profile: &std::path::Path,
+    evidence: &std::path::Path,
+) -> (Connection, ReferenceProcess) {
+    use std::process::{Command, Stdio};
+    std::fs::create_dir_all(profile).unwrap();
+    let version = Command::new(binary).arg("--version").output().unwrap();
+    assert!(version.status.success());
+    assert!(String::from_utf8_lossy(&version.stdout).contains("20261106.4262"));
+    let issued = Command::new(binary)
+        .env("T3CODE_HOME", profile)
+        .args([
+            "auth",
+            "session",
+            "issue",
+            "--subject",
+            "fresh-context-reference",
+            "--ttl",
+            "1h",
+            "--token-only",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        issued.status.success(),
+        "Reference auth failed: {}",
+        String::from_utf8_lossy(&issued.stderr)
+    );
+    let token = String::from_utf8(issued.stdout).unwrap().trim().to_owned();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let log = std::fs::File::create(evidence.join("reference-server.log")).unwrap();
+    let child = Command::new(binary)
+        .env("T3CODE_HOME", profile)
+        .args(["serve", "--host", "127.0.0.1", "--port", &port.to_string()])
+        .stdin(Stdio::null())
+        .stdout(log.try_clone().unwrap())
+        .stderr(log)
+        .spawn()
+        .unwrap();
+    let mut process = ReferenceProcess(child);
+    let base = format!("http://127.0.0.1:{port}");
+    let deadline = Instant::now() + Duration::from_secs(120);
+    loop {
+        if t3_protocol::fetch_descriptor(&base).is_ok() {
+            break;
+        }
+        assert!(
+            process.0.try_wait().unwrap().is_none(),
+            "Reference exited; inspect reference-server.log"
+        );
+        assert!(Instant::now() < deadline, "Reference startup timed out");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    signals::shield_client_thread_from_sigchld();
+    let connection = Connection::new(
+        &base,
+        None,
+        t3_protocol::Credential::bearer(&token).unwrap(),
+    )
+    .unwrap();
+    (connection, process)
+}
 #[test]
 #[ignore = "eight real Claude/Codex turns; execute with tools/live-fresh-context inside rootless podman"]
 fn native_resets_forget_prior_context_but_keep_history_and_new_continuations() {
@@ -85,53 +158,60 @@ fn native_resets_forget_prior_context_but_keep_history_and_new_continuations() {
     let output = PathBuf::from(std::env::var("O3_FRESH_CONTEXT_EVIDENCE").unwrap());
     assert_eq!(output, PathBuf::from("/evidence"));
     let dir = PathBuf::from("/tmp/fresh-context-profile");
-    let state = Arc::new(State::open(&dir).unwrap());
-    let claude = Arc::new(ClaudeProvider::discover().expect("installed Claude"));
-    let providers = Arc::new(Providers {
-        claude: Some(claude),
-        codex: Arc::new(CodexProvider::default()),
-    });
-    *state.provider.lock().unwrap() = Some(providers);
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    listener.set_nonblocking(true).unwrap();
-    let base = format!("http://{}", listener.local_addr().unwrap());
-    let serving = state.clone();
-    std::thread::spawn(move || {
-        tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(2)
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(async {
-                o3_server::serve(
-                    tokio::net::TcpListener::from_std(listener).unwrap(),
-                    serving,
-                )
-                .await
+    let (c, state, _reference) = if let Ok(binary) = std::env::var("O3_FRESH_CONTEXT_REFERENCE") {
+        let (connection, process) = start_reference(&binary, &dir, &output);
+        (connection, None, Some(process))
+    } else {
+        let state = Arc::new(State::open(&dir).unwrap());
+        let claude = Arc::new(ClaudeProvider::discover().expect("installed Claude"));
+        let providers = Arc::new(Providers {
+            claude: Some(claude),
+            codex: Arc::new(CodexProvider::default()),
+        });
+        *state.provider.lock().unwrap() = Some(providers);
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let serving = state.clone();
+        std::thread::spawn(move || {
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .build()
                 .unwrap()
-            })
-    });
-    signals::shield_client_thread_from_sigchld();
-    let secret = state
-        .issue_pairing(Some("isolated-native-acceptance"), 60_000)
-        .unwrap()["credential"]
-        .as_str()
+                .block_on(async {
+                    o3_server::serve(
+                        tokio::net::TcpListener::from_std(listener).unwrap(),
+                        serving,
+                    )
+                    .await
+                    .unwrap()
+                })
+        });
+        signals::shield_client_thread_from_sigchld();
+        let secret = state
+            .issue_pairing(Some("isolated-native-acceptance"), 60_000)
+            .unwrap()["credential"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let c = pair_bearer(
+            &base,
+            &secret,
+            None,
+            &PairingClient::default(),
+            &ConnectionOptions::default(),
+        )
         .unwrap()
-        .to_owned();
-    let c = pair_bearer(
-        &base,
-        &secret,
-        None,
-        &PairingClient::default(),
-        &ConnectionOptions::default(),
-    )
-    .unwrap()
-    .connection(&ConnectionOptions::default())
-    .unwrap();
+        .connection(&ConnectionOptions::default())
+        .unwrap();
+        (c, Some(state), None)
+    };
+    let engine = if state.is_some() { "o3" } else { "t3-4262" };
     let workspace = dir.join("workspace");
     std::fs::create_dir_all(&workspace).unwrap();
     c.rpc("projects.mutate",json!({"type":"project.create","commandId":"project","projectId":"p","title":"Fresh context acceptance","workspaceRoot":workspace})).unwrap();
-    c.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"create","threadId":"t","projectId":"p","title":"Fresh context acceptance","runtimeMode":"approval-required","interactionMode":"default","modelSelection":{"instanceId":"claudeAgent","model":"haiku"}})).unwrap();
+    c.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","createdBy":"user","creationSource":"web","branch":null,"worktreePath":null,"commandId":"create","threadId":"t","projectId":"p","title":"Fresh context acceptance","runtimeMode":"approval-required","interactionMode":"default","modelSelection":{"instanceId":"claudeAgent","model":"haiku"}})).unwrap();
     let words = (0..3)
         .map(|_| {
             format!(
@@ -240,13 +320,34 @@ fn native_resets_forget_prior_context_but_keep_history_and_new_continuations() {
         serde_json::to_vec_pretty(&p).unwrap(),
     )
     .unwrap();
-    let db = state.db.lock().unwrap();
-    let mut copy = rusqlite::Connection::open(output.join("o3.sqlite")).unwrap();
-    rusqlite::backup::Backup::new(&db, &mut copy)
-        .unwrap()
-        .run_to_completion(128, Duration::from_millis(10), None)
+    if let Some(state) = state {
+        let db = state.db.lock().unwrap();
+        let mut copy = rusqlite::Connection::open(output.join("o3.sqlite")).unwrap();
+        rusqlite::backup::Backup::new(&db, &mut copy)
+            .unwrap()
+            .run_to_completion(128, Duration::from_millis(10), None)
+            .unwrap();
+    } else {
+        let db = rusqlite::Connection::open_with_flags(
+            dir.join("userdata/statev2.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
         .unwrap();
-    std::fs::write(output.join("result.json"),serde_json::to_vec_pretty(&json!({"nativeTurns":8,"freshMarkers":marked,"claudeReset":true,"codexReset":true,"oldHistoryVisible":true,"postResetSwitch":true,"nativeIdentityChanges":true})).unwrap()).unwrap();
+        let mut copy = rusqlite::Connection::open(output.join("t3-reference.sqlite")).unwrap();
+        rusqlite::backup::Backup::new(&db, &mut copy)
+            .unwrap()
+            .run_to_completion(128, Duration::from_millis(10), None)
+            .unwrap();
+        let migration: i64 = copy
+            .query_row(
+                "SELECT max(migration_id) FROM effect_sql_migrations",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(migration, 80);
+    }
+    std::fs::write(output.join("result.json"),serde_json::to_vec_pretty(&json!({"engine":engine,"nativeTurns":8,"freshMarkers":marked,"claudeReset":true,"codexReset":true,"oldHistoryVisible":true,"postResetSwitch":true,"nativeIdentityChanges":true})).unwrap()).unwrap();
     println!("FRESH_CONTEXT_NATIVE_ACCEPTANCE_PASS: eight real turns, fresh identities, forgetting, continuation, provider switch and visible history");
 }
 
