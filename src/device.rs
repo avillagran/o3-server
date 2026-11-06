@@ -1,4 +1,4 @@
-//! Connected Android targets only. No daemon or emulator is started by this module.
+//! Native owned hubs when a verified installation exists; connected ADB targets remain a fallback.
 use crate::{
     p2::{invalid, str_field, Reply},
     store::State,
@@ -13,9 +13,131 @@ use std::{
 #[derive(Default)]
 pub struct Runtime {
     sessions: Mutex<Vec<Value>>,
+    native: tokio::sync::Mutex<Option<Arc<crate::device_native_runtime::NativeRuntime>>>,
+}
+/// An invalid or incomplete installation is reported, never executed or silently replaced.
+async fn native_runtime(
+    s: &State,
+) -> Result<Option<Arc<crate::device_native_runtime::NativeRuntime>>, Value> {
+    let mut slot = s.streams.p2.device.native.lock().await;
+    if let Some(runtime) = &*slot {
+        return Ok(Some(runtime.clone()));
+    }
+    let root = s.asset_profile_root.join("tools/expo-device-hub/0.19.1");
+    match std::fs::symlink_metadata(&root) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(crate::device_native_owner::host_error(
+                "local",
+                "checking device support",
+                error,
+            ))
+        }
+        Ok(_) => {}
+    }
+    let node=crate::executable::resolve(Path::new("node")).ok_or_else(||json!({"_tag":"NodeRuntimeUnavailableError","feature":"Local device support","message":"Local device support requires Node.js. Install Node.js and make sure node is on PATH, then retry."}))?;
+    let tools = Arc::new(crate::device_native_platform::LocalTools::discover(
+        std::env::vars().collect(),
+        s.dir.clone(),
+    ));
+    let platforms = [
+        crate::device_native_hub::Platform::Ios,
+        crate::device_native_hub::Platform::Android,
+    ]
+    .map(|platform| {
+        let mut value =
+            json!({"platform":platform,"available":tools.availability_reason(platform).is_none()});
+        if let Some(reason) = tools.availability_reason(platform) {
+            value["reason"] = json!(reason);
+        }
+        value
+    });
+    let driver = crate::device_native_local::LocalDriver::new(
+        node,
+        root,
+        s.dir.clone(),
+        tools.environment.clone(),
+        tools.clone(),
+        tools.platform.clone(),
+    )
+    .map_err(|error| {
+        crate::device_native_owner::host_error("local", "checking device support", error)
+    })?;
+    let owner = crate::device_native_owner::LocalOwner::new(Arc::new(driver));
+    let summary = json!({"id":"local","kind":"local","label":"This machine","platforms":platforms,"hubInstalled":true,"agentDeviceInstalled":false});
+    let runtime = Arc::new(crate::device_native_runtime::NativeRuntime::new(
+        owner,
+        summary,
+        s.streams.changed.clone(),
+    ));
+    *slot = Some(runtime.clone());
+    Ok(Some(runtime))
+}
+/// Media routes use only the origin of a currently owned, verified hub.
+pub async fn hub_origin(s: &State, host_id: &str) -> Result<Option<String>, Value> {
+    if host_id != "local" {
+        return Ok(None);
+    }
+    let Some(runtime) = native_runtime(s).await? else {
+        return Ok(None);
+    };
+    let settings = crate::settings::read(s).map_err(invalid)?;
+    runtime.configure(&settings).await;
+    runtime.origin().map(Some).ok_or_else(|| {
+        crate::device_native_owner::host_error(
+            "local",
+            "accessing device support",
+            "Device hub is not running",
+        )
+    })
+}
+#[cfg(test)]
+impl Runtime {
+    pub(crate) async fn register_native_test(
+        &self,
+        runtime: Arc<crate::device_native_runtime::NativeRuntime>,
+    ) {
+        *self.native.lock().await = Some(runtime);
+    }
 }
 pub fn available() -> bool {
     crate::executable::resolve(Path::new("adb")).is_some()
+}
+pub fn available_for(s: &State) -> bool {
+    if available() {
+        return true;
+    }
+    if let Ok(slot) = s.streams.p2.device.native.try_lock() {
+        if let Some(runtime) = &*slot {
+            return runtime.snapshot()["hosts"][0]["platforms"]
+                .as_array()
+                .is_some_and(|platforms| {
+                    platforms
+                        .iter()
+                        .any(|platform| platform["available"] == true)
+                });
+        }
+    }
+    let root = s.asset_profile_root.join("tools/expo-device-hub/0.19.1");
+    if crate::executable::resolve(Path::new("node")).is_none()
+        || crate::device_native_tools::InstalledTool::inspect(
+            &root,
+            crate::device_native_tools::Tool::Hub,
+        )
+        .is_err()
+    {
+        return false;
+    }
+    let tools = crate::device_native_platform::LocalTools::discover(
+        std::env::vars().collect(),
+        s.dir.clone(),
+    );
+    [
+        crate::device_native_hub::Platform::Ios,
+        crate::device_native_hub::Platform::Android,
+    ]
+    .into_iter()
+    .any(|platform| tools.availability_reason(platform).is_none())
 }
 fn unavailable(reason: &str) -> Value {
     json!({"_tag":"DeviceToolUnavailableError","reason":reason,"message":reason})
@@ -202,6 +324,13 @@ pub fn id(p: &Value) -> Result<&str, Value> {
 }
 pub async fn state(s: &State) -> Reply {
     let settings = crate::settings::read(s).map_err(invalid)?;
+    if let Some(runtime) = native_runtime(s).await? {
+        runtime.configure(&settings).await;
+        return match runtime.list().await {
+            Ok(state) => Ok(state),
+            Err(_) => Ok(runtime.snapshot()),
+        };
+    }
     let enabled = settings["enableDeviceSupport"].as_bool().unwrap_or(true);
     let mut devices = Vec::new();
     let mut status = "disabled";
@@ -301,6 +430,21 @@ async fn detail(p: &Value) -> Reply {
     )
 }
 pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
+    // Native boot has a three-minute hub deadline; do not apply the ADB nine-second budget.
+    if matches!(tag, "device.open" | "device.close") {
+        if let Some(runtime) = native_runtime(s).await? {
+            let settings = crate::settings::read(s).map_err(invalid)?;
+            runtime.configure(&settings).await;
+            if tag == "device.open" && settings["enableDeviceSupport"] == false {
+                return Err(unavailable("devices are disabled"));
+            }
+            return if tag == "device.open" {
+                runtime.open(p).await
+            } else {
+                runtime.close(p).await
+            };
+        }
+    }
     if matches!(tag, "device.action" | "device.open" | "device.close") {
         tokio::time::timeout(Duration::from_secs(9), call_inner(s, tag, p))
             .await
@@ -318,6 +462,21 @@ async fn call_inner(s: &State, tag: &str, p: &Value) -> Reply {
     }
     match tag {
         "device.list" => {
+            if p.get("updateTool").is_none() && p.get("retryHostId").is_some() {
+                if let Some(runtime) = native_runtime(s).await? {
+                    if p["retryHostId"] != "local" {
+                        return Err(unavailable(
+                            "Requested native device host is not configured",
+                        ));
+                    }
+                    let settings = crate::settings::read(s).map_err(invalid)?;
+                    runtime.configure(&settings).await;
+                    return match runtime.list().await {
+                        Ok(state) => Ok(state),
+                        Err(_) => Ok(runtime.snapshot()),
+                    };
+                }
+            }
             if p.get("updateTool").is_some() || p.get("retryHostId").is_some() {
                 return Err(unavailable(
                     "tool installation and host retry are unsupported",

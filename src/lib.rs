@@ -120,6 +120,12 @@ pub mod heap;
 pub mod device;
 pub mod device_native_client;
 pub mod device_native_hub;
+pub mod device_native_local;
+pub mod device_native_owner;
+pub mod device_native_platform;
+pub mod device_native_proxy;
+pub mod device_native_runtime;
+pub mod device_native_tools;
 pub mod device_native_state;
 
 mod background;

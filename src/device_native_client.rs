@@ -8,6 +8,9 @@ use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 type HostFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 /// The host owner supplies its existing executable and platform resolution.
 pub trait HostTools: Send + Sync {
+    fn video_encoder(&self) -> HostFuture<'_, Result<(), Value>> {
+        Box::pin(async { Err(video_encoder_error(false)) })
+    }
     fn platform_available(&self, platform: Platform) -> HostFuture<'_, bool>;
     fn run<'a>(&'a self, command: &'a str, args: &'a [String]) -> HostFuture<'a, CommandResult>;
 }
@@ -40,6 +43,14 @@ fn failure(operation: &str, reason: &str, cause: impl ToString) -> Value {
     let mut error = hub::operation_error(operation, reason);
     error["cause"] = json!(cause.to_string());
     error
+}
+pub fn video_encoder_error(missing: bool) -> Value {
+    let reason = if missing {
+        "Android emulator video needs the libx264 encoder. Install an ffmpeg build that includes libx264 on the device host, then retry opening the emulator. After changing PATH or SERVE_EMU_FFMPEG, turn device support off and on for SSH hosts, or restart the local environment server."
+    } else {
+        "Android emulator video needs working ffmpeg with the libx264 encoder. Install it on the device host's PATH or set SERVE_EMU_FFMPEG there, then retry opening the emulator. After changing PATH or SERVE_EMU_FFMPEG, turn device support off and on for SSH hosts, or restart the local environment server."
+    };
+    json!({"_tag":"DevicePlatformUnavailableError","hostId":"local","platform":"android","reason":reason,"message":format!("android devices are unavailable on host local: {reason}")})
 }
 impl HubClient {
     /// Only loopback hub origins are accepted. SSH hosts must first own a local forward.
@@ -141,6 +152,9 @@ impl HubClient {
             }
         };
         Ok(hub::discovery(parsed, android, &avds))
+    }
+    pub async fn check_video_encoder(&self) -> Result<(), Value> {
+        self.tools.video_encoder().await
     }
     pub async fn list(&self) -> Result<Discovery, Value> {
         self.listing().await

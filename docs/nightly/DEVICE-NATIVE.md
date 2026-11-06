@@ -58,12 +58,78 @@ no ADB, SDK, simulator, emulator, desktop display, hardware, npm installer or ac
 SSH service is invoked. The source oracle's dependency acquisition used a separate
 private container with lifecycle scripts disabled.
 
-## Remaining integration
+## Owned local runtime and media consumers
 
-The existing `device.rs` consumer remains unchanged. These modules are a verified
-foundation, not an assertion that the side panel now owns a full device host.
-Local and SSH hub ownership, pinned tool acquisition, agent-device daemon ownership,
-restart supervision, forwarding, device RPC integration and panel streaming still
-need their real consumers and acceptance proofs. EAS, Simlock and physical hardware
-support are not advertised by this checkpoint. No managed-policy family is enabled
-by this work.
+A manifest-verified installation at the profile's
+`tools/expo-device-hub/0.19.1` enables the real local owner. It launches the
+resolved Node executable with argv and an owned process group, waits for
+`/readyz` for at most 30 seconds, and closes the process scope after startup
+failure, cancellation, explicit stop or owner release. Crash supervision checks
+its generation before and after the native restart delay: the first replacement
+is immediate, repeated short lifetimes back off to 30 seconds, and a stable
+minute resets the delay. Stale or foreign PID records are not adopted or killed.
+
+The platform adapter retains native SDK search ordering, explicit-root precedence,
+PATH/real-path fallback, platform diagnostics, old-emulator camera overrides, and
+owner-checked Linux runtime-directory discovery. The source corpus adds 480 SDK
+and host-environment cases and 432 camera/runtime-directory cases. Android virtual
+device sessions require an ffmpeg/libx264 check before opening.
+
+`device.rs` now uses the owned native runtime for inventory, boot, attachment,
+session creation, shutdown and disabled-support teardown when a verified tool is
+present. The connected ADB implementation remains available when no native
+installation exists. Incomplete or invalid native installations produce errors;
+they are not executed or silently replaced. Native boot retains its three-minute
+deadline rather than the old ADB request budget.
+
+The authenticated `/api/device-hub` branch forwards only to the current owner's
+verified loopback origin. It applies the native route and method allowlists,
+strips credentials and routing tickets, rewrites Origin, and rejects redirects.
+HTTP bodies are streamed with bounded buffering, a 1 MiB request limit, 8 MiB
+ordinary-response limit, 64 MiB screenshot limit, and 20-second upstream idle
+budget. Continuous MJPEG/AVCC/event streams have no total-size limit. Screenshot
+responses use `image/png`. Upstream cookies are discarded. WebSocket forwarding
+bounds frames/messages at 16 MiB, connects within ten seconds, and checks device
+settings and session revocation every two seconds. Existing operate-scope admission
+remains in place; this checkpoint does not relax the old HTTP authorization rule.
+Shutdown also terminates media forwarding.
+
+The full native proxy router generated 816 outcomes spanning 34 paths, six methods
+and four scope sets. Rust compares route decisions, query stripping and forwarded
+headers; tracing IDs are excluded because Effect generates them at runtime.
+A physical synthetic-child test exercises the actual device RPC consumer, boot
+confirmation, session lifecycle, bearer-authenticated screenshot HTTP, credential
+stripping, bidirectional WebSocket forwarding, blocked shell paths, and disabled
+support stopping/reaping its owned process. The child is a private Python HTTP/
+WebSocket fixture; it is not an emulator or a downloaded package.
+
+## Tool acquisition boundary and remaining work
+
+`device_native_tools` validates pinned package metadata and a complete SHA-256
+installation inventory. Entry presence alone does not prove installation. It
+rejects links, special files, extra or changed files, and oversized inventories;
+file reads use `O_NOFOLLOW`. Sealing uses create-new manifest semantics within an
+exclusively owned staging directory. The npm acquisition plan pins exact package
+versions, disables lifecycle scripts and bin links, and records a package lock.
+No installation tree is recursively removed. Actual acquisition, atomic publication
+and incomplete-install quarantine still require their consumer and proofs before
+tool-update capability is enabled; no npm installation ran in these runtime tests.
+
+SSH bootstrap/forward ownership, agent-device daemon ownership, persistent crash
+recovery, EAS, Simlock and physical hardware acceptance remain incomplete. There is
+no claim that iOS or Android hardware ran, that packages were installed, or that
+all panel actions now work. Native iOS settings/actions and device automation still
+need their consumers. Tool-update, EAS and Simlock capability flags remain false.
+No managed-policy family is enabled by this work.
+
+## Validation commands
+
+The final local-runtime checkpoint passes all 15 device unit tests in both minimal
+and default feature modes, including the real private child/RPC/HTTP/WebSocket
+consumer test. Strict all-target Clippy passes in both modes. Formatting uses the
+repository's Rust 2021 edition.
+
+```sh
+tools/test-scheduled-modes --compile-lock /var/tmp/o3-build/o3-parity-compile.lock --unit-filter device_native
+tools/test-scheduled-modes --compile-lock /var/tmp/o3-build/o3-parity-compile.lock --default-features --unit-filter device_native
+```

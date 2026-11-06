@@ -318,6 +318,25 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
             {
                 return Ok(json_reply(StatusCode::FORBIDDEN, "{}".into()));
             }
+            let native_host = query(&request, "hostId").unwrap_or_else(|| "local".into());
+            match crate::device::hub_origin(&state, &native_host).await {
+                Ok(Some(origin)) => {
+                    return Ok(crate::device_native_proxy::serve(
+                        request,
+                        origin,
+                        state.clone(),
+                        session,
+                    )
+                    .await)
+                }
+                Err(error) => {
+                    return Ok(json_reply(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        error.to_string(),
+                    ))
+                }
+                Ok(None) => {}
+            }
             let target = json!({"deviceId":query(&request,"device").unwrap_or_default(),"hostId":query(&request,"hostId").unwrap_or_else(||"local".into())});
             let serial = match crate::device::id(&target) {
                 Ok(s) => s.to_string(),
