@@ -561,7 +561,7 @@ mod tests {
 
     #[test]
     fn managed_forge_lock_cannot_resurrect_hidden_private_credentials() {
-        assert!(std::path::Path::new("/run/.containerenv").is_file());
+        crate::test_sandbox::assert_isolated();
         let path = std::env::temp_dir().join(format!(
             "o3-forge-managed-secret-{}",
             crate::store::random_id().unwrap()

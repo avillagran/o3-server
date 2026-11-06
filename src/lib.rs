@@ -17,6 +17,9 @@ pub mod rpc;
 mod rpc_input;
 pub mod shared_readiness;
 pub mod store;
+#[cfg(test)]
+#[path = "../tests/support/sandbox.rs"]
+pub(crate) mod test_sandbox;
 
 pub use http::{serve, serve_io};
 pub mod command_output;

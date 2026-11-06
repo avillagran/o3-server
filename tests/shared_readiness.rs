@@ -1,10 +1,12 @@
 //! Legacy handover evidence without changing or migrating the private database.
+#[path = "support/sandbox.rs"]
+mod sandbox;
 use o3_server::shared_readiness::inspect;
 use rusqlite::Connection;
 use std::path::PathBuf;
 
 fn fixture() -> PathBuf {
-    assert!(std::path::Path::new("/run/.containerenv").is_file());
+    sandbox::assert_isolated();
     let path = std::env::temp_dir().join(format!(
         "o3-readiness-{}",
         o3_server::store::random_id().unwrap()

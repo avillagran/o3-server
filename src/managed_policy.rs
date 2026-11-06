@@ -965,7 +965,7 @@ mod admission_tests {
 
     #[test]
     fn managed_settings_read_write_preserves_hidden_values_and_sparse_defaults() {
-        assert!(Path::new("/run/.containerenv").is_file());
+        crate::test_sandbox::assert_isolated();
         let directory = std::env::temp_dir().join(format!(
             "managed-settings-physical-{}",
             crate::store::random_id().unwrap()
@@ -1009,7 +1009,7 @@ mod admission_tests {
 
     #[test]
     fn recovered_runs_are_refused_before_provider_fence_when_frozen_policy_exceeds_limits() {
-        assert!(Path::new("/run/.containerenv").is_file());
+        crate::test_sandbox::assert_isolated();
         for (driver, mode) in [
             ("codex", "full-access"),
             ("claudeAgent", "approval-required"),
@@ -1042,7 +1042,7 @@ mod admission_tests {
 
     #[test]
     fn provider_write_errors_preserve_native_rpc_metadata_and_do_not_persist() {
-        assert!(Path::new("/run/.containerenv").is_file());
+        crate::test_sandbox::assert_isolated();
         let directory = std::env::temp_dir().join(format!(
             "managed-write-{}",
             crate::store::random_id().unwrap()
@@ -1070,7 +1070,7 @@ mod admission_tests {
 
     #[test]
     fn policy_rejects_transactional_runtime_and_driver_changes_without_receipts_or_events() {
-        assert!(Path::new("/run/.containerenv").is_file());
+        crate::test_sandbox::assert_isolated();
         let directory = std::env::temp_dir().join(format!(
             "managed-admission-{}",
             crate::store::random_id().unwrap()

@@ -1,10 +1,12 @@
 //! Relay endpoint metadata stays derived and private; this starts no relay or provider.
+#[path = "support/sandbox.rs"]
+mod sandbox;
 mod support;
 use serde_json::json;
 
 #[test]
 fn task_responses_derive_relay_urls_and_rotation_preserves_native_private_configuration() {
-    assert!(std::path::Path::new("/run/.containerenv").is_file());
+    sandbox::assert_isolated();
     let server = support::start(|_| {});
     let client = server.connect();
     let secrets = server.state.dir.join("secrets");
