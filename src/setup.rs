@@ -541,6 +541,14 @@ async fn run_flow(
                             f.interaction = Some(json!({"type":"browser","id":"browser","url":url,"requiresConsent":false}));
                         }
                     }
+                    // After the sign-in link, Claude answers a pasted code on the prompt line
+                    // ("Paste code here if prompted > Invalid code. …"); show that answer.
+                    if !codex && f.url.is_some() && first_url(&line).is_none() {
+                        let answer = line.rsplit_once("> ").map_or(line.as_str(), |(_, rest)| rest).trim();
+                        if !answer.is_empty() {
+                            f.message = Some(answer.chars().take(240).collect());
+                        }
+                    }
                     if codex {
                         if let Some(code) = device_code(&line) {
                             if let Some(url) = f.url.clone() {
