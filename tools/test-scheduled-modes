@@ -14,7 +14,11 @@ selection=parser.add_mutually_exclusive_group()
 selection.add_argument("--unit-filter")
 selection.add_argument("--integration")
 selection.add_argument("--all-tests",action="store_true")
+parser.add_argument("--resume-from", help="With --all-tests, resume at an exact binary filename from retained evidence")
+parser.add_argument("--resume-manifest", type=pathlib.Path, help="Retained result.json supplying the original compiled binary order")
 options=parser.parse_args()
+if (options.resume_from or options.resume_manifest) and not (options.all_tests and options.resume_from and options.resume_manifest):
+    parser.error("resume requires --all-tests, --resume-from and --resume-manifest")
 root = pathlib.Path(__file__).resolve().parent.parent
 env = dict(os.environ)
 env.setdefault('CARGO_TARGET_DIR', '/var/tmp/o3-server/fresh-context-target')
@@ -31,29 +35,72 @@ if build.returncode:
 binaries = [pathlib.Path(v['executable']) for line in build.stdout.splitlines() if (v := json.loads(line)).get('executable') and v.get('profile', {}).get('test') and (options.all_tests or v.get('target', {}).get('name')==options.integration or v.get('target', {}).get('name') in ('o3_server', 'scheduled_modes', 'ops', 'native_goals', 'p2_webhook', 'mcp_launch'))]
 assert len(binaries) >= 6 if options.all_tests else len(binaries) == (1 if options.unit_filter or options.integration else 6)
 assert all(binary.parent==binaries[0].parent for binary in binaries)
-name = 'o3-scheduled-tests-' + uuid.uuid4().hex
+if options.resume_manifest:
+    previous = json.loads(options.resume_manifest.read_text())
+    compiled = {binary.name: binary for binary in binaries}
+    names = [pathlib.Path(value).name for value in previous['binaries']]
+    if len(set(names)) != len(names) or any(name not in compiled for name in names):
+        parser.error("retained binary identities do not match this compilation")
+    binaries = [compiled[name] for name in names]
+if options.resume_from:
+    position = next((i for i, binary in enumerate(binaries) if binary.name == options.resume_from), None)
+    if position is None:
+        parser.error("--resume-from did not match a compiled test binary")
+    binaries = binaries[position:]
 test_image=os.environ.get('O3_FRESH_CONTEXT_IMAGE', 'localhost/o3-server-tests:local')
 if subprocess.run(['podman','image','exists',test_image]).returncode:
     raise SystemExit('Test runtime missing. Run tools/build-test-image first.')
-args = ['podman', 'run', '--rm', '--name', name, '--userns=keep-id', '--user', f'{os.getuid()}:{os.getgid()}', '--read-only', '--tmpfs', '/tmp:rw,exec,size=1g,mode=1777', '--cap-drop=ALL', '--security-opt=no-new-privileges', '--pids-limit=512', '--memory=4g', '--network=none', f'--workdir={root}', '--env', 'HOME=/tmp/home', '--env', f'O3_UNIT_FILTER={options.unit_filter or ""}', '--env', f'O3_ALL_TESTS={int(options.all_tests)}', '-v', f'{root}:{root}:ro', '-v', f'{binaries[0].parent}:/test-bin:ro', '-v', f'{binaries[0].parent.parent}:{binaries[0].parent.parent}:ro', test_image, 'sh', '-c', 'set -eu; umask 077; mkdir -p "$HOME"; for binary in "$@"; do if test "$O3_ALL_TESTS" = 1; then /test-bin/"$binary" --test-threads=1; continue; fi; case "$binary" in o3_server-*) if test -n "$O3_UNIT_FILTER"; then /test-bin/"$binary" "$O3_UNIT_FILTER" --nocapture --test-threads=1; continue; fi; /test-bin/"$binary" scheduled::tests --test-threads=1; /test-bin/"$binary" webhook::crash_tests --test-threads=1; /test-bin/"$binary" fresh_context::tests --test-threads=1; /test-bin/"$binary" native_goal::tests --test-threads=1 ;; *) /test-bin/"$binary" --test-threads=1 ;; esac; done', 'scheduled-nightly', *[b.name for b in binaries]]
-try:
-    result = subprocess.run(args, cwd=root, timeout=900 if options.all_tests else 300, capture_output=True, text=True)
-    evidence=pathlib.Path(tempfile.mkdtemp(prefix='o3-container-tests-',dir='/var/tmp'))
-    (evidence/'output.log').write_text(result.stdout+result.stderr)
-    (evidence/'result.json').write_text(json.dumps({
-        'returncode': result.returncode,
-        'defaultFeatures': options.default_features,
-        'allTests': options.all_tests,
-        'integration': options.integration,
-        'unitFilter': options.unit_filter,
-        'image': test_image,
-        'binaries': [str(binary) for binary in binaries],
-    }, indent=2)+'\n')
-    print(f'Container test evidence: {evidence}',flush=True)
-    if result.returncode:
-        print(result.stdout+result.stderr,flush=True)
-    else:
-        print('\n'.join(line for line in result.stdout.splitlines() if line.startswith('test result:')),flush=True)
-finally:
-    subprocess.run(['podman', 'stop', '--time', '3', name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-raise SystemExit(result.returncode)
+evidence=pathlib.Path(tempfile.mkdtemp(prefix='o3-container-tests-',dir='/var/tmp'))
+print(f'Container test evidence: {evidence}',flush=True)
+report = {
+    'returncode': None,
+    'defaultFeatures': options.default_features,
+    'allTests': options.all_tests,
+    'integration': options.integration,
+    'unitFilter': options.unit_filter,
+    'resumeFrom': options.resume_from,
+    'resumeManifest': str(options.resume_manifest) if options.resume_manifest else None,
+    'image': test_image,
+    'binaries': [str(binary) for binary in binaries],
+    'binaryResults': [],
+    'privateContainerPerBinary': True,
+}
+script = """set -eu
+umask 077
+mkdir -p "$HOME"
+binary="$1"
+if test "$O3_ALL_TESTS" = 1; then exec /test-bin/"$binary" --test-threads=1; fi
+case "$binary" in
+  o3_server-*)
+    if test -n "$O3_UNIT_FILTER"; then exec /test-bin/"$binary" "$O3_UNIT_FILTER" --nocapture --test-threads=1; fi
+    /test-bin/"$binary" scheduled::tests --test-threads=1
+    /test-bin/"$binary" webhook::crash_tests --test-threads=1
+    /test-bin/"$binary" fresh_context::tests --test-threads=1
+    /test-bin/"$binary" native_goal::tests --test-threads=1 ;;
+  *) exec /test-bin/"$binary" --test-threads=1 ;;
+esac
+"""
+for index, binary in enumerate(binaries):
+    name = 'o3-scheduled-tests-' + uuid.uuid4().hex
+    args = ['podman', 'run', '--rm', '--name', name, '--userns=keep-id', '--user', f'{os.getuid()}:{os.getgid()}', '--read-only', '--tmpfs', '/tmp:rw,exec,size=1g,mode=1777', '--cap-drop=ALL', '--security-opt=no-new-privileges', '--pids-limit=512', '--memory=4g', '--network=none', f'--workdir={root}', '--env', 'HOME=/tmp/home', '--env', f'O3_UNIT_FILTER={options.unit_filter or ""}', '--env', f'O3_ALL_TESTS={int(options.all_tests)}', '-v', f'{root}:{root}:ro', '-v', f'{binary.parent}:/test-bin:ro', '-v', f'{binary.parent.parent}:{binary.parent.parent}:ro', test_image, 'sh', '-c', script, 'scheduled-nightly', binary.name]
+    try:
+        try:
+            result = subprocess.run(args, cwd=root, timeout=300, capture_output=True, text=True)
+            code, output = result.returncode, result.stdout+result.stderr
+        except subprocess.TimeoutExpired as error:
+            def decoded(value):
+                return value.decode(errors='replace') if isinstance(value, bytes) else value or ''
+            code, output = 124, decoded(error.stdout)+decoded(error.stderr)+'\nPrivate test binary timed out.\n'
+        (evidence/f'{index:03d}-{binary.name}.log').write_text(output)
+        with (evidence/'output.log').open('a') as log:
+            log.write(output)
+        report['binaryResults'].append({'binary':str(binary),'returncode':code})
+        report['returncode'] = code
+        (evidence/'result.json').write_text(json.dumps(report,indent=2)+'\n')
+        if code:
+            print(output,flush=True)
+            raise SystemExit(code)
+        print('\n'.join(line for line in output.splitlines() if line.startswith('test result:')),flush=True)
+    finally:
+        subprocess.run(['podman', 'stop', '--time', '3', name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+raise SystemExit(0)
