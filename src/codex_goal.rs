@@ -27,6 +27,7 @@ impl Snapshots {
         if raw["objective"]
             .as_str()
             .is_some_and(|text| text.len() > 16000)
+            || !(raw["tokenBudget"].is_null() || raw["tokenBudget"].is_number())
         {
             return;
         }
@@ -49,36 +50,6 @@ impl Snapshots {
             .iter()
             .find(|(id, _)| id == thread)
             .map(|(_, goal)| goal.clone())
-    }
-}
-
-#[cfg(test)]
-mod snapshot_tests {
-    use super::*;
-
-    #[test]
-    fn bounded_cache_preserves_subscribed_roots_and_rejects_oversized_snapshots() {
-        let mut snapshots = Snapshots::default();
-        let raw = json!({"objective":"Retain current work","status":"active","tokensUsed":73,"timeUsedSeconds":17,"tokenBudget":12345});
-        snapshots.remember("owned", &raw, |id| id == "owned");
-        for index in 0..600 {
-            snapshots.remember(&format!("child-{index}"), &raw, |id| id == "owned");
-        }
-        assert_eq!(snapshots.0.len(), 512);
-        assert_eq!(snapshots.get("owned").unwrap()["tokenBudget"], 12345);
-        assert!(snapshots.get("child-0").is_none());
-        assert!(snapshots.get("child-599").is_some());
-        snapshots.remember(
-            "oversized",
-            &json!({"objective":"x".repeat(16001),"status":"active"}),
-            |_| false,
-        );
-        assert!(snapshots.get("oversized").is_none());
-        snapshots.observe(
-            &json!({"method":"thread/goal/cleared","params":{"threadId":"owned"}}),
-            |id| id == "owned",
-        );
-        assert_eq!(snapshots.get("owned"), Some(Value::Null));
     }
 }
 
@@ -302,5 +273,41 @@ impl State {
         }
         self.publish(output, tid).await?;
         Ok(true)
+    }
+}
+
+#[cfg(test)]
+mod snapshot_tests {
+    use super::*;
+
+    #[test]
+    fn bounded_cache_preserves_subscribed_roots_and_rejects_oversized_snapshots() {
+        let mut snapshots = Snapshots::default();
+        let raw = json!({"objective":"Retain current work","status":"active","tokensUsed":73,"timeUsedSeconds":17,"tokenBudget":12345});
+        snapshots.remember("owned", &raw, |id| id == "owned");
+        for index in 0..600 {
+            snapshots.remember(&format!("child-{index}"), &raw, |id| id == "owned");
+        }
+        assert_eq!(snapshots.0.len(), 512);
+        assert_eq!(snapshots.get("owned").unwrap()["tokenBudget"], 12345);
+        assert!(snapshots.get("child-0").is_none());
+        assert!(snapshots.get("child-599").is_some());
+        snapshots.remember(
+            "oversized",
+            &json!({"objective":"x".repeat(16001),"status":"active"}),
+            |_| false,
+        );
+        assert!(snapshots.get("oversized").is_none());
+        snapshots.remember(
+            "invalid-budget",
+            &json!({"objective":"Bound the cached value","status":"active","tokensUsed":0,"timeUsedSeconds":0,"tokenBudget":["unexpected"]}),
+            |_| false,
+        );
+        assert!(snapshots.get("invalid-budget").is_none());
+        snapshots.observe(
+            &json!({"method":"thread/goal/cleared","params":{"threadId":"owned"}}),
+            |id| id == "owned",
+        );
+        assert_eq!(snapshots.get("owned"), Some(Value::Null));
     }
 }
