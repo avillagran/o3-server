@@ -1,6 +1,6 @@
 use super::*;
 use serde::{Deserialize, Serialize};
-use std::os::unix::fs::DirBuilderExt;
+use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::Notify;
 
@@ -262,12 +262,13 @@ impl PrivateOp {
             .create(&directory)
             .unwrap();
         let binary = directory.join("op");
-        std::os::unix::fs::symlink(
+        std::fs::copy(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("tests/fixtures/input/secret-op.py"),
             &binary,
         )
         .unwrap();
+        std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o700)).unwrap();
         std::fs::write(
             directory.join("case.json"),
             serde_json::to_vec(answers).unwrap(),
