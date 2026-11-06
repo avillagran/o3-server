@@ -100521,6 +100521,4126 @@
       "node": 619,
       "valueIndex": 27,
       "invalid": true
+    },
+    {
+      "node": 620,
+      "valueIndex": 0,
+      "invalid": true
+    },
+    {
+      "node": 620,
+      "valueIndex": 1,
+      "invalid": true
+    },
+    {
+      "node": 620,
+      "valueIndex": 2,
+      "invalid": true
+    },
+    {
+      "node": 620,
+      "valueIndex": 3,
+      "invalid": true
+    },
+    {
+      "node": 620,
+      "valueIndex": 4,
+      "invalid": true
+    },
+    {
+      "node": 620,
+      "valueIndex": 5,
+      "invalid": true
+    },
+    {
+      "node": 620,
+      "valueIndex": 6,
+      "invalid": true
+    },
+    {
+      "node": 620,
+      "valueIndex": 7,
+      "invalid": true
+    },
+    {
+      "node": 620,
+      "valueIndex": 8,
+      "invalid": true
+    },
+    {
+      "node": 620,
+      "valueIndex": 9,
+      "invalid": true
+    },
+    {
+      "node": 620,
+      "valueIndex": 10,
+      "invalid": true
+    },
+    {
+      "node": 620,
+      "valueIndex": 11,
+      "invalid": true
+    },
+    {
+      "node": 620,
+      "valueIndex": 12,
+      "invalid": true
+    },
+    {
+      "node": 620,
+      "valueIndex": 13,
+      "invalid": true
+    },
+    {
+      "node": 620,
+      "valueIndex": 14,
+      "invalid": true
+    },
+    {
+      "node": 620,
+      "valueIndex": 15,
+      "invalid": true
+    },
+    {
+      "node": 620,
+      "valueIndex": 16,
+      "invalid": true
+    },
+    {
+      "node": 620,
+      "valueIndex": 17,
+      "invalid": true
+    },
+    {
+      "node": 620,
+      "valueIndex": 18,
+      "invalid": true
+    },
+    {
+      "node": 620,
+      "valueIndex": 19,
+      "invalid": true
+    },
+    {
+      "node": 620,
+      "valueIndex": 20,
+      "invalid": true
+    },
+    {
+      "node": 620,
+      "valueIndex": 21,
+      "decoded": {
+        "value": {
+          "hosts": {},
+          "tokens": {},
+          "signIns": {}
+        }
+      },
+      "encoded": {
+        "value": {
+          "hosts": {},
+          "tokens": {},
+          "signIns": {}
+        }
+      }
+    },
+    {
+      "node": 620,
+      "valueIndex": 22,
+      "invalid": true
+    },
+    {
+      "node": 620,
+      "valueIndex": 23,
+      "invalid": true
+    },
+    {
+      "node": 620,
+      "valueIndex": 24,
+      "decoded": {
+        "value": {
+          "hosts": {},
+          "tokens": {},
+          "signIns": {}
+        }
+      },
+      "encoded": {
+        "value": {
+          "hosts": {},
+          "tokens": {},
+          "signIns": {}
+        }
+      }
+    },
+    {
+      "node": 620,
+      "valueIndex": 25,
+      "decoded": {
+        "value": {
+          "hosts": {},
+          "tokens": {},
+          "signIns": {}
+        }
+      },
+      "encoded": {
+        "value": {
+          "hosts": {},
+          "tokens": {},
+          "signIns": {}
+        }
+      }
+    },
+    {
+      "node": 620,
+      "valueIndex": 26,
+      "decoded": {
+        "value": {
+          "hosts": {},
+          "tokens": {},
+          "signIns": {}
+        }
+      },
+      "encoded": {
+        "value": {
+          "hosts": {},
+          "tokens": {},
+          "signIns": {}
+        }
+      }
+    },
+    {
+      "node": 620,
+      "valueIndex": 27,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 0,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 1,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 2,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 3,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 4,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 5,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 6,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 7,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 8,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 9,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 10,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 11,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 12,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 13,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 14,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 15,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 16,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 17,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 18,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 19,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 20,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 21,
+      "decoded": {
+        "value": {}
+      },
+      "encoded": {
+        "value": {}
+      }
+    },
+    {
+      "node": 621,
+      "valueIndex": 22,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 23,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 24,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 25,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 26,
+      "invalid": true
+    },
+    {
+      "node": 621,
+      "valueIndex": 27,
+      "decoded": {
+        "value": {}
+      },
+      "encoded": {
+        "value": {}
+      }
+    },
+    {
+      "node": 622,
+      "valueIndex": 0,
+      "decoded": {
+        "value": "gpu:"
+      },
+      "encoded": {
+        "value": "gpu:"
+      }
+    },
+    {
+      "node": 622,
+      "valueIndex": 1,
+      "decoded": {
+        "value": "gpu:"
+      },
+      "encoded": {
+        "value": "gpu:"
+      }
+    },
+    {
+      "node": 622,
+      "valueIndex": 2,
+      "decoded": {
+        "value": "valid"
+      },
+      "encoded": {
+        "value": "valid"
+      }
+    },
+    {
+      "node": 622,
+      "valueIndex": 3,
+      "decoded": {
+        "value": "a\nb"
+      },
+      "encoded": {
+        "value": "a\nb"
+      }
+    },
+    {
+      "node": 622,
+      "valueIndex": 4,
+      "decoded": {
+        "value": ""
+      },
+      "encoded": {
+        "value": ""
+      }
+    },
+    {
+      "node": 622,
+      "valueIndex": 5,
+      "invalid": true
+    },
+    {
+      "node": 622,
+      "valueIndex": 6,
+      "invalid": true
+    },
+    {
+      "node": 622,
+      "valueIndex": 7,
+      "invalid": true
+    },
+    {
+      "node": 622,
+      "valueIndex": 8,
+      "invalid": true
+    },
+    {
+      "node": 622,
+      "valueIndex": 9,
+      "invalid": true
+    },
+    {
+      "node": 622,
+      "valueIndex": 10,
+      "invalid": true
+    },
+    {
+      "node": 622,
+      "valueIndex": 11,
+      "invalid": true
+    },
+    {
+      "node": 622,
+      "valueIndex": 12,
+      "invalid": true
+    },
+    {
+      "node": 622,
+      "valueIndex": 13,
+      "invalid": true
+    },
+    {
+      "node": 622,
+      "valueIndex": 14,
+      "invalid": true
+    },
+    {
+      "node": 622,
+      "valueIndex": 15,
+      "decoded": {
+        "value": "native"
+      },
+      "encoded": {
+        "value": "native"
+      }
+    },
+    {
+      "node": 622,
+      "valueIndex": 16,
+      "decoded": {
+        "value": "ok"
+      },
+      "encoded": {
+        "value": "ok"
+      }
+    },
+    {
+      "node": 622,
+      "valueIndex": 17,
+      "decoded": {
+        "value": "node"
+      },
+      "encoded": {
+        "value": "node"
+      }
+    },
+    {
+      "node": 622,
+      "valueIndex": 18,
+      "decoded": {
+        "value": "local"
+      },
+      "encoded": {
+        "value": "local"
+      }
+    },
+    {
+      "node": 622,
+      "valueIndex": 19,
+      "decoded": {
+        "value": "onreturn"
+      },
+      "encoded": {
+        "value": "onreturn"
+      }
+    },
+    {
+      "node": 622,
+      "valueIndex": 20,
+      "invalid": true
+    },
+    {
+      "node": 622,
+      "valueIndex": 21,
+      "invalid": true
+    },
+    {
+      "node": 622,
+      "valueIndex": 22,
+      "invalid": true
+    },
+    {
+      "node": 622,
+      "valueIndex": 23,
+      "invalid": true
+    },
+    {
+      "node": 622,
+      "valueIndex": 24,
+      "invalid": true
+    },
+    {
+      "node": 622,
+      "valueIndex": 25,
+      "invalid": true
+    },
+    {
+      "node": 622,
+      "valueIndex": 26,
+      "invalid": true
+    },
+    {
+      "node": 622,
+      "valueIndex": 27,
+      "invalid": true
+    },
+    {
+      "node": 623,
+      "valueIndex": 0,
+      "invalid": true
+    },
+    {
+      "node": 623,
+      "valueIndex": 1,
+      "invalid": true
+    },
+    {
+      "node": 623,
+      "valueIndex": 2,
+      "invalid": true
+    },
+    {
+      "node": 623,
+      "valueIndex": 3,
+      "invalid": true
+    },
+    {
+      "node": 623,
+      "valueIndex": 4,
+      "invalid": true
+    },
+    {
+      "node": 623,
+      "valueIndex": 5,
+      "invalid": true
+    },
+    {
+      "node": 623,
+      "valueIndex": 6,
+      "invalid": true
+    },
+    {
+      "node": 623,
+      "valueIndex": 7,
+      "invalid": true
+    },
+    {
+      "node": 623,
+      "valueIndex": 8,
+      "invalid": true
+    },
+    {
+      "node": 623,
+      "valueIndex": 9,
+      "invalid": true
+    },
+    {
+      "node": 623,
+      "valueIndex": 10,
+      "invalid": true
+    },
+    {
+      "node": 623,
+      "valueIndex": 11,
+      "invalid": true
+    },
+    {
+      "node": 623,
+      "valueIndex": 12,
+      "invalid": true
+    },
+    {
+      "node": 623,
+      "valueIndex": 13,
+      "invalid": true
+    },
+    {
+      "node": 623,
+      "valueIndex": 14,
+      "invalid": true
+    },
+    {
+      "node": 623,
+      "valueIndex": 15,
+      "invalid": true
+    },
+    {
+      "node": 623,
+      "valueIndex": 16,
+      "invalid": true
+    },
+    {
+      "node": 623,
+      "valueIndex": 17,
+      "invalid": true
+    },
+    {
+      "node": 623,
+      "valueIndex": 18,
+      "invalid": true
+    },
+    {
+      "node": 623,
+      "valueIndex": 19,
+      "invalid": true
+    },
+    {
+      "node": 623,
+      "valueIndex": 20,
+      "invalid": true
+    },
+    {
+      "node": 623,
+      "valueIndex": 21,
+      "decoded": {
+        "value": {
+          "enabled": true
+        }
+      },
+      "encoded": {
+        "value": {
+          "enabled": true
+        }
+      }
+    },
+    {
+      "node": 623,
+      "valueIndex": 22,
+      "invalid": true
+    },
+    {
+      "node": 623,
+      "valueIndex": 23,
+      "invalid": true
+    },
+    {
+      "node": 623,
+      "valueIndex": 24,
+      "decoded": {
+        "value": {
+          "enabled": true
+        }
+      },
+      "encoded": {
+        "value": {
+          "enabled": true
+        }
+      }
+    },
+    {
+      "node": 623,
+      "valueIndex": 25,
+      "decoded": {
+        "value": {
+          "enabled": true
+        }
+      },
+      "encoded": {
+        "value": {
+          "enabled": true
+        }
+      }
+    },
+    {
+      "node": 623,
+      "valueIndex": 26,
+      "decoded": {
+        "value": {
+          "enabled": true
+        }
+      },
+      "encoded": {
+        "value": {
+          "enabled": true
+        }
+      }
+    },
+    {
+      "node": 623,
+      "valueIndex": 27,
+      "invalid": true
+    },
+    {
+      "node": 624,
+      "valueIndex": 0,
+      "invalid": true
+    },
+    {
+      "node": 624,
+      "valueIndex": 1,
+      "invalid": true
+    },
+    {
+      "node": 624,
+      "valueIndex": 2,
+      "invalid": true
+    },
+    {
+      "node": 624,
+      "valueIndex": 3,
+      "invalid": true
+    },
+    {
+      "node": 624,
+      "valueIndex": 4,
+      "invalid": true
+    },
+    {
+      "node": 624,
+      "valueIndex": 5,
+      "invalid": true
+    },
+    {
+      "node": 624,
+      "valueIndex": 6,
+      "decoded": {
+        "value": true
+      },
+      "encoded": {
+        "value": true
+      }
+    },
+    {
+      "node": 624,
+      "valueIndex": 7,
+      "decoded": {
+        "value": false
+      },
+      "encoded": {
+        "value": false
+      }
+    },
+    {
+      "node": 624,
+      "valueIndex": 8,
+      "invalid": true
+    },
+    {
+      "node": 624,
+      "valueIndex": 9,
+      "invalid": true
+    },
+    {
+      "node": 624,
+      "valueIndex": 10,
+      "invalid": true
+    },
+    {
+      "node": 624,
+      "valueIndex": 11,
+      "invalid": true
+    },
+    {
+      "node": 624,
+      "valueIndex": 12,
+      "invalid": true
+    },
+    {
+      "node": 624,
+      "valueIndex": 13,
+      "invalid": true
+    },
+    {
+      "node": 624,
+      "valueIndex": 14,
+      "invalid": true
+    },
+    {
+      "node": 624,
+      "valueIndex": 15,
+      "invalid": true
+    },
+    {
+      "node": 624,
+      "valueIndex": 16,
+      "invalid": true
+    },
+    {
+      "node": 624,
+      "valueIndex": 17,
+      "invalid": true
+    },
+    {
+      "node": 624,
+      "valueIndex": 18,
+      "invalid": true
+    },
+    {
+      "node": 624,
+      "valueIndex": 19,
+      "invalid": true
+    },
+    {
+      "node": 624,
+      "valueIndex": 20,
+      "invalid": true
+    },
+    {
+      "node": 624,
+      "valueIndex": 21,
+      "invalid": true
+    },
+    {
+      "node": 624,
+      "valueIndex": 22,
+      "invalid": true
+    },
+    {
+      "node": 624,
+      "valueIndex": 23,
+      "invalid": true
+    },
+    {
+      "node": 624,
+      "valueIndex": 24,
+      "invalid": true
+    },
+    {
+      "node": 624,
+      "valueIndex": 25,
+      "invalid": true
+    },
+    {
+      "node": 624,
+      "valueIndex": 26,
+      "invalid": true
+    },
+    {
+      "node": 624,
+      "valueIndex": 27,
+      "decoded": {
+        "value": true
+      },
+      "encoded": {
+        "value": true
+      }
+    },
+    {
+      "node": 625,
+      "valueIndex": 0,
+      "invalid": true
+    },
+    {
+      "node": 625,
+      "valueIndex": 1,
+      "invalid": true
+    },
+    {
+      "node": 625,
+      "valueIndex": 2,
+      "invalid": true
+    },
+    {
+      "node": 625,
+      "valueIndex": 3,
+      "invalid": true
+    },
+    {
+      "node": 625,
+      "valueIndex": 4,
+      "invalid": true
+    },
+    {
+      "node": 625,
+      "valueIndex": 5,
+      "invalid": true
+    },
+    {
+      "node": 625,
+      "valueIndex": 6,
+      "invalid": true
+    },
+    {
+      "node": 625,
+      "valueIndex": 7,
+      "invalid": true
+    },
+    {
+      "node": 625,
+      "valueIndex": 8,
+      "invalid": true
+    },
+    {
+      "node": 625,
+      "valueIndex": 9,
+      "invalid": true
+    },
+    {
+      "node": 625,
+      "valueIndex": 10,
+      "invalid": true
+    },
+    {
+      "node": 625,
+      "valueIndex": 11,
+      "invalid": true
+    },
+    {
+      "node": 625,
+      "valueIndex": 12,
+      "invalid": true
+    },
+    {
+      "node": 625,
+      "valueIndex": 13,
+      "invalid": true
+    },
+    {
+      "node": 625,
+      "valueIndex": 14,
+      "invalid": true
+    },
+    {
+      "node": 625,
+      "valueIndex": 15,
+      "invalid": true
+    },
+    {
+      "node": 625,
+      "valueIndex": 16,
+      "invalid": true
+    },
+    {
+      "node": 625,
+      "valueIndex": 17,
+      "invalid": true
+    },
+    {
+      "node": 625,
+      "valueIndex": 18,
+      "invalid": true
+    },
+    {
+      "node": 625,
+      "valueIndex": 19,
+      "invalid": true
+    },
+    {
+      "node": 625,
+      "valueIndex": 20,
+      "invalid": true
+    },
+    {
+      "node": 625,
+      "valueIndex": 21,
+      "decoded": {
+        "value": {}
+      },
+      "encoded": {
+        "value": {}
+      }
+    },
+    {
+      "node": 625,
+      "valueIndex": 22,
+      "invalid": true
+    },
+    {
+      "node": 625,
+      "valueIndex": 23,
+      "invalid": true
+    },
+    {
+      "node": 625,
+      "valueIndex": 24,
+      "invalid": true
+    },
+    {
+      "node": 625,
+      "valueIndex": 25,
+      "invalid": true
+    },
+    {
+      "node": 625,
+      "valueIndex": 26,
+      "invalid": true
+    },
+    {
+      "node": 625,
+      "valueIndex": 27,
+      "decoded": {
+        "missing": true
+      },
+      "encoded": {
+        "missing": true
+      }
+    },
+    {
+      "node": 626,
+      "valueIndex": 0,
+      "invalid": true
+    },
+    {
+      "node": 626,
+      "valueIndex": 1,
+      "invalid": true
+    },
+    {
+      "node": 626,
+      "valueIndex": 2,
+      "invalid": true
+    },
+    {
+      "node": 626,
+      "valueIndex": 3,
+      "invalid": true
+    },
+    {
+      "node": 626,
+      "valueIndex": 4,
+      "invalid": true
+    },
+    {
+      "node": 626,
+      "valueIndex": 5,
+      "invalid": true
+    },
+    {
+      "node": 626,
+      "valueIndex": 6,
+      "invalid": true
+    },
+    {
+      "node": 626,
+      "valueIndex": 7,
+      "invalid": true
+    },
+    {
+      "node": 626,
+      "valueIndex": 8,
+      "invalid": true
+    },
+    {
+      "node": 626,
+      "valueIndex": 9,
+      "invalid": true
+    },
+    {
+      "node": 626,
+      "valueIndex": 10,
+      "invalid": true
+    },
+    {
+      "node": 626,
+      "valueIndex": 11,
+      "invalid": true
+    },
+    {
+      "node": 626,
+      "valueIndex": 12,
+      "invalid": true
+    },
+    {
+      "node": 626,
+      "valueIndex": 13,
+      "invalid": true
+    },
+    {
+      "node": 626,
+      "valueIndex": 14,
+      "invalid": true
+    },
+    {
+      "node": 626,
+      "valueIndex": 15,
+      "invalid": true
+    },
+    {
+      "node": 626,
+      "valueIndex": 16,
+      "invalid": true
+    },
+    {
+      "node": 626,
+      "valueIndex": 17,
+      "invalid": true
+    },
+    {
+      "node": 626,
+      "valueIndex": 18,
+      "invalid": true
+    },
+    {
+      "node": 626,
+      "valueIndex": 19,
+      "invalid": true
+    },
+    {
+      "node": 626,
+      "valueIndex": 20,
+      "invalid": true
+    },
+    {
+      "node": 626,
+      "valueIndex": 21,
+      "decoded": {
+        "value": {}
+      },
+      "encoded": {
+        "value": {}
+      }
+    },
+    {
+      "node": 626,
+      "valueIndex": 22,
+      "invalid": true
+    },
+    {
+      "node": 626,
+      "valueIndex": 23,
+      "invalid": true
+    },
+    {
+      "node": 626,
+      "valueIndex": 24,
+      "invalid": true
+    },
+    {
+      "node": 626,
+      "valueIndex": 25,
+      "invalid": true
+    },
+    {
+      "node": 626,
+      "valueIndex": 26,
+      "invalid": true
+    },
+    {
+      "node": 626,
+      "valueIndex": 27,
+      "invalid": true
+    },
+    {
+      "node": 627,
+      "valueIndex": 0,
+      "invalid": true
+    },
+    {
+      "node": 627,
+      "valueIndex": 1,
+      "invalid": true
+    },
+    {
+      "node": 627,
+      "valueIndex": 2,
+      "invalid": true
+    },
+    {
+      "node": 627,
+      "valueIndex": 3,
+      "invalid": true
+    },
+    {
+      "node": 627,
+      "valueIndex": 4,
+      "invalid": true
+    },
+    {
+      "node": 627,
+      "valueIndex": 5,
+      "invalid": true
+    },
+    {
+      "node": 627,
+      "valueIndex": 6,
+      "invalid": true
+    },
+    {
+      "node": 627,
+      "valueIndex": 7,
+      "invalid": true
+    },
+    {
+      "node": 627,
+      "valueIndex": 8,
+      "invalid": true
+    },
+    {
+      "node": 627,
+      "valueIndex": 9,
+      "invalid": true
+    },
+    {
+      "node": 627,
+      "valueIndex": 10,
+      "invalid": true
+    },
+    {
+      "node": 627,
+      "valueIndex": 11,
+      "invalid": true
+    },
+    {
+      "node": 627,
+      "valueIndex": 12,
+      "invalid": true
+    },
+    {
+      "node": 627,
+      "valueIndex": 13,
+      "invalid": true
+    },
+    {
+      "node": 627,
+      "valueIndex": 14,
+      "invalid": true
+    },
+    {
+      "node": 627,
+      "valueIndex": 15,
+      "invalid": true
+    },
+    {
+      "node": 627,
+      "valueIndex": 16,
+      "invalid": true
+    },
+    {
+      "node": 627,
+      "valueIndex": 17,
+      "invalid": true
+    },
+    {
+      "node": 627,
+      "valueIndex": 18,
+      "invalid": true
+    },
+    {
+      "node": 627,
+      "valueIndex": 19,
+      "invalid": true
+    },
+    {
+      "node": 627,
+      "valueIndex": 20,
+      "invalid": true
+    },
+    {
+      "node": 627,
+      "valueIndex": 21,
+      "decoded": {
+        "value": {}
+      },
+      "encoded": {
+        "value": {}
+      }
+    },
+    {
+      "node": 627,
+      "valueIndex": 22,
+      "invalid": true
+    },
+    {
+      "node": 627,
+      "valueIndex": 23,
+      "invalid": true
+    },
+    {
+      "node": 627,
+      "valueIndex": 24,
+      "decoded": {
+        "value": {}
+      },
+      "encoded": {
+        "value": {}
+      }
+    },
+    {
+      "node": 627,
+      "valueIndex": 25,
+      "decoded": {
+        "value": {}
+      },
+      "encoded": {
+        "value": {}
+      }
+    },
+    {
+      "node": 627,
+      "valueIndex": 26,
+      "decoded": {
+        "value": {}
+      },
+      "encoded": {
+        "value": {}
+      }
+    },
+    {
+      "node": 627,
+      "valueIndex": 27,
+      "invalid": true
+    },
+    {
+      "node": 628,
+      "valueIndex": 0,
+      "decoded": {
+        "value": "gpu:\r"
+      },
+      "encoded": {
+        "value": "gpu:\r"
+      }
+    },
+    {
+      "node": 628,
+      "valueIndex": 1,
+      "decoded": {
+        "value": "gpu: "
+      },
+      "encoded": {
+        "value": "gpu: "
+      }
+    },
+    {
+      "node": 628,
+      "valueIndex": 2,
+      "decoded": {
+        "value": "valid\n"
+      },
+      "encoded": {
+        "value": "valid\n"
+      }
+    },
+    {
+      "node": 628,
+      "valueIndex": 3,
+      "decoded": {
+        "value": "a\nb"
+      },
+      "encoded": {
+        "value": "a\nb"
+      }
+    },
+    {
+      "node": 628,
+      "valueIndex": 4,
+      "decoded": {
+        "value": ""
+      },
+      "encoded": {
+        "value": ""
+      }
+    },
+    {
+      "node": 628,
+      "valueIndex": 5,
+      "invalid": true
+    },
+    {
+      "node": 628,
+      "valueIndex": 6,
+      "invalid": true
+    },
+    {
+      "node": 628,
+      "valueIndex": 7,
+      "invalid": true
+    },
+    {
+      "node": 628,
+      "valueIndex": 8,
+      "invalid": true
+    },
+    {
+      "node": 628,
+      "valueIndex": 9,
+      "invalid": true
+    },
+    {
+      "node": 628,
+      "valueIndex": 10,
+      "invalid": true
+    },
+    {
+      "node": 628,
+      "valueIndex": 11,
+      "invalid": true
+    },
+    {
+      "node": 628,
+      "valueIndex": 12,
+      "invalid": true
+    },
+    {
+      "node": 628,
+      "valueIndex": 13,
+      "decoded": {
+        "value": ""
+      },
+      "encoded": {
+        "value": ""
+      }
+    },
+    {
+      "node": 628,
+      "valueIndex": 14,
+      "decoded": {
+        "value": " "
+      },
+      "encoded": {
+        "value": " "
+      }
+    },
+    {
+      "node": 628,
+      "valueIndex": 15,
+      "decoded": {
+        "value": " native "
+      },
+      "encoded": {
+        "value": " native "
+      }
+    },
+    {
+      "node": 628,
+      "valueIndex": 16,
+      "decoded": {
+        "value": "﻿ok﻿"
+      },
+      "encoded": {
+        "value": "﻿ok﻿"
+      }
+    },
+    {
+      "node": 628,
+      "valueIndex": 17,
+      "decoded": {
+        "value": "node"
+      },
+      "encoded": {
+        "value": "node"
+      }
+    },
+    {
+      "node": 628,
+      "valueIndex": 18,
+      "decoded": {
+        "value": "local"
+      },
+      "encoded": {
+        "value": "local"
+      }
+    },
+    {
+      "node": 628,
+      "valueIndex": 19,
+      "decoded": {
+        "value": "onReturn"
+      },
+      "encoded": {
+        "value": "onReturn"
+      }
+    },
+    {
+      "node": 628,
+      "valueIndex": 20,
+      "invalid": true
+    },
+    {
+      "node": 628,
+      "valueIndex": 21,
+      "invalid": true
+    },
+    {
+      "node": 628,
+      "valueIndex": 22,
+      "invalid": true
+    },
+    {
+      "node": 628,
+      "valueIndex": 23,
+      "invalid": true
+    },
+    {
+      "node": 628,
+      "valueIndex": 24,
+      "invalid": true
+    },
+    {
+      "node": 628,
+      "valueIndex": 25,
+      "invalid": true
+    },
+    {
+      "node": 628,
+      "valueIndex": 26,
+      "invalid": true
+    },
+    {
+      "node": 628,
+      "valueIndex": 27,
+      "decoded": {
+        "missing": true
+      },
+      "encoded": {
+        "missing": true
+      }
+    },
+    {
+      "node": 629,
+      "valueIndex": 0,
+      "invalid": true
+    },
+    {
+      "node": 629,
+      "valueIndex": 1,
+      "invalid": true
+    },
+    {
+      "node": 629,
+      "valueIndex": 2,
+      "invalid": true
+    },
+    {
+      "node": 629,
+      "valueIndex": 3,
+      "invalid": true
+    },
+    {
+      "node": 629,
+      "valueIndex": 4,
+      "invalid": true
+    },
+    {
+      "node": 629,
+      "valueIndex": 5,
+      "invalid": true
+    },
+    {
+      "node": 629,
+      "valueIndex": 6,
+      "decoded": {
+        "value": true
+      },
+      "encoded": {
+        "value": true
+      }
+    },
+    {
+      "node": 629,
+      "valueIndex": 7,
+      "decoded": {
+        "value": false
+      },
+      "encoded": {
+        "value": false
+      }
+    },
+    {
+      "node": 629,
+      "valueIndex": 8,
+      "invalid": true
+    },
+    {
+      "node": 629,
+      "valueIndex": 9,
+      "invalid": true
+    },
+    {
+      "node": 629,
+      "valueIndex": 10,
+      "invalid": true
+    },
+    {
+      "node": 629,
+      "valueIndex": 11,
+      "invalid": true
+    },
+    {
+      "node": 629,
+      "valueIndex": 12,
+      "invalid": true
+    },
+    {
+      "node": 629,
+      "valueIndex": 13,
+      "invalid": true
+    },
+    {
+      "node": 629,
+      "valueIndex": 14,
+      "invalid": true
+    },
+    {
+      "node": 629,
+      "valueIndex": 15,
+      "invalid": true
+    },
+    {
+      "node": 629,
+      "valueIndex": 16,
+      "invalid": true
+    },
+    {
+      "node": 629,
+      "valueIndex": 17,
+      "invalid": true
+    },
+    {
+      "node": 629,
+      "valueIndex": 18,
+      "invalid": true
+    },
+    {
+      "node": 629,
+      "valueIndex": 19,
+      "invalid": true
+    },
+    {
+      "node": 629,
+      "valueIndex": 20,
+      "invalid": true
+    },
+    {
+      "node": 629,
+      "valueIndex": 21,
+      "invalid": true
+    },
+    {
+      "node": 629,
+      "valueIndex": 22,
+      "invalid": true
+    },
+    {
+      "node": 629,
+      "valueIndex": 23,
+      "invalid": true
+    },
+    {
+      "node": 629,
+      "valueIndex": 24,
+      "invalid": true
+    },
+    {
+      "node": 629,
+      "valueIndex": 25,
+      "invalid": true
+    },
+    {
+      "node": 629,
+      "valueIndex": 26,
+      "invalid": true
+    },
+    {
+      "node": 629,
+      "valueIndex": 27,
+      "decoded": {
+        "missing": true
+      },
+      "encoded": {
+        "missing": true
+      }
+    },
+    {
+      "node": 630,
+      "valueIndex": 0,
+      "invalid": true
+    },
+    {
+      "node": 630,
+      "valueIndex": 1,
+      "invalid": true
+    },
+    {
+      "node": 630,
+      "valueIndex": 2,
+      "invalid": true
+    },
+    {
+      "node": 630,
+      "valueIndex": 3,
+      "invalid": true
+    },
+    {
+      "node": 630,
+      "valueIndex": 4,
+      "invalid": true
+    },
+    {
+      "node": 630,
+      "valueIndex": 5,
+      "invalid": true
+    },
+    {
+      "node": 630,
+      "valueIndex": 6,
+      "invalid": true
+    },
+    {
+      "node": 630,
+      "valueIndex": 7,
+      "invalid": true
+    },
+    {
+      "node": 630,
+      "valueIndex": 8,
+      "invalid": true
+    },
+    {
+      "node": 630,
+      "valueIndex": 9,
+      "invalid": true
+    },
+    {
+      "node": 630,
+      "valueIndex": 10,
+      "invalid": true
+    },
+    {
+      "node": 630,
+      "valueIndex": 11,
+      "invalid": true
+    },
+    {
+      "node": 630,
+      "valueIndex": 12,
+      "invalid": true
+    },
+    {
+      "node": 630,
+      "valueIndex": 13,
+      "invalid": true
+    },
+    {
+      "node": 630,
+      "valueIndex": 14,
+      "invalid": true
+    },
+    {
+      "node": 630,
+      "valueIndex": 15,
+      "invalid": true
+    },
+    {
+      "node": 630,
+      "valueIndex": 16,
+      "invalid": true
+    },
+    {
+      "node": 630,
+      "valueIndex": 17,
+      "invalid": true
+    },
+    {
+      "node": 630,
+      "valueIndex": 18,
+      "invalid": true
+    },
+    {
+      "node": 630,
+      "valueIndex": 19,
+      "invalid": true
+    },
+    {
+      "node": 630,
+      "valueIndex": 20,
+      "invalid": true
+    },
+    {
+      "node": 630,
+      "valueIndex": 21,
+      "decoded": {
+        "value": {}
+      },
+      "encoded": {
+        "value": {}
+      }
+    },
+    {
+      "node": 630,
+      "valueIndex": 22,
+      "invalid": true
+    },
+    {
+      "node": 630,
+      "valueIndex": 23,
+      "invalid": true
+    },
+    {
+      "node": 630,
+      "valueIndex": 24,
+      "decoded": {
+        "value": {
+          "future": "x"
+        }
+      },
+      "encoded": {
+        "value": {
+          "future": "x"
+        }
+      }
+    },
+    {
+      "node": 630,
+      "valueIndex": 25,
+      "invalid": true
+    },
+    {
+      "node": 630,
+      "valueIndex": 26,
+      "decoded": {
+        "value": {
+          "provider": "vault",
+          "reference": "token"
+        }
+      },
+      "encoded": {
+        "value": {
+          "provider": "vault",
+          "reference": "token"
+        }
+      }
+    },
+    {
+      "node": 630,
+      "valueIndex": 27,
+      "decoded": {
+        "value": {}
+      },
+      "encoded": {
+        "value": {}
+      }
+    },
+    {
+      "node": 631,
+      "valueIndex": 0,
+      "decoded": {
+        "value": "gpu:"
+      },
+      "encoded": {
+        "value": "gpu:"
+      }
+    },
+    {
+      "node": 631,
+      "valueIndex": 1,
+      "decoded": {
+        "value": "gpu:"
+      },
+      "encoded": {
+        "value": "gpu:"
+      }
+    },
+    {
+      "node": 631,
+      "valueIndex": 2,
+      "decoded": {
+        "value": "valid"
+      },
+      "encoded": {
+        "value": "valid"
+      }
+    },
+    {
+      "node": 631,
+      "valueIndex": 3,
+      "decoded": {
+        "value": "a\nb"
+      },
+      "encoded": {
+        "value": "a\nb"
+      }
+    },
+    {
+      "node": 631,
+      "valueIndex": 4,
+      "decoded": {
+        "value": ""
+      },
+      "encoded": {
+        "value": ""
+      }
+    },
+    {
+      "node": 631,
+      "valueIndex": 5,
+      "invalid": true
+    },
+    {
+      "node": 631,
+      "valueIndex": 6,
+      "invalid": true
+    },
+    {
+      "node": 631,
+      "valueIndex": 7,
+      "invalid": true
+    },
+    {
+      "node": 631,
+      "valueIndex": 8,
+      "invalid": true
+    },
+    {
+      "node": 631,
+      "valueIndex": 9,
+      "invalid": true
+    },
+    {
+      "node": 631,
+      "valueIndex": 10,
+      "invalid": true
+    },
+    {
+      "node": 631,
+      "valueIndex": 11,
+      "invalid": true
+    },
+    {
+      "node": 631,
+      "valueIndex": 12,
+      "invalid": true
+    },
+    {
+      "node": 631,
+      "valueIndex": 13,
+      "decoded": {
+        "value": ""
+      },
+      "encoded": {
+        "value": ""
+      }
+    },
+    {
+      "node": 631,
+      "valueIndex": 14,
+      "decoded": {
+        "value": ""
+      },
+      "encoded": {
+        "value": ""
+      }
+    },
+    {
+      "node": 631,
+      "valueIndex": 15,
+      "decoded": {
+        "value": "native"
+      },
+      "encoded": {
+        "value": "native"
+      }
+    },
+    {
+      "node": 631,
+      "valueIndex": 16,
+      "decoded": {
+        "value": "ok"
+      },
+      "encoded": {
+        "value": "ok"
+      }
+    },
+    {
+      "node": 631,
+      "valueIndex": 17,
+      "decoded": {
+        "value": "node"
+      },
+      "encoded": {
+        "value": "node"
+      }
+    },
+    {
+      "node": 631,
+      "valueIndex": 18,
+      "decoded": {
+        "value": "local"
+      },
+      "encoded": {
+        "value": "local"
+      }
+    },
+    {
+      "node": 631,
+      "valueIndex": 19,
+      "decoded": {
+        "value": "onReturn"
+      },
+      "encoded": {
+        "value": "onReturn"
+      }
+    },
+    {
+      "node": 631,
+      "valueIndex": 20,
+      "invalid": true
+    },
+    {
+      "node": 631,
+      "valueIndex": 21,
+      "invalid": true
+    },
+    {
+      "node": 631,
+      "valueIndex": 22,
+      "invalid": true
+    },
+    {
+      "node": 631,
+      "valueIndex": 23,
+      "invalid": true
+    },
+    {
+      "node": 631,
+      "valueIndex": 24,
+      "invalid": true
+    },
+    {
+      "node": 631,
+      "valueIndex": 25,
+      "invalid": true
+    },
+    {
+      "node": 631,
+      "valueIndex": 26,
+      "decoded": {
+        "value": {
+          "provider": "vault",
+          "reference": "token"
+        }
+      },
+      "encoded": {
+        "value": {
+          "provider": "vault",
+          "reference": "token"
+        }
+      }
+    },
+    {
+      "node": 631,
+      "valueIndex": 27,
+      "invalid": true
+    },
+    {
+      "node": 632,
+      "valueIndex": 0,
+      "invalid": true
+    },
+    {
+      "node": 632,
+      "valueIndex": 1,
+      "invalid": true
+    },
+    {
+      "node": 632,
+      "valueIndex": 2,
+      "invalid": true
+    },
+    {
+      "node": 632,
+      "valueIndex": 3,
+      "invalid": true
+    },
+    {
+      "node": 632,
+      "valueIndex": 4,
+      "invalid": true
+    },
+    {
+      "node": 632,
+      "valueIndex": 5,
+      "invalid": true
+    },
+    {
+      "node": 632,
+      "valueIndex": 6,
+      "invalid": true
+    },
+    {
+      "node": 632,
+      "valueIndex": 7,
+      "invalid": true
+    },
+    {
+      "node": 632,
+      "valueIndex": 8,
+      "invalid": true
+    },
+    {
+      "node": 632,
+      "valueIndex": 9,
+      "invalid": true
+    },
+    {
+      "node": 632,
+      "valueIndex": 10,
+      "invalid": true
+    },
+    {
+      "node": 632,
+      "valueIndex": 11,
+      "invalid": true
+    },
+    {
+      "node": 632,
+      "valueIndex": 12,
+      "invalid": true
+    },
+    {
+      "node": 632,
+      "valueIndex": 13,
+      "invalid": true
+    },
+    {
+      "node": 632,
+      "valueIndex": 14,
+      "invalid": true
+    },
+    {
+      "node": 632,
+      "valueIndex": 15,
+      "invalid": true
+    },
+    {
+      "node": 632,
+      "valueIndex": 16,
+      "invalid": true
+    },
+    {
+      "node": 632,
+      "valueIndex": 17,
+      "invalid": true
+    },
+    {
+      "node": 632,
+      "valueIndex": 18,
+      "invalid": true
+    },
+    {
+      "node": 632,
+      "valueIndex": 19,
+      "invalid": true
+    },
+    {
+      "node": 632,
+      "valueIndex": 20,
+      "invalid": true
+    },
+    {
+      "node": 632,
+      "valueIndex": 21,
+      "decoded": {
+        "value": {}
+      },
+      "encoded": {
+        "value": {}
+      }
+    },
+    {
+      "node": 632,
+      "valueIndex": 22,
+      "invalid": true
+    },
+    {
+      "node": 632,
+      "valueIndex": 23,
+      "invalid": true
+    },
+    {
+      "node": 632,
+      "valueIndex": 24,
+      "decoded": {
+        "value": {
+          "future": "x"
+        }
+      },
+      "encoded": {
+        "value": {
+          "future": "x"
+        }
+      }
+    },
+    {
+      "node": 632,
+      "valueIndex": 25,
+      "invalid": true
+    },
+    {
+      "node": 632,
+      "valueIndex": 26,
+      "decoded": {
+        "value": {
+          "provider": "vault",
+          "reference": "token"
+        }
+      },
+      "encoded": {
+        "value": {
+          "provider": "vault",
+          "reference": "token"
+        }
+      }
+    },
+    {
+      "node": 632,
+      "valueIndex": 27,
+      "decoded": {
+        "missing": true
+      },
+      "encoded": {
+        "missing": true
+      }
+    },
+    {
+      "node": 633,
+      "valueIndex": 0,
+      "invalid": true
+    },
+    {
+      "node": 633,
+      "valueIndex": 1,
+      "invalid": true
+    },
+    {
+      "node": 633,
+      "valueIndex": 2,
+      "invalid": true
+    },
+    {
+      "node": 633,
+      "valueIndex": 3,
+      "invalid": true
+    },
+    {
+      "node": 633,
+      "valueIndex": 4,
+      "invalid": true
+    },
+    {
+      "node": 633,
+      "valueIndex": 5,
+      "invalid": true
+    },
+    {
+      "node": 633,
+      "valueIndex": 6,
+      "invalid": true
+    },
+    {
+      "node": 633,
+      "valueIndex": 7,
+      "invalid": true
+    },
+    {
+      "node": 633,
+      "valueIndex": 8,
+      "invalid": true
+    },
+    {
+      "node": 633,
+      "valueIndex": 9,
+      "invalid": true
+    },
+    {
+      "node": 633,
+      "valueIndex": 10,
+      "invalid": true
+    },
+    {
+      "node": 633,
+      "valueIndex": 11,
+      "invalid": true
+    },
+    {
+      "node": 633,
+      "valueIndex": 12,
+      "invalid": true
+    },
+    {
+      "node": 633,
+      "valueIndex": 13,
+      "invalid": true
+    },
+    {
+      "node": 633,
+      "valueIndex": 14,
+      "invalid": true
+    },
+    {
+      "node": 633,
+      "valueIndex": 15,
+      "invalid": true
+    },
+    {
+      "node": 633,
+      "valueIndex": 16,
+      "invalid": true
+    },
+    {
+      "node": 633,
+      "valueIndex": 17,
+      "invalid": true
+    },
+    {
+      "node": 633,
+      "valueIndex": 18,
+      "invalid": true
+    },
+    {
+      "node": 633,
+      "valueIndex": 19,
+      "invalid": true
+    },
+    {
+      "node": 633,
+      "valueIndex": 20,
+      "invalid": true
+    },
+    {
+      "node": 633,
+      "valueIndex": 21,
+      "decoded": {
+        "value": {}
+      },
+      "encoded": {
+        "value": {}
+      }
+    },
+    {
+      "node": 633,
+      "valueIndex": 22,
+      "invalid": true
+    },
+    {
+      "node": 633,
+      "valueIndex": 23,
+      "invalid": true
+    },
+    {
+      "node": 633,
+      "valueIndex": 24,
+      "decoded": {
+        "value": {
+          "future": "x"
+        }
+      },
+      "encoded": {
+        "value": {
+          "future": "x"
+        }
+      }
+    },
+    {
+      "node": 633,
+      "valueIndex": 25,
+      "invalid": true
+    },
+    {
+      "node": 633,
+      "valueIndex": 26,
+      "decoded": {
+        "value": {
+          "provider": "vault",
+          "reference": "token"
+        }
+      },
+      "encoded": {
+        "value": {
+          "provider": "vault",
+          "reference": "token"
+        }
+      }
+    },
+    {
+      "node": 633,
+      "valueIndex": 27,
+      "invalid": true
+    },
+    {
+      "node": 634,
+      "valueIndex": 0,
+      "invalid": true
+    },
+    {
+      "node": 634,
+      "valueIndex": 1,
+      "invalid": true
+    },
+    {
+      "node": 634,
+      "valueIndex": 2,
+      "invalid": true
+    },
+    {
+      "node": 634,
+      "valueIndex": 3,
+      "invalid": true
+    },
+    {
+      "node": 634,
+      "valueIndex": 4,
+      "invalid": true
+    },
+    {
+      "node": 634,
+      "valueIndex": 5,
+      "invalid": true
+    },
+    {
+      "node": 634,
+      "valueIndex": 6,
+      "invalid": true
+    },
+    {
+      "node": 634,
+      "valueIndex": 7,
+      "invalid": true
+    },
+    {
+      "node": 634,
+      "valueIndex": 8,
+      "invalid": true
+    },
+    {
+      "node": 634,
+      "valueIndex": 9,
+      "invalid": true
+    },
+    {
+      "node": 634,
+      "valueIndex": 10,
+      "invalid": true
+    },
+    {
+      "node": 634,
+      "valueIndex": 11,
+      "invalid": true
+    },
+    {
+      "node": 634,
+      "valueIndex": 12,
+      "invalid": true
+    },
+    {
+      "node": 634,
+      "valueIndex": 13,
+      "invalid": true
+    },
+    {
+      "node": 634,
+      "valueIndex": 14,
+      "invalid": true
+    },
+    {
+      "node": 634,
+      "valueIndex": 15,
+      "invalid": true
+    },
+    {
+      "node": 634,
+      "valueIndex": 16,
+      "invalid": true
+    },
+    {
+      "node": 634,
+      "valueIndex": 17,
+      "invalid": true
+    },
+    {
+      "node": 634,
+      "valueIndex": 18,
+      "invalid": true
+    },
+    {
+      "node": 634,
+      "valueIndex": 19,
+      "invalid": true
+    },
+    {
+      "node": 634,
+      "valueIndex": 20,
+      "invalid": true
+    },
+    {
+      "node": 634,
+      "valueIndex": 21,
+      "decoded": {
+        "value": {}
+      },
+      "encoded": {
+        "value": {}
+      }
+    },
+    {
+      "node": 634,
+      "valueIndex": 22,
+      "invalid": true
+    },
+    {
+      "node": 634,
+      "valueIndex": 23,
+      "invalid": true
+    },
+    {
+      "node": 634,
+      "valueIndex": 24,
+      "decoded": {
+        "value": {
+          "future": "x"
+        }
+      },
+      "encoded": {
+        "value": {
+          "future": "x"
+        }
+      }
+    },
+    {
+      "node": 634,
+      "valueIndex": 25,
+      "invalid": true
+    },
+    {
+      "node": 634,
+      "valueIndex": 26,
+      "decoded": {
+        "value": {
+          "provider": "vault",
+          "reference": "token"
+        }
+      },
+      "encoded": {
+        "value": {
+          "provider": "vault",
+          "reference": "token"
+        }
+      }
+    },
+    {
+      "node": 634,
+      "valueIndex": 27,
+      "decoded": {
+        "value": {}
+      },
+      "encoded": {
+        "value": {}
+      }
+    },
+    {
+      "node": 635,
+      "valueIndex": 0,
+      "invalid": true
+    },
+    {
+      "node": 635,
+      "valueIndex": 1,
+      "invalid": true
+    },
+    {
+      "node": 635,
+      "valueIndex": 2,
+      "invalid": true
+    },
+    {
+      "node": 635,
+      "valueIndex": 3,
+      "invalid": true
+    },
+    {
+      "node": 635,
+      "valueIndex": 4,
+      "invalid": true
+    },
+    {
+      "node": 635,
+      "valueIndex": 5,
+      "invalid": true
+    },
+    {
+      "node": 635,
+      "valueIndex": 6,
+      "invalid": true
+    },
+    {
+      "node": 635,
+      "valueIndex": 7,
+      "invalid": true
+    },
+    {
+      "node": 635,
+      "valueIndex": 8,
+      "invalid": true
+    },
+    {
+      "node": 635,
+      "valueIndex": 9,
+      "invalid": true
+    },
+    {
+      "node": 635,
+      "valueIndex": 10,
+      "invalid": true
+    },
+    {
+      "node": 635,
+      "valueIndex": 11,
+      "invalid": true
+    },
+    {
+      "node": 635,
+      "valueIndex": 12,
+      "invalid": true
+    },
+    {
+      "node": 635,
+      "valueIndex": 13,
+      "invalid": true
+    },
+    {
+      "node": 635,
+      "valueIndex": 14,
+      "invalid": true
+    },
+    {
+      "node": 635,
+      "valueIndex": 15,
+      "invalid": true
+    },
+    {
+      "node": 635,
+      "valueIndex": 16,
+      "invalid": true
+    },
+    {
+      "node": 635,
+      "valueIndex": 17,
+      "invalid": true
+    },
+    {
+      "node": 635,
+      "valueIndex": 18,
+      "invalid": true
+    },
+    {
+      "node": 635,
+      "valueIndex": 19,
+      "invalid": true
+    },
+    {
+      "node": 635,
+      "valueIndex": 20,
+      "invalid": true
+    },
+    {
+      "node": 635,
+      "valueIndex": 21,
+      "decoded": {
+        "value": {}
+      },
+      "encoded": {
+        "value": {}
+      }
+    },
+    {
+      "node": 635,
+      "valueIndex": 22,
+      "invalid": true
+    },
+    {
+      "node": 635,
+      "valueIndex": 23,
+      "invalid": true
+    },
+    {
+      "node": 635,
+      "valueIndex": 24,
+      "decoded": {
+        "value": {
+          "future": "x"
+        }
+      },
+      "encoded": {
+        "value": {
+          "future": "x"
+        }
+      }
+    },
+    {
+      "node": 635,
+      "valueIndex": 25,
+      "invalid": true
+    },
+    {
+      "node": 635,
+      "valueIndex": 26,
+      "decoded": {
+        "value": {
+          "provider": "vault",
+          "reference": "token"
+        }
+      },
+      "encoded": {
+        "value": {
+          "provider": "vault",
+          "reference": "token"
+        }
+      }
+    },
+    {
+      "node": 635,
+      "valueIndex": 27,
+      "decoded": {
+        "missing": true
+      },
+      "encoded": {
+        "missing": true
+      }
+    },
+    {
+      "node": 636,
+      "valueIndex": 0,
+      "invalid": true
+    },
+    {
+      "node": 636,
+      "valueIndex": 1,
+      "invalid": true
+    },
+    {
+      "node": 636,
+      "valueIndex": 2,
+      "invalid": true
+    },
+    {
+      "node": 636,
+      "valueIndex": 3,
+      "invalid": true
+    },
+    {
+      "node": 636,
+      "valueIndex": 4,
+      "invalid": true
+    },
+    {
+      "node": 636,
+      "valueIndex": 5,
+      "invalid": true
+    },
+    {
+      "node": 636,
+      "valueIndex": 6,
+      "invalid": true
+    },
+    {
+      "node": 636,
+      "valueIndex": 7,
+      "invalid": true
+    },
+    {
+      "node": 636,
+      "valueIndex": 8,
+      "invalid": true
+    },
+    {
+      "node": 636,
+      "valueIndex": 9,
+      "invalid": true
+    },
+    {
+      "node": 636,
+      "valueIndex": 10,
+      "invalid": true
+    },
+    {
+      "node": 636,
+      "valueIndex": 11,
+      "invalid": true
+    },
+    {
+      "node": 636,
+      "valueIndex": 12,
+      "invalid": true
+    },
+    {
+      "node": 636,
+      "valueIndex": 13,
+      "invalid": true
+    },
+    {
+      "node": 636,
+      "valueIndex": 14,
+      "invalid": true
+    },
+    {
+      "node": 636,
+      "valueIndex": 15,
+      "invalid": true
+    },
+    {
+      "node": 636,
+      "valueIndex": 16,
+      "invalid": true
+    },
+    {
+      "node": 636,
+      "valueIndex": 17,
+      "invalid": true
+    },
+    {
+      "node": 636,
+      "valueIndex": 18,
+      "invalid": true
+    },
+    {
+      "node": 636,
+      "valueIndex": 19,
+      "invalid": true
+    },
+    {
+      "node": 636,
+      "valueIndex": 20,
+      "invalid": true
+    },
+    {
+      "node": 636,
+      "valueIndex": 21,
+      "decoded": {
+        "value": {}
+      },
+      "encoded": {
+        "value": {}
+      }
+    },
+    {
+      "node": 636,
+      "valueIndex": 22,
+      "invalid": true
+    },
+    {
+      "node": 636,
+      "valueIndex": 23,
+      "invalid": true
+    },
+    {
+      "node": 636,
+      "valueIndex": 24,
+      "decoded": {
+        "value": {
+          "future": "x"
+        }
+      },
+      "encoded": {
+        "value": {
+          "future": "x"
+        }
+      }
+    },
+    {
+      "node": 636,
+      "valueIndex": 25,
+      "invalid": true
+    },
+    {
+      "node": 636,
+      "valueIndex": 26,
+      "decoded": {
+        "value": {
+          "provider": "vault",
+          "reference": "token"
+        }
+      },
+      "encoded": {
+        "value": {
+          "provider": "vault",
+          "reference": "token"
+        }
+      }
+    },
+    {
+      "node": 636,
+      "valueIndex": 27,
+      "invalid": true
+    },
+    {
+      "node": 637,
+      "valueIndex": 0,
+      "invalid": true
+    },
+    {
+      "node": 637,
+      "valueIndex": 1,
+      "invalid": true
+    },
+    {
+      "node": 637,
+      "valueIndex": 2,
+      "invalid": true
+    },
+    {
+      "node": 637,
+      "valueIndex": 3,
+      "invalid": true
+    },
+    {
+      "node": 637,
+      "valueIndex": 4,
+      "invalid": true
+    },
+    {
+      "node": 637,
+      "valueIndex": 5,
+      "invalid": true
+    },
+    {
+      "node": 637,
+      "valueIndex": 6,
+      "invalid": true
+    },
+    {
+      "node": 637,
+      "valueIndex": 7,
+      "invalid": true
+    },
+    {
+      "node": 637,
+      "valueIndex": 8,
+      "invalid": true
+    },
+    {
+      "node": 637,
+      "valueIndex": 9,
+      "invalid": true
+    },
+    {
+      "node": 637,
+      "valueIndex": 10,
+      "invalid": true
+    },
+    {
+      "node": 637,
+      "valueIndex": 11,
+      "invalid": true
+    },
+    {
+      "node": 637,
+      "valueIndex": 12,
+      "invalid": true
+    },
+    {
+      "node": 637,
+      "valueIndex": 13,
+      "invalid": true
+    },
+    {
+      "node": 637,
+      "valueIndex": 14,
+      "invalid": true
+    },
+    {
+      "node": 637,
+      "valueIndex": 15,
+      "invalid": true
+    },
+    {
+      "node": 637,
+      "valueIndex": 16,
+      "invalid": true
+    },
+    {
+      "node": 637,
+      "valueIndex": 17,
+      "invalid": true
+    },
+    {
+      "node": 637,
+      "valueIndex": 18,
+      "invalid": true
+    },
+    {
+      "node": 637,
+      "valueIndex": 19,
+      "invalid": true
+    },
+    {
+      "node": 637,
+      "valueIndex": 20,
+      "invalid": true
+    },
+    {
+      "node": 637,
+      "valueIndex": 21,
+      "decoded": {
+        "value": {
+          "token": ""
+        }
+      },
+      "encoded": {
+        "value": {
+          "token": ""
+        }
+      }
+    },
+    {
+      "node": 637,
+      "valueIndex": 22,
+      "invalid": true
+    },
+    {
+      "node": 637,
+      "valueIndex": 23,
+      "invalid": true
+    },
+    {
+      "node": 637,
+      "valueIndex": 24,
+      "decoded": {
+        "value": {
+          "token": ""
+        }
+      },
+      "encoded": {
+        "value": {
+          "token": ""
+        }
+      }
+    },
+    {
+      "node": 637,
+      "valueIndex": 25,
+      "decoded": {
+        "value": {
+          "token": ""
+        }
+      },
+      "encoded": {
+        "value": {
+          "token": ""
+        }
+      }
+    },
+    {
+      "node": 637,
+      "valueIndex": 26,
+      "decoded": {
+        "value": {
+          "token": ""
+        }
+      },
+      "encoded": {
+        "value": {
+          "token": ""
+        }
+      }
+    },
+    {
+      "node": 637,
+      "valueIndex": 27,
+      "invalid": true
+    },
+    {
+      "node": 638,
+      "valueIndex": 0,
+      "decoded": {
+        "value": "gpu:"
+      },
+      "encoded": {
+        "value": "gpu:"
+      }
+    },
+    {
+      "node": 638,
+      "valueIndex": 1,
+      "decoded": {
+        "value": "gpu:"
+      },
+      "encoded": {
+        "value": "gpu:"
+      }
+    },
+    {
+      "node": 638,
+      "valueIndex": 2,
+      "decoded": {
+        "value": "valid"
+      },
+      "encoded": {
+        "value": "valid"
+      }
+    },
+    {
+      "node": 638,
+      "valueIndex": 3,
+      "decoded": {
+        "value": "a\nb"
+      },
+      "encoded": {
+        "value": "a\nb"
+      }
+    },
+    {
+      "node": 638,
+      "valueIndex": 4,
+      "decoded": {
+        "value": ""
+      },
+      "encoded": {
+        "value": ""
+      }
+    },
+    {
+      "node": 638,
+      "valueIndex": 5,
+      "invalid": true
+    },
+    {
+      "node": 638,
+      "valueIndex": 6,
+      "invalid": true
+    },
+    {
+      "node": 638,
+      "valueIndex": 7,
+      "invalid": true
+    },
+    {
+      "node": 638,
+      "valueIndex": 8,
+      "invalid": true
+    },
+    {
+      "node": 638,
+      "valueIndex": 9,
+      "invalid": true
+    },
+    {
+      "node": 638,
+      "valueIndex": 10,
+      "invalid": true
+    },
+    {
+      "node": 638,
+      "valueIndex": 11,
+      "invalid": true
+    },
+    {
+      "node": 638,
+      "valueIndex": 12,
+      "invalid": true
+    },
+    {
+      "node": 638,
+      "valueIndex": 13,
+      "decoded": {
+        "value": ""
+      },
+      "encoded": {
+        "value": ""
+      }
+    },
+    {
+      "node": 638,
+      "valueIndex": 14,
+      "decoded": {
+        "value": ""
+      },
+      "encoded": {
+        "value": ""
+      }
+    },
+    {
+      "node": 638,
+      "valueIndex": 15,
+      "decoded": {
+        "value": "native"
+      },
+      "encoded": {
+        "value": "native"
+      }
+    },
+    {
+      "node": 638,
+      "valueIndex": 16,
+      "decoded": {
+        "value": "ok"
+      },
+      "encoded": {
+        "value": "ok"
+      }
+    },
+    {
+      "node": 638,
+      "valueIndex": 17,
+      "decoded": {
+        "value": "node"
+      },
+      "encoded": {
+        "value": "node"
+      }
+    },
+    {
+      "node": 638,
+      "valueIndex": 18,
+      "decoded": {
+        "value": "local"
+      },
+      "encoded": {
+        "value": "local"
+      }
+    },
+    {
+      "node": 638,
+      "valueIndex": 19,
+      "decoded": {
+        "value": "onReturn"
+      },
+      "encoded": {
+        "value": "onReturn"
+      }
+    },
+    {
+      "node": 638,
+      "valueIndex": 20,
+      "invalid": true
+    },
+    {
+      "node": 638,
+      "valueIndex": 21,
+      "invalid": true
+    },
+    {
+      "node": 638,
+      "valueIndex": 22,
+      "invalid": true
+    },
+    {
+      "node": 638,
+      "valueIndex": 23,
+      "invalid": true
+    },
+    {
+      "node": 638,
+      "valueIndex": 24,
+      "invalid": true
+    },
+    {
+      "node": 638,
+      "valueIndex": 25,
+      "invalid": true
+    },
+    {
+      "node": 638,
+      "valueIndex": 26,
+      "decoded": {
+        "value": {
+          "provider": "vault",
+          "reference": "token"
+        }
+      },
+      "encoded": {
+        "value": {
+          "provider": "vault",
+          "reference": "token"
+        }
+      }
+    },
+    {
+      "node": 638,
+      "valueIndex": 27,
+      "decoded": {
+        "value": ""
+      },
+      "encoded": {
+        "value": ""
+      }
+    },
+    {
+      "node": 639,
+      "valueIndex": 0,
+      "invalid": true
+    },
+    {
+      "node": 639,
+      "valueIndex": 1,
+      "invalid": true
+    },
+    {
+      "node": 639,
+      "valueIndex": 2,
+      "invalid": true
+    },
+    {
+      "node": 639,
+      "valueIndex": 3,
+      "invalid": true
+    },
+    {
+      "node": 639,
+      "valueIndex": 4,
+      "invalid": true
+    },
+    {
+      "node": 639,
+      "valueIndex": 5,
+      "invalid": true
+    },
+    {
+      "node": 639,
+      "valueIndex": 6,
+      "invalid": true
+    },
+    {
+      "node": 639,
+      "valueIndex": 7,
+      "invalid": true
+    },
+    {
+      "node": 639,
+      "valueIndex": 8,
+      "invalid": true
+    },
+    {
+      "node": 639,
+      "valueIndex": 9,
+      "invalid": true
+    },
+    {
+      "node": 639,
+      "valueIndex": 10,
+      "invalid": true
+    },
+    {
+      "node": 639,
+      "valueIndex": 11,
+      "invalid": true
+    },
+    {
+      "node": 639,
+      "valueIndex": 12,
+      "invalid": true
+    },
+    {
+      "node": 639,
+      "valueIndex": 13,
+      "invalid": true
+    },
+    {
+      "node": 639,
+      "valueIndex": 14,
+      "invalid": true
+    },
+    {
+      "node": 639,
+      "valueIndex": 15,
+      "invalid": true
+    },
+    {
+      "node": 639,
+      "valueIndex": 16,
+      "invalid": true
+    },
+    {
+      "node": 639,
+      "valueIndex": 17,
+      "invalid": true
+    },
+    {
+      "node": 639,
+      "valueIndex": 18,
+      "invalid": true
+    },
+    {
+      "node": 639,
+      "valueIndex": 19,
+      "invalid": true
+    },
+    {
+      "node": 639,
+      "valueIndex": 20,
+      "invalid": true
+    },
+    {
+      "node": 639,
+      "valueIndex": 21,
+      "decoded": {
+        "value": {
+          "accessToken": "",
+          "email": "",
+          "apiToken": ""
+        }
+      },
+      "encoded": {
+        "value": {
+          "accessToken": "",
+          "email": "",
+          "apiToken": ""
+        }
+      }
+    },
+    {
+      "node": 639,
+      "valueIndex": 22,
+      "invalid": true
+    },
+    {
+      "node": 639,
+      "valueIndex": 23,
+      "invalid": true
+    },
+    {
+      "node": 639,
+      "valueIndex": 24,
+      "decoded": {
+        "value": {
+          "accessToken": "",
+          "email": "",
+          "apiToken": ""
+        }
+      },
+      "encoded": {
+        "value": {
+          "accessToken": "",
+          "email": "",
+          "apiToken": ""
+        }
+      }
+    },
+    {
+      "node": 639,
+      "valueIndex": 25,
+      "decoded": {
+        "value": {
+          "accessToken": "",
+          "email": "",
+          "apiToken": ""
+        }
+      },
+      "encoded": {
+        "value": {
+          "accessToken": "",
+          "email": "",
+          "apiToken": ""
+        }
+      }
+    },
+    {
+      "node": 639,
+      "valueIndex": 26,
+      "decoded": {
+        "value": {
+          "accessToken": "",
+          "email": "",
+          "apiToken": ""
+        }
+      },
+      "encoded": {
+        "value": {
+          "accessToken": "",
+          "email": "",
+          "apiToken": ""
+        }
+      }
+    },
+    {
+      "node": 639,
+      "valueIndex": 27,
+      "invalid": true
+    },
+    {
+      "node": 640,
+      "valueIndex": 0,
+      "decoded": {
+        "value": "gpu:"
+      },
+      "encoded": {
+        "value": "gpu:"
+      }
+    },
+    {
+      "node": 640,
+      "valueIndex": 1,
+      "decoded": {
+        "value": "gpu:"
+      },
+      "encoded": {
+        "value": "gpu:"
+      }
+    },
+    {
+      "node": 640,
+      "valueIndex": 2,
+      "decoded": {
+        "value": "valid"
+      },
+      "encoded": {
+        "value": "valid"
+      }
+    },
+    {
+      "node": 640,
+      "valueIndex": 3,
+      "decoded": {
+        "value": "a\nb"
+      },
+      "encoded": {
+        "value": "a\nb"
+      }
+    },
+    {
+      "node": 640,
+      "valueIndex": 4,
+      "decoded": {
+        "value": ""
+      },
+      "encoded": {
+        "value": ""
+      }
+    },
+    {
+      "node": 640,
+      "valueIndex": 5,
+      "invalid": true
+    },
+    {
+      "node": 640,
+      "valueIndex": 6,
+      "invalid": true
+    },
+    {
+      "node": 640,
+      "valueIndex": 7,
+      "invalid": true
+    },
+    {
+      "node": 640,
+      "valueIndex": 8,
+      "invalid": true
+    },
+    {
+      "node": 640,
+      "valueIndex": 9,
+      "invalid": true
+    },
+    {
+      "node": 640,
+      "valueIndex": 10,
+      "invalid": true
+    },
+    {
+      "node": 640,
+      "valueIndex": 11,
+      "invalid": true
+    },
+    {
+      "node": 640,
+      "valueIndex": 12,
+      "invalid": true
+    },
+    {
+      "node": 640,
+      "valueIndex": 13,
+      "decoded": {
+        "value": ""
+      },
+      "encoded": {
+        "value": ""
+      }
+    },
+    {
+      "node": 640,
+      "valueIndex": 14,
+      "decoded": {
+        "value": ""
+      },
+      "encoded": {
+        "value": ""
+      }
+    },
+    {
+      "node": 640,
+      "valueIndex": 15,
+      "decoded": {
+        "value": "native"
+      },
+      "encoded": {
+        "value": "native"
+      }
+    },
+    {
+      "node": 640,
+      "valueIndex": 16,
+      "decoded": {
+        "value": "ok"
+      },
+      "encoded": {
+        "value": "ok"
+      }
+    },
+    {
+      "node": 640,
+      "valueIndex": 17,
+      "decoded": {
+        "value": "node"
+      },
+      "encoded": {
+        "value": "node"
+      }
+    },
+    {
+      "node": 640,
+      "valueIndex": 18,
+      "decoded": {
+        "value": "local"
+      },
+      "encoded": {
+        "value": "local"
+      }
+    },
+    {
+      "node": 640,
+      "valueIndex": 19,
+      "decoded": {
+        "value": "onReturn"
+      },
+      "encoded": {
+        "value": "onReturn"
+      }
+    },
+    {
+      "node": 640,
+      "valueIndex": 20,
+      "invalid": true
+    },
+    {
+      "node": 640,
+      "valueIndex": 21,
+      "invalid": true
+    },
+    {
+      "node": 640,
+      "valueIndex": 22,
+      "invalid": true
+    },
+    {
+      "node": 640,
+      "valueIndex": 23,
+      "invalid": true
+    },
+    {
+      "node": 640,
+      "valueIndex": 24,
+      "invalid": true
+    },
+    {
+      "node": 640,
+      "valueIndex": 25,
+      "invalid": true
+    },
+    {
+      "node": 640,
+      "valueIndex": 26,
+      "decoded": {
+        "value": {
+          "provider": "vault",
+          "reference": "token"
+        }
+      },
+      "encoded": {
+        "value": {
+          "provider": "vault",
+          "reference": "token"
+        }
+      }
+    },
+    {
+      "node": 640,
+      "valueIndex": 27,
+      "decoded": {
+        "value": ""
+      },
+      "encoded": {
+        "value": ""
+      }
+    },
+    {
+      "node": 641,
+      "valueIndex": 0,
+      "decoded": {
+        "value": "gpu:"
+      },
+      "encoded": {
+        "value": "gpu:"
+      }
+    },
+    {
+      "node": 641,
+      "valueIndex": 1,
+      "decoded": {
+        "value": "gpu:"
+      },
+      "encoded": {
+        "value": "gpu:"
+      }
+    },
+    {
+      "node": 641,
+      "valueIndex": 2,
+      "decoded": {
+        "value": "valid"
+      },
+      "encoded": {
+        "value": "valid"
+      }
+    },
+    {
+      "node": 641,
+      "valueIndex": 3,
+      "decoded": {
+        "value": "a\nb"
+      },
+      "encoded": {
+        "value": "a\nb"
+      }
+    },
+    {
+      "node": 641,
+      "valueIndex": 4,
+      "decoded": {
+        "value": ""
+      },
+      "encoded": {
+        "value": ""
+      }
+    },
+    {
+      "node": 641,
+      "valueIndex": 5,
+      "invalid": true
+    },
+    {
+      "node": 641,
+      "valueIndex": 6,
+      "invalid": true
+    },
+    {
+      "node": 641,
+      "valueIndex": 7,
+      "invalid": true
+    },
+    {
+      "node": 641,
+      "valueIndex": 8,
+      "invalid": true
+    },
+    {
+      "node": 641,
+      "valueIndex": 9,
+      "invalid": true
+    },
+    {
+      "node": 641,
+      "valueIndex": 10,
+      "invalid": true
+    },
+    {
+      "node": 641,
+      "valueIndex": 11,
+      "invalid": true
+    },
+    {
+      "node": 641,
+      "valueIndex": 12,
+      "invalid": true
+    },
+    {
+      "node": 641,
+      "valueIndex": 13,
+      "decoded": {
+        "value": ""
+      },
+      "encoded": {
+        "value": ""
+      }
+    },
+    {
+      "node": 641,
+      "valueIndex": 14,
+      "decoded": {
+        "value": ""
+      },
+      "encoded": {
+        "value": ""
+      }
+    },
+    {
+      "node": 641,
+      "valueIndex": 15,
+      "decoded": {
+        "value": "native"
+      },
+      "encoded": {
+        "value": "native"
+      }
+    },
+    {
+      "node": 641,
+      "valueIndex": 16,
+      "decoded": {
+        "value": "ok"
+      },
+      "encoded": {
+        "value": "ok"
+      }
+    },
+    {
+      "node": 641,
+      "valueIndex": 17,
+      "decoded": {
+        "value": "node"
+      },
+      "encoded": {
+        "value": "node"
+      }
+    },
+    {
+      "node": 641,
+      "valueIndex": 18,
+      "decoded": {
+        "value": "local"
+      },
+      "encoded": {
+        "value": "local"
+      }
+    },
+    {
+      "node": 641,
+      "valueIndex": 19,
+      "decoded": {
+        "value": "onReturn"
+      },
+      "encoded": {
+        "value": "onReturn"
+      }
+    },
+    {
+      "node": 641,
+      "valueIndex": 20,
+      "invalid": true
+    },
+    {
+      "node": 641,
+      "valueIndex": 21,
+      "invalid": true
+    },
+    {
+      "node": 641,
+      "valueIndex": 22,
+      "invalid": true
+    },
+    {
+      "node": 641,
+      "valueIndex": 23,
+      "invalid": true
+    },
+    {
+      "node": 641,
+      "valueIndex": 24,
+      "invalid": true
+    },
+    {
+      "node": 641,
+      "valueIndex": 25,
+      "invalid": true
+    },
+    {
+      "node": 641,
+      "valueIndex": 26,
+      "invalid": true
+    },
+    {
+      "node": 641,
+      "valueIndex": 27,
+      "decoded": {
+        "value": ""
+      },
+      "encoded": {
+        "value": ""
+      }
+    },
+    {
+      "node": 642,
+      "valueIndex": 0,
+      "decoded": {
+        "value": "gpu:"
+      },
+      "encoded": {
+        "value": "gpu:"
+      }
+    },
+    {
+      "node": 642,
+      "valueIndex": 1,
+      "decoded": {
+        "value": "gpu:"
+      },
+      "encoded": {
+        "value": "gpu:"
+      }
+    },
+    {
+      "node": 642,
+      "valueIndex": 2,
+      "decoded": {
+        "value": "valid"
+      },
+      "encoded": {
+        "value": "valid"
+      }
+    },
+    {
+      "node": 642,
+      "valueIndex": 3,
+      "decoded": {
+        "value": "a\nb"
+      },
+      "encoded": {
+        "value": "a\nb"
+      }
+    },
+    {
+      "node": 642,
+      "valueIndex": 4,
+      "decoded": {
+        "value": ""
+      },
+      "encoded": {
+        "value": ""
+      }
+    },
+    {
+      "node": 642,
+      "valueIndex": 5,
+      "invalid": true
+    },
+    {
+      "node": 642,
+      "valueIndex": 6,
+      "invalid": true
+    },
+    {
+      "node": 642,
+      "valueIndex": 7,
+      "invalid": true
+    },
+    {
+      "node": 642,
+      "valueIndex": 8,
+      "invalid": true
+    },
+    {
+      "node": 642,
+      "valueIndex": 9,
+      "invalid": true
+    },
+    {
+      "node": 642,
+      "valueIndex": 10,
+      "invalid": true
+    },
+    {
+      "node": 642,
+      "valueIndex": 11,
+      "invalid": true
+    },
+    {
+      "node": 642,
+      "valueIndex": 12,
+      "invalid": true
+    },
+    {
+      "node": 642,
+      "valueIndex": 13,
+      "decoded": {
+        "value": ""
+      },
+      "encoded": {
+        "value": ""
+      }
+    },
+    {
+      "node": 642,
+      "valueIndex": 14,
+      "decoded": {
+        "value": ""
+      },
+      "encoded": {
+        "value": ""
+      }
+    },
+    {
+      "node": 642,
+      "valueIndex": 15,
+      "decoded": {
+        "value": "native"
+      },
+      "encoded": {
+        "value": "native"
+      }
+    },
+    {
+      "node": 642,
+      "valueIndex": 16,
+      "decoded": {
+        "value": "ok"
+      },
+      "encoded": {
+        "value": "ok"
+      }
+    },
+    {
+      "node": 642,
+      "valueIndex": 17,
+      "decoded": {
+        "value": "node"
+      },
+      "encoded": {
+        "value": "node"
+      }
+    },
+    {
+      "node": 642,
+      "valueIndex": 18,
+      "decoded": {
+        "value": "local"
+      },
+      "encoded": {
+        "value": "local"
+      }
+    },
+    {
+      "node": 642,
+      "valueIndex": 19,
+      "decoded": {
+        "value": "onReturn"
+      },
+      "encoded": {
+        "value": "onReturn"
+      }
+    },
+    {
+      "node": 642,
+      "valueIndex": 20,
+      "invalid": true
+    },
+    {
+      "node": 642,
+      "valueIndex": 21,
+      "invalid": true
+    },
+    {
+      "node": 642,
+      "valueIndex": 22,
+      "invalid": true
+    },
+    {
+      "node": 642,
+      "valueIndex": 23,
+      "invalid": true
+    },
+    {
+      "node": 642,
+      "valueIndex": 24,
+      "invalid": true
+    },
+    {
+      "node": 642,
+      "valueIndex": 25,
+      "invalid": true
+    },
+    {
+      "node": 642,
+      "valueIndex": 26,
+      "decoded": {
+        "value": {
+          "provider": "vault",
+          "reference": "token"
+        }
+      },
+      "encoded": {
+        "value": {
+          "provider": "vault",
+          "reference": "token"
+        }
+      }
+    },
+    {
+      "node": 642,
+      "valueIndex": 27,
+      "decoded": {
+        "value": ""
+      },
+      "encoded": {
+        "value": ""
+      }
     }
   ]
 }

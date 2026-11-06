@@ -30,6 +30,7 @@ pub struct Ops {
     pub(crate) hook_runs: Mutex<std::collections::HashSet<String>>,
     pub(crate) scheduled_runs: Mutex<std::collections::HashSet<String>>,
     pub(crate) native_webhooks: Mutex<crate::webhook_native::AdmissionState>,
+    pub(crate) usage_sources: crate::config_sources::UsageState,
     pub usage_rate_failure: AtomicBool,
     pub usage_rate_refresh: tokio::sync::Mutex<()>,
     pub scheduler_wake: tokio::sync::Notify,
@@ -59,6 +60,7 @@ impl Ops {
             hook_runs: Mutex::default(),
             scheduled_runs: Mutex::default(),
             native_webhooks: Mutex::default(),
+            usage_sources: Default::default(),
             usage_rate_failure: AtomicBool::new(false),
             usage_rate_refresh: tokio::sync::Mutex::new(()),
             scheduler_wake: tokio::sync::Notify::new(),
@@ -181,6 +183,14 @@ fn report_activity(s: &State, p: &Value) -> Reply {
 }
 
 async fn refresh_providers(s: &State, p: &Value) -> Reply {
+    if p["instanceId"].as_str().is_none() {
+        if p["reloadSecrets"] == true {
+            let settings = crate::settings::read(s).ok();
+            crate::settings_secrets::invalidate(s.secret_resolver().as_ref(), settings.as_ref())
+                .await;
+        }
+        crate::config_sources::refresh(s).await;
+    }
     let provider = s.provider.lock().unwrap().clone();
     if let Some(provider) = provider {
         if p["reloadSecrets"] == true {

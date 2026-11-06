@@ -34,6 +34,30 @@ pub(crate) fn fields() -> &'static Map<String, Value> {
 pub(crate) fn project_override_keys() -> &'static Vec<Value> {
     PROGRAM["projectOverrideKeys"].as_array().unwrap()
 }
+pub(crate) fn read_source_host_settings(kind: &str, value: Value) -> Option<Value> {
+    let root = PROGRAM["sourceHostRoots"].get(kind)?.as_u64()? as usize;
+    run(
+        root,
+        Some(if value.is_null() { json!({}) } else { value }),
+        false,
+        false,
+    )
+    .or_else(|_| run(root, Some(json!({})), false, false))
+    .ok()
+    .flatten()
+}
+pub(crate) fn decode_usage_config(value: Value) -> Result<Value> {
+    run(id(&PROGRAM["usageConfigRoot"]), Some(value), false, false)?.ok_or(())
+}
+pub(crate) fn encode_provider_instance(value: Value) -> Result<Value> {
+    run(
+        id(&PROGRAM["providerInstanceRoot"]),
+        Some(value),
+        true,
+        false,
+    )?
+    .ok_or(())
+}
 pub(crate) fn decode_provider_instance(value: Value) -> Result<Value> {
     run(
         id(&PROGRAM["providerInstanceRoot"]),
@@ -270,6 +294,17 @@ fn transform(
         } else {
             value
         }),
+        "lowercase" => {
+            if encode {
+                Ok(value)
+            } else {
+                Ok(Some(json!(value
+                    .as_ref()
+                    .and_then(Value::as_str)
+                    .ok_or(())?
+                    .to_lowercase())))
+            }
+        }
         "nonEmptyFallback" => Ok(
             if !encode && value.as_ref().and_then(Value::as_str) == Some("") {
                 Some(n["fallback"].clone())

@@ -1,4 +1,10 @@
 {
+  "sourceHostRoots": {
+    "github": 620,
+    "gitcafe": 637,
+    "bitbucket": 639
+  },
+  "usageConfigRoot": 443,
   "providerInstanceRoot": 408,
   "providerConfigRoots": {
     "codex": 562,
@@ -165,6 +171,7 @@
     "packages/provider-pi/src/client.ts": "75e4d156f224724555ff2e30d978a8bff60a3b6c1d5d621dfe67605122f2ded3",
     "packages/provider-pi/src/settings.ts": "28c681f314437b53d6f08daafe3b9c28a573e42e68fcced346960acc4bfdcb62",
     "apps/server/src/sourceControl/sourceControlHostSecrets.ts": "d634f2fadd3803fbd7ccca1c5776c63b751aca40d8bb2dcf145f4b7ec6f636d3",
+    "apps/server/src/secrets/settingsSecretValue.ts": "26fd33aee87895e9cb64808776dadb38c96703c651713f20facdcd539e394284",
     "packages/source-control-definitions/src/registry.ts": "790378b20729deb0288f5ad504db6bdf1ebe88b1855d5f29f04c620bf7dbfe22",
     "packages/source-control-azure-devops/src/shared/definition.ts": "b27d85bf535679ccabbd6e7f9fe08b430110546479e55d46f1fcd5edf647bde1",
     "packages/source-control-core/src/shared/definition.ts": "83e242915ffcee6fe463c59aab96700ac33270483bf32657ec414f8251c65f09",
@@ -9776,6 +9783,302 @@
         616,
         617
       ]
+    },
+    {
+      "tag": "Objects",
+      "expected": "object",
+      "properties": [
+        {
+          "name": "hosts",
+          "type": 621
+        },
+        {
+          "name": "tokens",
+          "type": 630
+        },
+        {
+          "name": "signIns",
+          "type": 634
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "tag": "Objects",
+      "expected": "object",
+      "properties": [],
+      "indexes": [
+        {
+          "key": 622,
+          "value": 623
+        }
+      ],
+      "codecs": [
+        {
+          "from": 625,
+          "transform": "default"
+        }
+      ],
+      "default": {}
+    },
+    {
+      "tag": "String",
+      "expected": "string",
+      "codecs": [
+        {
+          "from": 6,
+          "transform": "lowercase"
+        }
+      ]
+    },
+    {
+      "tag": "Objects",
+      "expected": "object",
+      "properties": [
+        {
+          "name": "account",
+          "type": 530
+        },
+        {
+          "name": "enabled",
+          "type": 624
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "tag": "Boolean",
+      "expected": "boolean",
+      "codecs": [
+        {
+          "from": 61,
+          "transform": "default"
+        }
+      ],
+      "default": true
+    },
+    {
+      "tag": "Union",
+      "expected": "object | undefined",
+      "optional": true,
+      "types": [
+        626,
+        12
+      ]
+    },
+    {
+      "tag": "Objects",
+      "expected": "object",
+      "properties": [],
+      "indexes": [
+        {
+          "key": 5,
+          "value": 627
+        }
+      ]
+    },
+    {
+      "tag": "Objects",
+      "expected": "object",
+      "properties": [
+        {
+          "name": "account",
+          "type": 628
+        },
+        {
+          "name": "enabled",
+          "type": 629
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "tag": "String",
+      "expected": "string",
+      "optional": true
+    },
+    {
+      "tag": "Union",
+      "expected": "boolean | undefined",
+      "optional": true,
+      "types": [
+        47,
+        12
+      ]
+    },
+    {
+      "tag": "Objects",
+      "expected": "object",
+      "properties": [],
+      "indexes": [
+        {
+          "key": 622,
+          "value": 631
+        }
+      ],
+      "codecs": [
+        {
+          "from": 632,
+          "transform": "default"
+        }
+      ],
+      "default": {}
+    },
+    {
+      "tag": "Union",
+      "expected": "string | object",
+      "types": [
+        79,
+        255
+      ]
+    },
+    {
+      "tag": "Union",
+      "expected": "object | undefined",
+      "optional": true,
+      "types": [
+        633,
+        12
+      ]
+    },
+    {
+      "tag": "Objects",
+      "expected": "object",
+      "properties": [],
+      "indexes": [
+        {
+          "key": 5,
+          "value": 447
+        }
+      ]
+    },
+    {
+      "tag": "Objects",
+      "expected": "object",
+      "properties": [],
+      "indexes": [
+        {
+          "key": 622,
+          "value": 79
+        }
+      ],
+      "codecs": [
+        {
+          "from": 635,
+          "transform": "default"
+        }
+      ],
+      "default": {}
+    },
+    {
+      "tag": "Union",
+      "expected": "object | undefined",
+      "optional": true,
+      "types": [
+        636,
+        12
+      ]
+    },
+    {
+      "tag": "Objects",
+      "expected": "object",
+      "properties": [],
+      "indexes": [
+        {
+          "key": 5,
+          "value": 5
+        }
+      ]
+    },
+    {
+      "tag": "Objects",
+      "expected": "object",
+      "properties": [
+        {
+          "name": "token",
+          "type": 638
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "tag": "Union",
+      "expected": "string | object",
+      "types": [
+        79,
+        255
+      ],
+      "codecs": [
+        {
+          "from": 446,
+          "transform": "default"
+        }
+      ],
+      "default": ""
+    },
+    {
+      "tag": "Objects",
+      "expected": "object",
+      "properties": [
+        {
+          "name": "accessToken",
+          "type": 640
+        },
+        {
+          "name": "email",
+          "type": 641
+        },
+        {
+          "name": "apiToken",
+          "type": 642
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "tag": "Union",
+      "expected": "string | object",
+      "types": [
+        79,
+        255
+      ],
+      "codecs": [
+        {
+          "from": 446,
+          "transform": "default"
+        }
+      ],
+      "default": ""
+    },
+    {
+      "tag": "String",
+      "expected": "string",
+      "codecs": [
+        {
+          "from": 5,
+          "transform": "trim"
+        },
+        {
+          "from": 77,
+          "transform": "default"
+        }
+      ],
+      "default": ""
+    },
+    {
+      "tag": "Union",
+      "expected": "string | object",
+      "types": [
+        79,
+        255
+      ],
+      "codecs": [
+        {
+          "from": 446,
+          "transform": "default"
+        }
+      ],
+      "default": ""
     }
   ],
   "transformSources": {
@@ -9830,6 +10133,10 @@
     "nonEmptyFallback": {
       "decode": "(value) => Effect.succeed(value || fallback)",
       "encode": "(value) => Effect.succeed(value)"
+    },
+    "lowercase": {
+      "decode": "self => self.toLowerCase()",
+      "encode": "Passthrough"
     }
   }
 }

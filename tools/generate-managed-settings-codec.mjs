@@ -61,6 +61,7 @@ function transformKind(transformation,where){
  if(text.includes('Option.filter(o, Predicate.isNotUndefined)'))return tag('default');
  if(text.includes('Effect.succeed(trim(value))'))return tag('trim');
  if(text.includes('Effect.succeed(value || fallback)'))return tag('nonEmptyFallback');
+ if(text==='self => self.toLowerCase()')return tag('lowercase');
  if(text.includes('instanceIdSource'))return tag('modelSelection');
  if(text.includes('coerceLegacyOptionsObjectToArray'))return tag('legacyOptions');
  if(text.includes('Option.isSome(decodeValue(raw))')&&text.includes('undefined'))return tag('safeOptional');
@@ -216,6 +217,8 @@ const patchRoot=compile(C.ServerSettingsPatch.ast,'patch');
 const persistedRoot=compile(native.persisted.PersistedServerSettings.ast,'persisted');
 const providerConfigRoots={codex:compile(C.CodexSettings.ast,'providerConfig.codex'),claudeAgent:compile(C.ClaudeSettings.ast,'providerConfig.claudeAgent')};
 const providerInstanceRoot=compile(C.ProviderInstanceConfig.ast,'providerInstance');
+const sourceHostRoots=Object.fromEntries([...native.hosts.hostSettingsSchemas].map(([kind,schema])=>[kind,compile(schema.ast,'sourceHost.'+kind)]));
+const usageConfigRoot=compile(C.UsageLimitSourceConfig.ast,'usageConfig');
 const providerConfigDefaults={codex:plain(S.decodeUnknownSync(C.CodexSettings)({})),claudeAgent:plain(S.decodeUnknownSync(C.ClaudeSettings)({}))};
 for(const file of ['apps/server/src/provider/Drivers/CodexDriver.ts','apps/server/src/provider/Drivers/ClaudeDriver.ts'])source(file);
 const sparseCases=[{input:{},encoded:S.encodeSync(C.ServerSettings)({})}];
@@ -239,7 +242,7 @@ for(const [index,ast]of nodeAsts.entries())for(const [valueIndex,value]of [...no
  nodeCases.push(item);
 }
 fs.writeFileSync(path.join(output,'node-fixtures.json'),JSON.stringify({values:nodeValues,cases:nodeCases},null,2)+'\n');
-const ir={providerInstanceRoot,providerConfigRoots,providerConfigDefaults,persistedRoot,patchRoot,secretReference,secretFields,revision,effect:'4.1.2',sources,root,fields,projectOverrideKeys:Object.keys(C.ProjectSettingsOverrides.fields),defaults,encodedDefaults,nodes,transformSources};
+const ir={sourceHostRoots,usageConfigRoot,providerInstanceRoot,providerConfigRoots,providerConfigDefaults,persistedRoot,patchRoot,secretReference,secretFields,revision,effect:'4.1.2',sources,root,fields,projectOverrideKeys:Object.keys(C.ProjectSettingsOverrides.fields),defaults,encodedDefaults,nodes,transformSources};
 fs.writeFileSync(path.join(output,'codec.json'),JSON.stringify(ir,null,2)+'\n');
 fs.writeFileSync(path.join(output,'codec-fixtures.json'),JSON.stringify({revision,effect:'4.1.2',cases:codecCases},null,2)+'\n');
 console.log(nodes.length+' closed AST nodes; '+Object.keys(transformSources).length+' transforms; '+codecCases.length+' codec cases');

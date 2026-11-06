@@ -102,34 +102,6 @@ fn retry_after(text: &str, now: i64) -> Option<i64> {
         .filter(|v| *v > now)
 }
 
-fn shared_credential(s: &State, host: &str) -> Result<(Option<String>, bool), ()> {
-    use base64::Engine;
-    let raw = crate::settings::read(s).map_err(|_| ())?;
-    let github = &raw["sourceControlHosts"]["github"];
-    let stored = &github["tokens"][host];
-    let token = if stored == crate::settings::SENTINEL {
-        let encode =
-            |text: &str| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(text.as_bytes());
-        let name = format!(
-            "source-control-{}-{}-{}.bin",
-            encode("github"),
-            encode("tokens"),
-            encode(host)
-        );
-        match std::fs::read(s.dir.join("secrets").join(name)) {
-            Ok(bytes) => Some(trim(&String::from_utf8_lossy(&bytes)).to_owned()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-            Err(_) => return Err(()),
-        }
-    } else {
-        None
-    };
-    let app = github["signIns"][host]
-        .as_str()
-        .is_some_and(|v| !trim(v).is_empty());
-    Ok((token.filter(|v| !v.is_empty()), app))
-}
-
 struct CachedCredential {
     expires: Instant,
     token: Option<String>,
@@ -160,6 +132,8 @@ pub(crate) struct GitHub {
     client: OnceLock<reqwest::Client>,
     #[cfg(test)]
     fixture_api_root: Mutex<Option<String>>,
+    #[cfg(test)]
+    fixture_cli: Mutex<Option<std::path::PathBuf>>,
 }
 
 impl Default for GitHub {
@@ -173,6 +147,8 @@ impl Default for GitHub {
             client: OnceLock::new(),
             #[cfg(test)]
             fixture_api_root: Mutex::new(None),
+            #[cfg(test)]
+            fixture_cli: Mutex::new(None),
         }
     }
 }
@@ -184,7 +160,13 @@ impl GitHub {
         host: &str,
         account: Option<&str>,
     ) -> Result<String, CredentialFailure> {
-        if crate::executable::resolve(Path::new("gh")).is_none() {
+        #[cfg(test)]
+        let fixture = self.fixture_cli.lock().unwrap().clone();
+        #[cfg(test)]
+        let binary = fixture.as_deref().unwrap_or_else(|| Path::new("gh"));
+        #[cfg(not(test))]
+        let binary = Path::new("gh");
+        if crate::executable::resolve(binary).is_none() {
             return Err(CredentialFailure::Missing);
         }
         let _permit = self
@@ -197,7 +179,7 @@ impl GitHub {
             args.extend(["--user", account]);
         }
         let output = crate::proc::run(
-            "gh",
+            binary.to_str().ok_or(CredentialFailure::Missing)?,
             cwd,
             &args,
             crate::proc::Opts {
@@ -226,30 +208,36 @@ impl GitHub {
     }
 
     async fn credential(&self, s: &State, host: &str) -> Option<String> {
-        let settings = crate::settings::read(s).ok()?;
-        let github = &settings["sourceControlHosts"]["github"];
+        // Native settings read/materialization failures behave like absent saved credentials.
+        let settings = crate::settings::read(s)
+            .ok()
+            .and_then(|raw| crate::settings_secrets::materialize_profile(&s.dir, &raw).ok())
+            .unwrap_or_else(|| json!({}));
+        let providers = &settings["secretProviders"];
+        let resolved = crate::settings_secrets::resolve_fields(
+            s.secret_resolver().as_ref(),
+            providers,
+            "hosts",
+            Some("github"),
+            &settings["sourceControlHosts"]["github"],
+        )
+        .await;
+        let github = crate::managed_settings_codec::read_source_host_settings("github", resolved)?;
         let choice = &github["hosts"][host];
         if choice["enabled"] == false {
             return None;
         }
-        let saved = &github["tokens"][host];
-        // An unresolved reference must not silently switch to another account.
-        if saved.is_object() {
-            return None;
+        // A valid unreadable reference refuses fallback to another account.
+        let saved =
+            crate::settings_secrets::require_literal(&github["tokens"][host], providers).ok()?;
+        if !trim(&saved).is_empty() {
+            return Some(trim(&saved).into());
         }
-        if let Some(token) = saved
+        // App refresh is a separate driver; preserve the configured account boundary.
+        if github["signIns"][host]
             .as_str()
-            .map(trim)
-            .filter(|v| !v.is_empty() && *v != crate::settings::SENTINEL)
+            .is_some_and(|value| !trim(value).is_empty())
         {
-            return Some(token.into());
-        }
-        let (shared, app) = shared_credential(s, host).ok()?;
-        if shared.is_some() {
-            return shared;
-        }
-        // App refresh is a separate driver; do not silently replace a configured app account.
-        if app {
             return None;
         }
         let account = choice["account"]
@@ -518,14 +506,16 @@ mod tests {
         }
     }
 
-    #[test]
-    fn native_private_secret_slots_materialize_without_exposing_or_switching_accounts() {
+    #[tokio::test]
+    async fn native_private_secret_slots_materialize_without_exposing_or_switching_accounts() {
+        crate::test_sandbox::assert_isolated();
         use std::os::unix::fs::PermissionsExt;
         let path = std::env::temp_dir().join(format!(
             "o3-forge-native-secret-{}",
             crate::store::random_id().unwrap()
         ));
         let state = State::open(&path).unwrap();
+        let github = GitHub::default();
         let fixtures: Value =
             serde_json::from_str(include_str!("../tests/fixtures/forge.json")).unwrap();
         for case in fixtures["secretNames"].as_array().unwrap() {
@@ -538,8 +528,8 @@ mod tests {
             std::fs::write(&secret, b" fixture-native-token \n").unwrap();
             std::fs::set_permissions(&secret, std::fs::Permissions::from_mode(0o600)).unwrap();
             assert_eq!(
-                shared_credential(&state, host),
-                Ok((Some("fixture-native-token".into()), false))
+                github.credential(&state, host).await,
+                Some("fixture-native-token".into())
             );
             assert!(!crate::settings::get(&state)
                 .unwrap()
@@ -553,8 +543,8 @@ mod tests {
         }
         std::fs::write(state.dir.join("settings.json"),json!({"sourceControlHosts":{"github":{"signIns":{"github.com":"fixture-app-session"}}}}).to_string()).unwrap();
         assert_eq!(
-            shared_credential(&state, "github.com"),
-            Ok((None, true)),
+            github.credential(&state, "github.com").await,
+            None,
             "a configured app account stays distinct from personal fallback"
         );
     }
@@ -585,7 +575,13 @@ mod tests {
             encode("github.com")
         ));
         std::fs::write(&secret, b"hidden-personal-token").unwrap();
-        assert_eq!(shared_credential(&state, "github.com"), Ok((None, false)));
+        let effective = crate::settings_secrets::materialize_profile(
+            &state.dir,
+            &crate::settings::read(&state).unwrap(),
+        )
+        .unwrap();
+        assert!(effective["sourceControlHosts"]["github"]["tokens"]["github.com"].is_null());
+        assert!(effective["sourceControlHosts"]["github"]["signIns"]["github.com"].is_null());
         assert_eq!(
             std::fs::read_to_string(state.dir.join("settings.json")).unwrap(),
             stored
@@ -636,6 +632,109 @@ mod tests {
             requests
         });
         (base, task)
+    }
+
+    #[tokio::test]
+    async fn native_secret_reference_reaches_http_and_unreadable_reference_refuses_fallback() {
+        crate::test_sandbox::assert_isolated();
+        use std::os::unix::fs::PermissionsExt;
+        let path = std::env::temp_dir().join(format!(
+            "o3-forge-op-{}",
+            crate::store::random_id().unwrap()
+        ));
+        let mut state = State::open(&path).unwrap();
+        let binary = path.join("op");
+        std::fs::copy(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/input/secret-op.py"),
+            &binary,
+        )
+        .unwrap();
+        std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::write(
+            path.join("case.json"),
+            json!({"read":{"op://fixture/item/token":{"stdout":"fixture-resolved-token"}}})
+                .to_string(),
+        )
+        .unwrap();
+        state.secret_resolver =
+            std::sync::Arc::new(crate::secret_resolver::SecretResolver::new(vec![
+                std::sync::Arc::new(crate::secret_resolver::OnePassword::with_binary(binary)),
+            ]));
+        let settings = json!({"secretProviders":{"vault":{"kind":"one_password","label":"Private fixture","config":{"account":"fixture.1password.test"}}},"sourceControlHosts":{"github":{"tokens":{"fixture.test":{"provider":"vault","reference":"op://fixture/item/token"}}}}});
+        std::fs::write(path.join("settings.json"), settings.to_string()).unwrap();
+        let github = GitHub::default();
+        let token = github.credential(&state, "fixture.test").await.unwrap();
+        assert_eq!(token, "fixture-resolved-token");
+        let (base, task) = endpoint(vec![(204, String::new())]).await;
+        assert!(
+            github
+                .send(
+                    "fixture.test",
+                    &token,
+                    &format!("{base}/user/starred/o/r"),
+                    false
+                )
+                .await
+        );
+        assert!(task.await.unwrap()[0]
+            .to_lowercase()
+            .contains("authorization: bearer fixture-resolved-token"));
+        std::fs::write(
+            path.join("case.json"),
+            json!({"read":{"op://fixture/item/token":{"code":1}}}).to_string(),
+        )
+        .unwrap();
+        state.secret_resolver.invalidate(None).await;
+        assert!(
+            github.credential(&state, "fixture.test").await.is_none(),
+            "an unreadable saved reference cannot use a cached account token"
+        );
+        assert_eq!(
+            std::fs::read_to_string(path.join("settings.json")).unwrap(),
+            settings.to_string()
+        );
+        assert!(!crate::settings::get(&state)
+            .unwrap()
+            .to_string()
+            .contains("fixture-resolved-token"));
+    }
+
+    #[tokio::test]
+    async fn blank_literal_falls_back_to_private_cli_but_unreadable_reference_does_not() {
+        crate::test_sandbox::assert_isolated();
+        use std::os::unix::fs::PermissionsExt;
+        let directory = std::env::temp_dir().join(format!(
+            "o3-forge-cli-{}",
+            crate::store::random_id().unwrap()
+        ));
+        let state = State::open(&directory).unwrap();
+        let binary = directory.join("gh");
+        std::fs::copy(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/input/secret-gh.py"),
+            &binary,
+        )
+        .unwrap();
+        std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let github = GitHub::default();
+        *github.fixture_cli.lock().unwrap() = Some(binary);
+        std::fs::write(
+            directory.join("settings.json"),
+            json!({"sourceControlHosts":{"github":{"tokens":{"fixture.test":"  "}}}}).to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            github.credential(&state, "fixture.test").await,
+            Some("fixture-cli-token".into())
+        );
+        let calls = std::fs::read_to_string(directory.join("gh-calls.jsonl")).unwrap();
+        std::fs::write(directory.join("settings.json"),json!({"sourceControlHosts":{"github":{"tokens":{"fixture.test":{"provider":"missing","reference":"op://fixture/item/token"}}}}}).to_string()).unwrap();
+        assert!(github.credential(&state, "fixture.test").await.is_none());
+        assert_eq!(
+            std::fs::read_to_string(directory.join("gh-calls.jsonl")).unwrap(),
+            calls
+        );
     }
 
     #[tokio::test]

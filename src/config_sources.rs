@@ -4,6 +4,13 @@ use serde_json::{json, Value};
 use std::{process::Stdio, sync::Arc};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+#[derive(Default)]
+pub(crate) struct UsageState {
+    refresh: tokio::sync::Mutex<()>,
+    snapshot: std::sync::Mutex<Vec<Value>>,
+    version: std::sync::atomic::AtomicU64,
+}
+
 pub struct Sources {
     receiver: tokio::sync::mpsc::Receiver<Value>,
     task: tokio::task::JoinHandle<()>,
@@ -42,6 +49,7 @@ impl Sources {
             let mut last_themes = Value::Null;
             let mut next_usage = tokio::time::Instant::now();
             let mut last_settings = Value::Null;
+            let mut last_usage_version = 0;
             loop {
                 if themes {
                     let current = read_themes(&state);
@@ -55,7 +63,14 @@ impl Sources {
                 if usage
                     && (tokio::time::Instant::now() >= next_usage
                         || settings["usageLimitSources"] != last_settings["usageLimitSources"]
-                        || settings["providerInstances"] != last_settings["providerInstances"])
+                        || settings["providerInstances"] != last_settings["providerInstances"]
+                        || state
+                            .streams
+                            .ops
+                            .usage_sources
+                            .version
+                            .load(std::sync::atomic::Ordering::Acquire)
+                            != last_usage_version)
                 {
                     let provider = state.provider.lock().unwrap().clone();
                     if let Some(provider) = provider {
@@ -66,7 +81,25 @@ impl Sources {
                         .await;
                         state.notify();
                     }
-                    let sources = refresh(&settings).await;
+                    let version = state
+                        .streams
+                        .ops
+                        .usage_sources
+                        .version
+                        .load(std::sync::atomic::Ordering::Acquire);
+                    if version == last_usage_version || settings != last_settings {
+                        refresh(&state).await;
+                    }
+                    let sources = {
+                        let current = state.streams.ops.usage_sources.snapshot.lock().unwrap();
+                        last_usage_version = state
+                            .streams
+                            .ops
+                            .usage_sources
+                            .version
+                            .load(std::sync::atomic::Ordering::Acquire);
+                        current.clone()
+                    };
                     if crate::settings::read(&state).ok().is_some_and(|current| {
                         ["usageLimitSources", "providerInstances"]
                             .iter()
@@ -103,7 +136,7 @@ impl Sources {
                         _ = tokio::time::sleep(std::time::Duration::from_secs(1)), if themes => break,
                         r = changes.changed() => {
                             if r.is_err() { return; }
-                            if crate::settings::read(&state).ok().is_some_and(|s| ["usageLimitSources","providerInstances","backgroundActivity"].iter().any(|key| s[*key] != settings[*key])) { break; }
+                            if state.streams.ops.usage_sources.version.load(std::sync::atomic::Ordering::Acquire) != last_usage_version || crate::settings::read(&state).ok().is_some_and(|s| ["usageLimitSources","providerInstances","backgroundActivity"].iter().any(|key| s[*key] != settings[*key])) { break; }
                         }
                     }
                 }
@@ -118,15 +151,20 @@ impl Sources {
     }
 }
 async fn management(config: &Value, path: &str, body: Option<Value>) -> Result<Value, ()> {
-    let url = format!(
-        "{}/v0/management/{path}",
-        config["url"].as_str().ok_or(())?.trim_end_matches('/')
-    );
+    let mut base = url::Url::parse(config["url"].as_str().ok_or(())?).map_err(|_| ())?;
+    let normalized = regex::Regex::new(r"(?i)(/management\.html)?/?$")
+        .unwrap()
+        .replace(base.path(), "/")
+        .into_owned();
+    base.set_path(&normalized);
+    let url = base
+        .join(&format!("v0/management/{path}"))
+        .map_err(|_| ())?;
     let key = config["managementKey"]
         .as_str()
         .filter(|s| !s.is_empty())
         .ok_or(())?;
-    request(&url, key, &[], body).await
+    request(url.as_str(), key, &[], body).await
 }
 pub(crate) async fn request(
     url: &str,
@@ -288,7 +326,26 @@ async fn account(config: &Value, account: &Value) -> Value {
 
     out
 }
-async fn refresh(settings: &Value) -> Vec<Value> {
+pub(crate) async fn refresh(state: &State) -> Vec<Value> {
+    let service = &state.streams.ops.usage_sources;
+    let _refresh = service.refresh.lock().await;
+    let settings = crate::settings::read(state)
+        .ok()
+        .and_then(|raw| crate::settings_secrets::materialize_profile(&state.dir, &raw).ok())
+        .unwrap_or_else(|| json!({}));
+    let sources = read_sources(state, &settings).await;
+    let mut previous = service.snapshot.lock().unwrap();
+    if *previous != sources {
+        *previous = sources.clone();
+        service
+            .version
+            .fetch_add(1, std::sync::atomic::Ordering::Release);
+        state.notify();
+    }
+    sources
+}
+
+async fn read_sources(state: &State, settings: &Value) -> Vec<Value> {
     let mut sources = Vec::new();
     for (id, config) in settings["usageLimitSources"]
         .as_object()
@@ -296,9 +353,20 @@ async fn refresh(settings: &Value) -> Vec<Value> {
         .flatten()
         .take(512)
     {
+        let Ok(config) = crate::managed_settings_codec::decode_usage_config(config.clone()) else {
+            continue;
+        };
         if config["enabled"] == false {
             continue;
         }
+        let config = crate::settings_secrets::resolve_fields(
+            state.secret_resolver().as_ref(),
+            &settings["secretProviders"],
+            "usage",
+            None,
+            &config,
+        )
+        .await;
         let label = config["label"]
             .as_str()
             .filter(|s| !s.trim().is_empty())
@@ -315,17 +383,36 @@ async fn refresh(settings: &Value) -> Vec<Value> {
                             }
                         })
                     })
-                    .unwrap_or_else(|| id.to_owned())
+                    .unwrap_or_else(|| {
+                        let fallback = crate::native_goal::trim(id);
+                        if fallback.is_empty() {
+                            "Usage limit source".into()
+                        } else {
+                            fallback.into()
+                        }
+                    })
             });
         let mut source = json!({"id":id,"kind":"cliproxy","label":label,"checkedAt":iso(now_ms()),"accounts":[]});
-        match management(config, "auth-files", None).await {
+        if config["managementKey"]
+            .as_str()
+            .is_none_or(|key| key.is_empty())
+        {
+            source["error"] = json!(if config["managementKey"].is_object() {
+                "Could not read the management key from its secret provider."
+            } else {
+                "No management key configured."
+            });
+            sources.push(source);
+            continue;
+        }
+        match management(&config, "auth-files", None).await {
             Ok(files) => {
                 let mut accounts = Vec::new();
                 for a in files["files"].as_array().into_iter().flatten().take(4096) {
                     if a["disabled"] != true
                         && matches!(a["provider"].as_str(), Some("codex" | "claude"))
                     {
-                        accounts.push(account(config, a).await);
+                        accounts.push(account(&config, a).await);
                     }
                 }
                 source["accounts"] = json!(accounts);
@@ -411,3 +498,7 @@ fn read_themes(state: &State) -> Value {
     }
     json!(out)
 }
+
+#[cfg(test)]
+#[path = "../tests/support/config_sources_secrets.rs"]
+mod secret_tests;

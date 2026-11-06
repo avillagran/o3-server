@@ -27,12 +27,18 @@ export async function loadManagedSettingsNative(checkout,contracts,output,source
   const destination=path.join(output,'native-'+visited.size+'.mjs');const url=pathToFileURL(destination).href;visited.set(file,url);
   const relative=path.relative(checkout,file);let text=source(relative);
   if(relative==='apps/server/src/sourceControl/sourceControlHostSecrets.ts'){
-   // Exact pure helpers; the omitted tail imports secret resolvers and server drivers.
-   text='import {isSecretReference,secretSettingsFields} from "@t3tools/contracts";\nimport {builtInSourceControlDefinitions as sourceControlDefinitions} from "@t3tools/source-control-definitions/registry";\n'+text.slice(text.indexOf('export const SOURCE_CONTROL_HOST_SECRET_FIELDS'),text.indexOf('type SourceControlHostsSettings'));
+   // Preserve the complete pure helper implementation with the actual shared registry.
+   text='import {isSecretReference,secretReferencesInSettings,secretSettingsFields} from "@t3tools/contracts";\nimport * as Effect from "effect/Effect";\nimport {resolveSettingsSecrets} from "../secrets/settingsSecretValue.ts";\nimport {builtInSourceControlDefinitions as sourceControlDefinitions} from "@t3tools/source-control-definitions/registry";\n'+text.slice(text.indexOf('export const SOURCE_CONTROL_HOST_SECRET_FIELDS'));
   }
   text=stripTypeScriptTypes(text,{mode:'strip'});
   text=text.replace(/\b(from\s*|import\s*)(["'])([^"']+)\2/g,(match,prefix,quote,specifier)=>prefix+quote+resolve(specifier,file)+quote);
-  if(relative==='apps/server/src/settingsSecrets.ts')text+='\nexport {providerSecretFields,usageLimitSecretFields,easDeviceHostSecretFields,simlockDeviceHostSecretFields};\n';
+  if(relative==='apps/server/src/settingsSecrets.ts'){
+   const start=text.indexOf('const providerSecretFields = new Map('),end=text.indexOf('const usageLimitSecretFields');
+   if(start<0||end<start)throw Error('Native provider descriptor declaration changed');
+   const schemas=text.slice(start,end).replace('const providerSecretFields','const providerSettingsSchemas').replace(/secretSettingsFields\(([A-Za-z_][A-Za-z0-9_.]*)\)/g,'$1');
+   text+='\n'+schemas+'\nexport {providerSettingsSchemas,providerSecretFields,usageLimitSecretFields,easDeviceHostSecretFields,simlockDeviceHostSecretFields};\n';
+  }
+  if(relative==='apps/server/src/sourceControl/sourceControlHostSecrets.ts')text+='\nexport {hostSettingsSchemas};\n';
   fs.writeFileSync(destination,text);return url;
  }
  const settings=await import(write(path.join(checkout,'apps/server/src/policy/managedSettings.ts')));
@@ -43,6 +49,7 @@ export async function loadManagedSettingsNative(checkout,contracts,output,source
  const imports='import {ServerSettings,ResponseStreamingMode,ProjectId,ProjectSettingsOverrides,keepUnknownOverrideKeys} from '+JSON.stringify(pathToFileURL(contracts+'/src/index.ts').href)+';\n'+['Schema','Effect','SchemaTransformation'].map(name=>'import * as '+name+' from '+JSON.stringify(pathToFileURL(require.resolve('effect/'+name)).href)+';').join('\n');
  fs.writeFileSync(persistedFile,imports+'\n'+stripTypeScriptTypes(serverSettings.slice(serverSettings.indexOf('const PersistedResponseStreamingMode'),serverSettings.indexOf('// Parse first and decode second')),{mode:'strip'})+'\nexport {PersistedServerSettings};');
  const persisted=await import(pathToFileURL(persistedFile).href);
- return {settings,secrets,hosts,persisted};
+ const values=await import(write(path.join(checkout,'apps/server/src/secrets/settingsSecretValue.ts')));
+ return {settings,secrets,hosts,persisted,values};
 
 }

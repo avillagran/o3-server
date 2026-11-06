@@ -52,6 +52,7 @@ pub mod scopes;
 pub mod secret_resolver;
 pub mod service;
 pub mod settings;
+pub mod settings_secrets;
 
 pub mod agent_scope;
 pub mod assets;
