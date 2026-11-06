@@ -268,6 +268,90 @@ fn keys(db: &Connection, table: &Table, local: bool) -> Result<BTreeSet<String>>
     rows.map(|r| r.map_err(|e| e.to_string())).collect()
 }
 
+/// Native receipt lists and pending workers use rowid to break equal-time ties. Rowids
+/// are not identities, but copying by sorted primary key must not change their order.
+fn delivery_order(db: &Connection, name: &str) -> Result<Vec<String>> {
+    let mut query = db
+        .prepare(&format!("SELECT delivery_id FROM {name} ORDER BY rowid"))
+        .map_err(|e| e.to_string())?;
+    let rows = query
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| e.to_string())?;
+    rows.map(|row| row.map_err(|e| e.to_string())).collect()
+}
+
+fn copy_order(db: &Connection, table: &Table, mut keys: BTreeSet<String>) -> Result<Vec<String>> {
+    if !matches!(
+        table.name,
+        "scheduled_task_webhook_deliveries" | "scheduled_task_webhook_pending"
+    ) {
+        return Ok(keys.into_iter().collect());
+    }
+    // Insert fresh copies in source order, avoiding an unnecessary second rewrite
+    // of every large request/body just to repair its insertion order afterward.
+    let mut ordered = vec![];
+    for id in delivery_order(db, table.name)? {
+        let key = serde_json::to_string(&[id]).map_err(|e| e.to_string())?;
+        if keys.remove(&key) {
+            ordered.push(key);
+        }
+    }
+    ordered.extend(keys);
+    Ok(ordered)
+}
+
+fn align_webhook_order(target: &Connection, source: &Connection) -> Result<()> {
+    for name in [
+        "scheduled_task_webhook_deliveries",
+        "scheduled_task_webhook_pending",
+    ] {
+        let current = delivery_order(target, name)?;
+        let present = current.iter().cloned().collect::<BTreeSet<_>>();
+        let mut desired = delivery_order(source, name)?
+            .into_iter()
+            .filter(|id| present.contains(id))
+            .collect::<Vec<_>>();
+        let shared = desired.iter().cloned().collect::<BTreeSet<_>>();
+        // Unexported local rows follow native rows while retaining their own order.
+        desired.extend(current.iter().filter(|id| !shared.contains(*id)).cloned());
+        if current == desired {
+            continue;
+        }
+        let count =
+            i64::try_from(desired.len()).map_err(|_| "Webhook row order exceeds SQLite range")?;
+        let maximum: i64 = target
+            .query_row(
+                &format!("SELECT coalesce(max(rowid),0) FROM {name}"),
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        let staging = maximum.max(count);
+        staging
+            .checked_add(count)
+            .ok_or("Webhook row order exceeds SQLite range")?;
+        // Move every row above the final range first, avoiding collisions without
+        // deleting payloads or disturbing foreign keys. Both passes share the caller's transaction.
+        for (index, id) in desired.iter().enumerate() {
+            target
+                .execute(
+                    &format!("UPDATE {name} SET rowid=?1 WHERE delivery_id=?2"),
+                    params![staging + index as i64 + 1, id],
+                )
+                .map_err(|e| e.to_string())?;
+        }
+        for (index, id) in desired.iter().enumerate() {
+            target
+                .execute(
+                    &format!("UPDATE {name} SET rowid=?1 WHERE delivery_id=?2"),
+                    params![index as i64 + 1, id],
+                )
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
 /// Canonicalize JSON columns so property order or whitespace does not invent task edits.
 fn normalized(table: &Table, mut row: Vec<Value>, legacy: bool) -> Result<Vec<Value>> {
     for (column, field) in table.columns.iter().zip(&mut row) {
@@ -540,7 +624,7 @@ fn import_plan(local: &Connection, native: &Connection) -> Result<Vec<(usize, St
     for (index, table) in TABLES.iter().enumerate() {
         let mut all = keys(native, table, false)?;
         all.extend(baseline_keys(native, table)?);
-        for key in all {
+        for key in copy_order(native, table, all)? {
             let native_row = row(native, table, &key, false)?;
             let local_row = row(local, table, &key, true)?;
             let remote = fingerprint_version(table, native_row.as_ref(), legacy)?;
@@ -576,7 +660,7 @@ fn export_rows(local: &Connection, native: &Connection) -> Result<usize> {
         let mut all = keys(local, table, true)?;
         all.extend(keys(native, table, false)?);
         all.extend(baseline_keys(native, table)?);
-        for key in all {
+        for key in copy_order(local, table, all)? {
             let ours = row(local, table, &key, true)?;
             let hash = fingerprint(table, ours.as_ref())?;
             let remote = fingerprint(table, row(native, table, &key, false)?.as_ref())?;
@@ -623,6 +707,7 @@ fn export_rows(local: &Connection, native: &Connection) -> Result<usize> {
                 .map_err(|e| e.to_string())?;
         }
     }
+    align_webhook_order(native, local)?;
     let (identity, generation) = generation(local)?;
     native.execute("INSERT INTO o3_task_sync VALUES(1,1,?1,?2) ON CONFLICT(singleton) DO UPDATE SET local_identity=excluded.local_identity,local_generation=excluded.local_generation",params![identity,generation]).map_err(|e|e.to_string())?;
     native.execute("INSERT INTO o3_task_hash_format VALUES(1,2) ON CONFLICT(singleton) DO UPDATE SET version=excluded.version",[]).map_err(|e|e.to_string())?;
@@ -656,6 +741,8 @@ pub(crate) fn start(s: &State, native: &mut Connection) -> Result<usize> {
             write_row(&local_tx, table, key, Some(&value), true)?;
         }
     }
+    // Also repairs order lost by older exporters, even when row bodies are unchanged.
+    align_webhook_order(&local_tx, &tx)?;
     if upgrade {
         // Rebase the old hashes on the current native bytes before exporting preserved
         // local intent. The new hashes and their format marker share the native commit.

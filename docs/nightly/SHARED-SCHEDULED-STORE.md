@@ -84,6 +84,12 @@ preserve header order because it affects rendered request text. See
 [native webhook payload semantics](WEBHOOK-PAYLOAD.md) for the renderer and its
 separate ingress/worker limits.
 
+Receipt and pending-window insertion order also survives ownership changes.
+Native receipt lists and workers break equal-time ties with rowid; startup repairs
+older key-sorted copies, and export keeps the owner's relative order. Transactional
+alignment updates rowids without deleting payloads or changing delivery IDs.
+[Receipt read evidence](WEBHOOK-HISTORY.md) covers tie ordering and failed-write retry.
+
 Local imports commit before the native baseline. A native commit failure can
 therefore replay an already committed local import safely; it cannot acknowledge
 an import that never committed. Background export observes task notifications as

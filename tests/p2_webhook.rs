@@ -15,6 +15,7 @@ fn signed_webhook_definition_is_readable_without_leaking_secret() {
         .starts_with("/api/hooks/hook/"));
     assert!(!reply.to_string().contains("fixture-only-key"));
     let path = reply["task"]["webhook"]["path"].as_str().unwrap();
+    assert_eq!(path.rsplit('/').next().unwrap().len(), 43);
     let body = r#"{"id":"one","group":"batch","action":"opened"}"#;
     assert!(post(&s.base, path, body, "bad").contains("401"));
     assert!(post(&s.base, path, &" ".repeat(1024 * 1024 + 1), "bad").contains("413"));

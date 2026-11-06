@@ -57,6 +57,16 @@ fn count(db: &Connection, table: &str) -> i64 {
     db.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
         .unwrap()
 }
+fn ordered_deliveries(db: &Connection, table: &str) -> Vec<String> {
+    let mut query = db
+        .prepare(&format!("SELECT delivery_id FROM {table} ORDER BY rowid"))
+        .unwrap();
+    query
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()
+}
 fn task(s: &State, id: &str) -> Value {
     let body: String =
         s.db.lock()
@@ -263,6 +273,11 @@ fn pending_windows_can_exchange_unique_coalescing_keys_on_import_and_export() {
     let (_dir, s, native) = profile();
     native.execute("INSERT INTO scheduled_task_webhook_pending SELECT 'delivery:second-window',task_id,'other-key',due_at+1,state,task_json,request_json,'[\"delivery:second-window\"]' FROM scheduled_task_webhook_pending",[]).unwrap();
     drop(start(&s));
+    let order = ordered_deliveries(&native, "scheduled_task_webhook_pending");
+    assert_eq!(
+        ordered_deliveries(&s.db.lock().unwrap(), "scheduled_task_webhook_pending"),
+        order
+    );
     let swap = |db: &Connection| {
         let first=text(db,"SELECT coalesce_key FROM scheduled_task_webhook_pending WHERE delivery_id='delivery:synthetic-accepted'");
         let second=text(db,"SELECT coalesce_key FROM scheduled_task_webhook_pending WHERE delivery_id='delivery:second-window'");
@@ -272,12 +287,95 @@ fn pending_windows_can_exchange_unique_coalescing_keys_on_import_and_export() {
     };
     swap(&native);
     let mut shared = start(&s);
+    assert_eq!(
+        ordered_deliveries(&s.db.lock().unwrap(), "scheduled_task_webhook_pending"),
+        order
+    );
     assert_eq!(text(&s.db.lock().unwrap(),"SELECT coalesce_key FROM scheduled_task_webhook_pending WHERE delivery_id='delivery:synthetic-accepted'"),"other-key");
     swap(&s.db.lock().unwrap());
     t3_shared::export(&s, &mut shared).unwrap();
     assert_ne!(text(&native,"SELECT coalesce_key FROM scheduled_task_webhook_pending WHERE delivery_id='delivery:synthetic-accepted'"),"other-key");
     assert_eq!(count(&native, "scheduled_task_webhook_pending"), 2);
     assert_eq!(count(&native, "scheduled_task_webhook_replay_keys"), 2);
+    assert_eq!(
+        ordered_deliveries(&native, "scheduled_task_webhook_pending"),
+        order
+    );
+}
+
+#[test]
+fn equal_time_receipts_keep_native_order_repair_old_copies_and_export_local_insert_order() {
+    let (_dir, s, native) = profile();
+    let initial = ordered_deliveries(&native, "scheduled_task_webhook_deliveries");
+    drop(start(&s));
+    assert_eq!(
+        ordered_deliveries(&s.db.lock().unwrap(), "scheduled_task_webhook_deliveries"),
+        initial
+    );
+    // Simulate an older key-sorted copy without changing a row body or its baseline.
+    s.db.lock()
+        .unwrap()
+        .execute(
+            "UPDATE scheduled_task_webhook_deliveries SET rowid=-rowid",
+            [],
+        )
+        .unwrap();
+    assert_ne!(
+        ordered_deliveries(&s.db.lock().unwrap(), "scheduled_task_webhook_deliveries"),
+        initial
+    );
+    rename(&s, "continue", "Unexported task edit survives order repair");
+    let mut shared = start(&s);
+    assert_eq!(
+        ordered_deliveries(&s.db.lock().unwrap(), "scheduled_task_webhook_deliveries"),
+        initial
+    );
+    assert_eq!(
+        task(&s, "continue")["title"],
+        "Unexported task edit survives order repair"
+    );
+    {
+        let db = s.db.lock().unwrap();
+        for id in ["delivery:z-local", "delivery:a-local"] {
+            db.execute("INSERT INTO scheduled_task_webhook_deliveries SELECT ?1,task_id,received_at,method,query,headers_json,body,body_bytes,body_truncated,outcome,signature_verified,missing_fields_json,rendered_prompt,error FROM scheduled_task_webhook_deliveries WHERE delivery_id='delivery:synthetic-accepted'",[id]).unwrap();
+        }
+    }
+    t3_shared::export(&s, &mut shared).unwrap();
+    let mut expected = initial;
+    expected.extend(["delivery:z-local".into(), "delivery:a-local".into()]);
+    assert_eq!(
+        ordered_deliveries(&native, "scheduled_task_webhook_deliveries"),
+        expected
+    );
+    let before = count(&native, "scheduled_task_webhook_deliveries");
+    assert_eq!(t3_shared::export(&s, &mut shared).unwrap(), 0);
+    assert_eq!(count(&native, "scheduled_task_webhook_deliveries"), before);
+}
+
+#[test]
+fn failed_order_alignment_rolls_back_native_rows_and_retries_without_losing_local_work() {
+    let (_dir, s, native) = profile();
+    let mut shared = start(&s);
+    let initial = ordered_deliveries(&native, "scheduled_task_webhook_deliveries");
+    s.db.lock().unwrap().execute("INSERT INTO scheduled_task_webhook_deliveries SELECT 'delivery:local-before-others',task_id,received_at,method,query,headers_json,body,body_bytes,body_truncated,outcome,signature_verified,missing_fields_json,rendered_prompt,error FROM scheduled_task_webhook_deliveries WHERE delivery_id='delivery:synthetic-accepted'",[]).unwrap();
+    s.db.lock().unwrap().execute("UPDATE scheduled_task_webhook_deliveries SET rowid=-1 WHERE delivery_id='delivery:local-before-others'",[]).unwrap();
+    native.execute_batch("CREATE TRIGGER refuse_order BEFORE UPDATE OF rowid ON scheduled_task_webhook_deliveries BEGIN SELECT RAISE(ABORT,'synthetic order refusal'); END;").unwrap();
+    let error = t3_shared::export(&s, &mut shared).unwrap_err();
+    assert!(error.contains("synthetic order refusal"), "{error}");
+    assert_eq!(
+        ordered_deliveries(&native, "scheduled_task_webhook_deliveries"),
+        initial
+    );
+    assert_eq!(
+        count(&s.db.lock().unwrap(), "scheduled_task_webhook_deliveries"),
+        4
+    );
+    native.execute_batch("DROP TRIGGER refuse_order;").unwrap();
+    t3_shared::export(&s, &mut shared).unwrap();
+    assert_eq!(
+        ordered_deliveries(&native, "scheduled_task_webhook_deliveries"),
+        ordered_deliveries(&s.db.lock().unwrap(), "scheduled_task_webhook_deliveries")
+    );
 }
 
 #[test]

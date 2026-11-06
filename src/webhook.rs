@@ -133,7 +133,7 @@ pub fn prepare(db: &Connection, id: &str, task: &mut Value) -> Result<(), String
     let token = old["token"]
         .as_str()
         .map(str::to_owned)
-        .unwrap_or(random_id()?);
+        .map_or_else(new_token, Ok)?;
     put(
         db,
         "hookCredentials",
@@ -182,6 +182,12 @@ pub fn encode_component(text: &str) -> String {
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+pub(crate) fn new_token() -> Result<String, String> {
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+    let mut bytes = [0; 32];
+    getrandom::fill(&mut bytes).map_err(|_| "Could not generate webhook token.".to_owned())?;
+    Ok(URL_SAFE_NO_PAD.encode(bytes))
 }
 /// Whether the path names an enabled-or-not webhook task and carries its token. Checked before
 /// any body is read, so only holders of the hook URL cost more than one keyed lookup.

@@ -671,6 +671,33 @@ fn official_scheduled_store_retains_pending_coalescence_and_replay() {
     assert!(post(first).contains("accepted"));
     assert!(post(second).contains("coalesced"));
     assert!(post(first).contains("duplicate"));
+    let mut receipt_checks = vec![];
+    for input in [
+        json!({"id":"signed"}),
+        json!({"id":"signed","acceptAnyOutcome":true}),
+        json!({"id":"unsigned"}),
+        json!({"id":"absent"}),
+    ] {
+        let result = client
+            .rpc("scheduledTasks.listWebhookDeliveries", input.clone())
+            .unwrap();
+        receipt_checks.push(("scheduledTasks.listWebhookDeliveries", input, result));
+    }
+    let summaries = receipt_checks[1].2["deliveries"]
+        .as_array()
+        .unwrap()
+        .clone();
+    for row in summaries {
+        for accept in [false, true] {
+            let input = json!({"id":"signed","deliveryId":row["id"],"acceptAnyOutcome":accept});
+            let result = client.rpc("scheduledTasks.getWebhookDelivery", input.clone());
+            if accept || row["outcome"] == "accepted" {
+                receipt_checks.push(("scheduledTasks.getWebhookDelivery", input, result.unwrap()));
+            } else {
+                assert!(result.unwrap_err().contains("Webhook delivery not found."));
+            }
+        }
+    }
     drop(client);
     drop(process);
     let source = rusqlite::Connection::open(profile.join("userdata/statev2.sqlite")).unwrap();
@@ -818,6 +845,15 @@ fn official_scheduled_store_retains_pending_coalescence_and_replay() {
     // that edit over its public subscription. No provider is configured on the O3 side.
     let state = Arc::new(State::open(&profile.join("userdata")).unwrap());
     let mut shared = o3_server::t3_shared::start(&state).unwrap().unwrap();
+    for (method, input, expected) in &receipt_checks {
+        assert_eq!(
+            o3_server::scheduled::call(&state, method, input)
+                .unwrap()
+                .unwrap(),
+            *expected,
+            "{method}: {input}"
+        );
+    }
     let mut input = o3_server::scheduled::call(&state, "scheduledTasks.list", &json!({}))
         .unwrap()
         .unwrap()["tasks"]
@@ -828,6 +864,7 @@ fn official_scheduled_store_retains_pending_coalescence_and_replay() {
         .unwrap()
         .clone();
     input["title"] = json!("O3 task handover");
+    let mut rotated_tasks = vec![];
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -836,6 +873,16 @@ fn official_scheduled_store_retains_pending_coalescence_and_replay() {
             o3_server::scheduled::call(&state, "scheduledTasks.upsert", &input)
                 .unwrap()
                 .unwrap();
+            for id in ["signed", "unsigned"] {
+                let rotated = o3_server::scheduled::call(
+                    &state,
+                    "scheduledTasks.rotateWebhookToken",
+                    &json!({"id":id}),
+                )
+                .unwrap()
+                .unwrap();
+                rotated_tasks.push(rotated["task"].clone());
+            }
         });
     o3_server::t3_shared::export(&state, &mut shared).unwrap();
     drop(shared);
@@ -862,6 +909,35 @@ fn official_scheduled_store_retains_pending_coalescence_and_replay() {
         .into_inner()
         .expect("Reference task subscription did not yield a snapshot");
     let tasks = public["tasks"].as_array().unwrap();
+    for rotated in &rotated_tasks {
+        let observed = tasks
+            .iter()
+            .find(|task| task["id"] == rotated["id"])
+            .unwrap();
+        assert_eq!(observed["webhook"], rotated["webhook"]);
+        assert_eq!(observed["runCount"], 0);
+    }
+    for (method, input, expected) in &receipt_checks {
+        assert_eq!(
+            client.rpc(method, input.clone()).unwrap(),
+            *expected,
+            "{method}: {input}"
+        );
+    }
+    let native_rotation = client
+        .rpc(
+            "scheduledTasks.rotateWebhookToken",
+            json!({"id":"unsigned"}),
+        )
+        .unwrap()["task"]
+        .clone();
+    assert_ne!(
+        native_rotation["webhook"]["path"],
+        rotated_tasks
+            .iter()
+            .find(|task| task["id"] == "unsigned")
+            .unwrap()["webhook"]["path"]
+    );
     assert_eq!(
         tasks.iter().find(|task| task["id"] == "continue").unwrap()["title"],
         "O3 task handover"
@@ -890,6 +966,20 @@ fn official_scheduled_store_retains_pending_coalescence_and_replay() {
     let returned: Value = serde_json::from_str(&body).unwrap();
     assert_eq!(returned["title"], "T3 task handover returned");
     assert_eq!(returned["threadMode"], "fresh_session");
+    let returned_hook: String = state
+        .db
+        .lock()
+        .unwrap()
+        .query_row(
+            "SELECT body FROM records WHERE kind='scheduledTasks' AND id='unsigned'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&returned_hook).unwrap()["webhook"],
+        native_rotation["webhook"]
+    );
     let pending_after: (String, String, String) = state
         .db
         .lock()
@@ -961,7 +1051,7 @@ fn official_scheduled_store_retains_pending_coalescence_and_replay() {
         serde_json::to_vec_pretty(&snapshot).unwrap(),
     )
     .unwrap();
-    std::fs::write(output.join("scheduled-store-result.json"), serde_json::to_vec_pretty(&json!({"reference":"v0.1.8-nightly.20261106.4262","tasks":4,"pending":1,"coalescedDeliveryIds":2,"replayKeys":2,"nativeTurns":0,"providerCredentials":false,"retainedAfterRestart":true,"exportContainsTaskTablesOnly":true,"o3TaskEditReadByT3Subscription":true,"nativeTaskEditReadByO3":true,"pendingPreservedAcrossHandover":true})).unwrap()).unwrap();
+    std::fs::write(output.join("scheduled-store-result.json"), serde_json::to_vec_pretty(&json!({"reference":"v0.1.8-nightly.20261106.4262","tasks":4,"pending":1,"coalescedDeliveryIds":2,"replayKeys":2,"nativeTurns":0,"providerCredentials":false,"retainedAfterRestart":true,"exportContainsTaskTablesOnly":true,"o3TaskEditReadByT3Subscription":true,"nativeTaskEditReadByO3":true,"pendingPreservedAcrossHandover":true,"receiptReadComparisonsPerHandover":receipt_checks.len(),"o3RotatedTokensReadByT3":rotated_tasks.len(),"nativeRotationReadByO3":true})).unwrap()).unwrap();
     println!("SCHEDULED_STORE_REFERENCE_PASS: task modes, pending snapshot, latest coalesced request and replay retained without inference");
 }
 

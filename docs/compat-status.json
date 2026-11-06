@@ -612,9 +612,9 @@
       "note": "tests/ops.rs. 2026-11-04: idempotent like T3; a missing id still returns {id}."
     },
     "scheduledTasks.getWebhookDelivery": {
-      "status": "skip",
-      "priority": "unused",
-      "note": "No client call site in inventory."
+      "status": "done",
+      "priority": "P2",
+      "note": "2026-11-06: native ledger detail by task/delivery ID, legacy outcome opt-in, exact pending-window states and logged JSON fallbacks. Real RPC scope checks, 79 pinned-source projections and official 4262 read comparisons across handover; see docs/nightly/WEBHOOK-HISTORY.md. Native ingress/worker remains separate backlog."
     },
     "scheduledTasks.list": {
       "status": "done",
@@ -622,14 +622,14 @@
       "note": "tests/ops.rs. 2026-11-04: absent from T3 nightly 3991/4192, which answer `Unknown request tag: scheduledTasks.list` (the 2026-11-03 Android rejection came from NODE's T3). Kept for older o3 clients; same view as subscribe, webhook hidden without orchestration:operate."
     },
     "scheduledTasks.listWebhookDeliveries": {
-      "status": "skip",
-      "priority": "unused",
-      "note": "No client call site in inventory."
+      "status": "done",
+      "priority": "P2",
+      "note": "2026-11-06: native receipt summaries, receivedAt/rowid descending order, legacy outcome opt-in, pending-window states and logged JSON fallbacks. Real RPC and official 4262 comparisons; equal-time receipt and pending-worker order survives import/export, including older-copy repair. See docs/nightly/WEBHOOK-HISTORY.md."
     },
     "scheduledTasks.rotateWebhookToken": {
-      "status": "skip",
-      "priority": "unused",
-      "note": "No client call site in inventory."
+      "status": "partial",
+      "priority": "P2",
+      "note": "2026-11-06: local endpoint rotates 32 random bytes as unpadded base64url, atomically retains signing secret and accepted work, rejects retired URLs and notifies subscriptions. Both-direction official 4262 handover and write-failure rollback pass. Relay-origin endpoint URL resolution remains unimplemented; see docs/nightly/WEBHOOK-HISTORY.md."
     },
     "scheduledTasks.runNow": {
       "status": "done",

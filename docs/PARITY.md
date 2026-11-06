@@ -98,3 +98,8 @@ now pass O3 → T3 subscription → O3 handover with native ledger rows preserve
 webhook ingress/dispatch, legacy accepted-work migration and the rest of the
 service lifecycle remain open. This block is not certification of every
 scheduled-task method in the inventory.
+
+Native webhook receipt list/detail reads now preserve outcome opt-in, pending
+window flags and equal-time insertion order across handover. Local endpoint
+token rotation preserves signing credentials and accepted work; relay-derived
+endpoint URLs remain open. [Evidence and limits](nightly/WEBHOOK-HISTORY.md).

@@ -11,6 +11,9 @@ use crate::{
 use serde_json::{json, Value};
 use std::{sync::Arc, time::Duration};
 
+#[path = "webhook_history.rs"]
+mod history;
+
 type Reply = Result<Value, Value>;
 const KIND: &str = "scheduledTasks";
 const MIN_INTERVAL_MS: u64 = 60_000;
@@ -33,6 +36,11 @@ pub fn call(s: &Arc<State>, tag: &str, p: &Value) -> Option<Reply> {
         "scheduledTasks.setEnabled" => set_enabled(s, p).map(|task| json!({"task":task})),
         "scheduledTasks.delete" => delete(s, p).map(|id| json!({"id":id})),
         "scheduledTasks.runNow" => run_now(s, p).map(|task| json!({"task":task})),
+        "scheduledTasks.listWebhookDeliveries" => history::list(s, p),
+        "scheduledTasks.getWebhookDelivery" => history::get(s, p),
+        "scheduledTasks.rotateWebhookToken" => {
+            rotate_webhook_token(s, p).map(|task| json!({"task":task}))
+        }
         _ => return None,
     })
 }
@@ -542,6 +550,53 @@ fn run_now(s: &Arc<State>, p: &Value) -> Reply {
         ));
     }
     fire(s, id)
+}
+
+fn rotate_webhook_token(s: &Arc<State>, input: &Value) -> Reply {
+    use rusqlite::OptionalExtension;
+    let id = input["id"]
+        .as_str()
+        .filter(|id| !id.is_empty())
+        .ok_or_else(|| failure("id is required", None))?;
+    let mut db = s.db.lock().unwrap();
+    let tx = db
+        .transaction()
+        .map_err(|_| failure("Could not rotate webhook token.", Some(id)))?;
+    // Lookup and update share the writer transaction, so a same-id replacement
+    // cannot receive a token generated for the previous task row.
+    let mut task = get(&tx, KIND, id).map_err(|_| failure("Schedule task not found.", Some(id)))?;
+    if task["schedule"]["type"] != "webhook" {
+        return Err(failure("Only webhook tasks have a URL token.", Some(id)));
+    }
+    let token = crate::webhook::new_token().map_err(|e| failure(&e, None))?;
+    let saved: Option<String> = tx
+        .query_row(
+            "SELECT body FROM records WHERE kind='hookCredentials' AND id=?1",
+            [id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|_| failure("Could not rotate webhook token.", Some(id)))?;
+    let mut credentials = match saved {
+        Some(text) => serde_json::from_str::<Value>(&text)
+            .ok()
+            .filter(Value::is_object)
+            .ok_or_else(|| failure("Could not rotate webhook token.", Some(id)))?,
+        None => json!({"secret":null}),
+    };
+    credentials["token"] = json!(token);
+    task["webhook"] = json!({"path":format!("/api/hooks/{}/{token}",crate::webhook::encode_component(id)),"url":null,"hasSecret":!credentials["secret"].is_null()});
+    task["updatedAt"] = json!(iso(now_ms()));
+    let write = || -> Result<(), String> {
+        put(&tx, "hookCredentials", id, "", &credentials)?;
+        put(&tx, KIND, id, "", &task)
+    };
+    write().map_err(|_| failure("Could not rotate webhook token.", Some(id)))?;
+    tx.commit()
+        .map_err(|_| failure("Could not rotate webhook token.", Some(id)))?;
+    drop(db);
+    s.streams.ops.wake_scheduler();
+    Ok(task)
 }
 
 /// Starts the task's thread (or message) and records the outcome on the task.
