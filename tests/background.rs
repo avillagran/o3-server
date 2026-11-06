@@ -188,6 +188,12 @@ fn background_cases(cases: &[(&str, bool, bool, bool)]) {
             c.rpc("orchestration.dispatchCommand",json!({"type":"run.interrupt","commandId":"interrupt","threadId":"t","runId":p["runs"][0]["id"]})).unwrap();
         } else {
             std::fs::write(root.join("finish"), "").unwrap();
+            if instance == "claudeAgent" {
+                // A task ending is not the end of the parent's response to it.
+                wait(|| projection().to_string().contains("AFTER_NOTIFICATION"));
+                assert_eq!(projection()["runs"][0]["status"], "running");
+                std::fs::write(root.join("parent-result"), "").unwrap();
+            }
         }
         wait(|| {
             projection()["runs"][0]["status"]
@@ -272,11 +278,12 @@ async fn live_claude_background_shell() {
     let (tx, mut rx) = tokio::sync::mpsc::channel(16);
     let (_control, controls) = tokio::sync::mpsc::channel(8);
     let (_cancel, cancel) = tokio::sync::watch::channel(false);
-    let input=RunInput{native_mcp:None,provider_instance_id:"claudeAgent".into(),native_session_id:None,thread_id:"background-live".into(),run_id:"live".into(),cwd:dir.clone(),text:"Use Bash with run_in_background=true to execute: sleep 2; printf BACKGROUND_OK. Reply STARTED immediately after launching, without waiting or calling another tool.".into(),model_selection:json!({"instanceId":"claudeAgent","model":"haiku"}),runtime_mode:"full-access".into(),interaction_mode:"default".into(),attachment_root:dir.clone(),attachments:json!([]),context:None};
+    let input=RunInput{native_mcp:None,provider_instance_id:"claudeAgent".into(),native_session_id:None,thread_id:"background-live".into(),run_id:"live".into(),cwd:dir.clone(),text:"Use Bash with run_in_background=true to execute: sleep 3; exit 7. Reply STARTED immediately after launching, without waiting or calling another tool. When the failure notification arrives, continue by using Bash to execute printf RECOVERY_OK > recovered.txt and then reply AFTER_NOTIFICATION.".into(),model_selection:json!({"instanceId":"claudeAgent","model":"haiku"}),runtime_mode:"full-access".into(),interaction_mode:"default".into(),attachment_root:dir.clone(),attachments:json!([]),context:None};
     let read = async {
         let mut task = false;
         let mut done = false;
         let mut completed = false;
+        let mut text = String::new();
         while let Some(e) = rx.recv().await {
             match e {
                 ProviderEvent::Native(v) if v["type"] == "task" => {
@@ -296,8 +303,13 @@ async fn live_claude_background_shell() {
                         task && done,
                         "completion requires observed native background start and end"
                     );
+                    assert!(
+                        text.contains("AFTER_NOTIFICATION"),
+                        "lost parent continuation: {text}"
+                    );
                     completed = true;
                 }
+                ProviderEvent::TextDelta(delta) => text.push_str(&delta),
                 ProviderEvent::Failed(e) => panic!("{e}"),
                 _ => {}
             }
@@ -311,7 +323,10 @@ async fn live_claude_background_shell() {
     .unwrap();
     r.unwrap();
     provider.shutdown().await;
-    std::fs::remove_dir_all(dir).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(dir.join("recovered.txt")).unwrap(),
+        "RECOVERY_OK"
+    );
 }
 
 #[test]
