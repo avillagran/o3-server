@@ -165,4 +165,5 @@ tools/test-shared-nightly
 
 - Verify the O3 desktop composer against the enabled candidate. The desktop work is on
   `omarchy-t3-code` branch `feat/nightly-4247-parity`.
-- Scheduled-task fresh-session execution is a separate remaining integration.
+- Scheduled-task conversation modes now execute in the candidate; see
+  [their evidence and remaining storage/lifecycle work](SCHEDULED-TASK-MODES.md).
