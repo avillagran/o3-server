@@ -4,17 +4,22 @@ import argparse
 import json
 import os
 import pathlib
+import tempfile
 import subprocess
 import uuid
 
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--default-features",action="store_true")
-parser.add_argument("--unit-filter")
+selection=parser.add_mutually_exclusive_group()
+selection.add_argument("--unit-filter")
+selection.add_argument("--integration")
+selection.add_argument("--all-tests",action="store_true")
 options=parser.parse_args()
 root = pathlib.Path(__file__).resolve().parent.parent
 env = dict(os.environ)
 env.setdefault('CARGO_TARGET_DIR', '/var/tmp/o3-server/fresh-context-target')
-targets = ['--lib'] if options.unit_filter else ['--lib', '--test', 'scheduled_modes', '--test', 'ops', '--test', 'native_goals', '--test', 'p2_webhook', '--test', 'mcp_launch']
+env.setdefault('CARGO_BUILD_JOBS', '2')
+targets = [] if options.all_tests else ['--test', options.integration] if options.integration else ['--lib'] if options.unit_filter else ['--lib', '--test', 'scheduled_modes', '--test', 'ops', '--test', 'native_goals', '--test', 'p2_webhook', '--test', 'mcp_launch']
 build = subprocess.run(['cargo', 'test', '--locked', *([] if options.default_features else ['--no-default-features']), *targets, '--no-run', '--message-format=json'], cwd=root, env=env, capture_output=True, text=True)
 if build.returncode:
     for line in build.stdout.splitlines():
@@ -23,12 +28,25 @@ if build.returncode:
             print(diagnostic["rendered"], flush=True)
     print(build.stderr, flush=True)
     raise SystemExit(build.returncode)
-binaries = [pathlib.Path(v['executable']) for line in build.stdout.splitlines() if (v := json.loads(line)).get('executable') and v.get('target', {}).get('name') in ('o3_server', 'scheduled_modes', 'ops', 'native_goals', 'p2_webhook', 'mcp_launch')]
-assert len(binaries) == (1 if options.unit_filter else 6)
+binaries = [pathlib.Path(v['executable']) for line in build.stdout.splitlines() if (v := json.loads(line)).get('executable') and v.get('profile', {}).get('test') and (options.all_tests or v.get('target', {}).get('name')==options.integration or v.get('target', {}).get('name') in ('o3_server', 'scheduled_modes', 'ops', 'native_goals', 'p2_webhook', 'mcp_launch'))]
+assert len(binaries) >= 6 if options.all_tests else len(binaries) == (1 if options.unit_filter or options.integration else 6)
+assert all(binary.parent==binaries[0].parent for binary in binaries)
 name = 'o3-scheduled-tests-' + uuid.uuid4().hex
-args = ['podman', 'run', '--rm', '--name', name, '--userns=keep-id', '--user', f'{os.getuid()}:{os.getgid()}', '--read-only', '--tmpfs', '/tmp:rw,exec,size=1g,mode=1777', '--cap-drop=ALL', '--security-opt=no-new-privileges', '--pids-limit=512', '--memory=4g', '--network=none', '--workdir=/tmp', '--env', 'HOME=/tmp/home', '--env', f'O3_UNIT_FILTER={options.unit_filter or ""}', '-v', f'{root}:{root}:ro', '-v', f'{binaries[0].parent}:/test-bin:ro', os.environ.get('O3_FRESH_CONTEXT_IMAGE', 'localhost/android-sandbox:latest'), 'sh', '-c', 'set -eu; umask 077; mkdir -p "$HOME"; for binary in "$@"; do case "$binary" in o3_server-*) if test -n "$O3_UNIT_FILTER"; then /test-bin/"$binary" "$O3_UNIT_FILTER" --nocapture --test-threads=1; continue; fi; /test-bin/"$binary" scheduled::tests --test-threads=1; /test-bin/"$binary" webhook::crash_tests --test-threads=1; /test-bin/"$binary" fresh_context::tests --test-threads=1; /test-bin/"$binary" native_goal::tests --test-threads=1 ;; *) /test-bin/"$binary" --test-threads=1 ;; esac; done', 'scheduled-nightly', *[b.name for b in binaries]]
+runtime_mounts=[]
+if options.all_tests or options.integration:
+    node=pathlib.Path(subprocess.check_output(['mise','where','node'],text=True).strip()).resolve()
+    assert (node/'bin/node').is_file()
+    runtime_mounts=['-v',f'{node}:/test-node:ro','--env','PATH=/test-node/bin:/usr/local/bin:/usr/bin:/bin']
+args = ['podman', 'run', '--rm', '--name', name, '--userns=keep-id', '--user', f'{os.getuid()}:{os.getgid()}', '--read-only', '--tmpfs', '/tmp:rw,exec,size=1g,mode=1777', '--cap-drop=ALL', '--security-opt=no-new-privileges', '--pids-limit=512', '--memory=4g', '--network=none', '--workdir=/tmp', '--env', 'HOME=/tmp/home', '--env', f'O3_UNIT_FILTER={options.unit_filter or ""}', '--env', f'O3_ALL_TESTS={int(options.all_tests)}', '-v', f'{root}:{root}:ro', '-v', f'{binaries[0].parent}:/test-bin:ro', '-v', f'{binaries[0].parent.parent}:{binaries[0].parent.parent}:ro', *runtime_mounts, os.environ.get('O3_FRESH_CONTEXT_IMAGE', 'localhost/android-sandbox:latest'), 'sh', '-c', 'set -eu; umask 077; mkdir -p "$HOME"; for binary in "$@"; do if test "$O3_ALL_TESTS" = 1; then /test-bin/"$binary" --test-threads=1; continue; fi; case "$binary" in o3_server-*) if test -n "$O3_UNIT_FILTER"; then /test-bin/"$binary" "$O3_UNIT_FILTER" --nocapture --test-threads=1; continue; fi; /test-bin/"$binary" scheduled::tests --test-threads=1; /test-bin/"$binary" webhook::crash_tests --test-threads=1; /test-bin/"$binary" fresh_context::tests --test-threads=1; /test-bin/"$binary" native_goal::tests --test-threads=1 ;; *) /test-bin/"$binary" --test-threads=1 ;; esac; done', 'scheduled-nightly', *[b.name for b in binaries]]
 try:
-    result = subprocess.run(args, cwd=root, timeout=300)
+    result = subprocess.run(args, cwd=root, timeout=900 if options.all_tests else 300, capture_output=True, text=True)
+    evidence=pathlib.Path(tempfile.mkdtemp(prefix='o3-container-tests-',dir='/var/tmp'))
+    (evidence/'output.log').write_text(result.stdout+result.stderr)
+    print(f'Container test evidence: {evidence}',flush=True)
+    if result.returncode:
+        print(result.stdout+result.stderr,flush=True)
+    else:
+        print('\n'.join(line for line in result.stdout.splitlines() if line.startswith('test result:')),flush=True)
 finally:
     subprocess.run(['podman', 'stop', '--time', '3', name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 raise SystemExit(result.returncode)
