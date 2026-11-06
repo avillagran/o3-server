@@ -133,6 +133,7 @@ pub mod device_native_tools;
 
 mod background;
 
+mod cliproxy;
 mod config_sources;
 
 mod title;

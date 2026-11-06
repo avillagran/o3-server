@@ -324,9 +324,11 @@ fn hub_account_windows_and_failures_reach_the_real_quota_reducer() {
                 }
             }
             let text = String::from_utf8_lossy(&bytes);
-            assert!(text.contains("Authorization: Bearer test-management"));
+            assert!(text
+                .to_ascii_lowercase()
+                .contains("authorization: bearer test-management"));
             let response = if text.starts_with("GET /v0/management/auth-files") {
-                json!({"files":[{"id":"a","auth_index":"idx","provider":"codex","email":"person@example.invalid"},{"id":"disabled","provider":"claude","disabled":true}]})
+                json!({"files":[{"id":"a","auth_index":"idx","provider":"codex","email":"person@example.invalid"},{"id":"disabled","auth_index":"disabled-idx","provider":"claude","disabled":true}]})
             } else if text.contains("rate-limit-reset-credits") {
                 json!({"status_code":200,"body":json!({"credits":[{"id":"private-credit","status":"available","reset_type":"codex_rate_limits","expires_at":"2099-01-01T00:00:00Z"}]}).to_string()})
             } else {
@@ -360,7 +362,11 @@ fn hub_account_windows_and_failures_reach_the_real_quota_reducer() {
     assert_eq!(account["usageLimits"]["windows"][0]["usedPercent"], 38.0);
     assert_eq!(account["usageLimits"]["resetCredits"]["availableCount"], 1);
     assert!(!state.to_string().contains("test-management"));
-    assert!(!state.to_string().contains("private-credit"));
+    assert_eq!(
+        events.last().unwrap()["payload"]["sources"][0]["accounts"][0]["usageLimits"]
+            ["resetCredits"]["nextCreditId"],
+        "private-credit"
+    );
     stream.cancel();
     hub.join().unwrap();
     assert_eq!(calls.load(Ordering::SeqCst), 3);

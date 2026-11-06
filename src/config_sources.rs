@@ -150,22 +150,6 @@ impl Sources {
         }
     }
 }
-async fn management(config: &Value, path: &str, body: Option<Value>) -> Result<Value, ()> {
-    let mut base = url::Url::parse(config["url"].as_str().ok_or(())?).map_err(|_| ())?;
-    let normalized = regex::Regex::new(r"(?i)(/management\.html)?/?$")
-        .unwrap()
-        .replace(base.path(), "/")
-        .into_owned();
-    base.set_path(&normalized);
-    let url = base
-        .join(&format!("v0/management/{path}"))
-        .map_err(|_| ())?;
-    let key = config["managementKey"]
-        .as_str()
-        .filter(|s| !s.is_empty())
-        .ok_or(())?;
-    request(url.as_str(), key, &[], body).await
-}
 pub(crate) async fn request(
     url: &str,
     key: &str,
@@ -232,20 +216,13 @@ async fn account(config: &Value, account: &Value) -> Value {
     let codex = account["provider"] == "codex";
     let checked = iso(now_ms());
     let mut out = json!({"id":account["id"],"driver":if codex {"codex"} else {"claudeAgent"},"email":account["email"],"workspaceId":account["id_token"]["chatgpt_account_id"]});
-    let header = if codex {
-        json!({"Authorization":"Bearer $TOKEN$","Content-Type":"application/json","OpenAI-Beta":"codex-1","Originator":"Codex Desktop","Chatgpt-Account-Id":account["id_token"]["chatgpt_account_id"]})
-    } else {
-        json!({"Authorization":"Bearer $TOKEN$","anthropic-beta":"oauth-2025-04-20","User-Agent":"claude-code/2.1.273"})
-    };
-    let response = management(config,"api-call",Some(json!({"auth_index":account["auth_index"],"method":"GET","url":if codex {"https://chatgpt.com/backend-api/wham/usage"} else {"https://api.anthropic.com/api/oauth/usage"},"header":header}))).await;
-    let usage = response
-        .ok()
-        .filter(|r| {
-            r["status_code"]
-                .as_u64()
-                .is_some_and(|s| (200..300).contains(&s))
-        })
-        .and_then(|r| serde_json::from_str::<Value>(r["body"].as_str()?).ok());
+    let usage = crate::cliproxy::usage(
+        config["url"].as_str().unwrap_or(""),
+        config["managementKey"].as_str().unwrap_or(""),
+        account,
+    )
+    .await
+    .ok();
     let Some(usage) = usage else {
         out["usageLimits"] = json!({"checkedAt":checked,"windows":[],"unavailable":{"reason":"probeFailed","message":"The hub could not read this account's usage."}});
         return out;
@@ -310,16 +287,29 @@ async fn account(config: &Value, account: &Value) -> Value {
         json!("Claude Subscription")
     };
     out["usageLimits"] = json!({"checkedAt":checked,"windows":windows});
-    if codex {
-        if let Ok(response) = management(config,"api-call",Some(json!({"auth_index":account["auth_index"],"method":"GET","url":"https://chatgpt.com/backend-api/wham/rate-limit-reset-credits","header":{"Authorization":"Bearer $TOKEN$","Content-Type":"application/json","OpenAI-Beta":"codex-1","Originator":"Codex Desktop"}}))).await {
-            if response["status_code"] == 200 {
-                if let Some(body) = response["body"].as_str().and_then(|s| serde_json::from_str::<Value>(s).ok()) {
-                    let now = time::OffsetDateTime::now_utc();
-                    let mut credits:Vec<_> = body["credits"].as_array().into_iter().flatten().filter(|c| c["status"]=="available" && c["reset_type"]=="codex_rate_limits" && c["expires_at"].as_str().and_then(|s|time::OffsetDateTime::parse(s,&time::format_description::well_known::Rfc3339).ok()).is_some_and(|t| t>now)).collect();
-                    credits.sort_by_key(|c|c["expires_at"].as_str());
-                    out["usageLimits"]["resetCredits"] = json!({"availableCount":credits.len()});
-                    if let Some(first) = credits.first() { out["usageLimits"]["resetCredits"]["nextExpiresAt"] = first["expires_at"].clone(); }
-                }
+    let credits = if codex {
+        crate::cliproxy::credits(
+            config["url"].as_str().unwrap_or(""),
+            config["managementKey"].as_str().unwrap_or(""),
+            account,
+            now_ms(),
+        )
+        .await
+        .ok()
+    } else {
+        None
+    };
+    if let Some(credits) = credits {
+        out["usageLimits"]["resetCredits"] = json!({"availableCount":credits.len()});
+        if let Some(first) = credits.first() {
+            out["usageLimits"]["resetCredits"]["nextCreditId"] = first["id"].clone();
+            if let Some(at) = first["expires_at"].as_str().and_then(|value| {
+                chrono::DateTime::parse_from_rfc3339(value)
+                    .or_else(|_| chrono::DateTime::parse_from_rfc2822(value))
+                    .ok()
+            }) {
+                out["usageLimits"]["resetCredits"]["nextExpiresAt"] =
+                    json!(iso(at.timestamp_millis()));
             }
         }
     }
@@ -405,10 +395,15 @@ async fn read_sources(state: &State, settings: &Value) -> Vec<Value> {
             sources.push(source);
             continue;
         }
-        match management(&config, "auth-files", None).await {
+        match crate::cliproxy::list_accounts(
+            config["url"].as_str().unwrap_or(""),
+            config["managementKey"].as_str().unwrap_or(""),
+        )
+        .await
+        {
             Ok(files) => {
                 let mut accounts = Vec::new();
-                for a in files["files"].as_array().into_iter().flatten().take(4096) {
+                for a in files.iter().take(4096) {
                     if a["disabled"] != true
                         && matches!(a["provider"].as_str(), Some("codex" | "claude"))
                     {
@@ -417,11 +412,91 @@ async fn read_sources(state: &State, settings: &Value) -> Vec<Value> {
                 }
                 source["accounts"] = json!(accounts);
             }
-            Err(()) => source["error"] = json!("Could not read usage source."),
+            Err(failure) => source["error"] = json!(failure.detail()),
         }
         sources.push(source);
     }
     sources
+}
+
+pub(crate) async fn consume_reset_credit(state: &State, input: &Value) -> Result<Value, Value> {
+    let input = crate::cliproxy::decode_reset_input(input)
+        .map_err(|_| json!({"_tag":"RpcInvalidPayload","message":"Invalid reset-credit input."}))?;
+    if let Some(instance_id) = input["instanceId"].as_str() {
+        let settings = crate::settings::read(state).unwrap_or_else(|_| json!({}));
+        let instance = settings["providerInstances"].get(instance_id);
+        let detail = match instance {
+            None => "Provider instance not found.",
+            Some(instance) if instance["enabled"] == false => "This provider is disabled.",
+            Some(_) => "This provider does not bank reset credits.",
+        };
+        return Err(
+            json!({"_tag":"ProviderSetupError","instanceId":instance_id,"operation":"consume-reset-credit","detail":detail}),
+        );
+    }
+    let error = |detail: &str| json!({"_tag":"UsageLimitSourceError","detail":detail});
+    let service = &state.streams.ops.usage_sources;
+    // A stale concurrent refresh must not resurrect credit state after redemption.
+    let _refresh = service.refresh.lock().await;
+    let settings = crate::settings::read(state)
+        .and_then(|raw| crate::settings_secrets::materialize_profile(&state.dir, &raw))
+        .map_err(|_| error("Could not read hub settings."))?;
+    let source_id = input["sourceId"].as_str().unwrap();
+    let raw = settings["usageLimitSources"]
+        .get(source_id)
+        .ok_or_else(|| error("The usage limit source is missing or disabled."))?;
+    let config = crate::managed_settings_codec::decode_usage_config(raw.clone())
+        .map_err(|_| error("Could not read hub settings."))?;
+    if config["enabled"] == false {
+        return Err(error("The usage limit source is missing or disabled."));
+    }
+    let resolved = crate::settings_secrets::resolve_fields(
+        state.secret_resolver().as_ref(),
+        &settings["secretProviders"],
+        "usage",
+        None,
+        &config,
+    )
+    .await;
+    let key = resolved["managementKey"].as_str().unwrap_or("");
+    if key.is_empty() {
+        return Err(error(if config["managementKey"].is_string() {
+            "No management key configured."
+        } else {
+            "Could not read the management key from its secret provider."
+        }));
+    }
+    let result = crate::cliproxy::consume(
+        resolved["url"].as_str().unwrap(),
+        key,
+        input["accountId"].as_str().unwrap(),
+        input["creditId"].as_str().unwrap(),
+    )
+    .await
+    .map_err(|failure| error(&failure.detail()))?;
+    let mut selected = settings.clone();
+    selected["usageLimitSources"] = json!({source_id:raw});
+    let mut refreshed = read_sources(state, &selected).await;
+    if let Some(snapshot) = refreshed.pop() {
+        let mut previous = service.snapshot.lock().unwrap();
+        let mut changed = false;
+        for source in previous
+            .iter_mut()
+            .filter(|source| source["id"] == source_id)
+        {
+            if *source != snapshot {
+                *source = snapshot.clone();
+                changed = true;
+            }
+        }
+        if changed {
+            service
+                .version
+                .fetch_add(1, std::sync::atomic::Ordering::Release);
+            state.notify();
+        }
+    }
+    Ok(result)
 }
 
 fn read_themes(state: &State) -> Value {

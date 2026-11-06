@@ -119,6 +119,7 @@ pub async fn call(s: &std::sync::Arc<State>, tag: &str, p: &Value) -> Option<Rep
     Some(match tag {
         "server.reportClientActivity" => report_activity(s, p),
         "server.refreshProviders" => refresh_providers(s, p).await,
+        "provider.consumeResetCredit" => crate::config_sources::consume_reset_credit(s, p).await,
         "secrets.answerRequest" => answer_secret(s, p),
         "server.getProcessDiagnostics" => Ok(diagnostics()),
         "server.getResourceTelemetryHistory" => telemetry(s, p),
