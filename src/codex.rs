@@ -429,7 +429,8 @@ impl CodexProvider {
             .and_then(|a| a.split('/').nth(1))
             .and_then(|a| a.split_whitespace().next()));
         apply_auth(&mut d, &auth);
-        *self.auth_seen.lock().unwrap() = Some((auth_stamp(self.home.as_deref()), d["auth"].clone()));
+        *self.auth_seen.lock().unwrap() =
+            Some((auth_stamp(self.home.as_deref()), d["auth"].clone()));
         d["checkedAt"] = json!(crate::store::iso(crate::store::now_ms()));
         d["models"]=json!(models["data"].as_array().unwrap_or(&vec![]).iter().map(|m|json!({"slug":m["model"],"name":m["displayName"],"isCustom":false,"isDefault":m["isDefault"],"capabilities":model_capabilities(m)})).collect::<Vec<_>>());
         Ok(c)
@@ -1419,7 +1420,10 @@ mod tests {
         std::fs::write(dir.join("auth.json"), "{\"tokens\":{}}").unwrap();
         provider.probe().await.unwrap();
         let signed_in = provider.config()[0]["auth"]["status"].clone();
-        assert!(provider.client.lock().await.is_none(), "probe spawned app-server");
+        assert!(
+            provider.client.lock().await.is_none(),
+            "probe spawned app-server"
+        );
         // Signing out removes the file.
         std::fs::remove_file(dir.join("auth.json")).unwrap();
         provider.probe().await.unwrap();
