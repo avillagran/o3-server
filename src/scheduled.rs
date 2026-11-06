@@ -1,6 +1,6 @@
 //! Scheduled tasks: stored definitions plus an in-process timer that launches threads.
 //!
-//! Schedules follow T3 nightly 4192: `interval`, `fixed_time` (UTC, optionally on chosen
+//! Schedules follow T3 nightly 4262: `interval`, `fixed_time` (UTC, optionally on chosen
 //! weekdays), `once` and signed `webhook` (inbound route in `webhook.rs`). T3 reads tasks only
 //! through the `scheduledTasks.subscribe` stream; `scheduledTasks.list` stays for older o3
 //! clients. Without `orchestration:operate` both views drop each task's `webhook`.
@@ -8,7 +8,6 @@ use crate::{
     events::{get, put},
     store::{iso, now_ms, random_id, State},
 };
-use rusqlite::params;
 use serde_json::{json, Value};
 use std::{sync::Arc, time::Duration};
 
@@ -47,10 +46,11 @@ fn list(s: &State) -> Result<Vec<Value>, Value> {
         .map_err(|e| failure(&e.to_string(), None))?;
     let mut out = Vec::new();
     for row in rows {
-        out.push(
+        let mut task: Value =
             serde_json::from_str(&row.map_err(|e| failure(&e.to_string(), None))?)
-                .map_err(|e| failure(&e.to_string(), None))?,
-        );
+                .map_err(|e| failure(&e.to_string(), None))?;
+        task["threadMode"] = json!(thread_mode(&task));
+        out.push(task);
     }
     Ok(out)
 }
@@ -225,6 +225,30 @@ fn validate(p: &Value) -> Result<(), Value> {
     if !p["enabled"].is_boolean() {
         return Err(failure("enabled is required", None));
     }
+    if p.get("threadMode").is_some_and(|mode| {
+        !matches!(
+            mode.as_str(),
+            Some("new_thread" | "continue" | "fresh_session")
+        )
+    }) {
+        return Err(failure("Invalid scheduled task thread mode.", None));
+    }
+    if p.get("threadId")
+        .is_some_and(|id| !id.is_null() && !id.as_str().is_some_and(|id| !id.trim().is_empty()))
+    {
+        return Err(failure("Invalid scheduled task thread id.", None));
+    }
+    if p.get("createdBy")
+        .is_some_and(|v| !matches!(v.as_str(), Some("user" | "agent" | "system")))
+        || p.get("creationSource").is_some_and(|v| {
+            !matches!(
+                v.as_str(),
+                Some("web" | "mobile" | "mcp" | "provider" | "server")
+            )
+        })
+    {
+        return Err(failure("Invalid scheduled task creation fields.", None));
+    }
     let sched = &p["schedule"];
     match sched["type"].as_str() {
         Some("interval") => {
@@ -293,6 +317,43 @@ fn validate(p: &Value) -> Result<(), Value> {
     Ok(())
 }
 
+/// T3's legacy interpretation and save resolution, including a stale form with no bound thread.
+fn thread_mode(task: &Value) -> &str {
+    task["threadMode"].as_str().unwrap_or_else(|| {
+        if task["threadId"].is_null() {
+            "new_thread"
+        } else {
+            "continue"
+        }
+    })
+}
+fn resolve_thread_mode<'a>(input: &'a Value, existing: Option<&'a Value>) -> &'a str {
+    if let Some(mode) = input["threadMode"].as_str() {
+        return mode;
+    }
+    let stored = existing.map(thread_mode).unwrap_or("new_thread");
+    if stored == "new_thread" && !input["threadId"].is_null() {
+        "continue"
+    } else {
+        stored
+    }
+}
+fn saved_binding(input: &Value, existing: Option<&Value>, mode: &str) -> Value {
+    let kept = input
+        .get("threadId")
+        .filter(|id| !id.is_null())
+        .or_else(|| existing.and_then(|task| task.get("threadId")))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let moved = existing
+        .is_some_and(|old| old["projectId"] != input["projectId"] && kept == old["threadId"]);
+    if mode == "new_thread" || moved {
+        Value::Null
+    } else {
+        kept
+    }
+}
+
 fn upsert(s: &Arc<State>, p: &Value) -> Reply {
     validate(p)?;
     let now = now_ms();
@@ -326,6 +387,8 @@ fn upsert(s: &Arc<State>, p: &Value) -> Reply {
             return Err(failure("Too many scheduled tasks.", None));
         }
     }
+    let mode = resolve_thread_mode(p, existing.as_ref());
+    let binding = saved_binding(p, existing.as_ref(), mode);
     let old = existing.clone().unwrap_or_else(|| json!({"createdAt":at,"lastRunAt":null,"lastRunStatus":"never","lastRunError":null,"runCount":0}));
     let enabled = p["enabled"] == true;
     let mut schedule = p["schedule"].clone();
@@ -372,7 +435,7 @@ fn upsert(s: &Arc<State>, p: &Value) -> Reply {
     if !unchanged {
         require_future_once(enabled, &schedule, now, &id)?;
     }
-    let mut task = json!({"id":id,"title":p["title"].as_str().map(str::trim),"prompt":p["prompt"].as_str().map(str::trim),"enabled":enabled,"schedule":schedule,"projectId":p["projectId"],"threadId":p.get("threadId").cloned().unwrap_or(Value::Null),"workspaceStrategy":p["workspaceStrategy"],"modelSelection":p["modelSelection"],"runtimeMode":p["runtimeMode"],"interactionMode":p["interactionMode"],"createdBy":p.get("createdBy").cloned().unwrap_or(json!("user")),"creationSource":p.get("creationSource").cloned().unwrap_or(json!("web")),"createdAt":old["createdAt"],"updatedAt":at,"nextRunAt":Value::Null,"lastRunAt":old["lastRunAt"],"lastRunStatus":old["lastRunStatus"],"lastRunError":old["lastRunError"],"runCount":old["runCount"]});
+    let mut task = json!({"id":id,"title":p["title"].as_str().map(str::trim),"prompt":p["prompt"].as_str().map(str::trim),"enabled":enabled,"schedule":schedule,"projectId":p["projectId"],"threadId":binding,"threadMode":mode,"workspaceStrategy":p["workspaceStrategy"],"modelSelection":p["modelSelection"],"runtimeMode":p["runtimeMode"],"interactionMode":p["interactionMode"],"createdBy":p.get("createdBy").cloned().unwrap_or(json!("user")),"creationSource":p.get("creationSource").cloned().unwrap_or(json!("web")),"createdAt":old["createdAt"],"updatedAt":at,"nextRunAt":Value::Null,"lastRunAt":old["lastRunAt"],"lastRunStatus":old["lastRunStatus"],"lastRunError":old["lastRunError"],"runCount":old["runCount"]});
     match &existing {
         Some(e) if unchanged => {
             task["nextRunAt"] = e["nextRunAt"].clone();
@@ -426,6 +489,27 @@ fn set_enabled(s: &Arc<State>, p: &Value) -> Reply {
     Ok(task)
 }
 
+fn remove_task(db: &rusqlite::Connection, id: &str) -> Result<(), Value> {
+    let webhook = get(db, KIND, id).is_ok_and(|task| task["schedule"]["type"] == "webhook")
+        || get(db, "hookCredentials", id).is_ok();
+    db.execute(
+        "DELETE FROM records WHERE kind='scheduledTasks' AND id=?1",
+        [id],
+    )
+    .map_err(|e| failure(&e.to_string(), Some(id)))?;
+    if webhook {
+        for sql in [
+            "DELETE FROM records WHERE kind='hookCredentials' AND id=?1",
+            "DELETE FROM hook_queue WHERE task=?1",
+            "DELETE FROM hook_replay WHERE task=?1",
+        ] {
+            db.execute(sql, [id])
+                .map_err(|e| failure(&e.to_string(), Some(id)))?;
+        }
+    }
+    Ok(())
+}
+
 fn delete(s: &Arc<State>, p: &Value) -> Result<String, Value> {
     let id = p["id"]
         .as_str()
@@ -436,23 +520,7 @@ fn delete(s: &Arc<State>, p: &Value) -> Result<String, Value> {
         .transaction()
         .map_err(|e| failure(&e.to_string(), Some(id)))?;
     // T3 deletes idempotently: a missing task still answers `{id}`.
-    let task = get(&tx, KIND, id).unwrap_or(Value::Null);
-    tx.execute(
-        "DELETE FROM records WHERE kind=? AND id=?",
-        params![KIND, id],
-    )
-    .map_err(|e| failure(&e.to_string(), Some(id)))?;
-    if task["schedule"]["type"] == "webhook" || get(&tx, "hookCredentials", id).is_ok() {
-        tx.execute(
-            "DELETE FROM records WHERE kind='hookCredentials' AND id=?",
-            [id],
-        )
-        .map_err(|e| failure(&e.to_string(), Some(id)))?;
-        tx.execute("DELETE FROM hook_queue WHERE task=?", [id])
-            .map_err(|e| failure(&e.to_string(), Some(id)))?;
-        tx.execute("DELETE FROM hook_replay WHERE task=?", [id])
-            .map_err(|e| failure(&e.to_string(), Some(id)))?;
-    }
+    remove_task(&tx, id)?;
     tx.commit().map_err(|e| failure(&e.to_string(), Some(id)))?;
     drop(db);
     s.streams.ops.wake_scheduler();
@@ -482,12 +550,39 @@ fn fire(s: &Arc<State>, id: &str) -> Reply {
 pub(crate) fn fire_prompt(s: &Arc<State>, id: &str, prompt: Option<&str>) -> Reply {
     fire_prompt_key(s, id, prompt, None)
 }
+struct ActiveTask<'a> {
+    state: &'a State,
+    id: &'a str,
+}
+impl Drop for ActiveTask<'_> {
+    fn drop(&mut self) {
+        self.state
+            .streams
+            .ops
+            .scheduled_runs
+            .lock()
+            .unwrap()
+            .remove(self.id);
+    }
+}
+
 pub(crate) fn fire_prompt_key(
     s: &Arc<State>,
     id: &str,
     prompt: Option<&str>,
     job: Option<&str>,
 ) -> Reply {
+    if !s
+        .streams
+        .ops
+        .scheduled_runs
+        .lock()
+        .unwrap()
+        .insert(id.to_owned())
+    {
+        return Err(failure("Schedule task is already running.", Some(id)));
+    }
+    let _active = ActiveTask { state: s, id };
     let started = now_ms();
     let mut task = {
         let db = s.db.lock().unwrap();
@@ -514,18 +609,80 @@ pub(crate) fn fire_prompt_key(
     let message = job
         .map(|j| format!("webhook-{j}"))
         .unwrap_or_else(|| format!("scheduled-{id}-{number}"));
+    let mode = thread_mode(&task).to_owned();
     let outcome = match task["threadId"].as_str() {
-        Some(thread) => crate::events::dispatch(s, &json!({"type":"message.dispatch","commandId":cid,"messageId":message,"threadId":thread,"text":task["prompt"],"attachments":[],"scheduledTaskId":id,"dispatchMode":{"type":"start_immediately"}})).map(|_| ()),
-        None => crate::events::launch(s, &json!({"commandId":cid,"projectId":task["projectId"],"title":task["title"],"modelSelection":task["modelSelection"],"runtimeMode":task["runtimeMode"],"interactionMode":task["interactionMode"],"workspaceStrategy":task["workspaceStrategy"],"creationSource":task["creationSource"],"initialMessage":{"messageId":message,"text":task["prompt"],"attachments":[]}})).map(|_| ()),
+        Some(thread) => {
+            let target = get(&s.db.lock().unwrap(), "thread", thread);
+            match target {
+                Ok(target) if !target["deletedAt"].is_null() => Err("Thread not found.".into()),
+                Ok(target) if !target["archivedAt"].is_null() => Err(format!("Thread {thread} is archived and cannot receive messages.")),
+                Err(error) => Err(error),
+                Ok(_) => {
+                    let mut command = json!({"type":"message.dispatch","commandId":cid,"messageId":message,"threadId":thread,"text":task["prompt"],"attachments":[],"scheduledTaskId":id,"createdBy":task["createdBy"],"creationSource":task["creationSource"],"dispatchMode":{"type":"queue_after_active"}});
+                    if mode == "fresh_session" { command["freshContext"] = json!(true); }
+                    crate::events::dispatch(s, &command).map(|_| thread.to_owned())
+                }
+            }
+        }
+        None => crate::events::launch(s, &json!({"commandId":cid,"projectId":task["projectId"],"title":task["title"],"modelSelection":task["modelSelection"],"runtimeMode":task["runtimeMode"],"interactionMode":task["interactionMode"],"workspaceStrategy":task["workspaceStrategy"],"createdBy":task["createdBy"],"creationSource":task["creationSource"],"initialMessage":{"messageId":message,"scheduledTaskId":id,"text":task["prompt"],"attachments":[]}}))
+            .and_then(|result| result["threadId"].as_str().map(str::to_owned).ok_or_else(|| "Launched thread has no identity".into())),
     };
     let now = now_ms();
-    let db = s.db.lock().unwrap();
-    // The task may have been deleted or edited while launching; update what is stored now.
-    let mut task = get(&db, KIND, id).map_err(|_| failure("Schedule task not found.", Some(id)))?;
+    let mut db = s.db.lock().unwrap();
+    let tx = db
+        .transaction()
+        .map_err(|e| failure(&e.to_string(), Some(id)))?;
+    let task = record_outcome(&tx, &task, &outcome, started, now)?;
+    tx.commit().map_err(|e| failure(&e.to_string(), Some(id)))?;
+    drop(db);
+    s.streams.ops.wake_scheduler();
+    if job.is_some() {
+        outcome.map_err(|e| failure(&e, Some(id)))?;
+    }
+    Ok(task)
+}
+
+/// Finish only the admitted task row, even if a first binding or concurrent edit changed it.
+fn record_outcome(
+    db: &rusqlite::Connection,
+    active: &Value,
+    outcome: &Result<String, String>,
+    started: i64,
+    now: i64,
+) -> Reply {
+    let id = active["id"]
+        .as_str()
+        .ok_or_else(|| failure("Task identity missing", None))?;
+    let mode = thread_mode(active);
+    // Match the run's original row, preserving concurrent edits and never stamping a replacement.
+    let current = get(db, KIND, id).ok();
+    let mut stored = current.is_some();
+    let mut task = current.unwrap_or_else(|| active.clone());
+    if stored && (task["createdAt"] != active["createdAt"] || task["lastRunAt"] != iso(started)) {
+        return Ok(task);
+    }
+    if let Ok(thread) = &outcome {
+        if stored
+            && active["threadId"].is_null()
+            && mode != "new_thread"
+            && task["projectId"] == active["projectId"]
+            && task["threadId"].is_null()
+            && thread_mode(&task) != "new_thread"
+        {
+            task["threadId"] = json!(thread);
+            // Deletion may have run after launch committed, before the first binding existed.
+            let deleted = db.query_row("SELECT NOT EXISTS(SELECT 1 FROM records WHERE kind='thread' AND id=?1 AND json_extract(body,'$.deletedAt') IS NULL)", [thread], |row| row.get::<_,bool>(0)).unwrap_or(false);
+            if deleted && stored {
+                remove_task(db, id)?;
+                stored = false;
+                task["threadId"] = active["threadId"].clone();
+            }
+        }
+    }
     task["lastRunAt"] = json!(iso(started));
-    task["runCount"] = json!(number);
+    task["runCount"] = json!(task["runCount"].as_i64().unwrap_or(0) + 1);
     match &outcome {
-        Ok(()) => {
+        Ok(_) => {
             task["lastRunStatus"] = json!("succeeded");
             task["lastRunError"] = Value::Null;
         }
@@ -548,11 +705,8 @@ pub(crate) fn fire_prompt_key(
         Value::Null
     };
     task["updatedAt"] = json!(iso(now));
-    put(&db, KIND, id, "", &task).map_err(|e| failure(&e, Some(id)))?;
-    drop(db);
-    s.streams.ops.wake_scheduler();
-    if job.is_some() {
-        outcome.map_err(|e| failure(&e, Some(id)))?;
+    if stored {
+        put(db, KIND, id, "", &task).map_err(|e| failure(&e, Some(id)))?;
     }
     Ok(task)
 }
@@ -684,6 +838,96 @@ pub fn ensure_started(s: &Arc<State>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mode_resolution_matches_the_executed_reference_functions() {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/task-modes.json")).unwrap();
+        for case in fixture["cases"].as_array().unwrap() {
+            let existing = (!case["existing"].is_null()).then_some(&case["existing"]);
+            assert_eq!(
+                resolve_thread_mode(&case["input"], existing),
+                case["expected"].as_str().unwrap(),
+                "{case}"
+            );
+        }
+        for case in fixture["legacy"].as_array().unwrap() {
+            assert_eq!(
+                thread_mode(&case["task"]),
+                case["expected"].as_str().unwrap(),
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn completion_never_resurrects_tasks_or_overwrites_a_replacement() {
+        let dir = std::env::temp_dir().join(format!("o3-task-completion-{}", random_id().unwrap()));
+        let state = State::open(&dir).unwrap();
+        let db = state.db.lock().unwrap();
+        let at = iso(1000);
+        let active = json!({"id":"task","projectId":"p","createdAt":iso(0),"lastRunAt":at,"runCount":0,"threadMode":"continue","threadId":null,"enabled":false,"schedule":{"type":"interval","everyMs":60000}});
+        let result = record_outcome(&db, &active, &Ok("thread".into()), 1000, 2000).unwrap();
+        assert_eq!(result["lastRunStatus"], "succeeded");
+        assert!(result["threadId"].is_null());
+        assert!(get(&db, KIND, "task").is_err());
+        let mut replacement = active.clone();
+        replacement["createdAt"] = json!(iso(1500));
+        replacement["lastRunAt"] = Value::Null;
+        put(&db, KIND, "task", "", &replacement).unwrap();
+        assert_eq!(
+            record_outcome(&db, &active, &Ok("thread".into()), 1000, 2000).unwrap(),
+            replacement
+        );
+        assert_eq!(get(&db, KIND, "task").unwrap(), replacement);
+    }
+
+    #[test]
+    fn completion_preserves_edits_and_cleans_a_thread_deleted_before_binding() {
+        let dir = std::env::temp_dir().join(format!("o3-task-binding-{}", random_id().unwrap()));
+        let state = State::open(&dir).unwrap();
+        let db = state.db.lock().unwrap();
+        let active = json!({"id":"task","projectId":"p","createdAt":iso(0),"lastRunAt":iso(1000),"runCount":0,"threadMode":"continue","threadId":null,"enabled":false,"schedule":{"type":"interval","everyMs":60000}});
+        put(
+            &db,
+            "thread",
+            "thread",
+            "thread",
+            &json!({"id":"thread","deletedAt":null}),
+        )
+        .unwrap();
+        let mut edited = active.clone();
+        edited["threadMode"] = json!("new_thread");
+        put(&db, KIND, "task", "", &edited).unwrap();
+        assert!(
+            record_outcome(&db, &active, &Ok("thread".into()), 1000, 2000).unwrap()["threadId"]
+                .is_null()
+        );
+        edited = active.clone();
+        edited["projectId"] = json!("new-project");
+        edited["prompt"] = json!("Edited while dispatching");
+        edited["runCount"] = json!(5);
+        put(&db, KIND, "task", "", &edited).unwrap();
+        let finished = record_outcome(&db, &active, &Ok("thread".into()), 1000, 2000).unwrap();
+        assert!(finished["threadId"].is_null());
+        assert_eq!(finished["projectId"], "new-project");
+        assert_eq!(finished["prompt"], "Edited while dispatching");
+        assert_eq!(finished["runCount"], 6);
+        put(&db, KIND, "task", "", &active).unwrap();
+        put(
+            &db,
+            "thread",
+            "thread",
+            "thread",
+            &json!({"id":"thread","deletedAt":iso(1500)}),
+        )
+        .unwrap();
+        assert!(
+            record_outcome(&db, &active, &Ok("thread".into()), 1000, 2000).unwrap()["threadId"]
+                .is_null()
+        );
+        assert!(get(&db, KIND, "task").is_err());
+    }
 
     #[test]
     fn next_firing_for_intervals_and_fixed_times() {

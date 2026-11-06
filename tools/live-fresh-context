@@ -4,7 +4,10 @@ import argparse, json, os, pathlib, subprocess, tempfile, uuid
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--export-database", type=pathlib.Path)
 parser.add_argument("--reference-root", type=pathlib.Path)
+parser.add_argument("--scheduled-tasks", action="store_true")
 options = parser.parse_args()
+if options.scheduled_tasks and options.export_database:
+    parser.error("--scheduled-tasks cannot be combined with --export-database")
 root = pathlib.Path(__file__).resolve().parent.parent
 build_env = dict(os.environ)
 build_env.setdefault('CARGO_TARGET_DIR', '/var/tmp/o3-server/fresh-context-target')
@@ -50,7 +53,7 @@ for key, value in {'HOME':'/tmp/home', 'CLAUDE_CONFIG_DIR':'/tmp/home/.claude', 
     args += ['--env', f'{key}={value}']
 if options.reference_root:
     args += ['--env','O3_FRESH_CONTEXT_REFERENCE=/reference/t3']
-test_name='shared_native_projection_export' if options.export_database else 'native_resets_forget_prior_context_but_keep_history_and_new_continuations'
+test_name='shared_native_projection_export' if options.export_database else ('scheduled_tasks_native_conversation_modes' if options.scheduled_tasks else 'native_resets_forget_prior_context_but_keep_history_and_new_continuations')
 setup='set -eu; umask 077; mkdir -p "$HOME/.claude" "$HOME/.codex"; '
 if not options.export_database:
     setup+='cp /input/claude.json "$HOME/.claude/.credentials.json"; cp /input/codex.json "$HOME/.codex/auth.json"; '

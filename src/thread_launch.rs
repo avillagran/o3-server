@@ -310,6 +310,14 @@ pub(crate) fn launch_prepared(
     };
     let attachments = &m["attachments"];
     let mut message = json!({"type":"message.dispatch","commandId":format!("{cid}:initial-message"),"threadId":tid,"messageId":m["messageId"].as_str().map(str::to_owned).unwrap_or(format!("message-{cid}")),"text":m["text"],"attachments":attachments,"dispatchMode":{"type":"defer_start","workspaceStrategy":preparation}});
+    for field in ["createdBy", "creationSource"] {
+        if let Some(value) = p.get(field) {
+            message[field] = value.clone();
+        }
+    }
+    if let Some(task) = m.get("scheduledTaskId") {
+        message["scheduledTaskId"] = task.clone();
+    }
     if let Some(sender) = m.get("senderThreadId") {
         message["senderThreadId"] = sender.clone();
     }

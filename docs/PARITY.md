@@ -19,11 +19,12 @@ public method names and records existing method statuses as historical evidence,
 not certification against this nightly. The source adds two previously untracked
 methods: `orchestration.getThreadTitles` and `sourceControl.star`.
 
-The reference's shared database has migration head 80. Live O3 profiles are accepted
-through migration 73. Supporting migrations 74–80 requires isolated native-T3 migration,
-reducer/export/import and schema validation before widening the live-profile gate.
-The existing migration guard remains the protection against opening an incompatible
-profile. Preserving a historical status of `done` does not bypass this acceptance.
+The reference's shared database has migration head 80. This candidate accepts exactly
+80 and legacy 73 after isolated native-runtime handover, reducer/export/import and
+contract validation; see [the acceptance](nightly/SHARED-SCHEMA-80.md). Live services
+have not been upgraded by this work. Intermediate and future heads remain refused.
+This establishes shared history, not synchronization of task definitions or complete
+platform parity. Preserving a historical status of `done` does not bypass acceptance.
 
 For each implementation block:
 
@@ -47,3 +48,14 @@ provider-driver or shared-migration backlog.
 
 Validation details belong in `CONFORMANCE.md` and the per-block intake files. A green
 suite and an RPC count alone do not establish complete headless behavior.
+
+## Scheduled conversation modes
+
+The candidate advertises `scheduledTaskThreadModes` and implements `new_thread`,
+`continue` and `fresh_session`, including first-run binding, stale-form saves,
+project changes, queued bound sends, task provenance and guarded completion.
+[Evidence and remaining limitations](nightly/SCHEDULED-TASK-MODES.md) distinguish
+native runtime checks from source-function and peer regressions. Task definitions
+still live in O3's private store; bidirectional task/webhook storage and the rest
+of the service lifecycle remain open. This block is not certification of every
+scheduled-task method in the inventory.

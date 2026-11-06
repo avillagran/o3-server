@@ -9,6 +9,8 @@ permissions:
 jobs:
   rust:
     runs-on: ubuntu-latest
+    container:
+      image: rust:1-bookworm
     strategy:
       fail-fast: false
       matrix:
@@ -18,8 +20,10 @@ jobs:
       TMPDIR: /var/tmp/o3-build/tmp
     steps:
       - uses: actions/checkout@v4
-      - name: Install video decoder required by device stream regression
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Install test runtime dependencies inside the disposable container
+        run: apt-get update && apt-get install -y --no-install-recommends ffmpeg python3 git openssh-client procps nodejs
+      - name: Verify container isolation before executing tests
+        run: test -f /.dockerenv
       - run: mkdir -p "$TMPDIR"
       - run: rustup component add rustfmt clippy
       - run: cargo fmt --check

@@ -66,7 +66,8 @@
   ],
   "remaining": [
     "desktop-composer-live-server-check",
-    "scheduled-task-session-execution",
+    "scheduled-task-shared-storage-and-lifecycle",
     "full-platform-parity-audit"
-  ]
+  ],
+  "taskModeEvidence": "task-mode-intake.json"
 }

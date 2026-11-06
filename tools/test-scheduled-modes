@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+"""Compile scheduled-task and integrated goal regressions on the host and run them without host writes in Podman."""
+import argparse
+import json
+import os
+import pathlib
+import subprocess
+import uuid
+
+parser=argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--default-features",action="store_true")
+options=parser.parse_args()
+root = pathlib.Path(__file__).resolve().parent.parent
+env = dict(os.environ)
+env.setdefault('CARGO_TARGET_DIR', '/var/tmp/o3-server/fresh-context-target')
+build = subprocess.run(['cargo', 'test', '--locked', *([] if options.default_features else ['--no-default-features']), '--lib', '--test', 'scheduled_modes', '--test', 'ops', '--test', 'native_goals', '--test', 'p2_webhook', '--test', 'mcp_launch', '--no-run', '--message-format=json'], cwd=root, env=env, capture_output=True, text=True)
+if build.returncode:
+    for line in build.stdout.splitlines():
+        diagnostic = json.loads(line).get("message", {})
+        if diagnostic.get("rendered"):
+            print(diagnostic["rendered"], flush=True)
+    print(build.stderr, flush=True)
+    raise SystemExit(build.returncode)
+binaries = [pathlib.Path(v['executable']) for line in build.stdout.splitlines() if (v := json.loads(line)).get('executable') and v.get('target', {}).get('name') in ('o3_server', 'scheduled_modes', 'ops', 'native_goals', 'p2_webhook', 'mcp_launch')]
+assert len(binaries) == 6
+name = 'o3-scheduled-tests-' + uuid.uuid4().hex
+args = ['podman', 'run', '--rm', '--name', name, '--userns=keep-id', '--user', f'{os.getuid()}:{os.getgid()}', '--read-only', '--tmpfs', '/tmp:rw,exec,size=1g,mode=1777', '--cap-drop=ALL', '--security-opt=no-new-privileges', '--pids-limit=512', '--memory=4g', '--network=none', '--workdir=/tmp', '--env', 'HOME=/tmp/home', '-v', f'{root}:{root}:ro', '-v', f'{binaries[0].parent}:/test-bin:ro', os.environ.get('O3_FRESH_CONTEXT_IMAGE', 'localhost/android-sandbox:latest'), 'sh', '-c', 'set -eu; umask 077; mkdir -p "$HOME"; for binary in "$@"; do case "$binary" in o3_server-*) /test-bin/"$binary" scheduled::tests --test-threads=1; /test-bin/"$binary" fresh_context::tests --test-threads=1; /test-bin/"$binary" native_goal::tests --test-threads=1 ;; *) /test-bin/"$binary" --test-threads=1 ;; esac; done', 'scheduled-nightly', *[b.name for b in binaries]]
+try:
+    result = subprocess.run(args, cwd=root, timeout=300)
+finally:
+    subprocess.run(['podman', 'stop', '--time', '3', name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+raise SystemExit(result.returncode)

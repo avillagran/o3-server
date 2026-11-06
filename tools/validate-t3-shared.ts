@@ -26,6 +26,7 @@ const C: any = await import(`${contracts}/src/index.ts`);
 const Schema: any = await import(createRequire(`${contracts}/package.json`).resolve("effect/Schema"));
 
 const schemas: Record<string, { schema: any; table: string; id: string }> = {
+  scheduledTasks: { schema: C.ScheduledTask, table: "scheduled_tasks", id: "task_id" },
   project: { schema: C.Project, table: "projection_projects", id: "project_id" },
   thread: { schema: C.OrchestrationV2AppThreadJson, table: "orchestration_v2_projection_threads", id: "thread_id" },
   runs: { schema: C.OrchestrationV2RunJson, table: "orchestration_v2_projection_runs", id: "run_id" },
@@ -51,6 +52,26 @@ const isO3 = db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name='rec
 const limit = Number(limitArg ?? 0);
 const groups = new Map<string, { count: number; example: string }>();
 function* records(kind: string, table: string, id: string): Generator<{ id: string; body: string }> {
+  if (!isO3 && kind === "scheduledTasks") {
+    const rows = db.prepare(`SELECT * FROM scheduled_tasks${limit ? ` LIMIT ${limit}` : ""}`).iterate();
+    for (const row of rows) {
+      const task = {
+        id: row.task_id, title: row.title, prompt: row.prompt, enabled: row.enabled !== 0,
+        schedule: JSON.parse(String(row.schedule_json)), projectId: row.project_id,
+        threadId: row.thread_id,
+        threadMode: row.thread_mode ?? (row.thread_id == null ? "new_thread" : "continue"),
+        workspaceStrategy: JSON.parse(String(row.workspace_strategy_json)),
+        modelSelection: JSON.parse(String(row.model_selection_json)),
+        runtimeMode: row.runtime_mode, interactionMode: row.interaction_mode,
+        createdBy: row.created_by, creationSource: row.creation_source,
+        createdAt: row.created_at, updatedAt: row.updated_at, nextRunAt: row.next_run_at,
+        lastRunAt: row.last_run_at, lastRunStatus: row.last_run_status,
+        lastRunError: row.last_run_error, runCount: row.run_count,
+      };
+      yield { id: String(row.task_id), body: JSON.stringify(task) };
+    }
+    return;
+  }
   if (!isO3 && kind === "project") {
     const rows = db.prepare(`SELECT * FROM projection_projects${limit ? ` LIMIT ${limit}` : ""}`).iterate();
     for (const row of rows) {

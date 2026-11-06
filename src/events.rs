@@ -1499,6 +1499,9 @@ pub(crate) fn message_item(db: &Connection, tid: &str, m: &Value) -> Result<Valu
         }
         item["createdBy"] = m.get("createdBy").cloned().unwrap_or(json!("user"));
         item["creationSource"] = m.get("creationSource").cloned().unwrap_or(json!("web"));
+        if let Some(task) = m.get("scheduledTaskId") {
+            item["scheduledTaskId"] = task.clone();
+        }
         if let Some(sender) = m.get("senderThreadId") {
             item["senderThreadId"] = sender.clone();
         }
@@ -1665,6 +1668,30 @@ fn delivery_mode(s: &State, db: &Connection, t: &Value, c: &Value, mcp: bool) ->
     }
 }
 
+fn validate_creation_fields(command: &Value) -> Result<()> {
+    for (field, allowed) in [
+        ("createdBy", &["user", "agent", "system"][..]),
+        (
+            "creationSource",
+            &["web", "mobile", "mcp", "provider", "server"][..],
+        ),
+    ] {
+        if command
+            .get(field)
+            .is_some_and(|v| !v.as_str().is_some_and(|v| allowed.contains(&v)))
+        {
+            return Err(format!("Invalid {field}"));
+        }
+    }
+    if command
+        .get("scheduledTaskId")
+        .is_some_and(|v| !v.as_str().is_some_and(|v| !v.trim().is_empty()))
+    {
+        return Err("Invalid scheduledTaskId".into());
+    }
+    Ok(())
+}
+
 pub(crate) fn stage_message(
     s: &std::sync::Arc<State>,
     tx: &Connection,
@@ -1681,6 +1708,7 @@ pub(crate) fn stage_message(
     ) {
         return Err("dispatch mode is not implemented".into());
     }
+    validate_creation_fields(c)?;
     crate::fresh_context::validate(c)?;
     let mode = c["dispatchMode"]["type"].as_str();
     if s.active.lock().unwrap().len() >= 32 {
@@ -1756,6 +1784,16 @@ pub(crate) fn stage_message(
     let run_id = random_id()?;
     let mid = c["messageId"].as_str().ok_or("messageId required")?;
     let mut m = json!({"id":mid,"threadId":tid,"runId":run_id,"nodeId":run_id,"role":"user","text":c["text"],"attachments":c["attachments"],"streaming":false,"createdBy":if mcp_origin{"agent"}else{"user"},"creationSource":if mcp_origin{"mcp"}else{"web"},"createdAt":at,"updatedAt":at});
+    if !mcp_origin {
+        for field in ["createdBy", "creationSource"] {
+            if let Some(value) = c.get(field) {
+                m[field] = value.clone();
+            }
+        }
+    }
+    if let Some(task) = c.get("scheduledTaskId") {
+        m["scheduledTaskId"] = task.clone();
+    }
     if let Some(reference) = c.get("sourcePlanRef") {
         m["sourcePlanRef"] = reference.clone();
     }
@@ -1826,6 +1864,7 @@ pub(crate) fn stage_message(
         let object = preparation.as_object_mut().unwrap();
         for field in [
             "messageId",
+            "scheduledTaskId",
             "text",
             "attachments",
             "inputIntent",
@@ -1904,6 +1943,7 @@ pub(crate) fn import_native(
 }
 
 pub(crate) fn new_thread(db: &Connection, c: &Value, tid: &str, at: &str) -> Result<Value> {
+    validate_creation_fields(c)?;
     Ok({
         for key in [
             "projectId",
@@ -1924,7 +1964,7 @@ pub(crate) fn new_thread(db: &Connection, c: &Value, tid: &str, at: &str) -> Res
         {
             return Err("Project was deleted".into());
         }
-        json!({"id":tid,"projectId":c["projectId"],"title":c["title"],"providerInstanceId":c["modelSelection"]["instanceId"],"modelSelection":c["modelSelection"],"runtimeMode":c["runtimeMode"],"interactionMode":c["interactionMode"],"branch":c["branch"],"worktreePath":c["worktreePath"],"createdBy":"user","creationSource":c.get("creationSource").cloned().unwrap_or(json!("web")),"lineage":{"parentThreadId":null,"relationshipToParent":null,"rootThreadId":tid},"forkedFrom":null,"activeProviderThreadId":null,"createdAt":at,"updatedAt":at,"archivedAt":null,"settledOverride":null,"settledAt":null,"lastVisitedAt":null,"snoozedAt":null,"snoozedUntil":null,"pullRequests":[],"deletedAt":null})
+        json!({"id":tid,"projectId":c["projectId"],"title":c["title"],"providerInstanceId":c["modelSelection"]["instanceId"],"modelSelection":c["modelSelection"],"runtimeMode":c["runtimeMode"],"interactionMode":c["interactionMode"],"branch":c["branch"],"worktreePath":c["worktreePath"],"createdBy":c.get("createdBy").cloned().unwrap_or(json!("user")),"creationSource":c.get("creationSource").cloned().unwrap_or(json!("web")),"lineage":{"parentThreadId":null,"relationshipToParent":null,"rootThreadId":tid},"forkedFrom":null,"activeProviderThreadId":null,"createdAt":at,"updatedAt":at,"archivedAt":null,"settledOverride":null,"settledAt":null,"lastVisitedAt":null,"snoozedAt":null,"snoozedUntil":null,"pullRequests":[],"deletedAt":null})
     })
 }
 

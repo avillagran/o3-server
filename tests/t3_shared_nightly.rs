@@ -7,7 +7,10 @@ use std::{path::PathBuf, sync::Arc};
 const SCHEMA: &str = include_str!("fixtures/t3-statev2-80.sql");
 
 fn profile(schema: &str) -> PathBuf {
-    assert!(std::path::Path::new("/run/.containerenv").is_file());
+    assert!(
+        std::path::Path::new("/run/.containerenv").is_file()
+            || std::path::Path::new("/.dockerenv").is_file()
+    );
     let dir = std::env::temp_dir().join(format!(
         "o3-shared-nightly-{}",
         o3_server::store::random_id().unwrap()
