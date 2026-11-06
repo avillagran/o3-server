@@ -60,6 +60,7 @@ pub struct State {
     /// How long a finished run's live requests stay answerable, like T3's session idle window.
     pub request_release_ms: std::sync::atomic::AtomicU64,
     pub(crate) settings_cache: Mutex<crate::settings::Cache>,
+    pub(crate) secret_resolver: std::sync::Arc<crate::secret_resolver::SecretResolver>,
     pub provider: Mutex<Option<std::sync::Arc<dyn crate::provider::Provider>>>,
     pub active: Mutex<
         std::collections::BTreeMap<
@@ -71,6 +72,7 @@ pub struct State {
     pub launch_lock: Mutex<()>,
     pub(crate) shared_export: Mutex<()>,
     pub(crate) managed_policy: crate::managed_policy::Policy,
+    pub(crate) listener_auth: std::sync::OnceLock<crate::managed_limits::AuthPolicy>,
     pub changed: tokio::sync::watch::Sender<u64>,
     pub activity: tokio::sync::watch::Sender<u64>,
     /// Live terminal and command-output sources, with their own wake-up channel.
@@ -164,6 +166,9 @@ mod sql_profile {
 }
 
 impl State {
+    pub fn secret_resolver(&self) -> std::sync::Arc<crate::secret_resolver::SecretResolver> {
+        self.secret_resolver.clone()
+    }
     /// Embedded hosts select the o3-server binary used by the isolated document parser.
     pub fn set_document_worker(&self, path: PathBuf) {
         self.document_text.set_worker(path);
@@ -218,7 +223,7 @@ impl State {
         let streams = crate::streams::Hub::new();
         streams.terminals.set_agent_scopes(agent_scopes.clone());
         streams.terminals.restore(&dir.join("terminal-history"))?;
-        Ok(Self {
+        let state = Self {
             agent_scopes,
             forge: Default::default(),
             rollback_pending: std::sync::atomic::AtomicBool::new(false),
@@ -240,6 +245,7 @@ impl State {
             launch_lock: Mutex::new(()),
             shared_export: Mutex::new(()),
             managed_policy: policy,
+            listener_auth: std::sync::OnceLock::new(),
             provider: Mutex::new(None),
             active: Mutex::new(std::collections::BTreeMap::new()),
             changed,
@@ -259,7 +265,10 @@ impl State {
             asset_profile_root: dir.into(),
             request_release_ms: std::sync::atomic::AtomicU64::new(30 * 60 * 1000),
             settings_cache: Mutex::new(None),
-        })
+            secret_resolver: std::sync::Arc::new(crate::secret_resolver::SecretResolver::system()),
+        };
+        state.revoke_policy_clients()?;
+        Ok(state)
     }
 
     /// Backpressure on blocking workers, outside the receipt transaction.
@@ -306,9 +315,77 @@ impl State {
         }).expect("start SQLite checkpointer");
     }
 
+    /// Listener classification is fixed before request handling begins.
+    pub fn configure_web_auth(&self, host: Option<&str>) -> Result<(), String> {
+        self.listener_auth
+            .set(crate::managed_clients::web_auth_policy(host))
+            .map_err(|_| "Listener authentication is already configured".into())
+    }
+    pub fn auth_policy(&self) -> crate::managed_limits::AuthPolicy {
+        self.listener_auth
+            .get()
+            .copied()
+            .unwrap_or(crate::managed_limits::AuthPolicy::LocalBrowser)
+    }
+    /// Revoke only the native link identities the immutable machine policy disallows.
+    pub fn revoke_policy_clients(&self) -> Result<Value, String> {
+        if self.managed_policy.allows_remote() && self.managed_policy.allows_connect() {
+            return Ok(json!({"sessions":0,"pairingLinks":0}));
+        }
+        let now = now_ms();
+        let mut db = self.db.lock().unwrap();
+        let tx = db.transaction().map_err(|error| error.to_string())?;
+        let sessions = {
+            let mut query=tx.prepare("SELECT session_id,subject,client FROM auth_sessions WHERE revoked_at IS NULL AND expires_at>?").map_err(|error|error.to_string())?;
+            let rows = query
+                .query_map([now], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                })
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+            rows
+        };
+        let mut revoked_sessions = 0;
+        for (id, subject, client) in sessions {
+            let client: Value = serde_json::from_str(&client).map_err(|error| error.to_string())?;
+            if crate::managed_clients::session_disallowed(&self.managed_policy, &subject, &client) {
+                revoked_sessions+=tx.execute("UPDATE auth_sessions SET revoked_at=? WHERE session_id=? AND revoked_at IS NULL",params![now,id]).map_err(|error|error.to_string())?;
+            }
+        }
+        let links = {
+            let mut query=tx.prepare("SELECT id,subject FROM auth_pairing_links WHERE revoked_at IS NULL AND consumed_at IS NULL AND expires_at>?").map_err(|error|error.to_string())?;
+            let rows = query
+                .query_map([now], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+            rows
+        };
+        let mut revoked_links = 0;
+        for (id, subject) in links {
+            if crate::managed_clients::subject_disallowed(&self.managed_policy, &subject) {
+                revoked_links+=tx.execute("UPDATE auth_pairing_links SET revoked_at=? WHERE id=? AND revoked_at IS NULL",params![now,id]).map_err(|error|error.to_string())?;
+            }
+        }
+        tx.commit().map_err(|error| error.to_string())?;
+        Ok(json!({"sessions":revoked_sessions,"pairingLinks":revoked_links}))
+    }
+
     /// A one-use pairing secret, as `/api/auth/pairing-token` hands out.
     pub fn issue_pairing(&self, label: Option<&str>, ttl_ms: i64) -> Result<Value, String> {
-        self.issue_pairing_scoped(label, ttl_ms, &STANDARD_SCOPES.join(" "), "owner")
+        self.issue_pairing_scoped(
+            label,
+            ttl_ms,
+            &STANDARD_SCOPES.join(" "),
+            crate::managed_clients::LINK_SUBJECT,
+        )
     }
     pub fn issue_pairing_scoped(
         &self,
@@ -317,6 +394,22 @@ impl State {
         scopes: &str,
         subject: &str,
     ) -> Result<Value, String> {
+        if !self.managed_policy.allows_remote()
+            && subject != crate::managed_clients::STARTUP_SUBJECT
+        {
+            return Err(crate::managed_clients::remote_pairing_refusal(
+                &self.managed_policy,
+            ));
+        }
+        if subject == crate::managed_clients::CONNECT_SUBJECT
+            && !self.managed_policy.allows_connect()
+        {
+            return Err(crate::managed_clients::refusal(
+                &self.managed_policy,
+                "T3 Connect",
+                None,
+            ));
+        }
         let (id, credential, now) = (random_id()?, random_id()?, now_ms());
         self.db.lock().unwrap().execute(
             "INSERT INTO auth_pairing_links(id,credential,scopes,subject,label,created_at,expires_at) VALUES(?,?,?,?,?,?,?)",
@@ -336,8 +429,28 @@ impl State {
         credential: &str,
         client: &Value,
     ) -> Result<Option<Value>, String> {
+        self.exchange_pairing_from(credential, client, None)
+    }
+    pub(crate) fn exchange_pairing_from(
+        &self,
+        credential: &str,
+        client: &Value,
+        peer: Option<std::net::IpAddr>,
+    ) -> Result<Option<Value>, String> {
+        if !self.managed_policy.allows_remote()
+            && !peer.is_some_and(crate::managed_clients::local_peer)
+        {
+            return Ok(None);
+        }
         let now = now_ms();
         let db = self.db.lock().unwrap();
+        let subject: Option<String> = db.query_row("SELECT subject FROM auth_pairing_links WHERE credential=? AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>?", params![credential,now], |row|row.get(0)).optional().map_err(|error|error.to_string())?;
+        if subject.as_deref().is_some_and(|subject| {
+            crate::managed_clients::subject_disallowed(&self.managed_policy, subject)
+        }) {
+            return Ok(None);
+        }
+
         let grant: Option<(String, String, Option<String>)> = db.query_row(
             "UPDATE auth_pairing_links SET consumed_at=?1 WHERE credential=?2 AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>?1 RETURNING scopes,subject,label",
             params![now, credential], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
@@ -346,6 +459,13 @@ impl State {
             return Ok(None);
         };
         let mut client = client.clone();
+        if !client.is_object() {
+            client = json!({});
+        }
+        client.as_object_mut().unwrap().remove("ipAddress");
+        if let Some(peer) = peer {
+            client["ipAddress"] = json!(crate::managed_clients::canonical_peer(peer));
+        }
         if let Some(label) = label {
             client["client_label"] = label.into();
         }
@@ -405,6 +525,13 @@ impl State {
         claims["scopes"] = json!(scopes.split_whitespace().collect::<Vec<_>>());
         claims["sub"] = subject.into();
         let client: Value = serde_json::from_str(&client).ok()?;
+        if crate::managed_clients::session_disallowed(
+            &self.managed_policy,
+            claims["sub"].as_str()?,
+            &client,
+        ) {
+            return None;
+        }
         claims["runtimeModeCeiling"] = client["runtimeModeCeiling"].clone();
         Some(claims)
     }

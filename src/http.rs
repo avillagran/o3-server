@@ -85,6 +85,7 @@ async fn body(request: Request<Incoming>) -> Option<Bytes> {
 
 /// `POST /oauth/token`: RFC 8693 exchange of a pairing secret for a bearer session.
 async fn token(state: &State, request: Request<Incoming>) -> Reply {
+    let peer = request.extensions().get::<std::net::IpAddr>().copied();
     {
         let mut window = state.http.token_window.lock().unwrap();
         if window.0.elapsed() >= std::time::Duration::from_secs(1) {
@@ -118,7 +119,7 @@ async fn token(state: &State, request: Request<Incoming>) -> Reply {
             r#"{"code":"invalid_request"}"#.into(),
         );
     };
-    match state.exchange_pairing(&credential, &client) {
+    match state.exchange_pairing_from(&credential, &client, peer) {
         Ok(Some(result)) => json_reply(StatusCode::OK, result.to_string()),
         Ok(None) => unauthorized(),
         Err(_) => json_reply(
@@ -450,7 +451,7 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
         }
         (Method::GET, "/api/auth/session") => {
             let mut result =
-                json!({"authenticated":false,"auth":crate::settings::auth_descriptor()});
+                json!({"authenticated":false,"auth":crate::settings::auth_descriptor_for(&state)});
             if let Some(session) = bearer(&request).and_then(|t| state.session(t)) {
                 result["authenticated"] = json!(true);
                 result["scopes"] = session["scopes"].clone();
@@ -575,6 +576,15 @@ async fn serve_connection<I>(
 where
     I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
+    if !state.managed_policy.allows_remote()
+        && !address.is_some_and(crate::managed_clients::local_peer)
+    {
+        return Err(std::io::Error::other(crate::managed_clients::refusal(
+            &state.managed_policy,
+            "remote clients",
+            None,
+        )));
+    }
     let permit = state
         .http
         .connections
@@ -602,6 +612,21 @@ where
         .map_err(std::io::Error::other)
 }
 pub async fn serve(listener: TcpListener, state: Arc<State>) -> std::io::Result<()> {
+    if state.listener_auth.get().is_none() {
+        state
+            .configure_web_auth(Some(&listener.local_addr()?.ip().to_string()))
+            .map_err(std::io::Error::other)?;
+    }
+    crate::managed_limits::check_reachability(
+        state.managed_policy.document.as_ref(),
+        &crate::managed_limits::Reachability {
+            auth_policy: state.auth_policy(),
+            host: Some(listener.local_addr()?.ip().to_string()),
+            tailscale_serve_enabled: false,
+            private_network_only: None,
+        },
+    )
+    .map_err(std::io::Error::other)?;
     state.native_mcp.listen(listener.local_addr()?);
     crate::checkpoint::recover_rollbacks(&state).map_err(std::io::Error::other)?;
     crate::recovery::recover(&mut state.db.lock().unwrap()).map_err(std::io::Error::other)?;
@@ -718,11 +743,14 @@ async fn auth_route(s: &State, session: &Value, request: Request<Incoming>) -> R
                         .join(" ")
                 })
                 .unwrap_or_default();
+            if !s.managed_policy.allows_remote() {
+                return json_reply(StatusCode::FORBIDDEN, json!({"_tag":"EnvironmentHttpForbiddenError","message":crate::managed_clients::remote_pairing_refusal(&s.managed_policy)}).to_string());
+            }
             match s.issue_pairing_scoped(
                 p["label"].as_str(),
                 300000,
                 &scopes,
-                session["sub"].as_str().unwrap_or("client"),
+                crate::managed_clients::LINK_SUBJECT,
             ) {
                 Ok(v) => json_reply(StatusCode::OK, v.to_string()),
                 Err(_) => json_reply(StatusCode::INTERNAL_SERVER_ERROR, "{}".into()),

@@ -180,9 +180,15 @@ fn report_activity(s: &State, p: &Value) -> Reply {
     Ok(Value::Null)
 }
 
-async fn refresh_providers(s: &State, _p: &Value) -> Reply {
+async fn refresh_providers(s: &State, p: &Value) -> Reply {
     let provider = s.provider.lock().unwrap().clone();
     if let Some(provider) = provider {
+        if p["reloadSecrets"] == true {
+            provider
+                .reload_secrets(p["instanceId"].as_str())
+                .await
+                .map_err(|m| json!({"_tag":"ProviderSetupError","message":m}))?;
+        }
         provider
             .refresh()
             .await

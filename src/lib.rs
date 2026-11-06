@@ -17,16 +17,22 @@ pub mod rpc;
 mod rpc_input;
 pub mod shared_readiness;
 pub mod store;
+#[cfg(test)]
+#[path = "../tests/support/sandbox.rs"]
+pub(crate) mod test_sandbox;
 
 pub use http::{serve, serve_io};
 pub mod command_output;
 mod command_shared;
 mod composer_context;
 pub mod events;
+pub mod managed_clients;
 pub mod managed_limits;
 pub mod managed_policy;
 mod managed_settings;
 mod managed_settings_codec;
+pub mod managed_tailscale;
+pub mod managed_tailscale_guard;
 pub mod ops;
 #[cfg(target_os = "linux")]
 mod process_scope;
@@ -34,6 +40,7 @@ pub mod profile;
 pub mod provider;
 mod provider_failure;
 mod provider_policy;
+mod provider_secrets;
 pub mod pty;
 mod relay_origin;
 pub mod routes;

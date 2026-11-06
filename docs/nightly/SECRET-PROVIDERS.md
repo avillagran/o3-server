@@ -8,7 +8,7 @@ The 1Password driver invokes `op --cache=false` directly, using argument arrays.
 
 The temporary template holds references, not resolved values. Its guard removes that single file on completion, cancellation, and timeout; child processes are killed on cancellation. No recursive cleanup is used. The driver never writes resolved secrets into settings or a persistent cache.
 
-The production command adapter matches the native direct-spawn branch for Linux and macOS. Windows-specific executable and shell resolution remains outside this leaf. Consumer integration also remains pending: keep one resolver per server, pass effective settings snapshots, and resolve references only at the consumer boundary. Do not persist the resolved values. `server.refreshProviders` needs native selective invalidation, including the fallback to invalidating everything when settings cannot be read. Provider-instance refresh has a separate reference selection path.
+The production command adapter matches the native direct-spawn branch for Linux and macOS. Windows-specific executable and shell resolution remains outside this leaf. Registered-provider integration is implemented in `PROVIDER-SECRETS.md`: one resolver per server receives effective settings snapshots and resolves references at the consumer boundary. Other consumers remain pending. Do not persist the resolved values. `server.refreshProviders` needs native selective invalidation, including the fallback to invalidating everything when settings cannot be read. Provider-instance refresh has a separate reference selection path.
 
 References shaped as `{ provider, reference }` name a configured secret provider. A scheduled webhook's `signature.secretRef` is a separate one-use secret-request token scoped to a project; it must use the secret-request store rather than this resolver directly.
 
@@ -16,4 +16,4 @@ References shaped as `{ provider, reference }` name a configured secret provider
 
 Rust process tests copy the read-only synthetic `secret-op.py` into a private fixture directory inside the container and set the copied executable to mode 0700. They create no fixture symlinks. They check argv, templates, permissions, exact values, fallback, timeout termination, cancellation cleanup, and absence of fallback after a batch timeout. They never invoke an installed `op`, read real credentials, or use host authentication state.
 
-No RPC capability has been enabled by adding this leaf. Provider launch, source-control credentials, usage limits, device hosts, request-secret reference answers, and refresh integration require their own physical boundary checks before being advertised.
+Registered Codex/Claude provider launch and provider-scoped secret reload now have physical boundary checks. No unrelated RPC capability has been enabled. Source-control credentials, usage limits, device hosts, and request-secret reference answers remain pending.

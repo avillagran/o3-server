@@ -13,6 +13,7 @@ const revision=referenceOverride??'c55db3e9c72fdf584f4b54192fb39beb88667b59';
 const require=createRequire(contracts+'/package.json');
 if(require('effect/package.json').version!=='4.1.2')throw Error('Effect4.1.2 required');
 const S=await import(pathToFileURL(require.resolve('effect/Schema')).href);
+const NativeAnnotations=await import(pathToFileURL(path.join(path.dirname(require.resolve('effect/Schema')),'internal/schema/annotations.js')).href);
 const Effect=await import(pathToFileURL(require.resolve('effect/Effect')).href);
 const Option=await import(pathToFileURL(require.resolve('effect/Option')).href);
 const Duration=await import(pathToFileURL(require.resolve('effect/Duration')).href);
@@ -42,8 +43,8 @@ function plain(value){
 }
 function checkedFilter(check,where){
  const a=check.annotations;
- if(a?.representation){const kind=a.representation.id.replace('effect/schema/','');if(!['isMaxLength','isMinLength','isInt','isBetween','isPattern','isFinite','isGreaterThanOrEqualTo'].includes(kind))throw Error('Unsupported refinement '+kind);return {kind,...clone(a.representation.payload??{})};}
- if(a?.expected==='a non-blank string')return {kind:'nonBlank'};
+ if(a?.representation){const kind=a.representation.id.replace('effect/schema/','');if(!['isMaxLength','isMinLength','isInt','isBetween','isPattern','isFinite','isGreaterThanOrEqualTo'].includes(kind))throw Error('Unsupported refinement '+kind);return {kind,...clone(a.representation.payload??{}),...(a.expected?{expected:a.expected}:{})};}
+ if(a?.expected==='a non-blank string')return {kind:'nonBlank',expected:a.expected};
  if(a===undefined){
   if(where.includes('speechProjectCustomWords'))return {kind:'speechWords'};
   if(where.endsWith('.id')&&/(deviceHosts|easDeviceHosts|simlockDeviceHosts)/.test(where))return {kind:'configuredHostId'};
@@ -59,6 +60,7 @@ function transformKind(transformation,where){
  if(decode._tag==='Passthrough')return tag('identity');
  if(text.includes('Option.filter(o, Predicate.isNotUndefined)'))return tag('default');
  if(text.includes('Effect.succeed(trim(value))'))return tag('trim');
+ if(text.includes('Effect.succeed(value || fallback)'))return tag('nonEmptyFallback');
  if(text.includes('instanceIdSource'))return tag('modelSelection');
  if(text.includes('coerceLegacyOptionsObjectToArray'))return tag('legacyOptions');
  if(text.includes('Option.isSome(decodeValue(raw))')&&text.includes('undefined'))return tag('safeOptional');
@@ -74,7 +76,7 @@ function transformKind(transformation,where){
 function compile(ast,where){
  if(ids.has(ast))return ids.get(ast);
  const id=nodes.length;ids.set(ast,id);nodes.push(null);nodeAsts.push(ast);
- const node={tag:ast._tag};
+ const node={tag:ast._tag,expected:NativeAnnotations.getExpected(ast)};
  if(ast.context?.isOptional)node.optional=true;
  if(ast.checks?.length)node.checks=ast.checks.map(check=>checkedFilter(check,where));
  switch(ast._tag){
@@ -94,6 +96,7 @@ function compile(ast,where){
  }
  if(ast.encoding?.length){
   node.codecs=ast.encoding.map(({to,transformation})=>({from:compile(to,where),transform:transformKind(transformation,where)}));
+  if(node.codecs.some(codec=>codec.transform==='nonEmptyFallback')){const link=ast.encoding.find(({transformation})=>transformation.decode.transform?.toString().includes('Effect.succeed(value || fallback)'));node.fallback=plain(Effect.runSync(link.transformation.decode.transform('')));}
   if(node.codecs.some(codec=>codec.transform==='default')){
    const link=ast.encoding.find(({transformation})=>transformation.decode.transform?.toString().includes('Option.filter(o, Predicate.isNotUndefined)'));
    const selected=Effect.runSync(link.transformation.decode.transform(Option.none()));
@@ -211,9 +214,23 @@ const secretFields={providers:Object.fromEntries(native.secrets.providerSecretFi
 const secretReference=compile(C.SecretReference.ast,'secretReference');
 const patchRoot=compile(C.ServerSettingsPatch.ast,'patch');
 const persistedRoot=compile(native.persisted.PersistedServerSettings.ast,'persisted');
+const providerConfigRoots={codex:compile(C.CodexSettings.ast,'providerConfig.codex'),claudeAgent:compile(C.ClaudeSettings.ast,'providerConfig.claudeAgent')};
+const providerInstanceRoot=compile(C.ProviderInstanceConfig.ast,'providerInstance');
+const providerConfigDefaults={codex:plain(S.decodeUnknownSync(C.CodexSettings)({})),claudeAgent:plain(S.decodeUnknownSync(C.ClaudeSettings)({}))};
+for(const file of ['apps/server/src/provider/Drivers/CodexDriver.ts','apps/server/src/provider/Drivers/ClaudeDriver.ts'])source(file);
 const sparseCases=[{input:{},encoded:S.encodeSync(C.ServerSettings)({})}];
 for(const key of Object.keys(encodedDefaults)){const value=C.DEFAULT_SERVER_SETTINGS[key];sparseCases.push({input:plain({[key]:value}),encoded:S.encodeSync(C.ServerSettings)({[key]:value})});}
 fs.writeFileSync(path.join(output,'sparse-fixtures.json'),JSON.stringify(sparseCases,null,2)+'\n');
+const providerConfigCases=[];
+for(const [driver,schema]of Object.entries({codex:C.CodexSettings,claudeAgent:C.ClaudeSettings})){
+ const base=S.encodeSync(schema)(S.decodeUnknownSync(schema)({}));
+ for(const key of Object.keys(schema.fields))for(const value of [undefined,null,true,false,0,'',' native ',[],{},[{slug:' model ',name:' Name '}],[{slug:0}],{invalid:true}]){
+  const input={...base};if(value===undefined)delete input[key];else input[key]=value;
+  const c={driver,input};try{const decoded=S.decodeUnknownSync(schema)(input);c.decoded=plain(decoded);}catch(error){c.error=error.message;}providerConfigCases.push(c);
+ }
+ for(const input of [null,false,[],{}, {customModels:[{slug:' ',name:'n'}]}, ...[{}, {type:'select'}, {type:'boolean',id:0}, {type:'boolean',id:' ',label:'x'}].map(value=>({customModels:[{slug:'x',name:'n',capabilities:{optionDescriptors:[value]}}]}))]){const c={driver,input};try{c.decoded=plain(S.decodeUnknownSync(schema)(input));}catch(error){c.error=error.message;}providerConfigCases.push(c);}
+}
+fs.writeFileSync(path.join(output,'provider-config-fixtures.json'),JSON.stringify(providerConfigCases,null,2)+'\n');
 const nodeValues=['gpu:\r','gpu:\u2028','valid\n','a\nb','\u0085',null,true,false,0,1,-1,1.5,9007199254740992,'',' ',' native ','\uFEFFok\uFEFF','node','local','onReturn',[],{},['a'],[null],{future:'x'},{id:'node',term:'word',aliases:[]},{provider:'vault',reference:'token'}];
 const nodeCases=[];
 for(const [index,ast]of nodeAsts.entries())for(const [valueIndex,value]of [...nodeValues,undefined].entries()){
@@ -222,7 +239,7 @@ for(const [index,ast]of nodeAsts.entries())for(const [valueIndex,value]of [...no
  nodeCases.push(item);
 }
 fs.writeFileSync(path.join(output,'node-fixtures.json'),JSON.stringify({values:nodeValues,cases:nodeCases},null,2)+'\n');
-const ir={persistedRoot,patchRoot,secretReference,secretFields,revision,effect:'4.1.2',sources,root,fields,projectOverrideKeys:Object.keys(C.ProjectSettingsOverrides.fields),defaults,encodedDefaults,nodes,transformSources};
+const ir={providerInstanceRoot,providerConfigRoots,providerConfigDefaults,persistedRoot,patchRoot,secretReference,secretFields,revision,effect:'4.1.2',sources,root,fields,projectOverrideKeys:Object.keys(C.ProjectSettingsOverrides.fields),defaults,encodedDefaults,nodes,transformSources};
 fs.writeFileSync(path.join(output,'codec.json'),JSON.stringify(ir,null,2)+'\n');
 fs.writeFileSync(path.join(output,'codec-fixtures.json'),JSON.stringify({revision,effect:'4.1.2',cases:codecCases},null,2)+'\n');
 console.log(nodes.length+' closed AST nodes; '+Object.keys(transformSources).length+' transforms; '+codecCases.length+' codec cases');

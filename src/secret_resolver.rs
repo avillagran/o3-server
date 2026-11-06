@@ -22,14 +22,25 @@ pub struct SecretReference {
 impl SecretReference {
     /// Decode the native reference schema, retaining its distinction from a one-use secretRef.
     pub fn decode(value: &Value) -> Option<Self> {
-        let provider = trim(value.get("provider")?.as_str()?);
-        let reference = trim(value.get("reference")?.as_str()?);
+        Self::from_fields(
+            trim(value.get("provider")?.as_str()?),
+            trim(value.get("reference")?.as_str()?),
+        )
+    }
+    /// Read a schema-validated value without decoding it a second time.
+    pub(crate) fn from_decoded(value: &Value) -> Option<Self> {
+        Self::from_fields(
+            value.get("provider")?.as_str()?,
+            value.get("reference")?.as_str()?,
+        )
+    }
+    fn from_fields(provider: &str, reference: &str) -> Option<Self> {
         if provider.is_empty()
             || provider.encode_utf16().count() > 64
             || !regex::Regex::new(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
                 .unwrap()
                 .is_match(provider)
-            || reference.is_empty()
+            || trim(reference).is_empty()
             || reference.encode_utf16().count() > 1024
             || reference.contains(['\r', '\n'])
         {
@@ -40,6 +51,7 @@ impl SecretReference {
             reference: reference.into(),
         })
     }
+
     pub fn provider(&self) -> &str {
         &self.provider
     }

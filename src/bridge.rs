@@ -64,6 +64,15 @@ pub async fn start_hosted(
     gateway: Option<&Path>,
     relay_host: bool,
 ) -> anyhow::Result<Node> {
+    anyhow::ensure!(
+        state.managed_policy.allows_remote(),
+        "{}",
+        crate::managed_clients::refusal(
+            &state.managed_policy,
+            "remote clients",
+            Some("so OmaBridge cannot expose this environment")
+        )
+    );
     let store = Store::open(path, "o3-server")?;
     omabridge::write_document(
         &path.join("host.json"),
@@ -239,4 +248,67 @@ pub fn cli(args: &[String]) -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod managed_client_tests {
+    use super::*;
+    fn state(limits: serde_json::Value) -> Arc<State> {
+        assert!(Path::new("/run/.containerenv").is_file());
+        let dir = std::env::temp_dir().join(format!(
+            "managed-bridge-{}",
+            crate::store::random_id().unwrap()
+        ));
+        let mut state = State::open(&dir).unwrap();
+        state.managed_policy = crate::managed_policy::Policy::parse(
+            Path::new("/fixture/policy.json"),
+            &serde_json::json!({"schemaVersion":1,"organization":"Fixture Corp","limits":limits})
+                .to_string(),
+        )
+        .unwrap();
+        Arc::new(state)
+    }
+    #[tokio::test]
+    async fn policy_refuses_bridge_publication_and_credentials_before_state_effects() {
+        let state = state(serde_json::json!({"clients":["local-browser"]}));
+        let path = state.dir.join("bridge-not-created");
+        let error =
+            match start_hosted(&path, state.clone(), NetOptions::loopback(), None, false).await {
+                Ok(_) => panic!("Disallowed bridge started"),
+                Err(error) => error,
+            };
+        assert!(error.to_string().contains("Fixture Corp"));
+        assert!(!path.exists());
+        assert!(Issuer(state.clone())
+            .issue(None, "fixture-peer")
+            .await
+            .is_err());
+        let count: i64 = state
+            .db
+            .lock()
+            .unwrap()
+            .query_row("SELECT count(*) FROM auth_pairing_links", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+    #[tokio::test]
+    async fn connect_disabled_keeps_independent_bridge_pairing_available() {
+        let state = state(serde_json::json!({"connect":false}));
+        let pairing = Issuer(state.clone())
+            .issue(None, "fixture-peer")
+            .await
+            .unwrap();
+        let exchanged = state
+            .exchange_pairing(&pairing.credential, &serde_json::json!({}))
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            state
+                .session(exchanged["access_token"].as_str().unwrap())
+                .unwrap()["sub"],
+            crate::managed_clients::LINK_SUBJECT
+        );
+    }
 }

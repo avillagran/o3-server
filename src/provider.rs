@@ -186,6 +186,12 @@ pub trait Provider: Send + Sync + 'static {
     fn poll_usage<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         self.refresh()
     }
+    fn reload_secrets<'a>(
+        &'a self,
+        _instance: Option<&'a str>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
+    }
     fn refresh_defaults<'a>(
         &'a self,
         _excluded: Vec<String>,
@@ -1673,6 +1679,7 @@ pub struct ConfiguredProviders {
     pub directory: std::path::PathBuf,
     instances: std::sync::Mutex<std::collections::BTreeMap<String, Instance>>,
     last_settings: std::sync::Mutex<serde_json::Value>,
+    secrets: crate::provider_secrets::Registry,
     discovered_defaults: std::sync::Mutex<std::collections::HashSet<String>>,
     retired: std::sync::Mutex<Vec<std::sync::Arc<crate::provider_lifetime::Pool>>>,
     builtin_scopes: std::sync::Mutex<
@@ -1681,6 +1688,7 @@ pub struct ConfiguredProviders {
 }
 struct Instance {
     settings: serde_json::Value,
+    secrets: Option<crate::provider_secrets::Secrets>,
     discovered: bool,
     provider: Option<std::sync::Arc<crate::provider_lifetime::Pool>>,
     binary: std::path::PathBuf,
@@ -1700,10 +1708,24 @@ impl ConfiguredProviders {
             directory,
             instances: Default::default(),
             last_settings: std::sync::Mutex::new(serde_json::json!({})),
+            secrets: crate::provider_secrets::Registry::new(std::sync::Arc::new(
+                crate::secret_resolver::SecretResolver::system(),
+            )),
             discovered_defaults: Default::default(),
             retired: Default::default(),
             builtin_scopes: Default::default(),
         }
+    }
+    pub fn with_secret_resolver(
+        mut self,
+        resolver: std::sync::Arc<crate::secret_resolver::SecretResolver>,
+    ) -> Self {
+        self.secrets = self.secrets.with_resolver(resolver);
+        self
+    }
+    pub fn with_notifications(mut self, notify: tokio::sync::watch::Sender<u64>) -> Self {
+        self.secrets = self.secrets.with_notifications(notify);
+        self
     }
     pub fn with_agent_scopes(
         mut self,
@@ -1772,8 +1794,9 @@ impl ConfiguredProviders {
     fn sync(&self) -> serde_json::Value {
         use serde_json::json;
         let settings = self.settings();
-        let mut cache = self.instances.lock().unwrap();
         let hydrated = crate::provider_policy::hydrate(&settings);
+        let secret_states = self.secrets.reconcile(&hydrated, &settings, &self.policy);
+        let mut cache = self.instances.lock().unwrap();
         let available_builtins = self
             .defaults
             .config()
@@ -1792,7 +1815,20 @@ impl ConfiguredProviders {
         cache.retain(|id, instance| {
             let keep = hydrated
                 .get(id)
-                .is_some_and(|entry| instance.settings == *entry);
+                .is_some_and(|entry| instance.settings == *entry)
+                && match secret_states.get(id) {
+                    Some(crate::provider_secrets::Status::Ready { secrets, .. }) => {
+                        instance.secrets.as_ref() == Some(secrets)
+                    }
+                    Some(crate::provider_secrets::Status::Reading) => {
+                        instance.preparation_error.as_deref() == Some("Reading secrets…")
+                    }
+                    Some(crate::provider_secrets::Status::Unavailable(reason)) => {
+                        instance.provider.is_none()
+                            && instance.preparation_error.as_ref() == Some(reason)
+                    }
+                    None => false,
+                };
             if !keep {
                 if let Some(pool) = &instance.provider {
                     pool.retire();
@@ -1837,19 +1873,36 @@ impl ConfiguredProviders {
         }
         drop(builtin_scopes);
         for (id, entry) in hydrated.as_object().into_iter().flatten() {
-            if cache.get(id).is_some_and(|i| i.settings == *entry) {
+            if cache.contains_key(id) {
                 continue;
             }
+            let (resolved_entry, secrets, secret_error) = match secret_states.get(id) {
+                Some(crate::provider_secrets::Status::Ready { entry, secrets }) => {
+                    (entry.clone(), Some(secrets.clone()), None)
+                }
+                Some(crate::provider_secrets::Status::Reading) => {
+                    (entry.clone(), None, Some("Reading secrets…".to_owned()))
+                }
+                Some(crate::provider_secrets::Status::Unavailable(reason)) => {
+                    (entry.clone(), None, Some(reason.clone()))
+                }
+                None => (
+                    entry.clone(),
+                    None,
+                    Some("Invalid provider instance settings".to_owned()),
+                ),
+            };
+            let working = &resolved_entry;
             let driver = entry["driver"].as_str().unwrap_or("");
             let name = if driver == "claudeAgent" {
                 "claude"
             } else {
                 driver
             };
-            let binary = instance_binary(entry, name);
-            let resolved = match self.policy.driver_denial(driver) {
+            let binary = instance_binary(working, name);
+            let resolved = match secret_error.or_else(|| self.policy.driver_denial(driver)) {
                 Some(reason) => Err(reason),
-                None => crate::provider_home::resolve(entry),
+                None => crate::provider_home::resolve(working),
             };
             let preparation_error = resolved.as_ref().err().cloned();
             let layout = resolved.ok().flatten();
@@ -1857,12 +1910,12 @@ impl ConfiguredProviders {
             let env = layout
                 .as_ref()
                 .map(|home| home.environment.clone())
-                .unwrap_or_else(|| crate::provider_home::raw_environment(entry));
+                .unwrap_or_else(|| crate::provider_home::raw_environment(working));
             let home = layout.as_ref().and_then(|home| home.runtime.clone());
             let setup = layout
                 .filter(|home| home.driver == "codex")
                 .map(crate::provider_home::Setup::new);
-            let args = launch_args(entry["config"]["launchArgs"].as_str().unwrap_or(""))
+            let args = launch_args(working["config"]["launchArgs"].as_str().unwrap_or(""))
                 .unwrap_or_default();
             let provider: Option<std::sync::Arc<dyn Provider>> = if preparation_error.is_some() {
                 None
@@ -1890,6 +1943,7 @@ impl ConfiguredProviders {
                 id.clone(),
                 Instance {
                     settings: entry.clone(),
+                    secrets,
                     discovered: false,
                     provider: provider
                         .map(|p| crate::provider_lifetime::Pool::new(p, predecessors.clone())),
@@ -2043,6 +2097,10 @@ impl Provider for ConfiguredProviders {
             for p in providers {
                 let _ = p.discover(cwd.clone()).await;
             }
+            if self.secrets.has_pending() {
+                self.secrets.wait().await;
+                self.discover(cwd).await?;
+            }
             Ok(())
         })
     }
@@ -2162,6 +2220,21 @@ impl Provider for ConfiguredProviders {
                 let _ = p.refresh().await;
             }
             Ok(())
+        })
+    }
+    fn reload_secrets<'a>(
+        &'a self,
+        instance: Option<&'a str>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            let settings = self.settings();
+            let entries = crate::provider_policy::hydrate(&settings);
+            let instance = instance.map(|id| crate::provider_policy::configured_id(&settings, id));
+            self.secrets
+                .reload(&entries, &settings, &self.policy, instance)
+                .await;
+            self.sync();
+            self.close_retired().await
         })
     }
     fn execute<'a>(

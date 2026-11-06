@@ -8,6 +8,12 @@ pub fn descriptor(s: &State) -> Value {
 pub fn auth_descriptor() -> Value {
     json!({"policy":"loopback-browser","bootstrapMethods":["pairing-token"],"sessionMethods":["bearer-access-token"],"sessionCookieName":"t3code_session"})
 }
+pub fn auth_descriptor_for(state: &State) -> Value {
+    let mut descriptor = auth_descriptor();
+    descriptor["policy"] = serde_json::to_value(state.auth_policy()).unwrap();
+    descriptor["bootstrapMethods"] = json!(["one-time-token"]);
+    descriptor
+}
 pub(crate) type Cache = Option<(Option<(std::time::SystemTime, u64)>, Value)>;
 pub fn read(s: &State) -> Result<Value, String> {
     s.managed_policy.effective_settings(&read_stored(s)?)
@@ -396,7 +402,7 @@ fn preserve_environment(old: &Value, patch: &mut Value) {
 }
 pub fn config(s: &State) -> Result<Value, String> {
     let (keybindings, issues) = crate::keybind::resolved(s);
-    let mut config = json!({"environment":descriptor(s),"directEndpoints":direct_endpoints(s),"auth":auth_descriptor(),"cwd":std::env::current_dir().unwrap_or_default(),"keybindingsConfigPath":s.dir.join("keybindings.json"),"keybindings":keybindings,"issues":issues,"providers":s.provider.lock().unwrap().as_ref().map(|p|p.config()).unwrap_or_default(),"availableEditors":crate::files::available_editors(),"observability":{"logsDirectoryPath":s.dir.join("logs"),"localTracingEnabled":false,"otlpTracesEnabled":false,"otlpMetricsEnabled":false,"otlpLogsEnabled":false},"settings":get(s)?,"shellResumeCompletionMarker":true,"threadResumeCompletionMarker":true,"shellThreadFamilies":false,"shellOlderSettled":false,"threadSnapshotPagination":false});
+    let mut config = json!({"environment":descriptor(s),"directEndpoints":direct_endpoints(s),"auth":auth_descriptor_for(s),"cwd":std::env::current_dir().unwrap_or_default(),"keybindingsConfigPath":s.dir.join("keybindings.json"),"keybindings":keybindings,"issues":issues,"providers":s.provider.lock().unwrap().as_ref().map(|p|p.config()).unwrap_or_default(),"availableEditors":crate::files::available_editors(),"observability":{"logsDirectoryPath":s.dir.join("logs"),"localTracingEnabled":false,"otlpTracesEnabled":false,"otlpMetricsEnabled":false,"otlpLogsEnabled":false},"settings":get(s)?,"shellResumeCompletionMarker":true,"threadResumeCompletionMarker":true,"shellThreadFamilies":false,"shellOlderSettled":false,"threadSnapshotPagination":false});
     config["settingsSupport"] = json!({"enableAgentBrowserAccess":{"supported":true},"projectAgentBrowserAccessOverrides":{"supported":true}});
     if let Some(summary) = s.managed_policy.basic_summary() {
         config["managedPolicy"] = summary;

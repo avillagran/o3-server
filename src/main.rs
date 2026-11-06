@@ -134,6 +134,51 @@ fn main() -> std::io::Result<()> {
     };
     let provider_policy = policy.clone();
     let is_auth = args.first().map(String::as_str) == Some("auth");
+    let is_serving = !is_auth && args.first().map(String::as_str) != Some("import");
+    let port = option(&args, "--port")
+        .map(str::to_owned)
+        .or_else(|| std::env::var("T3CODE_PORT").ok())
+        .unwrap_or("3773".into());
+    let mut host = option(&args, "--host")
+        .map(str::to_owned)
+        .or_else(|| std::env::var("T3CODE_HOST").ok())
+        .unwrap_or("127.0.0.1".into());
+    if is_serving {
+        let port_number: u16 = port.parse().map_err(std::io::Error::other)?;
+        let reachability = o3_server::managed_limits::Reachability {
+            auth_policy: o3_server::managed_clients::web_auth_policy(Some(&host)),
+            host: Some(host.clone()),
+            tailscale_serve_enabled: false,
+            private_network_only: None,
+        };
+        host =
+            o3_server::managed_limits::check_reachability(policy.document.as_ref(), &reachability)
+                .unwrap_or_else(|error| {
+                    eprintln!("{error}");
+                    std::process::exit(o3_server::managed_policy::EXIT_CODE);
+                });
+        if !policy.allows_remote() {
+            if port_number == 0 {
+                eprintln!("A managed local listener requires a fixed nonzero port");
+                std::process::exit(o3_server::managed_policy::EXIT_CODE);
+            }
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?;
+            runtime
+                .block_on(o3_server::managed_tailscale_guard::enforce(
+                    &policy,
+                    &o3_server::managed_tailscale::Target {
+                        host: host.clone(),
+                        port: port_number,
+                    },
+                ))
+                .unwrap_or_else(|error| {
+                    eprintln!("{error}");
+                    std::process::exit(o3_server::managed_policy::EXIT_CODE);
+                });
+        }
+    }
     let _ownership = if !is_auth {
         Some(o3_server::profile::ownership(&dir)?)
     } else {
@@ -142,6 +187,11 @@ fn main() -> std::io::Result<()> {
     let mut state = o3_server::store::State::open_with_policy(Path::new(&dir), policy)
         .map_err(std::io::Error::other)?;
     state.asset_profile_root = base.clone();
+    if is_serving {
+        state
+            .configure_web_auth(Some(&host))
+            .map_err(std::io::Error::other)?;
+    }
     if args.first().map(String::as_str) == Some("import") {
         let source =
             option(&args, "--from").ok_or_else(|| std::io::Error::other("--from is required"))?;
@@ -247,14 +297,6 @@ fn main() -> std::io::Result<()> {
         }
         return Err(std::io::Error::other("unsupported auth command"));
     }
-    let port = option(&args, "--port")
-        .map(str::to_owned)
-        .or_else(|| std::env::var("T3CODE_PORT").ok())
-        .unwrap_or("3773".into());
-    let host = option(&args, "--host")
-        .map(str::to_owned)
-        .or_else(|| std::env::var("T3CODE_HOST").ok())
-        .unwrap_or("127.0.0.1".into());
     tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .on_thread_park(o3_server::heap::on_thread_park)
@@ -288,13 +330,19 @@ fn main() -> std::io::Result<()> {
                     dir.clone(),
                 )
                 .with_agent_scopes(state.agent_scopes.clone())
-                .with_policy(provider_policy.clone()),
+                .with_policy(provider_policy.clone())
+                .with_secret_resolver(state.secret_resolver())
+                .with_notifications(state.changed.clone()),
             ));
             let mut term =
                 tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
             let mut interrupt =
                 tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
-            let listener = tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
+            let listener = tokio::net::TcpListener::bind((
+                host.as_str(),
+                port.parse::<u16>().map_err(std::io::Error::other)?,
+            ))
+            .await?;
             let _guard = o3_server::profile::RuntimeGuard::write(&dir, listener.local_addr()?)?;
             eprintln!("o3-server listening on {}", listener.local_addr()?);
             // T3's base must be taken in before the first client reads.
@@ -329,38 +377,39 @@ fn main() -> std::io::Result<()> {
             // A standalone OmaBridge can publish this server instead; --no-bridge keeps the
             // embedded node, its identity and its timers out of this process.
             #[cfg(feature = "bridge")]
-            let bridge = if args.iter().any(|a| a == "--no-bridge") {
-                None
-            } else {
-                Some(
-                    o3_server::bridge::start_hosted(
-                        &option(&args, "--bridge-state-dir")
-                            .map(std::path::PathBuf::from)
-                            .unwrap_or_else(|| base.join("omabridge")),
-                        state.clone(),
-                        {
-                            let mut options = omabridge::NetOptions::loopback();
-                            if let Some(bind) = option(&args, "--bridge-bind") {
-                                options.bind = bind.parse().map_err(std::io::Error::other)?;
-                            }
-                            if let Some(relay) = option(&args, "--bridge-relay") {
-                                options.relay = match relay {
-                                    "none" => omabridge::Relay::Disabled,
-                                    "public" => omabridge::Relay::Public,
-                                    url => omabridge::Relay::Custom(
-                                        url.parse().map_err(std::io::Error::other)?,
-                                    ),
-                                };
-                            }
-                            options
-                        },
-                        option(&args, "--bridge-gateway-config").map(Path::new),
-                        args.iter().any(|a| a == "--bridge-relay-host"),
+            let bridge =
+                if args.iter().any(|a| a == "--no-bridge") || !provider_policy.allows_remote() {
+                    None
+                } else {
+                    Some(
+                        o3_server::bridge::start_hosted(
+                            &option(&args, "--bridge-state-dir")
+                                .map(std::path::PathBuf::from)
+                                .unwrap_or_else(|| base.join("omabridge")),
+                            state.clone(),
+                            {
+                                let mut options = omabridge::NetOptions::loopback();
+                                if let Some(bind) = option(&args, "--bridge-bind") {
+                                    options.bind = bind.parse().map_err(std::io::Error::other)?;
+                                }
+                                if let Some(relay) = option(&args, "--bridge-relay") {
+                                    options.relay = match relay {
+                                        "none" => omabridge::Relay::Disabled,
+                                        "public" => omabridge::Relay::Public,
+                                        url => omabridge::Relay::Custom(
+                                            url.parse().map_err(std::io::Error::other)?,
+                                        ),
+                                    };
+                                }
+                                options
+                            },
+                            option(&args, "--bridge-gateway-config").map(Path::new),
+                            args.iter().any(|a| a == "--bridge-relay-host"),
+                        )
+                        .await
+                        .map_err(std::io::Error::other)?,
                     )
-                    .await
-                    .map_err(std::io::Error::other)?,
-                )
-            };
+                };
             // block_on runs on the main thread, outside the runtime worker park hooks.
             let result = tokio::select! {
                 result=&mut serving=>result.map_err(std::io::Error::other)?,

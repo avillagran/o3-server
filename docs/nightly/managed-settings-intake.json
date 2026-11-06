@@ -1,11 +1,11 @@
 {
   "referenceRevision": "c55db3e9c72fdf584f4b54192fb39beb88667b59",
-  "checkedThrough": "6577c6b6185167c0e502fa01f9e8e8f2dee6ff25",
-  "scope": "Managed settings, full ServerSettings/ServerSettingsPatch/persisted schema codecs, and exact pure credential traversal dependencies. Other nightly features are outside this intake.",
+  "checkedThrough": "32a0531748c44b25072d7495ce0b9bd7e9450a87",
+  "scope": "Managed settings and complete ServerSettings/ServerSettingsPatch/persisted codecs, plus registered Codex/Claude config schemas and native diagnostic expectations. Other nightly features are outside this intake.",
   "effectVersion": "4.1.2",
-  "schemaNodes": 562,
-  "transformFamilies": 12,
-  "sourceFiles": 116,
+  "schemaNodes": 620,
+  "transformFamilies": 13,
+  "sourceFiles": 118,
   "changedSourcesThroughCheck": [
     "packages/contracts/src/device.ts"
   ],
@@ -125,20 +125,23 @@
     "packages/source-control-gitlab/src/shared/definition.ts": "c182b5a943364a38c428686a3038bb5fbb8603994946d28f738430540b45fdf2",
     "packages/source-control-gitlab/src/shared/icon.ts": "03965106c01b8be9db3ee69ba728235b42594ca987997e5b38a62d7f2dedd225",
     "packages/source-control-gitlab/src/shared/referenceAutolinks.ts": "6ace18aa56c08681061b2157e5027f037b6aa19a43e0f0fcaf0fa4b5ea1aa8bd",
-    "apps/server/src/serverSettings.ts": "95e1b05a690ffcdd96925f387b746f7cc3ce979925e114256d9c14784833deaf"
+    "apps/server/src/serverSettings.ts": "95e1b05a690ffcdd96925f387b746f7cc3ce979925e114256d9c14784833deaf",
+    "apps/server/src/provider/Drivers/CodexDriver.ts": "4327fed7ea328699265b6592152510c5c5355fae1bb37a7c89be9bb77cbd67c4",
+    "apps/server/src/provider/Drivers/ClaudeDriver.ts": "58ab8fa3d4e07d210eedc8adcb89af962359a37021806106b8e1209dbe0abf3b"
   },
   "fixtures": {
     "fullSettings": 1189,
-    "individualSchemaNodes": 15736,
+    "individualSchemaNodes": 17360,
     "managedScenarios": 533,
     "validScenarios": 211,
     "writeDecisions": 80,
-    "sparseEncodings": 75
+    "sparseEncodings": 75,
+    "providerConfigCases": 186
   },
   "sourceDriftExplanation": {
-    "packages/contracts/src/device.ts": "Only DeviceHostStatuses gained optional incompletePlatforms; unrelated to ServerSettings. Both references independently generated identical codec program and all four oracle fixture sets."
+    "packages/contracts/src/device.ts": "Only unrelated device status schema changed in the checked source closure. Independently generated full settings/provider codec program and all fixtures remain identical."
   },
-  "verifiedEquivalentThrough": "6577c6b6185167c0e502fa01f9e8e8f2dee6ff25",
+  "verifiedEquivalentThrough": "32a0531748c44b25072d7495ce0b9bd7e9450a87",
   "equivalenceProof": [
     "codec.json (excluding source hashes and revision)",
     "codec-fixtures.json (excluding revision)",

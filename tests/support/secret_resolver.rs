@@ -252,10 +252,7 @@ struct PrivateOp {
 }
 impl PrivateOp {
     fn new(answers: &Value) -> Self {
-        assert!(
-            std::path::Path::new("/run/.containerenv").exists(),
-            "synthetic secret process tests must run in rootless Podman"
-        );
+        crate::test_sandbox::assert_isolated();
         let directory = std::env::temp_dir().join(format!("o3-secret-op-{}", uuid().unwrap()));
         std::fs::DirBuilder::new()
             .mode(0o700)

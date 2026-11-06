@@ -34,6 +34,39 @@ pub(crate) fn fields() -> &'static Map<String, Value> {
 pub(crate) fn project_override_keys() -> &'static Vec<Value> {
     PROGRAM["projectOverrideKeys"].as_array().unwrap()
 }
+pub(crate) fn decode_provider_instance(value: Value) -> Result<Value> {
+    run(
+        id(&PROGRAM["providerInstanceRoot"]),
+        Some(value),
+        false,
+        false,
+    )?
+    .ok_or(())
+}
+pub(crate) fn decode_provider_config(
+    driver: &str,
+    value: Value,
+) -> std::result::Result<Value, String> {
+    let root = PROGRAM["providerConfigRoots"]
+        .get(driver)
+        .and_then(Value::as_u64)
+        .ok_or_else(|| "Unsupported provider config schema".to_owned())? as usize;
+    run(root, Some(value.clone()), false, false)
+        .and_then(|v| v.ok_or(()))
+        .map_err(|_| {
+            let (message, path) = diagnose(root, Some(value), Vec::new());
+            if path.is_empty() {
+                message
+            } else {
+                format!(
+                    "{message}\n  at {}",
+                    path.iter()
+                        .map(|part| format!("[{part}]"))
+                        .collect::<String>()
+                )
+            }
+        })
+}
 pub(crate) fn decode_persisted(value: Value) -> Result<Value> {
     run(id(&PROGRAM["persistedRoot"]), Some(value), false, false)?.ok_or(())
 }
@@ -237,6 +270,13 @@ fn transform(
         } else {
             value
         }),
+        "nonEmptyFallback" => Ok(
+            if !encode && value.as_ref().and_then(Value::as_str) == Some("") {
+                Some(n["fallback"].clone())
+            } else {
+                value
+            },
+        ),
         "retiredStream" => Ok(value.map(|v| {
             if !encode && v == "token" {
                 json!("paragraph")
@@ -417,9 +457,149 @@ fn check_value(check: &Value, v: &Value) -> Result<()> {
     }
 }
 
+fn expectation(index: usize) -> Vec<String> {
+    vec![node(index)["expected"]
+        .as_str()
+        .expect("native expected message")
+        .to_owned()]
+}
+
+fn compatible(index: usize, value: Option<&Value>) -> bool {
+    let n = node(index);
+    if let Some(codecs) = n["codecs"].as_array() {
+        return compatible(id(&codecs.last().unwrap()["from"]), value);
+    }
+    match n["tag"].as_str().unwrap() {
+        "Objects" => value.and_then(Value::as_object).is_some_and(|object| {
+            n["properties"].as_array().unwrap().iter().all(|property| {
+                let t = id(&property["type"]);
+                node(t)["tag"] != "Literal"
+                    || optional(t)
+                    || object.get(property["name"].as_str().unwrap()) == Some(&node(t)["literal"])
+            })
+        }),
+        "Literal" => match &n["literal"] {
+            Value::String(_) => value.is_some_and(Value::is_string),
+            Value::Number(_) => value.is_some_and(Value::is_number),
+            Value::Bool(_) => value.is_some_and(Value::is_boolean),
+            Value::Null => value.is_some_and(Value::is_null),
+            _ => false,
+        },
+        "Arrays" => value.is_some_and(Value::is_array),
+        "String" => value.is_some_and(Value::is_string),
+        "Number" => value.is_some_and(Value::is_number),
+        "Boolean" => value.is_some_and(Value::is_boolean),
+        "Null" => value.is_some_and(Value::is_null),
+        "Undefined" => value.is_none(),
+        "Union" => n["types"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| compatible(id(t), value)),
+        _ => false,
+    }
+}
+fn diagnose(index: usize, mut value: Option<Value>, path: Vec<Value>) -> (String, Vec<Value>) {
+    let n = node(index);
+    if let Some(codecs) = n["codecs"].as_array() {
+        for codec in codecs.iter().rev() {
+            let from = id(&codec["from"]);
+            match run(from, value.clone(), false, false) {
+                Err(()) => return diagnose(from, value, path),
+                Ok(v) => value = v,
+            }
+            match transform(
+                index,
+                codec["transform"].as_str().unwrap(),
+                value.clone(),
+                false,
+            ) {
+                Ok(v) => value = v,
+                Err(()) => return (format!("Expected {}", expectation(index).join(" | ")), path),
+            }
+        }
+    }
+    let expected = || format!("Expected {}", expectation(index).join(" | "));
+    match n["tag"].as_str().unwrap() {
+        "Union" => {
+            let matched = n["types"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(id)
+                .filter(|t| compatible(*t, value.as_ref()))
+                .collect::<Vec<_>>();
+            if matched.len() == 1 {
+                return diagnose(matched[0], value, path);
+            }
+        }
+        "Objects" => {
+            if let Some(object) = value.as_ref().and_then(Value::as_object) {
+                for property in n["properties"].as_array().unwrap() {
+                    let key = property["name"].as_str().unwrap();
+                    let t = id(&property["type"]);
+                    let v = object.get(key).cloned();
+                    let mut child = path.clone();
+                    child.push(json!(key));
+                    if v.is_none() && !optional(t) {
+                        return ("Missing key".into(), child);
+                    }
+                    if run(t, v.clone(), false, false).is_err() {
+                        return diagnose(t, v, child);
+                    }
+                }
+            }
+        }
+        "Arrays" => {
+            if let Some(array) = value.as_ref().and_then(Value::as_array) {
+                let elements = n["elements"].as_array().unwrap();
+                let rest = n["rest"].as_array().unwrap();
+                for (i, v) in array.iter().enumerate() {
+                    if let Some(t) = elements.get(i).or_else(|| rest.first()) {
+                        if run(id(t), Some(v.clone()), false, false).is_err() {
+                            let mut child = path.clone();
+                            child.push(json!(i));
+                            return diagnose(id(t), Some(v.clone()), child);
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    if let Some(v) = value {
+        for check in n["checks"].as_array().into_iter().flatten() {
+            if check_value(check, &v).is_err() {
+                return (
+                    format!(
+                        "Expected {}",
+                        check["expected"].as_str().unwrap_or("a valid value")
+                    ),
+                    path,
+                );
+            }
+        }
+    }
+    (expected(), path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn native_provider_config_decode_and_errors() {
+        let fixtures: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/provider-config-4262.json"))
+                .unwrap();
+        for c in fixtures.as_array().unwrap() {
+            let actual = decode_provider_config(c["driver"].as_str().unwrap(), c["input"].clone());
+            if let Some(error) = c["error"].as_str() {
+                assert_eq!(actual, Err(error.to_owned()), "config {c}")
+            } else {
+                assert_eq!(actual, Ok(c["decoded"].clone()), "config {c}")
+            }
+        }
+    }
     #[test]
     fn native_sparse_encoding() {
         let fixture: Value = serde_json::from_str(include_str!(

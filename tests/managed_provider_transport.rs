@@ -1,4 +1,6 @@
 //! Managed launch pins must reach the actual native transport without changing stored preferences.
+#[path = "support/sandbox.rs"]
+mod sandbox;
 mod support;
 use o3_server::managed_policy::Policy;
 use serde_json::{json, Value};
@@ -7,7 +9,7 @@ use std::{path::Path, sync::Arc, time::Duration};
 #[test]
 fn managed_pins_control_both_native_transports_and_preserve_stored_values() {
     use std::os::unix::fs::PermissionsExt;
-    assert!(Path::new("/run/.containerenv").is_file());
+    sandbox::assert_isolated();
     for (driver, whole_instance) in [
         ("codex", false),
         ("claudeAgent", false),
@@ -104,7 +106,7 @@ fn managed_pins_control_both_native_transports_and_preserve_stored_values() {
 async fn disallowed_driver_cannot_launch_during_discovery_or_usage_polling() {
     use o3_server::provider::Provider;
     use std::os::unix::fs::PermissionsExt;
-    assert!(Path::new("/run/.containerenv").is_file());
+    sandbox::assert_isolated();
     let directory = std::env::temp_dir().join(format!(
         "managed-blocked-{}",
         o3_server::store::random_id().unwrap()
