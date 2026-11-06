@@ -202,7 +202,23 @@ pub(crate) fn validate(t3: &Connection) -> Result<bool> {
 
 fn baseline_schema(t3: &Connection) -> Result<()> {
     t3.execute_batch("CREATE TABLE IF NOT EXISTS o3_task_baseline(table_name TEXT NOT NULL,row_key TEXT NOT NULL,row_hash TEXT NOT NULL,PRIMARY KEY(table_name,row_key));
-        CREATE TABLE IF NOT EXISTS o3_task_sync(singleton INTEGER PRIMARY KEY CHECK(singleton=1),version INTEGER NOT NULL CHECK(version=1),local_identity TEXT NOT NULL,local_generation INTEGER NOT NULL);").map_err(|e|e.to_string())
+        CREATE TABLE IF NOT EXISTS o3_task_sync(singleton INTEGER PRIMARY KEY CHECK(singleton=1),version INTEGER NOT NULL CHECK(version=1),local_identity TEXT NOT NULL,local_generation INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS o3_task_hash_format(singleton INTEGER PRIMARY KEY CHECK(singleton=1),version INTEGER NOT NULL);").map_err(|e|e.to_string())
+}
+fn legacy_hashes(native: &Connection) -> Result<bool> {
+    let version: Option<i64> = native
+        .query_row(
+            "SELECT version FROM o3_task_hash_format WHERE singleton=1",
+            [],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    match version {
+        Some(2) => Ok(false),
+        None => Ok(acknowledged(native)?.is_some()),
+        other => Err(format!("Unsupported shared task hash format {other:?}")),
+    }
 }
 fn generation(local: &Connection) -> Result<(String, i64)> {
     local
@@ -253,11 +269,14 @@ fn keys(db: &Connection, table: &Table, local: bool) -> Result<BTreeSet<String>>
 }
 
 /// Canonicalize JSON columns so property order or whitespace does not invent task edits.
-fn normalized(table: &Table, mut row: Vec<Value>) -> Result<Vec<Value>> {
+fn normalized(table: &Table, mut row: Vec<Value>, legacy: bool) -> Result<Vec<Value>> {
     for (column, field) in table.columns.iter().zip(&mut row) {
         if column.ends_with("_json") {
             let text = field.as_str().ok_or("Task JSON column is not text")?;
             let canonical = match *column {
+                _ if legacy => serde_json::from_str::<Value>(text)
+                    .map_err(|e| e.to_string())?
+                    .to_string(),
                 "request_json" => serde_json::to_string(
                     &serde_json::from_str::<crate::webhook_payload::Request>(text)
                         .map_err(|e| e.to_string())?,
@@ -381,8 +400,15 @@ fn row(db: &Connection, table: &Table, key: &str, local: bool) -> Result<Option<
     Ok(found)
 }
 fn fingerprint(table: &Table, row: Option<&Vec<Value>>) -> Result<Option<String>> {
+    fingerprint_version(table, row, false)
+}
+fn fingerprint_version(
+    table: &Table,
+    row: Option<&Vec<Value>>,
+    legacy: bool,
+) -> Result<Option<String>> {
     row.map(|row| {
-        normalized(table, row.clone())
+        normalized(table, row.clone(), legacy)
             .map(|row| format!("{:x}", Sha256::digest(serde_json::to_vec(&row).unwrap())))
     })
     .transpose()
@@ -509,15 +535,23 @@ fn write_row(
 fn import_plan(local: &Connection, native: &Connection) -> Result<Vec<(usize, String)>> {
     let identity = generation(local)?.0;
     let first = acknowledged(native)?.is_none_or(|saved| saved.0 != identity);
+    let legacy = legacy_hashes(native)?;
     let mut plan = Vec::new();
     for (index, table) in TABLES.iter().enumerate() {
         let mut all = keys(native, table, false)?;
         all.extend(baseline_keys(native, table)?);
         for key in all {
-            let remote = fingerprint(table, row(native, table, &key, false)?.as_ref())?;
+            let native_row = row(native, table, &key, false)?;
+            let local_row = row(local, table, &key, true)?;
+            let remote = fingerprint_version(table, native_row.as_ref(), legacy)?;
             let old = baseline(native, table, &key)?;
-            let ours = fingerprint(table, row(local, table, &key, true)?.as_ref())?;
+            let ours = fingerprint_version(table, local_row.as_ref(), legacy)?;
             if remote == old && !first {
+                // Older exporters sorted opaque request JSON while copying it. If neither
+                // copy changed semantically, restore the native bytes during the upgrade.
+                if legacy && ours == old && local_row != native_row {
+                    plan.push((index, key));
+                }
                 continue;
             }
             if ours == remote {
@@ -591,6 +625,7 @@ fn export_rows(local: &Connection, native: &Connection) -> Result<usize> {
     }
     let (identity, generation) = generation(local)?;
     native.execute("INSERT INTO o3_task_sync VALUES(1,1,?1,?2) ON CONFLICT(singleton) DO UPDATE SET local_identity=excluded.local_identity,local_generation=excluded.local_generation",params![identity,generation]).map_err(|e|e.to_string())?;
+    native.execute("INSERT INTO o3_task_hash_format VALUES(1,2) ON CONFLICT(singleton) DO UPDATE SET version=excluded.version",[]).map_err(|e|e.to_string())?;
     Ok(written)
 }
 
@@ -604,6 +639,7 @@ pub(crate) fn start(s: &State, native: &mut Connection) -> Result<usize> {
         .map_err(|e| e.to_string())?;
     baseline_schema(&tx)?;
     let imports = import_plan(&local, &tx)?;
+    let upgrade = legacy_hashes(&tx)?;
     let local_tx = local.transaction().map_err(|e| e.to_string())?;
     // Remove changed pending rows before reinserting them: two valid snapshots may exchange
     // coalescing keys and would otherwise violate the partial unique index mid-transaction.
@@ -618,6 +654,25 @@ pub(crate) fn start(s: &State, native: &mut Connection) -> Result<usize> {
         let table = &TABLES[*index];
         if let Some(value) = row(&tx, table, key, false)? {
             write_row(&local_tx, table, key, Some(&value), true)?;
+        }
+    }
+    if upgrade {
+        // Rebase the old hashes on the current native bytes before exporting preserved
+        // local intent. The new hashes and their format marker share the native commit.
+        for table in TABLES {
+            let mut all = keys(&tx, table, false)?;
+            all.extend(baseline_keys(&tx, table)?);
+            for key in all {
+                if let Some(hash) = fingerprint(table, row(&tx, table, &key, false)?.as_ref())? {
+                    tx.execute("UPDATE o3_task_baseline SET row_hash=?1 WHERE table_name=?2 AND row_key=?3",params![hash,table.name,key]).map_err(|e|e.to_string())?;
+                } else {
+                    tx.execute(
+                        "DELETE FROM o3_task_baseline WHERE table_name=?1 AND row_key=?2",
+                        params![table.name, key],
+                    )
+                    .map_err(|e| e.to_string())?;
+                }
+            }
         }
     }
     // Local imports commit before their native baseline. A crash before the native commit
@@ -645,6 +700,9 @@ pub(crate) fn export(s: &State, native: &mut Connection) -> Result<usize> {
         .map_err(|e| e.to_string())?;
     baseline_schema(&tx)?;
     let saved = acknowledged(&tx)?;
+    if legacy_hashes(&tx)? {
+        return Err("Shared task hash upgrade requires startup reconciliation".into());
+    }
     if saved.is_none()
         && TABLES
             .iter()

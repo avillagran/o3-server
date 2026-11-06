@@ -58,6 +58,10 @@ Comparison hashes normalize only their outer encoding and retain header order,
 because that order affects `{{request}}`. A regression exchanges order-only edits
 through both ownership directions. Other JSON columns retain semantic comparison
 so cosmetic schedule formatting does not create a task conflict.
+Hash format 2 also upgrades the previous sorted-JSON baseline transactionally.
+Unchanged native request bytes restore ordering lost by an older copy while
+unexported local task edits are retained. The format marker commits with the new
+hashes; unsupported future formats are refused.
 
 ## Still open
 

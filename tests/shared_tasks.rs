@@ -460,3 +460,125 @@ fn native_request_bytes_and_header_order_survive_handover_and_order_only_edits()
     assert_eq!(count(&native, "scheduled_task_webhook_pending"), 1);
     assert_eq!(count(&native, "scheduled_task_webhook_replay_keys"), 2);
 }
+
+#[test]
+fn old_sorted_hashes_upgrade_without_conflicts_or_losing_local_intent() {
+    use sha2::{Digest, Sha256};
+    let (_dir, s, native) = profile();
+    let original = text(
+        &native,
+        "SELECT request_json FROM scheduled_task_webhook_pending",
+    );
+    drop(start(&s));
+    let entries = {
+        let mut query = native
+            .prepare("SELECT table_name,row_key FROM o3_task_baseline")
+            .unwrap();
+        query
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap()
+    };
+    for (table, key) in entries {
+        assert!(matches!(
+            table.as_str(),
+            "scheduled_tasks"
+                | "scheduled_task_webhook_deliveries"
+                | "scheduled_task_webhook_pending"
+                | "scheduled_task_webhook_replay_keys"
+                | "scheduled_task_webhook_relay_deliveries"
+        ));
+        let values: Vec<String> = serde_json::from_str(&key).unwrap();
+        let mut query = native
+            .prepare(&format!("SELECT * FROM {table} LIMIT 0"))
+            .unwrap();
+        let columns = query
+            .column_names()
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect::<Vec<_>>();
+        drop(query);
+        let pk = if table == "scheduled_task_webhook_replay_keys" {
+            vec!["task_id", "replay_key"]
+        } else {
+            vec![columns[0].as_str()]
+        };
+        let predicate = pk
+            .iter()
+            .map(|name| format!("{name}=?"))
+            .collect::<Vec<_>>()
+            .join(" AND ");
+        query = native
+            .prepare(&format!("SELECT * FROM {table} WHERE {predicate}"))
+            .unwrap();
+        let fields = query
+            .query_row(params_from_iter(values), |row| {
+                columns
+                    .iter()
+                    .enumerate()
+                    .map(|(i, name)| {
+                        Ok(match row.get_ref(i)? {
+                            rusqlite::types::ValueRef::Null => Value::Null,
+                            rusqlite::types::ValueRef::Integer(n) => json!(n),
+                            rusqlite::types::ValueRef::Text(text) => {
+                                let text = std::str::from_utf8(text).unwrap();
+                                json!(if name.ends_with("_json") {
+                                    serde_json::from_str::<Value>(text).unwrap().to_string()
+                                } else {
+                                    text.to_owned()
+                                })
+                            }
+                            _ => panic!("Unexpected fixture SQL type"),
+                        })
+                    })
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .unwrap();
+        let hash = format!("{:x}", Sha256::digest(serde_json::to_vec(&fields).unwrap()));
+        native
+            .execute(
+                "UPDATE o3_task_baseline SET row_hash=?1 WHERE table_name=?2 AND row_key=?3",
+                params![hash, table, key],
+            )
+            .unwrap();
+    }
+    native
+        .execute("DELETE FROM o3_task_hash_format", [])
+        .unwrap();
+    let sorted = serde_json::from_str::<Value>(&original)
+        .unwrap()
+        .to_string();
+    s.db.lock()
+        .unwrap()
+        .execute(
+            "UPDATE scheduled_task_webhook_pending SET request_json=?1",
+            [sorted],
+        )
+        .unwrap();
+    rename(&s, "continue", "Pending before hash upgrade");
+    let mut shared = start(&s);
+    assert_eq!(task(&s, "continue")["title"], "Pending before hash upgrade");
+    assert_eq!(
+        text(
+            &native,
+            "SELECT title FROM scheduled_tasks WHERE task_id='continue'"
+        ),
+        "Pending before hash upgrade"
+    );
+    assert_eq!(
+        text(
+            &s.db.lock().unwrap(),
+            "SELECT request_json FROM scheduled_task_webhook_pending"
+        ),
+        original
+    );
+    assert_eq!(
+        native
+            .query_row("SELECT version FROM o3_task_hash_format", [], |r| r
+                .get::<_, i64>(0))
+            .unwrap(),
+        2
+    );
+    assert_eq!(t3_shared::export(&s, &mut shared).unwrap(), 0);
+}
