@@ -1,0 +1,19 @@
+# Secret provider resolver
+
+This leaf ports the native resolver core and the built-in `one_password` driver from nightly 4275 (`6577c6b6185167c0e502fa01f9e8e8f2dee6ff25`). The native algorithms produce the same fixture traces on nightly 4262. `secret-resolver-intake.json` records the source hashes and oracle boundaries.
+
+`SecretResolver::read` takes one effective `secretProviders` settings snapshot and decoded references. It checks driver availability, reference syntax, and the driver's configuration schema before reading. Cache entries include failed reads and remain for the server's lifetime; a changed decoded configuration or explicit invalidation permits another read. Calls deduplicate references and batch them per provider in input order. One semaphore serializes unlocks and invalidations, while complete cache hits bypass an unlock waiting on the provider. Cancelled reads release the semaphore and do not cache unfinished work.
+
+The 1Password driver invokes `op --cache=false` directly, using argument arrays. Single reads use `read --account=... --no-newline`. Batches use `inject --account=... -i FILE` with a private, exclusively created 0600 template and a random separator after each reference. A batch failure falls back to bounded single reads; a batch timeout returns unresolved results without another round of unlocks. Each operation has the native 45-second limit. A nonblank secret is returned verbatim, including surrounding whitespace. Diagnostics contain only stage, exit status, and reference count.
+
+The temporary template holds references, not resolved values. Its guard removes that single file on completion, cancellation, and timeout; child processes are killed on cancellation. No recursive cleanup is used. The driver never writes resolved secrets into settings or a persistent cache.
+
+The production command adapter matches the native direct-spawn branch for Linux and macOS. Windows-specific executable and shell resolution remains outside this leaf. Consumer integration also remains pending: keep one resolver per server, pass effective settings snapshots, and resolve references only at the consumer boundary. Do not persist the resolved values. `server.refreshProviders` needs native selective invalidation, including the fallback to invalidating everything when settings cannot be read. Provider-instance refresh has a separate reference selection path.
+
+References shaped as `{ provider, reference }` name a configured secret provider. A scheduled webhook's `signature.secretRef` is a separate one-use secret-request token scoped to a project; it must use the secret-request store rather than this resolver directly.
+
+`tools/generate-secret-resolver-fixtures.mjs` executes the complete pinned resolver and driver implementations with controlled lower-level services. It uses the actual Effect 4.1.2 schemas, driver wrapper, and 1Password reference validator. Its timeout fixture replaces the Clock service, preserving the source duration and timeout branch. Run the generator only in rootless Podman with source/runtime mounts read-only, private temporary storage, and no network. Its arguments are `CHECKOUT CONTRACTS OUTPUT_DIRECTORY [REVISION]`; generated runtime modules are temporary oracle material.
+
+Rust process tests use the read-only synthetic `secret-op.py` through a private symlink and private fixture files inside the container. They check argv, templates, permissions, exact values, fallback, timeout termination, cancellation cleanup, and absence of fallback after a batch timeout. They never invoke an installed `op`, read real credentials, or use host authentication state.
+
+No RPC capability has been enabled by adding this leaf. Provider launch, source-control credentials, usage limits, device hosts, request-secret reference answers, and refresh integration require their own physical boundary checks before being advertised.

@@ -39,6 +39,7 @@ mod relay_origin;
 pub mod routes;
 pub mod scheduled;
 pub mod scopes;
+pub mod secret_resolver;
 pub mod service;
 pub mod settings;
 
