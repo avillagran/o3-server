@@ -290,6 +290,28 @@ impl Drop for PrivateOp {
     }
 }
 
+fn is_template_path(value: &str) -> bool {
+    let path = std::path::Path::new(value);
+    path.parent()
+        .is_some_and(|parent| parent == std::env::temp_dir())
+        && path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| {
+                let Some(id) = name.strip_prefix("t3code-op-inject-") else {
+                    return false;
+                };
+                id.len() == 36
+                    && id.bytes().enumerate().all(|(index, byte)| {
+                        if matches!(index, 8 | 13 | 18 | 23) {
+                            byte == b'-'
+                        } else {
+                            byte.is_ascii_hexdigit()
+                        }
+                    })
+            })
+}
+
 #[tokio::test]
 async fn native_one_password_process_traces() {
     for case in fixtures()["driverCases"].as_array().unwrap() {
@@ -317,27 +339,7 @@ async fn native_one_password_process_traces() {
                         .unwrap()
                         .iter()
                         .map(|arg| {
-                            let template = arg.as_str().is_some_and(|value| {
-                                let path = std::path::Path::new(value);
-                                path.parent()
-                                    .is_some_and(|parent| parent == std::env::temp_dir())
-                                    && path.file_name().and_then(|name| name.to_str()).is_some_and(
-                                        |name| {
-                                            let Some(id) = name.strip_prefix("t3code-op-inject-")
-                                            else {
-                                                return false;
-                                            };
-                                            id.len() == 36
-                                                && id.bytes().enumerate().all(|(index, byte)| {
-                                                    if matches!(index, 8 | 13 | 18 | 23) {
-                                                        byte == b'-'
-                                                    } else {
-                                                        byte.is_ascii_hexdigit()
-                                                    }
-                                                })
-                                        },
-                                    )
-                            });
+                            let template = arg.as_str().is_some_and(is_template_path);
                             if template {
                                 json!("TEMPLATE")
                             } else {
@@ -366,10 +368,7 @@ async fn native_one_password_process_traces() {
                     .as_array()
                     .unwrap()
                     .iter()
-                    .find_map(|v| {
-                        v.as_str()
-                            .filter(|s| s.starts_with("/tmp/t3code-op-inject-"))
-                    })
+                    .find_map(|v| v.as_str().filter(|s| is_template_path(s)))
                     .unwrap();
                 assert!(
                     !std::path::Path::new(path).exists(),
