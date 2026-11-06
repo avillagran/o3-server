@@ -54,6 +54,7 @@ evidence=pathlib.Path(tempfile.mkdtemp(prefix='o3-container-tests-',dir='/var/tm
 print(f'Container test evidence: {evidence}',flush=True)
 report = {
     'returncode': None,
+    'complete': False,
     'defaultFeatures': options.default_features,
     'allTests': options.all_tests,
     'integration': options.integration,
@@ -95,7 +96,8 @@ for index, binary in enumerate(binaries):
         with (evidence/'output.log').open('a') as log:
             log.write(output)
         report['binaryResults'].append({'binary':str(binary),'returncode':code})
-        report['returncode'] = code
+        report['complete'] = bool(code or index + 1 == len(binaries))
+        report['returncode'] = code if report['complete'] else None
         (evidence/'result.json').write_text(json.dumps(report,indent=2)+'\n')
         if code:
             print(output,flush=True)
