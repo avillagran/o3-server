@@ -71,7 +71,11 @@ enum Op {
     AttachAgentThread(String, oneshot::Sender<()>),
     Call(String, Value, Reply),
     Reply(Value),
-    Subscribe(String, Route, oneshot::Sender<Result<(), String>>),
+    Subscribe(
+        String,
+        Route,
+        oneshot::Sender<Result<Option<Value>, String>>,
+    ),
     Unsubscribe(String),
     WatchGoal(String, bool),
     Shutdown(oneshot::Sender<()>),
@@ -621,29 +625,30 @@ impl CodexProvider {
         c.0.send(Op::Subscribe(tid.clone(), tx, ack))
             .await
             .map_err(|_| "Codex closed")?;
-        ready.await.map_err(|_| "Codex closed")??;
+        let observed_goal = ready.await.map_err(|_| "Codex closed")??;
         let mut active_turn = None;
         let mut terminal_received = false;
         let goal_command = crate::native_goal::parse(&input.text, &input.attachments);
-        let mut goal = goals::State::new(
-            if input.native_session_id.as_deref() == Some(tid.as_str()) {
-                input.model_selection["o3NativeGoal"].clone()
-            } else {
-                Value::Null
-            },
-        );
+        let mut goal = goals::State::new(if let Some(goal) = &observed_goal {
+            goal.clone()
+        } else if input.native_session_id.as_deref() == Some(tid.as_str()) {
+            input.model_selection["o3NativeGoal"].clone()
+        } else {
+            Value::Null
+        });
         goal.origin = if input.model_selection["o3GoalCommandOrigin"] == "user" {
             "user"
         } else {
             "automatic"
         };
-        if !goal.current.is_null() {
+        if observed_goal.is_some() || !goal.current.is_null() {
             c.0.send(Op::WatchGoal(tid.clone(), goal.active()))
                 .await
                 .map_err(|_| "Codex closed")?;
         }
         let result=async {
             output.send(ProviderEvent::Codex(json!({"method":"o3/binding","params":{"threadId":tid,"cwd":input.cwd}}))).await.map_err(|_|"receiver closed")?;
+            if observed_goal.as_ref().is_some_and(|observed|observed!=&input.model_selection["o3NativeGoal"]) {goal.publish(&output,&tid).await?;}
             if let Some(command) = &goal_command {
                 if let Some(reply) = goal.prepare(&c, &tid, command, &output).await? {
                     output.send(ProviderEvent::Codex(json!({"method":"turn/started","params":{"threadId":tid,"o3GoalCommand":true,"turn":{"id":format!("goal-command:{}",input.model_selection["o3AttemptId"].as_str().unwrap_or(&input.run_id))}}}))).await.map_err(|_|"receiver closed")?;
@@ -1249,6 +1254,7 @@ async fn actor(
     let mut goal_versions = HashMap::<String, u64>::new();
     let mut goal_requests = HashMap::<u64, u64>::new();
     let mut desired_goals = HashMap::<String, bool>::new();
+    let mut goal_snapshots = goals::Snapshots::default();
     let mut next = 0u64;
     let mut buffer = FrameBuffer::default();
     let mut shutdown = None;
@@ -1264,7 +1270,7 @@ async fn actor(
                 let frame=match op {
                     Some(Op::AttachAgentThread(thread,ack))=>{if let Some(scope)=&agent_scope {scope.attach(&thread);}let _=ack.send(());continue;},
                     None=>return Ok(()),
-                    Some(Op::Subscribe(id,tx,ack))=>{let result=if routes.len()>=32||routes.contains_key(&id){Err("Codex thread already active or capacity reached".into())}else{routes.insert(id,tx);Ok(())};let _=ack.send(result);continue;},
+                    Some(Op::Subscribe(id,tx,ack))=>{let result=if routes.len()>=32||routes.contains_key(&id){Err("Codex thread already active or capacity reached".into())}else{let goal=goal_snapshots.get(&id);routes.insert(id,tx);Ok(goal)};let _=ack.send(result);continue;},
                     Some(Op::Shutdown(ack))=>{shutdown=Some(ack);return Ok(());},
                     Some(Op::WaitForClose(id,ack))=>{
                         closing.retain(|_, waiters| {waiters.retain(|w| !w.is_closed()); !waiters.is_empty()});
@@ -1280,7 +1286,7 @@ async fn actor(
                         }
                         continue;
                     },
-                    Some(Op::WatchGoal(id,active))=>{desired_goals.insert(id.clone(),active);root_goals.insert(id,active);continue;},
+                    Some(Op::WatchGoal(id,active))=>{let active=goal_snapshots.get(&id).map(|goal|goal["status"]=="active").unwrap_or(active);desired_goals.insert(id.clone(),active);root_goals.insert(id,active);continue;},
                     Some(Op::ReleaseMcp(key,native,release,ack))=>{
                         let mut ids:Vec<_>=native_contexts.iter().filter(|(_,c)|c.thread_key()==key).map(|(id,_)|id.clone()).collect();
                         if let Some(id)=native {
@@ -1322,7 +1328,10 @@ async fn actor(
                             let observed_version = goal_requests.remove(&id);
                             if method.starts_with("thread/goal/") {
                                 if let (Some(native),Ok(result))=(&native,&response) {
-                                    if observed_version==Some(*goal_versions.get(native).unwrap_or(&0)) {root_goals.insert(native.clone(),result["goal"]["status"]=="active");}
+                                    if observed_version==Some(*goal_versions.get(native).unwrap_or(&0)) {
+                                        root_goals.insert(native.clone(),result["goal"]["status"]=="active");
+                                        goal_snapshots.remember(native,if method=="thread/goal/clear" {&Value::Null}else{&result["goal"]},|id|routes.contains_key(id));
+                                    }
                                     // A cancelled activation may acknowledge after Stop's pause.
                                     // Reassert the later intent instead of reviving orphan work.
                                     if method=="thread/goal/set" && result["goal"]["status"]=="active" && desired_goals.get(native)==Some(&false) {
@@ -1349,6 +1358,7 @@ async fn actor(
                         if let Some(waiters)=closing.remove(id){for waiter in waiters{let _=waiter.send(Ok(()));}}
                     }
                 }
+                goal_snapshots.observe(&frame,|id|routes.contains_key(id));
                 if frame["method"]=="account/rateLimits/updated" {publish_usage(&mut descriptor.lock().unwrap(), &frame["params"]["rateLimits"], None, frame["params"]["accountId"].as_str());}
                 let tid=frame["params"]["threadId"].as_str();
                 if let Some(tid)=tid {
