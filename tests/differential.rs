@@ -33,49 +33,23 @@ impl Drop for Server {
         let _ = self.child.wait();
     }
 }
-fn clean_old_profiles() {
-    let base = Path::new("/var/tmp/o3-build/tmp");
-    let Ok(entries) = std::fs::read_dir(base) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        let Some(name) = name.to_str() else { continue };
-        let Some(rest) = ["concurrent-", "p1-", "differential-"]
-            .iter()
-            .find_map(|p| name.strip_prefix(p))
-        else {
-            continue;
-        };
-        let Some(pid) = rest
-            .split('-')
-            .next()
-            .and_then(|s| s.parse::<i32>().ok())
-            .filter(|p| *p > 0)
-        else {
-            continue;
-        };
-        if !Path::new("/proc").join(pid.to_string()).exists()
-            && entry.file_type().is_ok_and(|t| t.is_dir())
-        {
-            let _ = std::fs::remove_dir_all(entry.path());
-        }
-    }
-}
 fn command(bin: &Path, home: &Path) -> Command {
-    clean_old_profiles();
     let mut c = Command::new("nice");
     // No inherited provider credentials, profile overrides, or service integration.
     let node_output = Command::new("node")
         .args(["-p", "process.execPath"])
         .output()
-        .expect("node runtime required");
-    assert!(node_output.status.success());
-    let node = PathBuf::from(String::from_utf8(node_output.stdout).unwrap().trim());
+        .ok()
+        .filter(|output| output.status.success());
+    let node = node_output
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|path| PathBuf::from(path.trim()))
+        .and_then(|path| path.parent().map(Path::to_path_buf))
+        .unwrap_or_else(|| PathBuf::from("/usr/bin"));
     let path = format!(
         "{}:{}:/usr/bin:/bin",
         home.join("bin").display(),
-        node.parent().unwrap().display()
+        node.display()
     );
     let parent = std::process::id();
     unsafe {
@@ -93,7 +67,7 @@ fn command(bin: &Path, home: &Path) -> Command {
         .env("PATH", path)
         .env("HOME", home.join("home"))
         .env("T3CODE_HOME", home)
-        .env("TMPDIR", "/var/tmp/o3-build/tmp")
+        .env("TMPDIR", std::env::temp_dir())
         .env("O3_USAGE_RATES_URL", "http://127.0.0.1:0/rates")
         .env("XDG_CONFIG_HOME", home.join("config"))
         .env("XDG_CACHE_HOME", home.join("cache"))
@@ -2144,8 +2118,11 @@ fn harness_parent_fixture() {
 
 #[test]
 fn killed_harness_does_not_orphan_server_child() {
-    let home =
-        PathBuf::from("/var/tmp/o3-build/tmp").join(format!("pdeath-{}", std::process::id()));
+    let home = std::env::temp_dir().join(format!(
+        "pdeath-{}-{}",
+        std::process::id(),
+        o3_server::store::random_id().unwrap()
+    ));
     std::fs::create_dir_all(&home).unwrap();
     let mut parent = Command::new(std::env::current_exe().unwrap())
         .args(["--ignored", "--exact", "harness_parent_fixture"])
@@ -2179,6 +2156,7 @@ fn killed_harness_does_not_orphan_server_child() {
             libc::kill(pid, libc::SIGKILL);
         }
     }
-    std::fs::remove_dir_all(home).unwrap();
+    std::fs::remove_file(home.join("child.pid")).unwrap();
+    std::fs::remove_dir(home).unwrap();
     assert!(result, "server child survived harness SIGKILL");
 }

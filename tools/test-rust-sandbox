@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""Compile Rust checks, then execute them in rootless Podman with no host writes or network."""
+import argparse
+import json
+import os
+import pathlib
+import subprocess
+import sys
+import uuid
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--image', default='localhost/o3-rust-tests:latest')
+parser.add_argument('--memory', default='6g')
+parser.add_argument('--test-threads', type=int, default=4)
+parser.add_argument('cargo_args', nargs=argparse.REMAINDER, help='Cargo test arguments after --; a second -- introduces harness arguments')
+options = parser.parse_args()
+root = pathlib.Path(__file__).resolve().parent.parent
+cargo_args = options.cargo_args
+if cargo_args[:1] == ['--']:
+    cargo_args = cargo_args[1:]
+if '--' in cargo_args:
+    split = cargo_args.index('--')
+    cargo_args, harness = cargo_args[:split], cargo_args[split + 1:]
+else:
+    harness = []
+value_flags = {'--package', '-p', '--exclude', '--bin', '--example', '--test', '--bench', '--features', '-F', '--target', '--target-dir', '--manifest-path', '--config', '--profile', '--color', '--jobs', '-j', '--message-format', '-Z'}
+value_next = False
+for arg in cargo_args:
+    if value_next:
+        value_next = False
+    elif arg in value_flags:
+        value_next = True
+    elif not arg.startswith('-'):
+        harness.insert(0, arg)
+if options.test_threads < 1:
+    raise SystemExit('--test-threads must be positive')
+if not any(arg.startswith('--test-threads') for arg in harness):
+    harness += [f'--test-threads={options.test_threads}']
+security = subprocess.run(['podman', 'info', '--format', '{{.Host.Security.Rootless}}'], check=True, capture_output=True, text=True)
+if security.stdout.strip() != 'true':
+    raise SystemExit('Rootless Podman is required')
+if subprocess.run(['podman', 'image', 'exists', options.image]).returncode:
+    subprocess.run(['podman', 'build', '--pull=never', '--tag', options.image, '--file', str(root / 'tools/rust-sandbox/Containerfile'), str(root / 'tools/rust-sandbox')], check=True, timeout=600)
+build = subprocess.run(['cargo', 'test', '--locked', *cargo_args, '--no-run', '--message-format=json'], cwd=root, capture_output=True, text=True)
+artifacts = []
+mounts = {root}
+try:
+    node = pathlib.Path(subprocess.check_output(['node', '-p', 'process.execPath'], text=True).strip()).resolve()
+except (OSError, subprocess.CalledProcessError) as error:
+    raise SystemExit('Node is required for provider installation and discovery fixtures') from error
+node_root = node.parent.parent
+if node_root in {pathlib.Path('/'), pathlib.Path('/usr'), pathlib.Path('/usr/local')}:
+    raise SystemExit('Use a private Node installation; system filesystem mounts are not allowed')
+mounts.add(node_root)
+for line in build.stdout.splitlines():
+    try:
+        item = json.loads(line)
+    except json.JSONDecodeError:
+        print(line, flush=True)
+        continue
+    diagnostic = item.get('message', {})
+    if diagnostic.get('rendered'):
+        print(diagnostic['rendered'], flush=True)
+    if item.get('executable'):
+        executable = pathlib.Path(item['executable']).resolve()
+        mounts.add(executable.parent)
+        if item.get('profile', {}).get('test'):
+            artifacts.append((item['target']['name'], str(executable)))
+if build.stderr:
+    print(build.stderr, file=sys.stderr, end='', flush=True)
+if build.returncode:
+    raise SystemExit(build.returncode)
+if not artifacts:
+    raise SystemExit('Cargo produced no test executables')
+common = pathlib.Path(subprocess.check_output(['git', 'rev-parse', '--git-common-dir'], cwd=root, text=True).strip())
+mounts.add((root / common).resolve() if not common.is_absolute() else common.resolve())
+mounts = sorted(path for path in mounts if not any(other != path and other in path.parents for other in mounts))
+name = 'o3-rust-tests-' + uuid.uuid4().hex
+args = ['podman', 'run', '--rm', '--pull=never', '--name', name, '--userns=keep-id', '--user', f'{os.getuid()}:{os.getgid()}', '--read-only', '--tmpfs', '/tmp:rw,exec,size=3g,mode=1777', '--cap-drop=ALL', '--security-opt=no-new-privileges', '--pids-limit=1024', '--memory', options.memory, '--network=none', '--workdir', str(root)]
+for source in mounts:
+    args += ['-v', f'{source}:{source}:ro']
+for key, value in {'HOME': '/tmp/home', 'TMPDIR': '/tmp', 'XDG_CONFIG_HOME': '/tmp/config', 'XDG_DATA_HOME': '/tmp/data', 'XDG_STATE_HOME': '/tmp/state', 'PATH': f'{node_root}/bin:/usr/bin:/bin', 'TZ': 'UTC'}.items():
+    args += ['--env', f'{key}={value}']
+runner = '''import json,os,subprocess,sys
+os.makedirs('/tmp/home',mode=0o700,exist_ok=True)
+for mount in json.loads(sys.argv[3]):
+    if not os.statvfs(mount).f_flag & os.ST_RDONLY:
+        raise SystemExit('Expected a read-only source/binary mount: '+mount)
+if not os.statvfs('/').f_flag & os.ST_RDONLY:
+    raise SystemExit('Expected a read-only container filesystem')
+for target,binary in json.loads(sys.argv[1]):
+    print('SANDBOX_TEST_BINARY '+target,flush=True)
+    result=subprocess.run([binary,*json.loads(sys.argv[2])])
+    if result.returncode:
+        raise SystemExit(result.returncode if result.returncode>0 else 128-result.returncode)
+'''
+args += [options.image, 'python3', '-c', runner, json.dumps(artifacts), json.dumps(harness), json.dumps([str(path) for path in mounts])]
+print(f'Running {len(artifacts)} test executables in rootless Podman', flush=True)
+try:
+    result = subprocess.run(args, cwd=root, timeout=1200)
+finally:
+    subprocess.run(['podman', 'stop', '--time', '3', name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+raise SystemExit(result.returncode)
