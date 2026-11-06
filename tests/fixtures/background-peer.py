@@ -11,6 +11,9 @@ def complete_later():
  if interrupted.is_set(): return
  if claude:
   for task in ("bg","child"): send({"type":"system","subtype":"task_notification","task_id":task,"status":"stopped" if task=="child" else "completed","summary":"done"})
+  send({'type':'stream_event','event':{'type':'content_block_delta','delta':{'type':'text_delta','text':'AFTER_NOTIFICATION\n\n'}}})
+  gate('parent-result')
+  send({'type':'result','subtype':'success','session_id':'native-bg','origin':{'kind':'task-notification'},'num_turns':1})
  else:
   send({"method":"item/completed","params":{"threadId":"native-bg","turnId":"turn","item":{"id":"bg","type":"commandExecution","command":"sleep 1","status":"completed","exitCode":0}}})
 def gate(name):

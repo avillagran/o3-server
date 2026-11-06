@@ -3425,3 +3425,30 @@ Validation: full suites 466 default / 463 without default features, 29 opt-ins
 ignored each; strict all-target Clippy both modes, fmt, generated compatibility and
 diff checks pass. The opt-in differential against real T3 3991 and the existing signed
 webhook differential pass.
+
+
+## 2026-11-06 — Consume Claude's response after a background notification
+
+The previous background test proved ownership until task completion, but accepted
+settlement immediately on the last `task_notification`. It did not prove that the
+parent's subsequent response reached the client. That was an execution parity gap.
+
+A successful root result received while background work is pending only acknowledges
+that root turn. When an owned task subsequently notifies completion, the adapter now
+invalidates that earlier success and keeps reading until Claude finishes its response
+to the notification. Duplicate or unrelated notifications do not invalidate a result.
+An interrupt still settles from its existing acknowledgement without requiring another
+native result. A zero-turn notification result is accepted only while consuming an
+owned continuation; an unrelated notification cannot finish a newly submitted prompt.
+
+Evidence: the real-client regression gates the parent's result independently from task
+completion and requires the parent's streamed text while the app run is still running.
+It failed against the previous adapter. The strengthened installed-Claude Haiku proof
+also failed before the fix (only `STARTED` survived). After the fix, a background Bash
+command exits with code 7, Claude receives its failure notification, runs a second Bash
+command that writes `RECOVERY_OK`, and replies `AFTER_NOTIFICATION` before app completion.
+The protocol-client background, legacy identity, restart and interrupt cases pass.
+
+This corrects premature settlement during an owned run. It does not establish complete
+idle-session wake routing or native goal projection parity, and does not replay failed
+commands or infer that all provider errors are safe to retry.

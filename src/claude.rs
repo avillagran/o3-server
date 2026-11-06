@@ -597,8 +597,8 @@ impl ClaudeProvider {
                             output.send(ProviderEvent::Native(json!({"type":"permission","request_id":format!("{}:{native}",input.run_id),"native_id":native,"request":v["request"]}))).await.map_err(|_|"receiver closed")?;
                         } else {
                             boundary.observe(&v)?;
-                            for event in decode(&v) {
-                                if matches!(event,ProviderEvent::Completed|ProviderEvent::Failed(_)) {boundary.terminal=Some(if interrupt_requested {ProviderEvent::Interrupted}else{event});} else {output.send(event).await.map_err(|_|"receiver closed")?;}
+                            for event in decode_with_continuation(&v, boundary.awaiting_continuation) {
+                                if matches!(event,ProviderEvent::Completed|ProviderEvent::Failed(_)) {boundary.awaiting_continuation=false; boundary.terminal=Some(if interrupt_requested {ProviderEvent::Interrupted}else{event});} else {output.send(event).await.map_err(|_|"receiver closed")?;}
                             }
                         }
                         if boundary.ready() {
@@ -663,6 +663,7 @@ struct TurnBoundary {
     tasks: std::collections::HashSet<String>,
     ended: std::collections::HashSet<String>,
     terminal: Option<ProviderEvent>,
+    awaiting_continuation: bool,
 }
 impl TurnBoundary {
     fn observe(&mut self, v: &Value) -> Result<(), String> {
@@ -689,7 +690,15 @@ impl TurnBoundary {
                     }
                 }
                 if v["subtype"] == "task_notification" {
-                    self.tasks.remove(id);
+                    // The root's earlier result only acknowledged launching background work.
+                    // Claude next emits a task-notification turn; consume that turn before
+                    // settling the app run. Duplicate notifications cannot reopen a result.
+                    if self.tasks.remove(id)
+                        && matches!(self.terminal, Some(ProviderEvent::Completed))
+                    {
+                        self.terminal = None;
+                        self.awaiting_continuation = true;
+                    }
                     if self.ended.len() >= 1024 {
                         return Err("Claude completed task limit reached".into());
                     }
@@ -930,7 +939,11 @@ fn sdk_answers(answers: &Value) -> Result<Value, String> {
     Ok(Value::Object(result))
 }
 
+#[cfg(test)]
 pub(crate) fn decode(v: &Value) -> Vec<ProviderEvent> {
+    decode_with_continuation(v, false)
+}
+fn decode_with_continuation(v: &Value, awaiting_continuation: bool) -> Vec<ProviderEvent> {
     let mut out = Vec::new();
     match v["type"].as_str().unwrap_or("") {
         "stream_event" => {
@@ -1011,9 +1024,11 @@ pub(crate) fn decode(v: &Value) -> Vec<ProviderEvent> {
         "result" => {
             // A resumed CLI can flush a zero-turn task-notification result before it
             // processes our user message. It neither settles that message nor supplies
-            // its usage. Preserve real turns, command results and notification errors.
-            // Upstream ClaudeAdapterV2 has the same zero-turn notification guard.
-            if v["origin"]["kind"] == "task-notification"
+            // its usage. An observed background completion, however, owns a continuation:
+            // its zero-turn result can legitimately settle that continuation without text.
+            // Upstream ClaudeAdapterV2 also distinguishes these two routes.
+            if !awaiting_continuation
+                && v["origin"]["kind"] == "task-notification"
                 && v["num_turns"].as_u64() == Some(0)
                 && v["subtype"] == "success"
                 && v["is_error"] != true
@@ -1466,7 +1481,30 @@ mod tests {
         // Reorder the observed terminal boundary to exercise a background completion race.
         assert!(!boundary.ready());
         boundary.observe(done).unwrap();
+        assert!(!boundary.ready(), "the parent's response is still unread");
+        assert!(boundary.awaiting_continuation);
+        let reply = json!({"type":"result","subtype":"success","origin":{"kind":"task-notification"},"num_turns":1});
+        for event in decode_with_continuation(&reply, boundary.awaiting_continuation) {
+            if matches!(event, ProviderEvent::Completed | ProviderEvent::Failed(_)) {
+                boundary.terminal = Some(event);
+            }
+        }
         assert!(boundary.ready());
+        boundary.observe(done).unwrap();
+        assert!(
+            boundary.ready(),
+            "a duplicate must not reopen the continuation"
+        );
+    }
+
+    #[test]
+    fn owned_zero_turn_notification_settles_only_its_continuation() {
+        let result = json!({"type":"result","subtype":"success","is_error":false,
+            "origin":{"kind":"task-notification"},"num_turns":0});
+        assert!(decode(&result).is_empty());
+        assert!(decode_with_continuation(&result, true)
+            .iter()
+            .any(|event| matches!(event, ProviderEvent::Completed)));
     }
     #[tokio::test]
     #[ignore = "uses installed Claude credentials and Haiku quota; only temporary workspace"]
