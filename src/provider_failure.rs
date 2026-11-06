@@ -315,6 +315,63 @@ pub(crate) fn persist(
 mod tests {
     use super::*;
     #[test]
+    fn closing_native_processes_cannot_terminalize_or_pause_durable_work() {
+        use crate::{
+            events::{get, put},
+            provider::{persist_attempt, ProviderEvent},
+            store::State,
+        };
+        let path = std::env::temp_dir().join(format!(
+            "o3-shutdown-receipts-{}",
+            crate::store::random_id().unwrap()
+        ));
+        let state = State::open(&path).unwrap();
+        let goal = json!({"objective":"Continue after restart","status":"active","tokensUsed":73,"timeUsedSeconds":17,"tokenBudget":12345});
+        {
+            let db = state.db.lock().unwrap();
+            put(&db,"thread","t","t",&json!({"id":"t","providerInstanceId":"codex","activeProviderThreadId":"p","deletedAt":null})).unwrap();
+            put(
+                &db,
+                "providerThreads",
+                "p",
+                "t",
+                &json!({"id":"p","appThreadId":"t","driver":"codex","goal":goal}),
+            )
+            .unwrap();
+            put(
+                &db,
+                "runs",
+                "r",
+                "t",
+                &json!({"id":"r","status":"running","ordinal":1,"providerThreadId":"p"}),
+            )
+            .unwrap();
+        }
+        state.begin_shutdown();
+        for event in [
+            ProviderEvent::Failed("Codex process closed".into()),
+            ProviderEvent::Interrupted,
+            ProviderEvent::Codex(
+                json!({"method":"thread/goal/updated","params":{"threadId":"native-root","goal":{"objective":"Continue after restart","status":"paused"}}}),
+            ),
+        ] {
+            persist_attempt(&state, "t", "r", None, event).unwrap();
+        }
+        let db = state.db.lock().unwrap();
+        assert_eq!(get(&db, "runs", "r").unwrap()["status"], "running");
+        assert_eq!(get(&db, "providerThreads", "p").unwrap()["goal"], goal);
+        assert_eq!(
+            db.query_row(
+                "SELECT count(*) FROM records WHERE kind='turnItems'",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0
+        );
+    }
+
+    #[test]
     fn executed_upstream_failure_and_card_goldens() {
         let fixture: Value =
             serde_json::from_str(include_str!("../tests/fixtures/provider-failures.json")).unwrap();

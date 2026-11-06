@@ -1,5 +1,28 @@
 # Conformance evidence
 
+## Server shutdown continuity, 2026-11-06
+
+Server teardown now fences late provider receipts before closing native transports.
+The fence shares the database writer barrier with receipt persistence. Pending
+work remains eligible for startup recovery, while user Stop retains its existing
+behavior. Generated systemd units use `KillMode=mixed` so the supervising server
+handles SIGTERM before native child processes are reaped.
+
+The affected default checks pass **199 cases**, with nine explicit native or
+platform opt-ins ignored. Real server process checks cover SIGKILL and SIGTERM
+followed by restart, preserved goal objective/budget/usage and app run, and native
+automatic completion without any goal-control RPC. A separate late-receipt check
+retains running work and its active goal after native failure, interruption and
+paused-goal notifications during teardown. The full suites pass **547 default /
+544 minimal**, with no failures and36 opt-ins ignored per mode across98 test
+executables. Strict Clippy in both modes, formatting, compatibility generation
+and all nine nightly-watch checks pass.
+
+A private probe reproduced failed execution state on SIGTERM in83ce347;445f545
+already passes the active-goal version of that probe. This change does not claim
+a newly reproduced deterministic445f545 goal regression. See
+[nightly/shutdown-intake.json](nightly/shutdown-intake.json) for scope and gaps.
+
 ## Terminal resource scopes, 2026-11-06
 
 Interactive terminals and managed project/setup PTYs now use the nightly general
