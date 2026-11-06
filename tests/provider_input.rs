@@ -74,7 +74,10 @@ fn uploaded_images_files_and_context_reach_both_native_transports() {
                 );
                 if instance == "claudeAgent" {
                     assert_eq!(p["providerThreads"][0]["contextUsage"]["maxTokens"], 200000);
-                    assert_eq!(p["providerThreads"][0]["contextUsage"]["cost"], 0.01);
+                    assert_eq!(
+                        p["providerThreads"][0]["contextUsage"]["cost"],
+                        json!({"amount":0.01,"currency":"USD"})
+                    );
                     let config = c.rpc("server.getConfig", json!({})).unwrap();
                     assert_eq!(
                         config["providers"][0]["slashCommands"][0]["name"],

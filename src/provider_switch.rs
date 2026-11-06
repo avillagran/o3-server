@@ -336,23 +336,43 @@ fn fresh_session(
     {
         return Ok(());
     }
-    let threads = list(db, "providerThreads", &tid)?;
-    for pt in &threads {
-        if (pt["ownerNodeId"].is_null() || pt["id"] == thread["activeProviderThreadId"])
-            && crate::native_recovery::background_work(db, &tid, pt)?
-        {
-            return Err("The current session is still running background agents or commands; wait for them or press Stop before starting a fresh session.".into());
+    let active = current(db, thread)?;
+    let sessions = list(db, "providerSessions", &tid)?;
+    let mut released = crate::fresh_context::released_sessions(&sessions, active.as_ref());
+    if active
+        .as_ref()
+        .is_some_and(|pt| pt["providerInstanceId"] != run["providerInstanceId"])
+    {
+        for id in plan(s, db, thread, &run["modelSelection"])?.release_sessions {
+            if !released.contains(&id) {
+                released.push(id);
+            }
         }
     }
-    let sessions = list(db, "providerSessions", &tid)?
-        .into_iter()
-        .filter(|session| !matches!(session["status"].as_str(), Some("stopped" | "error")))
-        .filter_map(|s| s["id"].as_str().map(str::to_owned))
-        .collect::<Vec<_>>();
     crate::fresh_context::remember(db, thread, run)?;
-    stage_sessions(db, thread, &sessions)?;
-    if let Some(active) = current(db, thread)? {
-        stage(db, thread, &active)?;
+    stage_sessions(db, thread, &released)?;
+    if let Some(active) = active {
+        // Legacy rows without session metadata still need exact native cleanup for single-thread adapters.
+        if !sessions
+            .iter()
+            .any(|s| s["id"] == active["providerSessionId"])
+        {
+            let multi = s
+                .provider
+                .lock()
+                .unwrap()
+                .as_ref()
+                .and_then(|p| p.capabilities(thread["providerInstanceId"].as_str().unwrap_or("")))
+                .is_some_and(|c| {
+                    c["sessions"]["supportsMultipleProviderThreadsPerSession"] == true
+                });
+            if !multi {
+                if crate::native_recovery::background_work(db, &tid, &active)? {
+                    return Err("The current session is still running background agents or commands; wait for them or press Stop before starting a fresh session.".into());
+                }
+                stage(db, thread, &active)?;
+            }
+        }
     } else if let Some(native) = crate::projection::native_id(db, thread) {
         stage_payload(
             db,
@@ -619,10 +639,7 @@ fn move_binding(
             pt["providerInstanceId"] == target
                 && pt["id"] != active["id"]
                 && pt["appThreadId"] == tid
-                && (boundary == 0
-                    || pt["firstRunOrdinal"]
-                        .as_i64()
-                        .is_some_and(|first| first >= boundary))
+                && !crate::fresh_context::predates_boundary(pt, boundary)
                 && pt["ownerNodeId"].is_null()
         })
         .collect::<Vec<_>>();

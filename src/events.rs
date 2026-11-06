@@ -48,6 +48,7 @@ pub fn initialize(db: &Connection) -> Result<()> {
     // The partial index finds the latest user without reading assistant bodies.
     db.execute_batch("CREATE INDEX IF NOT EXISTS records_turn_ordinal ON records(thread_id,json_extract(body,'$.ordinal')) WHERE kind='turnItems'; CREATE INDEX IF NOT EXISTS records_user_message ON records(thread_id) WHERE kind='messages' AND json_extract(body,'$.role')='user';").map_err(|e|e.to_string())?;
     repair_boolean_settled_override(db)?;
+    repair_context_costs(db)?;
     initialize_run_internal(db)?;
     crate::deletion::initialize(db)?;
     crate::run_restart::initialize(db)?;
@@ -62,6 +63,26 @@ pub fn initialize(db: &Connection) -> Result<()> {
 }
 /// Upstream 077 (1973e0a68): a boolean `settledOverride` breaks the thread schema; true means
 /// settled, false means none. Idempotent; walks only thread records through the primary key.
+/// One-time repair; replay tables can be large, so do not scan them on every startup.
+fn repair_context_costs(db: &Connection) -> Result<()> {
+    let done: bool = db
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='context_cost_canonical_v1')",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if done {
+        return Ok(());
+    }
+    db.execute_batch("BEGIN IMMEDIATE;
+        UPDATE records SET body=json_set(body,'$.contextUsage.cost',json_object('amount',json_extract(body,'$.contextUsage.cost'),'currency','USD')) WHERE kind='providerThreads' AND json_type(body,'$.contextUsage.cost') IN ('integer','real');
+        UPDATE events SET body=json_set(body,'$.payload.contextUsage.cost',json_object('amount',json_extract(body,'$.payload.contextUsage.cost'),'currency','USD')) WHERE json_extract(body,'$.type')='provider-thread.updated' AND json_type(body,'$.payload.contextUsage.cost') IN ('integer','real');
+        UPDATE records SET body=json_remove(body,'$.contextUsage.cost') WHERE kind='providerThreads' AND json_type(body,'$.contextUsage.cost')='null';
+        UPDATE events SET body=json_remove(body,'$.payload.contextUsage.cost') WHERE json_extract(body,'$.type')='provider-thread.updated' AND json_type(body,'$.payload.contextUsage.cost')='null';
+        CREATE TABLE context_cost_canonical_v1(done INTEGER); COMMIT;").map_err(|e|e.to_string())
+}
+
 fn repair_boolean_settled_override(db: &Connection) -> Result<()> {
     db.execute(
         "UPDATE records SET body=json_set(body,'$.settledOverride',IIF(json_type(body,'$.settledOverride')='true','settled',NULL)) WHERE kind='thread' AND json_valid(body) AND json_type(body,'$.settledOverride') IN ('true','false')",
@@ -183,6 +204,10 @@ pub(crate) fn put(db: &Connection, kind: &str, id: &str, tid: &str, v: &Value) -
         let mut public = v.clone();
         let internal = take_run_internal(&mut public);
         db.execute("INSERT INTO run_internal VALUES(?,?) ON CONFLICT(id) DO UPDATE SET body=json_patch(run_internal.body,excluded.body)", params![id,internal.to_string()]).map_err(|e|e.to_string())?;
+        Some(public)
+    } else if kind == "providerThreads" {
+        let mut public = v.clone();
+        crate::projection::normalize_context_cost(&mut public);
         Some(public)
     } else {
         None
@@ -481,6 +506,7 @@ pub(crate) fn append(
     mut payload: Value,
     thread: &Value,
 ) -> Result<i64> {
+    crate::projection::normalize_context_cost(&mut payload);
     // Older internal producers used an alias the real client reducer ignores.
     let kind = if kind == "attempt.updated" {
         "run-attempt.updated"

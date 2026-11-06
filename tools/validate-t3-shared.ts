@@ -7,8 +7,21 @@
 // The contracts package needs `effect` at the version T3 pins, resolvable from its directory.
 import { DatabaseSync } from "node:sqlite";
 import { createRequire } from "node:module";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 const contracts = process.env.T3_CONTRACTS;
 if (!contracts) throw new Error("T3_CONTRACTS must name T3's packages/contracts directory");
+const fromContracts = createRequire(`${contracts}/package.json`);
+const actualEffect = fromContracts("effect/package.json").version;
+const workspace = resolve(contracts, "../../pnpm-workspace.yaml");
+const pinnedEffect = existsSync(workspace)
+  ? readFileSync(workspace, "utf8").match(/^ {2}effect:\s*["']?([0-9]+\.[0-9]+\.[0-9]+(?:[-+][\w.]+)?)["']?\s*$/m)?.[1]
+  : undefined;
+const expectedEffect = pinnedEffect ?? process.env.T3_EFFECT_VERSION;
+if (expectedEffect && expectedEffect !== actualEffect) {
+  throw new Error(`T3 pins effect ${expectedEffect}, but contracts resolve ${actualEffect}`);
+}
+console.log(`T3 contract runtime: effect ${actualEffect}`);
 const C: any = await import(`${contracts}/src/index.ts`);
 const Schema: any = await import(createRequire(`${contracts}/package.json`).resolve("effect/Schema"));
 
@@ -86,3 +99,6 @@ if (!isO3 && after >= 0) {
 for (const [key, { count, example }] of [...groups].sort((a, b) => b[1].count - a[1].count)) {
   console.log(`${count}\t${key}\t(e.g. ${example})`);
 }
+
+// Rejected rows must fail automated acceptance instead of only printing diagnostics.
+if (groups.size > 0) process.exitCode = 1;

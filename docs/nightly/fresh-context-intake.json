@@ -1,0 +1,53 @@
+{
+  "reference": {
+    "tag": "v0.1.8-nightly.20261106.4262",
+    "commit": "c55db3e9c72fdf584f4b54192fb39beb88667b59",
+    "effect": "4.1.2"
+  },
+  "feature": "message.dispatch.freshContext",
+  "status": "candidate-capability-enabled-not-deployed",
+  "native": {
+    "claude": "2.1.318",
+    "codex": "0.167.0",
+    "turnsPerScenario": 8,
+    "proved": [
+      "old-context-recall",
+      "fresh-context-forgetting",
+      "same-provider-continuation",
+      "post-reset-provider-switch",
+      "changed-native-identities",
+      "visible-history-preserved"
+    ],
+    "isolation": "rootless-podman-readonly-source-and-binaries-tmpfs-provider-homes"
+  },
+  "differential": {
+    "sourceFunctionsExecuted": true,
+    "boundaryCases": 32,
+    "providerThreadCases": 12,
+    "sessionReleaseCases": 16
+  },
+  "sharedState": {
+    "acceptedMigrationHead": 73,
+    "exportedRecords": 81,
+    "freshRuns": 2,
+    "preservedMessages": 16,
+    "eventsValidated": 80,
+    "schemaRejections": 0,
+    "referenceMigration80Acceptance": false
+  },
+  "regressionsFixed": [
+    "multi-thread-sessions-kept-alive",
+    "context-cost-currency-shape",
+    "legacy-context-cost-repair",
+    "preserve-imported-cost-currency",
+    "validator-rejects-version-mismatch",
+    "validator-fails-on-rejected-data"
+  ],
+  "remaining": [
+    "native-T3-runtime-comparison",
+    "migration-74-through-80-acceptance",
+    "desktop-composer-live-server-check",
+    "scheduled-task-session-execution",
+    "full-platform-parity-audit"
+  ]
+}

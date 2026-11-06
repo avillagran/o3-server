@@ -15,6 +15,29 @@ pub(crate) fn validate(command: &serde_json::Value) -> Result<()> {
     Ok(())
 }
 
+/// A multi-thread native session stays alive; a fresh app run gets a new native thread in it.
+pub(crate) fn released_sessions(sessions: &[Value], active: Option<&Value>) -> Vec<String> {
+    let id = active
+        .map(|pt| &pt["providerSessionId"])
+        .unwrap_or(&Value::Null);
+    sessions
+        .iter()
+        .filter(|s| {
+            s["id"] == *id
+                && !matches!(s["status"].as_str(), Some("stopped" | "error"))
+                && s["capabilities"]["sessions"]["supportsMultipleProviderThreadsPerSession"]
+                    != true
+        })
+        .filter_map(|s| s["id"].as_str().map(str::to_owned))
+        .collect()
+}
+pub(crate) fn predates_boundary(thread: &Value, boundary: i64) -> bool {
+    boundary > 0
+        && thread["firstRunOrdinal"]
+            .as_i64()
+            .is_none_or(|first| first < boundary)
+}
+
 const BINDING_FIELDS: &[&str] = &[
     "providerGeneration",
     "activeProviderThreadId",
@@ -145,6 +168,10 @@ mod tests {
         ));
         let state = Arc::new(State::open(&dir).unwrap());
         std::fs::write(state.dir.join("settings.json"),json!({"providerInstances":{"a":{"driver":"claudeAgent","enabled":true},"b":{"driver":"claudeAgent","enabled":true}}}).to_string()).unwrap();
+        assert_eq!(
+            crate::settings::descriptor(&state)["capabilities"]["freshContext"],
+            true
+        );
         let probe = Arc::new(Probe::default());
         *state.provider.lock().unwrap() = Some(probe.clone());
         events::dispatch(&state,&json!({"type":"thread.create","commandId":"create","threadId":"t","projectId":"p","title":"Test","runtimeMode":"full-access","interactionMode":"default","modelSelection":{"instanceId":"a","model":"test"}})).unwrap();
@@ -473,5 +500,78 @@ mod tests {
         assert!(log[1]["native"].is_null());
         assert_eq!(log[1]["selection"]["instanceId"], "b");
         assert!(!log[1].to_string().contains("OLD-IMPORTED-CONTEXT"));
+    }
+    #[test]
+    fn exact_nightly_functions_supply_boundary_and_release_golden_cases() {
+        let fixtures: Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/fresh-context-boundaries.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            fixtures["revision"],
+            "c55db3e9c72fdf584f4b54192fb39beb88667b59"
+        );
+        for case in fixtures["boundaries"].as_array().unwrap() {
+            let db = Connection::open_in_memory().unwrap();
+            db.execute_batch("CREATE TABLE records(kind TEXT,id TEXT,thread_id TEXT,body TEXT)")
+                .unwrap();
+            for (i, run) in case["runs"].as_array().unwrap().iter().enumerate() {
+                db.execute(
+                    "INSERT INTO records VALUES('runs',?,'t',?)",
+                    params![i.to_string(), run.to_string()],
+                )
+                .unwrap();
+            }
+            assert_eq!(
+                json!(boundary(&db, "t", case["through"].as_i64().unwrap()).unwrap()),
+                case["expected"],
+                "{case}"
+            );
+        }
+        for case in fixtures["threads"].as_array().unwrap() {
+            assert_eq!(
+                json!(predates_boundary(
+                    &case["thread"],
+                    case["boundary"].as_i64().unwrap()
+                )),
+                case["expected"],
+                "{case}"
+            );
+        }
+        for case in fixtures["sessions"].as_array().unwrap() {
+            assert_eq!(
+                json!(released_sessions(
+                    case["providerSessions"].as_array().unwrap(),
+                    case.get("activeProviderThread").filter(|v| v.is_object())
+                )),
+                case["expected"],
+                "{case}"
+            );
+        }
+    }
+    #[tokio::test]
+    async fn multi_thread_sessions_keep_background_work_when_only_the_native_thread_resets() {
+        let (s, p) = state();
+        events::dispatch(&s, &command("seed", "old", false)).unwrap();
+        settled(&s, 1).await;
+        {
+            let db = s.db.lock().unwrap();
+            let t = get(&db, "thread", "t").unwrap();
+            let id = t["activeProviderThreadId"].as_str().unwrap();
+            let mut pt = get(&db, "providerThreads", id).unwrap();
+            pt["pendingBackgroundTasks"] = json!([{"kind":"command","taskId":"bg","awaited":true}]);
+            put(&db, "providerThreads", id, "t", &pt).unwrap();
+            let sid = pt["providerSessionId"].as_str().unwrap();
+            let mut session = get(&db, "providerSessions", sid).unwrap();
+            session["capabilities"]["sessions"]["supportsMultipleProviderThreadsPerSession"] =
+                json!(true);
+            put(&db, "providerSessions", sid, "t", &session).unwrap();
+        }
+        events::dispatch(&s, &command("reset", "new", true)).unwrap();
+        settled(&s, 2).await;
+        let log = p.log.lock().unwrap();
+        assert_eq!(log.len(), 2);
+        assert!(log.iter().all(|x| x["kind"] == "execute"));
+        assert!(log[1]["native"].is_null());
     }
 }

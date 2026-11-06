@@ -808,27 +808,12 @@ fn shape_values(kind_name: &str, v: &mut Value) {
             }
         }
     }
-    if let Some(usage) = v.get_mut("contextUsage").and_then(Value::as_object_mut) {
-        match usage.get("cost") {
-            Some(Value::Number(n)) => {
-                let amount = n.as_f64().unwrap_or(0.0);
-                usage.insert("cost".into(), json!({"amount": amount, "currency": "USD"}));
-            }
-            Some(Value::Null) => {
-                usage.remove("cost");
-            }
-            _ => {}
-        }
-    }
+    crate::projection::normalize_context_cost(v);
 }
 
-/// The reverse for fields O3 reads in its own form: a T3 cost object back to O3's USD amount.
+/// Imported context usage retains T3's currency-qualified cost contract.
 fn o3_shape(v: &mut Value) {
-    if let Some(usage) = v.get_mut("contextUsage").and_then(Value::as_object_mut) {
-        if let Some(amount) = usage.get("cost").and_then(|c| c.get("amount")).cloned() {
-            usage.insert("cost".into(), amount);
-        }
-    }
+    crate::projection::normalize_context_cost(v);
 }
 
 fn iso_ms(text: &str) -> Option<i64> {
