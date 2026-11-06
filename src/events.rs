@@ -56,7 +56,8 @@ pub fn initialize(db: &Connection) -> Result<()> {
     crate::native_recovery::initialize(db)?;
     crate::provider_switch::initialize(db)?;
     crate::context_transfer::initialize(db)?;
-    crate::threadq::initialize(db)
+    crate::threadq::initialize(db)?;
+    crate::t3_shared::initialize(db)
 }
 /// Upstream 077 (1973e0a68): a boolean `settledOverride` breaks the thread schema; true means
 /// settled, false means none. Idempotent; walks only thread records through the primary key.

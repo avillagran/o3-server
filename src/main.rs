@@ -19,6 +19,7 @@ Commands:
   auth session revoke ID    Revoke a session
   auth pairing create       Create a one-time pairing credential
   service install           Install the user service
+  --version                 Print the version
 
 The profile comes from T3CODE_HOME (default ~/.t3).
 ";
@@ -49,6 +50,11 @@ fn main() -> std::io::Result<()> {
             std::process::exit(2);
         }
         o3_server::document_text::worker(Path::new(&args[1]), &args[2]);
+    }
+    // Installers verify a downloaded binary with this; it touches no profile.
+    if args.first().is_some_and(|s| s == "--version" || s == "-V") {
+        println!("o3-server {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
     }
     // Before any command runs: `auth session issue --help` must never mint a credential.
     if args.iter().any(|a| a == "--help" || a == "-h") {
@@ -265,7 +271,17 @@ fn main() -> std::io::Result<()> {
             let listener = tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
             let _guard = o3_server::profile::RuntimeGuard::write(&dir, listener.local_addr()?)?;
             eprintln!("o3-server listening on {}", listener.local_addr()?);
+            // T3's base must be taken in before the first client reads.
+            let shared = match o3_server::t3_shared::start(&state) {
+                Ok(shared) => shared,
+                Err(e) => {
+                    eprintln!("T3 shared base not written: {e}");
+                    None
+                }
+            };
             let state = Arc::new(state);
+            let exporter =
+                shared.map(|t3| o3_server::t3_shared::Exporter::spawn(state.clone(), t3));
             let probe = state.provider.lock().unwrap().clone().unwrap();
             let probe_state = state.clone();
             let probe_task = tokio::spawn(async move {
@@ -337,6 +353,9 @@ fn main() -> std::io::Result<()> {
             let _ = probe_task.await;
             o3_server::preview::shutdown(&state).await;
             codex.shutdown().await;
+            if let Some(exporter) = exporter {
+                exporter.finish();
+            }
             result
         })
 }

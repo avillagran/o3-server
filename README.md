@@ -73,6 +73,14 @@ worktree handoff with setup/continuation and same-instance Codex run restart are
 available. Thread launch/transfer, cross-instance active handoff,
 remaining toolkits, OpenCode/ACP and DPoP/browser authentication remain pending. Native Claude/Codex support does not imply those capabilities are available.
 
+## Install
+
+Prebuilt Linux binaries (x86_64 and aarch64, glibc 2.39 or newer) are attached to each
+[release](https://github.com/avillagran/o3-server/releases) with a `SHA256SUMS` file. The O3
+Code installer can install and pin one for you (choose O3 Server when it asks). Releases are
+built by `.github/workflows/release.yml` when a `vX.Y.Z` tag equal to `Cargo.toml`'s version
+is pushed; `o3-server --version` prints that version.
+
 ## Build and test
 
 ```sh
