@@ -1,0 +1,54 @@
+{
+  "checkedAt": "2026-11-04T04:12:16.588087+00:00",
+  "reference": "322f6544dfad0a3c8a0c8cbecf2c7f7874b14268",
+  "tag": "v0.1.7-nightly.20261104.4151",
+  "url": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.7-nightly.20261104.4151",
+  "releases": [
+    {
+      "tag": "v0.1.7-nightly.20261104.4151",
+      "sha": "322f6544dfad0a3c8a0c8cbecf2c7f7874b14268",
+      "publishedAt": "2026-11-04T00:58:16Z",
+      "url": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.7-nightly.20261104.4151"
+    },
+    {
+      "tag": "v0.1.7-nightly.20261103.4138",
+      "sha": "115739c1e02e181d6c176a4d8b43716f8f83d1d4",
+      "publishedAt": "2026-11-03T18:43:24Z",
+      "url": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.7-nightly.20261103.4138"
+    },
+    {
+      "tag": "v0.1.7-nightly.20261103.4119",
+      "sha": "cefb544af3c98224874419198c0359b652ca3c94",
+      "publishedAt": "2026-11-03T08:49:52Z",
+      "url": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.7-nightly.20261103.4119"
+    },
+    {
+      "tag": "v0.1.7-nightly.20261103.4106",
+      "sha": "e1e520c93c997e07eebf135b12c89fad7fb35085",
+      "publishedAt": "2026-11-03T02:27:59Z",
+      "url": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.7-nightly.20261103.4106"
+    },
+    {
+      "tag": "v0.1.7-nightly.20261102.4093",
+      "sha": "84537c4dd976a89b6ec094f43ae3ef7bee12cb1a",
+      "publishedAt": "2026-11-02T19:48:59Z",
+      "url": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.7-nightly.20261102.4093"
+    }
+  ],
+  "scope": "MCP thread-control intake only; not a global conformance certificate. docs/nightly/report.json remains the earlier full inventory.",
+  "implementedInThisBlock": [
+    "Thread-control admission/receipts/queue/questions",
+    "Grouped t3_queue and t3_pending_request, overloaded configure reads",
+    "Required list-item projectId, allProjects, empty statuses and clamped read limits",
+    "Foreign environmentId rejected without local execution until linked routing exists",
+    "T3-Mode-Limit runtime/interaction narrowing, never broader than the current persisted grant"
+  ],
+  "pending": [
+    "Provider registry/native injection and caller limits",
+    "Thread launch/restart/transfer and project/task/worktree/PR/device/preview/HTML toolkits",
+    "Linked environments, OAuth/DPoP, SSE and hosted thread links",
+    "Provider catalog must respect project-disabled provider instances (aeaf3633b)",
+    "Worktree list after cleanup and project start-from-origin settings (0a41bbce4, ce89cd1cc)",
+    "Live nightly differential and client acceptance"
+  ]
+}

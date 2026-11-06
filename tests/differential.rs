@@ -33,49 +33,23 @@ impl Drop for Server {
         let _ = self.child.wait();
     }
 }
-fn clean_old_profiles() {
-    let base = Path::new("/var/tmp/o3-build/tmp");
-    let Ok(entries) = std::fs::read_dir(base) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        let Some(name) = name.to_str() else { continue };
-        let Some(rest) = ["concurrent-", "p1-", "differential-"]
-            .iter()
-            .find_map(|p| name.strip_prefix(p))
-        else {
-            continue;
-        };
-        let Some(pid) = rest
-            .split('-')
-            .next()
-            .and_then(|s| s.parse::<i32>().ok())
-            .filter(|p| *p > 0)
-        else {
-            continue;
-        };
-        if !Path::new("/proc").join(pid.to_string()).exists()
-            && entry.file_type().is_ok_and(|t| t.is_dir())
-        {
-            let _ = std::fs::remove_dir_all(entry.path());
-        }
-    }
-}
 fn command(bin: &Path, home: &Path) -> Command {
-    clean_old_profiles();
     let mut c = Command::new("nice");
     // No inherited provider credentials, profile overrides, or service integration.
     let node_output = Command::new("node")
         .args(["-p", "process.execPath"])
         .output()
-        .expect("node runtime required");
-    assert!(node_output.status.success());
-    let node = PathBuf::from(String::from_utf8(node_output.stdout).unwrap().trim());
+        .ok()
+        .filter(|output| output.status.success());
+    let node = node_output
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|path| PathBuf::from(path.trim()))
+        .and_then(|path| path.parent().map(Path::to_path_buf))
+        .unwrap_or_else(|| PathBuf::from("/usr/bin"));
     let path = format!(
         "{}:{}:/usr/bin:/bin",
         home.join("bin").display(),
-        node.parent().unwrap().display()
+        node.display()
     );
     let parent = std::process::id();
     unsafe {
@@ -93,7 +67,7 @@ fn command(bin: &Path, home: &Path) -> Command {
         .env("PATH", path)
         .env("HOME", home.join("home"))
         .env("T3CODE_HOME", home)
-        .env("TMPDIR", "/var/tmp/o3-build/tmp")
+        .env("TMPDIR", std::env::temp_dir())
         .env("O3_USAGE_RATES_URL", "http://127.0.0.1:0/rates")
         .env("XDG_CONFIG_HOME", home.join("config"))
         .env("XDG_CACHE_HOME", home.join("cache"))
@@ -2036,6 +2010,98 @@ fn upstream_p2_webhook_reader() {
 }
 
 #[test]
+#[ignore = "starts isolated real T3 and o3; tools/conformance-diff"]
+fn upstream_scheduled_tasks_android_contract() {
+    use t3_protocol::api::scheduled_tasks::{self, TaskUpsert};
+    let root = PathBuf::from("/var/tmp/o3-build/tmp").join(format!(
+        "scheduled-android-{}",
+        o3_server::store::random_id().unwrap()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let reference = reference_binary();
+    let mut views = Vec::new();
+    for (label, bin) in [
+        ("reference", reference.as_path()),
+        ("o3", Path::new(env!("CARGO_BIN_EXE_o3-server"))),
+    ] {
+        let home = root.join(label);
+        let s = start(bin, &home);
+        let c = connect(&s);
+        c.rpc("projects.mutate",json!({"type":"project.create","commandId":"p","projectId":"p","title":"Tasks fixture","workspaceRoot":home})).unwrap();
+        // Exactly what the Android client sent on 2026-11-03.
+        let list = raw_rpc(&s, "scheduledTasks.list", json!({}));
+        let first = |c: &Connection| {
+            stream(c, "scheduledTasks.subscribe", json!({}), 1)["items"][0].clone()
+        };
+        let empty = first(&c);
+        let mut input = json!({"commandId":"android-cmd","title":"Nightly","prompt":"check the build","enabled":true,"schedule":{"type":"interval","everyMs":3_600_000},"projectId":"p","workspaceStrategy":{"type":"root"},"modelSelection":{"instanceId":"codex","model":"fixture"},"runtimeMode":"full-access","interactionMode":"default"});
+        let created = c.rpc("scheduledTasks.upsert", input.clone()).unwrap();
+        input["title"] = json!("Nightly renamed");
+        let replay = c.rpc("scheduledTasks.upsert", input).unwrap();
+        let id = created["task"]["id"].as_str().unwrap().to_owned();
+        let off = c
+            .rpc(
+                "scheduledTasks.setEnabled",
+                json!({"id":id,"enabled":false}),
+            )
+            .unwrap();
+        let off_again = c
+            .rpc(
+                "scheduledTasks.setEnabled",
+                json!({"id":id,"enabled":false}),
+            )
+            .unwrap();
+        let hook = scheduled_tasks::upsert(&c, &TaskUpsert::from_json(&json!({"commandId":"android-hook","title":"Hook","prompt":"inspect {{body.action}}","enabled":true,"schedule":{"type":"webhook","signature":{"header":"x-hub-signature-256","encoding":"hex","prefix":"sha256=","secret":"fixture-only-key"}},"projectId":"p","workspaceStrategy":{"type":"root"},"modelSelection":{"instanceId":"codex","model":"fixture"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap()).unwrap();
+        let run_hook = outcome(c.rpc("scheduledTasks.runNow", json!({"id":hook["task"]["id"]})));
+        let populated = first(&c);
+        let deleted = c.rpc("scheduledTasks.delete", json!({"id":id})).unwrap();
+        let deleted_again = outcome(c.rpc("scheduledTasks.delete", json!({"id":id})));
+        let missing = outcome(c.rpc("scheduledTasks.setEnabled", json!({"id":id,"enabled":true})));
+        eprintln!("{label}: list={list} empty={empty} id={id} replayTitle={} runHook={run_hook} deletedAgain={deleted_again} missing={missing}", replay["task"]["title"]);
+        assert_eq!(empty, json!({"tasks":[]}), "{label}");
+        assert_eq!(id, "scheduled-task:android-cmd", "{label}");
+        assert_eq!(replay["task"]["id"], created["task"]["id"], "{label}");
+        assert_eq!(
+            off_again, off,
+            "{label}: unchanged setEnabled keeps updatedAt"
+        );
+        assert_eq!(deleted, json!({"id":id}), "{label}");
+        assert!(
+            !populated.to_string().contains("fixture-only-key"),
+            "{label}"
+        );
+        views.push(json!({
+            "listRejectedAsUnknown": list.to_string().contains("Unknown request tag: scheduledTasks.list"),
+            "created": shape(&created, ""),
+            "replay": shape(&replay, ""),
+            "off": shape(&off, ""),
+            "hook": shape(&hook, ""),
+            "runHook": run_hook["error"].as_str().is_some_and(|e| e.contains("Webhook tasks run when their URL receives a request.")),
+            "populated": shape(&populated, ""),
+            "deletedAgain": shape(&deleted_again, ""),
+            "missing": missing["error"].as_str().is_some_and(|e| e.contains("Schedule task not found.")),
+        }));
+    }
+    eprintln!("scheduled task observations: {}", json!(views));
+    // The pinned nightly has no scheduledTasks.list; o3 keeps it only for older o3 clients.
+    assert_eq!(views[0]["listRejectedAsUnknown"], true);
+    assert_eq!(views[1]["listRejectedAsUnknown"], false);
+    for key in [
+        "created",
+        "replay",
+        "off",
+        "hook",
+        "runHook",
+        "populated",
+        "deletedAgain",
+        "missing",
+    ] {
+        assert_eq!(views[0][key], views[1][key], "{key}");
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 #[ignore = "internal parent-death fixture; called only by its regression test"]
 fn harness_parent_fixture() {
     let Some(home) = std::env::var_os("O3_PARENT_FIXTURE") else {
@@ -2052,8 +2118,11 @@ fn harness_parent_fixture() {
 
 #[test]
 fn killed_harness_does_not_orphan_server_child() {
-    let home =
-        PathBuf::from("/var/tmp/o3-build/tmp").join(format!("pdeath-{}", std::process::id()));
+    let home = std::env::temp_dir().join(format!(
+        "pdeath-{}-{}",
+        std::process::id(),
+        o3_server::store::random_id().unwrap()
+    ));
     std::fs::create_dir_all(&home).unwrap();
     let mut parent = Command::new(std::env::current_exe().unwrap())
         .args(["--ignored", "--exact", "harness_parent_fixture"])
@@ -2087,6 +2156,7 @@ fn killed_harness_does_not_orphan_server_child() {
             libc::kill(pid, libc::SIGKILL);
         }
     }
-    std::fs::remove_dir_all(home).unwrap();
+    std::fs::remove_file(home.join("child.pid")).unwrap();
+    std::fs::remove_dir(home).unwrap();
     assert!(result, "server child survived harness SIGKILL");
 }

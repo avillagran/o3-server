@@ -31,11 +31,22 @@ The native protocols do not expose an idempotent command acknowledgement across
 restarts. Records are retained in SQLite; retention/GC and frontend presentation of
 the new error metadata remain future work. Never claim full native chat parity.
 
-Launch checkpoint: the thread, initial message/context/run, event rows and launch
-receipt now share one transaction. Native execution starts after commit. A failed
-run insert leaves none of those records; retrying the same launch creates one run.
-This improves database atomicity, not crash replay of committed native starts or
-filesystem rollback of a newly prepared worktree.
+Staged launch checkpoint (2026-11-04, supersedes the earlier single-transaction
+launch): the thread claim/receipt commits first, as upstream does. Initial
+message/context/run/events and the preparation job then commit together. A rejected
+message admission leaves the empty claimed thread; retry recovers its identity and
+admits one message/run without workspace effects from the rejected admission.
+The accepted run reads `preparing` while Git and setup execute in the background.
+Only release records execution intent and admits the provider.
+
+On restart, an unstarted preparation job can resume its exact durable request.
+Potentially started preparation is failed explicitly and cleaned without replaying
+an uncertain setup script. A failed bound synchronous setup keeps its checkout and
+terminal history for inspection; explicit `prepared-run.retry` reuses that workspace
+and the same run/attempt. Pre-release cancellation stops/reaps the setup scope and
+removes only owned resources. Failed checkout/ref cleanup stays durable and blocks
+retry until it succeeds. The scope ownership guarantee is Linux-specific. This does
+not certify native runtime reattachment or cross-instance handoff.
 
 Restart now also finalizes orphan provider nodes/attempts/subagents and tool items,
 stops assistant message streaming, and emits ordinary projection update events.
@@ -162,3 +173,110 @@ Once owned tasks/items finish, the adapter reports interrupted without requiring
 a second native turn result. Pinned 3991 retains an unresolved runtime request after stopping its run while
 the native session stays open. o3 preserves that request too; interruption alone
 does not invent a native request resolution. Channel loss/restart cancels it.
+
+
+MCP launch admission (2026-11-04): caller/key namespaces survive HTTP-session
+reinitialization. Both claim and message transactions recheck current authority,
+including target modes on receipt replay. A claim committed just before grant
+narrowing/revocation remains empty; no deferred run is admitted. Retry after authority
+is restored recovers that identity. Accepted replay uses the stored model and does
+not require a still-existing base ref or project default.
+
+MCP pending uploads are copied before thread creation, synced and admitted with the
+message. Rejected admissions remove this attempt's unused copies and preserve pending
+retry sources. Accepted copies are independent from pending deletion/sweeping, and
+receipt replay does not create a new set. This does not assert crash-atomic filesystem/
+SQLite commits or complete shared non-MCP attachment-intake parity.
+
+Shared attachment intake (2026-11-04): the MCP-launch claim layer now also handles
+ordinary message dispatch, queued edits and runtime question responses. File copies,
+fsync and optional extraction precede SQLite admission without retaining its write
+lock. Accepted message/request records determine which copies survive; uncertain
+post-admission reads keep the files. Known rejected attempts release their copies,
+leaving pending retry sources. Receipt replay skips copy/extraction and rechecks
+current authority. No provider input is resent as a consequence of extraction.
+
+Extracted `.txt` sidecars survive with accepted attachments. Parse failure preserves
+the original path. A single isolated worker per State bounds parsing work and writes
+a private sidecar atomically; invalid-input and transient-failure caches are in-memory.
+The MCP pending-upload ownership map also resets on restart. A lost process between
+filesystem copy and SQLite commit can leave an unused copy; cross-resource crash
+atomicity and guest-share mediation are outside this checkpoint's claim.
+
+Provider registry policy (2026-11-04): read/parse failure leaves its last valid
+configuration in memory; it does not remove native pools or discover a different
+set of defaults. A later valid settings change reconciles again. Union hydration
+keeps a globally disabled configured instance routable for explicitly enabled
+projects; removing the last enabling project stops new use. Accepted message
+receipts still replay after disable, while new message/launch/prepared admissions
+check the applicable project policy. Registry availability alone is not project
+authorization. Unknown project references do not restore removed configurations.
+
+Context transfers (2026-11-04): fork/merge-back admission persists source references,
+handoff records and run ownership with the command receipt. Legacy request-tag fork
+sources normalize on open without synthesizing native anchors. Adapter-only selection
+fields are rebuilt from SQLite, never accepted from wire model options.
+
+Native context delivery has a separate acknowledgement. Pending is committed before
+Codex history injection or inline prompt submission. In-memory success alone cannot
+mark it delivered; acknowledgement commits first. Stale attempts and terminal runs
+cannot mutate the delivery journal. Successful history and per-native-thread item ids
+are not injected on later ordinary turns. Only a definite unknown-method response
+allows inline fallback. A definitely unsent cancelled inline prompt can clear pending.
+An ambiguous outcome retains pending and forbids replay into that same native identity,
+including after State reopen. Fresh-native reconstruction is described below.
+
+
+## Native history reconstruction (2026-11-04)
+
+Turn start replaces an uncertain or unavailable native conversation while retaining
+its app provider-thread row. It reconstructs prior visible app history, places older
+pending handoffs before the recovery summary and current handoffs after it, and
+refreshes the MCP credential after releasing the exact old query. An active native
+writer fails explicitly. Failed native forks use portable history at the selected
+boundary; merge admission preserves an unconsumed native fork base.
+
+A SQLite journal gates the fresh binding on acknowledged cleanup. Failed cleanup
+retries before a later input; stale attempts and already accepted input cannot
+request replacement. The journal does not promise original-process reattachment
+or exactly-once external tools. It never replays the uncertain current native turn.
+
+Handoff allowance follows native usage/window, model changes, attachment estimates,
+current input and the output reserve. When history cannot fit the old window, the
+service previews fresh history first. A fresh-window failure rolls back identity
+changes; active native background work blocks budget replacement. Unaccepted prior
+failed inputs receive a delta; compact/goal defer inline history until ordinary input.
+Legacy import handoff lists normalize only when missing or null, and old active
+restart runs without app provider rows retain their prior continuation path.
+
+See `nightly/native-recovery-intake.json` for the exact source, native CLI proofs,
+validation and remaining gaps. The implementation services are unchanged in4179;
+its new secret-request behavior is recorded separately as pending.
+
+
+## Ordinary provider selection and returning conversations (2026-11-04)
+
+A selection command changes the requested model while preserving the native row's
+owner until the next run chooses its binding. Compatible instances share the native
+conversation. Otherwise admission picks the latest root row for the target provider
+or creates one. Returning to an existing row sends only visible history after its
+last completed or accepted run; a provider-changing merge carries full target
+history and the existing fork delta under the same handoff budget.
+
+Provider handoff records include canonical source/base refs and actor, and use
+portable_context or delta_context. Consumption records app admission, separately
+from the native history delivery acknowledgement. Queued messages reselect their
+recorded provider/model before ownership, even if later metadata chose another one.
+
+The selection receipt also stages exact old native cleanup. A per-thread gate waits
+for the outgoing execution and cleanup acknowledgement before acquiring the new
+MCP context or sending native input. Failure stays journaled and is retried before
+later input; another thread's native process or credential is not selected for
+release. Native background work rejects the switch before any selection, receipt
+or cleanup mutation. The entire outgoing wait/release has one 45-second deadline.
+Legacy pre-row imports keep their portable fallback; old Claude root row ownership
+normalizes without claiming native subagent bindings.
+
+See `nightly/provider-session-intake.json` for source/evidence and remaining gaps,
+including full same-instance classification, account-overlay setup and active
+cross-instance restart. This does not certify full nightly interchangeability.

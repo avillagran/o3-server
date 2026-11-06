@@ -77,6 +77,11 @@ pub fn setup(name: &str) -> Env {
     let state = scratch.join("userdata");
     std::fs::create_dir_all(&state).unwrap();
     let st = o3_server::store::State::open(&state).unwrap();
+    std::fs::write(
+        st.dir.join("settings.json"),
+        json!({"providerInstances":{"scripted":{"driver":"scripted","enabled":true}}}).to_string(),
+    )
+    .unwrap();
     let pairing = st.issue_pairing(Some("test"), 60_000).unwrap()["credential"]
         .as_str()
         .unwrap()

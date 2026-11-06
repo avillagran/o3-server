@@ -77,6 +77,9 @@ impl Registry {
 /// Only advertise setup operations that this server can actually execute.
 pub fn decorate(s: &State, config: &mut Value) {
     for p in config["providers"].as_array_mut().into_iter().flatten() {
+        if p["availability"] == "unavailable" {
+            continue;
+        }
         let supported = matches!(p["driver"].as_str(), Some("claudeAgent" | "codex"));
         let installed = p["installed"] == true;
         let id = p["instanceId"].as_str().unwrap_or("").to_owned();
@@ -474,6 +477,11 @@ fn update_flow(s: &State, d: &Driver, flow_id: &str, f: impl FnOnce(&mut Flow)) 
     let mut flows = s.streams.p2.setup.flows.lock().unwrap();
     if let Some(flow) = flows.get_mut(&d.instance).filter(|f| f.id == flow_id) {
         f(flow);
+        // A finished flow has nothing left for the user to do: drop the browser link or
+        // device code so clients stop offering them.
+        if matches!(flow.phase, "succeeded" | "failed" | "cancelled") {
+            flow.interaction = None;
+        }
     }
     drop(flows);
     s.streams.p2.setup.touch(s);
@@ -533,6 +541,14 @@ async fn run_flow(
                             f.interaction = Some(json!({"type":"browser","id":"browser","url":url,"requiresConsent":false}));
                         }
                     }
+                    // After the sign-in link, Claude answers a pasted code on the prompt line
+                    // ("Paste code here if prompted > Invalid code. …"); show that answer.
+                    if !codex && f.url.is_some() && first_url(&line).is_none() {
+                        let answer = line.rsplit_once("> ").map_or(line.as_str(), |(_, rest)| rest).trim();
+                        if !answer.is_empty() {
+                            f.message = Some(answer.chars().take(240).collect());
+                        }
+                    }
                     if codex {
                         if let Some(code) = device_code(&line) {
                             if let Some(url) = f.url.clone() {
@@ -584,6 +600,14 @@ async fn run_flow(
                     f.input = None;
                 });
                 let verified = verify(&d).await;
+                if verified {
+                    // The provider list reports the account its running CLI read at startup;
+                    // refresh it so the new sign-in shows without a server restart.
+                    let provider = s.provider.lock().unwrap().clone();
+                    if let Some(provider) = provider {
+                        let _ = provider.refresh().await;
+                    }
+                }
                 update_flow(&s, &d, &flow_id, |f| {
                     f.phase = if verified { "succeeded" } else { "failed" };
                     f.message = Some(if verified {

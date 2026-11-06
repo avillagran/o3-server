@@ -7,10 +7,14 @@ description = "Lean Rust server, wire-compatible with T3 Code clients, with OmaB
 
 [features]
 memory-diagnostics = []
+# Diagnostic builds only: counts SQL statements per text and logs the top ones every 60 s.
+sql-profile = ["rusqlite/trace"]
 default = ["bridge"]
 bridge = ["dep:omabridge", "dep:anyhow", "dep:t3-protocol"]
 
 [dependencies]
+ignore = "0.4"
+regex = "1"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 chrono-tz = "0.10"
 t3-protocol = { git = "https://github.com/avillagran/lib-t3-rust?o3-reader-pin", rev = "7cbad5d8198d37e9ded767d33ac03f2cf15875f4", optional = true }
@@ -23,6 +27,7 @@ hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
 http-body-util = "0.1"
 tokio-tungstenite = { version = "0.28", default-features = false, features = ["handshake"] }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha1 = "0.10"
 sha2 = "0.10"
@@ -33,8 +38,13 @@ time = { version = "0.3", features = ["formatting", "macros", "parsing"] }
 url = "2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 unicode-normalization = "0.1"
+unicode-segmentation = "1.13"
 pulldown-cmark = { version = "0.13", default-features = false }
 base64 = "0.22"
+quick-xml = { version = "0.42", features = ["escape-html"] }
+encoding_rs = "0.8.35"
+zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2"] }
+flate2 = { version = "1.1.10", default-features = false, features = ["rust_backend"] }
 
 [dev-dependencies]
 rcgen = "0.14"

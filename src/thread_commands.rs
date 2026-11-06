@@ -15,6 +15,7 @@ pub fn handles(kind: &str) -> bool {
     matches!(
         kind,
         "thread.fork"
+            | "thread.merge_back"
             | "thread.snooze"
             | "thread.unsnooze"
             | "thread.pin.reorder"
@@ -40,6 +41,9 @@ pub fn handles(kind: &str) -> bool {
 const BLOCKING: &str = "('preparing','starting','running','waiting')";
 
 pub fn has_blocking_run(db: &Connection, tid: &str) -> Result<bool> {
+    if crate::workspace_transition::pending(db, tid)? {
+        return Ok(true);
+    }
     db.query_row(
         &format!("SELECT EXISTS(SELECT 1 FROM records WHERE kind='runs' AND thread_id=? AND json_extract(body,'$.status') IN {BLOCKING})"),
         [tid],
@@ -113,16 +117,25 @@ fn next_ready(db: &Connection, tid: &str) -> Result<Option<Value>> {
 }
 
 /// Turns a queued run into a preparing one inside `db`; the caller starts the provider after commit.
-fn promote(db: &Connection, tid: &str, thread: &Value, mut run: Value) -> Result<(String, String)> {
+fn promote(
+    s: &State,
+    db: &Connection,
+    tid: &str,
+    thread: &Value,
+    mut run: Value,
+) -> Result<(String, String)> {
     let rid = run["id"].as_str().unwrap_or("").to_owned();
     let text = get(db, "messages", run["userMessageId"].as_str().unwrap_or(""))
         .map(|m| m["text"].as_str().unwrap_or("").to_owned())
         .unwrap_or_default();
     run["status"] = json!("preparing");
+    run["executionRequested"] = json!(true);
     run["queuePosition"] = Value::Null;
     run["queueHeld"] = json!(false);
     let mut thread = thread.clone();
-    crate::events::prepare_run_ownership(db, tid, &mut thread, &mut run, &iso(now_ms()))?;
+    crate::events::prepare_run_ownership(s, db, tid, &mut thread, &mut run, &iso(now_ms()))?;
+    crate::context_transfer::admit(s, db, &mut thread, &mut run, false, &iso(now_ms()))?;
+    put(db, "thread", tid, tid, &thread)?;
     let thread = &thread;
     put(db, "runs", &rid, tid, &run)?;
     append(db, tid, "run.updated", run, thread)?;
@@ -131,6 +144,11 @@ fn promote(db: &Connection, tid: &str, thread: &Value, mut run: Value) -> Result
 
 /// Called when a run ends: starts the next queued message of the thread, if any.
 pub fn advance(s: &Arc<State>, tid: &str) {
+    if let Err(error) = advance_checked(s, tid) {
+        eprintln!("Unable to advance thread queue: {error}");
+    }
+}
+pub(crate) fn advance_checked(s: &Arc<State>, tid: &str) -> Result<()> {
     let started = (|| -> Result<Option<(String, String)>> {
         let mut db = s.db.lock().unwrap();
         let tx = db.transaction().map_err(|e| e.to_string())?;
@@ -146,15 +164,16 @@ pub fn advance(s: &Arc<State>, tid: &str) {
         let Some(run) = next_ready(&tx, tid)? else {
             return Ok(None);
         };
-        let started = promote(&tx, tid, &thread, run)?;
+        let started = promote(s, &tx, tid, &thread, run)?;
         renumber(&tx, tid, &thread, &queued_runs(&tx, tid)?)?;
         tx.commit().map_err(|e| e.to_string())?;
         Ok(Some(started))
     })();
-    if let Ok(Some((rid, text))) = started {
+    if let Some((rid, text)) = started? {
         s.notify();
         crate::provider::start(s.clone(), tid.to_owned(), rid, text);
     }
+    Ok(())
 }
 
 struct Outcome {
@@ -167,6 +186,13 @@ struct Outcome {
 }
 
 pub fn dispatch(s: &Arc<State>, c: &Value) -> Result<Value> {
+    dispatch_scoped(s, c, None)
+}
+pub(crate) fn dispatch_scoped(
+    s: &Arc<State>,
+    c: &Value,
+    authority: Option<&crate::mcp_access::Authority>,
+) -> Result<Value> {
     let cid = c["commandId"]
         .as_str()
         .filter(|s| !s.is_empty())
@@ -179,6 +205,9 @@ pub fn dispatch(s: &Arc<State>, c: &Value) -> Result<Value> {
         return Err("rollback recovery required".into());
     }
     let tx = db.transaction().map_err(|e| e.to_string())?;
+    if let Some(authority) = authority {
+        authority.check(&tx, c)?;
+    }
     if let Some(r) = tx
         .query_row(
             "SELECT result FROM receipts WHERE command_id=?",
@@ -229,8 +258,13 @@ fn commit_thread(tx: &Connection, tid: &str, event: &str, thread: &Value) -> Res
 }
 
 fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outcome> {
-    if kind == "thread.fork" {
-        return fork(tx, c).map(|seq| Outcome {
+    if matches!(kind, "thread.fork" | "thread.merge_back") {
+        return (if kind == "thread.fork" {
+            fork(tx, c)
+        } else {
+            crate::context_transfer::merge_back(tx, c)
+        })
+        .map(|seq| Outcome {
             seq,
             start: None,
             steer: None,
@@ -449,7 +483,7 @@ fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outco
             if s.provider.lock().unwrap().is_none() {
                 return Err("no provider adapter configured".into());
             }
-            let (rid, text) = promote(tx, tid, &t, run)?;
+            let (rid, text) = promote(s, tx, tid, &t, run)?;
             renumber(tx, tid, &t, &queued_runs(tx, tid)?)?;
             start = Some((tid.to_owned(), rid, text));
             crate::events::sequence(tx)?
@@ -469,7 +503,7 @@ fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outco
             }
             if s.provider.lock().unwrap().is_some() {
                 if let Some(run) = next_ready(tx, tid)? {
-                    let (rid, text) = promote(tx, tid, &t, run)?;
+                    let (rid, text) = promote(s, tx, tid, &t, run)?;
                     renumber(tx, tid, &t, &queued_runs(tx, tid)?)?;
                     start = Some((tid.to_owned(), rid, text));
                 }
@@ -774,40 +808,24 @@ fn fork(tx: &Connection, c: &Value) -> Result<i64> {
             );
         }
     }
-    let forkable = |r: &Value| {
-        matches!(
-            r["status"].as_str(),
-            Some("completed" | "waiting" | "failed" | "interrupted" | "cancelled")
-        )
-    };
-    let point = &c["sourcePoint"];
-    let source_run = match point["type"].as_str() {
-        Some("latest_stable") => runs.iter().rev().find(|r| forkable(r)),
-        Some("run") => runs.iter().find(|r| r["id"] == point["runId"]),
-        Some("checkpoint") => {
-            let cp = get(
-                tx,
-                "checkpoints",
-                point["checkpointId"].as_str().unwrap_or(""),
-            )?;
-            runs.iter().find(|r| r["id"] == cp["runId"])
-        }
-        _ => return Err("invalid sourcePoint".into()),
+    let side_chat = c["sideChat"] == true;
+    if side_chat
+        && (source["lineage"]["sideChat"] == true
+            || source["lineage"]["relationshipToParent"] == "subagent"
+            || source["delegatedFrom"].is_object())
+    {
+        return Err("A side chat cannot start from a side chat or subagent.".into());
     }
-    .ok_or_else(|| {
-        format!(
-            "No stable source run was found for fork source {}.",
-            point["type"].as_str().unwrap_or("")
-        )
-    })?
-    .clone();
-    if !forkable(&source_run) {
-        return Err(format!(
-            "Run {} is {} and cannot be forked.",
-            source_run["id"].as_str().unwrap_or(""),
-            source_run["status"].as_str().unwrap_or("")
-        ));
+    if side_chat && crate::workspace_transition::pending(tx, source_id)? {
+        return Err("Finish preparing the source workspace before starting a side chat.".into());
     }
+    let selected = crate::context_transfer::source_run(
+        tx,
+        source_id,
+        &c["sourcePoint"],
+        if side_chat { "side_chat" } else { "fork" },
+    )?;
+    let source_run = selected.clone().unwrap_or(Value::Null);
     let at = c["createdAt"]
         .as_str()
         .map(str::to_owned)
@@ -828,12 +846,12 @@ fn fork(tx: &Connection, c: &Value) -> Result<i64> {
             "snoozedAt",
             "lastSnoozeWakeAt",
             "autoSettleDisabledAt",
-            "delegatedFrom",
-            "rollbackRequestId",
-            "rollbackFailure",
             "titleRegeneration",
         ] {
-            o.remove(k);
+            o.insert(k.into(), Value::Null);
+        }
+        for key in ["delegatedFrom", "rollbackRequestId", "rollbackFailure"] {
+            o.remove(key);
         }
     }
     target["id"] = json!(target_id);
@@ -841,6 +859,8 @@ fn fork(tx: &Connection, c: &Value) -> Result<i64> {
     target["activeProviderThreadId"] = Value::Null;
     target["codexNativeThreadId"] = Value::Null;
     target["nativeForkSource"] = Value::Null;
+    target["nativeForkTransferId"] = Value::Null;
+    target["nativeForkLastTurnId"] = Value::Null;
     if runs
         .last()
         .is_some_and(|r| r["id"] == source_run["id"] && r["status"] == "completed")
@@ -860,8 +880,23 @@ fn fork(tx: &Connection, c: &Value) -> Result<i64> {
         target["inheritedProviderContext"] = target["providerHandoff"].clone();
         target["inheritedProviderAttachments"] = target["providerHandoffAttachments"].clone();
     }
+    if let Some(links) = target["pullRequests"].as_array_mut() {
+        for link in links {
+            link.as_object_mut().unwrap().remove("watch");
+        }
+    }
     target["lineage"] = json!({"parentThreadId":source_id,"relationshipToParent":"fork","rootThreadId":source["lineage"]["rootThreadId"]});
-    target["forkedFrom"] = json!({"type":"run","threadId":source_id,"runId":source_run["id"]});
+    if side_chat {
+        target["lineage"]["sideChat"] = json!(true);
+        target["runtimeMode"] = json!("approval-required");
+        target["nativeForkSource"] = Value::Null;
+    }
+
+    target["forkedFrom"] = if selected.is_some() {
+        json!({"type":"run","threadId":source_id,"runId":source_run["id"]})
+    } else {
+        Value::Null
+    };
     for k in [
         "archivedAt",
         "settledOverride",
@@ -880,11 +915,8 @@ fn fork(tx: &Connection, c: &Value) -> Result<i64> {
     target["createdAt"] = json!(at);
     target["updatedAt"] = json!(at);
     put(tx, "thread", target_id, target_id, &target)?;
-    let seq = append(tx, target_id, "thread.created", target.clone(), &target)?;
-    let transfer_id = crate::store::random_id()?;
-    let transfer = json!({"id":transfer_id,"type":"fork","sourceThreadId":source_id,"targetThreadId":target_id,"sourcePoint":{"type":"run","runId":source_run["id"]},"basePoint":null,"sourceProviderInstanceId":source_run["providerInstanceId"],"targetProviderInstanceId":null,"targetRunId":null,"status":"pending","resolution":null,"createdBy":target["createdBy"],"error":null,"createdAt":at,"updatedAt":at,"consumedAt":null});
-    put(tx, "contextTransfers", &transfer_id, target_id, &transfer)?;
-    append(tx, target_id, "context-transfer.created", transfer, &target)?;
+    append(tx, target_id, "thread.created", target.clone(), &target)?;
+    let seq = crate::context_transfer::fork_record(tx, &source, &target, selected.as_ref(), &at)?;
     // The fork shows the source conversation up to the chosen run as inherited items. They are
     // copied row by row inside SQLite, so a long source costs no memory here.
     let ids: Vec<&Value> = runs
@@ -892,11 +924,13 @@ fn fork(tx: &Connection, c: &Value) -> Result<i64> {
         .take_while_inclusive(|r| r["id"] != source_run["id"])
         .map(|r| &r["id"])
         .collect();
-    tx.execute(
+    if !side_chat {
+        tx.execute(
         "INSERT INTO records(kind,id,thread_id,body) SELECT 'visibleTurnItems', ?1||':'||id, ?1, json_set(body,'$.visibility','inherited') FROM records WHERE kind='visibleTurnItems' AND thread_id=?2 AND json_extract(body,'$.item.runId') IN (SELECT value FROM json_each(?3)) ORDER BY rowid",
         params![target_id, source_id, json!(ids).to_string()],
     )
     .map_err(|e| e.to_string())?;
+    }
     Ok(seq)
 }
 

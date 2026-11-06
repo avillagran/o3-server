@@ -1,0 +1,33 @@
+{
+  "target": "T3 Code nightly4275,6577c6b6185167c0e502fa01f9e8e8f2dee6ff25",
+  "reference": "ProviderInstanceRegistry forks native adapters into parent-owned scopes and closes them when their scope ends. Server teardown is not a user Stop command.",
+  "observed": [
+    "Private container probe of83ce347: SIGTERM while a native turn is active can persist a failed run before the server exits.",
+    "The same probe with445f545 and an active goal already preserves the run; no deterministic active-goal SIGTERM regression in445f545 is claimed.",
+    "445f545 is installed on NODE and M2; real HTTP snapshots for the two reported NODE threads retain assistant answers and active native goals, and both runs returned to running after restart."
+  ],
+  "implemented": [
+    "Mark server teardown before closing native transports, serializing the receipt fence with the database writer.",
+    "Ignore late native receipts after teardown begins, so transport closure cannot create failure cards, terminalize durable work or replace its goal.",
+    "Do not issue user Stop or native goal-control commands during shutdown.",
+    "Generated systemd units use KillMode=mixed so SIGTERM reaches the supervising server before native children are reaped."
+  ],
+  "validation": {
+    "isolation": "Rootless Podman, read-only source and binaries, private tmpfs, no external network; independent build target.",
+    "affectedDefaultPassed": 199,
+    "affectedDefaultIgnored": 9,
+    "processCases": "SIGKILL/restart and SIGTERM/restart of a real server process; same app run, objective, usage and budget, automatic completion and no goal RPCs.",
+    "lateReceipts": "A native transport failure, interruption and paused-goal notification after teardown leave the run running and the stored goal active; no failure card.",
+    "affectedMinimalPassed": 199,
+    "affectedMinimalIgnored": 9,
+    "fullDefaultPassed": 547,
+    "fullMinimalPassed": 544,
+    "fullIgnoredPerMode": 36,
+    "testExecutablesPerMode": 98,
+    "checks": "Strict all-targets Clippy in both modes, formatting, compatibility generation and nine nightly-watch cases pass."
+  },
+  "remaining": [
+    "Full driver/session shutdown, forced stop, idle-wake and restart parity remain subject to the wider nightly inventory.",
+    "The new receipt fence is not deployed by this intake. Intel is not reachable over LAN or OmaBridge."
+  ]
+}

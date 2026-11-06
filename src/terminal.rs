@@ -36,6 +36,16 @@ const MAX_LIVE: usize = 64;
 const MAX_PENDING_CONTROL: usize = 8 * 1024;
 const DEFAULT_COLS: u16 = 120;
 const DEFAULT_ROWS: u16 = 30;
+async fn await_scope(completion: Option<tokio::sync::watch::Receiver<bool>>) -> Result<(), String> {
+    if let Some(mut done) = completion {
+        while !*done.borrow() {
+            done.changed()
+                .await
+                .map_err(|_| "Setup process scope ended without confirming cleanup".to_owned())?;
+        }
+    }
+    Ok(())
+}
 const BLOCKLIST: [&str; 10] = [
     "PORT",
     "ELECTRON_RENDERER_PORT",
@@ -368,12 +378,15 @@ struct Logged {
 }
 
 struct Proc {
+    completion: Option<tokio::sync::watch::Receiver<bool>>,
     master: Arc<AsyncFd<OwnedFd>>,
     /// Dropping (or sending on) this stops the process group: HUP and TERM, then KILL after a grace period.
     _stop: oneshot::Sender<()>,
 }
 
 struct SessionState {
+    scoped: bool,
+    shell_program: String,
     cwd: String,
     worktree_path: Option<String>,
     env: Option<BTreeMap<String, String>>,
@@ -490,6 +503,8 @@ impl Session {
             global,
             persistence: Mutex::new(None),
             st: Mutex::new(SessionState {
+                scoped: false,
+                shell_program: String::new(),
                 cwd: cwd.into(),
                 worktree_path: worktree,
                 env,
@@ -618,7 +633,11 @@ impl Session {
 
 // ---------------------------------------------------------------- pump (one task per live process)
 
-async fn kill_group(child: &mut tokio::process::Child, pid: i32) {
+async fn kill_group(child: &mut pty::Child, pid: i32) {
+    if child.stop_scope() {
+        let _ = child.wait().await;
+        return;
+    }
     pty::signal_session(pid, libc::SIGHUP);
     pty::signal_session(pid, libc::SIGTERM);
     let timed_out = tokio::time::timeout(KILL_GRACE, child.wait())
@@ -636,11 +655,12 @@ async fn pump(
     sess: Arc<Session>,
     gen: u64,
     master: Arc<AsyncFd<OwnedFd>>,
-    mut child: tokio::process::Child,
+    mut child: pty::Child,
     pid: i32,
     mut stop: oneshot::Receiver<()>,
 ) {
     use std::os::unix::process::ExitStatusExt;
+    let scoped = child.completion().is_some();
     let mut buf = vec![0u8; 16 * 1024];
     let mut decoder = Utf8Stream::default();
     let mut status = None;
@@ -680,7 +700,9 @@ async fn pump(
     }
     sess.output(gen, decoder.finish());
     let status = status.and_then(Result::ok);
-    pty::signal_group(pid, libc::SIGHUP);
+    if !scoped {
+        pty::signal_group(pid, libc::SIGHUP);
+    }
     sess.exited(
         gen,
         status.and_then(|s| s.code()),
@@ -691,6 +713,7 @@ async fn pump(
 // ---------------------------------------------------------------- manager
 
 pub struct Manager {
+    agent_scopes: std::sync::OnceLock<Arc<crate::agent_scope::Registry>>,
     sessions: Mutex<HashMap<(String, String), Arc<Session>>>,
     closed: Mutex<HashSet<(String, String)>>,
     global: Arc<Mutex<Ring>>,
@@ -798,6 +821,7 @@ fn check_cwd(cwd: &str) -> Result<(), Value> {
 }
 
 struct Launch {
+    scoped: bool,
     thread: String,
     terminal: String,
     cwd: String,
@@ -809,6 +833,7 @@ struct Launch {
 fn launch_of(s: &State, p: &Value, cwd_required: bool) -> Result<Launch, Value> {
     let (thread, terminal) = key_of(p)?;
     Ok(Launch {
+        scoped: false,
         cwd: if cwd_required || p.get("cwd").is_some() {
             cwd_of(p)?
         } else {
@@ -875,6 +900,7 @@ fn spawn_env(runtime: &Option<BTreeMap<String, String>>) -> Vec<(String, String)
 impl Manager {
     pub fn new(notify: Notifier) -> Arc<Self> {
         Arc::new(Self {
+            agent_scopes: Default::default(),
             sessions: Mutex::default(),
             closed: Mutex::default(),
             global: Arc::default(),
@@ -884,6 +910,9 @@ impl Manager {
             poller: std::sync::atomic::AtomicBool::new(false),
             history_dir: Mutex::new(None),
         })
+    }
+    pub(crate) fn set_agent_scopes(&self, registry: Arc<crate::agent_scope::Registry>) {
+        let _ = self.agent_scopes.set(registry);
     }
     /// Restore bounded snapshots only: processes and environment are never resurrected.
     pub fn restore(&self, dir: &Path) -> Result<(), String> {
@@ -1021,7 +1050,16 @@ impl Manager {
         }
     }
 
-    fn start_session(self: &Arc<Self>, sess: &Arc<Session>, cols: u16, rows: u16, restarted: bool) {
+    async fn start_session(
+        self: &Arc<Self>,
+        sess: &Arc<Session>,
+        cols: u16,
+        rows: u16,
+        restarted: bool,
+    ) {
+        if let Some(registry) = self.agent_scopes.get() {
+            registry.initialize().await;
+        }
         let mut st = sess.st.lock().unwrap();
         Session::stop_process(&mut st);
         st.status = "starting";
@@ -1047,8 +1085,16 @@ impl Manager {
         let mut last_error = String::new();
         let mut spawned = None;
         for shell in &candidates {
-            match pty::spawn(shell, Path::new(&st.cwd), &env, cols, rows) {
+            let launch = self.agent_scopes.get().map_or_else(
+                || Ok(crate::agent_scope::TerminalCommand::plain(shell, &env)),
+                |registry| registry.terminal_command(shell, Path::new(&st.cwd), &env),
+            );
+            let launch = launch.map_err(std::io::Error::other).and_then(|launch| {
+                pty::spawn_prepared(&launch, Path::new(&st.cwd), cols, rows, st.scoped)
+            });
+            match launch {
                 Ok(p) => {
+                    st.shell_program = shell.clone();
                     spawned = Some(p);
                     break;
                 }
@@ -1062,6 +1108,7 @@ impl Manager {
                 let master = Arc::new(p.master);
                 let (stop_tx, stop_rx) = oneshot::channel();
                 st.proc = Some(Proc {
+                    completion: p.child.completion(),
                     master: master.clone(),
                     _stop: stop_tx,
                 });
@@ -1095,12 +1142,13 @@ impl Manager {
             self.notify.clone(),
             self.global.clone(),
         );
+        sess.st.lock().unwrap().scoped = l.scoped;
         *sess.persistence.lock().unwrap() = self.history_path(&l.thread, &l.terminal);
         sess
     }
 
     /// `terminal.open`: start, or reconcile with, the session named by the input.
-    fn open_locked(self: &Arc<Self>, l: &Launch) -> Result<Arc<Session>, Value> {
+    async fn open_locked(self: &Arc<Self>, l: &Launch) -> Result<Arc<Session>, Value> {
         check_cwd(&l.cwd)?;
         let key = (l.thread.clone(), l.terminal.clone());
         let Some(live) = self.get(&key) else {
@@ -1118,7 +1166,7 @@ impl Manager {
                 .insert(key.clone(), sess.clone());
             self.closed.lock().unwrap().remove(&key);
             self.evict_inactive();
-            self.start_session(&sess, cols, rows, false);
+            self.start_session(&sess, cols, rows, false).await;
             return Ok(sess);
         };
         let (cols, rows, restart) = {
@@ -1129,6 +1177,7 @@ impl Manager {
                 .clone()
                 .unwrap_or_else(|| st.worktree_path.clone());
             let changed = st.cwd != l.cwd
+                || (l.scoped && !st.scoped)
                 || (st.proc.is_some() && st.env != l.env)
                 || st.worktree_path != next_worktree;
             if changed {
@@ -1136,6 +1185,7 @@ impl Manager {
                 st.cwd = l.cwd.clone();
                 st.worktree_path = next_worktree;
                 st.env = l.env.clone();
+                st.scoped |= l.scoped;
                 st.history.clear();
                 st.pending_ctl.clear();
             } else if matches!(st.status, "exited" | "error") {
@@ -1157,19 +1207,28 @@ impl Manager {
             }
         };
         if restart {
-            self.start_session(&live, cols, rows, false);
+            self.start_session(&live, cols, rows, false).await;
         }
         Ok(live)
     }
 
     /// `terminal.attach`: the session to stream, `None` when it was closed and the client only resumes.
-    fn attach_locked(
+    async fn attach_locked(
         self: &Arc<Self>,
         s: &State,
         p: &Value,
         resume: bool,
     ) -> Result<Option<Arc<Session>>, Value> {
         let l = launch_of(s, p, false)?;
+        if crate::events::get(&s.db.lock().unwrap(), "thread", &l.thread)
+            .is_ok_and(|t| !t["deletedAt"].is_null())
+        {
+            return if resume {
+                Ok(None)
+            } else {
+                Err(invalid("The thread was deleted."))
+            };
+        }
         let key = (l.thread.clone(), l.terminal.clone());
         let restart_if_stopped = p["restartIfNotRunning"] == true;
         let Some(session) = self.get(&key) else {
@@ -1179,11 +1238,11 @@ impl Manager {
             if l.cwd.is_empty() {
                 return Err(lookup_error(&key.0, &key.1));
             }
-            return self.open_locked(&l).map(Some);
+            return self.open_locked(&l).await.map(Some);
         };
         let stopped = session.st.lock().unwrap().proc.is_none();
         if !resume && stopped && !l.cwd.is_empty() && restart_if_stopped {
-            return self.open_locked(&l).map(Some);
+            return self.open_locked(&l).await.map(Some);
         }
         let mut st = session.st.lock().unwrap();
         let target = (l.cols.unwrap_or(st.cols), l.rows.unwrap_or(st.rows));
@@ -1199,7 +1258,45 @@ impl Manager {
         Ok(Some(session))
     }
 
-    fn close_session(&self, key: &(String, String)) {
+    pub(crate) async fn cleanup(&self, thread: &str) -> Result<(), String> {
+        let _gate = self.lifecycle.lock().await;
+        let keys: Vec<_> = self
+            .sessions
+            .lock()
+            .unwrap()
+            .keys()
+            .filter(|(t, _)| t == thread)
+            .cloned()
+            .collect();
+        for key in keys {
+            if let Some(session) = self.get(&key) {
+                session.persistence.lock().unwrap().take();
+            }
+            await_scope(self.close_session(&key)).await?;
+        }
+        let dir = self.history_dir.lock().unwrap().clone();
+        if let Some(dir) = dir {
+            for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())? {
+                let entry = entry.map_err(|e| e.to_string())?;
+                if !entry.file_type().map_err(|e| e.to_string())?.is_file()
+                    || entry.path().extension().is_none_or(|e| e != "json")
+                    || entry.metadata().map_err(|e| e.to_string())?.len()
+                        > 6 * HISTORY_BYTES as u64 + 65536
+                {
+                    continue;
+                }
+                let bytes = std::fs::read(entry.path()).map_err(|e| e.to_string())?;
+                if serde_json::from_slice::<Value>(&bytes)
+                    .ok()
+                    .is_some_and(|v| v["threadId"] == thread)
+                {
+                    std::fs::remove_file(entry.path()).map_err(|e| e.to_string())?;
+                }
+            }
+        }
+        Ok(())
+    }
+    fn close_session(&self, key: &(String, String)) -> Option<tokio::sync::watch::Receiver<bool>> {
         let removed = self.sessions.lock().unwrap().remove(key);
         self.closed.lock().unwrap().insert(key.clone());
         if self.closed.lock().unwrap().len() > 4096 {
@@ -1207,13 +1304,16 @@ impl Manager {
         }
         if let Some(sess) = removed {
             let mut st = sess.st.lock().unwrap();
+            let completion = st.proc.as_ref().and_then(|p| p.completion.clone());
             Session::stop_process(&mut st);
             st.closed = true;
             let seq = st.advance();
             sess.publish(&mut st, json!({"type":"closed"}), seq);
             st.history.clear();
             st.pending_ctl.clear();
+            return completion;
         }
+        None
     }
 
     fn ensure_poller(self: &Arc<Self>) {
@@ -1285,7 +1385,12 @@ pub async fn call(s: &Arc<State>, tag: &str, p: &Value) -> Result<Value, Value> 
         "terminal.open" => {
             let l = launch_of(s, p, true)?;
             let _guard = m.lifecycle.lock().await;
-            let sess = m.open_locked(&l)?;
+            if crate::events::get(&s.db.lock().unwrap(), "thread", &l.thread)
+                .is_ok_and(|t| !t["deletedAt"].is_null())
+            {
+                return Err(invalid("The thread was deleted."));
+            }
+            let sess = m.open_locked(&l).await?;
             Ok(sess.snapshot())
         }
         "terminal.write" => {
@@ -1352,6 +1457,11 @@ pub async fn call(s: &Arc<State>, tag: &str, p: &Value) -> Result<Value, Value> 
                 return Err(invalid("cols and rows required"));
             }
             let _guard = m.lifecycle.lock().await;
+            if crate::events::get(&s.db.lock().unwrap(), "thread", &l.thread)
+                .is_ok_and(|t| !t["deletedAt"].is_null())
+            {
+                return Err(invalid("The thread was deleted."));
+            }
             check_cwd(&l.cwd)?;
             let key = (l.thread.clone(), l.terminal.clone());
             let sess = match m.get(&key) {
@@ -1377,7 +1487,8 @@ pub async fn call(s: &Arc<State>, tag: &str, p: &Value) -> Result<Value, Value> 
                 st.history.clear();
                 st.pending_ctl.clear();
             }
-            m.start_session(&sess, l.cols.unwrap(), l.rows.unwrap(), true);
+            m.start_session(&sess, l.cols.unwrap(), l.rows.unwrap(), true)
+                .await;
             Ok(sess.snapshot())
         }
         "terminal.close" => {
@@ -1389,7 +1500,9 @@ pub async fn call(s: &Arc<State>, tag: &str, p: &Value) -> Result<Value, Value> 
                 .to_owned();
             let _guard = m.lifecycle.lock().await;
             match p.get("terminalId").and_then(Value::as_str) {
-                Some(id) => m.close_session(&(thread, id.to_owned())),
+                Some(id) => await_scope(m.close_session(&(thread, id.to_owned())))
+                    .await
+                    .map_err(|e| invalid(&e))?,
                 None => {
                     let keys: Vec<_> = m
                         .sessions
@@ -1400,7 +1513,9 @@ pub async fn call(s: &Arc<State>, tag: &str, p: &Value) -> Result<Value, Value> 
                         .cloned()
                         .collect();
                     for key in keys {
-                        m.close_session(&key);
+                        await_scope(m.close_session(&key))
+                            .await
+                            .map_err(|e| invalid(&e))?;
                     }
                 }
             }
@@ -1411,6 +1526,262 @@ pub async fn call(s: &Arc<State>, tag: &str, p: &Value) -> Result<Value, Value> 
 }
 
 // ---------------------------------------------------------------- streams
+
+/// Start a project script in a visible terminal, after its interactive shell is ready.
+/// A generation check prevents delayed input reaching a restarted/rebound terminal.
+pub(crate) async fn project_script(
+    s: &Arc<State>,
+    p: &Value,
+    command: String,
+) -> Result<(), Value> {
+    begin_project_script(s, p, command, false).await.map(|_| ())
+}
+pub(crate) async fn observed_project_script(
+    s: &Arc<State>,
+    p: &Value,
+    command: String,
+) -> Result<ScriptObserver, Value> {
+    begin_project_script(s, p, command, true).await
+}
+async fn begin_project_script(
+    s: &Arc<State>,
+    p: &Value,
+    mut command: String,
+    observe: bool,
+) -> Result<ScriptObserver, Value> {
+    let mut changed = s.streams.terminals.notify.subscribe();
+    let mut launch = launch_of(s, p, true)?;
+    // Project setup owns its descendants even when they daemonize. Ordinary
+    // interactive terminals retain their existing lifecycle.
+    launch.scoped = cfg!(target_os = "linux");
+    let (session, readiness_sequence) = {
+        let manager = &s.streams.terminals;
+        let _guard = manager.lifecycle.lock().await;
+        if crate::events::get(&s.db.lock().unwrap(), "thread", &launch.thread)
+            .is_ok_and(|t| !t["deletedAt"].is_null())
+        {
+            return Err(invalid("The thread was deleted."));
+        }
+        // Restored history and a previous shell's line editor state must not
+        // make this shell ready. Capture the live event cursor before opening.
+        let sequence = manager
+            .get(&(launch.thread.clone(), launch.terminal.clone()))
+            .map_or(0, |session| session.st.lock().unwrap().seq);
+        (manager.open_locked(&launch).await?, sequence)
+    };
+    let generation = session.st.lock().unwrap().gen;
+    let token = if observe {
+        format!(
+            "__T3_SETUP_DONE___{}:",
+            crate::store::random_id().map_err(|e| invalid(&e))?
+        )
+    } else {
+        String::new()
+    };
+    if observe {
+        let program = session.st.lock().unwrap().shell_program.clone();
+        let name = Path::new(&program)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+        let body = command.replace("\r\n", "\n").replace('\n', "\r");
+        command=match name {
+            "fish"=>format!("begin\r{body}\rend; printf '\\n{token}%s\\n' $status"),
+            "pwsh"|"powershell"=>format!("$global:LASTEXITCODE = $null; & {{\r{body}\r}}; if ($null -ne $LASTEXITCODE) {{ $__t3c = $LASTEXITCODE }} elseif ($?) {{ $__t3c = 0 }} else {{ $__t3c = 1 }}; Write-Host \"{token}$__t3c\""),
+            _=>format!("( {body}\r); printf '\\n{token}%s\\n' \"$?\""),
+        };
+    }
+    let input_error = Arc::new(Mutex::new(None));
+    let observer = ScriptObserver {
+        session: session.clone(),
+        generation,
+        sequence: session.st.lock().unwrap().seq,
+        partial: String::new(),
+        token,
+        input_error: input_error.clone(),
+    };
+    let weak = Arc::downgrade(s);
+    let cwd = p["cwd"].clone();
+    let tracking = p["_setupTrackingId"].as_str().map(str::to_owned);
+    tokio::spawn(async move {
+        let mut sequence = readiness_sequence;
+        let mut carry = String::new();
+        let mut paste = false;
+        let mut quiet = tokio::time::Instant::now() + Duration::from_secs(3);
+        let mut prompted = false;
+        loop {
+            if weak.strong_count() == 0 {
+                return;
+            }
+            let busy = {
+                let st = session.st.lock().unwrap();
+                if st.gen != generation || st.status != "running" {
+                    return;
+                }
+                for item in st.log.iter().filter(|item| item.seq > sequence) {
+                    if let Some(data) = item.event["data"]
+                        .as_str()
+                        .filter(|_| item.event["type"] == "output")
+                    {
+                        quiet = tokio::time::Instant::now() + Duration::from_secs(3);
+                        let text = format!("{carry}{data}");
+                        if let Some(on) = text.rfind("\x1b[?2004h") {
+                            paste = text.rfind("\x1b[?2004l").is_none_or(|off| on > off);
+                        } else if text.contains("\x1b[?2004l") {
+                            paste = false;
+                        }
+                        carry = text
+                            .chars()
+                            .rev()
+                            .take(16)
+                            .collect::<String>()
+                            .chars()
+                            .rev()
+                            .collect();
+                    }
+                }
+                sequence = st.seq;
+                st.has_subprocess
+            };
+            if paste {
+                break;
+            }
+            if tokio::time::Instant::now() >= quiet {
+                if !busy {
+                    break;
+                }
+                if !prompted {
+                    if let (Some(s), Some(id)) = (weak.upgrade(), tracking.as_deref()) {
+                        let _ = crate::worktree_setup::stage(
+                            &s,
+                            id,
+                            "setup-script",
+                            "running",
+                            Some("Waiting for shell startup prompt"),
+                        );
+                    }
+                    prompted = true;
+                }
+                quiet = tokio::time::Instant::now() + Duration::from_secs(3);
+            }
+            tokio::select! {r=changed.changed()=>if r.is_err(){return;},_=tokio::time::sleep_until(quiet)=>{}}
+        }
+        let Some(s) = weak.upgrade() else {
+            return;
+        };
+        if !crate::events::get(&s.db.lock().unwrap(), "thread", &session.thread_id)
+            .is_ok_and(|t| t["deletedAt"].is_null() && t["worktreePath"] == cwd)
+        {
+            return;
+        }
+        let master = {
+            let mut st = session.st.lock().unwrap();
+            if st.gen != generation || st.status != "running" {
+                return;
+            }
+            st.input_count += 1;
+            st.proc.as_ref().map(|p| p.master.clone())
+        };
+        if let Some(master) = master {
+            if let Err(error) = pty::write_all(
+                &master,
+                format!(" {command}\r").as_bytes(),
+                Duration::from_secs(2),
+            )
+            .await
+            {
+                eprintln!("Project script input failed: {error}");
+                *input_error.lock().unwrap() =
+                    Some(format!("Project script input failed: {error}"));
+                bump(&session.notify);
+            }
+        } else {
+            *input_error.lock().unwrap() = Some("Setup terminal is unavailable".into());
+            bump(&session.notify);
+        }
+    });
+    Ok(observer)
+}
+
+pub(crate) struct ScriptObserver {
+    session: Arc<Session>,
+    generation: u64,
+    sequence: u64,
+    partial: String,
+    token: String,
+    input_error: Arc<Mutex<Option<String>>>,
+}
+impl ScriptObserver {
+    pub(crate) async fn wait(
+        &mut self,
+        mut line: impl FnMut(String),
+    ) -> Result<Option<i32>, String> {
+        let mut changes = self.session.notify.subscribe();
+        static ANSI: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        let ansi = ANSI.get_or_init(|| {
+            regex::Regex::new(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)").unwrap()
+        });
+        loop {
+            if let Some(error) = self.input_error.lock().unwrap().clone() {
+                return Err(error);
+            }
+            let (chunks, ended) = {
+                let st = self.session.st.lock().unwrap();
+                let chunks = st
+                    .log
+                    .iter()
+                    .filter(|e| e.seq > self.sequence)
+                    .filter_map(|e| {
+                        e.event["data"]
+                            .as_str()
+                            .filter(|_| e.event["type"] == "output")
+                            .map(str::to_owned)
+                    })
+                    .collect::<Vec<_>>();
+                self.sequence = st.seq;
+                (chunks, st.gen != self.generation || st.status != "running")
+            };
+            for chunk in chunks {
+                self.partial.push_str(&chunk);
+                while let Some(end) = self.partial.find('\n') {
+                    let text = self.partial[..end].to_owned();
+                    self.partial.drain(..=end);
+                    let clean = ansi.replace_all(&text, "");
+                    let clean = clean
+                        .chars()
+                        .filter(|c| !c.is_control() || *c == '\t')
+                        .collect::<String>();
+                    if let Some(value) = clean
+                        .trim()
+                        .strip_prefix(&self.token)
+                        .filter(|_| !self.token.is_empty())
+                    {
+                        if let Ok(code) = value.trim().parse::<i32>() {
+                            return Ok(Some(code));
+                        }
+                    }
+                    if !clean.contains(&self.token) && !clean.is_empty() {
+                        line(clean);
+                    }
+                }
+                if self.partial.len() > 16384 {
+                    let mut cut = self.partial.len() - 16384;
+                    while !self.partial.is_char_boundary(cut) {
+                        cut += 1;
+                    }
+                    self.partial.drain(..cut);
+                }
+            }
+            if ended {
+                return Ok(None);
+            }
+            changes
+                .changed()
+                .await
+                .map_err(|_| "Setup terminal notifications ended".to_owned())?;
+        }
+    }
+}
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Kind {
@@ -1605,7 +1976,7 @@ pub async fn open_stream(s: &Arc<State>, tag: &str, p: &Value) -> Result<Cursor,
             cursor.key = key.clone();
             let _guard = m.lifecycle.lock().await;
             let session = if kind == Kind::Attach {
-                m.attach_locked(s, p, p["resume"] == true)?
+                m.attach_locked(s, p, p["resume"] == true).await?
             } else {
                 Some(m.require(&key)?)
             };

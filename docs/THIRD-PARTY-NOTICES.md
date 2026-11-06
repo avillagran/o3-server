@@ -1,0 +1,50 @@
+# Third-party notices
+
+## T3 Code
+
+MCP contracts, toolkit behavior and activity-text adaptation reference the T3 Code
+source at https://github.com/pingdotgg/t3code, commit
+`680152e27b2a961686389ca69a1557cbb2c55f08`. Its license notice follows.
+
+The staged launch, MCP project launch/attachment intake, managed Scratch folder,
+provider enablement/registry hydration, context-transfer/native-recovery/history-budget/native-delivery adaptations and generated fixtures, document text extraction/fixtures, branch naming and setup lifecycle
+adaptations also reference nightly4165,
+`8b44f42b14c8e273156474a924ccf29680dd7857`; see
+[thread-launch-intake.json](nightly/thread-launch-intake.json) and
+[attachment-intake.json](nightly/attachment-intake.json), and
+[provider-policy-intake.json](nightly/provider-policy-intake.json), and
+[context-transfer-intake.json](nightly/context-transfer-intake.json), and
+[native-recovery-intake.json](nightly/native-recovery-intake.json) for source files.
+The provider-session handoff, continuation, native home/auth-overlay and
+selection/session transition adaptations reference nightly4179,
+`9e85538535c8553901351112ab02dd1dd62db5ee`; see
+[provider-session-intake.json](nightly/provider-session-intake.json) and
+[provider-home-intake.json](nightly/provider-home-intake.json) and
+[selection-transition-intake.json](nightly/selection-transition-intake.json) and
+[active-provider-handoff-intake.json](nightly/active-provider-handoff-intake.json) and
+[provider-pool-lifetime-intake.json](nightly/provider-pool-lifetime-intake.json).
+Token and webhook signature decoding follows nightly4192,
+`7f6f47b27b44456f1c8214d3b566b375c09f629e`, and the MIT-licensed Effect 4.1.2
+encoders; see [signature-decoding-intake.json](nightly/signature-decoding-intake.json).
+
+MIT License
+
+Copyright (c) 2026 T3 Tools Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

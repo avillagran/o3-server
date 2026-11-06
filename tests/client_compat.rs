@@ -30,6 +30,11 @@ fn spawn_with_provider(fake: bool) -> (String, String) {
     ));
     let _ = std::fs::remove_dir_all(&dir);
     let state = o3_server::store::State::open(&dir).unwrap();
+    std::fs::write(
+        state.dir.join("settings.json"),
+        json!({"providerInstances":{"scripted":{"driver":"scripted","enabled":true}}}).to_string(),
+    )
+    .unwrap();
     let pairing = state.issue_pairing(Some("test"), 60_000).unwrap()["credential"]
         .as_str()
         .unwrap()
@@ -313,13 +318,14 @@ fn bounded_history_pages_do_not_lose_messages() {
             )
             .unwrap();
         let items = page["items"].as_array().unwrap();
-        assert!(items.len() <= 20);
+        // Older pages allow twice the user turns, as T3's `olderHistoryPagePolicy`.
+        assert!(items.len() <= 40);
         assert!(
             items
                 .iter()
                 .filter(|r| r["item"]["type"] == "user_message")
                 .count()
-                <= 10
+                <= 20
         );
         all.splice(0..0, page["items"].as_array().unwrap().clone());
         if page["hasMoreHistory"] == false {
@@ -348,8 +354,13 @@ fn bounded_history_pages_do_not_lose_messages() {
 fn launch_empty_thread_is_idempotent() {
     let (_, c) = connected(false);
     let p = json!({"commandId":"launch","projectId":"p1","title":"Launch","modelSelection":{"instanceId":"scripted","model":"test","options":[]},"runtimeMode":"full-access","interactionMode":"default","workspaceStrategy":{"type":"root"}});
+    assert!(c.rpc("orchestration.launchThread", p.clone()).is_err());
+    c.rpc("projects.mutate",json!({"type":"project.create","commandId":"project","projectId":"p1","title":"Launch","workspaceRoot":std::env::temp_dir()})).unwrap();
     let a = c.rpc("orchestration.launchThread", p.clone()).unwrap();
-    assert_eq!(a, c.rpc("orchestration.launchThread", p).unwrap());
+    let replay = c.rpc("orchestration.launchThread", p).unwrap();
+    assert_eq!(a["threadId"], replay["threadId"]);
+    assert_eq!(a["resumed"], false);
+    assert_eq!(replay["resumed"], true);
     assert_eq!(a["projection"]["thread"]["title"], "Launch");
 }
 fn wait_status(c: &Connection, status: &str) -> serde_json::Value {
@@ -533,7 +544,7 @@ fn protocol_rejected_before_auth() {
 #[test]
 fn projects_share_the_thread_sequence_and_replay_log() {
     let (_, c) = connected(false);
-    let p = json!({"type":"project.create","commandId":"project-create","projectId":"p1","title":"Project","workspaceRoot":"/var/tmp/o3-build/tmp","scripts":[]});
+    let p = json!({"type":"project.create","commandId":"project-create","projectId":"p1","title":"Project","workspaceRoot":std::env::temp_dir(),"scripts":[]});
     let result = c.rpc("projects.mutate", p.clone()).unwrap();
     assert_eq!(result, c.rpc("projects.mutate", p).unwrap());
     let shell = c
@@ -664,7 +675,7 @@ fn queued_dispatch_waits_for_completion_and_steering_reuses_active_run() {
     create(&c, "t1");
     c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"send","messageId":"first","threadId":"t1","text":"first","attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
     let first = wait_status(&c, "waiting")["projection"]["runs"][0]["id"].clone();
-    c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"queue","messageId":"second","threadId":"t1","text":"second","attachments":[],"dispatchMode":{"type":"queue_after_active"}})).unwrap();
+    c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"queue","messageId":"second","threadId":"t1","text":"second","attachments":[],"dispatchMode":{"type":"start_immediately"},"deliveryIntent":"auto"})).unwrap();
     let queued = snap(&c, "t1");
     assert_eq!(queued["projection"]["runs"][1]["status"], "queued");
     let steer = json!({"type":"message.dispatch","commandId":"steer","messageId":"steer","threadId":"t1","text":"STEERING","attachments":[],"dispatchMode":{"type":"steer_active","targetRunId":first}});

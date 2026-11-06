@@ -3,25 +3,33 @@ use crate::store::{iso, now_ms, random_id, State};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 type Result<T> = std::result::Result<T, String>;
-fn change_selection(db: &Connection, t: &mut Value, c: &Value, value: &Value) -> Result<()> {
+fn change_selection(
+    s: &State,
+    db: &Connection,
+    t: &mut Value,
+    c: &Value,
+    value: &Value,
+) -> Result<()> {
     if !value["instanceId"].is_string() || !value["model"].as_str().is_some_and(|m| !m.is_empty()) {
         return Err("invalid model selection".into());
     }
-    if t["modelSelection"] == *value {
+    if crate::selection_transition::model_selections_equal(&t["modelSelection"], value) {
         return Ok(());
     }
     let tid = t["id"].as_str().ok_or("thread id missing")?.to_owned();
     let active: bool = db.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='runs' AND thread_id=? AND json_extract(body,'$.status') IN ('preparing','starting','running','waiting'))", [&tid], |r|r.get(0)).map_err(|e|e.to_string())?;
-    if active {
-        return Err("change model after the active run finishes".into());
-    }
-    if t["providerInstanceId"] != value["instanceId"] {
-        let ordinal = db.query_row("SELECT coalesce(max(json_extract(body,'$.ordinal')),0) FROM records WHERE kind='runs' AND thread_id=?", [&tid], |r|r.get::<_,i64>(0)).map_err(|e|e.to_string())?;
-        crate::thread_commands::capture_handoff(db, t, &tid, ordinal)?;
-        t["providerGeneration"] = c["commandId"].clone();
-        t["activeProviderThreadId"] = Value::Null;
-        t["codexNativeThreadId"] = Value::Null;
-        t["nativeForkSource"] = Value::Null;
+    let transition = crate::provider_switch::selection(s, db, t, value, &c["commandId"])?;
+    if active
+        && !matches!(
+            transition,
+            crate::selection_transition::Transition::Reuse
+                | crate::selection_transition::Transition::SwitchModelInSession
+        )
+    {
+        return Err(
+            "The active selection requires an interrupt-and-restart; send it with restart intent."
+                .into(),
+        );
     }
     db.execute(
         "DELETE FROM records WHERE kind='approvalPolicies' AND thread_id=?",
@@ -35,11 +43,23 @@ fn change_selection(db: &Connection, t: &mut Value, c: &Value, value: &Value) ->
 
 pub fn initialize(db: &Connection) -> Result<()> {
     db.execute_batch("CREATE TABLE IF NOT EXISTS records(kind TEXT NOT NULL,id TEXT NOT NULL,thread_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(kind,id)); CREATE INDEX IF NOT EXISTS records_thread ON records(thread_id,kind); CREATE TABLE IF NOT EXISTS events(sequence INTEGER PRIMARY KEY AUTOINCREMENT,thread_id TEXT NOT NULL,body TEXT NOT NULL,shell TEXT); CREATE TABLE IF NOT EXISTS receipts(command_id TEXT PRIMARY KEY,result TEXT NOT NULL);").map_err(|e|e.to_string())?;
+    // Subscription cursors: per-thread and shell event seeks (see `next`).
+    db.execute_batch("CREATE INDEX IF NOT EXISTS events_thread_sequence ON events(thread_id,sequence); CREATE INDEX IF NOT EXISTS events_shell_sequence ON events(sequence) WHERE shell IS NOT NULL;").map_err(|e|e.to_string())?;
+    // Visible windows follow logical positions, including updated older rows.
+    db.execute_batch("CREATE INDEX IF NOT EXISTS records_visible_position ON records(thread_id,coalesce(json_extract(body,'$.position'),json_extract(body,'$.item.ordinal'),0)) WHERE kind='visibleTurnItems';").map_err(|e|e.to_string())?;
     // The partial index finds the latest user without reading assistant bodies.
     db.execute_batch("CREATE INDEX IF NOT EXISTS records_turn_ordinal ON records(thread_id,json_extract(body,'$.ordinal')) WHERE kind='turnItems'; CREATE INDEX IF NOT EXISTS records_user_message ON records(thread_id) WHERE kind='messages' AND json_extract(body,'$.role')='user';").map_err(|e|e.to_string())?;
     repair_boolean_settled_override(db)?;
     initialize_run_internal(db)?;
-    crate::threadq::initialize(db)
+    crate::deletion::initialize(db)?;
+    crate::run_restart::initialize(db)?;
+    crate::thread_launch::initialize(db)?;
+    crate::workspace_transition::initialize(db)?;
+    crate::native_recovery::initialize(db)?;
+    crate::provider_switch::initialize(db)?;
+    crate::context_transfer::initialize(db)?;
+    crate::threadq::initialize(db)?;
+    crate::t3_shared::initialize(db)
 }
 /// Upstream 077 (1973e0a68): a boolean `settledOverride` breaks the thread schema; true means
 /// settled, false means none. Idempotent; walks only thread records through the primary key.
@@ -57,7 +77,12 @@ pub(crate) fn normalize_settled_override(v: &mut Value) {
     }
 }
 // Durable execution bookkeeping is deliberately separate from wire records.
-const INTERNAL_RUN_FIELDS: [&str; 3] = ["executionRequested", "recoveryPending", "recoveryReason"];
+const INTERNAL_RUN_FIELDS: [&str; 4] = [
+    "executionRequested",
+    "recoveryPending",
+    "recoveryReason",
+    "executionPolicy",
+];
 fn take_run_internal(v: &mut Value) -> Value {
     let mut internal = json!({});
     for key in INTERNAL_RUN_FIELDS {
@@ -403,10 +428,13 @@ pub fn history(s: &State, tid: &str, cursor: &str) -> Result<Value> {
     let anchor: i64 = cursor.parse().map_err(|_| "invalid history cursor")?;
     let db = s.reader.lock().unwrap();
     get(&db, "thread", tid)?;
-    let (lower, more) = crate::snapshot::boundary(&db, tid, anchor)?;
-    let mut q=db.prepare("SELECT body FROM records WHERE kind='visibleTurnItems' AND thread_id=? AND rowid<? AND rowid>=? ORDER BY rowid DESC").map_err(|e|e.to_string())?;
+    let window = crate::snapshot::window(&db, tid, anchor, 20)?;
+    let selected = serde_json::to_string(&window.ids).map_err(|e| e.to_string())?;
+    let lower = window.ids.last().copied().unwrap_or(0);
+    let more = window.more;
+    let mut q=db.prepare("SELECT body FROM records WHERE kind='visibleTurnItems' AND thread_id=? AND rowid IN (SELECT value FROM json_each(?)) ORDER BY coalesce(json_extract(body,'$.position'),json_extract(body,'$.item.ordinal'),0) DESC,rowid DESC").map_err(|e|e.to_string())?;
     let rows = q
-        .query_map(params![tid, anchor, lower], |r| r.get::<_, String>(0))
+        .query_map(params![tid, selected], |r| r.get::<_, String>(0))
         .map_err(|e| e.to_string())?;
     let mut items = Vec::new();
     for row in rows {
@@ -422,14 +450,27 @@ pub fn history(s: &State, tid: &str, cursor: &str) -> Result<Value> {
     )
 }
 
+/// Every subscription polls this on each connection wake, so each shape must stay an index
+/// seek: an `(? IS NULL OR thread_id=?)` filter or testing `shell` (stored after the large
+/// `body`) without an index walks every later event of every thread.
+fn cursor_row(
+    db: &Connection,
+    after: i64,
+    tid: Option<&str>,
+    shell: bool,
+) -> Result<Option<(i64, String)>> {
+    let map = |r: &rusqlite::Row| Ok((r.get(0)?, r.get(1)?));
+    match (tid, shell) {
+        (Some(tid), false) => db.query_row("SELECT sequence,body FROM events INDEXED BY events_thread_sequence WHERE thread_id=?2 AND sequence>?1 ORDER BY sequence LIMIT 1", params![after, tid], map),
+        (Some(tid), true) => db.query_row("SELECT sequence,shell FROM events INDEXED BY events_thread_sequence WHERE thread_id=?2 AND sequence>?1 AND shell IS NOT NULL ORDER BY sequence LIMIT 1", params![after, tid], map),
+        (None, false) => db.query_row("SELECT sequence,body FROM events WHERE sequence>?1 ORDER BY sequence LIMIT 1", params![after], map),
+        (None, true) => db.query_row("SELECT sequence,shell FROM events INDEXED BY events_shell_sequence WHERE shell IS NOT NULL AND sequence>?1 ORDER BY sequence LIMIT 1", params![after], map),
+    }
+    .optional()
+    .map_err(|e| e.to_string())
+}
 pub fn next(s: &State, after: i64, tid: Option<&str>, shell: bool) -> Result<Option<(i64, Value)>> {
-    let db = s.reader.lock().unwrap();
-    let column = if shell { "shell" } else { "body" };
-    let sql=format!("SELECT sequence,{column} FROM events WHERE sequence>? AND (?2 IS NULL OR thread_id=?2) AND {column} IS NOT NULL ORDER BY sequence LIMIT 1");
-    let row: Option<(i64, String)> = db
-        .query_row(&sql, params![after, tid], |r| Ok((r.get(0)?, r.get(1)?)))
-        .optional()
-        .map_err(|e| e.to_string())?;
+    let row = cursor_row(&s.reader.lock().unwrap(), after, tid, shell)?;
     row.map(|(n, b)| {
         serde_json::from_str(&b)
             .map(|v| (n, v))
@@ -486,6 +527,20 @@ pub(crate) fn append(
     Ok(seq)
 }
 pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
+    dispatch_scoped(s, c, None)
+}
+pub(crate) fn dispatch_scoped(
+    s: &std::sync::Arc<State>,
+    c: &Value,
+    authority: Option<&crate::mcp_access::Authority>,
+) -> Result<Value> {
+    crate::attachment_intake::dispatch(s, c, authority)
+}
+pub(crate) fn dispatch_prepared(
+    s: &std::sync::Arc<State>,
+    c: &Value,
+    authority: Option<&crate::mcp_access::Authority>,
+) -> Result<Value> {
     if s.rollback_pending
         .load(std::sync::atomic::Ordering::Acquire)
     {
@@ -509,11 +564,14 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
         .as_str()
         .filter(|s| !s.is_empty())
         .ok_or("commandId required")?;
+    if c["type"] == "prepared-run.retry" {
+        return crate::thread_launch::retry(s, c, authority);
+    }
     if c["type"]
         .as_str()
         .is_some_and(crate::thread_commands::handles)
     {
-        return crate::thread_commands::dispatch(s, c);
+        return crate::thread_commands::dispatch_scoped(s, c, authority);
     }
     if c["type"] == "thread.stop" {
         let target = {
@@ -533,7 +591,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             interrupt["type"] = json!("run.interrupt");
             interrupt["runId"] = run["id"].clone();
             interrupt["holdQueue"] = json!(true);
-            if let Ok(result) = dispatch(s, &interrupt) {
+            if let Ok(result) = dispatch_scoped(s, &interrupt, authority) {
                 return Ok(result);
             }
         }
@@ -545,6 +603,9 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
         return Err("rollback recovery required".into());
     }
     let tx = db.transaction().map_err(|e| e.to_string())?;
+    if let Some(authority) = authority {
+        authority.check(&tx, c)?;
+    }
     if let Some(r) = tx
         .query_row(
             "SELECT result FROM receipts WHERE command_id=?",
@@ -554,8 +615,24 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
         .optional()
         .map_err(|e| e.to_string())?
     {
-        return serde_json::from_str(&r).map_err(|e| e.to_string());
+        let result = serde_json::from_str(&r).map_err(|e| e.to_string())?;
+        return if authority.is_some() {
+            crate::mcp_access::replay_reply(&tx, c, result)
+        } else {
+            Ok(result)
+        };
     }
+    let resolved;
+    let c = if authority.is_some() && c["type"] == "run.interrupt" {
+        let (command, terminal) = crate::mcp_access::interrupt_target(&tx, c)?;
+        if let Some(result) = terminal {
+            return Ok(result);
+        }
+        resolved = command;
+        &resolved
+    } else {
+        c
+    };
     let kind = c["type"].as_str().ok_or("type required")?;
     let tid = c["threadId"].as_str().ok_or("threadId required")?;
     let at = iso(now_ms());
@@ -564,6 +641,19 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
     } else {
         get(&tx, "thread", tid)?
     };
+    if kind == "message.dispatch" {
+        crate::thread_launch::enabled(
+            s,
+            t["projectId"].as_str().unwrap_or(""),
+            c.get("modelSelection")
+                .unwrap_or(&t["modelSelection"])
+                .get("instanceId")
+                .unwrap_or(&Value::Null),
+        )?;
+    }
+    if kind != "thread.delete" && !t["deletedAt"].is_null() {
+        return Err("The thread was deleted".into());
+    }
     let event = match kind {
         "thread.create" => {
             import_native(s, &tx, c, tid, &at, &mut t)?;
@@ -578,8 +668,18 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             "thread.unarchived"
         }
         "thread.delete" => {
-            t["deletedAt"] = json!(at);
-            "thread.deleted"
+            crate::deletion::plan(&tx, &mut t, cid, &at)?;
+            let result = json!({"sequence":sequence(&tx)?});
+            tx.execute(
+                "INSERT INTO receipts VALUES(?,?)",
+                params![cid, result.to_string()],
+            )
+            .map_err(|e| e.to_string())?;
+            tx.commit().map_err(|e| e.to_string())?;
+            drop(db);
+            crate::deletion::signal(s, tid);
+            s.notify();
+            return Ok(result);
         }
         "thread.pin" => {
             t["pinnedAt"] = json!(at);
@@ -604,6 +704,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             "thread.visited"
         }
         "thread.metadata.update" => {
+            crate::workspace_transition::plan(&tx, &t, c, &at)?;
             if c["regenerateTitle"] == true {
                 let text: Option<String> = tx.query_row("SELECT json_extract(body,'$.text') FROM records WHERE kind='messages' AND thread_id=? AND json_extract(body,'$.role')='user' ORDER BY rowid LIMIT 1",[tid],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
                 let title = crate::title::fallback(text.as_deref().unwrap_or(""));
@@ -633,20 +734,34 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             "thread.metadata-updated"
         }
         "thread.model-selection.set"
+        | "provider.switch"
         | "thread.runtime-mode.set"
         | "thread.interaction-mode.set" => {
             let active:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='runs' AND thread_id=? AND json_extract(body,'$.status') IN ('preparing','starting','running','waiting'))",[tid],|r|r.get(0)).map_err(|e|e.to_string())?;
-            if active {
-                return Err("change model or mode after the active run finishes".into());
+            if active && kind == "thread.runtime-mode.set" {
+                let pt = t["activeProviderThreadId"]
+                    .as_str()
+                    .and_then(|id| get(&tx, "providerThreads", id).ok());
+                let caps = pt
+                    .as_ref()
+                    .and_then(|pt| pt["providerSessionId"].as_str())
+                    .and_then(|id| get(&tx, "providerSessions", id).ok())
+                    .map(|s| s["capabilities"].clone())
+                    .unwrap_or(Value::Null);
+                if caps["sessions"]["supportsRuntimeModeSwitchInSession"] != true {
+                    return Err("The active provider cannot change runtime mode in session.".into());
+                }
             }
             let key = match kind {
-                "thread.model-selection.set" => "modelSelection",
+                "thread.model-selection.set" | "provider.switch" => "modelSelection",
                 "thread.runtime-mode.set" => "runtimeMode",
                 _ => "interactionMode",
             };
             let value = c.get(key).ok_or("mode or model selection required")?;
+            let instance_changed =
+                key == "modelSelection" && t["providerInstanceId"] != value["instanceId"];
             if key == "modelSelection" {
-                change_selection(&tx, &mut t, c, value)?;
+                change_selection(s, &tx, &mut t, c, value)?;
             } else if key == "runtimeMode"
                 && !matches!(
                     value.as_str(),
@@ -659,7 +774,10 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             {
                 return Err("unsupported interaction mode".into());
             }
-            if t[key] != *value && matches!(key, "runtimeMode" | "modelSelection") {
+            if (key == "runtimeMode" && t[key] != *value)
+                || (key == "modelSelection"
+                    && !crate::selection_transition::model_selections_equal(&t[key], value))
+            {
                 tx.execute(
                     "DELETE FROM records WHERE kind='approvalPolicies' AND thread_id=?",
                     [tid],
@@ -668,14 +786,80 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             }
             t[key] = value.clone();
             match kind {
-                "thread.model-selection.set" => "thread.model-selection-updated",
+                "provider.switch" => "thread.provider-switched",
+                "thread.model-selection.set" => {
+                    if instance_changed {
+                        "thread.provider-switched"
+                    } else {
+                        "thread.model-selection-updated"
+                    }
+                }
                 "thread.runtime-mode.set" => "thread.runtime-mode-updated",
                 _ => "thread.interaction-mode-updated",
             }
         }
         "message.dispatch" => {
+            let mut resolved = c.clone();
+            resolved["dispatchMode"] = delivery_mode(s, &tx, &t, c, authority.is_some())?;
+            resolve_steering_restart(s, &tx, &t, &mut resolved)?;
+            if authority.is_some()
+                && c["deliveryIntent"] == "steer"
+                && !matches!(
+                    resolved["dispatchMode"]["type"].as_str(),
+                    Some("steer_active" | "restart_active")
+                )
+            {
+                return Err(crate::mcp_tools::failure(
+                    "invalid_request",
+                    "The thread has no active turn that can be steered.",
+                )
+                .to_string());
+            }
+            let c = &resolved;
+            if c["dispatchMode"]["type"] == "restart_active" {
+                let rid = c["dispatchMode"]["targetRunId"]
+                    .as_str()
+                    .ok_or("targetRunId required")?;
+                let sender = s
+                    .active
+                    .lock()
+                    .unwrap()
+                    .get(rid)
+                    .cloned()
+                    .ok_or("Provider control unavailable for restart")?;
+                let permit = sender
+                    .try_reserve_owned()
+                    .map_err(|_| "Provider control busy")?;
+                let run = crate::run_restart::stage(s, &tx, c, &mut t, &at, authority.is_some())?;
+                let seq = sequence(&tx)?;
+                let result = json!({"sequence":seq});
+                tx.execute(
+                    "INSERT INTO receipts VALUES(?,?)",
+                    params![cid, result.to_string()],
+                )
+                .map_err(|e| e.to_string())?;
+                let result = if authority.is_some() {
+                    crate::mcp_access::sent_reply(&tx, c, &run, "restarted")?
+                } else {
+                    result
+                };
+                tx.commit().map_err(|e| e.to_string())?;
+                drop(db);
+                permit.send(crate::provider::ProviderControl::Interrupt);
+                s.notify();
+                return Ok(result);
+            }
             if let Some(selection) = c.get("modelSelection") {
-                change_selection(&tx, &mut t, c, selection)?;
+                let changed = !crate::selection_transition::model_selections_equal(
+                    &t["modelSelection"],
+                    selection,
+                );
+                change_selection(s, &tx, &mut t, c, selection)?;
+                if changed && c["dispatchMode"]["type"] == "steer_active" {
+                    t["updatedAt"] = json!(at);
+                    put(&tx, "thread", tid, tid, &t)?;
+                    append(&tx, tid, "thread.model-selection-updated", t.clone(), &t)?;
+                }
             }
             if c["dispatchMode"]["type"] == "steer_active" {
                 let rid = c["dispatchMode"]["targetRunId"]
@@ -696,7 +880,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                     text,
                     &c["attachments"],
                     c.get("context"),
-                    crate::provider_input::driver(s, &t["providerInstanceId"])? != "codex",
+                    crate::provider_input::driver(s, &run["providerInstanceId"])? != "codex",
                 )?;
                 let sender = s
                     .active
@@ -709,7 +893,13 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                     .try_reserve_owned()
                     .map_err(|_| "provider control busy")?;
                 let mid = c["messageId"].as_str().ok_or("messageId required")?;
-                let m = json!({"id":mid,"threadId":tid,"runId":rid,"nodeId":rid,"role":"user","text":text,"attachments":c["attachments"],"context":c["context"],"streaming":false,"createdBy":"user","creationSource":"web","createdAt":at,"updatedAt":at});
+                let m = json!({"id":mid,"threadId":tid,"runId":rid,"nodeId":rid,"role":"user","text":text,"attachments":c["attachments"],"context":c["context"],"streaming":false,"createdBy":if authority.is_some(){"agent"}else{"user"},"creationSource":if authority.is_some(){"mcp"}else{"web"},"createdAt":at,"updatedAt":at});
+                let mut m = m;
+                if authority.is_some() {
+                    if let Some(sender) = c.get("senderThreadId") {
+                        m["senderThreadId"] = sender.clone();
+                    }
+                }
                 put(&tx, "messages", mid, tid, &m)?;
                 append(&tx, tid, "message.updated", m.clone(), &t)?;
                 let mut item = message_item(&tx, tid, &m)?;
@@ -730,6 +920,11 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                     params![cid, result.to_string()],
                 )
                 .map_err(|e| e.to_string())?;
+                let result = if authority.is_some() {
+                    crate::mcp_access::sent_reply(&tx, c, rid, "steered")?
+                } else {
+                    result
+                };
                 tx.commit().map_err(|e| e.to_string())?;
                 drop(db);
                 permit.send(crate::provider::ProviderControl::SteerContent(content));
@@ -737,7 +932,18 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                 s.notify();
                 return Ok(result);
             }
-            let (result, run_id, queued) = stage_message(s, &tx, c, &mut t, &at)?;
+            let (result, run_id, queued) =
+                stage_message(s, &tx, c, &mut t, &at, authority.is_some())?;
+            let result = if authority.is_some() {
+                crate::mcp_access::sent_reply(
+                    &tx,
+                    c,
+                    &run_id,
+                    if queued { "queued" } else { "started" },
+                )?
+            } else {
+                result
+            };
             tx.commit().map_err(|e| e.to_string())?;
             drop(db);
             s.notify();
@@ -833,7 +1039,11 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             if c["holdQueue"] == true {
                 crate::thread_commands::hold_queue(&tx, tid, &t)?;
             }
-            let result = json!({"sequence":seq});
+            let result = if authority.is_some() {
+                json!({"threadId":tid,"runId":rid,"status":"interrupt_requested"})
+            } else {
+                json!({"sequence":seq})
+            };
             crate::outbox::stage(&tx, c)?;
             tx.execute(
                 "INSERT INTO receipts VALUES(?,?)",
@@ -913,7 +1123,7 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                 "resolved"
             });
             request["resolvedAt"] = json!(at);
-            for k in ["decision", "feedback", "answers"] {
+            for k in ["decision", "feedback", "answers", "attachmentsByQuestionId"] {
                 if let Some(v) = c.get(k) {
                     request[k] = v.clone()
                 }
@@ -926,6 +1136,9 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
                 let item_id = format!("item-{id}");
                 if let Ok(mut item) = get(&tx, "turnItems", &item_id) {
                     item["status"] = json!("completed");
+                    if kind == "runtime-request.respond" {
+                        crate::projection::question_answer(&mut item, c);
+                    }
                     item["completedAt"] = json!(at);
                     item["updatedAt"] = json!(at);
                     put(&tx, "turnItems", &item_id, tid, &item)?;
@@ -942,6 +1155,9 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
             put(&tx, "runtimeRequests", id, tid, &request)?;
             if let Ok(mut item) = get(&tx, "turnItems", &format!("approval-{id}")) {
                 item["status"] = json!("completed");
+                if kind == "runtime-request.respond" {
+                    crate::projection::question_answer(&mut item, c);
+                }
                 item["completedAt"] = json!(at);
                 item["updatedAt"] = json!(at);
                 crate::projection::save_item(&tx, tid, &t, item)?;
@@ -995,6 +1211,15 @@ pub fn dispatch(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
     .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
     drop(db);
+    if kind == "thread.metadata.update" && c.get("worktreePath").is_some() {
+        // The worker uses the durable outbox to distinguish a real change from a no-op.
+        if crate::workspace_transition::pending(&s.db.lock().unwrap(), tid)? {
+            s.executions.cancel(tid);
+        }
+    }
+    if matches!(kind, "thread.model-selection.set" | "provider.switch") {
+        crate::provider_switch::start_release(s.clone(), tid.into());
+    }
     s.notify();
     if c["regenerateTitle"] == true {
         let text = {
@@ -1093,12 +1318,15 @@ fn interrupt_items(
 }
 
 pub(crate) fn prepare_run_ownership(
+    state: &State,
     tx: &Connection,
     tid: &str,
     t: &mut Value,
     run: &mut Value,
     at: &str,
 ) -> Result<()> {
+    crate::provider_switch::admit(state, tx, t, run, at)?;
+    crate::selection_transition::freeze_policy(t, run);
     let run_id = run["id"].as_str().ok_or("run id missing")?.to_owned();
     let ordinal = run["ordinal"].clone();
     if t["activeProviderThreadId"]
@@ -1112,11 +1340,7 @@ pub(crate) fn prepare_run_ownership(
             format!("provider-thread-{}", crate::store::random_id()?)
         };
         t["activeProviderThreadId"] = json!(id);
-        let driver = if t["providerInstanceId"] == "codex" {
-            "codex"
-        } else {
-            "claudeAgent"
-        };
+        let driver = crate::provider_input::driver(state, &t["providerInstanceId"])?;
         let p = json!({"id":id,"appThreadId":tid,"driver":driver,"providerInstanceId":t["providerInstanceId"],"providerSessionId":id,"ownerNodeId":null,"nativeThreadRef":native.map(|native|json!({"driver":driver,"nativeId":native,"strength":"strong"})),"nativeConversationHeadRef":null,"status":"not_loaded","firstRunOrdinal":ordinal,"lastRunOrdinal":ordinal,"handoffIds":[],"forkedFrom":null,"contextUsage":null,"goal":null,"nativeMetadata":null,"pendingBackgroundTasks":[],"createdAt":at,"updatedAt":at});
         put(tx, "providerThreads", &id, tid, &p)?;
         put(tx, "thread", tid, tid, t)?;
@@ -1227,8 +1451,11 @@ pub(crate) fn message_item(db: &Connection, tid: &str, m: &Value) -> Result<Valu
     let mut item = json!({"id":id,"threadId":tid,"runId":m["runId"],"nodeId":m["nodeId"],"providerThreadId":m["providerThreadId"],"providerTurnId":m["providerTurnId"],"nativeItemRef":null,"parentItemId":null,"ordinal":ordinal,"status":"completed","title":null,"startedAt":m["createdAt"],"completedAt":m["updatedAt"],"updatedAt":m["updatedAt"],"type":if m["role"]=="user"{"user_message"}else{"assistant_message"},"messageId":m["id"],"text":m["text"],"streaming":m["streaming"],"attachments":m["attachments"]});
     if m["role"] == "user" {
         item.as_object_mut().unwrap().remove("streaming");
-        item["createdBy"] = json!("user");
-        item["creationSource"] = json!("web");
+        item["createdBy"] = m.get("createdBy").cloned().unwrap_or(json!("user"));
+        item["creationSource"] = m.get("creationSource").cloned().unwrap_or(json!("web"));
+        if let Some(sender) = m.get("senderThreadId") {
+            item["senderThreadId"] = sender.clone();
+        }
         item["inputIntent"] = m.get("inputIntent").cloned().unwrap_or(json!("turn_start"));
     }
     if let Ok(old) = get(db, "turnItems", &id) {
@@ -1248,12 +1475,143 @@ pub(crate) fn message_item(db: &Connection, tid: &str, m: &Value) -> Result<Valu
     Ok(item)
 }
 
-fn stage_message(
+// Resolve the modern composer intent against live server state, not a client's snapshot.
+fn resolve_steering_restart(s: &State, db: &Connection, t: &Value, c: &mut Value) -> Result<()> {
+    if c["dispatchMode"]["type"] != "steer_active" {
+        return Ok(());
+    }
+    let rid = c["dispatchMode"]["targetRunId"]
+        .as_str()
+        .ok_or("targetRunId required")?;
+    let run = get(db, "runs", rid)?;
+    let target = c.get("modelSelection").unwrap_or(&t["modelSelection"]);
+    let changed =
+        !crate::selection_transition::model_selections_equal(&run["modelSelection"], target);
+    let restart_selection = if changed {
+        !matches!(
+            crate::provider_switch::active_plan(s, db, t, &run, target)?.transition,
+            crate::selection_transition::Transition::Reuse
+                | crate::selection_transition::Transition::SwitchModelInSession
+        )
+    } else {
+        false
+    };
+    let pt = get(
+        db,
+        "providerThreads",
+        run["providerThreadId"].as_str().unwrap_or(""),
+    )
+    .unwrap_or(Value::Null);
+    let session = get(
+        db,
+        "providerSessions",
+        pt["providerSessionId"].as_str().unwrap_or(""),
+    )
+    .unwrap_or(Value::Null);
+    let restart_attachments = c["attachments"].as_array().is_some_and(|a| !a.is_empty())
+        && session["capabilities"]["turns"]["activeSteeringAcceptsAttachments"] == false;
+    if restart_selection || restart_attachments {
+        c["dispatchMode"]["type"] = json!("restart_active");
+    }
+    Ok(())
+}
+fn delivery_mode(s: &State, db: &Connection, t: &Value, c: &Value, mcp: bool) -> Result<Value> {
+    let Some(intent) = c.get("deliveryIntent") else {
+        return Ok(c["dispatchMode"].clone());
+    };
+    if !matches!(intent.as_str(), Some("auto" | "steer" | "restart")) {
+        return Err("invalid delivery intent".into());
+    }
+    let tid = t["id"].as_str().ok_or("thread id missing")?;
+    if crate::workspace_transition::pending(db, tid)? {
+        return if intent == "auto" {
+            Ok(json!({"type":"queue_after_active"}))
+        } else {
+            Err("workspace provider detach is pending".into())
+        };
+    }
+    if mcp && intent == "restart" {
+        let running:Option<String>=db.query_row("SELECT r.id FROM records r WHERE r.kind='runs' AND r.thread_id=?1 AND json_extract(r.body,'$.status')='running' AND EXISTS(SELECT 1 FROM records p WHERE p.kind='providerTurns' AND p.thread_id=r.thread_id AND json_extract(p.body,'$.runAttemptId')=json_extract(r.body,'$.activeAttemptId') AND json_extract(p.body,'$.status')='running') ORDER BY r.rowid DESC LIMIT 1",[tid],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
+        return running
+            .map(|rid| json!({"type":"restart_active","targetRunId":rid}))
+            .ok_or_else(|| {
+                crate::mcp_tools::failure(
+                    "invalid_request",
+                    "The thread has no running provider turn that can be restarted.",
+                )
+                .to_string()
+            });
+    }
+    let mut active: Option<String> = db.query_row(
+        "SELECT body FROM records WHERE kind='runs' AND thread_id=? AND json_extract(body,'$.status') IN ('preparing','starting','running','waiting') ORDER BY rowid DESC LIMIT 1",
+        [tid], |r| r.get(0)).optional().map_err(|e|e.to_string())?;
+    if active.is_none() {
+        // Completion is durable before the worker releases its live control entry.
+        // A send in that gap must wait for the worker to release the thread.
+        active = s.active.lock().unwrap().keys().find_map(|rid| {
+            get(db, "runs", rid)
+                .ok()
+                .filter(|r| r["threadId"] == tid)
+                .map(|r| r.to_string())
+        });
+    }
+    let Some(active) = active else {
+        if mcp && intent == "restart" {
+            return Err(crate::mcp_tools::failure(
+                "invalid_request",
+                "The thread has no running turn that can be restarted.",
+            )
+            .to_string());
+        }
+        return Ok(json!({"type":"start_immediately"}));
+    };
+    let run: Value = serde_json::from_str(&active).map_err(|e| e.to_string())?;
+    if intent == "restart" {
+        return Ok(json!({"type":"restart_active","targetRunId":run["id"]}));
+    }
+    let rid = run["id"].as_str().ok_or("run id missing")?;
+    let original =
+        get(db, "messages", run["userMessageId"].as_str().unwrap_or("")).unwrap_or(Value::Null);
+    let maintenance = matches!(
+        original["text"].as_str().map(str::trim),
+        Some("/compact" | "/logout")
+    ) && original["attachments"]
+        .as_array()
+        .is_some_and(|a| a.is_empty());
+    let live_turn: bool = db.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='providerTurns' AND thread_id=?1 AND json_extract(body,'$.runAttemptId')=?2 AND json_extract(body,'$.status')='running')", params![tid,run["activeAttemptId"].as_str()], |r|r.get(0)).map_err(|e|e.to_string())?;
+    let thread = get(
+        db,
+        "providerThreads",
+        run["providerThreadId"].as_str().unwrap_or(""),
+    )
+    .unwrap_or(Value::Null);
+    let session = get(
+        db,
+        "providerSessions",
+        thread["providerSessionId"].as_str().unwrap_or(""),
+    )
+    .unwrap_or(Value::Null);
+    let can_steer =
+        intent == "steer" || session["capabilities"]["turns"]["supportsActiveSteering"] == true;
+    if !maintenance
+        && live_turn
+        && can_steer
+        && matches!(run["status"].as_str(), Some("running" | "waiting"))
+        && s.active.lock().unwrap().contains_key(rid)
+    {
+        Ok(json!({"type":"steer_active","targetRunId":rid}))
+    } else {
+        Ok(json!({"type":"queue_after_active"}))
+    }
+}
+
+pub(crate) fn stage_message(
     s: &std::sync::Arc<State>,
     tx: &Connection,
     c: &Value,
     t: &mut Value,
     at: &str,
+    mcp_origin: bool,
 ) -> Result<(Value, String, bool)> {
     let tid = c["threadId"].as_str().ok_or("threadId required")?;
     let cid = c["commandId"].as_str().ok_or("commandId required")?;
@@ -1277,13 +1635,30 @@ fn stage_message(
             .find(|rid| get(tx, "runs", rid).is_ok_and(|r| r["threadId"] == tid))
             .cloned();
     }
+    let detaching = crate::workspace_transition::pending(tx, tid)?;
+    if detaching && matches!(mode, Some("start_immediately" | "steer_active")) {
+        return Err("workspace provider detach is pending; use queue_after_active".into());
+    }
     if c["dispatchMode"]["type"] == "start_immediately" && active_run.is_some() {
         return Err(
             "thread already has an active run; use queue_after_active or steer_active".into(),
         );
     }
 
-    let queued = c["dispatchMode"]["type"] == "queue_after_active" && active_run.is_some();
+    let latest:Option<String>=tx.query_row("SELECT body FROM records WHERE kind='runs' AND thread_id=? AND json_extract(body,'$.status')!='queued' ORDER BY json_extract(body,'$.ordinal') DESC,rowid DESC LIMIT 1",[tid],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
+    let missing_worktree = active_run.is_none()
+        && t["worktreePath"].is_null()
+        && latest
+            .and_then(|v| serde_json::from_str::<Value>(&v).ok())
+            .is_some_and(|r| {
+                matches!(r["status"].as_str(), Some("failed" | "interrupted"))
+                    && r["workspacePreparation"]["type"] == "worktree"
+            });
+    let queued = (mode == Some("queue_after_active")
+        && (active_run.is_some() || detaching || missing_worktree))
+        || (mode == Some("defer_start")
+            && c["dispatchMode"]["workspaceStrategy"].is_object()
+            && active_run.is_some());
     if mode != Some("defer_start") && s.provider.lock().unwrap().is_none() {
         return Err("no provider adapter configured; only defer_start is available".into());
     }
@@ -1319,12 +1694,17 @@ fn stage_message(
     }
     let run_id = random_id()?;
     let mid = c["messageId"].as_str().ok_or("messageId required")?;
-    let mut m = json!({"id":mid,"threadId":tid,"runId":run_id,"nodeId":run_id,"role":"user","text":c["text"],"attachments":c["attachments"],"streaming":false,"createdBy":"user","creationSource":"web","createdAt":at,"updatedAt":at});
+    let mut m = json!({"id":mid,"threadId":tid,"runId":run_id,"nodeId":run_id,"role":"user","text":c["text"],"attachments":c["attachments"],"streaming":false,"createdBy":if mcp_origin{"agent"}else{"user"},"creationSource":if mcp_origin{"mcp"}else{"web"},"createdAt":at,"updatedAt":at});
     if let Some(reference) = c.get("sourcePlanRef") {
         m["sourcePlanRef"] = reference.clone();
     }
     if let Some(context) = c.get("context") {
         m["context"] = context.clone();
+    }
+    if mcp_origin {
+        if let Some(sender) = c.get("senderThreadId") {
+            m["senderThreadId"] = sender.clone();
+        }
     }
     if !c["text"].is_string() || !c["attachments"].is_array() {
         return Err("text and attachments required".into());
@@ -1347,12 +1727,15 @@ fn stage_message(
     let mut run = json!({"id":run_id,"threadId":tid,"ordinal":ordinal,"providerInstanceId":t["providerInstanceId"],"modelSelection":t["modelSelection"],"providerThreadId":null,"userMessageId":mid,"rootNodeId":null,"activeAttemptId":null,"status":"preparing","queuePosition":null,"requestedAt":at,"startedAt":null,"completedAt":null,"checkpointId":null,"contextHandoffId":null,"executionRequested":c["dispatchMode"]["type"]!="defer_start"});
     if queued {
         run["status"] = json!("queued");
+        run["executionRequested"] = json!(true);
         run["queuePosition"] = json!(crate::thread_commands::next_queue_position(tx, tid)?);
-        run["queueHeld"] = json!(false);
+        run["queueHeld"] = json!(missing_worktree);
     }
     if !queued {
-        prepare_run_ownership(tx, tid, t, &mut run, at)?;
+        prepare_run_ownership(s, tx, tid, t, &mut run, at)?;
     }
+    crate::context_transfer::admit(s, tx, t, &mut run, queued, at)?;
+    put(tx, "thread", tid, tid, t)?;
     let mut item_message = m.clone();
     item_message["providerThreadId"] = run["providerThreadId"].clone();
     if queued {
@@ -1360,7 +1743,7 @@ fn stage_message(
     }
     let item = message_item(tx, tid, &item_message)?;
     append(tx, tid, "turn-item.updated", item.clone(), t)?;
-    if mode == Some("defer_start") {
+    if mode == Some("defer_start") && !queued {
         let mut preparation = item;
         let id = format!("workspace-preparation:{run_id}");
         let object = preparation.as_object_mut().unwrap();
@@ -1392,6 +1775,13 @@ fn stage_message(
         )?;
         append(tx, tid, "turn-item.updated", preparation, t)?;
     }
+    if mode == Some("defer_start") && !queued && c["dispatchMode"]["workspaceStrategy"].is_object()
+    {
+        run["workspacePreparation"] = c["dispatchMode"]["workspaceStrategy"].clone();
+        let mut plan = json!({"commandId":cid,"projectId":t["projectId"],"workspaceStrategy":run["workspacePreparation"],"initialMessage":{"text":c["text"],"attachments":c["attachments"],"context":c["context"]}});
+        plan["expectedWorktreePath"] = t["worktreePath"].clone();
+        crate::thread_launch::enqueue(tx, tid, Some(&run_id), cid, &plan)?;
+    }
     put(tx, "runs", &run_id, tid, &run)?;
     let seq = append(tx, tid, "run.created", run, t)?;
     let result = json!({"sequence":seq});
@@ -1404,7 +1794,7 @@ fn stage_message(
     Ok((result, run_id, queued))
 }
 
-fn import_native(
+pub(crate) fn import_native(
     s: &State,
     db: &Connection,
     c: &Value,
@@ -1425,7 +1815,7 @@ fn import_native(
             return Err("import requires matching strong native ref".into());
         }
         let id = format!("imported-{tid}");
-        let record = json!({"id":id,"appThreadId":tid,"driver":driver,"providerInstanceId":thread["providerInstanceId"],"nativeThreadRef":imported["ref"],"status":"not_loaded","nativeMetadata":imported["metadata"],"pendingBackgroundTasks":[],"createdAt":at,"updatedAt":at});
+        let record = json!({"id":id,"appThreadId":tid,"driver":driver,"providerInstanceId":thread["providerInstanceId"],"providerSessionId":null,"ownerNodeId":null,"nativeThreadRef":imported["ref"],"nativeConversationHeadRef":null,"status":"not_loaded","firstRunOrdinal":null,"lastRunOrdinal":null,"handoffIds":[],"forkedFrom":null,"contextUsage":null,"goal":null,"nativeMetadata":imported["metadata"],"pendingBackgroundTasks":[],"createdAt":at,"updatedAt":at});
         thread["activeProviderThreadId"] = json!(id);
         if driver == "codex" {
             thread["codexNativeThreadId"] = json!(native);
@@ -1436,7 +1826,7 @@ fn import_native(
     Ok(())
 }
 
-fn new_thread(db: &Connection, c: &Value, tid: &str, at: &str) -> Result<Value> {
+pub(crate) fn new_thread(db: &Connection, c: &Value, tid: &str, at: &str) -> Result<Value> {
     Ok({
         for key in [
             "projectId",
@@ -1452,158 +1842,34 @@ fn new_thread(db: &Connection, c: &Value, tid: &str, at: &str) -> Result<Value> 
         if get(db, "thread", tid).is_ok() {
             return Err("thread already exists".into());
         }
+        if get(db, "project", c["projectId"].as_str().unwrap_or(""))
+            .is_ok_and(|p| !p["deletedAt"].is_null())
+        {
+            return Err("Project was deleted".into());
+        }
         json!({"id":tid,"projectId":c["projectId"],"title":c["title"],"providerInstanceId":c["modelSelection"]["instanceId"],"modelSelection":c["modelSelection"],"runtimeMode":c["runtimeMode"],"interactionMode":c["interactionMode"],"branch":c["branch"],"worktreePath":c["worktreePath"],"createdBy":"user","creationSource":c.get("creationSource").cloned().unwrap_or(json!("web")),"lineage":{"parentThreadId":null,"relationshipToParent":null,"rootThreadId":tid},"forkedFrom":null,"activeProviderThreadId":null,"createdAt":at,"updatedAt":at,"archivedAt":null,"settledOverride":null,"settledAt":null,"lastVisitedAt":null,"snoozedAt":null,"snoozedUntil":null,"pullRequests":[],"deletedAt":null})
     })
 }
 
 pub fn launch(s: &std::sync::Arc<State>, p: &Value) -> Result<Value> {
-    let _worktree = s
-        .worktree_gate
-        .try_read()
-        .map_err(|_| "worktree cleanup in progress; retry launch")?;
-    let _launch = s.launch_lock.lock().unwrap();
-    let cid = p["commandId"].as_str().ok_or("commandId required")?;
-    if let Some(result) =
-        s.db.lock()
-            .unwrap()
-            .query_row(
-                "SELECT result FROM receipts WHERE command_id=?",
-                [cid],
-                |r| r.get::<_, String>(0),
-            )
-            .optional()
-            .map_err(|e| e.to_string())?
-    {
-        return serde_json::from_str(&result).map_err(|e| e.to_string());
-    }
-    let tid = p["threadId"]
-        .as_str()
-        .map(str::to_owned)
-        .unwrap_or(format!("thread-{cid}"));
-    let mut create = p.clone();
-    create["type"] = json!("thread.create");
-    create["threadId"] = json!(tid);
-    create["commandId"] = json!(format!("{cid}:create"));
-    if p.get("initialMessage").is_some() && s.provider.lock().unwrap().is_none() {
-        return Err("no provider adapter configured".into());
-    }
-    let reuse = p["reuseExistingThread"] == true;
-    if reuse && p["threadId"].as_str().is_none() {
-        return Err("threadId required for reuse".into());
-    }
-    // Validate the message before workspace preparation can create filesystem effects.
-    if let Some(m) = p.get("initialMessage") {
-        if !m["text"].is_string() || !m["attachments"].is_array() {
-            return Err("text and attachments required".into());
-        }
-    }
-    let mut prepared = crate::workspace::prepare(s, p, &tid)?;
-    create["worktreePath"] = prepared.path.clone();
-    create["branch"] = prepared.branch.clone();
-    let result = (|| -> Result<_> {
-        let mut db = s.db.lock().unwrap();
-        if s.rollback_pending
-            .load(std::sync::atomic::Ordering::Acquire)
-        {
-            return Err("rollback recovery required".into());
-        }
-        let tx = db.transaction().map_err(|e| e.to_string())?;
-        let at = iso(now_ms());
-        let mut thread = if reuse {
-            let existing = get(&tx, "thread", &tid)?;
-            if existing["projectId"] != p["projectId"] {
-                return Err("reuse project does not match thread".into());
-            }
-            let occupied: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE thread_id=? AND kind IN ('messages','runs'))", [&tid], |r| r.get(0)).map_err(|e| e.to_string())?;
-            if occupied || !existing["archivedAt"].is_null() || !existing["deletedAt"].is_null() {
-                return Err("only an empty active thread can be reused".into());
-            }
-            let mut existing = existing;
-            existing["ownedWorktree"] = json!(
-                existing["ownedWorktree"] == true && existing["worktreePath"] == prepared.path
-            );
-            existing["branch"] = prepared.branch.clone();
-            existing["worktreePath"] = prepared.path.clone();
-            existing["updatedAt"] = json!(at);
-            put(&tx, "thread", &tid, &tid, &existing)?;
-            append(&tx, &tid, "thread.updated", existing.clone(), &existing)?;
-            existing
-        } else {
-            let thread = new_thread(&tx, &create, &tid, &at)?;
-            put(&tx, "thread", &tid, &tid, &thread)?;
-            append(&tx, &tid, "thread.created", thread.clone(), &thread)?;
-            thread
-        };
-        if prepared.is_owned() {
-            thread["ownedWorktree"] = json!(true);
-        }
-        if p.get("initialMessage").is_some() {
-            thread["modelSelection"] = p["modelSelection"].clone();
-            thread["providerInstanceId"] = p["modelSelection"]["instanceId"].clone();
-        }
-        if p["generateTitle"] == true {
-            if let Some(text) = p["initialMessage"]["text"].as_str() {
-                let title = text.split_whitespace().collect::<Vec<_>>().join(" ");
-                if !title.is_empty() {
-                    thread["title"] = json!(title.chars().take(80).collect::<String>());
-                    thread["titleRegeneration"] = json!({"requestId":cid,"startedAt":at});
-                }
-            }
-        }
-        import_native(s, &tx, p, &tid, &at, &mut thread)?;
-        put(&tx, "thread", &tid, &tid, &thread)?;
-        append(
-            &tx,
-            &tid,
-            "thread.metadata-updated",
-            thread.clone(),
-            &thread,
-        )?;
-        let mut start = None;
-        if let Some(m) = p.get("initialMessage") {
-            let message = json!({"type":"message.dispatch","commandId":format!("{cid}:initial"),"threadId":tid,"messageId":m["messageId"].as_str().map(str::to_owned).unwrap_or(format!("message-{cid}")),"text":m["text"],"context":m["context"],"attachments":m["attachments"],"dispatchMode":{"type":"start_immediately"}});
-            let (_, rid, _) = stage_message(s, &tx, &message, &mut thread, &at)?;
-            start = Some((rid, m["text"].as_str().unwrap().to_owned()));
-        }
-        let result = json!({"threadId":tid,"projection":projection_db(&tx,&tid)?,"resumed":reuse});
-        tx.execute(
-            "INSERT INTO receipts VALUES(?,?)",
-            params![cid, result.to_string()],
-        )
-        .map_err(|e| e.to_string())?;
-        tx.commit().map_err(|e| e.to_string())?;
-        drop(db);
-        Ok((result, start))
-    })();
-    let (result, start) = match result {
-        Ok(value) => {
-            prepared.commit();
-            value
-        }
-        Err(error) => {
-            return match prepared.rollback() {
-                Ok(()) => Err(error),
-                Err(cleanup) => Err(format!("{error}; worktree cleanup failed: {cleanup}")),
-            }
-        }
-    };
-    s.notify();
-    if p["generateTitle"] == true {
-        if let Some(text) = p["initialMessage"]["text"].as_str() {
-            crate::title::start(s.clone(), tid.clone(), cid.into(), text.into());
-        }
-    }
-    if let Some((rid, text)) = start {
-        crate::provider::start(s.clone(), tid, rid, text);
-    }
-    Ok(result)
+    crate::thread_launch::launch(s, p)
 }
 
 pub fn mutate_project(s: &State, c: &Value) -> Result<Value> {
+    mutate_project_scoped(s, c, None)
+}
+pub(crate) fn mutate_project_scoped(
+    s: &State,
+    c: &Value,
+    authority: Option<&crate::mcp_access::Authority>,
+) -> Result<Value> {
     let cid = c["commandId"].as_str().ok_or("commandId required")?;
     let id = c["projectId"].as_str().ok_or("projectId required")?;
     let mut db = s.db.lock().unwrap();
     let tx = db.transaction().map_err(|e| e.to_string())?;
+    if let Some(authority) = authority {
+        authority.check(&tx, c)?;
+    }
     if let Some(r) = tx
         .query_row(
             "SELECT result FROM receipts WHERE command_id=?",
@@ -1614,6 +1880,18 @@ pub fn mutate_project(s: &State, c: &Value) -> Result<Value> {
         .map_err(|e| e.to_string())?
     {
         return serde_json::from_str(&r).map_err(|e| e.to_string());
+    }
+    if let Some(root) = c["workspaceRoot"].as_str() {
+        let duplicate:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='project' AND id!=?1 AND json_extract(body,'$.deletedAt') IS NULL AND json_extract(body,'$.workspaceRoot')=?2)",params![id,root],|r|r.get(0)).map_err(|e|e.to_string())?;
+        if duplicate {
+            return Err("A project already uses this workspace root".into());
+        }
+    }
+    if c["type"] == "project.delete" && c["force"] != true {
+        let nonempty:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='thread' AND json_extract(body,'$.projectId')=?1 AND json_extract(body,'$.deletedAt') IS NULL)",[id],|r|r.get(0)).map_err(|e|e.to_string())?;
+        if nonempty {
+            return Err("Project still has threads; delete them or pass force".into());
+        }
     }
     let at = iso(now_ms());
     let mut p = match c["type"].as_str() {
@@ -1628,9 +1906,43 @@ pub fn mutate_project(s: &State, c: &Value) -> Result<Value> {
             }
             json!({"id":id,"title":c["title"],"workspaceRoot":c["workspaceRoot"],"defaultModelSelection":null,"defaultThreadEnvMode":null,"autoPull":false,"faviconPath":null,"projectIcon":null,"repositoryIdentity":null,"archivedAt":null,"pinnedAt":null,"scripts":[],"createdAt":at,"updatedAt":at,"deletedAt":null})
         }
-        Some("project.update" | "project.delete") => get(&tx, "project", id)?,
+        Some("project.update" | "project.delete") => {
+            let p = get(&tx, "project", id)?;
+            if !p["deletedAt"].is_null() {
+                return Err("Project was deleted".into());
+            }
+            p
+        }
         _ => return Err("invalid project mutation".into()),
     };
+    if c["type"] == "project.update" {
+        if c["projectIcon"]["kind"] == "monogram"
+            && c["projectIcon"]["text"].as_str().is_some_and(|v| {
+                unicode_segmentation::UnicodeSegmentation::graphemes(v, true)
+                    .take(3)
+                    .count()
+                    > 2
+            })
+        {
+            return Err("Project monograms must contain at most two characters".into());
+        }
+        if let Some(scripts) = c["scripts"].as_array() {
+            for script in scripts {
+                let id = script["id"].as_str().ok_or("Script id required")?;
+                let existing = p["scripts"]
+                    .as_array()
+                    .is_some_and(|a| a.iter().any(|s| s["id"] == id));
+                let valid = id.len() <= 24
+                    && id.as_bytes().first().is_some_and(u8::is_ascii_alphanumeric)
+                    && id
+                        .bytes()
+                        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+                if !existing && !valid {
+                    return Err("Script IDs must be 1-24 lowercase letters, digits or hyphens, starting with a letter or digit".into());
+                }
+            }
+        }
+    }
     for key in [
         "title",
         "workspaceRoot",
@@ -1646,19 +1958,27 @@ pub fn mutate_project(s: &State, c: &Value) -> Result<Value> {
             p[key] = v.clone();
         }
     }
+    for (input, field) in [("pinned", "pinnedAt"), ("archived", "archivedAt")] {
+        if let Some(flag) = c[input].as_bool() {
+            p[field] = if flag { json!(at) } else { Value::Null };
+        }
+    }
     p["updatedAt"] = json!(at);
     if c["type"] == "project.delete" {
         p["deletedAt"] = json!(at);
     }
+    let mut deleted = Vec::new();
     if c["type"] == "project.delete" && c["force"] == true {
-        for mut t in list(&tx, "thread", None, i64::MAX as usize)? {
-            if t["projectId"] == id && t["deletedAt"].is_null() {
-                t["deletedAt"] = json!(at);
-                t["updatedAt"] = json!(at);
-                let tid = t["id"].as_str().ok_or("thread id missing")?.to_owned();
-                put(&tx, "thread", &tid, &tid, &t)?;
-                append(&tx, &tid, "thread.deleted", t.clone(), &t)?;
-            }
+        let mut cursor = 0i64;
+        loop {
+            let row=tx.query_row("SELECT rowid,id,body FROM records WHERE kind='thread' AND json_extract(body,'$.projectId')=?1 AND json_extract(body,'$.deletedAt') IS NULL AND rowid>?2 ORDER BY rowid LIMIT 1",params![id,cursor],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).optional().map_err(|e|e.to_string())?;
+            let Some((row, tid, body)) = row else {
+                break;
+            };
+            cursor = row;
+            let mut thread = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+            crate::deletion::plan(&tx, &mut thread, &format!("{cid}:delete-thread:{tid}"), &at)?;
+            deleted.push(tid);
         }
     }
     put(&tx, "project", id, "", &p)?;
@@ -1687,6 +2007,9 @@ pub fn mutate_project(s: &State, c: &Value) -> Result<Value> {
     .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
     drop(db);
+    for tid in deleted {
+        crate::deletion::signal(s, &tid);
+    }
     s.notify();
     Ok(p)
 }
@@ -1904,6 +2227,54 @@ mod migration_benchmark {
         );
         drop(db);
         std::fs::remove_file(path).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod cursor_index_tests {
+    use super::*;
+    #[test]
+    fn subscription_cursor_queries_are_index_seeks() {
+        let db = Connection::open_in_memory().unwrap();
+        initialize(&db).unwrap();
+        for (sql, index) in [
+            ("SELECT sequence,body FROM events INDEXED BY events_thread_sequence WHERE thread_id=?2 AND sequence>?1 ORDER BY sequence LIMIT 1", "events_thread_sequence"),
+            ("SELECT sequence,shell FROM events INDEXED BY events_shell_sequence WHERE shell IS NOT NULL AND sequence>?1 ORDER BY sequence LIMIT 1", "events_shell_sequence"),
+        ] {
+            let plan: String = if sql.contains("?2") {
+                db.query_row(&format!("EXPLAIN QUERY PLAN {sql}"), params![0, "t"], |r| r.get(3))
+            } else {
+                db.query_row(&format!("EXPLAIN QUERY PLAN {sql}"), params![0], |r| r.get(3))
+            }
+            .unwrap();
+            assert!(plan.contains(index) && plan.contains("SEARCH"), "{plan}");
+        }
+    }
+    #[test]
+    fn cursors_skip_other_threads_and_shell_less_events() {
+        let db = Connection::open_in_memory().unwrap();
+        initialize(&db).unwrap();
+        for (tid, shell) in [
+            ("a", None),
+            ("b", Some("{}")),
+            ("a", Some("{\"x\":1}")),
+            ("b", None),
+        ] {
+            db.execute(
+                "INSERT INTO events(thread_id,body,shell) VALUES(?,?,?)",
+                params![tid, "{\"t\":1}", shell],
+            )
+            .unwrap();
+        }
+        let q = |tid: Option<&str>, shell: bool, after: i64| -> Option<i64> {
+            cursor_row(&db, after, tid, shell).unwrap().map(|(n, _)| n)
+        };
+        assert_eq!(q(Some("a"), false, 1), Some(3));
+        assert_eq!(q(Some("b"), false, 2), Some(4));
+        assert_eq!(q(None, true, 0), Some(2));
+        assert_eq!(q(None, true, 2), Some(3));
+        assert_eq!(q(Some("b"), true, 2), None);
+        assert_eq!(q(None, false, 3), Some(4));
     }
 }
 

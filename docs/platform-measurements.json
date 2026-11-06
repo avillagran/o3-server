@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "date": "2026-11-03",
+  "source_sha": "7c9223ee69559e66d77f953b305bf70d67f3ee6f",
+  "method": "tools/measure-rss; one run per host; Linux smaps_rollup Rss; isolated synthetic profile; no inference; bridge enabled",
+  "hosts": {
+    "m2": {
+      "measured_at": "2026-11-03T16:30:40.817840+00:00",
+      "source_sha": "7c9223ee69559e66d77f953b305bf70d67f3ee6f",
+      "binary_sha256": "69a5dd57fb09f81df1c83694067086c1d58a6f24d4cb7d0ba21e09be04238e0f",
+      "binary_bytes": 14439744,
+      "seed_messages": 1000,
+      "text_bytes_per_message": 1000,
+      "cold_idle_rss_kib": 14656,
+      "seeded_idle_rss_kib": 16640,
+      "seeded_one_subscribed_client_rss_kib": 16576,
+      "snapshot_messages": 10,
+      "provider": "none (defer_start)",
+      "measurement": "Linux /proc/PID/smaps_rollup Rss"
+    },
+    "node": {
+      "measured_at": "2026-11-03T16:31:42.931834+00:00",
+      "source_sha": "7c9223ee69559e66d77f953b305bf70d67f3ee6f",
+      "binary_sha256": "20062efe3855d89050cb526c4995723f494d6c7a1e2d5f5c8b2bec2a44c0d18e",
+      "binary_bytes": 16103608,
+      "seed_messages": 1000,
+      "text_bytes_per_message": 1000,
+      "cold_idle_rss_kib": 11516,
+      "seeded_idle_rss_kib": 17532,
+      "seeded_one_subscribed_client_rss_kib": 17528,
+      "snapshot_messages": 10,
+      "provider": "none (defer_start)",
+      "measurement": "Linux /proc/PID/smaps_rollup Rss"
+    }
+  }
+}

@@ -12,11 +12,15 @@ pub fn handles(tag: &str) -> bool {
         || matches!(
             tag,
             "projects.mutate"
+                | "sourceControl.cloneRepository"
+                | "sourceControl.starred"
+                | "sourceControl.star"
                 | "attachments.createUploadUrl"
                 | "attachments.delete"
                 | "assets.createUrl"
                 | "projects.readFile"
                 | "projects.searchEntries"
+                | "projects.searchContents"
                 | "filesystem.browse"
                 | "filesystem.getMetadata"
                 | "shell.openInEditor"
@@ -37,6 +41,9 @@ pub fn handles(tag: &str) -> bool {
                 | "orchestration.getArchivedShellSnapshot"
                 | "orchestration.getTurnItem"
                 | "orchestration.getThreadProjection"
+                | "orchestration.getThreadTitles"
+                | "orchestration.getThreadFamily"
+                | "orchestration.getWorktreeThreadIds"
         )
 }
 
@@ -45,11 +52,15 @@ pub async fn call(s: &Arc<State>, tag: &str, p: Value) -> Result<Value, Value> {
         "projects.mutate" => crate::projects::mutate_resolved(s, &p).await.map_err(
             |message| serde_json::json!({"_tag":"ProjectMutationError","message":message}),
         ),
+        "sourceControl.cloneRepository" => crate::repositories::clone(s, &p, None).await,
+        "sourceControl.starred" => Ok(crate::forge::star(s, &p, false).await),
+        "sourceControl.star" => Ok(crate::forge::star(s, &p, true).await),
         "attachments.createUploadUrl" => assets::create_upload_url(s, &p),
         "attachments.delete" => assets::delete_attachment(s, &p),
         "assets.createUrl" => assets::create_url_async(s, &p).await,
         "projects.readFile" => Box::pin(files::read_file(p)).await,
         "projects.searchEntries" => Box::pin(files::search_entries(p)).await,
+        "projects.searchContents" => crate::content_search::search(p).await,
         "filesystem.browse" => Box::pin(files::browse(p)).await,
         "filesystem.getMetadata" => Box::pin(files::get_metadata(p)).await,
         "shell.openInEditor" => Box::pin(files::open_in_editor(p)).await,
@@ -70,6 +81,9 @@ pub async fn call(s: &Arc<State>, tag: &str, p: Value) -> Result<Value, Value> {
         "orchestration.getArchivedShellSnapshot" => threadq::archived_shell(s),
         "orchestration.getTurnItem" => threadq::turn_item(s, &p),
         "orchestration.getThreadProjection" => threadq::thread_projection(s, &p),
+        "orchestration.getThreadTitles" => threadq::thread_titles(s, &p),
+        "orchestration.getThreadFamily" => threadq::thread_family(s, &p),
+        "orchestration.getWorktreeThreadIds" => threadq::worktree_threads(s, &p),
         _ if crate::additions::handles(tag) => crate::additions::call(tag, &p),
         _ if crate::p2::handles(tag) => crate::p2::call(s, tag, p).await,
         _ => Err(

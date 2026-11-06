@@ -209,6 +209,7 @@ fn upgrade(state: Arc<State>, session: Value, mut request: Request<Incoming>) ->
 async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Reply, Infallible> {
     let path = request.uri().path().to_owned();
     Ok(match (request.method().clone(), path.as_str()) {
+        (_, "/mcp") => crate::mcp::handle(state, request).await,
         (Method::GET, "/.well-known/t3/environment") => json_reply(
             StatusCode::OK,
             crate::settings::descriptor(&state).to_string(),
@@ -218,7 +219,10 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
             if parts.len() != 2 {
                 return Ok(json_reply(StatusCode::NOT_FOUND, "{}".into()));
             }
-            let (id, token) = (parts[0].to_owned(), parts[1].to_owned());
+            let Some(id) = crate::assets::percent_decode(parts[0]) else {
+                return Ok(json_reply(StatusCode::NOT_FOUND, "{}".into()));
+            };
+            let token = parts[1].to_owned();
             // Every rejection looks the same and costs one keyed lookup: no body is read
             // without the hook's token, so unauthenticated traffic cannot crowd out its sender.
             let check_state = state.clone();
@@ -594,6 +598,7 @@ where
         .map_err(std::io::Error::other)
 }
 pub async fn serve(listener: TcpListener, state: Arc<State>) -> std::io::Result<()> {
+    state.native_mcp.listen(listener.local_addr()?);
     crate::checkpoint::recover_rollbacks(&state).map_err(std::io::Error::other)?;
     crate::recovery::recover(&mut state.db.lock().unwrap()).map_err(std::io::Error::other)?;
     state
@@ -602,6 +607,10 @@ pub async fn serve(listener: TcpListener, state: Arc<State>) -> std::io::Result<
         .unwrap()
         .execute_batch("PRAGMA shrink_memory")
         .map_err(std::io::Error::other)?;
+    crate::deletion::start(&state);
+    crate::workspace_transition::start(&state);
+    crate::run_restart::start(&state);
+    crate::thread_launch::start(&state);
     crate::recovery::resume(&state).map_err(std::io::Error::other)?;
     crate::heap::collect();
     state.start_checkpointer();

@@ -1,5 +1,5 @@
 {
-  "_doc": "Priorities from client-usage.md table surfaces; unused=skip. Done means covered by real Connection tests. Partial notes list known limits.",
+  "_doc": "Historical pinned-client priorities and evidence. Done means covered by real Connection tests, not full current-nightly parity. Unused/skip methods remain in the headless parity scope. Partial notes list known limits; see PARITY.md.",
   "methods": {
     "agentSessions.import": {
       "status": "done",
@@ -14,7 +14,7 @@
     "assets.createUrl": {
       "status": "done",
       "priority": "P1",
-      "note": "Real-client signed grants cover all resource tags, Range and HEAD, and session, scope and canonical-boundary rechecks. Media kinds the desktop classifier accepts, including .aac, .opus, .avi and .ogv, download through real asset readers; playback itself is client codec behavior. MCP HTML injection has no production caller."
+      "note": "Real-client signed grants cover all resource tags, Range and HEAD, and session, scope and canonical-boundary rechecks. Media kinds the desktop classifier accepts, including .aac, .opus, .avi and .ogv, download through real asset readers; playback itself is client codec behavior. MCP HTML injection has no production caller. 2026-11-04 nightly4192: grant tokens verify like PayloadSigner, decoding with Effect's Base64Url (padded or unpadded, trailing bits ignored) and ignoring segments after the signature."
     },
     "assets.persistChatAttachments": {
       "status": "skip",
@@ -24,7 +24,7 @@
     "attachments.createUploadUrl": {
       "status": "done",
       "priority": "P1",
-      "note": "Real-client test (files_assets): HMAC-signed 10 min grant, type/size limits (10 MiB image, 50 MiB file), pending-<uuid>[-ext] ids. Token layout matches T3."
+      "note": "Real-client test (files_assets): HMAC-signed 10 min grant, type/size limits (10 MiB image, 50 MiB file), pending-<uuid>[-ext] ids. Token layout matches T3. 2026-11-04 nightly4192: upload grants share the asset signer key and PayloadSigner decoding rules."
     },
     "attachments.delete": {
       "status": "done",
@@ -139,7 +139,7 @@
     "orchestration.dispatchCommand": {
       "status": "done",
       "priority": "P0",
-      "note": "Actual client Command, approval, queue, timeline, sidebar and awareness readers execute on server output; acceptForSession survives idle reap; imported native references share launch validation. Native control delivery has no exactly-once acknowledgement: uncertain handoffs are recorded as delivery-unknown, never replayed. Accepted limits: other-owner and delegated-cohort cases with no client flow; RECOVERY.md's exact original-process reattachment. See CONFORMANCE.md. 2026-11-02 audit implementation: historical fresh forks materialize bounded uploaded attachments and serialized historical context, excluding later runs; deterministic Claude/Codex peers assert provider-received image bytes and timeline reader output. Per-message provider selection shares identity reset/handoff with explicit selection; same-instance model changes retain identity. tests/model_handoff.rs includes failing-before controls. Oversize handoffs fail explicitly; arbitrary native context beyond stored conversation remains unproven."
+      "note": "Actual client Command, approval, queue, timeline, sidebar and awareness readers execute on server output; acceptForSession survives idle reap; imported native references share launch validation. Native control delivery has no exactly-once acknowledgement: uncertain handoffs are recorded as delivery-unknown, never replayed. Accepted limits: other-owner and delegated-cohort cases with no client flow; RECOVERY.md's exact original-process reattachment. See CONFORMANCE.md. 2026-11-02 audit implementation: historical fresh forks materialize bounded uploaded attachments and serialized historical context, excluding later runs; deterministic Claude/Codex peers assert provider-received image bytes and timeline reader output. Per-message provider selection shares identity reset/handoff with explicit selection; same-instance model changes retain identity. tests/model_handoff.rs includes failing-before controls. Oversize handoffs fail explicitly; arbitrary native context beyond stored conversation remains unproven. 2026-11-04: same-instance Codex restart_active retains the run and creates steering_restart attempts after native interruption/drain; stale writes are fenced by attempt. HTTP/native-peer and installed Codex continuation proofs pass. Claude capability rejection and unknown-admission failure are explicit. Active cross-instance restart now reuses compatible native history or prepares portable history through the active run, with durable old-attempt settlement/release before replacement input. Tracked-command containment failure refuses replacement; full native descendant/pooled-session lifetime and event fidelity remain partial. See active-provider-handoff-intake.json and MCP.md. 2026-11-04 transfer port supersedes earlier historical-fork replay notes: portable transfers carry intact selected visible items and recovery references, excluding attachments and foreign native tools/reasoning. Canonical fork/merge/side-chat plans and acknowledged handoff delivery share normal dispatch. See context-transfer-intake.json for remaining fidelity limits. 2026-11-04: planner-selected historical bindings release through a private original-owner/incarnation index, with ACK/retry/rebind/reopen and historical background guards. Explicit/builtin registry scopes close before replacement admission; native startup/reap ownership is exercised. Complete shared-session pooling/queue policy and projection/credential epochs remain partial; see provider-pool-lifetime-intake.json."
     },
     "orchestration.getArchivedShellSnapshot": {
       "status": "partial",
@@ -157,9 +157,14 @@
       "note": "tests/admin_reads.rs: pages settled top-level threads below the cursor (settledAt desc, id asc), limit 0 returns per-project counts, project filter. Snapshots never omit older settled threads, so capabilities.shellOlderSettled stays false."
     },
     "orchestration.getThreadFamily": {
-      "status": "skip",
-      "priority": "unused",
-      "note": "No client call site in inventory."
+      "status": "partial",
+      "priority": "P2",
+      "note": "tests/thread_reads.rs: active family membership, archived/deleted filtering, deleted anchors, side chats, descendants and ordering match official nightly 4262. Malformed-input wire defects match the official runtime; complete common shell summaries still need full parity."
+    },
+    "orchestration.getThreadTitles": {
+      "status": "partial",
+      "priority": "P2",
+      "note": "tests/thread_reads.rs: archived titles, absent deleted/unknown IDs, duplicates, 35000-ID batches, scopes and Unicode trimming. Output matches official nightly 4262. Malformed-input wire defects match the official runtime in 31 differential cases across the three read schemas."
     },
     "orchestration.getThreadProjection": {
       "status": "done",
@@ -182,14 +187,14 @@
       "note": "tests/admin_reads.rs: reads .js files below $CLAUDE_CONFIG_DIR|~/.claude/projects, 256 KiB cap, T3's typed OrchestrationGetWorkflowScriptError reasons."
     },
     "orchestration.getWorktreeThreadIds": {
-      "status": "skip",
-      "priority": "unused",
-      "note": "No client call site in inventory."
+      "status": "partial",
+      "priority": "P2",
+      "note": "tests/thread_reads.rs: active exact-path membership and ordering match official nightly 4262, including subagents and side chats; requires orchestration:read. Malformed-input wire defects match the official runtime in 31 differential cases across the three read schemas."
     },
     "orchestration.launchThread": {
       "status": "done",
       "priority": "P0",
-      "note": "Automatic generateTitle launches preserve fallback titles even with unsupported saved Codex text generation; no provider substitution. Real Connection/title readers cover this and explicit regeneration errors. Pinned 3991 accepts saved selection and empty automatic launch; full initial-message generation on reference is unproven. Broader parity remains subject to independent audit."
+      "note": "Automatic generateTitle launches preserve fallback titles even with unsupported saved Codex text generation; no provider substitution. Real Connection/title readers cover this and explicit regeneration errors. Pinned 3991 accepts saved selection and empty automatic launch; full initial-message generation on reference is unproven. Broader parity remains subject to independent audit. 2026-11-04: staged launch accepts a preparing run before Git/setup, preserves a durable thread claim when initial-message admission fails, and replays without duplicate runs. Shared service supports sync/async setup, same-run retry, interruption recovery, branch naming and Scratch allocation. Installed Claude Haiku and Codex gpt-6.1-sol pass gated-setup proofs. MCP launch now shares this service with transactional mode ceilings, durable caller/key replay, pending attachment copies and native caller inheritance (tests/mcp_launch.rs). Installed native CLI launch proofs pass. Transfer, provider-catalog enable precedence, numeric checkout progress and latest live differential remain open; see MCP.md."
     },
     "orchestration.searchThread": {
       "status": "skip",
@@ -304,7 +309,7 @@
     "projects.ensureScratch": {
       "status": "skip",
       "priority": "unused",
-      "note": "No client call site in inventory."
+      "note": "Implemented through the shared managed-folder helper: atomic bootstrap, preserved user icon, separate non-Git folder per launch and explicit refusal when the server profile is inside a Git checkout. tests/mcp_launch.rs drives the RPC through real Connection. Classified unused because the pinned client has no builder call site."
     },
     "projects.listEntries": {
       "status": "skip",
@@ -327,9 +332,9 @@
       "note": "Real-client test: relative paths rooted lexically and by realpath (symlink escapes refused), 1 MiB cap with truncated flag, binary refused, allowMissing, absolute host paths read in place as T3 does, filesystem:read scope."
     },
     "projects.searchContents": {
-      "status": "skip",
+      "status": "partial",
       "priority": "unused",
-      "note": "No client call site in inventory."
+      "note": "Implemented from nightly source with real Connection regressions in tests/content_search.rs: literal/regex, invalid-regex fallback, case/whole-word, Unicode UTF-16 ranges, gitignore, binary/symlink exclusion, fresh edits and result limits. Bounded scan (250 ms, 1 MiB/file, 64 KiB/line, 2 MiB result), reports truncated on resource omissions. Uses ignore/regex rather than upstream fff index; ranking, full regex dialect and live nightly differential remain unverified."
     },
     "projects.searchEntries": {
       "status": "done",
@@ -604,7 +609,7 @@
     "scheduledTasks.delete": {
       "status": "done",
       "priority": "P2",
-      "note": "tests/ops.rs."
+      "note": "tests/ops.rs. 2026-11-04: idempotent like T3; a missing id still returns {id}."
     },
     "scheduledTasks.getWebhookDelivery": {
       "status": "skip",
@@ -614,7 +619,7 @@
     "scheduledTasks.list": {
       "status": "done",
       "priority": "P2",
-      "note": "tests/ops.rs."
+      "note": "tests/ops.rs. 2026-11-04: absent from T3 nightly 3991/4192, which answer `Unknown request tag: scheduledTasks.list` (the 2026-11-03 Android rejection came from NODE's T3). Kept for older o3 clients; same view as subscribe, webhook hidden without orchestration:operate."
     },
     "scheduledTasks.listWebhookDeliveries": {
       "status": "skip",
@@ -629,22 +634,22 @@
     "scheduledTasks.runNow": {
       "status": "done",
       "priority": "P2",
-      "note": "Desktop scheduled_tasks.rs:68, Android MaintenanceScreen.kt:83. A real reader passes; succeeded means dispatch and launch succeeded."
+      "note": "Desktop scheduled_tasks.rs:68, Android MaintenanceScreen.kt:83. A real reader passes; succeeded means dispatch and launch succeeded. 2026-11-04: webhook tasks are refused; the run is stored as running before launch; `once` counts from the run start."
     },
     "scheduledTasks.setEnabled": {
       "status": "done",
       "priority": "P2",
-      "note": "tests/ops.rs."
+      "note": "tests/ops.rs. 2026-11-04: an unchanged value is a no-op; enabling a past `once` fails as in T3."
     },
     "scheduledTasks.subscribe": {
-      "status": "skip",
-      "priority": "unused",
-      "note": "No client call site in inventory."
+      "status": "done",
+      "priority": "P2",
+      "note": "T3 nightly 3991/4192 read path (they have no scheduledTasks.list). tests/ops.rs and differential upstream_scheduled_tasks_android_contract against real 3991: {tasks} at once, the full list after every write (coalesced like T3's sliding PubSub), webhook stripped without orchestration:operate, newest-first order. lib-t3-rust PR26 reads scheduledTasks.list from this stream."
     },
     "scheduledTasks.upsert": {
       "status": "partial",
       "priority": "P2",
-      "note": "Signed inbound webhooks: body-only signature, templates and filters limited to signed body fields, permanent body-digest dedupe per task, bounded queue, durable dispatch claim. Unknown hooks and wrong tokens get the same 404 without the body being read. Pinned 3991 accepts unsigned query templates; o3 rejects them on purpose. Remaining: desktop T3ScheduledTasks.qml:21 and Android TaskEditor.kt:72 have no signing controls, so users cannot save a new webhook task; that needs client work. Triggered runs use the task's or thread's runtime mode, which can be full access."
+      "note": "Signed inbound webhooks: body-only signature, templates and filters limited to signed body fields, permanent body-digest dedupe per task, bounded queue, durable dispatch claim. Unknown hooks and wrong tokens get the same 404 without the body being read. Pinned 3991 accepts unsigned query templates; o3 rejects them on purpose. Remaining: desktop T3ScheduledTasks.qml:21 and Android TaskEditor.kt:72 have no signing controls, so users cannot save a new webhook task; that needs client work. Triggered runs use the task's or thread's runtime mode, which can be full access. 2026-11-04 nightly4192: signature tags decode with Effect's Hex/Base64 rules (no sign-prefixed hex digits; canonical base64 padding, trailing bits ignored) before HMAC verification. 2026-11-04 nightly service parity: id `id ?? scheduled-task:<commandId|uuid>` (replays update the same row), `once` schedules with T3's ISO-with-offset check, an unchanged schedule/enabled keeps nextRunAt, stored webhook schedule normalized (lowercase header, null age, kept dedupe/filters), encodeURIComponent hook paths, creationSource from the save."
     },
     "secrets.answerRequest": {
       "status": "done",
@@ -839,7 +844,7 @@
     "server.updateSettings": {
       "status": "partial",
       "priority": "P1",
-      "note": "Saved Codex generation selections remain accepted (pinned 3991 probe). Automatic launches and blank-message commits use deterministic fallbacks without changing provider; explicit title regeneration/reviews without fallback return actionable errors. Settings effects remain partial. Remaining: desktop offers Codex for text generation, but explicit generation returns an actionable error because app-server 0.166.0 exposes no verified tool-free control. Automatic titles and commits use honest fallbacks."
+      "note": "Saved Codex generation selections remain accepted (pinned 3991 probe). Automatic launches and blank-message commits use deterministic fallbacks without changing provider; explicit title regeneration/reviews without fallback return actionable errors. Settings effects remain partial. Remaining: desktop offers Codex for text generation, but explicit generation returns an actionable error because app-server 0.166.0 exposes no verified tool-free control. Automatic titles and commits use honest fallbacks. 2026-11-04: changed/removed native scopes and builtin overrides retire before replacement work; cancelled cleanup waiters do not abandon reaping. Installed Codex/Claude scope changes reap active shells and preserve resumed history. Remaining shared-session/credential-epoch semantics are recorded in provider-pool-lifetime-intake.json."
     },
     "server.upsertKeybinding": {
       "status": "done",
@@ -929,7 +934,7 @@
     "subscribeWorktreeSetup": {
       "status": "partial",
       "priority": "P2",
-      "note": "Remaining: null output suppresses setup stages, progress and Cancel (worktree_setup.rs:22, T3Composer.qml:302-306). Attempted on branch t3/implement-client-visible-flows (kept unmerged at fa5ab7f): staged setup with progress. Not merged because a setup daemon that clears its environment survives cancellation and restart recovery, and corrupt persisted setup state blocked startup."
+      "note": "2026-11-04: durable staged launches now stream running/done/failed/cancelled snapshots, ordered fetch/checkout/setup-script/agent stages, bounded details/tails, monotonic sequence and 30-second finished retention through the real Connection/stream builder. tests/staged_launch.rs covers sync/async setup, startup prompts, cancellation, rename and retry. Remaining: numeric checkout percentages and compatible desktop/Android UI acceptance; latest live reference differential is pending."
     },
     "terminal.attach": {
       "status": "done",
@@ -1014,92 +1019,97 @@
     "worktreeSetup.cancel": {
       "status": "partial",
       "priority": "P2",
-      "note": "Remaining: Cancel is hidden without running setup, so synchronous preparation cannot be cancelled (write.rs:406). The unmerged attempt at fa5ab7f could not kill every escaped descendant of setup; main keeps synchronous setup."
+      "note": "2026-11-04: actual client cancel builder stops tracked preparation before agent admission, awaits Linux scope reaping and rolls back only owned checkout/ref resources. Late/repeated cancellation returns false; locked-checkout cleanup remains durable and gates retry. Tests cover an escaped double-fork/setsid/env-cleared daemon and branch rename/metadata failure. Remaining: compatible desktop/Android UI acceptance and non-Linux descendant ownership."
     },
     "review.getBranchCommits": {
       "status": "done",
       "priority": "P2",
-      "note": "Port 4093: commits HEAD desde merge-base (baseRef o rama por defecto), máx. 100, asunto 300 chars, 128 KiB, truncated; repo sin HEAD o fuera de git → vacío; cwd en workspace conocido. tests/vcs_compat.rs."
+      "note": "Nightly 4093: HEAD commits since merge-base (baseRef or default branch), at most 100, 300-character subjects and 128 KiB, with truncation. Missing HEAD or non-Git directory returns empty; cwd must belong to a known workspace. tests/vcs_compat.rs."
     },
     "orchestration.getNativeChildWork": {
       "status": "done",
       "priority": "P2",
-      "note": "Upstream sólo lee hijos nativos de Antigravity y responde {children:[]} para otros drivers; o3 sólo tiene Claude/Codex: misma respuesta. src/additions.rs."
+      "note": "Upstream reads native Antigravity children and returns {children:[]} for other drivers. O3 currently has Claude/Codex and gives the same answer. src/additions.rs."
     },
     "sourceControl.starred": {
       "status": "partial",
       "priority": "P2",
-      "note": "false = la forja no puede responder (sin token de app). Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
+      "note": "Personal GitHub star state uses native GET/PUT and only 204 means success. Real compatible client plus local HTTP exercise read/star/read; 83 upstream helper cases and 22 official-runtime fallback/input/scope comparisons. Host-selected literal, environment, gh and native private token slots are supported; app sign-in, secret-provider resolution and integration with other forge consumers remain partial."
     },
     "sourceControl.appAccess": {
       "status": "partial",
       "priority": "P2",
-      "note": "signed-out: sin driver de sign-in de app, como upstream sin T3CODE_GITHUB_APP_CLIENT_ID. Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
+      "note": "Signed-out fallback without an app sign-in driver. GitHub App device flow remains unimplemented; no corresponding capability is advertised."
     },
     "sourceControl.signInStart": {
       "status": "partial",
       "priority": "P2",
-      "note": "SourceControlSignInError reason=unsupported (texto upstream). Device flow GitHub App pendiente. Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
+      "note": "SourceControlSignInError reason=unsupported with upstream wording. GitHub App device flow remains pending; no corresponding capability is advertised."
     },
     "sourceControl.signInWait": {
       "status": "partial",
       "priority": "P2",
-      "note": "SourceControlSignInError reason=unsupported. Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
+      "note": "SourceControlSignInError reason=unsupported. App sign-in remains pending; no corresponding capability is advertised."
     },
     "sourceControl.signInCancel": {
       "status": "partial",
       "priority": "P2",
-      "note": "SourceControlSignInError reason=unsupported. Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
+      "note": "SourceControlSignInError reason=unsupported. App sign-in remains pending; no corresponding capability is advertised."
     },
     "peerLinks.list": {
       "status": "partial",
       "priority": "P2",
-      "note": "{links:[]}; peer links (OAuth MCP entre entornos) no implementado; capacidad peerLinks no anunciada."
+      "note": "Returns {links:[]}; OAuth MCP links between environments remain unimplemented and peerLinks is not advertised."
     },
     "peerLinks.link": {
       "status": "partial",
       "priority": "P2",
-      "note": "PeerLinkError reason=disabled (texto upstream). Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
+      "note": "PeerLinkError reason=disabled with upstream wording. Peer links remain unimplemented and the capability is not advertised."
     },
     "peerLinks.unlink": {
       "status": "partial",
       "priority": "P2",
-      "note": "PeerLinkError reason=disabled. Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
+      "note": "PeerLinkError reason=disabled. Peer links remain unimplemented and the capability is not advertised."
     },
     "peerLinks.answerRequest": {
       "status": "partial",
       "priority": "P2",
-      "note": "PeerLinkRequestError reason=not_found: o3 no crea tarjetas link_request. Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
+      "note": "PeerLinkRequestError reason=not_found: O3 does not create link_request cards. Peer links remain unimplemented and the capability is not advertised."
     },
     "preview.stopLocalServer": {
       "status": "partial",
       "priority": "P2",
-      "note": "PreviewStopLocalServerError reason=unsupported; falta mapa pid↔puerto y verificación de grupo. Capacidad localServerStop no anunciada."
+      "note": "PreviewStopLocalServerError reason=unsupported. PID-to-port mapping and process-group verification remain pending; localServerStop is not advertised."
     },
     "server.getNpmRelease": {
       "status": "partial",
       "priority": "P2",
-      "note": "ServerNpmReleaseError: o3 no se distribuye por npm ni se autoactualiza. Capacidad npmReleaseLookup no anunciada."
+      "note": "ServerNpmReleaseError: O3 is not distributed through npm and does not update itself. npmReleaseLookup is not advertised."
     },
     "server.prepareTriage": {
       "status": "partial",
       "priority": "P2",
-      "note": "ServerPrepareTriageError: el playbook de triage es interno de T3. Capacidad triage no anunciada."
+      "note": "ServerPrepareTriageError: the triage playbook is internal to T3. The triage capability is not advertised."
     },
     "projects.createFromThread": {
       "status": "partial",
       "priority": "P2",
-      "note": "OrchestrationDispatchCommandError: o3 no tiene hilos sin proyecto (scratch). Capacidad threadProjectFromScratch no anunciada."
+      "note": "OrchestrationDispatchCommandError: converting projectless scratch threads remains unimplemented; threadProjectFromScratch is not advertised."
     },
     "orchestration.forceStopThread": {
       "status": "todo",
       "priority": "P2",
-      "note": "Pendiente: matar grupo del agente, superseded por runId, settle del run. Capacidad threadForceStop no anunciada; hoy RpcNotImplemented."
+      "note": "Pending: terminate the provider process group, supersede by runId and settle the run. threadForceStop is not advertised; currently RpcNotImplemented."
     },
     "device.simlockIdentity": {
       "status": "partial",
       "priority": "P2",
-      "note": "DeviceSimlockIdentityError: gateways Simlock no soportados; no se envía token. Respuesta tipada de upstream para función no disponible; capacidad no anunciada."
+      "note": "DeviceSimlockIdentityError: Simlock gateways remain unsupported; no token is sent and the capability is not advertised."
+    },
+    "sourceControl.star": {
+      "status": "partial",
+      "priority": "P2",
+      "note": "Personal GitHub star state uses native GET/PUT and only 204 means success. Real compatible client plus local HTTP exercise read/star/read; 83 upstream helper cases and 22 official-runtime fallback/input/scope comparisons. Host-selected literal, environment, gh and native private token slots are supported; app sign-in, secret-provider resolution and integration with other forge consumers remain partial. Requires source-control:write; reads require orchestration:read."
     }
   },
   "commands": {
@@ -1131,7 +1141,7 @@
     "message.dispatch": {
       "status": "done",
       "priority": "P0",
-      "note": "Native uploaded images and files, serialized context, attachment steering, attempt identity and active execution recovery have real client and deterministic native-peer coverage. The control outbox records uncertain handoffs without blind replay; exactly-once native effects are not claimed."
+      "note": "Native uploaded images and files, serialized context, attachment steering, attempt identity and active execution recovery have real client and deterministic native-peer coverage. The control outbox records uncertain handoffs without blind replay; exactly-once native effects are not claimed. 2026-11-04: ordinary provider changes now share native-compatible continuation or previous-row delta reuse, with exact durable cleanup before new MCP/input and queued recorded-model ownership. Five installed Claude/Codex turns preserve private words and original native ids. Full active cross-instance and selection policy remain pending; see provider-session-intake.json."
     },
     "notification.delivery.accept": {
       "status": "skip",
@@ -1156,7 +1166,7 @@
     "prepared-run.retry": {
       "status": "skip",
       "priority": "unused",
-      "note": "No client call site in inventory."
+      "note": "Implemented for failed staged preparation with a failure item: same run/attempt, current workspace checks, receipt replay and queue release; cleanup must finish first. Real Connection regression in staged_launch.rs. Classified unused because the pinned client has no builder call site."
     },
     "provider-session.detach": {
       "status": "skip",
@@ -1164,9 +1174,9 @@
       "note": "No client call site in inventory."
     },
     "provider.switch": {
-      "status": "skip",
+      "status": "partial",
       "priority": "unused",
-      "note": "No client call site in inventory."
+      "note": "Shares guarded planning/receipts with model selection and emits provider-switched events. Compatible-home restart, incompatible/same-instance classified handoff, missing/unavailable classification refusal and native-owner queue restore have compatible-client/native-peer coverage. Active cross-instance lifecycle, full pool cleanup and remaining SDK policies are pending; see selection-transition-intake.json."
     },
     "queue.resume": {
       "status": "done",
@@ -1249,9 +1259,9 @@
       "note": "Real Connection lifecycle/idempotency test."
     },
     "thread.fork": {
-      "status": "done",
+      "status": "partial",
       "priority": "P1",
-      "note": "Latest completed forks use native continuity with no fallback budget. Historical forks hand bounded attachments, messages and tool results to the fresh session, keeping the newest and marking omissions, tested on Claude and Codex peers with real readers. Pinned attachment overflow behavior is not compared."
+      "note": "Nightly4165 canonical transfer plans, checkpoint-qualified latest_stable, explicit boundaries, private-state reset and unwatched PR inheritance. Shared first-turn admission resolves portable history or a native fork; Codex uses lastTurnId even after the source advances. Side chats preserve the stable base plus a separate post-boundary digest, including an empty parent. Compatible-client/native-peer coverage and installed Claude/Codex private-codeword proofs. Historical Claude native anchors still use the portable path. Native-window allowance and uncertain/missing-native replacement now reconstruct app history with durable cleanup; failed native forks fall back at the selected app boundary. Fork-plus-merge composition and legacy imports are covered. See native-recovery-intake.json for remaining fidelity limits."
     },
     "thread.guest-message.dismiss": {
       "status": "todo",
@@ -1274,19 +1284,19 @@
       "note": "tests/thread_commands.rs"
     },
     "thread.merge_back": {
-      "status": "skip",
-      "priority": "unused",
-      "note": "No client call site in inventory."
+      "status": "partial",
+      "priority": "P1",
+      "note": "Shared RPC/MCP fork-to-direct-parent lifecycle: idle/queue/source/relationship guards, supersession, receipt replay, own-run delta, consumption, handoff projections and durable provider delivery. Changing the target provider carries its full history together with the fork delta under one deduplicated budget. Current MCP authority checks cover both threads. Real compatible-client/native-peer and installed Claude/Codex proofs pass. Uncertain-delivery replacement now reconstructs the target history before consuming the merge delta. Full source-wide handoff/continuation parity remains pending; see native-recovery-intake.json."
     },
     "thread.metadata.update": {
       "status": "done",
       "priority": "P1",
-      "note": "Title regeneration uses bounded tool-free generation when supported; an explicit unsupported selection produces an actionable RPC error rather than silently substituting another provider. Explicit rename wins over asynchronous completion. Real Connection/title reader coverage: tests/title_generation.rs and tests/generation_selection.rs."
+      "note": "Title regeneration uses bounded tool-free generation when supported; an explicit unsupported selection produces an actionable RPC error rather than silently substituting another provider. Explicit rename wins over asynchronous completion. Real Connection/title reader coverage: tests/title_generation.rs and tests/generation_selection.rs. Workspace binding updates compare expectedWorktreePath/expectedBranch/expectedEmpty under the receipt transaction. A real path change interrupts live work, durably detaches the native session and gates queued work until detach succeeds; native conversation identity is resumed in the new cwd. Shared Codex credentials/processes survive this detach. Coverage: tests/workspace_transition.rs and workspace_transition module recovery/atomicity tests. The native MCP handoff service now uses this transition with managed Git creation, setup-terminal launch and receipt-atomic continuation (tests/worktree_handoff.rs)."
     },
     "thread.model-selection.set": {
-      "status": "skip",
+      "status": "partial",
       "priority": "unused",
-      "note": "Implemented: an explicit idle instance switch clears foreign native IDs and supplies bounded transcript text (tests/model_handoff.rs). No production caller in the three clients; desktop src/write.rs:189 sends message.dispatch modelSelection instead, which is tracked on its own. Reclassified by independent audit on 2026-11-02."
+      "note": "Source transition policy and native next-turn classifiers permit active same-instance steering/preferences without replacing its attempt. Latest live/dead negotiated capabilities, durable restart/handoff/refusal, canonical option ordering, legacy alias routing and frozen admitted model/modes are covered. Four installed Claude/Codex app turns preserve active native commands and private history. Active cross-instance lifecycle, full pool/SDK cleanup and remaining source policy are pending; see selection-transition-intake.json. Pinned clients normally send per-message selection; MCP configuration also uses this standalone command."
     },
     "thread.pin": {
       "status": "done",

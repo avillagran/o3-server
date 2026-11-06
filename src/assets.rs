@@ -57,15 +57,11 @@ fn sign(s: &State, claims: &Value) -> std::io::Result<String> {
 }
 /// Claims of an unexpired token carrying a valid signature.
 fn verify(s: &State, token: &str, kind_ok: impl Fn(&str) -> bool) -> Option<Value> {
-    let mut parts = token.split('.');
-    let (payload, sig) = (parts.next()?, parts.next()?);
-    if payload.is_empty() || sig.is_empty() || parts.next().is_some() {
-        return None;
-    }
+    let (payload, sig) = auth::token_parts(token)?;
     let mut m = mac(&signing_key(s).ok()?);
     m.update(payload.as_bytes());
-    m.verify_slice(&B64.decode(sig).ok()?).ok()?;
-    let claims: Value = serde_json::from_slice(&B64.decode(payload).ok()?).ok()?;
+    m.verify_slice(&auth::decode_b64url(sig)?).ok()?;
+    let claims: Value = serde_json::from_slice(&auth::decode_b64url(payload)?).ok()?;
     if let Some(sid) = claims["sessionId"].as_str() {
         let valid: bool = s.db.lock().ok()?.query_row("SELECT EXISTS(SELECT 1 FROM auth_sessions WHERE session_id=? AND revoked_at IS NULL AND expires_at>?)", rusqlite::params![sid,now_ms()], |r| r.get(0)).ok()?;
         if !valid {
@@ -85,7 +81,7 @@ pub fn attachments_dir(s: &State) -> PathBuf {
 // ------------------------------------------------------------------ attachment ids
 
 /// `<thread-segment>-<uuid>[-<ext>]`, as T3 names attachments. Returns (segment, ext).
-fn parse_id(id: &str) -> Option<(String, Option<String>)> {
+pub(crate) fn parse_id(id: &str) -> Option<(String, Option<String>)> {
     if id.is_empty() || id.len() > 256 || id.contains(['/', '\\', '.', '\0']) {
         return None;
     }
@@ -141,6 +137,32 @@ pub(crate) fn attachment_path_in(dir: &Path, id: &str) -> Option<PathBuf> {
             .map(|e| dir.join(format!("{id}.{e}")))
             .find(|p| std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_file())),
     }
+}
+
+pub(crate) fn cleanup_attachment(s: &State, id: &str) -> Result<(), String> {
+    let Some((_, extension)) = parse_id(id) else {
+        return Ok(());
+    };
+    let extensions = extension.map(|e| vec![e]).unwrap_or_else(|| {
+        SAFE_IMAGE_EXT
+            .iter()
+            .chain(&["bin"])
+            .map(|e| e.to_string())
+            .collect()
+    });
+    for extension in extensions {
+        let path = attachments_dir(s).join(format!("{}.{}", id.to_lowercase(), extension));
+        let mut sidecar = path.clone().into_os_string();
+        sidecar.push(".txt");
+        for path in [path, std::path::PathBuf::from(sidecar)] {
+            match std::fs::remove_file(path) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e.to_string()),
+            }
+        }
+    }
+    Ok(())
 }
 
 fn file_extension(name: &str) -> String {
@@ -657,6 +679,14 @@ fn allowed_file(s: &State, path: &Path) -> Option<PathBuf> {
     None
 }
 
+/// Host media (`media-file`, absolute draft files): as in T3, anything the chat can reference,
+/// wherever it is, for a `filesystem:read` session — viewing a previewable type or downloading
+/// any file. Only this server's own profile (database, session signing key) stays refused.
+fn media_allowed(s: &State, real: &Path) -> bool {
+    allowed_file(s, real).is_some()
+        || !std::fs::canonicalize(&s.asset_profile_root).is_ok_and(|r| real.starts_with(r))
+}
+
 fn real_dir(root: &Path) -> Option<PathBuf> {
     std::fs::canonicalize(root).ok().filter(|r| r.is_dir())
 }
@@ -1104,7 +1134,7 @@ pub fn create_url(s: &State, p: &Value) -> Reply {
                     .ok()
                     .filter(|r| r.is_file())
                     .ok_or_else(|| asset_err("AssetWorkspaceAssetNotFoundError", resource))?;
-                if allowed_file(s, &real).is_none() {
+                if !media_allowed(s, &real) {
                     return Err(not_found("AssetWorkspacePathValidationError"));
                 }
                 if !download && !previewable(&real.to_string_lossy()) {
@@ -1455,8 +1485,8 @@ fn resolve(s: &State, token: &str, rest: &str) -> Option<Resolved> {
                 if !icon_allowed(&real) || !favicon_ext_ok(&real.to_string_lossy()) {
                     return None;
                 }
-            } else {
-                allowed_file(s, &real)?;
+            } else if !media_allowed(s, &real) {
+                return None;
             }
             let download = c["download"] == true;
             if !download && !previewable(&real.to_string_lossy()) {
@@ -1528,14 +1558,14 @@ fn resolve(s: &State, token: &str, rest: &str) -> Option<Resolved> {
     }
 }
 
-fn percent_decode(s: &str) -> Option<String> {
+pub(crate) fn percent_decode(s: &str) -> Option<String> {
     let bytes = s.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%' {
             let h = std::str::from_utf8(bytes.get(i + 1..i + 3)?).ok()?;
-            out.push(u8::from_str_radix(h, 16).ok()?);
+            out.push(crate::auth::decode_hex(h)?[0]);
             i += 3;
         } else {
             out.push(bytes[i]);

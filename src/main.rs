@@ -14,10 +14,12 @@ Commands:
   serve                     Run the server (default)
   import --from PATH        Import a T3 statev2.sqlite, read-only
   auth session issue        Issue a bearer session
+  auth mcp issue            Issue a dedicated MCP credential (--access read-only by default)
   auth session list         List sessions
   auth session revoke ID    Revoke a session
   auth pairing create       Create a one-time pairing credential
   service install           Install the user service
+  --version                 Print the version
 
 The profile comes from T3CODE_HOME (default ~/.t3).
 ";
@@ -43,6 +45,17 @@ fn ttl(s: &str) -> std::io::Result<i64> {
 fn main() -> std::io::Result<()> {
     o3_server::heap::configure();
     let args: Vec<_> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|s| s == "__document-text") {
+        if args.len() != 3 {
+            std::process::exit(2);
+        }
+        o3_server::document_text::worker(Path::new(&args[1]), &args[2]);
+    }
+    // Installers verify a downloaded binary with this; it touches no profile.
+    if args.first().is_some_and(|s| s == "--version" || s == "-V") {
+        println!("o3-server {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     // Before any command runs: `auth session issue --help` must never mint a credential.
     if args.iter().any(|a| a == "--help" || a == "-h") {
         print!("{USAGE}");
@@ -120,13 +133,39 @@ fn main() -> std::io::Result<()> {
     if args.first().map(String::as_str) == Some("import") {
         let source =
             option(&args, "--from").ok_or_else(|| std::io::Error::other("--from is required"))?;
-        println!(
-            "{}",
-            o3_server::import::from_t3(&state, Path::new(source)).map_err(std::io::Error::other)?
-        );
+        let mut report =
+            o3_server::import::from_t3(&state, Path::new(source)).map_err(std::io::Error::other)?;
+        // T3 keeps attachment files beside its database; a backup copy elsewhere needs the
+        // directory named explicitly.
+        let attachments = option(&args, "--attachments")
+            .map(std::path::PathBuf::from)
+            .or_else(|| Path::new(source).parent().map(|p| p.join("attachments")));
+        if let Some(dir) = attachments.filter(|d| d.is_dir()) {
+            report["attachments"] = serde_json::json!(
+                o3_server::import::attachments(&state, &dir).map_err(std::io::Error::other)?
+            );
+        }
+        println!("{report}");
         return Ok(());
     }
     if is_auth {
+        if args.get(1).map(String::as_str) == Some("mcp")
+            && args.get(2).map(String::as_str) == Some("issue")
+        {
+            let token = state
+                .issue_mcp_session(
+                    option(&args, "--access").unwrap_or("read-only"),
+                    ttl(option(&args, "--ttl").unwrap_or("30d"))?,
+                    option(&args, "--label").unwrap_or("MCP client"),
+                )
+                .map_err(std::io::Error::other)?;
+            if args.iter().any(|s| s == "--token-only") {
+                println!("{token}");
+            } else {
+                println!("{}", serde_json::json!({"token":token}));
+            }
+            return Ok(());
+        }
         if args.get(1).map(String::as_str) == Some("session")
             && args.get(2).map(String::as_str) == Some("issue")
         {
@@ -216,15 +255,23 @@ fn main() -> std::io::Result<()> {
         .block_on(async {
             #[cfg(feature = "memory-diagnostics")]
             memory::start();
-            let codex = Arc::new(o3_server::codex::CodexProvider::default());
-            *state.provider.lock().unwrap() =
-                Some(Arc::new(o3_server::provider::ConfiguredProviders::new(
+            state.agent_scopes.enable();
+            let codex = Arc::new(
+                o3_server::codex::CodexProvider::default()
+                    .with_agent_scopes(state.agent_scopes.clone()),
+            );
+            *state.provider.lock().unwrap() = Some(Arc::new(
+                o3_server::provider::ConfiguredProviders::new(
                     Arc::new(o3_server::provider::Providers {
-                        claude: o3_server::claude::ClaudeProvider::discover().map(Arc::new),
+                        claude: o3_server::claude::ClaudeProvider::discover().map(|provider| {
+                            Arc::new(provider.with_agent_scopes(state.agent_scopes.clone()))
+                        }),
                         codex: codex.clone(),
                     }),
                     dir.clone(),
-                )));
+                )
+                .with_agent_scopes(state.agent_scopes.clone()),
+            ));
             let mut term =
                 tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
             let mut interrupt =
@@ -232,7 +279,17 @@ fn main() -> std::io::Result<()> {
             let listener = tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
             let _guard = o3_server::profile::RuntimeGuard::write(&dir, listener.local_addr()?)?;
             eprintln!("o3-server listening on {}", listener.local_addr()?);
+            // T3's base must be taken in before the first client reads.
+            let shared = match o3_server::t3_shared::start(&state) {
+                Ok(shared) => shared,
+                Err(e) => {
+                    eprintln!("T3 shared base not written: {e}");
+                    None
+                }
+            };
             let state = Arc::new(state);
+            let exporter =
+                shared.map(|t3| o3_server::t3_shared::Exporter::spawn(state.clone(), t3));
             let probe = state.provider.lock().unwrap().clone().unwrap();
             let probe_state = state.clone();
             let probe_task = tokio::spawn(async move {
@@ -251,49 +308,63 @@ fn main() -> std::io::Result<()> {
                 probe_state.notify();
             });
             let mut serving = tokio::spawn(o3_server::serve(listener, state.clone()));
+            // A standalone OmaBridge can publish this server instead; --no-bridge keeps the
+            // embedded node, its identity and its timers out of this process.
             #[cfg(feature = "bridge")]
-            let bridge = o3_server::bridge::start_hosted(
-                &option(&args, "--bridge-state-dir")
-                    .map(std::path::PathBuf::from)
-                    .unwrap_or_else(|| base.join("omabridge")),
-                state.clone(),
-                {
-                    let mut options = omabridge::NetOptions::loopback();
-                    if let Some(bind) = option(&args, "--bridge-bind") {
-                        options.bind = bind.parse().map_err(std::io::Error::other)?;
-                    }
-                    if let Some(relay) = option(&args, "--bridge-relay") {
-                        options.relay = match relay {
-                            "none" => omabridge::Relay::Disabled,
-                            "public" => omabridge::Relay::Public,
-                            url => omabridge::Relay::Custom(
-                                url.parse().map_err(std::io::Error::other)?,
-                            ),
-                        };
-                    }
-                    options
-                },
-                option(&args, "--bridge-gateway-config").map(Path::new),
-                args.iter().any(|a| a == "--bridge-relay-host"),
-            )
-            .await
-            .map_err(std::io::Error::other)?;
+            let bridge = if args.iter().any(|a| a == "--no-bridge") {
+                None
+            } else {
+                Some(
+                    o3_server::bridge::start_hosted(
+                        &option(&args, "--bridge-state-dir")
+                            .map(std::path::PathBuf::from)
+                            .unwrap_or_else(|| base.join("omabridge")),
+                        state.clone(),
+                        {
+                            let mut options = omabridge::NetOptions::loopback();
+                            if let Some(bind) = option(&args, "--bridge-bind") {
+                                options.bind = bind.parse().map_err(std::io::Error::other)?;
+                            }
+                            if let Some(relay) = option(&args, "--bridge-relay") {
+                                options.relay = match relay {
+                                    "none" => omabridge::Relay::Disabled,
+                                    "public" => omabridge::Relay::Public,
+                                    url => omabridge::Relay::Custom(
+                                        url.parse().map_err(std::io::Error::other)?,
+                                    ),
+                                };
+                            }
+                            options
+                        },
+                        option(&args, "--bridge-gateway-config").map(Path::new),
+                        args.iter().any(|a| a == "--bridge-relay-host"),
+                    )
+                    .await
+                    .map_err(std::io::Error::other)?,
+                )
+            };
             // block_on runs on the main thread, outside the runtime worker park hooks.
             let result = tokio::select! {
                 result=&mut serving=>result.map_err(std::io::Error::other)?,
                 _=interrupt.recv()=>Ok(()),
                 _=term.recv()=>Ok(()),
             };
+            state.begin_shutdown();
             if !serving.is_finished() {
                 serving.abort();
                 let _ = serving.await;
             }
             #[cfg(feature = "bridge")]
-            bridge.shutdown().await;
+            if let Some(bridge) = bridge {
+                bridge.shutdown().await;
+            }
             probe_task.abort();
             let _ = probe_task.await;
             o3_server::preview::shutdown(&state).await;
             codex.shutdown().await;
+            if let Some(exporter) = exporter {
+                exporter.finish();
+            }
             result
         })
 }

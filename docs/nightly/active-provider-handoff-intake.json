@@ -1,0 +1,35 @@
+{
+  "checkedAt": "2026-11-04T19:40:55.437031+00:00",
+  "tag": "v0.1.8-nightly.20261104.4179",
+  "reference": "9e85538535c8553901351112ab02dd1dd62db5ee",
+  "url": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.8-nightly.20261104.4179",
+  "scope": "Active provider transition and tracked-command interruption checkpoint; complete protocol goal remains active.",
+  "sourceFiles": [
+    "apps/server/src/orchestration-v2/Orchestrator.ts",
+    "apps/server/src/orchestration-v2/CommandPolicy.ts",
+    "apps/server/src/orchestration-v2/ProviderSwitchService.ts",
+    "apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts"
+  ],
+  "implemented": [
+    "Explicit restart and active steering/auto requiring immediate selection use the admitted run selection for planning. Turn-scoped same-instance preferences continue steering without interrupting. Restart requires outgoing negotiated interrupt/restart capabilities; unavailable/unsupported classifications refuse transactionally.",
+    "Same run ID, new ordinal attempt/root, superseded previous attempt, cancelled pending native requests and streaming messages, preserved app-owned delegates. Incoming model/runtime policy is captured at replacement admission. Claude binding preserves staged attempt/root instead of resetting initial identity.",
+    "Compatible native profiles reuse the provider-thread/native conversation; incompatible providers prepare full-thread portable history including the active ordinal before replacement input. Handoff consumption and native-delivery acceptance are separate. Attempt generation fences old owner credentials and late projection frames.",
+    "Wait for outgoing execution and terminal acknowledgement, release exact outgoing native binding, then register replacement execution under the same run ID. Failed release does not send input. Durable release clears outgoing session/status/background flags while preserving native history references.",
+    "Codex tracked commands may lack item/completed after interruption. After native terminal acknowledgement, contain tracked process IDs through source terminate/list RPCs before retiring interrupted command items. Remaining active terminals or malformed/failed containment refuse replacement. Ordinary completed turns still drain owned items."
+  ],
+  "validation": {
+    "directed": "6 new compatible-client regressions (eight explicit/steer/auto/preference transition cases inside the matrix, plus delayed ACK/stale output, receipt rollback, native release failure, physical containment refusal and stop/delete/archive). Existing 4 restart and 4 background regressions pass; installed opt-in ignored by ordinary suites.",
+    "fullWithoutDefaultFeatures": "444 passed, 27 opt-ins ignored; includes tracked-command containment change.",
+    "fullDefaultFeatures": "447 passed, 27 opt-ins ignored; final full suite includes tracked-command containment.",
+    "static": "Strict all-target Clippy passes both feature modes; final fmt, generated table, 9 nightly monitor tests, 96 source-generated selection fixtures reproduce and diff checks pass.",
+    "installed": "4 actual app turns with Codex CLI0.166.0 gpt-6.1-sol and Claude Haiku. Each source starts a native shell, then active steering to compatible Codex profile or Claude restarts the same run. Both incoming responses recall a private codeword absent from replacement input; compatible path preserves native identity with no handoff, portable path covers active ordinal1. Temporary credential-copy homes and owned processes cleaned; wrapper redirects native stderr only.",
+    "qualification": "Fresh shared-home initialization was serialized before adding the second Codex profile. Concurrent native first-use SQLite initialization was observed failing and remains a separate registry/native startup concern.",
+    "reproduceInstalled": "tools/live-transfer-e2e --target active_handoff live_active_cross_instance_resume_and_portable_handoff"
+  },
+  "pending": [
+    "All historical/pooled/retired-session release and registry replacement; recursive native descendant/late-lineage containment, dynamic tools/image work and background guards.",
+    "Fresh shared Codex-home SQLite initialization can fail when native discovery launches multiple profiles concurrently. The installed transition proof initializes the source home before registering the second profile; production first-use migration coordination remains unverified.",
+    "Full source event ordering/timeline/modelSwitch/checkpoint-scope fidelity, SDK flags/anchors and import migrations.",
+    "Complete request_secret4179, MCP/auth/environment/provider drivers, differential and desktop/Android/resource backlog. This checkpoint is not a full protocol equivalence claim."
+  ]
+}

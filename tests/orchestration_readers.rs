@@ -32,12 +32,18 @@ fn reused_launch_import_title_and_native_attachment_steering() {
                 }))
             });
             let c = s.connect();
+            let root = s.dir.join("workspace");
+            std::fs::create_dir_all(&root).unwrap();
+            c.rpc("projects.mutate",json!({"type":"project.create","commandId":"project","projectId":"p","title":"Readers","workspaceRoot":root})).unwrap();
             // This steering peer has one fixed native id; title failure is isolated.
             c.rpc("server.updateSettings",json!({"patch":{"textGenerationModelSelection":{"instanceId":"unavailable","model":"none"}}})).unwrap();
             c.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"create","threadId":"t","projectId":"p","title":"Original","modelSelection":{"instanceId":instance,"model":"old"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
             let launch = json!({"commandId":"launch","threadId":"t","projectId":"p","title":"Seed","reuseExistingThread":true,"generateTitle":true,"modelSelection":{"instanceId":instance,"model":"override"},"workspaceStrategy":{"type":"root"},"importedNativeThread":{"ref":{"driver":instance,"nativeId":"native","strength":"strong"},"metadata":{"title":"Imported"}},"initialMessage":{"text":"hold","attachments":[]}});
             let result = c.rpc("orchestration.launchThread", launch.clone()).unwrap();
-            assert_eq!(result, c.rpc("orchestration.launchThread", launch).unwrap());
+            let replay = c.rpc("orchestration.launchThread", launch).unwrap();
+            assert_eq!(result["threadId"], replay["threadId"]);
+            assert_eq!(result["resumed"], false);
+            assert_eq!(replay["resumed"], true);
             assert_eq!(result["projection"]["thread"]["title"], "hold");
             assert_eq!(
                 result["projection"]["runs"][0]["modelSelection"]["model"],
@@ -47,7 +53,25 @@ fn reused_launch_import_title_and_native_attachment_steering() {
                 result["projection"]["providerThreads"][0]["nativeThreadRef"]["nativeId"],
                 "native"
             );
-            let p = wait(&c, |p| p["runs"][0]["status"] == "running");
+            assert_eq!(
+                result["projection"]["providerThreads"][0]["handoffIds"],
+                json!([])
+            );
+            // Started precedes the native binding; inspect imported ordinals only after acceptance.
+            let p = wait(&c, |p| {
+                p["runs"][0]["status"] == "running"
+                    && p["providerTurns"]
+                        .as_array()
+                        .is_some_and(|turns| !turns.is_empty())
+            });
+            assert_eq!(
+                p["providerThreads"][0]["firstRunOrdinal"],
+                p["runs"][0]["ordinal"]
+            );
+            assert_eq!(
+                p["providerThreads"][0]["lastRunOrdinal"],
+                p["runs"][0]["ordinal"]
+            );
             let rid = p["runs"][0]["id"].clone();
             let image = c
                 .upload_attachment(
@@ -65,7 +89,12 @@ fn reused_launch_import_title_and_native_attachment_steering() {
                     std::io::Cursor::new(b"file-proof"),
                 )
                 .unwrap();
-            c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"steer","threadId":"t","messageId":"steered","text":"input-proof","context":{"text":"context-proof"},"attachments":[image,file],"dispatchMode":if queued {json!({"type":"queue_after_active"})} else {json!({"type":"steer_active","targetRunId":rid})}})).unwrap();
+            let mut command = json!({"type":"message.dispatch","commandId":"steer","threadId":"t","messageId":"steered","text":"input-proof","context":{"text":"context-proof"},"attachments":[image,file],"dispatchMode":if queued {json!({"type":"queue_after_active"})} else {json!({"type":"steer_active","targetRunId":rid})}});
+            if !queued {
+                command["dispatchMode"] = json!({"type":"start_immediately"});
+                command["deliveryIntent"] = json!("auto");
+            }
+            c.rpc("orchestration.dispatchCommand", command).unwrap();
             if queued {
                 let p = wait(&c, |p| {
                     p["runs"]

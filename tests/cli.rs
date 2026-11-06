@@ -252,6 +252,20 @@ fn auth_leaves_no_files_in_a_profile_owned_by_another_live_server() {
 }
 
 #[test]
+fn version_prints_the_package_version_and_touches_nothing() {
+    for flag in ["--version", "-V"] {
+        let p = Profile::new();
+        let out = p.cmd().arg(flag).output().unwrap();
+        assert!(out.status.success(), "{flag}");
+        assert_eq!(
+            String::from_utf8(out.stdout).unwrap(),
+            format!("o3-server {}\n", env!("CARGO_PKG_VERSION"))
+        );
+        assert!(!p.0.join("userdata").exists(), "{flag} created a profile");
+    }
+}
+
+#[test]
 fn help_anywhere_prints_usage_and_touches_nothing() {
     for args in [
         vec!["--help"],

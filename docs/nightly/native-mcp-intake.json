@@ -1,0 +1,26 @@
+{
+  "checkedAt": "2026-11-04T04:53:29.462393+00:00",
+  "reference": "322f6544dfad0a3c8a0c8cbecf2c7f7874b14268",
+  "tag": "v0.1.7-nightly.20261104.4151",
+  "url": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.7-nightly.20261104.4151",
+  "scope": "Native MCP credential lifecycle and Claude/Codex injection only; not a full-nightly conformance certificate.",
+  "sourceFiles": [
+    "apps/server/src/mcp/McpSessionRegistry.ts",
+    "apps/server/src/mcp/McpInvocationContext.ts",
+    "apps/server/src/mcp/threadAccess.ts"
+  ],
+  "implementedInThisBlock": [
+    "In-memory hashed credential registry with weak provider owners and idle refresh",
+    "Native Claude private-file and Codex app-server configuration injection",
+    "Cached CLI reuse, observed process exit and shutdown revocation",
+    "Current native caller modes, same-provider background authority and optional target defaults",
+    "Shared scoped browser transport with orchestration retained when browser access is disabled"
+  ],
+  "pending": [
+    "Thread launch/restart/transfer and deferred caller settlement",
+    "Full project/task/worktree/attachment/PR/device/preview/HTML/scheduler toolkits",
+    "OAuth/DPoP/SSE, linked environments, hosted links and native subagent-specific scopes",
+    "ACP/OpenCode, forceStopThread, execution-history importer and broader latest-nightly changes",
+    "Live nightly differential and compatible desktop acceptance"
+  ]
+}

@@ -1,0 +1,1471 @@
+{
+  "source": "c55db3e9c72fdf584f4b54192fb39beb88667b59",
+  "slices": [
+    {
+      "input": "/tmp/profile/userdata",
+      "expected": "app-t3code-agents-41846b0b7ee7.slice"
+    },
+    {
+      "input": "/home/example/.t3/userdata",
+      "expected": "app-t3code-agents-49c253eb7aac.slice"
+    },
+    {
+      "input": "/tmp/á🚀/userdata",
+      "expected": "app-t3code-agents-c02d0f184505.slice"
+    },
+    {
+      "input": "",
+      "expected": "app-t3code-agents-e3b0c44298fc.slice"
+    },
+    {
+      "input": "/tmp/a/../b",
+      "expected": "app-t3code-agents-7c1771324d4d.slice"
+    }
+  ],
+  "limits": [
+    {
+      "input": 0,
+      "expected": {
+        "high": 0,
+        "max": 0
+      }
+    },
+    {
+      "input": 1,
+      "expected": {
+        "high": 0,
+        "max": 0
+      }
+    },
+    {
+      "input": 3,
+      "expected": {
+        "high": 1,
+        "max": 2
+      }
+    },
+    {
+      "input": 4,
+      "expected": {
+        "high": 2,
+        "max": 3
+      }
+    },
+    {
+      "input": 1024,
+      "expected": {
+        "high": 512,
+        "max": 768
+      }
+    },
+    {
+      "input": 1073741824,
+      "expected": {
+        "high": 536870912,
+        "max": 805306368
+      }
+    },
+    {
+      "input": 2147483648,
+      "expected": {
+        "high": 1073741824,
+        "max": 1610612736
+      }
+    },
+    {
+      "input": 4294967296,
+      "expected": {
+        "high": 2147483648,
+        "max": 3221225472
+      }
+    },
+    {
+      "input": 6442450944,
+      "expected": {
+        "high": 3221225472,
+        "max": 4831838208
+      }
+    },
+    {
+      "input": 8589934592,
+      "expected": {
+        "high": 4294967296,
+        "max": 6442450944
+      }
+    },
+    {
+      "input": 17179869184,
+      "expected": {
+        "high": 10737418240,
+        "max": 12884901888
+      }
+    },
+    {
+      "input": 34359738368,
+      "expected": {
+        "high": 27917287424,
+        "max": 30064771072
+      }
+    },
+    {
+      "input": 68719476736,
+      "expected": {
+        "high": 62277025792,
+        "max": 64424509440
+      }
+    },
+    {
+      "input": 17179869187,
+      "expected": {
+        "high": 10737418243,
+        "max": 12884901891
+      }
+    }
+  ],
+  "states": [
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "active",
+        "result": "success"
+      },
+      "expected": "running"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "active",
+        "result": "success",
+        "populated": false
+      },
+      "expected": "stopping"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "active",
+        "result": "success",
+        "populated": true
+      },
+      "expected": "running"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "active",
+        "result": "success",
+        "oomKills": 0
+      },
+      "expected": "running"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "active",
+        "result": "success",
+        "oomKills": 0,
+        "populated": false
+      },
+      "expected": "stopping"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "active",
+        "result": "success",
+        "oomKills": 0,
+        "populated": true
+      },
+      "expected": "running"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "active",
+        "result": "success",
+        "oomKills": 1
+      },
+      "expected": "stopping"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "active",
+        "result": "success",
+        "oomKills": 1,
+        "populated": false
+      },
+      "expected": "stopping"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "active",
+        "result": "success",
+        "oomKills": 1,
+        "populated": true
+      },
+      "expected": "stopping"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "active",
+        "result": "oom-kill"
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "active",
+        "result": "oom-kill",
+        "populated": false
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "active",
+        "result": "oom-kill",
+        "populated": true
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "active",
+        "result": "oom-kill",
+        "oomKills": 0
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "active",
+        "result": "oom-kill",
+        "oomKills": 0,
+        "populated": false
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "active",
+        "result": "oom-kill",
+        "oomKills": 0,
+        "populated": true
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "active",
+        "result": "oom-kill",
+        "oomKills": 1
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "active",
+        "result": "oom-kill",
+        "oomKills": 1,
+        "populated": false
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "active",
+        "result": "oom-kill",
+        "oomKills": 1,
+        "populated": true
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "inactive",
+        "result": "success"
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "inactive",
+        "result": "success",
+        "populated": false
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "inactive",
+        "result": "success",
+        "populated": true
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "inactive",
+        "result": "success",
+        "oomKills": 0
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "inactive",
+        "result": "success",
+        "oomKills": 0,
+        "populated": false
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "inactive",
+        "result": "success",
+        "oomKills": 0,
+        "populated": true
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "inactive",
+        "result": "success",
+        "oomKills": 1
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "inactive",
+        "result": "success",
+        "oomKills": 1,
+        "populated": false
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "inactive",
+        "result": "success",
+        "oomKills": 1,
+        "populated": true
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "inactive",
+        "result": "oom-kill"
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "inactive",
+        "result": "oom-kill",
+        "populated": false
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "inactive",
+        "result": "oom-kill",
+        "populated": true
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "inactive",
+        "result": "oom-kill",
+        "oomKills": 0
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "inactive",
+        "result": "oom-kill",
+        "oomKills": 0,
+        "populated": false
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "inactive",
+        "result": "oom-kill",
+        "oomKills": 0,
+        "populated": true
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "inactive",
+        "result": "oom-kill",
+        "oomKills": 1
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "inactive",
+        "result": "oom-kill",
+        "oomKills": 1,
+        "populated": false
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "inactive",
+        "result": "oom-kill",
+        "oomKills": 1,
+        "populated": true
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "failed",
+        "result": "success"
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "failed",
+        "result": "success",
+        "populated": false
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "failed",
+        "result": "success",
+        "populated": true
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "failed",
+        "result": "success",
+        "oomKills": 0
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "failed",
+        "result": "success",
+        "oomKills": 0,
+        "populated": false
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "failed",
+        "result": "success",
+        "oomKills": 0,
+        "populated": true
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "failed",
+        "result": "success",
+        "oomKills": 1
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "failed",
+        "result": "success",
+        "oomKills": 1,
+        "populated": false
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "failed",
+        "result": "success",
+        "oomKills": 1,
+        "populated": true
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "failed",
+        "result": "oom-kill"
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "failed",
+        "result": "oom-kill",
+        "populated": false
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "failed",
+        "result": "oom-kill",
+        "populated": true
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "failed",
+        "result": "oom-kill",
+        "oomKills": 0
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "failed",
+        "result": "oom-kill",
+        "oomKills": 0,
+        "populated": false
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "failed",
+        "result": "oom-kill",
+        "oomKills": 0,
+        "populated": true
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "failed",
+        "result": "oom-kill",
+        "oomKills": 1
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "failed",
+        "result": "oom-kill",
+        "oomKills": 1,
+        "populated": false
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "failed",
+        "result": "oom-kill",
+        "oomKills": 1,
+        "populated": true
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "deactivating",
+        "result": "success"
+      },
+      "expected": "stopping"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "deactivating",
+        "result": "success",
+        "populated": false
+      },
+      "expected": "stopping"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "deactivating",
+        "result": "success",
+        "populated": true
+      },
+      "expected": "stopping"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "deactivating",
+        "result": "success",
+        "oomKills": 0
+      },
+      "expected": "stopping"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "deactivating",
+        "result": "success",
+        "oomKills": 0,
+        "populated": false
+      },
+      "expected": "stopping"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "deactivating",
+        "result": "success",
+        "oomKills": 0,
+        "populated": true
+      },
+      "expected": "stopping"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "deactivating",
+        "result": "success",
+        "oomKills": 1
+      },
+      "expected": "stopping"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "deactivating",
+        "result": "success",
+        "oomKills": 1,
+        "populated": false
+      },
+      "expected": "stopping"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "deactivating",
+        "result": "success",
+        "oomKills": 1,
+        "populated": true
+      },
+      "expected": "stopping"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "deactivating",
+        "result": "oom-kill"
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "deactivating",
+        "result": "oom-kill",
+        "populated": false
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "deactivating",
+        "result": "oom-kill",
+        "populated": true
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "deactivating",
+        "result": "oom-kill",
+        "oomKills": 0
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "deactivating",
+        "result": "oom-kill",
+        "oomKills": 0,
+        "populated": false
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "deactivating",
+        "result": "oom-kill",
+        "oomKills": 0,
+        "populated": true
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "deactivating",
+        "result": "oom-kill",
+        "oomKills": 1
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "deactivating",
+        "result": "oom-kill",
+        "oomKills": 1,
+        "populated": false
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "loaded",
+        "activeState": "deactivating",
+        "result": "oom-kill",
+        "oomKills": 1,
+        "populated": true
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "active",
+        "result": "success"
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "active",
+        "result": "success",
+        "populated": false
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "active",
+        "result": "success",
+        "populated": true
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "active",
+        "result": "success",
+        "oomKills": 0
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "active",
+        "result": "success",
+        "oomKills": 0,
+        "populated": false
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "active",
+        "result": "success",
+        "oomKills": 0,
+        "populated": true
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "active",
+        "result": "success",
+        "oomKills": 1
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "active",
+        "result": "success",
+        "oomKills": 1,
+        "populated": false
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "active",
+        "result": "success",
+        "oomKills": 1,
+        "populated": true
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "active",
+        "result": "oom-kill"
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "active",
+        "result": "oom-kill",
+        "populated": false
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "active",
+        "result": "oom-kill",
+        "populated": true
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "active",
+        "result": "oom-kill",
+        "oomKills": 0
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "active",
+        "result": "oom-kill",
+        "oomKills": 0,
+        "populated": false
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "active",
+        "result": "oom-kill",
+        "oomKills": 0,
+        "populated": true
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "active",
+        "result": "oom-kill",
+        "oomKills": 1
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "active",
+        "result": "oom-kill",
+        "oomKills": 1,
+        "populated": false
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "active",
+        "result": "oom-kill",
+        "oomKills": 1,
+        "populated": true
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "inactive",
+        "result": "success"
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "inactive",
+        "result": "success",
+        "populated": false
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "inactive",
+        "result": "success",
+        "populated": true
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "inactive",
+        "result": "success",
+        "oomKills": 0
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "inactive",
+        "result": "success",
+        "oomKills": 0,
+        "populated": false
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "inactive",
+        "result": "success",
+        "oomKills": 0,
+        "populated": true
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "inactive",
+        "result": "success",
+        "oomKills": 1
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "inactive",
+        "result": "success",
+        "oomKills": 1,
+        "populated": false
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "inactive",
+        "result": "success",
+        "oomKills": 1,
+        "populated": true
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "inactive",
+        "result": "oom-kill"
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "inactive",
+        "result": "oom-kill",
+        "populated": false
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "inactive",
+        "result": "oom-kill",
+        "populated": true
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "inactive",
+        "result": "oom-kill",
+        "oomKills": 0
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "inactive",
+        "result": "oom-kill",
+        "oomKills": 0,
+        "populated": false
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "inactive",
+        "result": "oom-kill",
+        "oomKills": 0,
+        "populated": true
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "inactive",
+        "result": "oom-kill",
+        "oomKills": 1
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "inactive",
+        "result": "oom-kill",
+        "oomKills": 1,
+        "populated": false
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "inactive",
+        "result": "oom-kill",
+        "oomKills": 1,
+        "populated": true
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "failed",
+        "result": "success"
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "failed",
+        "result": "success",
+        "populated": false
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "failed",
+        "result": "success",
+        "populated": true
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "failed",
+        "result": "success",
+        "oomKills": 0
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "failed",
+        "result": "success",
+        "oomKills": 0,
+        "populated": false
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "failed",
+        "result": "success",
+        "oomKills": 0,
+        "populated": true
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "failed",
+        "result": "success",
+        "oomKills": 1
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "failed",
+        "result": "success",
+        "oomKills": 1,
+        "populated": false
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "failed",
+        "result": "success",
+        "oomKills": 1,
+        "populated": true
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "failed",
+        "result": "oom-kill"
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "failed",
+        "result": "oom-kill",
+        "populated": false
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "failed",
+        "result": "oom-kill",
+        "populated": true
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "failed",
+        "result": "oom-kill",
+        "oomKills": 0
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "failed",
+        "result": "oom-kill",
+        "oomKills": 0,
+        "populated": false
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "failed",
+        "result": "oom-kill",
+        "oomKills": 0,
+        "populated": true
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "failed",
+        "result": "oom-kill",
+        "oomKills": 1
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "failed",
+        "result": "oom-kill",
+        "oomKills": 1,
+        "populated": false
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "failed",
+        "result": "oom-kill",
+        "oomKills": 1,
+        "populated": true
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "deactivating",
+        "result": "success"
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "deactivating",
+        "result": "success",
+        "populated": false
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "deactivating",
+        "result": "success",
+        "populated": true
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "deactivating",
+        "result": "success",
+        "oomKills": 0
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "deactivating",
+        "result": "success",
+        "oomKills": 0,
+        "populated": false
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "deactivating",
+        "result": "success",
+        "oomKills": 0,
+        "populated": true
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "deactivating",
+        "result": "success",
+        "oomKills": 1
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "deactivating",
+        "result": "success",
+        "oomKills": 1,
+        "populated": false
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "deactivating",
+        "result": "success",
+        "oomKills": 1,
+        "populated": true
+      },
+      "expected": "gone"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "deactivating",
+        "result": "oom-kill"
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "deactivating",
+        "result": "oom-kill",
+        "populated": false
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "deactivating",
+        "result": "oom-kill",
+        "populated": true
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "deactivating",
+        "result": "oom-kill",
+        "oomKills": 0
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "deactivating",
+        "result": "oom-kill",
+        "oomKills": 0,
+        "populated": false
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "deactivating",
+        "result": "oom-kill",
+        "oomKills": 0,
+        "populated": true
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "deactivating",
+        "result": "oom-kill",
+        "oomKills": 1
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "deactivating",
+        "result": "oom-kill",
+        "oomKills": 1,
+        "populated": false
+      },
+      "expected": "oom-killed"
+    },
+    {
+      "input": {
+        "loadState": "not-found",
+        "activeState": "deactivating",
+        "result": "oom-kill",
+        "oomKills": 1,
+        "populated": true
+      },
+      "expected": "oom-killed"
+    }
+  ]
+}

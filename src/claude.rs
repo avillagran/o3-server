@@ -1,15 +1,15 @@
 //! Direct Claude Code stream-json transport. No transcript cache or Node bridge.
 use crate::provider::{Provider, ProviderControl, ProviderEvent, RunInput};
+use crate::provider_frames::{Frame, FrameBuffer, FrameError, MAX_FRAME};
 use serde_json::{json, Value};
 use std::{
     collections::HashMap, future::Future, path::PathBuf, pin::Pin, process::Stdio, sync::Mutex,
 };
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncWriteExt, BufReader},
     process::{Child, ChildStdin, ChildStdout, Command},
     sync::{mpsc, watch},
 };
-const MAX_FRAME: usize = 1024 * 1024;
 const MAX_SESSIONS: usize = 16;
 /// A Claude Code session that launched this server exports these. A child spawned with them
 /// joins that session (id, messaging socket/token, effort). Upstream 47f2c8d29.
@@ -63,6 +63,7 @@ fn settings_entrypoint(instance: &[(String, String)]) -> Option<String> {
         .map(str::to_owned)
 }
 pub struct ClaudeProvider {
+    agent_scopes: Option<std::sync::Arc<crate::agent_scope::Registry>>,
     binary: PathBuf,
     idle_timeout: std::time::Duration,
     environment: Vec<(String, String)>,
@@ -71,11 +72,13 @@ pub struct ClaudeProvider {
     sessions: std::sync::Arc<Mutex<HashMap<String, Session>>>,
 }
 struct Session {
+    _agent_scope: Option<crate::agent_scope::Lease>,
+    native_mcp: Option<std::sync::Arc<crate::native_mcp::Context>>,
     _mcp_config: Option<PrivateConfig>,
     child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
-    buffer: Vec<u8>,
+    buffer: FrameBuffer,
     native: String,
     cwd: PathBuf,
     options: Value,
@@ -118,6 +121,7 @@ impl ClaudeProvider {
     }
     pub fn new(binary: PathBuf) -> Self {
         Self {
+            agent_scopes: None,
             binary,
             idle_timeout: std::time::Duration::from_secs(60),
             environment: Vec::new(),
@@ -130,6 +134,20 @@ impl ClaudeProvider {
         self.idle_timeout = timeout;
         self
     }
+    pub fn with_agent_scopes(
+        mut self,
+        registry: std::sync::Arc<crate::agent_scope::Registry>,
+    ) -> Self {
+        self.agent_scopes = Some(registry);
+        self
+    }
+    pub(crate) fn with_optional_agent_scopes(
+        mut self,
+        registry: Option<std::sync::Arc<crate::agent_scope::Registry>>,
+    ) -> Self {
+        self.agent_scopes = registry;
+        self
+    }
     pub fn with_launch_args(mut self, args: Vec<String>) -> Self {
         self.launch_args = args;
         self
@@ -139,7 +157,15 @@ impl ClaudeProvider {
         self
     }
     pub async fn shutdown(&self) {
-        let sessions = std::mem::take(&mut *self.sessions.lock().unwrap());
+        let sessions = {
+            let mut sessions = self.sessions.lock().unwrap();
+            for s in sessions.values() {
+                if let Some(c) = &s.native_mcp {
+                    c.revoke();
+                }
+            }
+            std::mem::take(&mut *sessions)
+        };
         for (_, mut session) in sessions {
             session.stop().await;
         }
@@ -156,7 +182,11 @@ impl ClaudeProvider {
             let expired = {
                 let mut map = sessions.lock().unwrap();
                 if map.get(&thread_id).is_some_and(|s| s.idle_since == stamp) {
-                    map.remove(&thread_id)
+                    let expired = map.remove(&thread_id);
+                    if let Some(context) = expired.as_ref().and_then(|s| s.native_mcp.as_ref()) {
+                        context.revoke();
+                    }
+                    expired
                 } else {
                     None
                 }
@@ -171,6 +201,12 @@ impl ClaudeProvider {
             crate::claude_models::compile(&input.model_selection)?;
         let mut cmd = Command::new(&self.binary);
         apply_environment(&mut cmd, &self.environment);
+        cmd.env(
+            "T3CODE_THREAD_ID",
+            input.model_selection["o3AppThreadId"]
+                .as_str()
+                .unwrap_or(&input.thread_id),
+        );
         cmd.args(&self.launch_args);
         cmd.args([
             "-p",
@@ -188,18 +224,28 @@ impl ClaudeProvider {
         .arg(model)
         .arg("--permission-mode")
         .arg(mode(input))
-        .process_group(0)
-        .current_dir(&input.cwd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
+        .current_dir(&input.cwd);
+        if input.model_selection["o3ColdCompact"] == true {
+            // Build the continuation summary without permitting historical tool replay.
+            cmd.args([
+                "--tools",
+                "",
+                "--strict-mcp-config",
+                "--mcp-config",
+                r#"{"mcpServers":{}}"#,
+            ]);
+        }
         if let Some(effort) = effort {
             cmd.arg("--effort").arg(effort);
         }
         let mut mcp_config = None;
-        if input.model_selection["o3BrowserMcp"].is_object() {
-            let mut config = input.model_selection["o3BrowserMcp"].clone();
+        let injected = if input.model_selection["o3NativeMcp"].is_object() {
+            &input.model_selection["o3NativeMcp"]
+        } else {
+            &input.model_selection["o3BrowserMcp"]
+        };
+        if injected.is_object() {
+            let mut config = injected.clone();
             config["type"] = json!("http");
             let file = PrivateConfig::create(&json!({"mcpServers":{"t3-code":config}}))?;
             cmd.arg("--mcp-config").arg(file.0.join("config.json"));
@@ -230,24 +276,53 @@ impl ClaudeProvider {
             ]);
         }
         cmd.arg("--settings").arg(settings.to_string());
+        if let Some(id) = input.model_selection["o3NewSessionId"].as_str() {
+            cmd.arg("--session-id").arg(id);
+        }
         if let Some(id) = input.model_selection["nativeForkSource"].as_str() {
             cmd.arg("--resume").arg(id).arg("--fork-session");
         } else if let Some(id) = &input.native_session_id {
             cmd.arg("--resume").arg(id);
         }
+
+        let (mut cmd, agent_scope) = if let Some(registry) = &self.agent_scopes {
+            let thread = input.model_selection["o3AppThreadId"]
+                .as_str()
+                .unwrap_or(&input.thread_id);
+            registry
+                .wrap(cmd, "claude", Some(thread), false, false)
+                .await?
+        } else {
+            (cmd, None)
+        };
+        cmd.process_group(0)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .kill_on_drop(true);
         let mut child = cmd.spawn().map_err(|e| format!("Claude spawn: {e}"))?;
         let stdin = child.stdin.take().ok_or("Claude stdin missing")?;
         let stdout = BufReader::new(child.stdout.take().ok_or("Claude stdout missing")?);
         let mut s = Session {
+            _agent_scope: agent_scope,
+            native_mcp: input.native_mcp.clone(),
             _mcp_config: mcp_config,
             child,
             stdin,
             stdout,
-            buffer: Vec::new(),
-            native: input.native_session_id.clone().unwrap_or_default(),
+            buffer: FrameBuffer::default(),
+            native: input
+                .native_session_id
+                .clone()
+                .or_else(|| {
+                    input.model_selection["o3NewSessionId"]
+                        .as_str()
+                        .map(str::to_owned)
+                })
+                .unwrap_or_default(),
             cwd: input.cwd.clone(),
             options: input.model_selection["options"].clone(),
-            browser: input.model_selection["o3BrowserMcp"].is_object(),
+            browser: injected.is_object(),
             idle_since: tokio::time::Instant::now(),
         };
         s.send(json!({"type":"control_request","request_id":"initialize","request":{"subtype":"initialize"}})).await?;
@@ -257,7 +332,7 @@ impl ClaudeProvider {
                 let v = s.frame().await?;
                 if v["type"] == "control_response" && v["response"]["request_id"] == "initialize" {
                     if v["response"]["subtype"] != "success" {
-                        return Err("Claude initialize rejected".into());
+                        return Err(format!("Claude initialize rejected: {}",v["response"]["error"].as_str().unwrap_or("native initialization failed").chars().take(500).collect::<String>()));
                     }
                     let response = &v["response"]["response"];
                     let mut metadata = self.metadata.lock().unwrap();
@@ -281,7 +356,54 @@ impl ClaudeProvider {
         })
         .await
         .map_err(|_| "Claude initialize timeout")??;
+        if let Some(context) = &input.native_mcp {
+            let sessions = std::sync::Arc::downgrade(&self.sessions);
+            let key = input.thread_id.clone();
+            let id = context.id().to_owned();
+            let dispose_sessions = sessions.clone();
+            let dispose_key = key.clone();
+            context.set_disposer(std::sync::Arc::new(move |_revoke| {
+                let sessions = dispose_sessions.clone();
+                let key = dispose_key.clone();
+                Box::pin(async move {
+                    let session = sessions
+                        .upgrade()
+                        .and_then(|sessions| sessions.lock().unwrap().remove(&key));
+                    if let Some(mut session) = session {
+                        session.stop().await;
+                    }
+                    Ok(())
+                })
+            }));
+            context.set_process_check(std::sync::Arc::new(move || {
+                let Some(sessions) = sessions.upgrade() else {
+                    return false;
+                };
+                let mut sessions = sessions.lock().unwrap();
+                sessions
+                    .get_mut(&key)
+                    .filter(|s| s.native_mcp.as_ref().is_some_and(|c| c.id() == id))
+                    .is_none_or(|s| matches!(s.child.try_wait(), Ok(None)))
+            }));
+        }
         Ok(s)
+    }
+    async fn recover_input(
+        &self,
+        input: &mut RunInput,
+        output: &mpsc::Sender<ProviderEvent>,
+        reason: crate::provider::NativeRecoveryReason,
+        current: &[Value],
+    ) -> Result<(), String> {
+        let id = crate::native_recovery::request(input, output, reason, current).await?;
+        let previous = self.sessions.lock().unwrap().remove(&input.thread_id);
+        if let Some(mut previous) = previous {
+            previous.stop().await;
+        }
+        if let Some(context) = &input.native_mcp {
+            context.revoke();
+        }
+        crate::native_recovery::released(output, id).await
     }
     async fn run(
         &self,
@@ -294,50 +416,140 @@ impl ClaudeProvider {
             return Ok(());
         }
         let mut content = crate::provider_input::content(&input, true)?;
-        if crate::claude_models::compile(&input.model_selection)?.3 {
-            let text = content[0]["text"].as_str().unwrap().to_owned();
-            content[0]["text"] = json!(format!("{text}\n\nultrathink"));
+        if let Some(reason) = crate::handoff_delivery::recovery_reason(&input, &content) {
+            self.recover_input(&mut input, &output, reason, &content)
+                .await?;
+            content = crate::provider_input::content(&input, true)?;
         }
-        let existing = if input.runtime_mode == "text-only" {
+        let maintenance = crate::handoff_delivery::maintenance_input(&input);
+        let manual = if maintenance {
+            vec![]
+        } else {
+            crate::handoff_delivery::manual(&input, &mut content)?
+        };
+        let mut deliveries = if maintenance {
+            vec![]
+        } else {
+            crate::handoff_delivery::prepare(&input, &content)?
+        };
+        if (!deliveries.is_empty() || !manual.is_empty()) && input.native_session_id.is_none() {
+            input.model_selection["o3NewSessionId"] = json!(crate::store::random_id()?);
+        }
+        if !deliveries.is_empty() {
+            let context = deliveries
+                .iter()
+                .map(|d| d.inline())
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            let current = content[0]["text"].as_str().unwrap_or("");
+            content[0]["text"] = json!(format!("{context}\n\nUser message:\n{current}"));
+        }
+        deliveries.extend(manual);
+        let existing = if input.runtime_mode == "text-only"
+            || input.model_selection["o3ForceNewNativeThread"] == true
+        {
             None
         } else {
             self.sessions.lock().unwrap().remove(&input.thread_id)
         };
-        let mut session = if let Some(mut s) = existing {
-            if input.native_session_id.is_none() && !s.native.is_empty() {
-                input.native_session_id = Some(s.native.clone());
-            }
-            if !s.browser
-                && !input.model_selection["o3BrowserMcp"].is_object()
-                && s.cwd == input.cwd
-                && s.options == input.model_selection["options"]
-                && s.child.try_wait().map_err(|e| e.to_string())?.is_none()
-            {
-                s.control(
-                    "model",
-                    json!({"subtype":"set_model","model":crate::claude_models::compile(&input.model_selection)?.0}),
-                )
-                .await?;
-                s.control(
-                    "mode",
-                    json!({"subtype":"set_permission_mode","mode":mode(&input)}),
-                )
-                .await?;
-                s
+        let loaded: Result<Session, String> = async {
+            let session = if let Some(mut s) = existing {
+                if input.native_session_id.is_none() && !s.native.is_empty() {
+                    input.native_session_id = Some(s.native.clone());
+                }
+                let same_mcp = match (&s.native_mcp, &input.native_mcp) {
+                    (Some(old), Some(new)) => old.id() == new.id(),
+                    (None, None) => {
+                        !s.browser
+                            && !input.model_selection["o3BrowserMcp"].is_object()
+                            && !input.model_selection["o3NativeMcp"].is_object()
+                    }
+                    _ => false,
+                };
+                if same_mcp
+                    && s.cwd == input.cwd
+                    && crate::selection_transition::option_key(&s.options) == crate::selection_transition::option_key(&input.model_selection["options"])
+                    && s.child.try_wait().map_err(|e| e.to_string())?.is_none()
+                {
+                    s.control(
+                        "model",
+                        json!({"subtype":"set_model","model":crate::claude_models::compile(&input.model_selection)?.0}),
+                    )
+                    .await?;
+                    s.control(
+                        "mode",
+                        json!({"subtype":"set_permission_mode","mode":mode(&input)}),
+                    )
+                    .await?;
+                    s
+                } else {
+                    s.stop().await;
+                    refresh_mcp(&mut input).await?;
+                    self.spawn(&input).await?
+                }
             } else {
-                s.stop().await;
+                refresh_mcp(&mut input).await?;
+                self.spawn(&input).await?
+            };
+            Ok(session)
+        }
+        .await;
+        let mut session = match loaded {
+            Ok(session) => session,
+            Err(error)
+                if input.model_selection["nativeForkSource"].is_string()
+                    || (input.native_session_id.is_some()
+                        && !crate::native_recovery::thread_in_use(&error)) =>
+            {
+                let base = crate::provider_input::content(&input, true)?;
+                let reason = if input.model_selection["nativeForkSource"].is_string() {
+                    crate::provider::NativeRecoveryReason::ForkFailed
+                } else {
+                    crate::provider::NativeRecoveryReason::ResumeFailed
+                };
+                self.recover_input(&mut input, &output, reason, &base)
+                    .await?;
+                content = crate::provider_input::content(&input, true)?;
+                let manual = if maintenance {
+                    vec![]
+                } else {
+                    crate::handoff_delivery::manual(&input, &mut content)?
+                };
+                deliveries = if maintenance {
+                    vec![]
+                } else {
+                    crate::handoff_delivery::prepare(&input, &content)?
+                };
+                if !deliveries.is_empty() {
+                    let history = deliveries
+                        .iter()
+                        .map(|d| d.inline())
+                        .collect::<Vec<_>>()
+                        .join("\n\n");
+                    let current = content[0]["text"].as_str().unwrap_or("");
+                    content[0]["text"] = json!(format!("{history}\n\nUser message:\n{current}"));
+                }
+                deliveries.extend(manual);
+                input.model_selection["o3NewSessionId"] = json!(crate::store::random_id()?);
+                refresh_mcp(&mut input).await?;
                 self.spawn(&input).await?
             }
-        } else {
-            self.spawn(&input).await?
+            Err(error) => return Err(error),
         };
+        if crate::claude_models::compile(&input.model_selection)?.3 {
+            let text = content[0]["text"].as_str().unwrap().to_owned();
+            content[0]["text"] = json!(format!("{text}\n\nultrathink"));
+        }
         let result = async {
             if *cancel.borrow() || output.is_closed() || matches!(control.try_recv(), Ok(ProviderControl::Interrupt)) { return Ok(false); }
+            for delivery in &deliveries {delivery.acknowledge(&output,&session.native,"pending").await?;}
+            let mut history_inline = false;
             session.send(json!({"type":"user","message":{"role":"user","content":content},"parent_tool_use_id":null,"session_id":session.native})).await?;
             output.send(ProviderEvent::Started).await.map_err(|_|"receiver closed")?;
             let mut pending: HashMap<String, Value> = HashMap::new();
             let mut boundary=TurnBoundary::default();
             let mut interrupt_requested=false;
+            let mut cold_compact_pending = input.model_selection["o3ColdCompact"] == true;
             loop {
                 tokio::select! {
                     biased;
@@ -389,7 +601,10 @@ impl ClaudeProvider {
                         if v["type"]=="rate_limit_event" {
                             self.metadata.lock().unwrap()["usageLimits"]=usage_limits(&v["rate_limit_info"]);
                         }
-                        if let Some(id)=v["session_id"].as_str() { session.native=id.into(); }
+                        if let Some(id)=v["session_id"].as_str() {
+                            session.native=id.into();
+                            if !history_inline { for delivery in &deliveries {delivery.acknowledge(&output,id,"inline").await?;} history_inline=true; }
+                        }
                         if v["type"]=="control_response" && v["response"]["subtype"]=="error" { return Err(format!("Claude control rejected: {}",v["response"]["error"])); }
                         if v["type"]=="control_cancel_request" {
                             if let Some(native)=v["request_id"].as_str() {
@@ -416,16 +631,28 @@ impl ClaudeProvider {
                             output.send(ProviderEvent::Native(json!({"type":"permission","request_id":format!("{}:{native}",input.run_id),"native_id":native,"request":v["request"]}))).await.map_err(|_|"receiver closed")?;
                         } else {
                             boundary.observe(&v)?;
-                            for event in decode(&v) {
-                                if matches!(event,ProviderEvent::Completed|ProviderEvent::Failed(_)) {boundary.terminal=Some(if interrupt_requested {ProviderEvent::Interrupted}else{event});} else {output.send(event).await.map_err(|_|"receiver closed")?;}
+                            for event in decode_with_continuation(&v, boundary.awaiting_continuation) {
+                                if matches!(event,ProviderEvent::Completed|ProviderEvent::Failed(_)) {boundary.awaiting_continuation=false; boundary.terminal=Some(if interrupt_requested {ProviderEvent::Interrupted}else{event});} else {output.send(event).await.map_err(|_|"receiver closed")?;}
                             }
                         }
-                        if boundary.ready() {output.send(boundary.terminal.take().unwrap()).await.map_err(|_|"receiver closed")?;return Ok(true); }
+                        if boundary.ready() {
+                            if cold_compact_pending && matches!(boundary.terminal, Some(ProviderEvent::Completed)) {
+                                cold_compact_pending = false;
+                                boundary = TurnBoundary::default();
+                                session.prompt("/compact").await?;
+                                continue;
+                            }
+                            output.send(boundary.terminal.take().unwrap()).await.map_err(|_|"receiver closed")?;
+                            return Ok(true);
+                        }
                     }
                 }
             }
         }.await;
-        if matches!(result, Ok(true)) && input.runtime_mode != "text-only" {
+        if matches!(result, Ok(true))
+            && input.runtime_mode != "text-only"
+            && input.model_selection["o3ColdCompact"] != true
+        {
             let stamp = tokio::time::Instant::now();
             session.idle_since = stamp;
             let thread_id = input.thread_id.clone();
@@ -433,7 +660,11 @@ impl ClaudeProvider {
                 let mut sessions = self.sessions.lock().unwrap();
                 let evicted = if sessions.len() >= MAX_SESSIONS {
                     let key = sessions.keys().next().cloned().unwrap();
-                    sessions.remove(&key)
+                    let removed = sessions.remove(&key);
+                    if let Some(c) = removed.as_ref().and_then(|s| s.native_mcp.as_ref()) {
+                        c.revoke();
+                    }
+                    removed
                 } else {
                     None
                 };
@@ -450,11 +681,23 @@ impl ClaudeProvider {
         result.map(|_| ())
     }
 }
+async fn refresh_mcp(input: &mut RunInput) -> Result<(), String> {
+    if let Some(context) = &input.native_mcp {
+        let context = context
+            .refresh(&input.cwd, &input.model_selection["options"])
+            .await?;
+        input.model_selection["o3NativeMcp"] = context.config();
+        input.native_mcp = Some(context);
+    }
+    Ok(())
+}
+
 #[derive(Default)]
 struct TurnBoundary {
     tasks: std::collections::HashSet<String>,
     ended: std::collections::HashSet<String>,
     terminal: Option<ProviderEvent>,
+    awaiting_continuation: bool,
 }
 impl TurnBoundary {
     fn observe(&mut self, v: &Value) -> Result<(), String> {
@@ -481,7 +724,15 @@ impl TurnBoundary {
                     }
                 }
                 if v["subtype"] == "task_notification" {
-                    self.tasks.remove(id);
+                    // The root's earlier result only acknowledged launching background work.
+                    // Claude next emits a task-notification turn; consume that turn before
+                    // settling the app run. Duplicate notifications cannot reopen a result.
+                    if self.tasks.remove(id)
+                        && matches!(self.terminal, Some(ProviderEvent::Completed))
+                    {
+                        self.terminal = None;
+                        self.awaiting_continuation = true;
+                    }
                     if self.ended.len() >= 1024 {
                         return Err("Claude completed task limit reached".into());
                     }
@@ -508,6 +759,9 @@ fn mode(input: &RunInput) -> &str {
 }
 impl Drop for Session {
     fn drop(&mut self) {
+        if let Some(context) = &self.native_mcp {
+            context.revoke();
+        }
         if let Some(pid) = self.child.id() {
             // Each CLI owns an isolated process group. Never leave tool grandchildren behind.
             // SAFETY: kill takes integer arguments and no pointers; pid is our live child's ID.
@@ -519,6 +773,9 @@ impl Drop for Session {
 }
 impl Session {
     async fn stop(&mut self) {
+        if let Some(context) = self.native_mcp.take() {
+            context.revoke();
+        }
         if let Some(pid) = self.child.id() {
             // SAFETY: the isolated group is owned by this Session, with no borrowed pointers.
             unsafe {
@@ -526,6 +783,9 @@ impl Session {
             }
         }
         let _ = self.child.kill().await;
+        if let Some(mut scope) = self._agent_scope.take() {
+            scope.stop().await;
+        }
     }
     async fn send(&mut self, v: Value) -> Result<(), String> {
         let mut bytes = serde_json::to_vec(&v).map_err(|e| e.to_string())?;
@@ -545,40 +805,64 @@ impl Session {
     async fn prompt(&mut self, text: &str) -> Result<(), String> {
         self.send(json!({"type":"user","message":{"role":"user","content":[{"type":"text","text":text}]},"parent_tool_use_id":null,"session_id":self.native})).await
     }
-    // fill_buf is cancellation safe; the partial frame survives select! cancellation.
+    // Cancellation safe; the partial frame survives select! cancellation. A frame above the
+    // buffering limit is drained and surfaced as `o3_oversized_frame` so the turn continues.
     async fn frame(&mut self) -> Result<Value, String> {
-        loop {
-            let bytes = self.stdout.fill_buf().await.map_err(|e| e.to_string())?;
-            if bytes.is_empty() {
-                return Err("Claude stdout closed".into());
+        match self.buffer.next(&mut self.stdout, MAX_FRAME).await {
+            Ok(Some(Frame::Json(v, _))) => Ok(v),
+            Ok(Some(Frame::Oversized(bytes))) => {
+                Ok(json!({"type":"o3_oversized_frame","bytes":bytes}))
             }
-            let n = bytes
-                .iter()
-                .position(|b| *b == b'\n')
-                .map(|n| n + 1)
-                .unwrap_or(bytes.len());
-            if self.buffer.len() + n > MAX_FRAME {
-                return Err("Claude frame exceeds 1 MiB".into());
-            }
-            let done = bytes[n - 1] == b'\n';
-            self.buffer.extend_from_slice(&bytes[..n]);
-            self.stdout.consume(n);
-            if done {
-                let v = serde_json::from_slice(&self.buffer)
-                    .map_err(|e| format!("Claude invalid JSON: {e}"));
-                self.buffer.clear();
-                return v;
-            }
+            Ok(None) | Err(FrameError::Truncated) => Err("Claude stdout closed".into()),
+            Err(FrameError::Io(e)) => Err(e),
+            Err(FrameError::Json(e)) => Err(format!("Claude invalid JSON: {e}")),
         }
     }
 }
 impl Provider for ClaudeProvider {
+    fn dispose<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            self.shutdown().await;
+            Ok(())
+        })
+    }
+
+    fn capabilities(&self, _instance: &str) -> Option<Value> {
+        crate::selection_transition::native_capabilities("claudeAgent")
+    }
+    fn plan_selection_transition(
+        &self,
+        _instance: &str,
+        _current: &Value,
+        _target: &Value,
+        _capabilities: &Value,
+    ) -> Result<Option<crate::selection_transition::Selection>, String> {
+        Ok(crate::selection_transition::turn_scoped())
+    }
+
+    fn detach<'a>(
+        &'a self,
+        _instance: &'a str,
+        key: &'a str,
+        _native: Option<&'a str>,
+        _revoke: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            let session = self.sessions.lock().unwrap().remove(key);
+            if let Some(mut session) = session {
+                session.stop().await;
+            }
+            Ok(())
+        })
+    }
+
     fn discover<'a>(
         &'a self,
         cwd: PathBuf,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(async move {
             let input = RunInput {
+                native_mcp: None,
                 provider_instance_id: "claudeAgent".into(),
                 native_session_id: None,
                 thread_id: "discovery".into(),
@@ -692,7 +976,11 @@ fn sdk_answers(answers: &Value) -> Result<Value, String> {
     Ok(Value::Object(result))
 }
 
+#[cfg(test)]
 pub(crate) fn decode(v: &Value) -> Vec<ProviderEvent> {
+    decode_with_continuation(v, false)
+}
+fn decode_with_continuation(v: &Value, awaiting_continuation: bool) -> Vec<ProviderEvent> {
     let mut out = Vec::new();
     match v["type"].as_str().unwrap_or("") {
         "stream_event" => {
@@ -727,9 +1015,36 @@ pub(crate) fn decode(v: &Value) -> Vec<ProviderEvent> {
             out.push(ProviderEvent::Native(json!({"type":"task","frame":v})))
         }
         "assistant" | "user" => {
+            if v["parent_tool_use_id"].is_null() {
+                if v["type"] == "assistant" && v["message"]["model"] != "<synthetic>" {
+                    out.push(ProviderEvent::Native(json!({"type":"goal_checked"})));
+                } else if v["message"]["model"] == "<synthetic>"
+                    || (v["type"] == "user" && v["isSynthetic"] == true)
+                {
+                    let text = crate::native_goal::claude_text(v);
+                    if crate::native_goal::trim(&text).starts_with("Goal ")
+                        || crate::native_goal::trim(&text).starts_with("No goal set")
+                        || text.starts_with("Stop hook feedback:\n[")
+                    {
+                        out.push(ProviderEvent::Native(
+                            json!({"type":"goal_message","message":v}),
+                        ));
+                        if v["type"] == "assistant"
+                            && (crate::native_goal::trim(&text).starts_with("Goal active: ")
+                                || crate::native_goal::trim(&text).starts_with("No goal set"))
+                        {
+                            out.push(ProviderEvent::TextDelta(text));
+                        }
+                    }
+                }
+            }
             if let Some(content) = v["message"]["content"].as_array() {
                 for block in content {
                     if matches!(block["type"].as_str(), Some("tool_use" | "tool_result")) {
+                        let mut block = block.clone();
+                        if block["type"] == "tool_result" {
+                            crate::provider_frames::redact_inline_binary(&mut block["content"]);
+                        }
                         out.push(ProviderEvent::Native(json!({"type":"tool","block":block,"parent_tool_use_id":v["parent_tool_use_id"]})));
                         if block["type"] == "tool_use" && block["name"] == "Bash" {
                             out.push(ProviderEvent::Command(
@@ -767,7 +1082,20 @@ pub(crate) fn decode(v: &Value) -> Vec<ProviderEvent> {
             }
         }
         "result" => {
-            out.push(ProviderEvent::Native(json!({"type":"usage","usage":v["usage"],"modelUsage":v["modelUsage"],"cost":v["total_cost_usd"],"session_id":v["session_id"]})));
+            // A resumed CLI can flush a zero-turn task-notification result before it
+            // processes our user message. It neither settles that message nor supplies
+            // its usage. An observed background completion, however, owns a continuation:
+            // its zero-turn result can legitimately settle that continuation without text.
+            // Upstream ClaudeAdapterV2 also distinguishes these two routes.
+            if !awaiting_continuation
+                && v["origin"]["kind"] == "task-notification"
+                && v["num_turns"].as_u64() == Some(0)
+                && v["subtype"] == "success"
+                && v["is_error"] != true
+            {
+                return out;
+            }
+            out.push(ProviderEvent::Native(json!({"type":"usage","usage":v["usage"],"modelUsage":v["modelUsage"],"cost":v["total_cost_usd"],"session_id":v["session_id"],"origin":v["origin"],"num_turns":v["num_turns"],"subtype":v["subtype"],"terminal_reason":v["terminal_reason"]})));
             out.push(if v["is_error"] == true || v["subtype"] != "success" {
                 ProviderEvent::Failed(v["result"].as_str().unwrap_or("Claude turn failed").into())
             } else {
@@ -920,11 +1248,13 @@ mod tests {
         let pid = child.id().unwrap();
         let stamp = tokio::time::Instant::now();
         let session = Session {
+            _agent_scope: None,
+            native_mcp: None,
             _mcp_config: None,
             stdin: child.stdin.take().unwrap(),
             stdout: BufReader::new(child.stdout.take().unwrap()),
             child,
-            buffer: vec![],
+            buffer: FrameBuffer::default(),
             native: "fixture".into(),
             cwd: PathBuf::new(),
             options: Value::Null,
@@ -962,11 +1292,13 @@ mod tests {
             .unwrap();
         let pid = child.id().unwrap();
         let session = Session {
+            _agent_scope: None,
+            native_mcp: None,
             _mcp_config: None,
             stdin: child.stdin.take().unwrap(),
             stdout: BufReader::new(child.stdout.take().unwrap()),
             child,
-            buffer: vec![],
+            buffer: FrameBuffer::default(),
             native: "conversation".into(),
             cwd: PathBuf::new(),
             options: Value::Null,
@@ -979,6 +1311,7 @@ mod tests {
             .unwrap()
             .insert("collision".into(), session);
         let input = RunInput {
+            native_mcp: None,
             provider_instance_id: "claudeAgent".into(),
             native_session_id: None,
             thread_id: "collision".into(),
@@ -1057,7 +1390,7 @@ mod tests {
         );
     }
     #[tokio::test]
-    async fn oversized_and_malformed_frames_fail_bounded() {
+    async fn oversized_frames_are_skipped_and_malformed_frames_fail() {
         let mut child = Command::new("sh")
             .args(["-c", "printf 'not-json\\n'"])
             .stdin(Stdio::piped())
@@ -1066,11 +1399,13 @@ mod tests {
             .spawn()
             .unwrap();
         let mut s = Session {
+            _agent_scope: None,
+            native_mcp: None,
             _mcp_config: None,
             stdin: child.stdin.take().unwrap(),
             stdout: BufReader::new(child.stdout.take().unwrap()),
             child,
-            buffer: vec![],
+            buffer: FrameBuffer::default(),
             native: String::new(),
             cwd: PathBuf::new(),
             options: Value::Null,
@@ -1080,27 +1415,57 @@ mod tests {
         assert!(s.frame().await.unwrap_err().contains("invalid JSON"));
         let _ = s.child.wait().await;
         let mut child = Command::new("sh")
-            .args(["-c", "head -c 1048577 /dev/zero"])
+            .args([
+                "-c",
+                "head -c 67108865 /dev/zero; printf '\\n{\"type\":\"result\"}\\n'",
+            ])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .kill_on_drop(true)
             .spawn()
             .unwrap();
         let mut s = Session {
+            _agent_scope: None,
+            native_mcp: None,
             _mcp_config: None,
             stdin: child.stdin.take().unwrap(),
             stdout: BufReader::new(child.stdout.take().unwrap()),
             child,
-            buffer: vec![],
+            buffer: FrameBuffer::default(),
             native: String::new(),
             cwd: PathBuf::new(),
             options: Value::Null,
             browser: false,
             idle_since: tokio::time::Instant::now(),
         };
-        assert!(s.frame().await.unwrap_err().contains("exceeds"));
+        let skipped = s.frame().await.unwrap();
+        assert_eq!(skipped["type"], "o3_oversized_frame");
+        assert_eq!(skipped["bytes"], MAX_FRAME + 2);
         assert!(s.buffer.len() <= MAX_FRAME);
+        assert_eq!(s.frame().await.unwrap()["type"], "result");
         s.stop().await;
+    }
+    #[test]
+    fn tool_result_images_are_not_forwarded_as_base64() {
+        let data = "A".repeat(4 * 1024 * 1024);
+        let frame = json!({"type":"user","parent_tool_use_id":null,"message":{"role":"user","content":[
+            {"type":"tool_result","tool_use_id":"read","content":[
+                {"type":"image","source":{"type":"base64","media_type":"image/png","data":data}}
+            ]}
+        ]}});
+        let events = decode(&frame);
+        let tool = events
+            .iter()
+            .find_map(|e| match e {
+                ProviderEvent::Native(v) if v["type"] == "tool" => Some(v),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(
+            tool["block"]["content"][0]["source"]["data"],
+            "[omitted 4194304 bytes of base64 data]"
+        );
+        assert!(serde_json::to_vec(tool).unwrap().len() < 4096);
     }
     #[test]
     fn observed_steering_and_interrupt_boundaries() {
@@ -1124,6 +1489,43 @@ mod tests {
             .any(|e| matches!(e, ProviderEvent::Failed(_))));
     }
     #[test]
+    fn empty_task_notification_result_does_not_finish_submitted_prompt() {
+        let mut boundary = TurnBoundary::default();
+        let unrelated = json!({"type":"result","subtype":"success","is_error":false,
+            "origin":{"kind":"task-notification"},"num_turns":0,
+            "result":"","usage":{"input_tokens":0,"output_tokens":0}});
+        for event in decode(&unrelated) {
+            if matches!(event, ProviderEvent::Completed | ProviderEvent::Failed(_)) {
+                boundary.terminal = Some(event);
+            }
+        }
+        assert!(
+            !boundary.ready(),
+            "a notification is not the submitted prompt's result"
+        );
+        let reply = json!({"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"actual reply"}}});
+        assert!(!decode(&reply).is_empty());
+        let own = json!({"type":"result","subtype":"success","num_turns":1,
+            "origin":{"kind":"human"},"usage":{"input_tokens":10,"output_tokens":2}});
+        for event in decode(&own) {
+            if matches!(event, ProviderEvent::Completed | ProviderEvent::Failed(_)) {
+                boundary.terminal = Some(event);
+            }
+        }
+        assert!(boundary.ready());
+        // Do not hide zero-turn human commands, errors or real notification turns.
+        for result in [
+            json!({"type":"result","subtype":"success","num_turns":0,"origin":{"kind":"human"}}),
+            json!({"type":"result","subtype":"error_during_execution","is_error":true,"num_turns":0,"origin":{"kind":"task-notification"}}),
+            json!({"type":"result","subtype":"success","num_turns":1,"origin":{"kind":"task-notification"}}),
+        ] {
+            assert!(decode(&result)
+                .iter()
+                .any(|e| matches!(e, ProviderEvent::Completed | ProviderEvent::Failed(_))));
+        }
+    }
+
+    #[test]
     fn background_acknowledgement_does_not_finish_parent() {
         let frames: Vec<Value> = include_str!("../tests/fixtures/claude/subagent.jsonl")
             .lines()
@@ -1143,7 +1545,30 @@ mod tests {
         // Reorder the observed terminal boundary to exercise a background completion race.
         assert!(!boundary.ready());
         boundary.observe(done).unwrap();
+        assert!(!boundary.ready(), "the parent's response is still unread");
+        assert!(boundary.awaiting_continuation);
+        let reply = json!({"type":"result","subtype":"success","origin":{"kind":"task-notification"},"num_turns":1});
+        for event in decode_with_continuation(&reply, boundary.awaiting_continuation) {
+            if matches!(event, ProviderEvent::Completed | ProviderEvent::Failed(_)) {
+                boundary.terminal = Some(event);
+            }
+        }
         assert!(boundary.ready());
+        boundary.observe(done).unwrap();
+        assert!(
+            boundary.ready(),
+            "a duplicate must not reopen the continuation"
+        );
+    }
+
+    #[test]
+    fn owned_zero_turn_notification_settles_only_its_continuation() {
+        let result = json!({"type":"result","subtype":"success","is_error":false,
+            "origin":{"kind":"task-notification"},"num_turns":0});
+        assert!(decode(&result).is_empty());
+        assert!(decode_with_continuation(&result, true)
+            .iter()
+            .any(|event| matches!(event, ProviderEvent::Completed)));
     }
     #[tokio::test]
     #[ignore = "uses installed Claude credentials and Haiku quota; only temporary workspace"]
@@ -1161,6 +1586,7 @@ mod tests {
             resume: Option<String>,
         ) -> Vec<ProviderEvent> {
             let input = RunInput {
+                native_mcp: None,
                 provider_instance_id: "claude".into(),
                 native_session_id: resume,
                 thread_id: "live".into(),

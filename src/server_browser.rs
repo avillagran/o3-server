@@ -22,6 +22,8 @@ type Request = (
 );
 #[derive(Default)]
 pub struct Browsers {
+    #[cfg(test)]
+    pub(crate) fixture_binary: std::sync::Mutex<Option<PathBuf>>,
     tabs: Mutex<BTreeMap<(String, String), Tab>>,
     viewers: std::sync::Mutex<std::collections::BTreeSet<(String, String)>>,
 }
@@ -95,9 +97,13 @@ impl Drop for Group {
         }
     }
 }
-async fn launch(root: &Path, profile: &str) -> Result<Tab, String> {
-    use std::os::fd::AsRawFd;
-    let binary=executable().ok_or("Install a system Chromium browser, or set O3_BROWSER_BINARY to its executable; o3 does not download browsers")?;
+async fn launch(
+    root: &Path,
+    profile: &str,
+    registry: &std::sync::Arc<crate::agent_scope::Registry>,
+    binary: PathBuf,
+) -> Result<Tab, String> {
+    use std::os::fd::{AsRawFd, FromRawFd};
     let ephemeral = profile == "incognito" || profile.starts_with("agent:");
     let dir = directory(
         root,
@@ -111,16 +117,6 @@ async fn launch(root: &Path, profile: &str) -> Result<Tab, String> {
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
         .map_err(|_| "Cannot restrict browser profile permissions")?;
-    let (parent, child_pipe) =
-        std::os::unix::net::UnixStream::pair().map_err(|_| "Cannot create CDP pipe")?;
-    parent
-        .set_nonblocking(true)
-        .map_err(|_| "Cannot configure CDP pipe")?;
-    // Duplicate above stdio to avoid an fd 3/4 collision during pre_exec.
-    let fd = unsafe { libc::fcntl(child_pipe.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 10) };
-    if fd < 0 {
-        return Err("Cannot allocate CDP pipe".into());
-    }
     let mut command = tokio::process::Command::new(binary);
     command
         .args([
@@ -133,7 +129,22 @@ async fn launch(root: &Path, profile: &str) -> Result<Tab, String> {
             "--disable-sync",
         ])
         .arg(format!("--user-data-dir={}", dir.display()))
-        .arg("about:blank")
+        .arg("about:blank");
+    let (mut command, mut agent_scope) = registry
+        .wrap(command, "preview-browser", None, false, false)
+        .await?;
+    let (parent, child_pipe) =
+        std::os::unix::net::UnixStream::pair().map_err(|_| "Cannot create CDP pipe")?;
+    parent
+        .set_nonblocking(true)
+        .map_err(|_| "Cannot configure CDP pipe")?;
+    // Keep allocation after scope preparation and own the duplicate across all error paths.
+    let raw_fd = unsafe { libc::fcntl(child_pipe.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 10) };
+    if raw_fd < 0 {
+        return Err("Cannot allocate CDP pipe".into());
+    }
+    let fd = unsafe { std::os::fd::OwnedFd::from_raw_fd(raw_fd) };
+    command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -141,17 +152,15 @@ async fn launch(root: &Path, profile: &str) -> Result<Tab, String> {
         .process_group(0);
     unsafe {
         command.pre_exec(move || {
-            if libc::dup2(fd, 3) < 0 || libc::dup2(fd, 4) < 0 {
+            if libc::dup2(raw_fd, 3) < 0 || libc::dup2(raw_fd, 4) < 0 {
                 return Err(std::io::Error::last_os_error());
             }
-            libc::close(fd);
+            libc::close(raw_fd);
             Ok(())
         });
     }
     let spawned = command.spawn();
-    unsafe {
-        libc::close(fd);
-    }
+    drop(fd);
     let mut child = spawned.map_err(|_| {
         "Cannot start system Chromium; check its executable and sandbox dependencies"
     })?;
@@ -226,6 +235,9 @@ async fn launch(root: &Path, profile: &str) -> Result<Tab, String> {
         let _ = child.kill().await;
         let _ = child.wait().await;
         drop(_group);
+        if let Some(scope) = agent_scope.as_mut() {
+            scope.stop().await;
+        }
         if ephemeral {
             let _ = std::fs::remove_dir_all(&dir);
         }
@@ -321,7 +333,7 @@ impl Browsers {
     }
     pub async fn open(
         &self,
-        root: &Path,
+        state: &crate::store::State,
         thread: &str,
         tab: &str,
         profile: &str,
@@ -340,7 +352,19 @@ impl Browsers {
         {
             existing.clone()
         } else {
-            launch(root, profile).await.map_err(error)?
+            #[cfg(test)]
+            let binary = self
+                .fixture_binary
+                .lock()
+                .unwrap()
+                .clone()
+                .or_else(executable);
+            #[cfg(not(test))]
+            let binary = executable();
+            let binary=binary.ok_or_else(||error("Install a system Chromium browser, or set O3_BROWSER_BINARY to its executable; o3 does not download browsers".into()))?;
+            launch(&state.dir, profile, &state.agent_scopes, binary)
+                .await
+                .map_err(error)?
         };
         // A browser-level request creates a page. The actor routes page commands to
         // the attached target using flattened sessionId.

@@ -1,0 +1,61 @@
+{
+  "checkedAt": "2026-11-04T18:28:52.397725+00:00",
+  "tag": "v0.1.8-nightly.20261104.4179",
+  "reference": "9e85538535c8553901351112ab02dd1dd62db5ee",
+  "url": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.8-nightly.20261104.4179",
+  "scope": "Provider session transition planning and native turn-scoped preferences. Full protocol goal remains active.",
+  "sourceFiles": [
+    "apps/server/src/orchestration-v2/ProviderSessionTransitionPolicy.ts",
+    "apps/server/src/orchestration-v2/ProviderSessionTransitionPolicy.test.ts",
+    "apps/server/src/orchestration-v2/ProviderSwitchService.ts",
+    "apps/server/src/orchestration-v2/ProviderSwitchService.test.ts",
+    "apps/server/src/orchestration-v2/Orchestrator.ts",
+    "apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts",
+    "apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts",
+    "packages/provider-core/src/server/selectionTransition.ts",
+    "packages/shared/src/model.ts"
+  ],
+  "implemented": [
+    "Typed reuse, switch_model_in_session, restart_and_resume, create_with_handoff and reject decisions. Selection classification precedes workspace/runtime restart decisions; incompatible continuation wins over selection classification. Interaction mode is turn-scoped. Native Codex/Claude classify selections for their next turn; ACP capability classification is available to adapters without registering an ACP runtime. Missing classifications reject active/native-history changes.",
+    "The planner selects the newest live session rather than a newer stopped/error record, retaining newest negotiated capabilities when only native history remains. Logical release-session selection follows restart vs handoff policy. Registry routers use exact configured aliases before canonical fallback.",
+    "Metadata decisions persist transactionally in a private selection-plan table until matching native-owner/run admission. Same-instance classified restarts resume the native row; classified handoffs use a different root and portable history. Unexecuted composer metadata cannot replace a queued run native owner. Corrupt plans fail with transaction rollback; deletion clears unused plans. Comprehensive pooled/retired-session cleanup remains pending.",
+    "Native same-instance selection/steering can update future thread preferences while preserving the running attempt. Runtime/interaction modes may change during supported native sessions. Admitted model/policy remains frozen privately for the current attempt; native session projections report its model. Next admission captures new preferences. No active restart is introduced for turn-scoped steering.",
+    "Model equality ignores option ordering and omitted-vs-empty arrays while retaining explicit false and typed values. Canonical option keys avoid unnecessary MCP credential/process churn; equivalent reordering preserves approval policies. provider.switch routes through the same guarded planning/receipt path with provider-switched events.",
+    "Legacy claude/claude-code aliases resolve canonical driver, shared home, project enable policy and MCP instance configuration when no exact entry exists. Exact alias settings and project overrides retain precedence. Old compatible-client alias selection and a canonical profile with a different configured native driver are covered.",
+    "An explicit same-instance restart with no model in its message captures current thread preferences, with legacy fallback to the recorded run. Receipt failure rolls back its replacement attempt and never sends the native interrupt. This case was red with the original model before correction."
+  ],
+  "evidence": [
+    "Original active model steering failed with change model after the active run finishes. Both native subprocess adapters now complete one original run/attempt while updating next-turn preferences, with and without an earlier metadata command. Native start/resume/control frames show the model and modes on the next turn.",
+    "A generator executes pinned TypeScript policy/equality/classifiers:82 policy cases,8 equality cases and6 ACP cases. A separate service test covers newest-live release, stopped/error/native fallback, dead-record capability refusal and corrupt-plan rollback.",
+    "Compatible Rust Connection and native peers verify durable restart/handoff/refusal/missing classification, State reopen before admission, unavailable targets, deletion, canonical alias binding, stable process/native identity on option reordering and preserved approval rows. Existing queue restore, transfer, home, restart and deletion suites remain checks.",
+    "Four app turns with installed Codex gpt-6.1-sol and Claude Haiku plus two steering deliveries pass in isolated credential-copy homes. A native shell command remains active during preference changes and finishes; the original attempt/model is retained, subsequent preferences are applied, and the next turn recalls a private codeword with the same native conversation and no portable handoff. Owned-process/private-home cleanup completes."
+  ],
+  "validation": {
+    "status": "passed",
+    "fullDefault": 441,
+    "fullNoDefault": 438,
+    "ignoredEach": 26,
+    "finalAffectedEach": 28,
+    "finalAffectedIgnoredEach": 1,
+    "strictClippy": "all targets, both feature modes",
+    "other": [
+      "rustfmt",
+      "generated compatibility table",
+      "nightly monitor9",
+      "git diff --check",
+      "Python syntax",
+      "96-case TypeScript fixture reproduction",
+      "four installed native app turns plus two steering deliveries"
+    ],
+    "scopeNotes": [
+      "The complete suites precede the final small implicit restart-preference fallback fix. Final restart/selection/compatible-client suites pass28per mode (1opt-in ignored), including the new red-to-green implicit case and explicit rollback/replay. Both strict Clippy modes cover the final source. Native steering implementation is unchanged after its installed proof.",
+      "Remote minimal CI on156bca5 found the locked-worktree fixture retried after directory removal but before durable cleanup acknowledgement. The fixture now waits for the same pending predicate as prepared-run.retry. Both staged-launch suites10each,12targeted repetitions per mode and strict Clippy both modes pass; production code is unchanged."
+    ]
+  },
+  "pending": [
+    "Active cross-instance interrupt/restart/continuation/settlement, all provider registry replacement/pool lifetimes and actual release of every historical/pooled binding selected by the logical plan.",
+    "Complete SDK options/live flag application, legacy historical anchors, native/source-busy/subagent/setup-side-chat guards, timeline/event ordering and queue/background-session preservation in all transitions.",
+    "Exact ICU localeCompare tie behavior for exotic canonically equivalent duplicate option IDs/values remains unverified; current equality goldens cover ordinary Unicode values and ASCII typed ties.",
+    "request_secret4179 and remaining MCP/auth/environment/drivers/importer/forceStop surfaces; source-wide differential, current desktop/Android acceptance and resource measurements. No deployment, main promotion or M2 changes."
+  ]
+}
