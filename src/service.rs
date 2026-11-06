@@ -12,7 +12,7 @@ fn quote(s: &str) -> io::Result<String> {
     ))
 }
 pub fn unit(exe: &Path, base: &Path) -> io::Result<String> {
-    Ok(format!("[Unit]\nDescription=T3 compatible o3-server\nAfter=network.target\n\n[Service]\nType=simple\nEnvironment={}\nExecStart={} serve --base-dir {}\nRestart=on-failure\n\n[Install]\nWantedBy=default.target\n",quote(&format!("T3CODE_HOME={}",base.display()))?,quote(&exe.to_string_lossy())?,quote(&base.to_string_lossy())?))
+    Ok(format!("[Unit]\nDescription=T3 compatible o3-server\nAfter=network.target\n\n[Service]\nType=simple\nEnvironment={}\nExecStart={} serve --base-dir {}\nRestart=on-failure\nKillMode=mixed\n\n[Install]\nWantedBy=default.target\n",quote(&format!("T3CODE_HOME={}",base.display()))?,quote(&exe.to_string_lossy())?,quote(&base.to_string_lossy())?))
 }
 pub fn install(base: &Path, dry_run: bool) -> io::Result<()> {
     let content = unit(&std::env::current_exe()?, base)?;

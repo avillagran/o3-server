@@ -59,6 +59,15 @@ fn spawn(root: &Path) -> Server {
 
 #[test]
 fn server_restart_resumes_a_legacy_active_goal_without_replacing_the_goal_or_app_run() {
+    resume_after_shutdown(false);
+}
+
+#[test]
+fn graceful_server_shutdown_preserves_active_goal_and_automatic_continuation() {
+    resume_after_shutdown(true);
+}
+
+fn resume_after_shutdown(graceful: bool) {
     let root = std::env::temp_dir().join(format!(
         "o3-goal-upgrade-{}",
         o3_server::store::random_id().unwrap()
@@ -108,8 +117,21 @@ fn server_restart_resumes_a_legacy_active_goal_without_replacing_the_goal_or_app
         record(&root, "providerThreads", "p")["goal"]["status"] == "active"
             && record(&root, "runs", "r")["status"] == "running"
     });
-    first.0.kill().unwrap();
-    first.0.wait().unwrap();
+    if graceful {
+        assert!(Command::new("kill")
+            .args(["-TERM", &first.0.id().to_string()])
+            .status()
+            .unwrap()
+            .success());
+    } else {
+        first.0.kill().unwrap();
+    }
+    let exit = first.0.wait().unwrap();
+    if graceful {
+        assert!(exit.success(), "graceful shutdown must exit successfully");
+        assert_eq!(record(&root, "runs", "r")["status"], "running");
+        assert_eq!(record(&root, "providerThreads", "p")["goal"], goal);
+    }
     let previous_binding = record(&root, "providerThreads", "p")["updatedAt"].clone();
     std::fs::write(
         root.join("resume-goal.json"),

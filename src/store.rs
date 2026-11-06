@@ -27,6 +27,7 @@ pub const STANDARD_SCOPES: [&str; 16] = [
 ];
 
 pub struct State {
+    pub(crate) shutting_down: std::sync::atomic::AtomicBool,
     pub agent_scopes: std::sync::Arc<crate::agent_scope::Registry>,
     pub(crate) forge: crate::forge::GitHub,
     pub(crate) rollback_pending: std::sync::atomic::AtomicBool,
@@ -219,6 +220,7 @@ impl State {
         streams.terminals.set_agent_scopes(agent_scopes.clone());
         streams.terminals.restore(&dir.join("terminal-history"))?;
         Ok(Self {
+            shutting_down: Default::default(),
             agent_scopes,
             forge: Default::default(),
             rollback_pending: std::sync::atomic::AtomicBool::new(false),
@@ -457,6 +459,15 @@ impl State {
         self.rpc_clients.load(std::sync::atomic::Ordering::Relaxed) > 0
             || !self.active.lock().unwrap().is_empty()
     }
+    /// Fence provider receipts before closing native processes. A server shutdown
+    /// leaves durable executions available to startup recovery, without user Stop.
+    pub fn begin_shutdown(&self) {
+        let _db = self.db.lock().unwrap();
+        self.shutting_down
+            .store(true, std::sync::atomic::Ordering::Release);
+        self.notify();
+    }
+
     pub fn notify(&self) {
         let (dirty, wake) = &*self.checkpoint_wake;
         *dirty.lock().unwrap() = true;
