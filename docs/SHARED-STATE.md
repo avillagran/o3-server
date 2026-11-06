@@ -26,9 +26,12 @@ not rebuild projections at start: it trusts them, after checking that the
 `orchestration_v2_projection_metadata` high-water mark equals the newest agent event and that every
 projected thread has a `thread.created` event. So O3 writes both, exactly as T3's event sink does:
 
-1. **Schema gate.** O3 writes only when the newest row in `effect_sql_migrations` is migration 73,
-   `ActiveTurnItemIndexes` (`t3_shared::MIGRATION_HEAD`), and the projection schema is version 2.
-   Any other base is left untouched and O3 logs why; a newer T3 needs a matching O3.
+1. **Schema gate.** O3 supports exactly migration 80, `ScheduledTaskThreadMode`
+   (`t3_shared::MIGRATION_HEAD`), and the legacy migration 73, `ActiveTurnItemIndexes`,
+   with projection schema version 2. Migration 80 must also contain its new subagent, project
+   and task columns. Intermediate, newer or malformed bases are refused before sync writes.
+   T3 owns schema creation and migration; O3 does not upgrade a database. See
+   [Nightly migration 80 acceptance](nightly/SHARED-SCHEMA-80.md).
 2. **Marks.** Triggers on O3's `records` table mark every changed record of a shared kind in
    `t3_dirty`, with a version so a record rewritten during an export stays marked.
 3. **Export.** A background thread drains the marks about every 250 ms, and once more when the server
@@ -38,7 +41,10 @@ projected thread has a `thread.created` event. So O3 writes both, exactly as T3'
    (recorded run fields, subagent completion delivery, provider turn token usage, the active
    provider thread on the thread row, turn item positions and the thread's `updatedAt`). The
    high-water mark and O3's cursor move in the same transaction. A record T3's columns cannot hold
-   is skipped and listed in `t3_rejects`.
+   is skipped and listed in `t3_rejects`. A later valid export clears that rejection.
+   Migration 80 also writes indexed subagent delivery state and project pin/archive timestamps;
+   old migration 73 rejects project flags it cannot store without dropping O3's local intent.
+   The first migration-80 startup revisits projects previously exported by an older mapping.
 4. **Catch-up.** At start, O3 reads T3's events after its cursor (`o3_sync.o3SeenSequence`) and takes
    in the current T3 row of every record they touched, emitting client events so open clients see
    the change.
@@ -65,6 +71,12 @@ O3-only data with no T3 table (usage ledger, background and Claude tasks, MCP cl
 
 - `tests/t3_shared.rs` builds T3's schema at migration 73 (`tests/fixtures/t3-statev2-73.sql`) and
   covers both directions, idempotent re-export, adoption and the schema gate.
+- `tools/test-shared-nightly` builds without executing on the host, then runs the eight
+  legacy tests and six migration-80 regressions in a credential-free, network-disabled
+  rootless container. The migration-80 fixture contains schema only from the official runtime.
+- `tools/live-fresh-context --export-database <synthetic-o3.sqlite> --reference-root <4262-package>`
+  exports migration 80 and proves O3 → T3 → O3 → T3 handover on one disposable profile,
+  preserving sixteen messages and both fresh-context markers.
 - `tests/shared_acceptance.rs` (opt-in) runs O3 on a copy of a real profile, then the real T3 runtime
   on the same copy, and reads every live thread through T3's own decoders.
 - `tools/validate-t3-shared.ts` decodes every projection row, and the events O3 wrote, with T3's

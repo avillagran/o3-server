@@ -2,15 +2,18 @@
 """Build acceptance without running it on the host, then execute in rootless podman."""
 import argparse, json, os, pathlib, subprocess, tempfile, uuid
 parser = argparse.ArgumentParser(description=__doc__)
-mode = parser.add_mutually_exclusive_group()
-mode.add_argument("--export-database", type=pathlib.Path)
-mode.add_argument("--reference-root", type=pathlib.Path)
+parser.add_argument("--export-database", type=pathlib.Path)
+parser.add_argument("--reference-root", type=pathlib.Path)
 options = parser.parse_args()
 root = pathlib.Path(__file__).resolve().parent.parent
 build_env = dict(os.environ)
 build_env.setdefault('CARGO_TARGET_DIR', '/var/tmp/o3-server/fresh-context-target')
 build = subprocess.run(['cargo', 'test', '--locked', '--no-default-features', '--test', 'fresh_context_live', '--no-run', '--message-format=json'], cwd=root, env=build_env, capture_output=True, text=True)
 if build.returncode:
+    for line in build.stdout.splitlines():
+        diagnostic = json.loads(line).get("message", {})
+        if diagnostic.get("rendered"):
+            print(diagnostic["rendered"], flush=True)
     print(build.stderr, flush=True)
     raise SystemExit(build.returncode)
 binary = next(pathlib.Path(v['executable']) for line in build.stdout.splitlines() if (v := json.loads(line)).get('executable') and v.get('target', {}).get('name') == 'fresh_context_live')
@@ -27,12 +30,13 @@ else:
         if not source.is_file():
             raise SystemExit(f'Missing native authentication file: {source}')
     native_mounts=[(claude,'/native/claude'),(codex,'/native/codex'),*credentials]
-    if options.reference_root:
-        reference=options.reference_root.resolve()
-        if not (reference/'t3').is_file():
-            raise SystemExit('Reference root must contain the extracted t3 binary')
-        node=pathlib.Path(subprocess.check_output(['mise','where','node'],text=True).strip()).resolve()
-        native_mounts += [(reference,'/reference'),(node,'/native/node')]
+
+if options.reference_root:
+    reference=options.reference_root.resolve()
+    if not (reference/'t3').is_file():
+        raise SystemExit('Reference root must contain the extracted t3 binary')
+    node=pathlib.Path(subprocess.check_output(['mise','where','node'],text=True).strip()).resolve()
+    native_mounts += [(reference,'/reference'),(node,'/native/node')]
 
 state = pathlib.Path(tempfile.mkdtemp(prefix='o3-fresh-native-', dir='/var/tmp'))
 evidence = state / 'evidence'

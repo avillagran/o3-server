@@ -365,7 +365,7 @@ fn shared_native_projection_export() {
     let state = State::open(&dir).unwrap();
     let shared = rusqlite::Connection::open("/evidence/statev2.sqlite").unwrap();
     shared
-        .execute_batch(include_str!("fixtures/t3-statev2-73.sql"))
+        .execute_batch(include_str!("fixtures/t3-statev2-80.sql"))
         .unwrap();
     drop(shared);
     let mut shared = o3_server::t3_shared::open(std::path::Path::new("/evidence"))
@@ -383,6 +383,94 @@ fn shared_native_projection_export() {
         )
         .unwrap();
     assert_eq!(messages, 16);
-    std::fs::write("/evidence/shared-result.json",serde_json::to_vec_pretty(&json!({"exportedRecords":exported,"freshRuns":marked,"messages":messages,"migrationHead":73})).unwrap()).unwrap();
+    std::fs::write("/evidence/shared-result.json",serde_json::to_vec_pretty(&json!({"exportedRecords":exported,"freshRuns":marked,"messages":messages,"migrationHead":80})).unwrap()).unwrap();
+    if let Ok(binary) = std::env::var("O3_FRESH_CONTEXT_REFERENCE") {
+        drop(shared);
+        let reference_profile = PathBuf::from("/tmp/shared-handover-reference");
+        let userdata = reference_profile.join("userdata");
+        std::fs::create_dir_all(&userdata).unwrap();
+        std::fs::copy("/evidence/statev2.sqlite", userdata.join("statev2.sqlite")).unwrap();
+        // Both servers take turns owning the same profile; retain O3's private records and cursor.
+        let mut local = rusqlite::Connection::open(userdata.join("o3.sqlite")).unwrap();
+        rusqlite::backup::Backup::new(&state.db.lock().unwrap(), &mut local)
+            .unwrap()
+            .run_to_completion(128, Duration::ZERO, None)
+            .unwrap();
+        drop(local);
+        let (client, process) = start_reference(
+            &binary,
+            &reference_profile,
+            std::path::Path::new("/evidence"),
+        );
+        let before = projection(&client);
+        assert_eq!(before["messages"].as_array().unwrap().len(), 16);
+        assert_eq!(
+            before["runs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|r| r["freshContext"] == true)
+                .count(),
+            2
+        );
+        client.rpc("orchestration.dispatchCommand", json!({"type":"thread.metadata.update","commandId":"reference-title","threadId":"t","title":"Renamed by T3 nightly"})).unwrap();
+        client.rpc("projects.mutate", json!({"type":"project.update","commandId":"reference-project","projectId":"p","pinned":true,"archived":true})).unwrap();
+        assert_eq!(
+            projection(&client)["thread"]["title"],
+            "Renamed by T3 nightly"
+        );
+        drop(client);
+        drop(process);
+        let recovered = Arc::new(State::open(&userdata).unwrap());
+        let mut shared = o3_server::t3_shared::start(&recovered).unwrap().unwrap();
+        let p = o3_server::events::projection(&recovered, "t").unwrap();
+        assert_eq!(p["thread"]["title"], "Renamed by T3 nightly");
+        assert_eq!(p["messages"].as_array().unwrap().len(), 16);
+        let project: Value = serde_json::from_str(
+            &recovered
+                .db
+                .lock()
+                .unwrap()
+                .query_row(
+                    "SELECT body FROM records WHERE kind='project' AND id='p'",
+                    [],
+                    |r| r.get::<_, String>(0),
+                )
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(!project["pinnedAt"].is_null());
+        assert!(!project["archivedAt"].is_null());
+        o3_server::events::dispatch(&recovered, &json!({"type":"thread.metadata.update","commandId":"o3-title","threadId":"t","title":"Returned by O3"})).unwrap();
+        o3_server::events::mutate_project(&recovered, &json!({"type":"project.update","commandId":"o3-project","projectId":"p","pinned":false,"archived":false})).unwrap();
+        assert!(o3_server::t3_shared::export(&recovered, &mut shared).unwrap() > 0);
+        let rejected: i64 = recovered
+            .db
+            .lock()
+            .unwrap()
+            .query_row("SELECT count(*) FROM t3_rejects", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(rejected, 0);
+        drop(shared);
+        drop(recovered);
+        let (client, process) = start_reference(
+            &binary,
+            &reference_profile,
+            std::path::Path::new("/evidence"),
+        );
+        let p = projection(&client);
+        assert_eq!(p["thread"]["title"], "Returned by O3");
+        assert_eq!(p["messages"].as_array().unwrap().len(), 16);
+        drop(client);
+        drop(process);
+        let source = rusqlite::Connection::open(userdata.join("statev2.sqlite")).unwrap();
+        let mut output = rusqlite::Connection::open("/evidence/handover.sqlite").unwrap();
+        rusqlite::backup::Backup::new(&source, &mut output)
+            .unwrap()
+            .run_to_completion(128, Duration::ZERO, None)
+            .unwrap();
+        std::fs::write("/evidence/handover-result.json", serde_json::to_vec_pretty(&json!({"reference":"v0.1.8-nightly.20261106.4262","migrationHead":80,"o3ToT3":true,"t3ToO3":true,"o3ReturnToT3":true,"projectPinArchivePreserved":true,"messages":16,"rejected":0})).unwrap()).unwrap();
+        println!("FRESH_CONTEXT_SHARED_RUNTIME_HANDOVER_PASS: O3 to T3 to O3 to T3, retained history and project flags");
+    }
     println!("FRESH_CONTEXT_SHARED_EXPORT_PASS: {exported} records, two fresh runs, sixteen preserved messages");
 }

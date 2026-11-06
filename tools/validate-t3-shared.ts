@@ -26,6 +26,7 @@ const C: any = await import(`${contracts}/src/index.ts`);
 const Schema: any = await import(createRequire(`${contracts}/package.json`).resolve("effect/Schema"));
 
 const schemas: Record<string, { schema: any; table: string; id: string }> = {
+  project: { schema: C.Project, table: "projection_projects", id: "project_id" },
   thread: { schema: C.OrchestrationV2AppThreadJson, table: "orchestration_v2_projection_threads", id: "thread_id" },
   runs: { schema: C.OrchestrationV2RunJson, table: "orchestration_v2_projection_runs", id: "run_id" },
   attempts: { schema: C.OrchestrationV2RunAttemptJson, table: "orchestration_v2_projection_run_attempts", id: "attempt_id" },
@@ -49,14 +50,35 @@ const db = new DatabaseSync(path, { readOnly: true });
 const isO3 = db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name='records'").get().n === 1;
 const limit = Number(limitArg ?? 0);
 const groups = new Map<string, { count: number; example: string }>();
-for (const [kind, { schema, table, id }] of Object.entries(schemas)) {
-  const decode = Schema.decodeUnknownExit(Schema.fromJsonString(schema));
+function* records(kind: string, table: string, id: string): Generator<{ id: string; body: string }> {
+  if (!isO3 && kind === "project") {
+    const rows = db.prepare(`SELECT * FROM projection_projects${limit ? ` LIMIT ${limit}` : ""}`).iterate();
+    for (const row of rows) {
+      const parse = (value: unknown) => value == null ? null : JSON.parse(String(value));
+      const project = {
+        id: row.project_id, title: row.title, workspaceRoot: row.workspace_root,
+        defaultModelSelection: parse(row.default_model_selection_json),
+        defaultThreadEnvMode: row.default_thread_env_mode, autoPull: row.auto_pull !== 0,
+        faviconPath: row.favicon_path, projectIcon: parse(row.project_icon_json),
+        scripts: parse(row.scripts_json), createdAt: row.created_at,
+        updatedAt: row.updated_at, deletedAt: row.deleted_at,
+        ...(row.pinned_at === undefined ? {} : { pinnedAt: row.pinned_at }),
+        ...(row.archived_at === undefined ? {} : { archivedAt: row.archived_at }),
+      };
+      yield { id: String(row.project_id), body: JSON.stringify(project) };
+    }
+    return;
+  }
   const sql = isO3
     ? `SELECT id, body FROM records WHERE kind='${kind}'${limit ? ` LIMIT ${limit}` : ""}`
     : `SELECT ${id} AS id, payload_json AS body FROM ${table}${limit ? ` LIMIT ${limit}` : ""}`;
+  yield* db.prepare(sql).iterate() as Iterable<{ id: string; body: string }>;
+}
+for (const [kind, { schema, table, id }] of Object.entries(schemas)) {
+  const decode = Schema.decodeUnknownExit(Schema.fromJsonString(schema));
   let total = 0;
   let bad = 0;
-  for (const row of db.prepare(sql).iterate() as Iterable<{ id: string; body: string }>) {
+  for (const row of records(kind, table, id)) {
     total++;
     const exit = decode(row.body);
     if (exit._tag === "Success") continue;

@@ -12,8 +12,8 @@ Status: execution and history-boundary implementation on
 `feat/nightly-4247-fresh-context`, based on `dev` at `5abc0d9`.
 The candidate now advertises `environment.capabilities.freshContext` after the
 native CLI, source-policy and shared-schema checks below. This is not a claim of
-complete Nightly parity or a deployed feature. The wider migration-80 and
-cross-server acceptance backlog remains open.
+complete Nightly parity or a deployed feature. Migration-80 shared history and bidirectional runtime handover are now validated
+on a disposable profile; the desktop composer and wider platform backlog remain open.
 
 ## Behavior
 
@@ -57,7 +57,9 @@ The implementation follows these functions at the exact reference revision:
   `freshContext` and the user-message turn-item marker.
 
 O3 reuses its existing durable detachment and native-recovery mechanisms.
-The change does not advance the shared T3 migration head or alter T3's SQL schema.
+The initial fresh-context change did not alter T3's SQL schema. The subsequent
+[migration-80 compatibility change](SHARED-SCHEMA-80.md) accepts the nightly schema
+and writes its indexed delivery state and project flags without migrating T3 tables.
 
 ## Validation
 
@@ -109,7 +111,8 @@ retained visible history. The final O3 run passed after applying the upstream
 multi-thread session policy. The identical eight-turn scenario also passed against
 the official T3 4262 Linux binary inside the same container boundary. All seven
 behavioral results match. Its migration-80 database has 109 public records and
-264 events, all accepted by the exact contracts with zero rejections.
+264 events, all accepted by the exact contracts with zero rejections. The validator
+now also checks the project row (110 public records in total).
 
 The official archive SHA-256 was verified against its GitHub release digest:
 `5df94ca15c4f68f749fa5540fbb9d5ca879ca8750ac43dd2704f6a18899ed6d5`.
@@ -122,8 +125,13 @@ migration-73 schema through the guarded `t3_shared::open` and real exporter:
 accepted every public row and all 80 exported events with zero rejections, using
 its exact Effect 4.1.2 runtime. The validator refuses a mismatched installed
 runtime before decoding, and rejected rows now produce a failing exit code.
-This establishes that additive fresh-context data fits the currently supported
-shared schema; it does not establish support for migration head 80.
+The exporter now also supports the native migration-80 schema. A separate
+credential-free run exports the same 81 records and starts the official reference:
+O3 → T3 → O3 → T3 preserves the history and fresh markers, imports reference
+metadata and project pin/archive edits, and returns O3 edits to T3. All 80 public
+records (including the project) and 86 events after handover validate with zero
+rejections. Six focused migration-80 regressions and all eight legacy tests pass
+in a network-disabled container.
 
 The validator exposed a pre-existing context-cost difference: bare USD numbers
 were converted only on shared export. Snapshots, new events, imported usage and
@@ -146,13 +154,15 @@ tools/live-fresh-context --reference-root /path/to/t3-0.1.8-nightly.20261106.426
 tools/live-fresh-context --export-database /path/to/evidence/o3.sqlite
 T3_CONTRACTS=/path/to/t3code-4262/packages/contracts AFTER_SEQUENCE=0 \
   node tools/validate-t3-shared.ts /path/to/export/evidence/statev2.sqlite
+# Add --reference-root to --export-database for the offline runtime handover:
+tools/live-fresh-context --export-database /path/to/evidence/o3.sqlite \
+  --reference-root /path/to/t3-0.1.8-nightly.20261106.4262-linux-x64
+tools/test-shared-nightly
 ```
 
 ## Remaining integration
 
 
-- Validate migrations 74–80 and bidirectional runtime handover on a disposable
-  profile before advancing `MIGRATION_HEAD`.
 - Verify the O3 desktop composer against the enabled candidate. The desktop work is on
   `omarchy-t3-code` branch `feat/nightly-4247-parity`.
 - Scheduled-task fresh-session execution is a separate remaining integration.
