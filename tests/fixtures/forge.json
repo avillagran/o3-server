@@ -1,0 +1,513 @@
+{
+  "hosts": [
+    {
+      "host": "github.com",
+      "expected": true
+    },
+    {
+      "host": "api.github.com",
+      "expected": true
+    },
+    {
+      "host": "org.ghe.com",
+      "expected": true
+    },
+    {
+      "host": "git.example.test",
+      "expected": true
+    },
+    {
+      "host": "127.0.0.1:443",
+      "expected": true
+    },
+    {
+      "host": "host:99999",
+      "expected": true
+    },
+    {
+      "host": "localhost",
+      "expected": true
+    },
+    {
+      "host": "example.test.",
+      "expected": false
+    },
+    {
+      "host": "-bad.test",
+      "expected": false
+    },
+    {
+      "host": "bad-.test",
+      "expected": false
+    },
+    {
+      "host": "bad..test",
+      "expected": false
+    },
+    {
+      "host": "user@host",
+      "expected": false
+    },
+    {
+      "host": "https://github.com",
+      "expected": false
+    },
+    {
+      "host": "github.com/path",
+      "expected": false
+    },
+    {
+      "host": "github.com?x=1",
+      "expected": false
+    },
+    {
+      "host": "héllo.test",
+      "expected": false
+    },
+    {
+      "host": "GitHub.com",
+      "expected": false
+    },
+    {
+      "host": "",
+      "expected": false
+    }
+  ],
+  "paths": [
+    {
+      "repository": "owner/repo",
+      "expected": "user/starred/owner/repo"
+    },
+    {
+      "repository": "o/r.git",
+      "expected": "user/starred/o/r.git"
+    },
+    {
+      "repository": "o/r space",
+      "expected": "user/starred/o/r%20space"
+    },
+    {
+      "repository": "o/café",
+      "expected": "user/starred/o/caf%C3%A9"
+    },
+    {
+      "repository": "o/%2e%2e",
+      "expected": "user/starred/o/%252e%252e"
+    },
+    {
+      "repository": "o/..",
+      "expected": null
+    },
+    {
+      "repository": "../repo",
+      "expected": null
+    },
+    {
+      "repository": "o/.",
+      "expected": null
+    },
+    {
+      "repository": "/repo",
+      "expected": null
+    },
+    {
+      "repository": "o/",
+      "expected": null
+    },
+    {
+      "repository": "o/r/extra",
+      "expected": null
+    },
+    {
+      "repository": "o/r?query#fragment",
+      "expected": "user/starred/o/r%3Fquery%23fragment"
+    },
+    {
+      "repository": "o/!'()*~_",
+      "expected": "user/starred/o/!'()*~_"
+    },
+    {
+      "repository": "o/line\nbreak",
+      "expected": "user/starred/o/line%0Abreak"
+    }
+  ],
+  "urls": [
+    {
+      "host": "github.com",
+      "expected": "https://api.github.com"
+    },
+    {
+      "host": "api.github.com",
+      "expected": "https://api.github.com/api/v3"
+    },
+    {
+      "host": "org.ghe.com",
+      "expected": "https://api.org.ghe.com"
+    },
+    {
+      "host": "git.example.test",
+      "expected": "https://git.example.test/api/v3"
+    },
+    {
+      "host": "127.0.0.1:443",
+      "expected": "https://127.0.0.1:443/api/v3"
+    },
+    {
+      "host": "host:99999",
+      "expected": "https://host:99999/api/v3"
+    },
+    {
+      "host": "localhost",
+      "expected": "https://localhost/api/v3"
+    }
+  ],
+  "environment": [
+    {
+      "host": "github.com",
+      "env": {},
+      "expected": null
+    },
+    {
+      "host": "github.com",
+      "env": {
+        "GH_TOKEN": " primary ",
+        "GITHUB_TOKEN": "secondary"
+      },
+      "expected": "primary"
+    },
+    {
+      "host": "github.com",
+      "env": {
+        "GH_TOKEN": " ",
+        "GITHUB_TOKEN": " fallback "
+      },
+      "expected": "fallback"
+    },
+    {
+      "host": "github.com",
+      "env": {
+        "GH_HOST": " git.example.test ",
+        "GH_ENTERPRISE_TOKEN": " enterprise ",
+        "GITHUB_ENTERPRISE_TOKEN": "other"
+      },
+      "expected": null
+    },
+    {
+      "host": "github.com",
+      "env": {
+        "GH_HOST": "GIT.EXAMPLE.TEST",
+        "GITHUB_ENTERPRISE_TOKEN": " enterprise fallback "
+      },
+      "expected": null
+    },
+    {
+      "host": "github.com",
+      "env": {
+        "GH_HOST": "wrong.test",
+        "GH_TOKEN": "personal",
+        "GH_ENTERPRISE_TOKEN": "enterprise"
+      },
+      "expected": "personal"
+    },
+    {
+      "host": "api.github.com",
+      "env": {},
+      "expected": null
+    },
+    {
+      "host": "api.github.com",
+      "env": {
+        "GH_TOKEN": " primary ",
+        "GITHUB_TOKEN": "secondary"
+      },
+      "expected": null
+    },
+    {
+      "host": "api.github.com",
+      "env": {
+        "GH_TOKEN": " ",
+        "GITHUB_TOKEN": " fallback "
+      },
+      "expected": null
+    },
+    {
+      "host": "api.github.com",
+      "env": {
+        "GH_HOST": " git.example.test ",
+        "GH_ENTERPRISE_TOKEN": " enterprise ",
+        "GITHUB_ENTERPRISE_TOKEN": "other"
+      },
+      "expected": null
+    },
+    {
+      "host": "api.github.com",
+      "env": {
+        "GH_HOST": "GIT.EXAMPLE.TEST",
+        "GITHUB_ENTERPRISE_TOKEN": " enterprise fallback "
+      },
+      "expected": null
+    },
+    {
+      "host": "api.github.com",
+      "env": {
+        "GH_HOST": "wrong.test",
+        "GH_TOKEN": "personal",
+        "GH_ENTERPRISE_TOKEN": "enterprise"
+      },
+      "expected": null
+    },
+    {
+      "host": "org.ghe.com",
+      "env": {},
+      "expected": null
+    },
+    {
+      "host": "org.ghe.com",
+      "env": {
+        "GH_TOKEN": " primary ",
+        "GITHUB_TOKEN": "secondary"
+      },
+      "expected": "primary"
+    },
+    {
+      "host": "org.ghe.com",
+      "env": {
+        "GH_TOKEN": " ",
+        "GITHUB_TOKEN": " fallback "
+      },
+      "expected": "fallback"
+    },
+    {
+      "host": "org.ghe.com",
+      "env": {
+        "GH_HOST": " git.example.test ",
+        "GH_ENTERPRISE_TOKEN": " enterprise ",
+        "GITHUB_ENTERPRISE_TOKEN": "other"
+      },
+      "expected": null
+    },
+    {
+      "host": "org.ghe.com",
+      "env": {
+        "GH_HOST": "GIT.EXAMPLE.TEST",
+        "GITHUB_ENTERPRISE_TOKEN": " enterprise fallback "
+      },
+      "expected": null
+    },
+    {
+      "host": "org.ghe.com",
+      "env": {
+        "GH_HOST": "wrong.test",
+        "GH_TOKEN": "personal",
+        "GH_ENTERPRISE_TOKEN": "enterprise"
+      },
+      "expected": "personal"
+    },
+    {
+      "host": "git.example.test",
+      "env": {},
+      "expected": null
+    },
+    {
+      "host": "git.example.test",
+      "env": {
+        "GH_TOKEN": " primary ",
+        "GITHUB_TOKEN": "secondary"
+      },
+      "expected": null
+    },
+    {
+      "host": "git.example.test",
+      "env": {
+        "GH_TOKEN": " ",
+        "GITHUB_TOKEN": " fallback "
+      },
+      "expected": null
+    },
+    {
+      "host": "git.example.test",
+      "env": {
+        "GH_HOST": " git.example.test ",
+        "GH_ENTERPRISE_TOKEN": " enterprise ",
+        "GITHUB_ENTERPRISE_TOKEN": "other"
+      },
+      "expected": "enterprise"
+    },
+    {
+      "host": "git.example.test",
+      "env": {
+        "GH_HOST": "GIT.EXAMPLE.TEST",
+        "GITHUB_ENTERPRISE_TOKEN": " enterprise fallback "
+      },
+      "expected": "enterprise fallback"
+    },
+    {
+      "host": "git.example.test",
+      "env": {
+        "GH_HOST": "wrong.test",
+        "GH_TOKEN": "personal",
+        "GH_ENTERPRISE_TOKEN": "enterprise"
+      },
+      "expected": null
+    },
+    {
+      "host": "127.0.0.1:443",
+      "env": {},
+      "expected": null
+    },
+    {
+      "host": "127.0.0.1:443",
+      "env": {
+        "GH_TOKEN": " primary ",
+        "GITHUB_TOKEN": "secondary"
+      },
+      "expected": null
+    },
+    {
+      "host": "127.0.0.1:443",
+      "env": {
+        "GH_TOKEN": " ",
+        "GITHUB_TOKEN": " fallback "
+      },
+      "expected": null
+    },
+    {
+      "host": "127.0.0.1:443",
+      "env": {
+        "GH_HOST": " git.example.test ",
+        "GH_ENTERPRISE_TOKEN": " enterprise ",
+        "GITHUB_ENTERPRISE_TOKEN": "other"
+      },
+      "expected": null
+    },
+    {
+      "host": "127.0.0.1:443",
+      "env": {
+        "GH_HOST": "GIT.EXAMPLE.TEST",
+        "GITHUB_ENTERPRISE_TOKEN": " enterprise fallback "
+      },
+      "expected": null
+    },
+    {
+      "host": "127.0.0.1:443",
+      "env": {
+        "GH_HOST": "wrong.test",
+        "GH_TOKEN": "personal",
+        "GH_ENTERPRISE_TOKEN": "enterprise"
+      },
+      "expected": null
+    },
+    {
+      "host": "host:99999",
+      "env": {},
+      "expected": null
+    },
+    {
+      "host": "host:99999",
+      "env": {
+        "GH_TOKEN": " primary ",
+        "GITHUB_TOKEN": "secondary"
+      },
+      "expected": null
+    },
+    {
+      "host": "host:99999",
+      "env": {
+        "GH_TOKEN": " ",
+        "GITHUB_TOKEN": " fallback "
+      },
+      "expected": null
+    },
+    {
+      "host": "host:99999",
+      "env": {
+        "GH_HOST": " git.example.test ",
+        "GH_ENTERPRISE_TOKEN": " enterprise ",
+        "GITHUB_ENTERPRISE_TOKEN": "other"
+      },
+      "expected": null
+    },
+    {
+      "host": "host:99999",
+      "env": {
+        "GH_HOST": "GIT.EXAMPLE.TEST",
+        "GITHUB_ENTERPRISE_TOKEN": " enterprise fallback "
+      },
+      "expected": null
+    },
+    {
+      "host": "host:99999",
+      "env": {
+        "GH_HOST": "wrong.test",
+        "GH_TOKEN": "personal",
+        "GH_ENTERPRISE_TOKEN": "enterprise"
+      },
+      "expected": null
+    },
+    {
+      "host": "localhost",
+      "env": {},
+      "expected": null
+    },
+    {
+      "host": "localhost",
+      "env": {
+        "GH_TOKEN": " primary ",
+        "GITHUB_TOKEN": "secondary"
+      },
+      "expected": null
+    },
+    {
+      "host": "localhost",
+      "env": {
+        "GH_TOKEN": " ",
+        "GITHUB_TOKEN": " fallback "
+      },
+      "expected": null
+    },
+    {
+      "host": "localhost",
+      "env": {
+        "GH_HOST": " git.example.test ",
+        "GH_ENTERPRISE_TOKEN": " enterprise ",
+        "GITHUB_ENTERPRISE_TOKEN": "other"
+      },
+      "expected": null
+    },
+    {
+      "host": "localhost",
+      "env": {
+        "GH_HOST": "GIT.EXAMPLE.TEST",
+        "GITHUB_ENTERPRISE_TOKEN": " enterprise fallback "
+      },
+      "expected": null
+    },
+    {
+      "host": "localhost",
+      "env": {
+        "GH_HOST": "wrong.test",
+        "GH_TOKEN": "personal",
+        "GH_ENTERPRISE_TOKEN": "enterprise"
+      },
+      "expected": null
+    }
+  ],
+  "secretNames": [
+    {
+      "input": {
+        "kind": "github",
+        "field": "tokens",
+        "serverHost": "github.com"
+      },
+      "expected": "source-control-Z2l0aHVi-dG9rZW5z-Z2l0aHViLmNvbQ"
+    },
+    {
+      "input": {
+        "kind": "github",
+        "field": "tokens",
+        "serverHost": "git.example.test"
+      },
+      "expected": "source-control-Z2l0aHVi-dG9rZW5z-Z2l0LmV4YW1wbGUudGVzdA"
+    }
+  ]
+}

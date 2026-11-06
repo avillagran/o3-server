@@ -1,0 +1,79 @@
+{
+  "reference": {
+    "tag": "v0.1.8-nightly.20261106.4275",
+    "commit": "6577c6b6185167c0e502fa01f9e8e8f2dee6ff25",
+    "nativeRuntimeProof": "v0.1.8-nightly.20261106.4262",
+    "sourceUnchangedFromNativeProof": true
+  },
+  "sourceFiles": [
+    {
+      "path": "packages/source-control-github/src/server/driver.ts",
+      "sha256": "527c445184fb644e8e399f16d2f63b916eca6ab0c60e6d081b4a1181f69ca3ad"
+    },
+    {
+      "path": "packages/source-control-github/src/server/GitHubCredentials.ts",
+      "sha256": "0d716c1c5d622d6faa0642964bc384195a1a332b3490856d13013f7775b7b4ff"
+    },
+    {
+      "path": "packages/source-control-github/src/server/GitHubRequestPolicy.ts",
+      "sha256": "b697a4ccff334cf5130b20f8c0e9c6f41042ee78358251afbb52634523f52ec2"
+    },
+    {
+      "path": "packages/source-control-github/src/server/GitHubQuota.ts",
+      "sha256": "daf06673d4f21026b476b034a552ab67d7a9de4cd343c469eef6820adc1372d3"
+    },
+    {
+      "path": "packages/source-control-core/src/server/SourceControlRateLimit.ts",
+      "sha256": "b3ffa6f1db412ecb1f7451ce7d11447f1618685a218d9f6f1a4221bbe0c8e6cf"
+    },
+    {
+      "path": "apps/server/src/sourceControl/SourceControlSignIn.ts",
+      "sha256": "186b6991c0f1a89939997aa370b52d10aa647fe050ff7ac9c9d17882ce569b38"
+    },
+    {
+      "path": "apps/server/src/sourceControl/sourceControlHostSecrets.ts",
+      "sha256": "d634f2fadd3803fbd7ccca1c5776c63b751aca40d8bb2dcf145f4b7ec6f636d3"
+    },
+    {
+      "path": "apps/server/src/auth/ServerSecretStore.ts",
+      "sha256": "73dafed19bec0d5166326c509dba79014891f6de718e935a3c255ba1917e4753"
+    }
+  ],
+  "implemented": [
+    "GET star state and PUT star operations with upstream headers and only 204 accepted as success.",
+    "Source-compatible repository path encoding, bare-host validation, API roots, environment-token routing and host/account selection.",
+    "Personal credentials prefer saved literals or native private token slots, then scoped environment variables and gh; disabled hosts and unresolved references do not switch accounts.",
+    "Credential lookups deduplicate per host/account, cap gh concurrency at four and HTTP at eight, cache successes for five minutes and missing logins for ten seconds, and invalidate host credentials after 401.",
+    "Shared star read/write quota reserve and credential-scoped rate-limit pauses honor response snapshots, Retry-After and stale lease ordering.",
+    "Star mutation requires source-control:write; both input schemas emit native decode defects. Keyed token/sign-in literals are redacted, native placeholders remain visible and public settings round trips preserve literals."
+  ],
+  "validation": {
+    "upstreamHelperCases": 83,
+    "moduleTests": 6,
+    "compatibleClientCases": 1,
+    "officialNativeComparisons": 22,
+    "externalStarRequests": 0,
+    "nativeIsolation": "Rootless Podman with network disabled and no native credentials; success-path HTTP uses an in-process private loopback fixture.",
+    "fullDefault": {
+      "passed": 517,
+      "failed": 0,
+      "ignored": 35
+    },
+    "fullMinimal": {
+      "passed": 514,
+      "failed": 0,
+      "ignored": 35
+    },
+    "postReview": "Ten affected checks passed in each feature mode after HTTP-construction and nested-redaction guards; two native proofs remain opt-in per mode.",
+    "strictClippy": "Passed all targets in both feature modes with warnings denied.",
+    "routineChecks": "Formatting, whitespace, regenerated scopes and compatibility tables, fixture JSON and nine nightly-watch tests passed."
+  },
+  "pending": [
+    "GitHub App sign-in/refresh and typed app-access lifecycle.",
+    "Secret-provider reference resolution and complete source-wide secret persistence semantics.",
+    "Shared rate-limit and credential integration with existing pull-request, clone and discovery consumers.",
+    "Complete JavaScript Date.parse parity for nonstandard Retry-After values, redirect/response edge cases and installed gh acceptance beyond the covered pure and protocol paths.",
+    "The remaining headless parity backlog in PARITY.md."
+  ],
+  "deployment": "Not deployed; all three live hosts remain on background-continuation source 83ce347."
+}

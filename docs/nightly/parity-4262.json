@@ -7,9 +7,7 @@
   },
   "scope": "All headless protocol and observable behavior; unused methods remain in scope. Source discovery is not behavioral certification.",
   "publicMethodCount": 211,
-  "untrackedMethods": [
-    "sourceControl.star"
-  ],
+  "untrackedMethods": [],
   "sharedState": {
     "acceptedO3Migration": 73,
     "referenceMigration": 80,
@@ -941,12 +939,14 @@
     {
       "name": "sourceControl.star",
       "legacyStatus": "untracked",
-      "nightly4262Status": "requires behavioral comparison"
+      "nightly4262Status": "personal credentials and star transport implemented; app, secret providers and shared forge policy remain partial",
+      "evidence": "src/forge.rs, tests/forge.rs and tools/generate-forge-fixtures.mjs"
     },
     {
       "name": "sourceControl.starred",
       "legacyStatus": "partial",
-      "nightly4262Status": "requires behavioral comparison"
+      "nightly4262Status": "personal credentials and star transport implemented; app, secret providers and shared forge policy remain partial",
+      "evidence": "src/forge.rs, tests/forge.rs and tools/generate-forge-fixtures.mjs"
     },
     {
       "name": "subscribeAuthAccess",

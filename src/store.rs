@@ -1,4 +1,4 @@
-//! o3-server's own SQLite state. T3's database is never written: its schema changes every nightly.
+//! O3's private SQLite state; shared T3 history is synchronized through `t3_shared`.
 use crate::auth;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
@@ -27,6 +27,7 @@ pub const STANDARD_SCOPES: [&str; 16] = [
 ];
 
 pub struct State {
+    pub(crate) forge: crate::forge::GitHub,
     pub(crate) rollback_pending: std::sync::atomic::AtomicBool,
     pub(crate) http: crate::http::Limits,
     pub(crate) mcp: crate::mcp::Sessions,
@@ -200,6 +201,7 @@ impl State {
         let streams = crate::streams::Hub::new();
         streams.terminals.restore(&dir.join("terminal-history"))?;
         Ok(Self {
+            forge: Default::default(),
             rollback_pending: std::sync::atomic::AtomicBool::new(false),
             http: crate::http::Limits::default(),
             mcp: crate::mcp::Sessions::default(),
