@@ -107,7 +107,7 @@ fn write_snapshot(
         }
         // Bound all transcript representations to the same visible window.
         let anchor = if opts.bounded {
-            boundary(db, tid, i64::MAX)?.0
+            boundary(db, tid, i64::MAX, 10)?.0
         } else {
             0
         };
@@ -256,31 +256,44 @@ fn write_snapshot(
     }
     Ok(())
 }
-/// Latest page: at most ten user turns, 75 generic entries, 500 entries and 1 MiB.
-pub(crate) fn boundary(db: &Connection, tid: &str, before: i64) -> Result<(i64, bool), String> {
+/// T3's `THREAD_HISTORY_PAGE_POLICY` (`threadHistoryPaging.ts`): a page that reaches a user
+/// turn keeps up to `max_turns` user turns and 500 entries, so ordinary turns stay whole.
+/// A page inside one turn longer than that (no user turn selected) keeps the newest 75
+/// entries. Every page stops at 1 MiB and admits at least one entry. Returns the oldest
+/// selected rowid and whether older entries remain.
+pub(crate) fn boundary(
+    db: &Connection,
+    tid: &str,
+    before: i64,
+    max_turns: usize,
+) -> Result<(i64, bool), String> {
+    const MAX_ITEMS: usize = 75;
+    const MAX_TURN_ITEMS: usize = 500;
+    const MAX_BYTES: usize = 1024 * 1024;
     let mut q=db.prepare("SELECT rowid,body FROM records WHERE kind='visibleTurnItems' AND thread_id=? AND rowid<? ORDER BY rowid DESC").map_err(|e|e.to_string())?;
     let mut rows = q.query(params![tid, before]).map_err(|e| e.to_string())?;
-    let (mut anchor, mut turns, mut generic, mut count, mut bytes) = (0, 0, 0, 0, 0);
+    let (mut ids, mut turns, mut bytes, mut more) = (Vec::new(), 0, 0, false);
     while let Some(row) = rows.next().map_err(|e| e.to_string())? {
         let id: i64 = row.get(0).map_err(|e| e.to_string())?;
         let b: String = row.get(1).map_err(|e| e.to_string())?;
-        let v: Value = serde_json::from_str(&b).map_err(|e| e.to_string())?;
-        let user = v["item"]["type"] == "user_message";
-        if count > 0
-            && (count >= 500 || generic >= 75 || turns >= 10 || bytes + b.len() > 1024 * 1024)
+        if !ids.is_empty()
+            && (ids.len() >= MAX_TURN_ITEMS || turns >= max_turns || bytes + b.len() > MAX_BYTES)
         {
-            return Ok((anchor, true));
+            more = true;
+            break;
         }
-        anchor = id;
-        count += 1;
-        bytes += b.len();
-        if user {
+        let v: Value = serde_json::from_str(&b).map_err(|e| e.to_string())?;
+        if v["item"]["type"] == "user_message" {
             turns += 1;
-        } else {
-            generic += 1;
         }
+        ids.push(id);
+        bytes += b.len();
     }
-    Ok((anchor, false))
+    if turns == 0 && ids.len() > MAX_ITEMS {
+        ids.truncate(MAX_ITEMS);
+        more = true;
+    }
+    Ok((ids.last().copied().unwrap_or(0), more))
 }
 
 fn compact_record(v: &mut Value, ids: &mut std::collections::BTreeMap<String, usize>) {
@@ -309,5 +322,59 @@ fn compact_id(v: &mut Value, ids: &mut std::collections::BTreeMap<String, usize>
             ids.insert(id.to_owned(), n);
             *v = json!(n);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn db(items: &[&str]) -> Connection {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch("CREATE TABLE records(kind TEXT NOT NULL,id TEXT NOT NULL,thread_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(kind,id));").unwrap();
+        for (n, kind) in items.iter().enumerate() {
+            let body = json!({"item":{"type":kind}}).to_string();
+            db.execute(
+                "INSERT INTO records(kind,id,thread_id,body) VALUES('visibleTurnItems',?,'t',?)",
+                params![n.to_string(), body],
+            )
+            .unwrap();
+        }
+        db
+    }
+    fn selected(db: &Connection, max_turns: usize) -> (usize, bool) {
+        let (anchor, more) = boundary(db, "t", i64::MAX, max_turns).unwrap();
+        let n: i64 = db
+            .query_row(
+                "SELECT count(*) FROM records WHERE rowid>=?",
+                [anchor],
+                |r| r.get(0),
+            )
+            .unwrap();
+        (n as usize, more)
+    }
+
+    #[test]
+    fn a_tool_heavy_turn_stays_whole_when_its_user_message_is_in_reach() {
+        let mut items = vec!["user_message"];
+        items.extend(std::iter::repeat_n("command_execution", 300));
+        items.push("assistant_message");
+        assert_eq!(selected(&db(&items), 10), (302, false));
+    }
+
+    #[test]
+    fn inside_a_turn_longer_than_the_window_the_newest_75_entries_show() {
+        let mut items = vec!["user_message"];
+        items.extend(std::iter::repeat_n("command_execution", 600));
+        assert_eq!(selected(&db(&items), 10), (75, true));
+    }
+
+    #[test]
+    fn pages_stop_at_the_user_turn_limit() {
+        let items: Vec<&str> = (0..30)
+            .flat_map(|_| ["user_message", "assistant_message"])
+            .collect();
+        assert_eq!(selected(&db(&items), 10), (20, true));
+        assert_eq!(selected(&db(&items), 20), (40, true));
     }
 }

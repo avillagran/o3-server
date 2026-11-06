@@ -3,7 +3,7 @@ use crate::provider::{Provider, ProviderControl, ProviderEvent, RunInput};
 use serde_json::{json, Value};
 use std::{collections::HashMap, future::Future, path::PathBuf, pin::Pin, sync::Mutex};
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncWriteExt, BufReader},
     process::Command,
     sync::{mpsc, oneshot, watch},
 };
@@ -11,7 +11,7 @@ use tokio::{
 #[path = "codex_lifetime.rs"]
 mod lifetime;
 
-const MAX_FRAME: usize = 1024 * 1024;
+use crate::provider_frames::{Frame, FrameBuffer, FrameError, MAX_FRAME};
 // Provider input admits 8 MiB of serialized content, plus the RPC envelope.
 const MAX_OUTGOING_FRAME: usize = 16 * 1024 * 1024;
 /// Notifications queued for one Codex thread while its turn loop is busy (writing events,
@@ -25,9 +25,11 @@ struct Route {
 }
 impl Route {
     /// Never blocks the shared reader; false when the consumer is gone or over budget.
+    /// A single frame larger than the budget is admitted when nothing else is queued.
     fn push(&self, frame: Value, size: usize) -> bool {
         use std::sync::atomic::Ordering;
-        if self.queued.fetch_add(size, Ordering::AcqRel) + size > ROUTE_BACKLOG_BYTES {
+        let queued = self.queued.fetch_add(size, Ordering::AcqRel);
+        if queued > 0 && queued + size > ROUTE_BACKLOG_BYTES {
             return false;
         }
         self.tx.send((frame, size)).is_ok()
@@ -1034,46 +1036,29 @@ fn native_response(
         _ => Err(format!("Unsupported Codex server request: {method}")),
     }
 }
-// read_until would allocate without bound before checking the size. Read from the
-// fixed-capacity BufReader, checking each slice before extending the frame.
+// read_until would allocate without bound before checking the size. FrameBuffer reads
+// from the fixed-capacity BufReader and checks each slice before extending the frame.
 #[cfg(test)]
 async fn read_frame<R: tokio::io::AsyncBufRead + Unpin>(
     reader: &mut R,
-    frame: &mut Vec<u8>,
+    frame: &mut FrameBuffer,
 ) -> Result<Option<Value>, String> {
     Ok(read_sized_frame(reader, frame).await?.map(|(v, _)| v))
 }
-/// Cancellation-safe: a partial line stays in `frame` for the next call.
+/// Cancellation-safe: a partial line stays in `frame` for the next call. Frames above the
+/// buffering limit are drained and skipped so one oversized notification cannot stop every
+/// Codex thread sharing this app-server.
 async fn read_sized_frame<R: tokio::io::AsyncBufRead + Unpin>(
     reader: &mut R,
-    frame: &mut Vec<u8>,
+    frame: &mut FrameBuffer,
 ) -> Result<Option<(Value, usize)>, String> {
     loop {
-        let buf = reader.fill_buf().await.map_err(|e| e.to_string())?;
-        if buf.is_empty() {
-            return if frame.is_empty() {
-                Ok(None)
-            } else {
-                Err("Truncated Codex frame".into())
-            };
-        }
-        let n = buf
-            .iter()
-            .position(|b| *b == b'\n')
-            .map(|n| n + 1)
-            .unwrap_or(buf.len());
-        if frame.len() + n > MAX_FRAME {
-            return Err("Codex frame exceeds 1 MiB".into());
-        }
-        frame.extend_from_slice(&buf[..n]);
-        reader.consume(n);
-        if frame.last() == Some(&b'\n') {
-            let size = frame.len();
-            let result = serde_json::from_slice(frame)
-                .map(|v| Some((v, size)))
-                .map_err(|e| e.to_string());
-            frame.clear();
-            return result;
+        match frame.next(reader, MAX_FRAME).await {
+            Ok(Some(Frame::Json(v, size))) => return Ok(Some((v, size))),
+            Ok(Some(Frame::Oversized(_))) => continue,
+            Ok(None) => return Ok(None),
+            Err(FrameError::Truncated) => return Err("Truncated Codex frame".into()),
+            Err(FrameError::Io(e) | FrameError::Json(e)) => return Err(e),
         }
     }
 }
@@ -1091,7 +1076,7 @@ async fn actor(
     let mut native_contexts = HashMap::<String, std::sync::Arc<crate::native_mcp::Context>>::new();
     let mut routes = HashMap::<String, Route>::new();
     let mut next = 0u64;
-    let mut buffer = Vec::new();
+    let mut buffer = FrameBuffer::default();
     let mut shutdown = None;
     let mut idle = tokio::time::interval(std::time::Duration::from_secs(1));
     let mut last_operation = tokio::time::Instant::now();
@@ -1774,7 +1759,7 @@ mod tests {
     async fn bounded_frames_survive_cancelled_read() {
         let (mut writer, reader) = tokio::io::duplex(128);
         let mut reader = BufReader::new(reader);
-        let mut bytes = Vec::new();
+        let mut bytes = FrameBuffer::default();
         writer.write_all(b"{\"method\":").await.unwrap();
         assert!(tokio::time::timeout(
             std::time::Duration::from_millis(10),
@@ -1787,12 +1772,13 @@ mod tests {
             read_frame(&mut reader, &mut bytes).await.unwrap().unwrap()["method"],
             "test"
         );
-        let oversized = vec![b'x'; MAX_FRAME + 1];
+        let mut oversized = vec![b'x'; MAX_FRAME + 1];
+        oversized.extend_from_slice(b"\n{\"method\":\"after\"}\n");
         let mut reader = BufReader::new(oversized.as_slice());
-        assert!(read_frame(&mut reader, &mut bytes)
-            .await
-            .unwrap_err()
-            .contains("1 MiB"));
+        assert_eq!(
+            read_frame(&mut reader, &mut bytes).await.unwrap().unwrap()["method"],
+            "after"
+        );
     }
     #[test]
     fn native_response_shapes() {

@@ -318,13 +318,14 @@ fn bounded_history_pages_do_not_lose_messages() {
             )
             .unwrap();
         let items = page["items"].as_array().unwrap();
-        assert!(items.len() <= 20);
+        // Older pages allow twice the user turns, as T3's `olderHistoryPagePolicy`.
+        assert!(items.len() <= 40);
         assert!(
             items
                 .iter()
                 .filter(|r| r["item"]["type"] == "user_message")
                 .count()
-                <= 10
+                <= 20
         );
         all.splice(0..0, page["items"].as_array().unwrap().clone());
         if page["hasMoreHistory"] == false {
