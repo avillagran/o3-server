@@ -51,9 +51,11 @@ fn cstring(bytes: &[u8]) -> io::Result<CString> {
 /// shell's pid is returned separately from the supervisor (for PTY job control).
 pub(crate) fn spawn(
     program: &Path,
+    args: &[std::ffi::OsString],
     cwd: &Path,
     env: &[(String, String)],
     slave: RawFd,
+    adjust_oom: bool,
 ) -> io::Result<(Child, i32)> {
     let program = cstring(program.as_os_str().as_bytes())?;
     let cwd = cstring(cwd.as_os_str().as_bytes())?;
@@ -63,7 +65,14 @@ pub(crate) fn spawn(
         .collect::<io::Result<Vec<_>>>()?;
     let mut envp = env.iter().map(|s| s.as_ptr()).collect::<Vec<_>>();
     envp.push(std::ptr::null());
-    let argv = [program.as_ptr(), std::ptr::null()];
+    let args = args
+        .iter()
+        .map(|arg| cstring(arg.as_bytes()))
+        .collect::<io::Result<Vec<_>>>()?;
+    let mut argv = std::iter::once(program.as_ptr())
+        .chain(args.iter().map(|arg| arg.as_ptr()))
+        .collect::<Vec<_>>();
+    argv.push(std::ptr::null());
     let (control_read, control_write) = pipe()?;
     let (status_read, status_write) = pipe()?;
     let (error_read, error_write) = pipe()?;
@@ -93,7 +102,15 @@ pub(crate) fn spawn(
     }
     if pid == 0 {
         unsafe {
-            supervise(&fds, &program, &cwd, &argv, &envp, limit.rlim_cur);
+            supervise(
+                &fds,
+                &program,
+                &cwd,
+                &argv,
+                &envp,
+                limit.rlim_cur,
+                adjust_oom,
+            );
         }
     }
     drop(held);
@@ -174,6 +191,7 @@ unsafe fn supervise(
     argv: &[*const libc::c_char],
     envp: &[*const libc::c_char],
     limit: libc::rlim_t,
+    adjust_oom: bool,
 ) -> ! {
     for target in 0..=2 {
         if libc::dup2(fds[0], target) < 0 {
@@ -230,6 +248,9 @@ unsafe fn supervise(
             || libc::chdir(cwd.as_ptr()) < 0
         {
             report_error();
+        }
+        if adjust_oom {
+            crate::agent_scope::raise_oom_score();
         }
         libc::execve(program.as_ptr(), argv.as_ptr(), envp.as_ptr());
         report_error();

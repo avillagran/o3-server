@@ -115,7 +115,8 @@ remain opt-in and use the dedicated isolated runners documented in `docs/nightly
 `tools/test-agent-systemd` runs the opt-in native scope lifecycle in a separate
 rootless container with its own systemd user manager and private cgroups. It
 verifies detached descendants, shared-process protection, profile orphan cleanup
-and an OOM fixture capped at 32 MiB. No host service manager or bus is mounted.
+an OOM fixture capped at 32 MiB, CDP pipes and interactive/setup PTY ownership.
+No host service manager or bus is mounted.
 
 ## Try it beside T3 (pilot)
 

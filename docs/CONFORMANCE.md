@@ -1,5 +1,31 @@
 # Conformance evidence
 
+## Terminal resource scopes, 2026-11-06
+
+Interactive terminals and managed project/setup PTYs now use the nightly general
+collecting agents slice rather than the per-profile orphan slice. The registry
+constructs one shared scope command policy for native providers and terminals.
+Terminal launches keep their explicit sanitized environment; an empty/missing
+runtime directory falls back to the server runtime. Resource discovery is awaited
+only for an actual spawn, before taking synchronous PTY locks. The owned setup
+subreaper accepts wrapper argv, with all CString storage prepared before fork,
+and adjusts the executed child OOM score using only async-signal-safe syscalls.
+
+The complete container suites pass **533 default / 530 minimal**, no failures,
+36 opt-in cases ignored per configuration. Strict Clippy, formatting, compatibility
+generation and nine nightly-watch checks pass. New checks cover manager-free
+PTY fallback without parent-environment inheritance and invalid open/attach
+requests without policy initialization. Upstream Terminal Manager source is
+unchanged between4262 and4275.
+
+The real systemd opt-in case passes in both modes. Interactive and managed Python
+PTYs preserve PID=session=process-group identity, controlling TTY, a literal
+environment value, absence of an excluded parent variable, OOM score800 and the
+general agents slice. A terminal API request initializes the backend lazily, and
+profile orphan cleanup leaves the PTYs alive. This verifies resource policy and
+process ownership; it does not add persistent PTY reconnection after a real server
+restart. No live services were deployed.
+
 ## Server-browser resource scopes, 2026-11-06
 
 Server browsers now use the profile registry and the upstream unowned collecting

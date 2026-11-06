@@ -102,6 +102,29 @@ struct Tracked {
     oom_killed: bool,
 }
 
+struct ScopeOptions {
+    owned: bool,
+    continuing: bool,
+    survives_restart: bool,
+}
+
+pub(crate) struct TerminalCommand {
+    pub program: PathBuf,
+    pub args: Vec<OsString>,
+    pub env: Vec<(String, String)>,
+    pub adjust_oom: bool,
+}
+impl TerminalCommand {
+    pub(crate) fn plain(program: &str, env: &[(String, String)]) -> Self {
+        Self {
+            program: PathBuf::from(program),
+            args: vec![],
+            env: env.to_vec(),
+            adjust_oom: false,
+        }
+    }
+}
+
 /// One registry is shared by every provider instance in a server profile.
 /// It is disabled for embedded hosts until explicitly enabled.
 pub struct Registry {
@@ -127,6 +150,107 @@ impl Registry {
 
     pub fn enable(&self) {
         self.enabled.store(true, Ordering::Release);
+    }
+
+    pub(crate) async fn initialize(&self) {
+        self.backend().await;
+    }
+
+    fn scoped_command(
+        &self,
+        backend: &Backend,
+        unit: &str,
+        program: &Path,
+        args: impl IntoIterator<Item = OsString>,
+        options: ScopeOptions,
+    ) -> Command {
+        let mut command = Command::new(&backend.run);
+        command
+            .args(["--user", "--scope", "--quiet"])
+            .arg(format!(
+                "--slice={}",
+                if options.survives_restart {
+                    AGENT_SLICE
+                } else {
+                    &self.owned_slice
+                }
+            ))
+            .arg(format!("--unit={unit}"))
+            .args(SCOPE_OPTIONS);
+        if backend.oom_policy {
+            command.arg(format!(
+                "--property=OOMPolicy={}",
+                if options.continuing {
+                    "continue"
+                } else {
+                    "stop"
+                }
+            ));
+        }
+        if !options.owned {
+            command.arg("--collect");
+        }
+        command.arg("--").arg(program).args(args);
+        command
+    }
+
+    /// Terminal callers initialize the backend before taking synchronous PTY locks.
+    /// The full sanitized environment is explicit, rather than inherited again.
+    pub(crate) fn terminal_command(
+        &self,
+        program: &str,
+        cwd: &Path,
+        env: &[(String, String)],
+    ) -> Result<TerminalCommand, String> {
+        let mut plan = TerminalCommand::plain(program, env);
+        if !cfg!(target_os = "linux") || !self.enabled.load(Ordering::Acquire) {
+            return Ok(plan);
+        }
+        let environment = env
+            .iter()
+            .map(|(key, value)| (OsString::from(key), OsString::from(value)))
+            .collect();
+        let cwd = if cwd.is_absolute() {
+            cwd.to_owned()
+        } else {
+            std::env::current_dir()
+                .map_err(|error| error.to_string())?
+                .join(cwd)
+        };
+        let Some(resolved) = resolve(Path::new(program), &cwd, &environment) else {
+            return Ok(plan);
+        };
+        plan.program = resolved;
+        plan.adjust_oom = true;
+        if let Some(backend) = self.backend.get().and_then(Option::as_ref) {
+            let unit = format!("t3code-terminal-{}.scope", &crate::store::random_id()?[..8]);
+            let command = self.scoped_command(
+                backend,
+                &unit,
+                &plan.program,
+                vec![],
+                ScopeOptions {
+                    owned: false,
+                    continuing: false,
+                    survives_restart: true,
+                },
+            );
+            plan.program = PathBuf::from(command.as_std().get_program());
+            plan.args = command.as_std().get_args().map(ToOwned::to_owned).collect();
+            if environment
+                .get(std::ffi::OsStr::new("XDG_RUNTIME_DIR"))
+                .is_none_or(|value| value.is_empty())
+            {
+                plan.env.retain(|(key, _)| key != "XDG_RUNTIME_DIR");
+                plan.env.push((
+                    "XDG_RUNTIME_DIR".into(),
+                    backend.runtime.to_string_lossy().into_owned(),
+                ));
+            }
+        }
+        // Unlike native sessions, terminal scopes may outlive a server restart.
+        // They are collecting scopes, without a lease that stops them on drop.
+        Ok(plan)
     }
 
     async fn backend(&self) -> Option<&Backend> {
@@ -567,29 +691,17 @@ impl Registry {
                 )
                 .await;
             }
-            let mut wrapped = Command::new(&backend.run);
-            wrapped
-                .args(["--user", "--scope", "--quiet"])
-                .arg(format!(
-                    "--slice={}",
-                    if survives_restart {
-                        AGENT_SLICE
-                    } else {
-                        &self.owned_slice
-                    }
-                ))
-                .arg(format!("--unit={unit}"))
-                .args(SCOPE_OPTIONS);
-            if backend.oom_policy {
-                wrapped.arg(format!(
-                    "--property=OOMPolicy={}",
-                    if continuing { "continue" } else { "stop" }
-                ));
-            }
-            if !owned {
-                wrapped.arg("--collect");
-            }
-            wrapped.arg("--").arg(program).args(source.get_args());
+            let wrapped = self.scoped_command(
+                backend,
+                &unit,
+                &program,
+                source.get_args().map(ToOwned::to_owned),
+                ScopeOptions {
+                    owned,
+                    continuing,
+                    survives_restart,
+                },
+            );
             lease = Some(Lease {
                 registry: self.clone(),
                 unit,
@@ -621,18 +733,26 @@ impl Registry {
             // Only async-signal-safe syscalls run after fork. Failure is deliberately
             // ignored, matching the upstream wrapper on restricted kernels.
             wrapped.pre_exec(|| {
-                let fd = libc::open(
-                    c"/proc/self/oom_score_adj".as_ptr(),
-                    libc::O_WRONLY | libc::O_CLOEXEC,
-                );
-                if fd >= 0 {
-                    libc::write(fd, b"800\n".as_ptr().cast(), 4);
-                    libc::close(fd);
-                }
+                raise_oom_score();
                 Ok(())
             });
         }
         Ok((wrapped, lease))
+    }
+}
+
+/// Only async-signal-safe syscalls; callers run this in the child before exec.
+pub(crate) unsafe fn raise_oom_score() {
+    #[cfg(target_os = "linux")]
+    {
+        let fd = libc::open(
+            c"/proc/self/oom_score_adj".as_ptr(),
+            libc::O_WRONLY | libc::O_CLOEXEC,
+        );
+        if fd >= 0 {
+            libc::write(fd, b"800\n".as_ptr().cast(), 4);
+            libc::close(fd);
+        }
     }
 }
 
@@ -1137,6 +1257,63 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn terminal_fallback_raises_oom_score_without_reintroducing_the_parent_environment() {
+        let f = Fixture::new();
+        std::fs::write(f.root.join("probe-disabled"), "").unwrap();
+        f.registry.initialize().await;
+        let env = vec![
+            ("PATH".into(), "/usr/bin:/bin".into()),
+            ("HOME".into(), f.root.to_string_lossy().into_owned()),
+            ("PYTHON_BASIC_REPL".into(), "1".into()),
+        ];
+        let plan = f
+            .registry
+            .terminal_command("python3", &f.root, &env)
+            .unwrap();
+        assert!(plan.adjust_oom);
+        assert!(plan.args.is_empty());
+        assert_eq!(plan.env, env);
+        let mut terminal = crate::pty::spawn_prepared(&plan, &f.root, 80, 24, false).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(format!("/proc/{}/oom_score_adj", terminal.pid))
+                .unwrap()
+                .trim(),
+            "800"
+        );
+        let environment = std::fs::read(format!("/proc/{}/environ", terminal.pid)).unwrap();
+        assert!(!environment
+            .split(|byte| *byte == 0)
+            .any(|entry| entry.starts_with(b"XDG_RUNTIME_DIR=")));
+        crate::pty::signal_group(terminal.pid, libc::SIGKILL);
+        assert!(!terminal.child.wait().await.unwrap().success());
+    }
+
+    #[tokio::test]
+    async fn invalid_terminal_requests_do_not_initialize_resource_policy() {
+        let f = Fixture::new();
+        let state = Arc::new(crate::store::State::open(&f.root.join("state")).unwrap());
+        state.agent_scopes.enable();
+        assert!(crate::terminal::call(&state, "terminal.open", &json!({}))
+            .await
+            .is_err());
+        assert!(crate::terminal::call(
+            &state,
+            "terminal.open",
+            &json!({"threadId":"t","terminalId":"terminal","cwd":f.root.join("missing")})
+        )
+        .await
+        .is_err());
+        assert!(crate::terminal::open_stream(
+            &state,
+            "terminal.attach",
+            &json!({"threadId":"t","terminalId":"terminal","cwd":f.root.join("missing")})
+        )
+        .await
+        .is_err());
+        assert!(state.agent_scopes.backend.get().is_none());
+    }
+
+    #[tokio::test]
     async fn configured_native_providers_execute_through_the_shared_registry_and_own_app_thread_ids(
     ) {
         use crate::provider::{Provider, ProviderEvent, RunInput};
@@ -1316,7 +1493,8 @@ mod tests {
             crate::store::random_id().unwrap()
         ));
         std::fs::create_dir(&root).unwrap();
-        let registry = Registry::new(&root);
+        let terminal_state = Arc::new(crate::store::State::open(&root).unwrap());
+        let registry = terminal_state.agent_scopes.clone();
         registry.enable();
         let backend = registry
             .backend()
@@ -1411,6 +1589,81 @@ mod tests {
         assert!(shared.try_wait().unwrap().is_none());
         finish(&mut shared).await;
         shared_lease.stop().await;
+
+        std::env::set_var("O3_SCOPE_PARENT_PRIVATE", "not-for-the-terminal");
+        std::env::set_var("SHELL", "/usr/bin/python3");
+        let fresh_terminal_state =
+            Arc::new(crate::store::State::open(&root.join("terminal-api")).unwrap());
+        fresh_terminal_state.agent_scopes.enable();
+        assert!(fresh_terminal_state.agent_scopes.backend.get().is_none());
+        let api_input = json!({"threadId":"terminal-api-thread","terminalId":"terminal-api","cwd":root,"cols":80,"rows":24,"env":{"XDG_RUNTIME_DIR":""}});
+        let snapshot = crate::terminal::call(&fresh_terminal_state, "terminal.open", &api_input)
+            .await
+            .unwrap();
+        assert_eq!(snapshot["status"], "running");
+        let api_pid = snapshot["pid"].as_u64().unwrap();
+        let api_group = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let group = std::fs::read_to_string(format!("/proc/{api_pid}/cgroup")).unwrap();
+                if group.contains("t3code-terminal-") {
+                    break group;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(api_group.contains(AGENT_SLICE));
+        let env = vec![
+            ("PATH".into(), "/usr/bin:/bin".into()),
+            ("HOME".into(), "/tmp/home".into()),
+            ("TERM".into(), "xterm".into()),
+            ("PYTHON_BASIC_REPL".into(), "1".into()),
+            ("PTY_SCOPE_ONLY".into(), "literal-$HOME".into()),
+        ];
+        let mut terminals = Vec::new();
+        for scoped in [false, true] {
+            let launch = registry
+                .terminal_command("/usr/bin/python3", &root, &env)
+                .unwrap();
+            let terminal = crate::pty::spawn_prepared(&launch, &root, 80, 24, scoped).unwrap();
+            let command="import os,json;print('__PTY_PROOF__'+json.dumps({'pid':os.getpid(),'pgrp':os.getpgrp(),'sid':os.getsid(0),'tty':os.isatty(0),'env':os.environ.get('PTY_SCOPE_ONLY'),'leaked':'O3_SCOPE_PARENT_PRIVATE' in os.environ,'oom':open('/proc/self/oom_score_adj').read().strip(),'group':open('/proc/self/cgroup').read().strip()}))\n";
+            crate::pty::write_all(&terminal.master, command.as_bytes(), Duration::from_secs(3))
+                .await
+                .unwrap();
+            let mut output = String::new();
+            let proof = tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    let mut bytes = [0u8; 4096];
+                    if let Ok(count) = crate::pty::read(&terminal.master, &mut bytes) {
+                        output.push_str(&String::from_utf8_lossy(&bytes[..count]));
+                    }
+                    if let Some((_, json)) = output.split_once("__PTY_PROOF__{") {
+                        if let Some(end) = json.find('}') {
+                            break serde_json::from_str::<Value>(&format!("{{{}", &json[..=end]))
+                                .unwrap();
+                        }
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .unwrap();
+            assert_eq!(proof["pid"], terminal.pid);
+            assert_eq!(proof["pgrp"], terminal.pid);
+            assert_eq!(proof["sid"], terminal.pid);
+            assert_eq!(proof["tty"], true);
+            assert_eq!(proof["env"], "literal-$HOME");
+            assert_eq!(proof["leaked"], false);
+            assert_eq!(proof["oom"], "800");
+            let group = proof["group"].as_str().unwrap();
+            assert!(
+                group.contains(AGENT_SLICE)
+                    && group.contains("t3code-terminal-")
+                    && !group.contains(&registry.owned_slice)
+            );
+            terminals.push(terminal);
+        }
 
         // The CDP descriptors must survive systemd-run as well as the normal
         // launch path. Keep the browser peer inside this private namespace.
@@ -1546,8 +1799,31 @@ mod tests {
             .unwrap()
             .success());
         assert!(unrelated.try_wait().unwrap().is_none());
+        for terminal in &terminals {
+            assert!(
+                Path::new(&format!("/proc/{}", terminal.pid)).exists(),
+                "Restart cleanup killed a terminal outside the owned profile slice"
+            );
+        }
         finish(&mut unrelated).await;
         orphan_lease.stop().await;
         unrelated_lease.stop().await;
+        crate::terminal::call(&fresh_terminal_state, "terminal.close", &api_input)
+            .await
+            .unwrap();
+        gone(api_pid).await;
+        for mut terminal in terminals {
+            crate::pty::write_all(&terminal.master, b"exit()\n", Duration::from_secs(3))
+                .await
+                .unwrap();
+            assert!(
+                tokio::time::timeout(Duration::from_secs(5), terminal.child.wait())
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .success()
+            );
+            gone(terminal.pid as u64).await;
+        }
     }
 }
