@@ -91,3 +91,51 @@ zero-test child invocation from passing. The environment change applies only to
 that child; production workers and other tests retain their configuration.
 No assertion was relaxed, no worker budget increased, and no runtime path was
 skipped. Reproduction artifacts remain under the private build cache.
+
+## ADB settings readers and common pipe buffers
+
+A subsequent private full run reached `tests/device.rs` and the first Android
+settings-action test overflowed a server worker stack. The retained core's mapped
+GNU build ID matched the retained executable exactly. The runtime emitted an
+explicit stack-overflow diagnostic; available memory and the core metadata did
+not indicate an OOM kill. No unchanged failing test was retried.
+
+The ADB action path reads five settings concurrently after each mutation. Its
+common process runner still held two inline 16 KiB pipe buffers inside boxed
+async work. Boxing the work did not prevent debug poll frames from reserving
+space for those buffers and intermediate moves. The recently added stdin
+coordinator introduced an additional nested read-join poll layer.
+
+A compilation-only comparison used the complete process modules before stdin
+coordination, with stdin coordination, and with bounded heap pipe buffers. The
+layout probe never polled futures or launched a process. It ran only to print
+sizes inside a private container; assembly was inspected without executing the
+poll functions.
+
+| Selected debug poll frame | Before stdin coordination | Inline buffers with stdin | Heap buffers with stdin |
+| --- | ---: | ---: | ---: |
+| `run_inner` | 36,808 | 37,368 | 4,648 |
+| Outer work | 66,792 | 67,464 | 2,024 |
+| Additional read-join work | No corresponding layer | 66,568 | 1,128 |
+| Sum of these selected reservations | 103,600 | 171,400 | 7,800 |
+| Public `run` future layout | 984 | 1,072 | 1,072 |
+
+These are debug code-generation observations, not a complete reconstructed crash
+stack. The core's original faulting call chain remained unresolved with the
+container's library paths unavailable to the host debugger. The additional poll
+layer and the heap-buffer comparison support stack pressure as the mechanism.
+
+The production change replaces each fixed-size inline buffer with a zeroed
+bounded vector of the same 16 KiB length. Output caps, read chunk size, stdin,
+timeouts, cancellation, process-group cleanup and concurrency remain unchanged.
+The vector initialization allocates directly on the heap instead of first
+constructing a large stack array.
+
+The existing Android action test now executes its unchanged typed reader/action
+assertions in a fresh Linux child with pthread caching disabled at exec. Its
+real in-process HTTP server measures both actual Tokio workers as 524,288 bytes.
+The fake ADB commands exercise appearance, text size, networking and animation
+mutations followed by all five actual settings readers. An independent process
+regression also checks null stdin, both output-cap policies, stderr preservation,
+timeout and cancellation. Fixtures stay private, retain their directories for
+container teardown, and never run a real Android SDK or host ADB.

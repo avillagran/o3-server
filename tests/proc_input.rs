@@ -144,3 +144,15 @@ async fn timeout_and_future_cancellation_stop_the_owned_process_group() {
     .expect("cancelled child still exists");
     // Exact owned files and their containing fixture directory remain for container teardown.
 }
+
+#[tokio::test]
+async fn pipe_buffers_preserve_output_caps_and_null_stdin() {
+    test_sandbox::assert_isolated();
+    for allow_truncate in [false, true] {
+        let out=proc::run("/usr/bin/python3",Path::new("/"),&["-c","import os,sys; assert sys.stdin.buffer.read()==b''; os.write(1,b'x'*20000); os.write(2,b'fixture-stderr')"],Opts{timeout:Duration::from_secs(2),cap:17000,allow_truncate},&[]).await.unwrap();
+        assert_eq!(out.stdout, vec![b'x'; 17000]);
+        assert_eq!(out.stderr, "fixture-stderr");
+        assert!(out.truncated);
+        assert_eq!(out.ok(), allow_truncate);
+    }
+}

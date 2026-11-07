@@ -68,7 +68,8 @@ impl Opts {
 
 async fn read_capped<R: AsyncRead + Unpin>(mut r: R, cap: usize) -> (Vec<u8>, bool) {
     let mut out = Vec::new();
-    let mut buf = [0u8; 16 * 1024];
+    // Keep bounded pipe buffers out of nested debug poll frames.
+    let mut buf = vec![0u8; 16 * 1024];
     loop {
         match r.read(&mut buf).await {
             Ok(0) | Err(_) => return (out, false),
