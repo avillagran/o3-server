@@ -8,6 +8,7 @@ import pathlib
 import tempfile
 import subprocess
 import uuid
+from test_safety import check
 
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--default-features",action="store_true")
@@ -22,6 +23,7 @@ options=parser.parse_args()
 if (options.resume_from or options.resume_manifest) and not (options.all_tests and options.resume_from and options.resume_manifest):
     parser.error("resume requires --all-tests, --resume-from and --resume-manifest")
 root = pathlib.Path(__file__).resolve().parent.parent
+check(root, full=options.all_tests or not (options.unit_filter or options.integration))
 env = dict(os.environ)
 env.setdefault('CARGO_TARGET_DIR', '/var/tmp/o3-server/fresh-context-target')
 env.setdefault('CARGO_BUILD_JOBS', '2')

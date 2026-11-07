@@ -1,0 +1,10 @@
+The complete runtime matrix is paused while legacy test filesystem effects are audited.
+
+Explicit recursive fixture cleanup has been removed. Production deletion paths
+reached by fixtures must use explicit planning/recording filesystem boundaries;
+the real production executor must remain intact. New or individually reviewed
+focused tests may run only in their private rootless container.
+
+Remove this marker only after the audit is complete. Do not bypass the preflight,
+use a host test fallback, or claim the earlier functional counts establish this
+filesystem-policy acceptance.
