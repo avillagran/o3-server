@@ -1966,6 +1966,49 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
+        state
+            .streams
+            .p2
+            .preview
+            .browser
+            .command("dialog", &tab, "Fixture.dialogOnTitle", json!({}))
+            .await
+            .unwrap();
+        let (dialog, title) = tokio::time::timeout(
+            Duration::from_secs(2),
+            state
+                .streams
+                .p2
+                .preview
+                .browser
+                .title_status("dialog", &tab),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(dialog["message"], "Title race prompt");
+        assert!(
+            title.is_null(),
+            "a newly opened modal must interrupt the title probe"
+        );
+        state
+            .streams
+            .p2
+            .preview
+            .browser
+            .answer_dialog("dialog", &tab, false, None)
+            .await
+            .unwrap();
+        let (dialog, title) = state
+            .streams
+            .p2
+            .preview
+            .browser
+            .title_status("dialog", &tab)
+            .await
+            .unwrap();
+        assert!(dialog.is_null());
+        assert_eq!(title, "Post dialog title");
         close(&state, "dialog", Some(&tab)).await;
         shutdown(&state.streams.p2.preview).await;
         assert!(profile.join("commands.jsonl").exists());

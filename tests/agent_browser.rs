@@ -1,8 +1,10 @@
 mod common;
 mod support;
 use serde_json::json;
+static BROWSER_ENVIRONMENT: std::sync::Mutex<()> = std::sync::Mutex::new(());
 #[test]
 fn browser_capability_tracks_settings_and_fixture_availability() {
+    let _browser_environment = BROWSER_ENVIRONMENT.lock().unwrap();
     std::env::set_var(
         "O3_BROWSER_BINARY",
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/browser-cdp.py"),
@@ -28,6 +30,7 @@ fn browser_capability_tracks_settings_and_fixture_availability() {
 
 #[test]
 fn native_sessions_reuse_mcp_credentials_enforce_modes_and_revoke_on_exit() {
+    let _browser_environment = BROWSER_ENVIRONMENT.lock().unwrap();
     use std::{sync::Arc, time::Duration};
     std::env::set_var(
         "O3_BROWSER_BINARY",
@@ -226,6 +229,7 @@ fn native_request(
 
 #[test]
 fn actual_mcp_dialog_status_and_answer_bypass_a_held_owned_evaluate() {
+    let _browser_environment = BROWSER_ENVIRONMENT.lock().unwrap();
     use std::{sync::Arc, time::Duration};
     std::env::set_var(
         "O3_BROWSER_BINARY",

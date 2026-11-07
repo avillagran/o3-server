@@ -92,6 +92,7 @@ def check(text):
         answered=tool('preview_dialog',{'tabId':tab,'accept':True,'promptText':'Owned MCP answer'})
         assert not answered['isError'],answered
         assert json.loads(answered['content'][0]['text'])['dialog'] is None,answered
+        assert json.loads(answered['content'][0]['text'])['title']=='Post dialog title',answered
         worker.join(3);assert not worker.is_alive()
         assert len(observed)==1 and isinstance(observed[0],dict) and not observed[0]['isError'],observed
         assert tool('preview_dialog',{'tabId':tab,'accept':True})['isError']

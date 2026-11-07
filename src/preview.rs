@@ -78,6 +78,10 @@ pub struct Manager {
     monitors: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
 }
 impl Manager {
+    /// Native status reads the authoritative snapshots without issuing page JavaScript.
+    pub(crate) fn snapshot_list(&self, thread: &str) -> Value {
+        self.inner.lock().unwrap().kernel.list(thread)
+    }
     pub fn activity(&self) -> crate::preview_activity::Activity {
         self.activity.clone()
     }

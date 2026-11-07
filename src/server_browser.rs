@@ -786,6 +786,46 @@ impl Browsers {
             .and_then(|(pages, session)| events::dialog_state(pages, session))
             .map_or(Value::Null, |state| state.status()))
     }
+    /// Native status skips page JavaScript while modal, but reads a fresh normal title.
+    pub(crate) async fn title_status(
+        &self,
+        thread: &str,
+        tab: &str,
+    ) -> Result<(Value, Value), Value> {
+        let tab = self.dialog_tab(thread, tab)?;
+        let (pages, session) = tab
+            .events
+            .as_ref()
+            .zip(tab.session.as_deref())
+            .ok_or_else(|| error("Browser tab is closed".into()))?;
+        let mut dialogs = events::dialog_watch(pages, session)
+            .ok_or_else(|| error("Browser tab is closed".into()))?;
+        let pending = dialogs.borrow().status();
+        if !pending.is_null() {
+            return Ok((pending, Value::Null));
+        }
+        let query = request_in(
+            &tab.tx,
+            "Runtime.evaluate",
+            json!({"expression":"document.title","returnByValue":true}),
+            tab.session.clone(),
+        );
+        tokio::pin!(query);
+        loop {
+            tokio::select! {
+                result=&mut query=>{
+                    let title=result.ok().and_then(|value|value["result"]["value"].as_str().filter(|title|!title.is_empty()).map(str::to_owned)).map_or(Value::Null,|title|json!(title));
+                    let pending=dialogs.borrow().status();
+                    return Ok((pending.clone(),if pending.is_null(){title}else{Value::Null}));
+                },
+                changed=dialogs.changed()=>{
+                    if changed.is_err(){return Err(error("Browser tab is closed".into()));}
+                    let pending=dialogs.borrow_and_update().status();
+                    if !pending.is_null(){return Ok((pending,Value::Null));}
+                }
+            }
+        }
+    }
     pub(crate) fn dialog_watch(
         &self,
         thread: &str,

@@ -50,8 +50,11 @@ operation gate; close also bypasses it. Agent admission remains limited to its
 owned tabs. The source's broader unclaimed-tab admission, full SessionControl
 ownership/generation transitions, reference invalidation, file-chooser interception
 and beforeunload navigation-await cancellation are not implemented by this change.
-Status derives URL, title and loading from the existing observed navigation
-snapshot, with title null during a pending dialog.
+Status reads URL and loading from the authoritative navigation snapshot. A pending
+dialog skips every page-JavaScript probe and returns a null title. Without a modal
+and with a nonblank URL, an independent title query reads the current document;
+query failure yields null. If a dialog opens during the query, its identity watch
+returns the pending status immediately rather than waiting behind that dialog.
 
 The viewer reads dialog revisions independently of an outstanding screenshot and
 can answer through its existing interactive authorization. Control messages retain
@@ -85,3 +88,22 @@ an inherited-pipe dialog answer through a framed interactive viewer while both
 an evaluation and screenshot response are held, and actual provider-authenticated
 MCP metadata/status/answer admission. Full-size transport and full control-owner
 wire parity remain outside these bounded tests.
+
+## Modal status and parallel fixture regression
+
+The compatibility `preview.list` path refreshes page metadata. Calling that path
+inside native status could issue a second evaluation while a modal dialog held all
+evaluations, blocking the status needed to answer it. The stronger owned protocol
+fixture reproduced that failure before the fix. Native status now reads the
+manager's authoritative snapshots directly and applies the modal/fresh-title
+branch above only to its selected page. Physical tests hold all evaluations during
+the dialog, mutate the title without navigation before answering, and open another
+dialog during a title probe. No request timeout is increased.
+
+The three provider-browser integration cases share a process-wide executable
+environment variable. A shared mutex now covers their entire lifetimes so normal
+parallel Cargo execution cannot mix protocol fixtures. Private acceptance runs all
+three with `tools/test-scheduled-modes --integration agent_browser --test-threads
+3` in each feature mode. The runner defaults to one thread, records the selected
+positive thread count, and rejects zero, negative and noninteger values before
+compilation. Test runtime execution remains inside the private container.

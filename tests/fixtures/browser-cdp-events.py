@@ -57,14 +57,23 @@ while True:
                 if method=='Page.getFrameTree':result={'frameTree':{'frame':{'id':target+'-frame','url':page['url']}}}
                 elif method=='Page.getNavigationHistory':result={'currentIndex':0,'entries':[{'id':1,'url':page['url'],'title':page['title']}]}
                 elif method=='Runtime.evaluate':
-                    if params.get('fixtureHold') or params.get('expression')=='fixtureDialog()':
+                    if page.get('held') and not params.get('fixtureHold'):
+                        page.setdefault('blockedReads',[]).append((command['id'],session));held=True
+                    elif params.get('expression')=='document.title' and page.pop('dialogOnTitle',False):
+                        page['held']=(command['id'],session);held=True
+                        events=[{'method':'Page.javascriptDialogOpening','sessionId':session,'params':{'type':'prompt','message':'Title race prompt','defaultPrompt':'race'}}]
+                    elif params.get('expression')=='document.title':result={'result':{'value':page['title']}}
+                    elif params.get('fixtureHold') or params.get('expression')=='fixtureDialog()':
                         page['held']=(command['id'],session);held=True
                         events=[{'method':'Page.javascriptDialogOpening','sessionId':session,'params':{'type':'prompt','message':'Owned prompt','defaultPrompt':'default','url':page['url']}}]
                     else:result={'result':{'value':{'url':page['url'],'title':page['title'],'readyState':'complete'}}}
                 elif method=='Page.handleJavaScriptDialog':
+                    page['title']='Post dialog title'
                     pending=page.pop('held',None)
                     if pending:
                         deferred=[{'id':pending[0],'sessionId':pending[1],'result':{'result':{'value':{'unblocked':True,'accepted':params['accept'],'promptText':params.get('promptText')}}}}]
+                    for read_id,read_session in page.pop('blockedReads',[]):
+                        deferred.append({'id':read_id,'sessionId':read_session,'result':{'result':{'value':{'url':page['url'],'title':page['title'],'readyState':'complete'}}}})
                     screenshot=page.pop('screenshot',None)
                     if screenshot:
                         deferred.append({'id':screenshot[0],'sessionId':screenshot[1],'result':{'data':'/9j/2Q=='}})
@@ -78,6 +87,7 @@ while True:
                         page['screenshot']=(command['id'],session);held=True
                     else:result={'data':'/9j/2Q=='}
                 elif method=='Fixture.holdScreenshot':page['holdScreenshot']=True
+                elif method=='Fixture.dialogOnTitle':page['dialogOnTitle']=True
                 elif method=='Fixture.holdNextCreate':hold_next_create=True
                 elif method=='Fixture.rejectNextAttach':reject_next_attach=True
                 elif method=='Fixture.setUrl':page['url']=params['url']

@@ -120,7 +120,7 @@ impl Scope {
         owned: &[String],
         tab: Option<&str>,
     ) -> Result<Value, Value> {
-        let list = preview::call(state, "preview.list", &json!({"threadId":self.thread})).await?;
+        let list = state.streams.p2.preview.snapshot_list(&self.thread);
         let sessions = list["sessions"]
             .as_array()
             .into_iter()
@@ -143,6 +143,17 @@ impl Scope {
         } else {
             json!({"available":false,"visible":false,"tabId":null,"url":null,"title":null,"loading":false})
         };
+        if status["available"] == true && !status["url"].is_null() {
+            let (dialog, title) = state
+                .streams
+                .p2
+                .preview
+                .browser
+                .title_status(&self.thread, status["tabId"].as_str().unwrap())
+                .await?;
+            status["dialog"] = dialog;
+            status["title"] = title;
+        }
         status["tabs"]=json!(sessions.iter().map(|session|json!({"tabId":session["tabId"],"url":if session["navStatus"]["url"]=="about:blank"{Value::Null}else{session["navStatus"]["url"].clone()},"visible":session["tabId"].as_str().is_some_and(|tab|state.streams.p2.preview.browser.human_controls(&self.thread,tab))})).collect::<Vec<_>>());
         Ok(status)
     }

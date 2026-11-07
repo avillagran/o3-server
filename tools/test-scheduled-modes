@@ -11,8 +11,18 @@ import uuid
 from test_safety import check
 from runtime_artifacts import snapshot
 
+def positive_threads(value):
+    try:
+        count = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("test thread count must be a positive integer") from None
+    if count < 1:
+        raise argparse.ArgumentTypeError("test thread count must be a positive integer")
+    return count
+
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--default-features",action="store_true")
+parser.add_argument("--test-threads",type=positive_threads,default=1,help="Positive private test thread count (default: 1)")
 parser.add_argument("--case-filter",help="Run one exact test case with --integration")
 selection=parser.add_mutually_exclusive_group()
 selection.add_argument("--unit-filter")
@@ -93,6 +103,7 @@ report = {
     'integration': options.integration,
     'unitFilter': options.unit_filter,
     'caseFilter': options.case_filter,
+    'testThreads': options.test_threads,
     'resumeFrom': options.resume_from,
     'resumeManifest': str(options.resume_manifest) if options.resume_manifest else None,
     'image': test_image,
@@ -106,22 +117,22 @@ script = """set -eu
 umask 077
 mkdir -p "$HOME"
 binary="$1"
-if test "$O3_ALL_TESTS" = 1; then exec /test-bin/"$binary" --test-threads=1; fi
+if test "$O3_ALL_TESTS" = 1; then exec /test-bin/"$binary" --test-threads="$O3_TEST_THREADS"; fi
 case "$binary" in
   o3_server-*)
-    if test -n "$O3_UNIT_FILTER"; then exec /test-bin/"$binary" "$O3_UNIT_FILTER" --nocapture --test-threads=1; fi
-    /test-bin/"$binary" scheduled::tests --test-threads=1
-    /test-bin/"$binary" webhook::crash_tests --test-threads=1
-    /test-bin/"$binary" fresh_context::tests --test-threads=1
-    /test-bin/"$binary" native_goal::tests --test-threads=1 ;;
+    if test -n "$O3_UNIT_FILTER"; then exec /test-bin/"$binary" "$O3_UNIT_FILTER" --nocapture --test-threads="$O3_TEST_THREADS"; fi
+    /test-bin/"$binary" scheduled::tests --test-threads="$O3_TEST_THREADS"
+    /test-bin/"$binary" webhook::crash_tests --test-threads="$O3_TEST_THREADS"
+    /test-bin/"$binary" fresh_context::tests --test-threads="$O3_TEST_THREADS"
+    /test-bin/"$binary" native_goal::tests --test-threads="$O3_TEST_THREADS" ;;
   *)
-    if test -n "$O3_CASE_FILTER"; then exec /test-bin/"$binary" "$O3_CASE_FILTER" --exact --test-threads=1; fi
-    exec /test-bin/"$binary" --test-threads=1 ;;
+    if test -n "$O3_CASE_FILTER"; then exec /test-bin/"$binary" "$O3_CASE_FILTER" --exact --test-threads="$O3_TEST_THREADS"; fi
+    exec /test-bin/"$binary" --test-threads="$O3_TEST_THREADS" ;;
 esac
 """
 for index, binary in enumerate(binaries):
     name = 'o3-scheduled-tests-' + uuid.uuid4().hex
-    args = ['podman', 'run', '--rm', '--name', name, '--userns=keep-id', '--user', f'{os.getuid()}:{os.getgid()}', '--read-only', '--tmpfs', '/tmp:rw,exec,size=1g,mode=1777', '--cap-drop=ALL', '--security-opt=no-new-privileges', '--pids-limit=512', '--memory=4g', '--network=none', f'--workdir={root}', '--env', 'HOME=/tmp/home', '--env', f'O3_UNIT_FILTER={options.unit_filter or ""}', '--env', f'O3_CASE_FILTER={options.case_filter or ""}', '--env', f'O3_ALL_TESTS={int(options.all_tests)}', '-v', f'{root}:{root}:ro', '-v', f'{artifact_snapshot / binary.parent.name}:/test-bin:ro', '-v', f'{artifact_snapshot}:{binary.parent.parent}:ro', test_image, 'sh', '-c', script, 'scheduled-nightly', binary.name]
+    args = ['podman', 'run', '--rm', '--name', name, '--userns=keep-id', '--user', f'{os.getuid()}:{os.getgid()}', '--read-only', '--tmpfs', '/tmp:rw,exec,size=1g,mode=1777', '--cap-drop=ALL', '--security-opt=no-new-privileges', '--pids-limit=512', '--memory=4g', '--network=none', f'--workdir={root}', '--env', 'HOME=/tmp/home', '--env', f'O3_UNIT_FILTER={options.unit_filter or ""}', '--env', f'O3_CASE_FILTER={options.case_filter or ""}', '--env', f'O3_ALL_TESTS={int(options.all_tests)}', '--env', f'O3_TEST_THREADS={options.test_threads}', '-v', f'{root}:{root}:ro', '-v', f'{artifact_snapshot / binary.parent.name}:/test-bin:ro', '-v', f'{artifact_snapshot}:{binary.parent.parent}:ro', test_image, 'sh', '-c', script, 'scheduled-nightly', binary.name]
     try:
         try:
             result = subprocess.run(args, cwd=root, timeout=300, capture_output=True, text=True)
