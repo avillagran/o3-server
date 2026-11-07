@@ -8,7 +8,9 @@ import socketserver
 import sys
 import threading
 
-settings_path = pathlib.Path(__file__).with_suffix('.json')
+# The immutable executable is shared from the read-only source tree. Its normal
+# SSH identity argv slot selects only this fixture's private settings file.
+settings_path = pathlib.Path(sys.argv[sys.argv.index('-i') + 1])
 settings = json.loads(settings_path.read_text())
 trace = pathlib.Path(settings['trace'])
 def record(value):

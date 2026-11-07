@@ -4,8 +4,7 @@ use super::*;
 mod ssh_fixture;
 use ssh_fixture::Fixture;
 async fn profile(fixture: &Fixture, enabled: bool) -> Arc<State> {
-    let state =
-        Arc::new(State::open(&fixture.executable.parent().unwrap().join("profile")).unwrap());
+    let state = Arc::new(State::open(&fixture.directory.join("profile")).unwrap());
     state
         .streams
         .p2

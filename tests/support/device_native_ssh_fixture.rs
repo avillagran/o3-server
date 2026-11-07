@@ -13,6 +13,8 @@ pub struct Fixture {
     server: tokio::task::JoinHandle<()>,
     pub trace: PathBuf,
     pub executable: PathBuf,
+    pub directory: PathBuf,
+    settings_path: PathBuf,
     pub devices: Arc<std::sync::Mutex<Value>>,
 }
 impl Drop for Fixture {
@@ -89,26 +91,25 @@ impl Fixture {
                 });
             }
         });
-        let executable = base.join("ssh-private-cli.py");
-        std::fs::copy(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("tests/fixtures/device/ssh-private-cli.py"),
-            &executable,
-        )
-        .unwrap();
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+        // Never create/write a runnable file while parallel tests spawn children.
+        // The checked-in executable is mounted read-only; its per-fixture
+        // settings travel through the existing explicit SSH identity argv slot.
+        let executable = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/device/ssh-private-cli.py");
+        let settings_path = base.join("key with ' quote.json");
         let trace = base.join("trace.jsonl");
-        std::fs::write(executable.with_extension("json"),serde_json::to_vec(&serde_json::json!({"remotePort":port,"receipt":"c".repeat(48),"trace":trace,"counter":base.join("counter"),"failForwards":fail_forwards})).unwrap()).unwrap();
-        let config=Config::decode(&serde_json::json!({"id":"mini","label":"Private SSH","target":"user@private.invalid","port":2222,"identityFile":"/private/key with ' quote"})).unwrap();
+        std::fs::write(&settings_path,serde_json::to_vec(&serde_json::json!({"remotePort":port,"receipt":"c".repeat(48),"trace":trace,"counter":base.join("counter"),"failForwards":fail_forwards})).unwrap()).unwrap();
+        let config=Config::decode(&serde_json::json!({"id":"mini","label":"Private SSH","target":"user@private.invalid","port":2222,"identityFile":settings_path})).unwrap();
         let owner = plan::owner(Some("private-environment"), "/private/state", &config.id);
-        let cli = Arc::new(Cli::new(executable.clone(), base, config, owner).unwrap());
+        let cli = Arc::new(Cli::new(executable.clone(), base.clone(), config, owner).unwrap());
         Self {
             cli,
             healthy,
             server,
             trace,
             executable,
+            directory: base,
+            settings_path,
             devices,
         }
     }
@@ -120,7 +121,7 @@ impl Fixture {
             .collect()
     }
     pub fn settings(&self, patch: Value) {
-        let path = self.executable.with_extension("json");
+        let path = &self.settings_path;
         let mut value: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         for (key, data) in patch.as_object().unwrap() {
             value[key] = data.clone();
