@@ -1,9 +1,11 @@
 # Captured Page grants
 
-This policy is an unregistered transport foundation. It is compiled by
-`tests/native_page_grants.rs`; the product actor does not yet instantiate it.
-It does not activate tools, authenticate an MCP caller, or grant a browser
-endpoint to a worker.
+The inherited-pipe and desktop actors now retain this policy behind a trusted
+owner-library factory. `Manager::capture_native_page` captures the real existing
+tab, target, registry and Control. It allocates distinct native CDP sessions;
+the existing legacy observer session is borrowed for identity only and is never
+granted or detached. No public tool selects this factory, and no worker endpoint
+or complete MCP dispatch is activated by this checkpoint.
 
 The owner supplies a captured target. Root commands cannot enumerate targets,
 create targets or contexts, close the shared browser, change download paths, or
@@ -33,10 +35,57 @@ for minimal and 6,875,624 bytes for default. Fixtures perform no filesystem
 operations beyond the shared container admission check. No recursive removal or
 host runtime test is involved.
 
-The next acceptance boundary is an actual actor-owned grant factory and event
-route, using the existing raw command lane and completion observers. It must
-retain all pending callbacks through shutdown, detach late granted sessions,
-refuse foreign targets at the transport boundary, and preserve the borrowed
-legacy session. Actual provider authority, persistent Page operations, and the
-outer twelve-tool MCP dispatch remain separate outstanding consumers. The
-existing 4 MiB CDP frame cap also remains an explicit parity gap.
+## Actual actor and caller acceptance
+
+`/var/tmp/o3-server/page-real-grant-physical-4/result.json` records the actual
+Chromium acceptance with immutable executable SHA
+`2ff75a7bb24f55bee30221773f72c973ff33cdf0952a329dbb8c759a14d33a4c`.
+The private pipe proxy delays one actual attach response by 350 ms; it never
+manufactures a response. The caller is cancelled before that response arrives.
+The actor still registers the late session, drains it, and records its individual
+detach acknowledgment. A separate actual auto-attached Worker executes through
+its own session. Its detach uses the real CDP parent session; an explicit root
+attach's lineage witness is deliberately not mistaken for that protocol parent.
+Deepest children close first. Remote detach rejection produces an unknown
+receipt instead of an unbounded retry. The v3 child-close failure is retained;
+only v4 is acceptance for the corrected implementation.
+
+Owned raw events route before the scalar decoder. Events from unrelated targets
+still use the original decoder. A duplicate lone-surrogate application event on
+the borrowed observer cannot retire the shared profile. The proof verifies an
+exact console event and result, foreign-target/global-close refusal, ended
+callback refusal, the borrowed observer's continued evaluation, a neighboring
+tab's survival, and zero profile removal requests or recursive-removal attempts.
+
+`NativePage::admitted_provider` accepts the actual opaque provider `Context`.
+Its ticket binds the original RunContext, actual thread and registry identity,
+and dynamic `Scope::caller` checks. Native status/snapshot/wait classification
+uses the fixed `NativeOperation` enum, not a caller-provided metadata flag.
+Every command checks credential lifetime, capability availability, provider
+generation, and the original callback before reaching the actor. Opaque 24-byte
+random receipts never resolve to a successor context. Owner-library admission
+is explicitly separate from provider admission and is not exposed as an MCP
+argument or endpoint.
+
+`/var/tmp/o3-server/page-real-owner-focused-3/result.json` records 36 browser/actor
+units plus ten grant cases per feature mode, all passing in private containers.
+The new credential case uses actual Context acquisition and Scope.caller, proves
+archived metadata read versus operate admission, generation fencing, and Context
+drop revocation while the callback is still entered. Denied receipts leave the
+actor queue empty. Immutable unit executables are individually below 200 MiB;
+the four artifacts total 330,342,320 bytes and are retained. No test deletes a
+fixture tree or executes a host browser.
+
+The provider ticket issuer is not yet connected to the Node transport adapter.
+The private gateway, callback-end cancellation notification, runtime/event and
+cleanup capabilities, sealed worker attachment, original outer MCP registration
+and all twelve real tool consumers remain the next boundary. In particular,
+eight correlated commands, 64 late receipts and the existing 4 MiB CDP frame cap
+are foundation resource limits, not final native concurrency/payload parity.
+
+Final all-target Clippy is recorded in
+`/var/tmp/o3-server/page-real-owner-strict-2/result.json` for both modes. The
+consolidated receipt and final source hashes are in
+`/var/tmp/o3-server/page-real-owner-focused-3/proof.json`. The only declaration
+change after functional execution moves public reexports before the test module;
+all-target strict checks use that final declaration order.

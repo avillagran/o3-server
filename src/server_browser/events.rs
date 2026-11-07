@@ -245,6 +245,7 @@ impl Observer {
 }
 #[derive(Default)]
 pub(super) struct Registry {
+    pub(super) native: BTreeMap<String, std::sync::Arc<super::native_owner::Owner>>,
     controls: Vec<crate::preview_control::runtime::Control>,
     pages: BTreeMap<String, Observer>,
     registered: bool,

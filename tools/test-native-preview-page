@@ -2,7 +2,7 @@
 """Run reviewed whole-native page functions against a retained private Chromium owner."""
 import argparse,json,os,pathlib,subprocess,tempfile,hashlib,uuid
 from node_admission import snapshot as snapshot_node, environment as node_environment
-p=argparse.ArgumentParser(description=__doc__);p.add_argument('--supervisor-bin',type=pathlib.Path);p.add_argument('--broker-source',type=pathlib.Path,help='Pinned complete native PreviewAutomationBroker source');p.add_argument('--consumer-source',type=pathlib.Path,help='Pinned whole native ServerBrowser source for selected consumer oracle');p.add_argument('--reuse-node-artifact',type=pathlib.Path,help='Reuse an existing immutable admitted Node with the same exact hash');p.add_argument('--case',choices=['real-page','retention','contracts','relay','supervised','supervised-revoke','entry-protocol','framing','mcp-output','owned-pipe','control-queue','control-consumer','broker-timeout','scope-context','scope-transport'],default='real-page');p.add_argument('--native',type=pathlib.Path,required=True);p.add_argument('--playwright',type=pathlib.Path,required=True);p.add_argument('--deps',type=pathlib.Path,required=True);p.add_argument('--node',type=pathlib.Path,required=True);p.add_argument('--guard',type=pathlib.Path,required=True);p.add_argument('--evidence-root',type=pathlib.Path,required=True);a=p.parse_args()
+p=argparse.ArgumentParser(description=__doc__);p.add_argument('--supervisor-bin',type=pathlib.Path);p.add_argument('--broker-source',type=pathlib.Path,help='Pinned complete native PreviewAutomationBroker source');p.add_argument('--consumer-source',type=pathlib.Path,help='Pinned whole native ServerBrowser source for selected consumer oracle');p.add_argument('--reuse-node-artifact',type=pathlib.Path,help='Reuse an existing immutable admitted Node with the same exact hash');p.add_argument('--case',choices=['real-page','retention','contracts','relay','supervised','supervised-revoke','entry-protocol','framing','mcp-output','owned-pipe','owned-grants','control-queue','control-consumer','broker-timeout','scope-context','scope-transport'],default='real-page');p.add_argument('--native',type=pathlib.Path,required=True);p.add_argument('--playwright',type=pathlib.Path,required=True);p.add_argument('--deps',type=pathlib.Path,required=True);p.add_argument('--node',type=pathlib.Path,required=True);p.add_argument('--guard',type=pathlib.Path,required=True);p.add_argument('--evidence-root',type=pathlib.Path,required=True);a=p.parse_args()
 node_binary=a.node/'bin/node';node_stat=node_binary.lstat()
 assert node_binary.is_file() and not node_binary.is_symlink() and node_stat.st_mode&0o111
 node_sha=hashlib.sha256(node_binary.read_bytes()).hexdigest()
@@ -58,7 +58,7 @@ if a.case=='control-consumer':
  payload=a.consumer_source.read_bytes();assert hashlib.sha256(payload).hexdigest()==provenance['sha256']
  (out/'native-consumer.ts').write_bytes(payload);(out/'native-consumer.ts').chmod(0o400)
  (out/'native-consumer-source.json').write_text(json.dumps(provenance,indent=2)+'\n')
-if a.case in ('supervised','supervised-revoke','owned-pipe'):
+if a.case in ('supervised','supervised-revoke','owned-pipe','owned-grants'):
  assert a.supervisor_bin and a.supervisor_bin.is_file()
  (out/'supervisor').write_bytes(a.supervisor_bin.read_bytes());(out/'supervisor').chmod(0o500)
 bootstrap='''
@@ -77,7 +77,7 @@ container='o3-native-page-'+uuid.uuid4().hex
 cmd=['podman','--remote=false','run','--name',container,'--label','o3.preview-proof='+container,'--rm','--pull=never','--http-proxy=false','--userns=keep-id','--user',f'{os.getuid()}:{os.getgid()}','--read-only','--network=none','--cap-drop=ALL','--security-opt=no-new-privileges','--pids-limit=512','--memory=4g','--tmpfs','/tmp:rw,size=512m,mode=1777','--tmpfs','/native/node_modules:rw,size=32m,mode=1777','--env','HOME=/out/home','--env','XDG_CONFIG_HOME=/out/home/config','--env','XDG_CACHE_HOME=/out/home/cache']
 for name,value in node_environment(node_receipt,path='/node/bin/node').items():cmd+=['--env',name+'='+value]
 for root,target,mode in [(pathlib.Path('/usr'),'/usr','ro'),(snapshot,'/source','ro'),(a.native,'/native','ro'),(a.playwright,'/playwright','ro'),(a.deps,'/deps','ro'),(node_mount,'/node/bin','ro'),(a.guard,'/guard.mjs','ro'),(out,'/out','rw')]:cmd+=['-v',f'{root.resolve()}:{target}:{mode}']
-if a.case in ('supervised','supervised-revoke','owned-pipe'):cmd+=['-v',f'{out}/supervisor:/supervisor:ro']
+if a.case in ('supervised','supervised-revoke','owned-pipe','owned-grants'):cmd+=['-v',f'{out}/supervisor:/supervisor:ro']
 cmd+=['localhost/o3-rust-tests:latest','python3','-c',bootstrap]
 with (out/'runtime.log').open('w') as log:
  try:result=subprocess.run(cmd,stdout=log,stderr=subprocess.STDOUT,timeout=90);code=result.returncode

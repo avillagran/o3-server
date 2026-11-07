@@ -2,6 +2,10 @@
 //! scoped grant; this module is not an MCP endpoint or a browser launcher.
 pub mod cdp;
 pub use crate::server_browser::exact::CapturedEvaluation;
+/// Trusted owner handles for native Page sessions; no public MCP dispatch is installed.
+pub use crate::server_browser::native_owner::{
+    NativeCloseReceipt, NativeInvocation, NativeOperation, NativePage, NativeReceipt,
+};
 pub mod control;
 
 use serde_json::{json, Value};

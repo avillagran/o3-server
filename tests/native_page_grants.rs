@@ -358,9 +358,12 @@ fn close_drains_all_entered_commands_before_certifying_owned_cleanup() {
             Some("owned-session"),
         )
         .unwrap();
+    assert!(state.may_start(&operation, false));
+    assert_eq!(state.requests_pending(), 1);
     state.started(&operation);
     state.cancelled(&operation);
     state.close();
+    assert!(!state.may_start(&operation, false));
     let detach = state.cleanup_detach("owned-session").unwrap();
     state
         .completed(&detach, &packet(r#"{"id":2,"result":{}}"#))
@@ -390,4 +393,79 @@ fn close_drains_all_entered_commands_before_certifying_owned_cleanup() {
         .unwrap();
     ambiguous.close();
     assert!(!ambiguous.clean());
+}
+
+#[test]
+fn cleanup_distinguishes_protocol_parent_from_an_explicit_attach_lineage_witness() {
+    sandbox::assert_isolated();
+    let mut state = root();
+    attach(&mut state);
+    state.event(&packet(r#"{"method":"Target.attachedToTarget","sessionId":"owned-session","params":{"sessionId":"auto-child","targetInfo":{"targetId":"child-target","type":"worker"}}}"#)).unwrap();
+    assert_eq!(
+        state
+            .cleanup_detach("auto-child")
+            .unwrap()
+            .session
+            .as_deref(),
+        Some("owned-session")
+    );
+    let request = state
+        .reserve(
+            "Target.attachToTarget",
+            &json(r#"{"targetId":"child-target","flatten":true}"#),
+            None,
+        )
+        .unwrap();
+    state
+        .completed(
+            &request,
+            &packet(r#"{"id":2,"result":{"sessionId":"explicit-child"}}"#),
+        )
+        .unwrap();
+    assert_eq!(
+        state.cleanup_detach("explicit-child").unwrap().session,
+        None
+    );
+    let sessions = state.detach_sessions();
+    assert_eq!(sessions.last().unwrap(), "owned-session");
+    assert!(matches!(
+        state.reserve(
+            "Target.detachFromTarget",
+            &json(r#"{"sessionId":"auto-child"}"#),
+            Some("explicit-child")
+        ),
+        Err(Denied::Scope)
+    ));
+    state
+        .reserve(
+            "Target.detachFromTarget",
+            &json(r#"{"sessionId":"auto-child"}"#),
+            Some("owned-session"),
+        )
+        .unwrap();
+}
+
+#[test]
+fn root_event_identity_is_raw_and_missing_parent_detach_remains_owned() {
+    sandbox::assert_isolated();
+    let mut state = root();
+    attach(&mut state);
+    let own = packet(
+        r#"{"method":"Target.targetInfoChanged","params":{"targetInfo":{"targetId":"owned-target","title":"\ud800"}}}"#,
+    );
+    assert!(state.related_root_event(&own).unwrap());
+    assert!(state.event(&own).unwrap());
+    assert!(!state.related_root_event(&packet(r#"{"method":"Target.targetInfoChanged","params":{"targetInfo":{"targetId":"foreign","title":"\ud800"}}}"#)).unwrap());
+    state.event(&packet(r#"{"method":"Target.attachedToTarget","sessionId":"owned-session","params":{"sessionId":"child","targetInfo":{"targetId":"child-target","type":"worker"}}}"#)).unwrap();
+    let detach = state.cleanup_detach("owned-session").unwrap();
+    state
+        .completed(&detach, &packet(r#"{"id":3,"result":{}}"#))
+        .unwrap();
+    let late_child = packet(
+        r#"{"method":"Target.detachedFromTarget","sessionId":"owned-session","params":{"sessionId":"child"}}"#,
+    );
+    assert!(state.related_session_event(&late_child).unwrap());
+    assert!(state.event(&late_child).unwrap());
+    state.close();
+    assert!(state.clean());
 }

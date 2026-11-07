@@ -54,6 +54,12 @@ impl Drop for Context {
     }
 }
 impl Context {
+    pub(crate) fn page_authority(&self) -> (Weak<State>, crate::mcp_access::Authority) {
+        (
+            self.scope.state.clone(),
+            crate::mcp_access::Authority::from_native(self.scope.clone()),
+        )
+    }
     pub(crate) fn set_disposer(&self, dispose: Dispose) {
         *self.dispose.lock().unwrap() = Some(dispose);
     }

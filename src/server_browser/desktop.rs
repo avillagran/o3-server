@@ -89,6 +89,7 @@ pub(super) async fn launch(
                     match incoming{
                         Some(Ok(Message::Text(text)))=>{
                             if calls.complete_exact(text.as_bytes()){continue;}
+                            if native_owner::route(&actor_pages,text.as_bytes()){continue;}
                             let Ok(packet)=crate::cdp_dialog_json::decode(text.as_bytes())else{break;};
                             if events::notify_packet(&actor_pages,&packet){break;}
                             calls.complete(&packet.value,&actor_pages);
@@ -103,6 +104,7 @@ pub(super) async fn launch(
         drop(rx);
         drop(exact_rx);
         drop(calls);
+        native_owner::stopped(&actor_pages);
         let controls = events::control_receipts(&actor_pages);
         for control in &controls {
             drop(control.close());

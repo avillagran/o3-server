@@ -16,6 +16,10 @@ mod events;
 pub(crate) mod exact;
 #[cfg(test)]
 mod lifetime_tests;
+mod native_grant;
+pub(crate) mod native_owner;
+#[cfg(test)]
+mod native_owner_tests;
 #[cfg(test)]
 mod ownership_tests;
 mod pending;
@@ -430,6 +434,7 @@ async fn launch(
                 packet=incoming.recv()=>{
                     let Some(Ok(bytes))=packet else{break;};
                     if calls.complete_exact(&bytes){continue;}
+                    if native_owner::route(&actor_pages,&bytes){continue;}
                     let Ok(packet)=crate::cdp_dialog_json::decode(&bytes)else{break;};
                     if events::notify_packet(&actor_pages,&packet){break;}
                     calls.complete(&packet.value,&actor_pages);
@@ -439,6 +444,7 @@ async fn launch(
         drop(rx);
         drop(exact_rx);
         drop(calls);
+        native_owner::stopped(&actor_pages);
         let controls = events::control_receipts(&actor_pages);
         for control in &controls {
             drop(control.close());

@@ -35,11 +35,13 @@ pub(super) enum Effect {
 pub(super) struct Reservation {
     pub ticket: u64,
     pub effect: Effect,
+    pub session: Option<String>,
 }
 #[derive(Clone, Debug)]
 struct Session {
     target: String,
     parent: Option<String>,
+    wire_parent: Option<String>,
     usable: bool,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -193,6 +195,17 @@ impl State {
                 }
                 Effect::Detach { session }
             }
+            ("Target.detachFromTarget", Some(parent)) => {
+                let child = identity(&fields, "sessionId")?;
+                if !self
+                    .sessions
+                    .get(&child)
+                    .is_some_and(|child| child.wire_parent.as_deref() == Some(parent))
+                {
+                    return Err(Denied::Scope);
+                }
+                Effect::Detach { session: child }
+            }
             ("Target.setAutoAttach", Some(_)) => {
                 if !field::<bool>(&fields, "flatten")? {
                     return Err(Denied::Scope);
@@ -226,6 +239,7 @@ impl State {
         Ok(Reservation {
             ticket: self.next,
             effect,
+            session: session.map(str::to_owned),
         })
     }
     fn receipt(&mut self, receipt: Receipt) {
@@ -262,6 +276,7 @@ impl State {
             effect: Effect::Detach {
                 session: session.into(),
             },
+            session: self.sessions[session].wire_parent.clone(),
         })
     }
     pub fn started(&mut self, reservation: &Reservation) {
@@ -341,6 +356,7 @@ impl State {
                     Session {
                         target: target.clone(),
                         parent: parent.clone(),
+                        wire_parent: None,
                         usable: !self.closing
                             && parent.as_ref().is_none_or(|parent| {
                                 self.sessions
@@ -391,6 +407,45 @@ impl State {
         }
         result
     }
+    pub fn related_session_event(&self, packet: &Packet) -> Result<bool, Denied> {
+        let Some(session) = packet.session() else {
+            return Ok(false);
+        };
+        if self.owns_session(session) {
+            return Ok(true);
+        }
+        if packet.method() != Some("Target.detachedFromTarget") {
+            return Ok(false);
+        }
+        let Some(Payload::Parameters(params)) = packet.payload() else {
+            return Err(Denied::Protocol);
+        };
+        let child = identity(&object(params.json())?, "sessionId")?;
+        Ok(self
+            .sessions
+            .get(&child)
+            .is_some_and(|child| child.parent.as_deref() == Some(session)))
+    }
+    pub fn related_root_event(&self, packet: &Packet) -> Result<bool, Denied> {
+        if packet.session().is_some() {
+            return Ok(false);
+        }
+        let Some(Payload::Parameters(params)) = packet.payload() else {
+            return Ok(false);
+        };
+        let fields = object(params.json())?;
+        Ok(match packet.method() {
+            Some("Target.targetInfoChanged") => {
+                let info = object(fields.0.get("targetInfo").ok_or(Denied::Protocol)?.get())?;
+                self.known_target(&identity(&info, "targetId")?)
+            }
+            Some("Target.targetDestroyed") => self.known_target(&identity(&fields, "targetId")?),
+            Some("Target.detachedFromTarget") => {
+                self.sessions.contains_key(&identity(&fields, "sessionId")?)
+            }
+            _ => false,
+        })
+    }
     fn event_inner(&mut self, packet: &Packet) -> Result<bool, Denied> {
         let Some(method) = packet.method() else {
             return Ok(false);
@@ -412,10 +467,18 @@ impl State {
                     return Ok(false);
                 }
             }
-        } else if method != "Target.detachedFromTarget" {
+        } else if !self.related_root_event(packet)? {
             return Ok(false);
         }
         match method {
+            "Target.targetDestroyed" if packet.session().is_none() => {
+                let Some(Payload::Parameters(params)) = packet.payload() else {
+                    return self.malformed();
+                };
+                if identity(&object(params.json())?, "targetId")? == self.target {
+                    self.closing = true;
+                }
+            }
             "Target.attachedToTarget" => {
                 let Some(parent) = packet.session() else {
                     return Ok(false);
@@ -441,6 +504,7 @@ impl State {
                     Session {
                         target,
                         parent: Some(parent.into()),
+                        wire_parent: Some(parent.into()),
                         usable,
                     },
                 );
@@ -470,11 +534,37 @@ impl State {
         }
         Ok(!self.closing)
     }
+    pub fn owns_session(&self, session: &str) -> bool {
+        self.sessions.contains_key(session)
+    }
+    pub fn may_start(&self, reservation: &Reservation, cleanup: bool) -> bool {
+        self.requests.contains_key(&reservation.ticket)
+            && (!self.closing || (cleanup && matches!(reservation.effect, Effect::Detach { .. })))
+    }
+    pub fn requests_pending(&self) -> usize {
+        self.requests.len()
+    }
     pub fn close(&mut self) {
         self.closing = true;
     }
     pub fn detach_sessions(&self) -> Vec<String> {
-        self.sessions.keys().cloned().collect()
+        let mut sessions: Vec<_> = self.sessions.keys().cloned().collect();
+        sessions.sort_by_key(|session| {
+            let mut depth = 0;
+            let mut parent = self.sessions[session].parent.as_ref();
+            while let Some(id) = parent {
+                depth += 1;
+                parent = self
+                    .sessions
+                    .get(id)
+                    .and_then(|session| session.parent.as_ref());
+                if depth > MAX_SESSIONS {
+                    break;
+                }
+            }
+            std::cmp::Reverse(depth)
+        });
+        sessions
     }
     pub fn refused_sessions(&self) -> Vec<String> {
         self.sessions
