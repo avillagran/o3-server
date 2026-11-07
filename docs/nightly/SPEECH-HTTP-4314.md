@@ -38,3 +38,9 @@ CARGO_TARGET_DIR=/absolute/worktree-specific-target \
 ```
 
 The runner asserts rootless Podman, snapshots the CLI and runtime libraries under the shared compile lock, verifies the explicit Node digest and private runtime version, and retains its private profile and evidence. It never executes the CLI, engine, model, or acceptance process on the host. The startup flags are optional; existing unconfigured servers do not acquire or advertise a local speech engine.
+
+## Media fixture phase boundaries
+
+The media authority/flow fixtures prepare the same authenticated state/session/model through the actual HTTP controller before starting their ten-second per-event witness. They require preparation's 204 response and assert that WebSocket readiness reuses exactly one CPU worker. Preparation keeps the existing thirty-second control-request budget; native process, inference, cleanup, and media event deadlines are unchanged.
+
+An instrumented default-parallel five-case run under two CPUs measured cold first-ready phases around 8.2 seconds, while normal subsequent events took milliseconds and hung-feed revocation took about one second. This establishes that cold admission consumed most of the former event witness locally. The retained failed CI log did not identify which shared `next` call expired, so the exact CI failure cause remains unproven. Each event now carries an explicit phase label and elapsed timing. Cold Worker and real CPU CLI acceptance remain separate receipts; preparing the media fixture does not reclassify them or simulate a ready event.

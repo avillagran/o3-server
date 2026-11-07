@@ -198,6 +198,27 @@ fn original_http_schema_and_scope_order_reach_the_actual_connection_service() {
         .unwrap();
     });
 }
+async fn prepare_socket_fixture(fixture: &Fixture, token: &str) {
+    // Separate cold immutable-runtime/model setup from the ten-second media
+    // event witness. Preparation still uses the actual authenticated controller
+    // and its existing thirty-second request budget, not a mock ready event.
+    let prepared = request(
+        fixture.state.clone(),
+        "POST",
+        "/api/voice/models/prepare",
+        token,
+        Some("application/json"),
+        b"{}",
+        None,
+    )
+    .await;
+    assert_eq!(
+        prepared.status, 204,
+        "Actual fixture model preparation must complete before the media phase"
+    );
+    assert_eq!(fixture.engine.placements(), vec!["cpu"]);
+}
+
 async fn ws(
     state: Arc<State>,
     token: &str,
@@ -218,12 +239,26 @@ async fn ws(
         .await
         .map(|(socket, _)| socket)
 }
-async fn next(socket: &mut tokio_tungstenite::WebSocketStream<tokio::io::DuplexStream>) -> Value {
+async fn next(
+    socket: &mut tokio_tungstenite::WebSocketStream<tokio::io::DuplexStream>,
+    stage: &str,
+) -> Value {
+    let started = std::time::Instant::now();
+    eprintln!("speech fixture awaiting {stage}");
     let message = tokio::time::timeout(Duration::from_secs(10), socket.next())
         .await
-        .unwrap()
+        .unwrap_or_else(|_| {
+            panic!(
+                "Speech fixture timed out at {stage} after {:?}",
+                started.elapsed()
+            )
+        })
         .unwrap()
         .unwrap();
+    eprintln!(
+        "speech fixture observed {stage} after {:?}",
+        started.elapsed()
+    );
     serde_json::from_str(message.to_text().unwrap()).unwrap()
 }
 #[test]
@@ -237,6 +272,7 @@ fn actual_media_socket_finishes_and_revoked_open_session_cannot_send_more_pcm() 
             process::assert_stack();
             let fixture = Fixture::new("stream");
             let token = fixture.token(&["orchestration:operate"]);
+            prepare_socket_fixture(&fixture, &token).await;
             let mut socket = ws(fixture.state.clone(), &token).await.unwrap();
             socket
                 .send(tokio_tungstenite::tungstenite::Message::Text(
@@ -246,14 +282,25 @@ fn actual_media_socket_finishes_and_revoked_open_session_cannot_send_more_pcm() 
                 ))
                 .await
                 .unwrap();
-            assert_eq!(next(&mut socket).await, json!({"type":"ready"}));
+            assert_eq!(
+                next(&mut socket, "first-ready").await,
+                json!({"type":"ready"})
+            );
+            assert_eq!(
+                fixture.engine.placements(),
+                vec!["cpu"],
+                "The media scope must reuse the prepared CPU worker"
+            );
             socket
                 .send(tokio_tungstenite::tungstenite::Message::Binary(
                     [0.25f32.to_le_bytes(); 512].concat().into(),
                 ))
                 .await
                 .unwrap();
-            assert_eq!(next(&mut socket).await["type"], "update");
+            assert_eq!(
+                next(&mut socket, "first-feed-update").await["type"],
+                "update"
+            );
             let before = fixture
                 .engine
                 .events()
@@ -271,7 +318,7 @@ fn actual_media_socket_finishes_and_revoked_open_session_cannot_send_more_pcm() 
                 ))
                 .await;
             assert_eq!(
-                next(&mut socket).await,
+                next(&mut socket, "revoked-feed-denial").await,
                 json!({"type":"error","message":"Speech authorization ended."})
             );
             let close = socket.next().await.unwrap().unwrap();
@@ -298,21 +345,30 @@ fn actual_media_socket_finishes_and_revoked_open_session_cannot_send_more_pcm() 
                 ))
                 .await
                 .unwrap();
-            assert_eq!(next(&mut socket).await["type"], "ready");
+            assert_eq!(
+                next(&mut socket, "replacement-ready").await["type"],
+                "ready"
+            );
             socket
                 .send(tokio_tungstenite::tungstenite::Message::Binary(
                     [0.5f32.to_le_bytes(); 512].concat().into(),
                 ))
                 .await
                 .unwrap();
-            assert_eq!(next(&mut socket).await["type"], "update");
+            assert_eq!(
+                next(&mut socket, "replacement-feed-update").await["type"],
+                "update"
+            );
             socket
                 .send(tokio_tungstenite::tungstenite::Message::Text(
                     json!({"type":"finish"}).to_string().into(),
                 ))
                 .await
                 .unwrap();
-            assert_eq!(next(&mut socket).await["type"], "finished");
+            assert_eq!(
+                next(&mut socket, "replacement-finished").await["type"],
+                "finished"
+            );
             let _ = socket.next().await;
             let current = fixture.token(&["orchestration:operate"]);
             let mut socket = ws(fixture.state.clone(), &current).await.unwrap();
@@ -324,7 +380,7 @@ fn actual_media_socket_finishes_and_revoked_open_session_cannot_send_more_pcm() 
                 ))
                 .await
                 .unwrap();
-            assert_eq!(next(&mut socket).await["type"], "ready");
+            assert_eq!(next(&mut socket, "downgrade-ready").await["type"], "ready");
             let sid = fixture.state.session(&current).unwrap()["sid"]
                 .as_str()
                 .unwrap()
@@ -346,7 +402,7 @@ fn actual_media_socket_finishes_and_revoked_open_session_cannot_send_more_pcm() 
                 .await
                 .unwrap();
             assert_eq!(
-                next(&mut socket).await,
+                next(&mut socket, "downgraded-finish-denial").await,
                 json!({"type":"error","message":"Speech authorization ended."})
             );
             let _ = socket.next().await;
@@ -366,6 +422,7 @@ fn revoked_media_authority_fences_an_already_running_native_feed() {
             process::assert_stack();
             let fixture = Fixture::new("stream-hang");
             let token = fixture.token(&["orchestration:operate"]);
+            prepare_socket_fixture(&fixture, &token).await;
             let mut socket = ws(fixture.state.clone(), &token).await.unwrap();
             socket
                 .send(tokio_tungstenite::tungstenite::Message::Text(
@@ -375,7 +432,12 @@ fn revoked_media_authority_fences_an_already_running_native_feed() {
                 ))
                 .await
                 .unwrap();
-            assert_eq!(next(&mut socket).await["type"], "ready");
+            assert_eq!(next(&mut socket, "hung-ready").await["type"], "ready");
+            assert_eq!(
+                fixture.engine.placements(),
+                vec!["cpu"],
+                "The media scope must reuse the prepared CPU worker"
+            );
             socket
                 .send(tokio_tungstenite::tungstenite::Message::Binary(
                     [0.25f32.to_le_bytes(); 512].concat().into(),
@@ -389,7 +451,10 @@ fn revoked_media_authority_fences_an_already_running_native_feed() {
                 .unwrap()
                 .to_owned();
             fixture.state.revoke_session(&sid).unwrap();
-            assert_eq!(next(&mut socket).await["type"], "error");
+            assert_eq!(
+                next(&mut socket, "revoked-hung-feed-denial").await["type"],
+                "error"
+            );
             let _exit = tokio::time::timeout(Duration::from_secs(2), exit.readable())
                 .await
                 .unwrap()
