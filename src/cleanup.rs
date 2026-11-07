@@ -131,6 +131,57 @@ impl RemovalPlan {
         }
         Ok(plan)
     }
+    /// Plan only named non-directory entries. The containing directory is an
+    /// identity guard, never a removal operation; no children are enumerated.
+    pub fn prepare_files(root: &Path, names: &[&str], tree: &impl Tree) -> io::Result<Self> {
+        if !root.is_absolute()
+            || root.parent().is_none()
+            || root
+                .components()
+                .any(|part| matches!(part, Component::ParentDir | Component::CurDir))
+        {
+            return Err(io::Error::other("Invalid exact-file removal root"));
+        }
+        let identity = tree.identity(root)?;
+        if identity.kind != Kind::Directory {
+            return Err(io::Error::other(
+                "Exact-file removal root is not a directory",
+            ));
+        }
+        let mut plan = Self {
+            operations: Vec::new(),
+            directories: BTreeMap::from([(root.to_owned(), identity)]),
+        };
+        let mut seen = std::collections::BTreeSet::new();
+        for name in names {
+            let path = Path::new(name);
+            let mut components = path.components();
+            if !matches!(components.next(), Some(Component::Normal(_)))
+                || components.next().is_some()
+                || path.as_os_str() != path.components().collect::<PathBuf>().as_os_str()
+            {
+                return Err(io::Error::other("Invalid exact removal filename"));
+            }
+            if !seen.insert(*name) {
+                continue;
+            }
+            let path = root.join(name);
+            match tree.identity(&path) {
+                Ok(identity) if identity.kind == Kind::Entry => {
+                    plan.operations.push(Operation { path, identity })
+                }
+                Ok(_) => {
+                    return Err(io::Error::other(
+                        "Exact-file removal refuses directory entries",
+                    ))
+                }
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(plan)
+    }
+
     pub fn operations(&self) -> &[Operation] {
         &self.operations
     }
@@ -348,6 +399,48 @@ pub fn publish_directory(from: &Path, to: &Path) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn exact_file_plan_never_traverses_or_removes_its_root() {
+        struct Fixture;
+        impl super::Tree for Fixture {
+            fn identity(&self, path: &std::path::Path) -> std::io::Result<super::Identity> {
+                let kind =
+                    if path == std::path::Path::new("/fixture") || path.ends_with("directory") {
+                        super::Kind::Directory
+                    } else if path.ends_with("missing") {
+                        return Err(std::io::Error::from(std::io::ErrorKind::NotFound));
+                    } else {
+                        super::Kind::Entry
+                    };
+                Ok(super::Identity {
+                    device: 7,
+                    inode: if kind == super::Kind::Directory { 1 } else { 2 },
+                    kind,
+                })
+            }
+            fn children(&self, _: &std::path::Path) -> std::io::Result<Vec<std::path::PathBuf>> {
+                panic!("exact plans must never enumerate a tree")
+            }
+        }
+        let root = std::path::Path::new("/fixture");
+        let plan = super::RemovalPlan::prepare_files(
+            root,
+            &["model.gguf", "model.gguf.verified", "missing", "model.gguf"],
+            &Fixture,
+        )
+        .unwrap();
+        assert_eq!(plan.operations().len(), 2);
+        assert!(plan
+            .operations()
+            .iter()
+            .all(|operation| operation.identity.kind == super::Kind::Entry
+                && operation.path.parent() == Some(root)));
+        for invalid in ["../escape", "nested/model", ".", "", "/fixture/absolute"] {
+            assert!(super::RemovalPlan::prepare_files(root, &[invalid], &Fixture).is_err());
+        }
+        assert!(super::RemovalPlan::prepare_files(root, &["directory"], &Fixture).is_err());
+    }
+
     use super::*;
     struct MemoryTree {
         entries: BTreeMap<PathBuf, Identity>,
