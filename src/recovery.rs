@@ -42,12 +42,17 @@ pub fn recover(db: &mut Connection) -> Result<(), String> {
                     Some("running" | "starting" | "waiting")
                 ) || v["status"] == "preparing" && v["executionRequested"] == true =>
             {
-                let unstarted = v["startedAt"].is_null();
-                let ended = if unstarted { "cancelled" } else { "failed" };
+                let unstarted = v.get("startedAt").is_some_and(Value::is_null);
+                let usage_continuation = v.get("usageLimitContinuationOfRunId").is_some();
+                let ended = if unstarted || usage_continuation {
+                    "cancelled"
+                } else {
+                    "failed"
+                };
                 v["status"] = json!(ended);
                 v["queuePosition"] = Value::Null;
                 v["completedAt"] = json!(iso(now_ms()));
-                if !unstarted {
+                if !unstarted && !usage_continuation {
                     v["error"] = json!("server restarted during execution");
                 }
                 if let Ok(t) = events::get(&tx, "thread", &tid) {
@@ -100,6 +105,7 @@ pub fn recover(db: &mut Connection) -> Result<(), String> {
                 }
                 if let Ok(t) = events::get(&tx, "thread", &tid) {
                     if !unstarted
+                        && !usage_continuation
                         && matches!(
                             t["providerInstanceId"].as_str(),
                             Some("codex" | "claudeAgent" | "claude" | "claude-code")

@@ -8,6 +8,82 @@ fn put(db: &rusqlite::Connection, kind: &str, id: &str, value: Value) {
         rusqlite::params![kind,id,value.to_string()]).unwrap();
 }
 
+fn fixture() -> (support::Server, t3_protocol::Connection) {
+    let server = support::start(|state| {
+        *state.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::ScriptedProvider));
+    });
+    let client = server.connect();
+    let workspace = server.dir.join("workspace");
+    std::fs::create_dir(&workspace).unwrap();
+    client.rpc("projects.mutate",json!({"type":"project.create","commandId":"project","projectId":"p","title":"Recovery","workspaceRoot":workspace})).unwrap();
+    client.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"thread","threadId":"t","projectId":"p","title":"Recovery","modelSelection":{"instanceId":"scripted","model":"fixture"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
+    (server, client)
+}
+
+#[test]
+fn enabling_automatic_recovery_wakes_an_already_parked_worker_without_polling_delay() {
+    let (server, client) = fixture();
+    let now = o3_server::store::now_ms();
+    let before = o3_server::store::iso(now - 10_000);
+    let reset = o3_server::store::iso(now - 1000);
+    {
+        let db = server.state.db.lock().unwrap();
+        let body: String = db
+            .query_row(
+                "SELECT body FROM records WHERE kind='thread' AND id='t'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let mut thread: Value = serde_json::from_str(&body).unwrap();
+        thread["usageLimitResetAt"] = json!(reset);
+        put(&db, "thread", "t", thread);
+        put(
+            &db,
+            "runs",
+            "source",
+            json!({"id":"source","threadId":"t","providerInstanceId":"scripted","ordinal":1,"status":"failed","rootNodeId":"source-root","requestedAt":before,"startedAt":before,"completedAt":before,"errorClass":"usage_limit"}),
+        );
+        put(
+            &db,
+            "turnItems",
+            "failure",
+            json!({"id":"failure","threadId":"t","runId":"source","nodeId":"source-root","ordinal":1,"type":"error","status":"failed","updatedAt":before,"failure":{"class":"usage_limit","message":"Synthetic limit","resetAt":reset}}),
+        );
+    }
+    client
+        .rpc(
+            "server.updateSettings",
+            json!({"patch":{"autoResumeLimitedThreads":true}}),
+        )
+        .unwrap();
+    let read = || {
+        client
+            .rpc("orchestration.getThreadProjection", json!({"threadId":"t"}))
+            .unwrap()
+    };
+    assert!(
+        support::wait_for(Duration::from_secs(10), || read()["runs"]
+            .as_array()
+            .is_some_and(|runs| runs.len() == 2 && runs[1]["status"] == "waiting")),
+        "{:?}",
+        read()
+    );
+    let current = read();
+    assert_eq!(
+        current["runs"][1]["usageLimitContinuationOfRunId"],
+        "source"
+    );
+    assert_eq!(
+        current["thread"]["limitRecovery"]["requestId"],
+        format!("limit-arm:t:source:{}", now - 1000)
+    );
+    client.rpc("orchestration.dispatchCommand",json!({"type":"runtime-request.respond","commandId":"approve","threadId":"t","requestId":"approval-1","decision":"accept"})).unwrap();
+    assert!(support::wait_for(Duration::from_secs(10), || read()
+        ["runs"][1]["status"]
+        == "completed"));
+}
+
 #[test]
 fn unsent_usage_resume_has_one_new_receipt_after_recovery_without_replaying_started_or_legacy_work()
 {
@@ -17,14 +93,7 @@ fn unsent_usage_resume_has_one_new_receipt_after_recovery_without_replaying_star
         (false, false, false),
         (true, false, true),
     ] {
-        let server = support::start(|state| {
-            *state.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::ScriptedProvider));
-        });
-        let client = server.connect();
-        let workspace = server.dir.join("workspace");
-        std::fs::create_dir(&workspace).unwrap();
-        client.rpc("projects.mutate",json!({"type":"project.create","commandId":"project","projectId":"p","title":"Recovery","workspaceRoot":workspace})).unwrap();
-        client.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"thread","threadId":"t","projectId":"p","title":"Recovery","modelSelection":{"instanceId":"scripted","model":"fixture"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
+        let (server, client) = fixture();
         let now = o3_server::store::now_ms();
         let reset_ms = now - 1000;
         let reset = o3_server::store::iso(reset_ms);

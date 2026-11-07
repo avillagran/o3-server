@@ -81,7 +81,8 @@ fn candidate(db: &rusqlite::Connection, t: &Value) -> Result<Value, String> {
         .iter()
         .filter(|run| {
             run["status"] != "queued"
-                && !(run["status"] == "cancelled" && run["startedAt"].is_null())
+                && !(run["status"] == "cancelled"
+                    && run.get("startedAt").is_some_and(Value::is_null))
         })
         .max_by_key(|run| {
             (
@@ -204,7 +205,7 @@ pub(crate) fn admit_continuation(
 
 /// Only tagged continuations proven not to have started receive a fresh identity.
 pub(crate) fn recover_unsent(db: &rusqlite::Connection) -> Result<(), String> {
-    let mut query = db.prepare("SELECT id,thread_id FROM records WHERE kind='runs' AND json_type(body,'$.usageLimitContinuationOfRunId')='text' AND json_extract(body,'$.startedAt') IS NULL AND json_extract(body,'$.status') IN ('preparing','starting','running','waiting') ORDER BY rowid").map_err(|error| error.to_string())?;
+    let mut query = db.prepare("SELECT id,thread_id FROM records WHERE kind='runs' AND json_type(body,'$.usageLimitContinuationOfRunId')='text' AND json_type(body,'$.startedAt')='null' AND json_extract(body,'$.status') IN ('preparing','starting','running','waiting') ORDER BY rowid").map_err(|error| error.to_string())?;
     let rows = query
         .query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -222,7 +223,11 @@ pub(crate) fn recover_unsent(db: &rusqlite::Connection) -> Result<(), String> {
     for (rid, tid) in rows {
         let mut run = events::get(db, "runs", &rid)?;
         if run["status"] == "preparing" && run["executionRequested"] != true {
-            continue;
+            let message =
+                events::get(db, "messages", run["userMessageId"].as_str().unwrap_or("")).ok();
+            if message.is_none_or(|message| message["createdBy"] != "agent") {
+                continue;
+            }
         }
         let mut thread = events::get(db, "thread", &tid)?;
         if thread["limitRecovery"]["autoResume"] == true && refreshed.insert(tid.clone()) {
@@ -412,6 +417,11 @@ pub(crate) fn tick(s: &Arc<State>) -> Option<i64> {
         }
         if let Some(at) = millis(&t["usageLimitResetAt"]).filter(|at| *at > now_ms()) {
             next = Some(next.map_or(at, |n: i64| n.min(at)));
+        }
+        if t["limitRecovery"]["autoResume"] == true {
+            if let Some(at) = millis(&t["snoozedUntil"]).filter(|at| *at > now_ms()) {
+                next = Some(next.map_or(at, |n: i64| n.min(at)));
+            }
         }
         // Legacy records without a run may expire, but cannot authorize a retry.
         if t["limitRecovery"]["status"] != "limited"
@@ -605,6 +615,55 @@ mod tests {
         assert_eq!(unarmed["limitRecovery"]["requestId"], "stop");
         assert!(
             recovery_command(&candidate(&db, &unarmed).unwrap(), true, now_ms(), false).is_none()
+        );
+    }
+    #[test]
+    fn started_usage_continuation_cannot_enter_native_conversation_restart_replay() {
+        let state = limited_state();
+        let mut db = state.db.lock().unwrap();
+        let mut thread = events::get(&db, "thread", "t").unwrap();
+        thread["providerInstanceId"] = json!("codex");
+        thread["codexNativeThreadId"] = json!("synthetic-native-thread");
+        events::put(&db, "thread", "t", "t", &thread).unwrap();
+        events::put(&db,"runs","started","t",&json!({"id":"started","threadId":"t","providerInstanceId":"codex","ordinal":2,"status":"running","requestedAt":iso(now_ms()-1000),"startedAt":iso(now_ms()-500),"completedAt":null,"usageLimitContinuationOfRunId":"source"})).unwrap();
+        crate::recovery::recover(&mut db).unwrap();
+        let run = events::get(&db, "runs", "started").unwrap();
+        assert_eq!(run["status"], "cancelled");
+        assert_ne!(run["recoveryPending"], true);
+        assert_eq!(
+            events::get(&db, "thread", "t").unwrap()["limitRecovery"]["requestId"],
+            "old"
+        );
+    }
+    #[test]
+    fn held_agent_preparation_does_not_hide_an_unsent_usage_continuation_from_recovery() {
+        let state = limited_state();
+        let mut db = state.db.lock().unwrap();
+        events::put(&db,"messages","automatic","t",&json!({"id":"automatic","threadId":"t","runId":"held","role":"user","createdBy":"agent","createdAt":iso(now_ms()),"text":"Continue where you left off."})).unwrap();
+        events::put(&db,"runs","held","t",&json!({"id":"held","threadId":"t","providerInstanceId":"scripted","ordinal":2,"status":"preparing","requestedAt":iso(now_ms()),"startedAt":null,"completedAt":null,"executionRequested":false,"userMessageId":"automatic","usageLimitContinuationOfRunId":"source"})).unwrap();
+        crate::recovery::recover(&mut db).unwrap();
+        assert_eq!(
+            events::get(&db, "runs", "held").unwrap()["status"],
+            "cancelled"
+        );
+        assert_ne!(
+            events::get(&db, "thread", "t").unwrap()["limitRecovery"]["requestId"],
+            "old"
+        );
+    }
+    #[test]
+    fn missing_start_time_does_not_prove_a_tagged_turn_was_unsent() {
+        let state = limited_state();
+        let mut db = state.db.lock().unwrap();
+        events::put(&db,"runs","unknown","t",&json!({"id":"unknown","threadId":"t","providerInstanceId":"scripted","ordinal":2,"status":"starting","requestedAt":iso(now_ms()),"completedAt":null,"usageLimitContinuationOfRunId":"source"})).unwrap();
+        crate::recovery::recover(&mut db).unwrap();
+        assert_eq!(
+            events::get(&db, "thread", "t").unwrap()["limitRecovery"]["requestId"],
+            "old"
+        );
+        assert_eq!(
+            events::get(&db, "runs", "unknown").unwrap()["status"],
+            "cancelled"
         );
     }
     #[test]

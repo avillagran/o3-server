@@ -1164,11 +1164,15 @@ pub(crate) fn persist_attempt(
             append(&tx, tid, "thread.metadata-updated", thread.clone(), &thread)?;
         }
     }
+    let usage_failure = run["errorClass"] == "usage_limit" && run["status"] == "failed";
     put(&tx, "runs", rid, tid, &run)?;
     append(&tx, tid, "run.updated", run, &thread)?;
     tx.commit().map_err(|e| e.to_string())?;
     drop(db);
     s.notify();
+    if usage_failure {
+        s.streams.ops.scheduler_wake.notify_one();
+    }
     Ok(())
 }
 

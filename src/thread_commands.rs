@@ -235,6 +235,9 @@ pub(crate) fn dispatch_scoped(
         crate::checkpoint::complete_journal(s)?;
     }
     s.notify();
+    if kind.starts_with("thread.") {
+        s.streams.ops.scheduler_wake.notify_one();
+    }
     if let Some((permit, text)) = outcome.steer {
         permit.send(text);
         crate::outbox::handed_off(s, cid)?;

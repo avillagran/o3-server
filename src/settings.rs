@@ -505,6 +505,7 @@ fn update_inner(s: &State, p: &Value, policy_error: &mut Option<Value>) -> Resul
         crate::config_sources::private_settings_changed(s);
     }
     s.notify();
+    s.streams.ops.scheduler_wake.notify_one();
     if patch.get("providerInstances").is_some()
         || patch.get("projectSettingsOverrides").is_some()
         || p.get("providerInstanceMutation").is_some()

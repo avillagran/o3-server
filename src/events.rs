@@ -50,6 +50,8 @@ pub fn initialize(db: &Connection) -> Result<()> {
     db.execute_batch("CREATE INDEX IF NOT EXISTS records_visible_position ON records(thread_id,coalesce(json_extract(body,'$.position'),json_extract(body,'$.item.ordinal'),0)) WHERE kind='visibleTurnItems';").map_err(|e|e.to_string())?;
     // The partial index finds the latest user without reading assistant bodies.
     db.execute_batch("CREATE INDEX IF NOT EXISTS records_turn_ordinal ON records(thread_id,json_extract(body,'$.ordinal')) WHERE kind='turnItems'; CREATE INDEX IF NOT EXISTS records_user_message ON records(thread_id) WHERE kind='messages' AND json_extract(body,'$.role')='user';").map_err(|e|e.to_string())?;
+    // Recovery reads root failures without materializing unrelated transcript bodies.
+    db.execute_batch("CREATE INDEX IF NOT EXISTS records_root_failure ON records(thread_id,json_extract(body,'$.runId'),json_extract(body,'$.nodeId')) WHERE kind='turnItems' AND json_extract(body,'$.type')='error' AND json_extract(body,'$.status')='failed';").map_err(|error|error.to_string())?;
     repair_boolean_settled_override(db)?;
     repair_context_costs(db)?;
     initialize_run_internal(db)?;
@@ -1291,6 +1293,7 @@ fn dispatch_prepared_with_auto(
                 crate::outbox::handed_off(s, cid)?;
             }
             s.notify();
+            s.streams.ops.scheduler_wake.notify_one();
             return Ok(result);
         }
         _ => return Err(format!("command {kind} is not implemented")),
@@ -1321,6 +1324,9 @@ fn dispatch_prepared_with_auto(
         crate::provider_switch::start_release(s.clone(), tid.into());
     }
     s.notify();
+    if kind.starts_with("thread.") || kind == "provider.switch" {
+        s.streams.ops.scheduler_wake.notify_one();
+    }
     if c["regenerateTitle"] == true {
         let text = {
             let db = s.db.lock().unwrap();

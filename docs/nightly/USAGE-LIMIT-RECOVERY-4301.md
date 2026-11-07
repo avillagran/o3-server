@@ -15,6 +15,9 @@ Every newly created continuation preserves `usageLimitContinuationOfRunId`.
 Recovery gives only tagged, unstarted active continuations a fresh request ID,
 cancels their obsolete copy and marks its user item as a cancelled queued turn.
 Already-started and legacy untagged copies do not acquire a fresh identity.
+Tagged started work is also excluded from the ordinary native-conversation
+restart path; the presence of a native session ID cannot replay that continuation.
+Missing start timestamps do not count as proof of an unsent turn.
 Receipt-time admission rechecks the source failure, request ID, provider identity,
 archive/deletion/settlement state, pending requests and snooze deadline. Duplicate
 receipts cannot create another run. A snooze racing the command rotates its nonce
@@ -26,8 +29,11 @@ integration fixture uses the real HTTP/WebSocket client, durable records/receipt
 recovery entrypoint and an explicitly configured local provider: it observes one
 new tagged continuation, answers its fresh synthetic approval, and proves repeated
 RPC delivery does not create a fourth run. Started/legacy cases retain two runs.
-The fixture reuses its listener and explicitly wakes the parked scheduler as a
-fresh startup would. It does not run a paid provider or claim a literal OS restart.
+The restart fixture reuses its listener and explicitly wakes the parked scheduler
+as a fresh startup would. A separate real settings-RPC case verifies automatic
+arming and immediate scheduler invalidation. Recovery reads root failures through
+a partial SQL index, excluding unrelated transcript bodies; settings, relevant
+thread commands and usage failures wake scheduling without waking on each token. It does not run a paid provider or claim a literal OS restart.
 
 The broader recovery implementation retains existing behavior for started work;
 these checks do not certify every native runtime-reconciliation branch, exact
