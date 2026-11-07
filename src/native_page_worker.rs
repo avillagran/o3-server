@@ -87,8 +87,83 @@ impl WorkerSpec {
 pub enum OperationResult {
     Value(Value),
     NativeError(Value),
+    /// Exact JavaScript JSON which cannot be represented by a Unicode-scalar
+    /// serde Value. Never substitute a lossy string in an MCP response.
+    JavaScriptValue(JavaScriptJson),
+    JavaScriptError(JavaScriptJson),
 }
+#[derive(Clone, Debug)]
+pub struct JavaScriptJson(Box<serde_json::value::RawValue>);
+impl JavaScriptJson {
+    pub fn json(&self) -> &str {
+        self.0.get()
+    }
+}
+impl PartialEq for JavaScriptJson {
+    fn eq(&self, other: &Self) -> bool {
+        self.json() == other.json()
+    }
+}
+impl serde::Serialize for JavaScriptJson {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
+    }
+}
+struct Packet {
+    envelope: Value,
+    exact: Option<OperationResult>,
+}
+impl std::ops::Deref for Packet {
+    type Target = Value;
+    fn deref(&self) -> &Value {
+        &self.envelope
+    }
+}
+fn decode_packet(bytes: &[u8]) -> Result<Packet, Fault> {
+    if let Ok(envelope) = serde_json::from_slice(bytes) {
+        return Ok(Packet {
+            envelope,
+            exact: None,
+        });
+    }
+    // Parse only the control envelope as scalar JSON. RawValue validates the
+    // original JSON grammar while retaining every escaped UTF-16 payload unit.
+    let mut fields: BTreeMap<String, Box<serde_json::value::RawValue>> =
+        serde_json::from_slice(bytes).map_err(|_| Fault::Protocol)?;
+    let value = fields.remove("value");
+    let error = fields.remove("error");
+    let (field, payload, failed) = match (value, error) {
+        (Some(value), None) => ("value", value, false),
+        (None, Some(error)) if error.get().trim_start().starts_with('{') => ("error", error, true),
+        _ => return Err(Fault::Protocol),
+    };
+    let mut envelope = serde_json::Map::new();
+    for (key, raw) in fields {
+        envelope.insert(
+            key,
+            serde_json::from_str(raw.get()).map_err(|_| Fault::Protocol)?,
+        );
+    }
+    if envelope.get("kind") != Some(&json!("result")) || envelope.get("ok") != Some(&json!(!failed))
+    {
+        return Err(Fault::Protocol);
+    }
+    envelope.insert(field.into(), if failed { json!({}) } else { Value::Null });
+    let exact = if failed {
+        OperationResult::JavaScriptError(JavaScriptJson(payload))
+    } else {
+        OperationResult::JavaScriptValue(JavaScriptJson(payload))
+    };
+    Ok(Packet {
+        envelope: Value::Object(envelope),
+        exact: Some(exact),
+    })
+}
+/// Native broker grace is response transport time, never page-operation time.
+pub const HOST_RESPONSE_GRACE: Duration = Duration::from_millis(1_000);
+
 struct Call {
+    native_timeout: Duration,
     operation: String,
     input: Value,
     deadline: Instant,
@@ -217,6 +292,37 @@ impl Worker {
         input: Value,
         timeout: Duration,
     ) -> Result<OperationResult, Fault> {
+        self.invoke_budget(operation, input, timeout, Duration::ZERO)
+            .await
+    }
+    /// Preserve the native operation timeout while allowing its original host
+    /// response grace only when the broker updates the current tab.
+    pub async fn invoke_native(
+        &self,
+        operation: &str,
+        input: Value,
+        native_timeout: Duration,
+        update_current_tab: bool,
+    ) -> Result<OperationResult, Fault> {
+        self.invoke_budget(
+            operation,
+            input,
+            native_timeout,
+            if update_current_tab {
+                HOST_RESPONSE_GRACE
+            } else {
+                Duration::ZERO
+            },
+        )
+        .await
+    }
+    async fn invoke_budget(
+        &self,
+        operation: &str,
+        input: Value,
+        timeout: Duration,
+        grace: Duration,
+    ) -> Result<OperationResult, Fault> {
         if timeout.is_zero() || timeout > Duration::from_secs(120) {
             return Err(Fault::Deadline);
         }
@@ -229,7 +335,8 @@ impl Worker {
             .try_send(Call {
                 operation: operation.into(),
                 input,
-                deadline: Instant::now() + timeout,
+                native_timeout: timeout,
+                deadline: Instant::now() + timeout + grace,
                 reply,
             })
             .map_err(|e| match e {
@@ -281,7 +388,7 @@ async fn close_without_child(
         executed_recursive_removals: None,
     }
 }
-async fn read_frame<R: tokio::io::AsyncRead + Unpin>(reader: &mut R) -> Result<Value, Fault> {
+async fn read_frame<R: tokio::io::AsyncRead + Unpin>(reader: &mut R) -> Result<Packet, Fault> {
     let mut header = [0u8; 12];
     reader
         .read_exact(&mut header)
@@ -299,7 +406,7 @@ async fn read_frame<R: tokio::io::AsyncRead + Unpin>(reader: &mut R) -> Result<V
         .read_exact(&mut body)
         .await
         .map_err(|_| Fault::Protocol)?;
-    serde_json::from_slice(&body).map_err(|_| Fault::Protocol)
+    decode_packet(&body)
 }
 async fn write_frame<W: tokio::io::AsyncWrite + Unpin>(
     writer: &mut W,
@@ -391,7 +498,7 @@ async fn run(running: Running) {
     let handshake = if initially_revoked {
         Err(Fault::Revoked)
     } else {
-        tokio::select! {packet=inbound.recv()=>match packet{Some(Ok(v))if v==json!({"kind":"ready","protocol":1,"nonce":nonce})=>Ok(()),Some(Err(e))=>Err(e),_=>Err(Fault::Protocol)},_=tokio::time::sleep(spec.startup_deadline)=>Err(Fault::Deadline),_=stop.changed()=>Err(Fault::Closed),_=revoked.changed()=>Err(Fault::Revoked),Some(error)=faults.recv()=>Err(error),Some(error)=stderr_fail.recv()=>Err(error),_=child.wait()=>Err(Fault::Exited)}
+        tokio::select! {packet=inbound.recv()=>match packet{Some(Ok(v))if v.envelope==json!({"kind":"ready","protocol":1,"nonce":nonce})=>Ok(()),Some(Err(e))=>Err(e),_=>Err(Fault::Protocol)},_=tokio::time::sleep(spec.startup_deadline)=>Err(Fault::Deadline),_=stop.changed()=>Err(Fault::Closed),_=revoked.changed()=>Err(Fault::Revoked),Some(error)=faults.recv()=>Err(error),Some(error)=stderr_fail.recv()=>Err(error),_=child.wait()=>Err(Fault::Exited)}
     };
     let mut pending = BTreeMap::<u64, Pending>::new();
     let mut next = 0u64;
@@ -418,16 +525,16 @@ async fn run(running: Running) {
             if call.reply.is_closed(){continue;}
             if call.deadline<=Instant::now(){let _=call.reply.send(Err(Fault::Deadline));continue;}
                      next+=1;if next>9_007_199_254_740_991{break Fault::Protocol;}
-                     let packet=json!({"kind":"invoke","id":next,"nonce":nonce,"operation":call.operation,"input":call.input,"timeoutMs":call.deadline.saturating_duration_since(Instant::now()).as_millis().max(1)});
+                     let packet=json!({"kind":"invoke","id":next,"nonce":nonce,"operation":call.operation,"input":call.input,"timeoutMs":call.native_timeout.as_millis().max(1)});
                      if serde_json::to_vec(&packet).map_or(true,|b|b.len()>MAX_FRAME_BYTES){let _=call.reply.send(Err(Fault::TooLarge));continue;}
                      pending.insert(next,Pending{deadline:call.deadline,reply:call.reply});if writes.try_send(packet).is_err(){break Fault::Busy;}
                     },
                     packet=inbound.recv()=>{
-                     let packet=match packet{Some(Ok(v))=>v,Some(Err(e))=>break e,None=>break Fault::Exited};
+                     let mut packet=match packet{Some(Ok(v))=>v,Some(Err(e))=>break e,None=>break Fault::Exited};
                      if !packet.as_object().is_some_and(|m|m.keys().all(|k|matches!(k.as_str(),"kind"|"nonce"|"id"|"ok"|"value"|"error")))||packet["kind"]!="result"||packet["nonce"]!=nonce{break Fault::Protocol;}
                      let Some(id)=packet["id"].as_u64()else{break Fault::Protocol;};let Some(call)=pending.remove(&id)else{break Fault::Protocol;};
                      if *revoked.borrow()||*stop.borrow(){let _=call.reply.send(Err(Fault::Revoked));break Fault::Revoked;}
-                     let result=match packet["ok"].as_bool(){Some(true)if packet.get("error").is_none()&&packet.get("value").is_some()=>Ok(OperationResult::Value(packet["value"].clone())),Some(false)if packet.get("value").is_none()&&packet["error"].is_object()=>Ok(OperationResult::NativeError(packet["error"].clone())),_=>{let _=call.reply.send(Err(Fault::Protocol));break Fault::Protocol;}};let _=call.reply.send(result);
+                     let exact=packet.exact.take();let result=match packet["ok"].as_bool(){Some(true)if packet.get("error").is_none()&&packet.get("value").is_some()=>Ok(OperationResult::Value(packet["value"].clone())),Some(false)if packet.get("value").is_none()&&packet["error"].is_object()=>Ok(OperationResult::NativeError(packet["error"].clone())),_=>{let _=call.reply.send(Err(Fault::Protocol));break Fault::Protocol;}};let result=result.map(|value|exact.unwrap_or(value));let _=call.reply.send(result);
                     }
                    }
         }
@@ -475,7 +582,7 @@ async fn run(running: Running) {
                         && v["executedRecursiveRemovals"] == 0
                         && v.get("guardRefusals").is_none_or(|n| n == 0) =>
                 {
-                    return Some(v)
+                    return Some(v.envelope)
                 }
                 Ok(v) if v["kind"] == "result" && v["nonce"] == nonce => {}
                 _ => return None,
@@ -585,6 +692,62 @@ mod tests {
             }),
             close_deadline: Duration::from_millis(100),
         }
+    }
+    #[tokio::test]
+    async fn javascript_payload_retains_lone_units_without_relaxing_envelope() {
+        crate::test_sandbox::assert_isolated();
+        let bytes = br#"{"kind":"result","nonce":"valid","id":1,"ok":true,"value":{"\ud800":"\udfff","pair":"\ud83d\ude00"}}"#;
+        let packet = decode_packet(bytes).unwrap();
+        let Some(OperationResult::JavaScriptValue(exact)) = packet.exact else {
+            panic!("Expected exact UTF-16 JSON")
+        };
+        assert_eq!(exact.json(), r#"{"\ud800":"\udfff","pair":"\ud83d\ude00"}"#);
+        assert_eq!(serde_json::to_string(&exact).unwrap(), exact.json());
+        assert!(serde_json::from_str::<Value>(exact.json()).is_err());
+        for bad in [
+            br#"{"kind":"result","nonce":"\ud800","id":1,"ok":true,"value":"\udfff"}"#.as_slice(),
+            br#"{"kind":"ready","nonce":"valid","value":"\udfff"}"#.as_slice(),
+            br#"{"kind":"result","nonce":"valid","id":1,"ok":false,"error":"\udfff"}"#.as_slice(),
+            br#"{"kind":"result","nonce":"valid","id":1,"ok":true,"value":"\uQQQQ"}"#.as_slice(),
+        ] {
+            assert!(matches!(decode_packet(bad), Err(Fault::Protocol)));
+        }
+        let worker = Worker::spawn(spec("surrogate"), Owner::new(false))
+            .await
+            .unwrap();
+        let OperationResult::JavaScriptValue(result) = worker
+            .invoke("evaluate", json!({}), Duration::from_secs(1))
+            .await
+            .unwrap()
+        else {
+            panic!("Lost JavaScript units")
+        };
+        assert!(result.json().contains(r#""\ud800":"\udfff""#));
+        assert!(worker.close().await.graceful_worker);
+    }
+    #[tokio::test]
+    async fn native_response_grace_does_not_expand_operation_timeout() {
+        let owner = Owner::new(false);
+        let worker = Worker::spawn(spec("grace"), owner).await.unwrap();
+        assert_eq!(
+            worker
+                .invoke_native("evaluate", json!({}), Duration::from_millis(20), true)
+                .await
+                .unwrap(),
+            OperationResult::Value(json!({"nativeTimeoutMs":20}))
+        );
+        assert!(worker.close().await.owner_grant_closed);
+        let worker = Worker::spawn(spec("grace"), Owner::new(false))
+            .await
+            .unwrap();
+        assert_eq!(
+            worker
+                .invoke_native("evaluate", json!({}), Duration::from_millis(20), false)
+                .await
+                .unwrap_err(),
+            Fault::Deadline
+        );
+        assert!(worker.close().await.worker_reaped);
     }
     #[tokio::test]
     async fn real_owned_node_protocol_and_native_errors() {

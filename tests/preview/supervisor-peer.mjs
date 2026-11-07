@@ -14,6 +14,8 @@ function handle(packet){
  }
  if(packet.kind==='close'){if(mode==='late'&&latePacket){fs.writeFileSync(process.env.HOME+'/late-sent.json',JSON.stringify({afterOwnerClose:true}));send({kind:'result',nonce:init.nonce,id:latePacket.id,ok:true,value:'late'});}if(mode==='hang'||mode==='startup-hang')return;send({kind:'closed',nonce:init.nonce,artifactHealthy:true,nativeRecursiveRequests:0,executedRecursiveRemovals:0});process.stdout.write('',()=>process.exit(0));}
  if(packet.kind==='invoke'){
+  if(mode==='surrogate'){send({kind:'result',nonce:init.nonce,id:packet.id,ok:true,value:{'\ud800':'\udfff',pair:'😀'}});return;}
+  if(mode==='grace'){setTimeout(()=>send({kind:'result',nonce:init.nonce,id:packet.id,ok:true,value:{nativeTimeoutMs:packet.timeoutMs}}),packet.timeoutMs+60);return;}
   if(mode==='crash'){process.exit(17);}
   if(mode==='hang')return;
   if(mode==='malformed'){send({kind:'result',nonce:init.nonce,id:packet.id,ok:true});return;}

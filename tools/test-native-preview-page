@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run reviewed whole-native page functions against a retained private Chromium owner."""
 import argparse,json,os,pathlib,subprocess,tempfile,hashlib,uuid
+from node_admission import snapshot as snapshot_node, environment as node_environment
 p=argparse.ArgumentParser(description=__doc__);p.add_argument('--supervisor-bin',type=pathlib.Path);p.add_argument('--case',choices=['real-page','retention','contracts','relay','supervised','supervised-revoke','entry-protocol','framing'],default='real-page');p.add_argument('--native',type=pathlib.Path,required=True);p.add_argument('--playwright',type=pathlib.Path,required=True);p.add_argument('--deps',type=pathlib.Path,required=True);p.add_argument('--node',type=pathlib.Path,required=True);p.add_argument('--guard',type=pathlib.Path,required=True);p.add_argument('--evidence-root',type=pathlib.Path,required=True);a=p.parse_args()
 node_binary=a.node/'bin/node';node_stat=node_binary.lstat()
 assert node_binary.is_file() and not node_binary.is_symlink() and node_stat.st_mode&0o111
@@ -18,6 +19,11 @@ for row in json.loads(artifact.read_text())['files']:
  item=a.playwright.parent/row['path'];assert item.is_file() and not item.is_symlink() and hashlib.sha256(item.read_bytes()).hexdigest()==row['sha256'],row['path']
 assert subprocess.check_output(['podman','--remote=false','info','--format','{{.Host.Security.Rootless}}'],text=True).strip()=='true'
 a.evidence_root.mkdir(parents=True,exist_ok=True);out=pathlib.Path(tempfile.mkdtemp(prefix='page-',dir=a.evidence_root));out.chmod(0o700);source=pathlib.Path(__file__).resolve().parent.parent
+# The shared no-follow copier seals the bytes before any private execution.
+# Version admission is performed on this exact copy inside the container.
+node_receipt={'path':str(node_binary.absolute()),'version':'26.13.0','sha256':node_sha,'bytes':node_stat.st_size}
+snapshot_node(node_receipt,out/'node-bin'/'node')
+(out/'node-receipt.json').write_text(json.dumps(node_receipt,indent=2)+'\n')
 snapshot=out/'source';hashes={}
 for directory in ['runtime/preview','tests/preview']:
  for item in (source/directory).iterdir():
@@ -42,7 +48,8 @@ raise SystemExit(subprocess.run(['/node/bin/node','--experimental-vm-modules','/
 bootstrap=bootstrap.replace('real-page.mjs',a.case+'.mjs')
 container='o3-native-page-'+uuid.uuid4().hex
 cmd=['podman','--remote=false','run','--name',container,'--label','o3.preview-proof='+container,'--rm','--pull=never','--http-proxy=false','--userns=keep-id','--user',f'{os.getuid()}:{os.getgid()}','--read-only','--network=none','--cap-drop=ALL','--security-opt=no-new-privileges','--pids-limit=512','--memory=4g','--tmpfs','/tmp:rw,size=512m,mode=1777','--tmpfs','/native/node_modules:rw,size=32m,mode=1777','--env','HOME=/out/home','--env','XDG_CONFIG_HOME=/out/home/config','--env','XDG_CACHE_HOME=/out/home/cache']
-for root,target,mode in [(pathlib.Path('/usr'),'/usr','ro'),(snapshot,'/source','ro'),(a.native,'/native','ro'),(a.playwright,'/playwright','ro'),(a.deps,'/deps','ro'),(a.node,'/node','ro'),(a.guard,'/guard.mjs','ro'),(out,'/out','rw')]:cmd+=['-v',f'{root.resolve()}:{target}:{mode}']
+for name,value in node_environment(node_receipt,path='/node/bin/node').items():cmd+=['--env',name+'='+value]
+for root,target,mode in [(pathlib.Path('/usr'),'/usr','ro'),(snapshot,'/source','ro'),(a.native,'/native','ro'),(a.playwright,'/playwright','ro'),(a.deps,'/deps','ro'),(out/'node-bin','/node/bin','ro'),(a.guard,'/guard.mjs','ro'),(out,'/out','rw')]:cmd+=['-v',f'{root.resolve()}:{target}:{mode}']
 if a.case in ('supervised','supervised-revoke'):cmd+=['-v',f'{out}/supervisor:/supervisor:ro']
 cmd+=['localhost/o3-rust-tests:latest','python3','-c',bootstrap]
 with (out/'runtime.log').open('w') as log:
