@@ -23,6 +23,7 @@ pub fn auth_policy(host: Option<&str>, desktop: bool) -> crate::managed_limits::
 pub struct Startup {
     pub desktop: bool,
     pub envelope: Option<Envelope>,
+    pub browser: Option<BrowserDescriptors>,
 }
 
 fn option<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
@@ -32,7 +33,12 @@ fn option<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
 }
 
 impl Startup {
-    pub async fn read(args: &[String]) -> io::Result<Self> {
+    /// Read trusted launcher startup input exactly once before starting providers.
+    ///
+    /// # Safety
+    /// The caller must exclusively own any inherited browser descriptors named
+    /// by the envelope and transfer their ownership to this startup operation.
+    pub async unsafe fn read(args: &[String]) -> io::Result<Self> {
         for name in ["--bootstrap-fd", "--mode"] {
             if args.iter().any(|arg| arg == name) && option(args, name).is_none() {
                 return Err(io::Error::other(format!("Missing value for {name}")));
@@ -41,6 +47,7 @@ impl Startup {
         let fd = option(args, "--bootstrap-fd")
             .map(str::to_owned)
             .or_else(|| std::env::var("T3CODE_BOOTSTRAP_FD").ok());
+        let bootstrap_fd = fd.as_deref().and_then(|fd| fd.parse::<i32>().ok());
         let envelope = if let Some(fd) = fd {
             let fd = fd
                 .parse::<i32>()
@@ -66,8 +73,6 @@ impl Startup {
             for name in [
                 "desktopTelemetryFd",
                 "desktopTelemetryControlFd",
-                "desktopBrowserFd",
-                "desktopBrowserControlFd",
                 "resourceMonitorPath",
                 "otlpTracesUrl",
                 "otlpMetricsUrl",
@@ -89,7 +94,14 @@ impl Startup {
                 ));
             }
         }
-        Ok(Self { desktop, envelope })
+        // SAFETY: startup runs once, before providers or profile discovery; these
+        // dedicated descriptors are transferred by the trusted launcher envelope.
+        let browser = unsafe { BrowserDescriptors::adopt(envelope.as_ref(), bootstrap_fd) }?;
+        Ok(Self {
+            desktop,
+            envelope,
+            browser,
+        })
     }
     pub fn parent_watch_enabled(&self, parent: i32) -> bool {
         self.desktop && parent > 1 && self.envelope.is_some()
@@ -112,5 +124,77 @@ pub async fn wait_for_parent_change(parent: i32, enabled: bool) {
             return;
         }
         tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+}
+
+/// Dedicated launcher channels, owned before any provider subprocess can inherit them.
+pub struct BrowserDescriptors {
+    input: std::os::fd::OwnedFd,
+    control: std::os::fd::OwnedFd,
+}
+impl BrowserDescriptors {
+    /// The caller must exclusively own both inherited descriptor numbers.
+    unsafe fn adopt(
+        envelope: Option<&Envelope>,
+        bootstrap: Option<i32>,
+    ) -> io::Result<Option<Self>> {
+        use std::os::fd::FromRawFd;
+        let field = |name| {
+            envelope
+                .and_then(|e| e.value(name))
+                .and_then(serde_json::Value::as_f64)
+        };
+        let (input, control) = match (field("desktopBrowserFd"), field("desktopBrowserControlFd")) {
+            (None, None) => return Ok(None),
+            (Some(input), Some(control)) => (input, control),
+            _ => {
+                return Err(io::Error::other(
+                    "Desktop browser requires both dedicated channels",
+                ))
+            }
+        };
+        if [input, control]
+            .iter()
+            .any(|fd| !fd.is_finite() || fd.fract() != 0.0 || *fd > i32::MAX as f64)
+        {
+            return Err(io::Error::other(
+                "Invalid desktop browser descriptor number",
+            ));
+        }
+        let input = input as i32;
+        let control = control as i32;
+        if input < 3
+            || control < 3
+            || input == control
+            || Some(input) == bootstrap
+            || Some(control) == bootstrap
+        {
+            return Err(io::Error::other(
+                "Desktop browser descriptors must be distinct dedicated channels",
+            ));
+        }
+        for fd in [input, control] {
+            let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
+            // SAFETY: fstat initializes only the supplied stack buffer.
+            if unsafe { libc::fstat(fd, stat.as_mut_ptr()) } < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            let mode = unsafe { stat.assume_init() }.st_mode & libc::S_IFMT;
+            if mode != libc::S_IFIFO && mode != libc::S_IFSOCK {
+                return Err(io::Error::other(
+                    "Desktop browser descriptor is not a pipe or socket",
+                ));
+            }
+            crate::desktop_bootstrap_fd::close_on_exec(fd)?;
+        }
+        // SAFETY: validated dedicated descriptors are exclusively transferred by startup.
+        Ok(Some(Self {
+            input: unsafe { std::os::fd::OwnedFd::from_raw_fd(input) },
+            control: unsafe { std::os::fd::OwnedFd::from_raw_fd(control) },
+        }))
+    }
+    /// Register the channels only in the final server runtime.
+    pub fn into_channel(self) -> io::Result<crate::desktop_browser_channel::Channel> {
+        crate::desktop_browser_channel::Channel::from_owned_descriptors(self.input, self.control)
     }
 }

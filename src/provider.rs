@@ -627,6 +627,7 @@ pub(crate) fn start(
         if crate::run_restart::admission(&s, &rid, attempt.as_deref()).is_err() {
             return;
         }
+        let mut preview_turn = s.streams.p2.preview.activity().begin(&tid);
         let mut task = tokio::task::spawn(async move {
             provider
                 .execute(input, output, controls, cancellation)
@@ -727,6 +728,7 @@ pub(crate) fn start(
                     | ProviderEvent::Failed(_)
                     | ProviderEvent::FailedWithDetails(_)
             ) {
+                preview_turn.end();
                 checkpoint_finished = true;
                 let cs = s.clone();
                 let ct = tid.clone();
@@ -780,6 +782,7 @@ pub(crate) fn start(
                 break;
             }
         }
+        preview_turn.end();
         if !buffered.is_empty() {
             let _ = persist_attempt(
                 &s,

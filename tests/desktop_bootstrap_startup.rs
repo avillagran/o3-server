@@ -175,7 +175,7 @@ fn unsupported_launcher_channels_fail_before_creating_profile() {
     let root = directory();
     let home = root.join("uncreated-home");
     let mut value = envelope(&home);
-    value["desktopBrowserFd"] = json!(10);
+    value["desktopTelemetryFd"] = json!(10);
     let mut server = start(command(), &value);
     let status = server.wait();
     assert!(!status.success());
@@ -187,7 +187,7 @@ fn unsupported_launcher_channels_fail_before_creating_profile() {
         .unwrap()
         .read_to_string(&mut error)
         .unwrap();
-    assert!(error.contains("desktopBrowserFd"));
+    assert!(error.contains("desktopTelemetryFd"));
     assert!(!error.contains("private-launcher-seed"));
     assert!(!home.exists());
 }
@@ -319,4 +319,97 @@ fn parent_replacement_stops_the_launcher_owned_server_gracefully() {
     };
     // SAFETY: poll receives one initialized process descriptor; wait for actual process exit.
     assert_eq!(unsafe { libc::poll(&mut poll, 1, 2000) }, 1);
+}
+
+#[test]
+fn dedicated_browser_channels_are_consumed_before_authenticated_readiness() {
+    use std::os::{
+        fd::AsRawFd,
+        unix::{net::UnixStream, process::CommandExt},
+    };
+    let root = directory();
+    let home = root.join("browser-home");
+    let (mut launcher_input, server_input) = UnixStream::pair().unwrap();
+    let (mut launcher_control, server_control) = UnixStream::pair().unwrap();
+    let mut value = envelope(&home);
+    value["desktopBrowserFd"] = json!(90);
+    value["desktopBrowserControlFd"] = json!(91);
+    let input = server_input.as_raw_fd();
+    let control = server_control.as_raw_fd();
+    assert!(input < 90 && control < 90);
+    let mut launch = command();
+    launch.env("O3_BROWSER_BINARY", "/nonexistent/browser");
+    // SAFETY: only async-signal-safe descriptor duplication runs in the child.
+    unsafe {
+        launch.pre_exec(move || {
+            if libc::dup2(input, 90) < 0 || libc::dup2(control, 91) < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let mut server = start(launch, &value);
+    drop(server_input);
+    drop(server_control);
+    let runtime = ready(&mut server, &home);
+    let (status, token) = request(
+        &runtime,
+        "/oauth/token",
+        Some("subject_token=private-launcher-seed"),
+    );
+    assert_eq!(status, 200);
+    let base = format!("http://127.0.0.1:{}", runtime["port"]);
+    let connection = t3_protocol::Connection::new(
+        &base,
+        None,
+        t3_protocol::Credential::bearer(token["access_token"].as_str().unwrap()).unwrap(),
+    )
+    .unwrap();
+    let config = connection.rpc("server.getConfig", json!({})).unwrap();
+    assert_eq!(config["environment"]["capabilities"]["serverBrowser"], true);
+    // This channel is live after the temporary bootstrap-reading runtime has gone.
+    writeln!(
+        launcher_input,
+        "{{\"type\":\"shown\",\"threadId\":\"unknown\",\"tabId\":\"unknown\",\"shown\":true}}"
+    )
+    .unwrap();
+    drop(connection);
+    server.stop();
+    launcher_control
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    let mut bytes = Vec::new();
+    launcher_control.read_to_end(&mut bytes).unwrap();
+}
+
+#[test]
+fn browser_channels_reject_partial_or_aliased_descriptors_before_profile_creation() {
+    for (input, control) in [
+        (Some(10), None),
+        (Some(0), Some(91)),
+        (Some(90), Some(90)),
+        (Some(90), Some(91)),
+    ] {
+        let root = directory();
+        let home = root.join("uncreated-browser-home");
+        let mut value = envelope(&home);
+        if let Some(fd) = input {
+            value["desktopBrowserFd"] = json!(fd);
+        }
+        if let Some(fd) = control {
+            value["desktopBrowserControlFd"] = json!(fd);
+        }
+        let mut server = start(command(), &value);
+        assert!(!server.wait().success());
+        let mut error = String::new();
+        server
+            .0
+            .stderr
+            .take()
+            .unwrap()
+            .read_to_string(&mut error)
+            .unwrap();
+        assert!(!error.contains("private-launcher-seed"));
+        assert!(!home.exists());
+    }
 }

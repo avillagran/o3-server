@@ -117,12 +117,16 @@ fn main() -> std::io::Result<()> {
     let is_serving = args
         .first()
         .is_none_or(|arg| matches!(arg.as_str(), "serve" | "start") || arg.starts_with('-'));
-    let startup = if is_serving {
+    let mut startup = if is_serving {
         Some(
             tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()?
-                .block_on(o3_server::desktop_startup::Startup::read(&args))?,
+                .block_on({
+                    // SAFETY: this is the sole startup reader, before providers or
+                    // profile discovery; the trusted launcher transfers its channels.
+                    unsafe { o3_server::desktop_startup::Startup::read(&args) }
+                })?,
         )
     } else {
         None
@@ -403,6 +407,9 @@ fn main() -> std::io::Result<()> {
                 }
             };
             let state = Arc::new(state);
+            let desktop_driver = if let Some(descriptors) = startup.as_mut().and_then(|startup| startup.browser.take()) {
+                Some(o3_server::preview::install_desktop(state.clone(), descriptors.into_channel()?).await)
+            } else { None };
             let exporter =
                 shared.map(|t3| o3_server::t3_shared::Exporter::spawn(state.clone(), t3));
             let probe = state.provider.lock().unwrap().clone().unwrap();
@@ -478,6 +485,7 @@ fn main() -> std::io::Result<()> {
             probe_task.abort();
             let _ = probe_task.await;
             o3_server::preview::shutdown(&state).await;
+            if let Some(driver) = desktop_driver { driver.shutdown().await; }
             codex.shutdown().await;
             if let Some(exporter) = exporter {
                 exporter.finish();
