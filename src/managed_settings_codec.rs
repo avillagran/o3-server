@@ -107,6 +107,15 @@ pub(crate) fn decode_provider_config(
             }
         })
 }
+/// Decode actual speech schemas through the same closed interpreter as settings.
+pub(crate) fn speech_options(value: Value, postprocess: bool, encode: bool) -> Result<Value> {
+    let root = if postprocess {
+        "speechPostProcessingRoot"
+    } else {
+        "speechOptionsRoot"
+    };
+    run(id(&PROGRAM[root]), Some(value), encode, false)?.ok_or(())
+}
 pub(crate) fn decode_persisted(value: Value) -> Result<Value> {
     run(id(&PROGRAM["persistedRoot"]), Some(value), false, false)?.ok_or(())
 }

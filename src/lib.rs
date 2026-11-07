@@ -24,6 +24,7 @@ pub mod rpc;
 mod rpc_input;
 pub mod shared_readiness;
 pub mod speech_kernel;
+pub mod speech_request;
 pub mod store;
 #[cfg(test)]
 #[path = "../tests/support/sandbox.rs"]

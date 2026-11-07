@@ -1,4 +1,6 @@
 {
+  "speechOptionsRoot": 650,
+  "speechPostProcessingRoot": 655,
   "sourceHostRoots": {
     "github": 627,
     "gitcafe": 644,
@@ -10218,6 +10220,228 @@
         }
       ],
       "default": ""
+    },
+    {
+      "tag": "Objects",
+      "expected": "object",
+      "properties": [
+        {
+          "name": "speechLanguage",
+          "type": 651
+        },
+        {
+          "name": "speechTranslateToEnglish",
+          "type": 47
+        },
+        {
+          "name": "speechCustomWords",
+          "type": 652
+        },
+        {
+          "name": "speechRemoveFillerWords",
+          "type": 47
+        },
+        {
+          "name": "speechCorrectionWord",
+          "type": 653
+        },
+        {
+          "name": "speechSilenceFiltering",
+          "type": 654
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "tag": "String",
+      "expected": "string",
+      "checks": [
+        {
+          "kind": "isMinLength",
+          "minLength": 2,
+          "expected": "a value with a length of at least 2"
+        },
+        {
+          "kind": "isMaxLength",
+          "maxLength": 16,
+          "expected": "a value with a length of at most 16"
+        }
+      ]
+    },
+    {
+      "tag": "Arrays",
+      "expected": "array",
+      "checks": [
+        {
+          "kind": "isMaxLength",
+          "maxLength": 100,
+          "expected": "a value with a length of at most 100"
+        },
+        {
+          "kind": "speechWords"
+        }
+      ],
+      "elements": [],
+      "rest": [
+        119
+      ]
+    },
+    {
+      "tag": "String",
+      "expected": "string",
+      "optional": true,
+      "checks": [
+        {
+          "kind": "isMaxLength",
+          "maxLength": 50,
+          "expected": "a value with a length of at most 50"
+        }
+      ]
+    },
+    {
+      "tag": "Boolean",
+      "expected": "boolean",
+      "codecs": [
+        {
+          "from": 61,
+          "transform": "default"
+        }
+      ],
+      "default": true
+    },
+    {
+      "tag": "Objects",
+      "expected": "object",
+      "properties": [
+        {
+          "name": "options",
+          "type": 656
+        },
+        {
+          "name": "transcript",
+          "type": 662
+        },
+        {
+          "name": "draft",
+          "type": 663
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "tag": "Objects",
+      "expected": "object",
+      "properties": [
+        {
+          "name": "speechCustomWords",
+          "type": 652
+        },
+        {
+          "name": "speechPostProcessingPrompt",
+          "type": 657
+        },
+        {
+          "name": "speechCorrectionWord",
+          "type": 653
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "tag": "Objects",
+      "expected": "object",
+      "properties": [
+        {
+          "name": "mode",
+          "type": 658
+        },
+        {
+          "name": "customInstructions",
+          "type": 661
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "tag": "Union",
+      "expected": "\"default\" | \"custom\"",
+      "types": [
+        659,
+        660
+      ]
+    },
+    {
+      "tag": "Literal",
+      "expected": "\"default\"",
+      "literal": "default"
+    },
+    {
+      "tag": "Literal",
+      "expected": "\"custom\"",
+      "literal": "custom"
+    },
+    {
+      "tag": "String",
+      "expected": "string",
+      "checks": [
+        {
+          "kind": "isMaxLength",
+          "maxLength": 10000,
+          "expected": "a value with a length of at most 10000"
+        }
+      ]
+    },
+    {
+      "tag": "String",
+      "expected": "string",
+      "checks": [
+        {
+          "kind": "isMaxLength",
+          "maxLength": 100000,
+          "expected": "a value with a length of at most 100000"
+        }
+      ]
+    },
+    {
+      "tag": "Objects",
+      "expected": "object",
+      "properties": [
+        {
+          "name": "text",
+          "type": 664
+        },
+        {
+          "name": "selection",
+          "type": 665
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "tag": "String",
+      "expected": "string",
+      "checks": [
+        {
+          "kind": "isMaxLength",
+          "maxLength": 100000,
+          "expected": "a value with a length of at most 100000"
+        }
+      ]
+    },
+    {
+      "tag": "Objects",
+      "expected": "object",
+      "properties": [
+        {
+          "name": "start",
+          "type": 364
+        },
+        {
+          "name": "end",
+          "type": 364
+        }
+      ],
+      "indexes": []
     }
   ],
   "transformSources": {

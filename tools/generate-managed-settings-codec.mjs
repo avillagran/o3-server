@@ -48,7 +48,7 @@ function checkedFilter(check,where){
  if(a?.representation){const kind=a.representation.id.replace('effect/schema/','');if(!['isMaxLength','isMinLength','isInt','isBetween','isPattern','isFinite','isGreaterThanOrEqualTo'].includes(kind))throw Error('Unsupported refinement '+kind);return {kind,...clone(a.representation.payload??{}),...(a.expected?{expected:a.expected}:{})};}
  if(a?.expected==='a non-blank string')return {kind:'nonBlank',expected:a.expected};
  if(a===undefined){
-  if(where.includes('speechProjectCustomWords'))return {kind:'speechWords'};
+  if(where.includes('speechProjectCustomWords')||where.endsWith('.speechCustomWords'))return {kind:'speechWords'};
   if(where.endsWith('.id')&&/(deviceHosts|easDeviceHosts|simlockDeviceHosts)/.test(where))return {kind:'configuredHostId'};
   if(/(?:deviceHosts|easDeviceHosts|simlockDeviceHosts)$/.test(where))return {kind:'uniqueHostIds'};
   if(where.endsWith('easDeviceHosts.*'))return {kind:'easBounds'};
@@ -222,6 +222,8 @@ const providerConfigRoots={codex:compile(C.CodexSettings.ast,'providerConfig.cod
 const providerInstanceRoot=compile(C.ProviderInstanceConfig.ast,'providerInstance');
 const sourceHostRoots=Object.fromEntries([...native.hosts.hostSettingsSchemas].map(([kind,schema])=>[kind,compile(schema.ast,'sourceHost.'+kind)]));
 const usageConfigRoot=compile(C.UsageLimitSourceConfig.ast,'usageConfig');
+const speechOptionsRoot=compile(C.SpeechTranscriptionOptions.ast,'speechOptions');
+const speechPostProcessingRoot=compile(C.EnvironmentSpeechPostProcessingRequest.ast,'speechPostProcessing');
 const providerConfigDefaults={codex:plain(S.decodeUnknownSync(C.CodexSettings)({})),claudeAgent:plain(S.decodeUnknownSync(C.ClaudeSettings)({}))};
 for(const file of ['apps/server/src/provider/Drivers/CodexDriver.ts','apps/server/src/provider/Drivers/ClaudeDriver.ts'])source(file);
 const sparseCases=[{input:{},encoded:S.encodeSync(C.ServerSettings)({})}];
@@ -237,6 +239,21 @@ for(const [driver,schema]of Object.entries({codex:C.CodexSettings,claudeAgent:C.
  for(const input of [null,false,[],{}, {customModels:[{slug:' ',name:'n'}]}, ...[{}, {type:'select'}, {type:'boolean',id:0}, {type:'boolean',id:' ',label:'x'}].map(value=>({customModels:[{slug:'x',name:'n',capabilities:{optionDescriptors:[value]}}]}))]){const c={driver,input};try{c.decoded=plain(S.decodeUnknownSync(schema)(input));}catch(error){c.error=error.message;}providerConfigCases.push(c);}
 }
 fs.writeFileSync(path.join(output,'provider-config-fixtures.json'),JSON.stringify(providerConfigCases,null,2)+'\n');
+const speechCases=[];
+function speechCase(kind,input){const schema=kind==='transcription'?C.SpeechTranscriptionOptions:C.EnvironmentSpeechPostProcessingRequest;const row={kind,input};try{const decoded=S.decodeUnknownSync(schema)(input);row.decoded=plain(decoded);row.encoded=plain(S.encodeSync(schema)(decoded));}catch{row.invalid=true;}speechCases.push(row);}
+const speechBase=C.DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS;
+speechCase('transcription',speechBase);
+for(const field of Object.keys(C.SpeechTranscriptionOptions.fields)){
+ const absent={...speechBase};delete absent[field];speechCase('transcription',absent);
+ for(const value of [null,'',true,false,0,[],{}])speechCase('transcription',{...speechBase,[field]:value});
+}
+for(const speechLanguage of ['e','e'.repeat(16),'e'.repeat(17),'😀'.repeat(8),'😀'.repeat(9),'\ufeffen'])speechCase('transcription',{...speechBase,speechLanguage});
+for(const speechCustomWords of [[{term:'é',aliases:['e\u0301']}],[{term:' word ',aliases:['WORD']}],[{term:'valid',aliases:[' ']}],Array.from({length:100},(_,n)=>({term:'term'+n,aliases:[]})),Array.from({length:101},(_,n)=>({term:'term'+n,aliases:[]}))])speechCase('transcription',{...speechBase,speechCustomWords});
+for(const speechCorrectionWord of ['c'.repeat(50),'c'.repeat(51)])speechCase('transcription',{...speechBase,speechCorrectionWord});
+speechCase('transcription',{...speechBase,future:'stripped'});
+const postBase={options:{speechCustomWords:[],speechPostProcessingPrompt:{mode:'default',customInstructions:''}},transcript:'text',draft:{text:'draft',selection:{start:0,end:1}}};
+for(const input of [postBase,{}, {...postBase,future:'stripped'}, {...postBase,transcript:1}, {...postBase,draft:{text:'draft',selection:{start:-0.5,end:1.5}}}, ...[null,{}, {speechCustomWords:[]}, {speechCustomWords:[],speechPostProcessingPrompt:{mode:'custom',customInstructions:'instruction'}}].map(options=>({...postBase,options}))])speechCase('postprocess',input);
+fs.writeFileSync(path.join(output,'speech-options-fixtures.json'),JSON.stringify({revision,effect:'4.1.2',cases:speechCases},null,2)+'\n');
 const nodeValues=['gpu:\r','gpu:\u2028','valid\n','a\nb','\u0085',null,true,false,0,1,-1,1.5,9007199254740992,'',' ',' native ','\uFEFFok\uFEFF','node','local','onReturn',[],{},['a'],[null],{future:'x'},{id:'node',term:'word',aliases:[]},{provider:'vault',reference:'token'}];
 const nodeCases=[];
 for(const [index,ast]of nodeAsts.entries())for(const [valueIndex,value]of [...nodeValues,undefined].entries()){
@@ -245,7 +262,7 @@ for(const [index,ast]of nodeAsts.entries())for(const [valueIndex,value]of [...no
  nodeCases.push(item);
 }
 fs.writeFileSync(path.join(output,'node-fixtures.json'),JSON.stringify({values:nodeValues,cases:nodeCases},null,2)+'\n');
-const ir={sourceHostRoots,usageConfigRoot,providerInstanceRoot,providerConfigRoots,providerConfigDefaults,persistedRoot,patchRoot,secretReference,secretFields,revision,effect:'4.1.2',sources,root,fields,projectOverrideKeys:Object.keys(C.ProjectSettingsOverrides.fields),defaults,encodedDefaults,nodes,transformSources};
+const ir={speechOptionsRoot,speechPostProcessingRoot,sourceHostRoots,usageConfigRoot,providerInstanceRoot,providerConfigRoots,providerConfigDefaults,persistedRoot,patchRoot,secretReference,secretFields,revision,effect:'4.1.2',sources,root,fields,projectOverrideKeys:Object.keys(C.ProjectSettingsOverrides.fields),defaults,encodedDefaults,nodes,transformSources};
 fs.writeFileSync(path.join(output,'codec.json'),JSON.stringify(ir,null,2)+'\n');
 fs.writeFileSync(path.join(output,'codec-fixtures.json'),JSON.stringify({revision,effect:'4.1.2',cases:codecCases},null,2)+'\n');
 console.log(nodes.length+' closed AST nodes; '+Object.keys(transformSources).length+' transforms; '+codecCases.length+' codec cases');
