@@ -14,6 +14,31 @@ use std::{
     sync::{Arc, OnceLock},
     time::Duration,
 };
+const CLOSE_DEADLINE: Duration = Duration::from_secs(2);
+
+fn watch_native_exit(pid: u32) -> tokio::io::unix::AsyncFd<std::os::fd::OwnedFd> {
+    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+    // Capture the owned child before the crash/cancel. A pidfd cannot be
+    // redirected by PID reuse, and its readiness proves exit without requiring
+    // the container init to reap an orphan on a particular scheduler turn.
+    let descriptor = unsafe { libc::syscall(libc::SYS_pidfd_open, i32::try_from(pid).unwrap(), 0) };
+    assert!(descriptor >= 0, "owned native child needs an exit receipt");
+    let owned = unsafe { OwnedFd::from_raw_fd(i32::try_from(descriptor).unwrap()) };
+    let flags = unsafe { libc::fcntl(owned.as_raw_fd(), libc::F_GETFL) };
+    assert!(flags >= 0);
+    assert_eq!(
+        unsafe { libc::fcntl(owned.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) },
+        0
+    );
+    tokio::io::unix::AsyncFd::new(owned).unwrap()
+}
+
+async fn assert_native_exited(exit: tokio::io::unix::AsyncFd<std::os::fd::OwnedFd>) {
+    let _exit_ready = tokio::time::timeout(CLOSE_DEADLINE, exit.readable())
+        .await
+        .expect("group fence must terminate the owned native child")
+        .expect("owned native exit observation failed");
+}
 fn root() -> PathBuf {
     let path = std::env::temp_dir().join(format!(
         "speech-owner-{}",
@@ -84,7 +109,7 @@ impl Fixture {
             acceleration: "cpu".into(),
             startup_deadline: Duration::from_secs(10),
             operation_deadline: Duration::from_secs(5),
-            close_deadline: Duration::from_secs(2),
+            close_deadline: CLOSE_DEADLINE,
         })
         .await
         .unwrap();
@@ -245,18 +270,20 @@ fn cancellation_fences_hung_native_group_and_rejects_parallel_discovery() {
                     .await
             });
             let pid = fixture.entered().await;
+            let exit = watch_native_exit(pid);
             assert_eq!(fixture.worker.discover().await.unwrap_err(), Error::Busy);
             task.abort();
             let _ = task.await;
-            assert!(matches!(
-                fixture.worker.close().await,
-                Cleanup::Confirmed { .. }
-            ));
-            assert_eq!(
-                unsafe { libc::kill(pid as i32, 0) },
-                -1,
-                "factory must reap its aborted native child"
-            );
+            let cleanup = fixture.worker.close().await;
+            assert!(matches!(cleanup, Cleanup::Confirmed { .. }));
+            assert_native_exited(exit).await;
+            if matches!(cleanup, Cleanup::Confirmed { graceful: true }) {
+                assert_eq!(
+                    unsafe { libc::kill(pid as i32, 0) },
+                    -1,
+                    "graceful native disposal also reaps its child"
+                );
+            }
             assert_eq!(
                 fixture
                     .events()
@@ -359,20 +386,53 @@ fn crashed_bridge_fences_remaining_native_child_without_replay() {
     if fresh("crashed_bridge_fences_remaining_native_child_without_replay") {
         return;
     }
-    runtime().block_on(async {tokio::spawn(async {
-        assert_worker_stack();
-        let fixture=Fixture::start("hang").await;fixture.worker.load().await.unwrap();
-        let worker=fixture.worker.clone();
-        let operation=tokio::spawn(async move {worker.transcribe(&Pcm::decode(&0.25f32.to_le_bytes()).unwrap(),json!({"timestamps":"none"}),false).await});
-        let native=fixture.entered().await;
-        let parent=fixture.events().iter().find(|value|value["kind"]=="load").unwrap()["parent"].as_u64().unwrap() as i32;
-        assert!(parent>1);assert_eq!(unsafe {libc::kill(parent,libc::SIGKILL)},0);
-        assert!(matches!(operation.await.unwrap(),Err(Error::Closed|Error::Protocol)));
-        assert_eq!(fixture.worker.close().await,Cleanup::Confirmed{graceful:false});
-        let state=fs::read_to_string(format!("/proc/{native}/stat")).ok();
-        assert!(state.is_none_or(|text|text.split_whitespace().nth(2)==Some("Z")),"group fence must stop the native child; orphan reaping belongs to the container init");
-        assert_eq!(fixture.events().iter().filter(|event|event["kind"]=="transcribe").count(),1);
-    }).await.unwrap();});
+    runtime().block_on(async {
+        tokio::spawn(async {
+            assert_worker_stack();
+            let fixture = Fixture::start("hang").await;
+            fixture.worker.load().await.unwrap();
+            let worker = fixture.worker.clone();
+            let operation = tokio::spawn(async move {
+                worker
+                    .transcribe(
+                        &Pcm::decode(&0.25f32.to_le_bytes()).unwrap(),
+                        json!({"timestamps":"none"}),
+                        false,
+                    )
+                    .await
+            });
+            let native = fixture.entered().await;
+            let exit = watch_native_exit(native);
+            let parent = fixture
+                .events()
+                .iter()
+                .find(|value| value["kind"] == "load")
+                .unwrap()["parent"]
+                .as_u64()
+                .unwrap() as i32;
+            assert!(parent > 1);
+            assert_eq!(unsafe { libc::kill(parent, libc::SIGKILL) }, 0);
+            assert!(matches!(
+                operation.await.unwrap(),
+                Err(Error::Closed | Error::Protocol)
+            ));
+            assert_eq!(
+                fixture.worker.close().await,
+                Cleanup::Confirmed { graceful: false }
+            );
+            assert_native_exited(exit).await;
+            assert_eq!(
+                fixture
+                    .events()
+                    .iter()
+                    .filter(|event| event["kind"] == "transcribe")
+                    .count(),
+                1
+            );
+        })
+        .await
+        .unwrap();
+    });
 }
 
 #[test]
