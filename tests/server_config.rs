@@ -385,7 +385,7 @@ fn normalized_settings_are_readable_by_native_settings_and_atomic_on_rejection()
             .unwrap()
     };
     let initial = c.rpc("server.getSettings", json!({})).unwrap();
-    assert_eq!(initial["sidebarAutoSettleAfterDays"], 3);
+    assert_eq!(initial["sidebarAutoSettleAfterDays"], 7);
     assert_eq!(
         initial["sourceControlWritingStyle"]["followChangeRequestTemplates"],
         true

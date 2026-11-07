@@ -98,10 +98,15 @@ fn base_command(program: &str, cwd: &Path, args: &[&str]) -> tokio::process::Com
         .env("GIT_ASKPASS", "true")
         .env("SSH_ASKPASS", "true")
         .env("GIT_PAGER", "cat")
-        .env("LC_ALL", "C")
         .env_remove("GIT_DIR")
         .env_remove("GIT_WORK_TREE")
         .env_remove("GIT_INDEX_FILE");
+    if program == "git" {
+        // Git diagnostics use English without changing the locale inherited by hooks.
+        c.env("LANGUAGE", "C");
+    } else {
+        c.env("LC_ALL", "C");
+    }
     c
 }
 
@@ -460,5 +465,77 @@ mod diff_relative_tests {
             .unwrap();
         // Fixture trees are retained for private container teardown.
         assert!(out.text().contains("out.txt"), "{}", out.text());
+    }
+}
+
+#[cfg(test)]
+mod nightly4314_tests {
+    use super::*;
+    use serde_json::Value;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[tokio::test]
+    async fn native_git_language_defaults_and_caller_overrides_reach_owned_child() {
+        crate::test_sandbox::assert_isolated();
+        let fixture: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/nightly-small-4314.json"))
+                .unwrap();
+        let root = std::env::temp_dir().join(format!(
+            "git-language-{}",
+            crate::store::random_id().unwrap()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let executable = root.join("git");
+        std::fs::write(&executable,"#!/usr/bin/python3\nimport os,json\nprint(json.dumps({key:os.environ.get(key) for key in ['LANGUAGE','LC_ALL','LC_CTYPE','LANG']}))\n").unwrap();
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let search = format!("{}:/usr/bin:/bin", root.display());
+        for case in fixture["vcsCases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|case| case["platform"] == "linux" && case["command"] == "git")
+        {
+            let mut extra = case["env"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(key, value)| (key.as_str(), Path::new(value.as_str().unwrap())))
+                .collect::<Vec<_>>();
+            extra.push(("PATH", Path::new(&search)));
+            // The observer must not apply Python locale coercion before recording.
+            extra.push(("PYTHONCOERCECLOCALE", Path::new("0")));
+            extra.push(("PYTHONUTF8", Path::new("0")));
+            let out = git_env(&root, &["fixture"], Opts::READ, &extra)
+                .await
+                .unwrap();
+            assert!(out.ok(), "{}", out.stderr);
+            let actual: Value = serde_json::from_slice(&out.stdout).unwrap();
+            for key in ["LANGUAGE", "LC_ALL", "LC_CTYPE", "LANG"] {
+                let expected = case["observed"][0]["env"]
+                    .get(key)
+                    .cloned()
+                    .unwrap_or_else(|| std::env::var(key).ok().map_or(Value::Null, Value::String));
+                assert_eq!(actual[key], expected, "{case}: {key}");
+            }
+        }
+        let command = base_command("git", &root, &[]);
+        let explicit = command.as_std().get_envs().collect::<Vec<_>>();
+        for key in ["LC_ALL", "LC_CTYPE", "LANG"] {
+            assert!(
+                !explicit
+                    .iter()
+                    .any(|(name, _)| *name == std::ffi::OsStr::new(key)),
+                "git must inherit hook locale {key}"
+            );
+        }
+        let command = base_command("gh", &root, &[]);
+        assert!(
+            !command
+                .as_std()
+                .get_envs()
+                .any(|(name, _)| name == "LANGUAGE"),
+            "the new locale override is git-only"
+        );
+        // Owned fixture files are retained; no recursive cleanup runs.
     }
 }

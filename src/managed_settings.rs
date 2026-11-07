@@ -492,16 +492,27 @@ mod tests {
                 serde_json::from_value::<Vec<String>>(c["lockedPaths"].clone()).unwrap(),
                 "{label}: paths"
             );
+            // Historical fixtures omit explicit3 because it equaled that pin's
+            // built-in default. In4314 it is a meaningful policy override.
+            let auto = &c["settings"]["sidebarAutoSettleAfterDays"];
+            let mut expected_defaults = expanded(&c["defaults"]);
+            if auto["value"] == 3 && auto["locked"] == false {
+                expected_defaults["sidebarAutoSettleAfterDays"] = json!(3);
+            }
             assert_eq!(
                 codec::encode(policy.defaults_value.clone()).unwrap(),
-                expanded(&c["defaults"]),
+                expected_defaults,
                 "{label}: defaults"
             );
             let current = codec::decode(merged(&codec::encoded_defaults(), &c["current"]))
                 .unwrap_or_else(|()| panic!("{label}: current invalid"));
+            let mut expected_applied = expanded(&c["applied"]);
+            if auto["value"] == 3 && auto["locked"] == true {
+                expected_applied["sidebarAutoSettleAfterDays"] = json!(3);
+            }
             assert_eq!(
                 codec::encode(policy.apply_locks(&current).unwrap()).unwrap(),
-                expanded(&c["applied"]),
+                expected_applied,
                 "{label}: applied"
             );
             for fill in c["fills"].as_array().unwrap() {

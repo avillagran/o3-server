@@ -347,7 +347,7 @@
     "easDeviceHosts": [],
     "simlockDeviceHosts": [],
     "simlockDeviceHostsEnabled": false,
-    "sidebarAutoSettleAfterDays": 3,
+    "sidebarAutoSettleAfterDays": 7,
     "compactIdleThreads": false,
     "snoozeLimitedThreads": false,
     "autoResumeLimitedThreads": false,
@@ -478,7 +478,7 @@
     "easDeviceHosts": [],
     "simlockDeviceHosts": [],
     "simlockDeviceHostsEnabled": false,
-    "sidebarAutoSettleAfterDays": 3,
+    "sidebarAutoSettleAfterDays": 7,
     "compactIdleThreads": false,
     "snoozeLimitedThreads": false,
     "autoResumeLimitedThreads": false,
@@ -4678,7 +4678,7 @@
           "transform": "default"
         }
       ],
-      "default": 3
+      "default": 7
     },
     {
       "tag": "Union",
@@ -10137,6 +10137,14 @@
     "lowercase": {
       "decode": "self => self.toLowerCase()",
       "encode": "Passthrough"
+    }
+  },
+  "defaultOverrides": {
+    "revision": "83a3674ffd84ffb33de768210c806cb1ac53fd80",
+    "source": "packages/contracts/src/settings.ts",
+    "sourceSha256": "98861705ca62879f6fe7771b20aba6b7ec02a1b00bb5045c0569a3b9ecf255a6",
+    "fields": {
+      "sidebarAutoSettleAfterDays": 7
     }
   }
 }

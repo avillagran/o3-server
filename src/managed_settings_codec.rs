@@ -659,6 +659,25 @@ mod tests {
             json!({"responseStreamingMode":"paragraph","future":1})
         );
     }
+    // Historical corpus values retain their original pin. Only the separately
+    // source-proven4314 missing-field default is projected into those outcomes.
+    fn current_default_expected(mut expected: Value, index: usize, input: Option<&Value>) -> Value {
+        let field = id(&PROGRAM["fields"]["sidebarAutoSettleAfterDays"]);
+        let missing = input.is_none();
+        if index == field && missing {
+            expected["value"] = PROGRAM["nodes"][field]["default"].clone();
+        }
+        if [id(&PROGRAM["root"]), id(&PROGRAM["persistedRoot"])].contains(&index)
+            && input.is_some_and(|value| {
+                value.is_object() && value.get("sidebarAutoSettleAfterDays").is_none()
+            })
+            && expected["value"].is_object()
+        {
+            expected["value"]["sidebarAutoSettleAfterDays"] =
+                PROGRAM["nodes"][field]["default"].clone();
+        }
+        expected
+    }
     #[test]
     fn pinned_every_ast_node() {
         let fixture: Value = serde_json::from_str(include_str!(
@@ -671,7 +690,7 @@ mod tests {
             let result = if input.is_none() && !optional(index) {
                 Err(())
             } else {
-                run(index, input, false, false)
+                run(index, input.clone(), false, false)
             };
             if case["invalid"] == true {
                 assert!(
@@ -682,13 +701,21 @@ mod tests {
             }
             assert_eq!(
                 result,
-                Ok(case["decoded"].get("value").cloned()),
+                Ok(
+                    current_default_expected(case["decoded"].clone(), index, input.as_ref())
+                        .get("value")
+                        .cloned()
+                ),
                 "node {index} case {case}: decode"
             );
             let encoded = run(index, result.unwrap(), true, false);
             assert_eq!(
                 encoded,
-                Ok(case["encoded"].get("value").cloned()),
+                Ok(
+                    current_default_expected(case["encoded"].clone(), index, input.as_ref())
+                        .get("value")
+                        .cloned()
+                ),
                 "node {index} case {case}: encode"
             );
         }
@@ -712,6 +739,7 @@ mod tests {
             } else {
                 input[key] = case["value"].clone();
             }
+            let missing = case["missing"] == true;
             let result = decode(input);
             if case["invalid"] == true {
                 assert!(result.is_err(), "{label}: unexpectedly valid {result:?}");
@@ -720,15 +748,65 @@ mod tests {
             let result = result.unwrap_or_else(|()| panic!("{label}: unexpectedly invalid"));
             assert_eq!(
                 result.get(key),
-                case["decoded"].get("value"),
+                current_default_expected(
+                    case["decoded"].clone(),
+                    id(&PROGRAM["fields"][key]),
+                    if missing { None } else { Some(&case["value"]) }
+                )
+                .get("value"),
                 "{label}: decoded"
             );
             let encoded = encode(result).unwrap_or_else(|()| panic!("{label}: encode failed"));
             assert_eq!(
                 encoded.get(key),
-                case["encoded"].get("value"),
+                current_default_expected(
+                    case["encoded"].clone(),
+                    id(&PROGRAM["fields"][key]),
+                    if missing { None } else { Some(&case["value"]) }
+                )
+                .get("value"),
                 "{label}: encoded"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod nightly4314_tests {
+    use super::*;
+    #[test]
+    fn missing_auto_settle_default_matches_native4314_without_rewriting_explicit_values() {
+        crate::test_sandbox::assert_isolated();
+        let fixture: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/nightly-small-4314.json"))
+                .unwrap();
+        for case in fixture["schemaCases"].as_array().unwrap() {
+            let result = decode(case["input"].clone());
+            if case["invalid"] == true {
+                assert!(result.is_err(), "{case}");
+                continue;
+            }
+            let decoded = result.unwrap();
+            assert_eq!(
+                decoded["sidebarAutoSettleAfterDays"], case["value"],
+                "{case}"
+            );
+            assert_eq!(
+                encode(decoded).unwrap()["sidebarAutoSettleAfterDays"],
+                case["value"],
+                "{case}"
+            );
+        }
+        let state = crate::store::State::open(&std::env::temp_dir().join(format!(
+            "settings4314-{}",
+            crate::store::random_id().unwrap()
+        )))
+        .unwrap();
+        assert_eq!(
+            crate::settings::read(&state).unwrap()["sidebarAutoSettleAfterDays"],
+            7
+        );
+        assert_eq!(defaults()["sidebarAutoSettleAfterDays"], 7);
+        assert_eq!(encoded_defaults()["sidebarAutoSettleAfterDays"], 7);
     }
 }
