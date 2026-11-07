@@ -46,7 +46,6 @@ impl Access {
 }
 pub struct Broker {
     scope: Arc<Scope>,
-    runtime: tokio::runtime::Handle,
 }
 struct Scope {
     state: std::sync::Weak<State>,
@@ -55,16 +54,26 @@ struct Scope {
     profile: String,
     owner: std::sync::OnceLock<String>,
     ordinary: Mutex<()>,
-    tabs: std::sync::Mutex<Vec<String>>,
     revoked: AtomicBool,
+}
+struct Used {
+    state: Arc<State>,
+    thread: String,
+    agent: String,
+    tab: Option<String>,
+}
+impl Drop for Used {
+    fn drop(&mut self) {
+        self.state.streams.p2.preview.browser.mark_used(
+            &self.thread,
+            &self.agent,
+            self.tab.as_deref(),
+        );
+    }
 }
 impl Drop for Broker {
     fn drop(&mut self) {
         self.scope.revoked.store(true, Ordering::SeqCst);
-        let scope = self.scope.clone();
-        self.runtime.spawn(async move {
-            scope.cleanup().await;
-        });
     }
 }
 pub fn enabled(s: &State, project: &str) -> bool {
@@ -76,9 +85,6 @@ pub fn enabled(s: &State, project: &str) -> bool {
 impl Broker {
     pub(crate) fn access(&self) -> Access {
         Access(Arc::downgrade(&self.scope))
-    }
-    pub(crate) async fn finish_turn(&self) {
-        self.scope.cleanup().await;
     }
     pub async fn start(state: Arc<State>, thread: &str) -> Option<Self> {
         let project = {
@@ -98,19 +104,16 @@ impl Broker {
             owner: std::sync::OnceLock::new(),
             revoked: AtomicBool::new(false),
             ordinary: Mutex::new(()),
-            tabs: std::sync::Mutex::new(Vec::new()),
         });
-        Some(Self {
-            scope,
-            runtime: tokio::runtime::Handle::current(),
-        })
+        state.streams.p2.preview.start_idle_worker(&state);
+        Some(Self { scope })
     }
 }
 
 pub(crate) fn tools() -> Vec<Value> {
     let mut tools: Vec<Value> = [
-        ("preview_status","List this session's browser tabs and their state"),
-        ("preview_open","Open a private server browser tab; HTTP(S) only"),
+        ("preview_status","List this thread's browser tabs and their state"),
+        ("preview_open","Open or reuse a server browser tab; HTTP(S) only"),
         ("preview_navigate","Navigate a tab to a HTTP(S) URL"),
         ("preview_close","Close this session's tab"),
         ("preview_resize","Set viewport width and height"),
@@ -120,6 +123,11 @@ pub(crate) fn tools() -> Vec<Value> {
         ("preview_type","Fill a CSS locator with text"),
         ("preview_press","Press a key"),
     ].into_iter().map(|(name,description)|json!({"name":name,"description":description,"inputSchema":{"type":"object","properties":{"tabId":{"type":"string"},"url":{"type":"string"},"expression":{"type":"string"},"locator":{"type":"string"},"text":{"type":"string"},"key":{"type":"string"},"width":{"type":"integer"},"height":{"type":"integer"}},"additionalProperties":false}})).collect();
+    if let Some(open) = tools.iter_mut().find(|tool| tool["name"] == "preview_open") {
+        for flag in ["reuseExistingTab", "open", "show"] {
+            open["inputSchema"]["properties"][flag] = json!({"type":"boolean"});
+        }
+    }
     let native: Value = serde_json::from_str(include_str!(
         "../tests/fixtures/native-preview-dialog-tool-4288.json"
     ))
@@ -199,27 +207,30 @@ impl Scope {
             text_override: Some(text),
         })
     }
-    async fn cleanup(&self) {
-        let Some(state) = self.state.upgrade() else {
-            return;
-        };
-        let _ordinary = self.ordinary.lock().await;
-        let tabs = std::mem::take(&mut *self.tabs.lock().unwrap());
-        for tab in tabs {
-            let _ = preview::call(
-                &state,
-                "preview.close",
-                &json!({"threadId":self.thread,"tabId":tab}),
-            )
-            .await;
-        }
-    }
     async fn call(
         self: &Arc<Self>,
         name: &str,
         p: &Value,
         authority: &crate::mcp_access::Authority,
     ) -> Result<BrowserOutput, Value> {
+        let scope = self.clone();
+        let name = name.to_owned();
+        let input = p.clone();
+        let authority = authority.clone();
+        // Native invocation finalizers belong to the real operation, including
+        // its activity timestamp; losing an HTTP observer does not finish it.
+        tokio::spawn(async move {scope.call_inner(&name,&input,&authority).await}).await
+            .map_err(|_|json!({"_tag":"BrowserControlInterrupted","reason":"closed","message":"Browser invocation worker ended."}))?
+    }
+    async fn call_inner(
+        self: &Arc<Self>,
+        name: &str,
+        p: &Value,
+        authority: &crate::mcp_access::Authority,
+    ) -> Result<BrowserOutput, Value> {
+        if !p.is_object() {
+            return Err(json!({"message":"Expected browser input object"}));
+        }
         let state = self
             .state
             .upgrade()
@@ -229,9 +240,8 @@ impl Scope {
         } else {
             None
         };
-        let tabs = self.tabs.lock().unwrap().clone();
-        // Check after waiting for ordinary work, so terminal-turn cleanup cannot be
-        // followed by a queued operation admitted while the parent was still active.
+        // Check after waiting for ordinary work, so owner revocation cannot be
+        // followed by a queued operation admitted while the parent was active.
         authority.browser_admission(
             &state,
             !matches!(name, "preview_status" | "preview_snapshot"),
@@ -248,6 +258,13 @@ impl Scope {
                 json!({"_tag":"BrowserControlInterrupted","reason":"agentMismatch","message":"This tab belongs to another agent."}),
             );
         }
+        let mut used = Used {
+            state: state.clone(),
+            thread: self.thread.clone(),
+            agent: owner.clone(),
+            tab: p["tabId"].as_str().map(str::to_owned),
+        };
+        let tabs = state.streams.p2.preview.browser.thread_tabs(&self.thread);
         if name == "preview_status" {
             if !p.is_object() {
                 return Err(json!({"message":"Expected status input object"}));
@@ -260,14 +277,16 @@ impl Scope {
             };
             let target = crate::server_browser::dialog::Input::decode(&target)
                 .map_err(|message| json!({"message":message}))?;
-            let tab = target
-                .tab
-                .as_deref()
-                .or_else(|| tabs.last().map(String::as_str));
-            if tab.is_some_and(|tab| !tabs.iter().any(|owned| owned == tab)) {
-                return Err(json!({"message":"Tab does not belong to this agent session"}));
-            }
-            return self.status(&state, &tabs, tab).await;
+            let tab = target.tab.or_else(|| {
+                state
+                    .streams
+                    .p2
+                    .preview
+                    .browser
+                    .latest_tab(&self.thread, Some(&owner))
+            });
+            used.tab = tab.clone();
+            return self.status(&state, &tabs, tab.as_deref()).await;
         }
         let dialog_input = if name == "preview_dialog" {
             Some(
@@ -278,25 +297,132 @@ impl Scope {
             None
         };
         if name == "preview_open" {
-            if tabs.len() >= 4 {
-                return Err(json!({"message":"Close a tab before opening another (limit 4)"}));
+            // Native open rejects its URL before selecting, sweeping or reclaiming tabs.
+            if let Some(url) = p.get("url") {
+                preview::normalize_url(
+                    url.as_str()
+                        .ok_or_else(|| json!({"message":"Expected string url"}))?,
+                )?;
             }
-            let result=preview::open_agent(&state,&json!({"threadId":self.thread,"runtime":"server","profileId":format!("{}:{}",self.profile,crate::store::random_id().map_err(|_|json!({"message":"Cannot allocate context"}))?),"url":p["url"]}),&owner).await?;
-            self.tabs
-                .lock()
-                .unwrap()
-                .push(result["tabId"].as_str().unwrap().into());
-            return Ok(result.into());
+            for flag in ["reuseExistingTab", "open", "show"] {
+                if p.get(flag).is_some_and(|value| !value.is_boolean()) {
+                    return Err(json!({"message":format!("Expected boolean {flag}")}));
+                }
+            }
+            let selector = crate::server_browser::dialog::Input::decode(&match p.get("tabId") {
+                Some(tab) => json!({"accept":true,"tabId":tab}),
+                None => json!({"accept":true}),
+            })
+            .map_err(|message| json!({"message":message}))?;
+            let reuse = p["reuseExistingTab"].as_bool().unwrap_or(true);
+            if !reuse && selector.tab.is_some() {
+                return Err(
+                    json!({"message":"tabId cannot be combined with reuseExistingTab=false"}),
+                );
+            }
+            let owned = state
+                .streams
+                .p2
+                .preview
+                .browser
+                .owned_tabs(&self.thread, &owner);
+            if reuse && selector.tab.is_none() && owned.len() > 1 {
+                return Err(
+                    json!({"_tag":"BrowserControlInterrupted","reason":"tabRequired","message":"Multiple tabs are open. Pass tabId or reuseExistingTab=false."}),
+                );
+            }
+            let target = if reuse {
+                selector.tab.clone().or_else(|| owned.first().cloned())
+            } else {
+                None
+            };
+            let existing = if let Some(tab) = &target {
+                Some(preview::agent_page(&state, &self.thread, tab).await?)
+            } else {
+                None
+            };
+            let tab = if let Some(page) = existing {
+                if !page.dialog_status()?.is_null() {
+                    return Err(
+                        json!({"_tag":"BrowserControlInterrupted","reason":"dialogPending","message":"A browser dialog is pending. Read preview_status and use preview_dialog first."}),
+                    );
+                }
+                let tab = page.key().1.to_owned();
+                let control = page.control();
+                let scope = self.clone();
+                let state = state.clone();
+                let authority = authority.clone();
+                let input = p.clone();
+                let selected = tab.clone();
+                control.agent(&owner,None,move||async move {
+                    authority.browser_admission(&state,true)?;
+                    if scope.revoked.load(Ordering::SeqCst)||!enabled(&state,&scope.project){return Err(json!({"message":"Agent browser access disabled"}));}
+                    if !state.streams.p2.preview.browser.current(&page){return Err(json!({"_tag":"BrowserControlInterrupted","reason":"closed","message":"This browser tab is closed."}));}
+                    if !page.dialog_status()?.is_null(){return Err(json!({"_tag":"BrowserControlInterrupted","reason":"dialogPending","message":"A browser dialog is pending. Read preview_status and use preview_dialog first."}));}
+                    if input.get("url").is_some() {scope.execute(&state,"preview_navigate",&input,&selected,&page).await} else {Ok(Value::Null)}
+                }).wait().await?;
+                tab
+            } else {
+                let result=preview::open_agent(&state,&json!({"threadId":self.thread,"runtime":"server","profileId":format!("{}:{}",self.profile,crate::store::random_id().map_err(|_|json!({"message":"Cannot allocate context"}))?),"url":p["url"]}),&owner).await?;
+                result["tabId"]
+                    .as_str()
+                    .ok_or_else(|| json!({"message":"Browser did not return a tab"}))?
+                    .to_owned()
+            };
+            used.tab = Some(tab.clone());
+            if p["open"].as_bool().or_else(|| p["show"].as_bool()) != Some(false) {
+                preview::request_reveal(
+                    &state,
+                    &self.thread,
+                    &tab,
+                    p["open"].as_bool().or_else(|| p["show"].as_bool()) == Some(true),
+                )?;
+            }
+            let tabs = state.streams.p2.preview.browser.thread_tabs(&self.thread);
+            return self.status(&state, &tabs, Some(&tab)).await;
         }
-        let tab = dialog_input
+        let explicit = dialog_input
             .as_ref()
             .and_then(|input| input.tab.as_deref())
-            .or_else(|| p["tabId"].as_str())
-            .or_else(|| tabs.last().map(String::as_str))
-            .ok_or_else(|| json!({"message":"Open a browser tab first"}))?
-            .to_owned();
-        if !tabs.contains(&tab) {
-            return Err(json!({"message":"Tab does not belong to this agent session"}));
+            .or_else(|| p["tabId"].as_str());
+        if explicit.is_none()
+            && state
+                .streams
+                .p2
+                .preview
+                .browser
+                .owned_tabs(&self.thread, &owner)
+                .len()
+                > 1
+        {
+            return Err(
+                json!({"_tag":"BrowserControlInterrupted","reason":"tabRequired","message":"Multiple tabs belong to this agent session. Pass a tabId from preview_open or preview_status tabs."}),
+            );
+        }
+        let tab = explicit
+            .map(str::to_owned)
+            .or_else(|| {
+                state
+                    .streams
+                    .p2
+                    .preview
+                    .browser
+                    .latest_tab(&self.thread, Some(&owner))
+            })
+            .ok_or_else(|| json!({"message":"Open a browser tab first"}))?;
+        used.tab = Some(tab.clone());
+        let page = preview::agent_page(&state, &self.thread, &tab).await?;
+        if name != "preview_snapshot"
+            && page
+                .control()
+                .snapshot()
+                .agent_id
+                .as_deref()
+                .is_some_and(|creator| creator != owner)
+        {
+            return Err(
+                json!({"_tag":"BrowserControlInterrupted","reason":"agentMismatch","message":"This tab belongs to another agent session. You can read it, but open your own tab to act."}),
+            );
         }
         if name != "preview_snapshot"
             && state
@@ -340,10 +466,8 @@ impl Scope {
                 &json!({"threadId":self.thread,"tabId":tab}),
             )
             .await?;
-            self.tabs.lock().unwrap().retain(|owned| owned != &tab);
             return Ok(result.into());
         }
-        let page = preview::agent_page(&state, &self.thread, &tab).await?;
         let control = page.control();
         let scope = self.clone();
         let state = state.clone();
@@ -351,13 +475,33 @@ impl Scope {
         let input = p.clone();
         let authority = authority.clone();
         let owner = owner.clone();
-        control.agent(&owner,None,move||async move {
-            authority.browser_admission(&state,name!="preview_snapshot")?;
-            if scope.revoked.load(Ordering::SeqCst)||!enabled(&state,&scope.project){return Err(json!({"message":"Agent browser access disabled"}));}
-            if !state.streams.p2.preview.browser.current(&page){return Err(json!({"_tag":"BrowserControlInterrupted","reason":"closed","message":"This browser tab is closed."}));}
-            if !page.dialog_status()?.is_null(){return Err(json!({"_tag":"BrowserControlInterrupted","reason":"dialogPending","message":"A browser dialog is pending. Read preview_status and use preview_dialog first."}));}
-            scope.execute(&state,&name,&input,&tab,&page).await
-        }).wait().await.map(BrowserOutput::from)
+        let snapshot = control.snapshot();
+        let observe = name == "preview_snapshot"
+            && snapshot.agent_id.as_deref() != Some(&owner)
+            && (snapshot.agent_id.is_some() || snapshot.controller.is_some());
+        let work = move || async move {
+            authority.browser_admission(&state, name != "preview_snapshot")?;
+            if scope.revoked.load(Ordering::SeqCst) || !enabled(&state, &scope.project) {
+                return Err(json!({"message":"Agent browser access disabled"}));
+            }
+            if !state.streams.p2.preview.browser.current(&page) {
+                return Err(
+                    json!({"_tag":"BrowserControlInterrupted","reason":"closed","message":"This browser tab is closed."}),
+                );
+            }
+            if !page.dialog_status()?.is_null() {
+                return Err(
+                    json!({"_tag":"BrowserControlInterrupted","reason":"dialogPending","message":"A browser dialog is pending. Read preview_status and use preview_dialog first."}),
+                );
+            }
+            scope.execute(&state, &name, &input, &tab, &page).await
+        };
+        let call = if observe {
+            control.observe(work)
+        } else {
+            control.agent(&owner, None, work)
+        };
+        call.wait().await.map(BrowserOutput::from)
     }
     async fn execute(
         &self,

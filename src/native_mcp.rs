@@ -90,11 +90,6 @@ impl Context {
     pub(crate) fn id(&self) -> &str {
         &self.scope.id
     }
-    pub(crate) async fn finish_turn(&self) {
-        if let Some(browser) = &self.browser {
-            browser.finish_turn().await;
-        }
-    }
 }
 impl Registry {
     pub(crate) fn configured(&self) -> bool {
@@ -167,20 +162,6 @@ impl Registry {
             if context.scope.thread == thread {
                 context.scope.touched.store(now_ms(), Ordering::Relaxed);
             }
-        }
-    }
-    pub(crate) async fn finish_turn(&self, thread: &str) {
-        let contexts: Vec<_> = self
-            .entries
-            .lock()
-            .unwrap()
-            .tokens
-            .values()
-            .filter_map(Weak::upgrade)
-            .filter(|c| c.scope.thread == thread)
-            .collect();
-        for context in contexts {
-            context.finish_turn().await;
         }
     }
     pub(crate) async fn obtain(

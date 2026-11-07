@@ -55,6 +55,7 @@ fn native_sessions_reuse_mcp_credentials_enforce_modes_and_revoke_on_exit() {
         c.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"higher","threadId":"higher","projectId":"p","title":"Higher","modelSelection":{"instanceId":instance,"model":"test"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
         let capture = s.dir.join("peer-observation.json");
         let mut previous = None;
+        let mut retained_tab = None;
         for (index, text) in ["enabled", "enabled", "disabled", "disabled"]
             .into_iter()
             .enumerate()
@@ -158,10 +159,21 @@ fn native_sessions_reuse_mcp_credentials_enforce_modes_and_revoke_on_exit() {
                 ));
             }
             let tabs = t3_protocol::api::preview::list(&c, "t").unwrap();
-            assert!(
-                tabs["sessions"].as_array().unwrap().is_empty(),
-                "session tabs must be removed"
+            let sessions = tabs["sessions"].as_array().unwrap();
+            assert_eq!(
+                sessions.len(),
+                1,
+                "foreground completion and provider revocation retain the user's native tab"
             );
+            let current = sessions[0]["tabId"].as_str().unwrap().to_owned();
+            if let Some(expected) = &retained_tab {
+                assert_eq!(
+                    expected, &current,
+                    "default open reuses the same native tab"
+                );
+            } else {
+                retained_tab = Some(current);
+            }
         }
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
@@ -172,19 +184,24 @@ fn native_sessions_reuse_mcp_credentials_enforce_modes_and_revoke_on_exit() {
             native_request(&s, &previous.unwrap(), "ping", json!({})).0,
             401
         );
+        c.rpc(
+            "preview.close",
+            json!({"threadId":"t","tabId":retained_tab.unwrap()}),
+        )
+        .unwrap();
         if s.dir.join("browser-profiles").exists() {
             assert_eq!(
                 std::fs::read_dir(s.dir.join("browser-profiles"))
                     .unwrap()
                     .count(),
-                2,
-                "Recording executor retains both isolated profile fixtures"
+                1,
+                "Recording executor retains the reused isolated profile fixture"
             );
             let plans = removals.0.lock().unwrap();
             assert_eq!(
                 plans.len(),
-                2,
-                "Both completed browser profiles have removal plans"
+                1,
+                "Explicit close prepares one removal plan after the retained tab stops"
             );
             for plan in plans.iter() {
                 let root = &plan.operations().last().unwrap().path;

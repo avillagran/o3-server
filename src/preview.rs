@@ -76,8 +76,81 @@ pub struct Manager {
     desktop: Arc<Mutex<Option<runtime::DesktopSlot>>>,
     jobs: Arc<Mutex<Vec<runtime::Job>>>,
     monitors: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
+    idle: IdleWorker,
+}
+struct IdleWorker {
+    started: std::sync::atomic::AtomicBool,
+    stop: tokio::sync::watch::Sender<bool>,
+}
+impl Default for IdleWorker {
+    fn default() -> Self {
+        Self {
+            started: false.into(),
+            stop: tokio::sync::watch::channel(false).0,
+        }
+    }
 }
 impl Manager {
+    pub(crate) fn start_idle_worker(&self, state: &Arc<State>) {
+        use std::sync::atomic::Ordering;
+        let inner = self.inner.lock().unwrap();
+        if inner.stopping || self.idle.started.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let weak = Arc::downgrade(state);
+        let mut stop = self.idle.stop.subscribe();
+        let task = tokio::spawn(async move {
+            let mut interval =
+                tokio::time::interval(Duration::from_millis(crate::browser_lifetime::SWEEP_MS));
+            loop {
+                if *stop.borrow() {
+                    break;
+                }
+                tokio::select! {
+                    biased;
+                    _=stop.changed()=>break,
+                    _=interval.tick()=>{
+                        let Some(state)=weak.upgrade() else {break;};
+                        tokio::select! {
+                            biased;
+                            _=stop.changed()=>break,
+                            _=state.streams.p2.preview.sweep_idle_at(&state,now_ms())=>{},
+                        }
+                    }
+                }
+            }
+        });
+        self.monitors.lock().unwrap().push(task);
+        drop(inner);
+    }
+    pub(crate) async fn sweep_idle_at(&self, state: &State, now: i64) {
+        let _gate = self.lifecycle.lock().await;
+        self.sweep_idle_locked(state, now).await;
+    }
+    async fn sweep_idle_locked(&self, state: &State, now: i64) {
+        if self.inner.lock().unwrap().stopping {
+            return;
+        }
+        for page in self.browser.idle_candidates(now, true) {
+            if self.browser.reserve_idle(&page, now, true) {
+                let (thread, tab) = page.key();
+                runtime::close(state, thread, Some(tab)).await;
+            }
+        }
+    }
+    pub(crate) fn pending_lifetime(&self) -> Vec<crate::browser_lifetime::Pending> {
+        self.inner
+            .lock()
+            .unwrap()
+            .pending
+            .iter()
+            .map(|(key, pending)| crate::browser_lifetime::Pending {
+                thread_id: key.0.clone(),
+                tab_id: key.1.clone(),
+                agent_id: pending.agent_id.clone(),
+            })
+            .collect()
+    }
     /// Native status reads the authoritative snapshots without issuing page JavaScript.
     pub(crate) fn snapshot_list(&self, thread: &str) -> Value {
         self.inner.lock().unwrap().kernel.list(thread)
@@ -263,6 +336,9 @@ pub async fn sync_navigation(s: &State, thread: &str, tab: &str) {
 
 pub(crate) async fn open_agent(s: &State, input: &Value, owner: &str) -> Reply {
     str_field(input, "threadId")?;
+    if let Some(url) = input.get("url").filter(|value| !value.is_null()) {
+        normalize_url(url.as_str().ok_or_else(|| invalid("Expected string url"))?)?;
+    }
     let mut trusted = input.clone();
     trusted["automationOwner"] = json!(owner);
     runtime::open(s, &trusted).await

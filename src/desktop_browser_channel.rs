@@ -83,6 +83,11 @@ pub struct Channel {
     commands: mpsc::UnboundedSender<Command>,
     _scope: Arc<Scope>,
 }
+/// Hold the visibility decision through a bounded synchronous close reservation.
+/// This guard must be dropped before invoking control or channel callbacks.
+pub(crate) struct HiddenVisibility<'a> {
+    _state: std::sync::MutexGuard<'a, State>,
+}
 impl Channel {
     /// Own both streams until the last channel handle is dropped. Input shutdown
     /// clears visibility but preserves attachment state, as in the native channel.
@@ -212,6 +217,14 @@ impl Channel {
     pub fn is_shown(&self, key: &TabKey) -> bool {
         self.state.lock().unwrap().kernel.is_shown(key)
     }
+    pub(crate) fn lock_hidden(&self, key: &TabKey) -> Option<HiddenVisibility<'_>> {
+        let state = self.state.lock().unwrap();
+        if state.kernel.is_shown(key) {
+            None
+        } else {
+            Some(HiddenVisibility { _state: state })
+        }
+    }
     pub async fn await_attached(&self, key: &TabKey, timeout: Duration) -> bool {
         // Register before checking: an attach between these operations is queued.
         let mut subscription = self.subscribe();
@@ -254,6 +267,77 @@ impl Channel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn a_hidden_close_reservation_serializes_visibility_updates() {
+        let (mut launcher, input) = tokio::io::duplex(1024);
+        let (control, _commands) = tokio::io::duplex(1024);
+        let channel = Channel::start(input, control);
+        let key = TabKey {
+            thread_id: "thread".into(),
+            tab_id: "tab".into(),
+        };
+        assert!(
+            channel.lock_hidden(&key).is_none(),
+            "native visibility starts shown until reported otherwise"
+        );
+        let barrier = TabKey {
+            thread_id: "barrier".into(),
+            tab_id: "hidden".into(),
+        };
+        launcher
+            .write_all(
+                format!(
+                    "{}\n{}\n",
+                    json!({"type":"shown","threadId":"thread","tabId":"tab","shown":false}),
+                    json!({"type":"attached","threadId":barrier.thread_id,"tabId":barrier.tab_id})
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+        assert!(
+            channel
+                .await_attached(&barrier, Duration::from_secs(1))
+                .await
+        );
+        {
+            let permit = channel.lock_hidden(&key).unwrap();
+            let shared = channel.state.clone();
+            std::thread::spawn(move || {
+                assert!(matches!(
+                    shared.try_lock(),
+                    Err(std::sync::TryLockError::WouldBlock)
+                ))
+            })
+            .join()
+            .unwrap();
+            drop(permit);
+        }
+        let barrier = TabKey {
+            thread_id: "barrier".into(),
+            tab_id: "shown".into(),
+        };
+        launcher
+            .write_all(
+                format!(
+                    "{}\n{}\n",
+                    json!({"type":"shown","threadId":"thread","tabId":"tab","shown":true}),
+                    json!({"type":"attached","threadId":barrier.thread_id,"tabId":barrier.tab_id})
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+        assert!(
+            channel
+                .await_attached(&barrier, Duration::from_secs(1))
+                .await
+        );
+        assert!(
+            channel.lock_hidden(&key).is_none(),
+            "the updated shown state cannot be reclaimed"
+        );
+    }
     #[tokio::test]
     async fn native_state_traces_cross_actual_async_streams() {
         let fixtures: Value =

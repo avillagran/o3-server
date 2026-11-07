@@ -28,6 +28,7 @@ async fn unconfirmed_profile_owner_survives_retry_and_caller_cancellation() {
         ("thread".into(), "tab".into()),
         Tab {
             closing: false,
+            activity: Default::default(),
             control: None,
             origin: Origin::Local,
             desktop_channel: None,
@@ -116,6 +117,7 @@ async fn process_acknowledgement_cannot_clear_a_profile_before_owned_observation
         ("thread".into(), "tab".into()),
         Tab {
             closing: false,
+            activity: Default::default(),
             control: Some(control.clone()),
             origin: Origin::Local,
             desktop_channel: None,

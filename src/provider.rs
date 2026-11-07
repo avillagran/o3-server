@@ -794,7 +794,6 @@ pub(crate) fn start(
         }
         let _ = cancel.send(true);
         tokio::select! {r=&mut task=>{match r {Ok(Ok(()))=>finished=true,Ok(Err(e))=>failure=Some(e),Err(e)=>failure=Some(e.to_string())}},_=tokio::time::sleep(std::time::Duration::from_secs(2))=>{task.abort();let _=task.await;}}
-        s.native_mcp.finish_turn(&tid).await;
         if !checkpoint_finished
             && crate::run_restart::matches(&s.db.lock().unwrap(), &rid, attempt.as_deref())
             && !crate::workspace_transition::pending(&s.db.lock().unwrap(), &tid).unwrap_or(true)

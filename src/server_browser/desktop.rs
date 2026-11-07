@@ -111,6 +111,7 @@ pub(super) async fn launch(
     });
     let mut browser = Tab {
         closing: false,
+        activity: Default::default(),
         control: Some(crate::preview_control::runtime::Control::new(
             owner.map(str::to_owned),
         )),

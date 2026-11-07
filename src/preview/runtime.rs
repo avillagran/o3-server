@@ -8,6 +8,7 @@ pub(super) struct Job {
 }
 #[derive(Clone)]
 pub(super) struct Pending {
+    pub(super) agent_id: Option<String>,
     generation: u64,
     cancel: watch::Sender<bool>,
     result: watch::Receiver<Option<Result<(), Value>>>,
@@ -52,11 +53,15 @@ fn alive(inner: &Inner, key: &Key, generation: u64) -> bool {
             .get(key)
             .is_some_and(|pending| pending.generation == generation)
 }
-fn prepare(inner: &mut Inner) -> (Pending, watch::Sender<Option<Result<(), Value>>>) {
+fn prepare(
+    inner: &mut Inner,
+    agent_id: Option<String>,
+) -> (Pending, watch::Sender<Option<Result<(), Value>>>) {
     inner.next_job += 1;
     let (cancel, _) = watch::channel(false);
     let (sender, result) = watch::channel(None);
     let pending = Pending {
+        agent_id,
         generation: inner.next_job,
         cancel,
         result,
@@ -64,7 +69,12 @@ fn prepare(inner: &mut Inner) -> (Pending, watch::Sender<Option<Result<(), Value
     (pending, sender)
 }
 fn reserve(inner: &mut Inner, key: Key) -> (Pending, watch::Sender<Option<Result<(), Value>>>) {
-    let (pending, sender) = prepare(inner);
+    let agent_id = inner
+        .kernel
+        .get(&key.0, &key.1)
+        .and_then(|snapshot| snapshot["automationOwner"].as_str())
+        .map(str::to_owned);
+    let (pending, sender) = prepare(inner, agent_id);
     inner.pending.insert(key, pending.clone());
     (pending, sender)
 }
@@ -144,6 +154,23 @@ pub(super) async fn open(s: &State, input: &Value) -> Reply {
     {
         return Err(invalid("The thread was deleted."));
     }
+    if let Some(agent) = input["automationOwner"].as_str() {
+        let now = now_ms();
+        m.sweep_idle_locked(s, now).await;
+        let pending = m.pending_lifetime();
+        if let Some(page) = m.browser.reclaim_candidate(&pending, agent, now) {
+            if m.browser.reserve_idle(&page, now, false) {
+                let (thread, tab) = page.key();
+                close(s, thread, Some(tab)).await;
+            }
+        }
+        let (server_full, agent_full) = m.browser.tab_capacity(&m.pending_lifetime(), agent);
+        if server_full || agent_full {
+            return Err(
+                json!({"_tag":"BrowserControlInterrupted","reason":"tabLimit","message":"Too many server browser tabs are open (8 per agent session, 32 per server). Close one with t3_preview_close or reuse one from preview_status tabs."}),
+            );
+        }
+    }
     let (mut snapshot, pending, send) = {
         let mut inner = m.inner.lock().unwrap();
         if inner.stopping {
@@ -155,7 +182,10 @@ pub(super) async fn open(s: &State, input: &Value) -> Reply {
         inner.next_tab += 1;
         let base = format!("tab_{}", radix36(inner.next_tab));
         let (pending, send) = if input["runtime"] == "server" {
-            let (pending, send) = prepare(&mut inner);
+            let (pending, send) = prepare(
+                &mut inner,
+                input["automationOwner"].as_str().map(str::to_owned),
+            );
             (Some(pending), Some(send))
         } else {
             (None, None)
@@ -294,7 +324,9 @@ fn spawn(
                 .get(&key)
                 .is_some_and(|pending| pending.generation == generation)
             {
-                inner.pending.remove(&key);
+                if outcome.is_ok() {
+                    inner.pending.remove(&key);
+                }
                 if outcome.is_err() && close_on_error {
                     inner
                         .kernel
@@ -306,6 +338,14 @@ fn spawn(
         };
         if outcome.is_err() {
             owned.browser.close(&key.0, Some(&key.1)).await;
+            let mut inner = owned.inner.lock().unwrap();
+            if inner
+                .pending
+                .get(&key)
+                .is_some_and(|pending| pending.generation == generation)
+            {
+                inner.pending.remove(&key);
+            }
         }
         bump(&owned.changed);
         let _ = sender.send(Some(outcome.clone()));
@@ -486,6 +526,7 @@ pub(super) async fn close_settled(s: &State, thread: &str, tab: &str) {
     }
 }
 pub(super) async fn shutdown(m: &Manager) {
+    m.idle.stop.send_replace(true);
     let desktop = m.desktop.lock().unwrap().take();
     if let Some(desktop) = &desktop {
         desktop.stop.send_replace(true);

@@ -14,6 +14,8 @@ mod desktop;
 pub(crate) mod dialog;
 mod events;
 #[cfg(test)]
+mod lifetime_tests;
+#[cfg(test)]
 mod ownership_tests;
 mod pending;
 mod pipe;
@@ -26,7 +28,6 @@ pub enum Origin {
     Desktop,
 }
 
-const LIFETIME: Duration = Duration::from_secs(1800);
 struct Request {
     method: String,
     params: Value,
@@ -68,6 +69,7 @@ pub(crate) struct Navigation {
 #[derive(Clone)]
 struct Tab {
     closing: bool,
+    activity: std::sync::Arc<TabActivity>,
     control: Option<crate::preview_control::runtime::Control>,
     origin: Origin,
     desktop_channel: Option<crate::desktop_browser_channel::Channel>,
@@ -80,6 +82,34 @@ struct Tab {
     tx: mpsc::Sender<Request>,
     done: tokio::sync::watch::Receiver<bool>,
     cancel: std::sync::Arc<tokio::sync::Notify>,
+}
+struct TabActivity {
+    order: u64,
+    created: std::sync::atomic::AtomicI64,
+    used: std::sync::atomic::AtomicI64,
+    admitted: std::sync::atomic::AtomicBool,
+}
+impl Default for TabActivity {
+    fn default() -> Self {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static ORDER: AtomicU64 = AtomicU64::new(0);
+        let now = crate::store::now_ms();
+        Self {
+            order: ORDER.fetch_add(1, Ordering::Relaxed),
+            created: now.into(),
+            used: now.into(),
+            admitted: false.into(),
+        }
+    }
+}
+impl TabActivity {
+    fn admit(&self) {
+        use std::sync::atomic::Ordering;
+        let now = crate::store::now_ms();
+        self.created.store(now, Ordering::Relaxed);
+        self.used.store(now, Ordering::Relaxed);
+        self.admitted.store(true, Ordering::Release);
+    }
 }
 pub(crate) struct OpenPage<'a> {
     pub url: Option<&'a str>,
@@ -347,8 +377,6 @@ async fn launch(
     tokio::spawn(async move {
         let _group = group;
         let _reader_abort = reader_abort;
-        let deadline = tokio::time::sleep(LIFETIME);
-        tokio::pin!(deadline);
         let mut calls = pending::Calls::default();
         let mut writing_done = writer.completion();
         loop {
@@ -363,7 +391,6 @@ async fn launch(
                 _=pending::deadline(expires)=>{if calls.expire(tokio::time::Instant::now()){break;}},
                 _=writing_done.changed()=>break,
                 _=stop_signal.notified()=>break,
-                _=&mut deadline=>break,
                 _=child.wait()=>break,
                 packet=incoming.recv()=>{
                     let Some(Ok(packet))=packet else{break;};
@@ -410,6 +437,7 @@ async fn launch(
     });
     Ok(Tab {
         closing: false,
+        activity: Default::default(),
         control: None,
         origin: Origin::Local,
         desktop_channel: None,
@@ -463,6 +491,194 @@ impl Drop for Viewer {
     }
 }
 impl Browsers {
+    fn lifetime_catalog(&self) -> Vec<(Page, crate::browser_lifetime::Tab)> {
+        use std::sync::atomic::Ordering;
+        let viewers = self.viewers.lock().unwrap();
+        let tabs = self.tabs.lock().unwrap();
+        let mut entries = tabs
+            .iter()
+            .filter_map(|(key, tab)| {
+                if tab.closing
+                    || *tab.done.borrow()
+                    || !tab.activity.admitted.load(Ordering::Acquire)
+                {
+                    return None;
+                }
+                let control = tab.control.as_ref()?.snapshot();
+                if control.closed {
+                    return None;
+                }
+                let shown = tab.desktop_channel.as_ref().is_some_and(|channel| {
+                    channel.is_shown(&crate::desktop_browser::TabKey {
+                        thread_id: key.0.clone(),
+                        tab_id: key.1.clone(),
+                    })
+                });
+                Some((
+                    Page {
+                        key: key.clone(),
+                        tab: tab.clone(),
+                    },
+                    crate::browser_lifetime::Tab {
+                        thread_id: key.0.clone(),
+                        tab_id: key.1.clone(),
+                        agent_id: control.agent_id,
+                        desktop: tab.origin == Origin::Desktop,
+                        viewers: viewers.get(key).map_or(0, |viewers| viewers.len()),
+                        shown,
+                        used_at: tab.activity.used.load(Ordering::Relaxed),
+                        created_at: tab.activity.created.load(Ordering::Relaxed),
+                    },
+                ))
+            })
+            .collect::<Vec<_>>();
+        entries.sort_by_key(|(page, _)| page.tab.activity.order);
+        entries
+    }
+    pub(crate) fn mark_used(&self, thread: &str, agent: &str, explicit: Option<&str>) {
+        use std::sync::atomic::Ordering;
+        let tabs = self.tabs.lock().unwrap();
+        let entries: Vec<_> = tabs
+            .iter()
+            .filter_map(|(key, tab)| {
+                if tab.closing
+                    || *tab.done.borrow()
+                    || !tab.activity.admitted.load(Ordering::Acquire)
+                {
+                    return None;
+                }
+                let control = tab.control.as_ref()?.snapshot();
+                if control.closed {
+                    return None;
+                }
+                Some((
+                    tab,
+                    crate::browser_lifetime::Tab {
+                        thread_id: key.0.clone(),
+                        tab_id: key.1.clone(),
+                        agent_id: control.agent_id,
+                        desktop: tab.origin == Origin::Desktop,
+                        viewers: 0,
+                        shown: false,
+                        used_at: 0,
+                        created_at: 0,
+                    },
+                ))
+            })
+            .collect();
+        let rows: Vec<_> = entries.iter().map(|(_, row)| row.clone()).collect();
+        let now = crate::store::now_ms();
+        for index in crate::browser_lifetime::used_indices(&rows, thread, agent, explicit) {
+            entries[index].0.activity.used.store(now, Ordering::Relaxed);
+        }
+    }
+    pub(crate) fn latest_tab(&self, thread: &str, agent: Option<&str>) -> Option<String> {
+        let entries = self.lifetime_catalog();
+        let rows: Vec<_> = entries.iter().map(|(_, row)| row.clone()).collect();
+        crate::browser_lifetime::latest(&rows, thread, agent)
+            .map(|index| rows[index].tab_id.clone())
+    }
+    pub(crate) fn thread_tabs(&self, thread: &str) -> Vec<String> {
+        self.lifetime_catalog()
+            .into_iter()
+            .filter_map(|(_, row)| (row.thread_id == thread).then_some(row.tab_id))
+            .collect()
+    }
+    pub(crate) fn owned_tabs(&self, thread: &str, agent: &str) -> Vec<String> {
+        self.lifetime_catalog()
+            .into_iter()
+            .filter_map(|(_, row)| {
+                (row.thread_id == thread && row.agent_id.as_deref() == Some(agent))
+                    .then_some(row.tab_id)
+            })
+            .collect()
+    }
+    pub(crate) fn tab_capacity(
+        &self,
+        pending: &[crate::browser_lifetime::Pending],
+        agent: &str,
+    ) -> (bool, bool) {
+        let rows: Vec<_> = self
+            .lifetime_catalog()
+            .into_iter()
+            .map(|(_, row)| row)
+            .collect();
+        crate::browser_lifetime::capacity(&rows, pending, agent)
+    }
+    pub(crate) fn reclaim_candidate(
+        &self,
+        pending: &[crate::browser_lifetime::Pending],
+        agent: &str,
+        now: i64,
+    ) -> Option<Page> {
+        let entries = self.lifetime_catalog();
+        let rows: Vec<_> = entries.iter().map(|(_, row)| row.clone()).collect();
+        crate::browser_lifetime::reclaim(&rows, pending, agent, now)
+            .map(|index| entries[index].0.clone())
+    }
+    pub(crate) fn idle_candidates(&self, now: i64, headless_only: bool) -> Vec<Page> {
+        let entries = self.lifetime_catalog();
+        let rows: Vec<_> = entries.iter().map(|(_, row)| row.clone()).collect();
+        let indices = if headless_only {
+            crate::browser_lifetime::headless_idle(&rows, now)
+        } else {
+            crate::browser_lifetime::idle(&rows, now)
+        };
+        indices
+            .into_iter()
+            .map(|index| entries[index].0.clone())
+            .collect()
+    }
+    /// Recheck visibility, time and the exact page while reserving close. A
+    /// newly attached viewer cannot be swept from an earlier visibility read.
+    pub(crate) fn reserve_idle(&self, page: &Page, now: i64, headless_only: bool) -> bool {
+        use std::sync::atomic::Ordering;
+        let viewers = self.viewers.lock().unwrap();
+        let mut tabs = self.tabs.lock().unwrap();
+        let Some(current) = tabs
+            .get_mut(&page.key)
+            .filter(|current| std::sync::Arc::ptr_eq(&current.activity, &page.tab.activity))
+        else {
+            return false;
+        };
+        let control = current.control.as_ref().map(|control| control.snapshot());
+        let visible = viewers
+            .get(&page.key)
+            .is_some_and(|viewers| !viewers.is_empty());
+        if current.closing
+            || *current.done.borrow()
+            || visible
+            || !current.activity.admitted.load(Ordering::Acquire)
+            || control.is_none_or(|control| control.closed || control.agent_id.is_none())
+            || (headless_only && current.origin == Origin::Desktop)
+            || current.activity.used.load(Ordering::Relaxed)
+                >= now.saturating_sub(crate::browser_lifetime::IDLE_MS)
+        {
+            return false;
+        }
+        let channel = current.desktop_channel.clone();
+        let hidden = if let Some(channel) = &channel {
+            let key = crate::desktop_browser::TabKey {
+                thread_id: page.key.0.clone(),
+                tab_id: page.key.1.clone(),
+            };
+            let Some(hidden) = channel.lock_hidden(&key) else {
+                return false;
+            };
+            Some(hidden)
+        } else {
+            None
+        };
+        current.closing = true;
+        let control = current.control.clone();
+        drop(hidden);
+        drop(tabs);
+        drop(viewers);
+        if let Some(control) = control {
+            drop(control.close());
+        }
+        true
+    }
     pub(crate) fn set_profile_removal(&self, removal: std::sync::Arc<dyn crate::cleanup::Removal>) {
         *self.removal.0.lock().unwrap() = removal;
     }
@@ -493,15 +709,21 @@ impl Browsers {
                 })
             })
     }
-    fn claim_viewer(&self, page: Page, id: String) -> Viewer {
+    fn claim_viewer(&self, page: Page, id: String) -> Result<Viewer, Value> {
         let key = page.key.clone();
-        self.viewers
-            .lock()
-            .unwrap()
-            .entry(key.clone())
-            .or_default()
-            .insert(id.clone());
-        Viewer {
+        let mut viewers = self.viewers.lock().unwrap();
+        let tabs = self.tabs.lock().unwrap();
+        if !tabs.get(&key).is_some_and(|current| {
+            !current.closing
+                && !*current.done.borrow()
+                && std::sync::Arc::ptr_eq(&current.activity, &page.tab.activity)
+        }) {
+            return Err(error("Browser tab is closed".into()));
+        }
+        page.live()?;
+        drop(tabs);
+        viewers.entry(key.clone()).or_default().insert(id.clone());
+        Ok(Viewer {
             remove: Some(RemoveViewer {
                 registry: self.viewers.clone(),
                 key,
@@ -509,7 +731,7 @@ impl Browsers {
             }),
             page,
             inputs: Default::default(),
-        }
+        })
     }
 
     // Keep cleanup receipts in the authoritative map across cancellation and failed stops.
@@ -684,22 +906,6 @@ impl Browsers {
             });
             tabs.clone()
         };
-        if tabs
-            .values()
-            .filter(|tab| {
-                !*tab.process_done.borrow()
-                    || tab
-                        .control
-                        .as_ref()
-                        .is_some_and(|control| !control.is_finished())
-            })
-            .count()
-            >= 8
-        {
-            return Err(error(
-                "Close a server browser session before opening another".into(),
-            ));
-        }
         if tabs.values().any(|t| {
             t.origin == Origin::Local
                 && t.profile == profile
@@ -743,6 +949,7 @@ impl Browsers {
         browser.control = Some(crate::preview_control::runtime::Control::new(
             owner.map(str::to_owned),
         ));
+        browser.activity = Default::default();
         browser.closing = true;
         // A canceled setup retains a non-usable cleanup receipt, including before target discovery.
         self.tabs
@@ -856,6 +1063,7 @@ impl Browsers {
             return Err(error(cause));
         }
         browser.closing = false;
+        browser.activity.admit();
         self.tabs.lock().unwrap().insert(key, browser);
         Ok(())
     }
@@ -897,25 +1105,10 @@ impl Browsers {
                 return Err(error("Desktop browser connection is still closing".into()));
             }
         }
-        if tabs
-            .values()
-            .filter(|tab| {
-                !*tab.process_done.borrow()
-                    || tab
-                        .control
-                        .as_ref()
-                        .is_some_and(|control| !control.is_finished())
-            })
-            .count()
-            >= 8
-        {
-            return Err(error(
-                "Close a server browser session before opening another".into(),
-            ));
-        }
         let browser = desktop::launch(channel, thread, tab, profile, owner)
             .await
             .map_err(error)?;
+        browser.activity.admit();
         self.tabs.lock().unwrap().insert(key, browser);
         Ok(())
     }
@@ -1125,6 +1318,7 @@ impl Browsers {
                 && !*tab.done.borrow()
                 && tab.tx.same_channel(&page.tab.tx)
                 && tab.session == page.tab.session
+                && std::sync::Arc::ptr_eq(&tab.activity, &page.tab.activity)
         })
     }
     pub async fn command(
@@ -1191,12 +1385,15 @@ pub async fn stream<S>(
     let Ok(viewer_id) = crate::store::random_id() else {
         return;
     };
-    let viewer = state
+    let Ok(viewer) = state
         .streams
         .p2
         .preview
         .browser
-        .claim_viewer(page.clone(), viewer_id.clone());
+        .claim_viewer(page.clone(), viewer_id.clone())
+    else {
+        return;
+    };
     let inputs = viewer.inputs.clone();
     let _viewer = viewer;
     let snapshot = control.snapshot();
@@ -1226,8 +1423,6 @@ pub async fn stream<S>(
         return;
     }
     let mut interval = tokio::time::interval(Duration::from_millis(250));
-    let deadline = tokio::time::sleep(LIFETIME);
-    tokio::pin!(deadline);
     let mut waiting: Option<std::time::Instant> = None;
     type Frame =
         std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<u8>, Value>> + Send>>;
@@ -1237,7 +1432,6 @@ pub async fn stream<S>(
     let mut observing = std::collections::BTreeSet::new();
     loop {
         tokio::select! {
-            _=&mut deadline=>break,
                 changed=controls.changed()=>{
                 if changed.is_err()||controls.borrow_and_update().closed{break;}
                 let control=viewer::control(&control.snapshot(),&viewer_id,operate,dialogs.borrow().status());
