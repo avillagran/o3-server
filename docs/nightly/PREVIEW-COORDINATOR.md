@@ -58,3 +58,12 @@ Desktop live page notifications are now projected by the consumer described in
 `PREVIEW-NAVIGATION.md`; local inherited-pipe notification ownership is described in
 `PREVIEW-LOCAL-PIPE.md`. Native network/download/dialog consumers retain their
 separate acceptance boundaries.
+
+Initial setup failure closes its newly published session. A later `ensure` retry
+has a different lifetime: native `ServerBrowser.ts` (4288, lines 1373–1394) logs
+and returns the setup error while retaining the Manager session; initial
+`openTab` adds its own close-on-error handler at lines 1484–1488. The owned job
+preserves that distinction while cleaning up failed actor resources. The actual
+duplex/loopback proof detaches an adopted page, rejects reattachment because no
+page exists, retains the same snapshot, then successfully reattaches. Explicit
+close fences a later stale retry and cannot resurrect the session.

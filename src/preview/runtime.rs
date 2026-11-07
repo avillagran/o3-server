@@ -196,7 +196,7 @@ pub(super) async fn open(s: &State, input: &Value) -> Reply {
             browser: m.browser.clone(),
             jobs: m.jobs.clone(),
         };
-        spawn(Owned::new(s), snapshot.clone(), pending.clone(), send);
+        spawn(Owned::new(s), snapshot.clone(), pending.clone(), send, true);
         let outcome = result(pending.result).await;
         guard.armed = false;
         outcome?;
@@ -237,7 +237,13 @@ pub(super) async fn ensure(s: &State, snapshot: &Value) -> Result<(), Value> {
         }
     };
     if let Some(send) = send {
-        spawn(Owned::new(s), snapshot.clone(), pending.clone(), send);
+        spawn(
+            Owned::new(s),
+            snapshot.clone(),
+            pending.clone(),
+            send,
+            false,
+        );
     }
     result(pending.result).await
 }
@@ -246,6 +252,7 @@ fn spawn(
     snapshot: Value,
     pending: Pending,
     sender: watch::Sender<Option<Result<(), Value>>>,
+    close_on_error: bool,
 ) {
     let jobs = owned.jobs.clone();
     let task_key = (
@@ -288,7 +295,7 @@ fn spawn(
                 .is_some_and(|pending| pending.generation == generation)
             {
                 inner.pending.remove(&key);
-                if outcome.is_err() {
+                if outcome.is_err() && close_on_error {
                     inner
                         .kernel
                         .close(&json!({"threadId":key.0,"tabId":key.1}), || iso(now_ms()));
@@ -681,7 +688,7 @@ mod tests {
                             (metadata.clone(), during)
                         };
                         let result=match method{
-                            "Target.getTargets"=>json!({"targetInfos":[{"type":"page","targetId":"page"}]}),"Target.attachToTarget"=>json!({"sessionId":"opaque"}),"Page.getFrameTree"=>json!({"frameTree":{"frame":{"id":"main-frame"}}}),
+                            "Target.getTargets"=>json!({"targetInfos":if state["missingPage"]==true{json!([])}else{json!([{"type":"page","targetId":"page"}])}}),"Target.attachToTarget"=>json!({"sessionId":"opaque"}),"Page.getFrameTree"=>json!({"frameTree":{"frame":{"id":"main-frame"}}}),
                             "Page.getNavigationHistory" if state.is_object()=>state.get("history").cloned().unwrap_or_else(||json!({"currentIndex":0,"entries":[{"url":state["url"],"title":state["title"]}]})),
                             "Runtime.evaluate" if state.is_object()=>json!({"result":{"value":{"url":state["url"],"title":state["title"],"readyState":state["readyState"]}}}),_=>json!({})};
                         let envelope = |message: Value| json!({"type":"cdp","threadId":command["threadId"],"tabId":command["tabId"],"message":message.to_string()});
@@ -1401,6 +1408,118 @@ mod tests {
             .kernel
             .all()
             .is_empty());
+        assert!(!state.dir.join("browser-profiles").exists());
+        peer.task.abort();
+    }
+    #[tokio::test]
+    async fn failed_desktop_retry_retains_session_and_can_reattach_without_resurrection() {
+        let state = state();
+        let peer = peer();
+        let driver = install_desktop(state.clone(), peer.channel.clone()).await;
+        let open = opening(state.clone());
+        let snapshot = published(&state).await;
+        let tab = tab_of(&snapshot).to_owned();
+        peer.events
+            .send(json!({"type":"attached","threadId":"thread","tabId":tab}))
+            .unwrap();
+        open.await.unwrap().unwrap();
+        let retained = state
+            .streams
+            .p2
+            .preview
+            .inner
+            .lock()
+            .unwrap()
+            .kernel
+            .get("thread", &tab)
+            .unwrap()
+            .clone();
+        peer.events
+            .send(json!({"type":"detached","threadId":"thread","tabId":tab}))
+            .unwrap();
+        let mut done = state
+            .streams
+            .p2
+            .preview
+            .browser
+            .completion("thread", &tab)
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !*done.borrow() {
+                done.changed().await.unwrap();
+            }
+        })
+        .await
+        .unwrap();
+        *peer.navigation.lock().unwrap() = json!({"missingPage":true});
+        peer.events
+            .send(json!({"type":"attached","threadId":"thread","tabId":tab}))
+            .unwrap();
+        wait(|| {
+            let inner = state.streams.p2.preview.inner.lock().unwrap();
+            inner.pending.is_empty()
+                && peer
+                    .messages
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|message| {
+                        message["type"] == "cdp"
+                            && message["message"]
+                                .as_str()
+                                .is_some_and(|value| value.contains("Target.getTargets"))
+                    })
+                    .count()
+                    >= 2
+        })
+        .await;
+        assert_eq!(
+            state
+                .streams
+                .p2
+                .preview
+                .inner
+                .lock()
+                .unwrap()
+                .kernel
+                .get("thread", &tab),
+            Some(&retained)
+        );
+        assert!(state
+            .streams
+            .p2
+            .preview
+            .browser
+            .connection("thread", &tab)
+            .await
+            .is_none());
+        *peer.navigation.lock().unwrap() = Value::Null;
+        ensure(&state, &retained).await.unwrap();
+        assert_eq!(
+            state
+                .streams
+                .p2
+                .preview
+                .browser
+                .connection("thread", &tab)
+                .await,
+            Some((crate::server_browser::Origin::Desktop, true))
+        );
+        close(&state, "thread", Some(&tab)).await;
+        assert!(ensure(&state, &retained).await.is_err());
+        assert!(state
+            .streams
+            .p2
+            .preview
+            .inner
+            .lock()
+            .unwrap()
+            .kernel
+            .get("thread", &tab)
+            .is_none());
+        shutdown(&state.streams.p2.preview).await;
+        driver.shutdown().await;
         assert!(!state.dir.join("browser-profiles").exists());
         peer.task.abort();
     }
