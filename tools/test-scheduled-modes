@@ -9,6 +9,7 @@ import tempfile
 import subprocess
 import uuid
 from test_safety import check
+from runtime_artifacts import snapshot
 
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--default-features",action="store_true")
@@ -31,6 +32,8 @@ env = dict(os.environ)
 env.setdefault('CARGO_TARGET_DIR', '/var/tmp/o3-server/fresh-context-target')
 env.setdefault('CARGO_BUILD_JOBS', '2')
 targets = [] if options.all_tests else ['--test', options.integration] if options.integration else ['--lib'] if options.unit_filter else ['--lib', '--test', 'scheduled_modes', '--test', 'ops', '--test', 'native_goals', '--test', 'p2_webhook', '--test', 'mcp_launch']
+evidence=pathlib.Path(tempfile.mkdtemp(prefix='o3-container-tests-',dir='/var/tmp'))
+artifact_snapshot = None
 compile_lock = None
 try:
     if options.compile_lock:
@@ -38,6 +41,16 @@ try:
         compile_lock = options.compile_lock.open('a')
         fcntl.flock(compile_lock.fileno(), fcntl.LOCK_EX)
     build = subprocess.run(['cargo', 'test', '--locked', *([] if options.default_features else ['--no-default-features']), *targets, '--no-run', '--message-format=json'], cwd=root, env=env, capture_output=True, text=True)
+    runtime_records = []
+    if build.returncode == 0:
+        runtime_outputs = [pathlib.Path(value['executable']) for line in build.stdout.splitlines()
+                           if (value := json.loads(line)).get('executable')]
+        if not runtime_outputs:
+            raise RuntimeError('Cargo produced no runtime executables')
+        debug = next(path.parent.parent if path.parent.name == 'deps' else path.parent
+                     for path in runtime_outputs if path.parent.name != 'examples')
+        artifact_snapshot = debug.resolve().parent / ('test-runtime-' + uuid.uuid4().hex)
+        runtime_records = snapshot(debug, runtime_outputs, artifact_snapshot)
 finally:
     if compile_lock:
         compile_lock.close()
@@ -66,7 +79,6 @@ if options.resume_from:
 test_image=os.environ.get('O3_FRESH_CONTEXT_IMAGE', 'localhost/o3-server-tests:local')
 if subprocess.run(['podman','image','exists',test_image]).returncode:
     raise SystemExit('Test runtime missing. Run tools/build-test-image first.')
-evidence=pathlib.Path(tempfile.mkdtemp(prefix='o3-container-tests-',dir='/var/tmp'))
 print(f'Container test evidence: {evidence}',flush=True)
 report = {
     'returncode': None,
@@ -82,6 +94,8 @@ report = {
     'binaries': [str(binary) for binary in binaries],
     'binaryResults': [],
     'privateContainerPerBinary': True,
+    'runtimeSnapshot': str(artifact_snapshot),
+    'runtimeArtifacts': runtime_records,
 }
 script = """set -eu
 umask 077
@@ -102,7 +116,7 @@ esac
 """
 for index, binary in enumerate(binaries):
     name = 'o3-scheduled-tests-' + uuid.uuid4().hex
-    args = ['podman', 'run', '--rm', '--name', name, '--userns=keep-id', '--user', f'{os.getuid()}:{os.getgid()}', '--read-only', '--tmpfs', '/tmp:rw,exec,size=1g,mode=1777', '--cap-drop=ALL', '--security-opt=no-new-privileges', '--pids-limit=512', '--memory=4g', '--network=none', f'--workdir={root}', '--env', 'HOME=/tmp/home', '--env', f'O3_UNIT_FILTER={options.unit_filter or ""}', '--env', f'O3_CASE_FILTER={options.case_filter or ""}', '--env', f'O3_ALL_TESTS={int(options.all_tests)}', '-v', f'{root}:{root}:ro', '-v', f'{binary.parent}:/test-bin:ro', '-v', f'{binary.parent.parent}:{binary.parent.parent}:ro', test_image, 'sh', '-c', script, 'scheduled-nightly', binary.name]
+    args = ['podman', 'run', '--rm', '--name', name, '--userns=keep-id', '--user', f'{os.getuid()}:{os.getgid()}', '--read-only', '--tmpfs', '/tmp:rw,exec,size=1g,mode=1777', '--cap-drop=ALL', '--security-opt=no-new-privileges', '--pids-limit=512', '--memory=4g', '--network=none', f'--workdir={root}', '--env', 'HOME=/tmp/home', '--env', f'O3_UNIT_FILTER={options.unit_filter or ""}', '--env', f'O3_CASE_FILTER={options.case_filter or ""}', '--env', f'O3_ALL_TESTS={int(options.all_tests)}', '-v', f'{root}:{root}:ro', '-v', f'{artifact_snapshot / binary.parent.name}:/test-bin:ro', '-v', f'{artifact_snapshot}:{binary.parent.parent}:ro', test_image, 'sh', '-c', script, 'scheduled-nightly', binary.name]
     try:
         try:
             result = subprocess.run(args, cwd=root, timeout=300, capture_output=True, text=True)
