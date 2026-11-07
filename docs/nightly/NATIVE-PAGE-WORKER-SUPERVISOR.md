@@ -61,3 +61,20 @@ The pinned Effect4.1.2 `ai/McpServer` encodes a tool success through its actual 
 
 
 The selected `mcp-output` oracle executes the complete pinned toolkit definitions and the actual canonical Effect4.1.2 `McpServer.registerToolkit` registration handler. Only opaque service dependencies and a synthetic application-result handler are injected. Seven cases cover isolated high/low units, a valid pair, an isolated object key, a literal escape, controls and nested data. Both the actual native encoded structured content and its text survive outer JSON encoding. The retained fixture records those exact native outcomes; this is a result-codec oracle, not evidence of real provider, authority, HTTP or CDP dispatch. The private Page runner verifies the full pinned Effect manifest before loading any selected fixture.
+
+### Entered callbacks and handoffs
+
+The pinned whole `SessionControl` oracle proves four queue/close/deadline cases.
+The independent consumer oracle executes the complete original `requireTab`
+and `runOperation` methods with a single-tab store and injected I/O. Its four
+cases distinguish the creator's read during human control from a foreign
+observer, reject foreign writes and cross-thread explicit tabs, and prove the
+second reference invalidation in the operation's `finally` after a takeover.
+An already entered callback drains across a generation change; a callback still
+queued rejects the stale generation before transport. These results do not
+prove MCP admission or an attached production Page consumer.
+
+Both fixtures run under the recursive-removal guard with the admitted Node
+26.13.0 binary reused by hash and receipt. The runner's optional
+`--reuse-node-artifact` avoids another persistent binary copy while preserving
+shared admission, source identity, hash and isolated version verification.
