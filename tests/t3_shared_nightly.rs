@@ -311,3 +311,164 @@ fn nightly_search_triggers_exclude_attachment_placeholders_on_export() {
         0
     );
 }
+
+#[test]
+fn usage_continuation_tags_and_recovery_nonce_survive_schema80_handover_without_replay() {
+    for started in [false, true] {
+        let dir = profile(SCHEMA);
+        let state = Arc::new(State::open(&dir).unwrap());
+        let mut native = t3_shared::start(&state).unwrap().unwrap();
+        create(&state);
+        for id in ["source", "continuation"] {
+            events::dispatch(&state,&json!({"type":"message.dispatch","commandId":id,"messageId":id,"threadId":"t","text":"Synthetic handover only","attachments":[],"createdBy":"agent","creationSource":"server","dispatchMode":{"type":"defer_start","workspaceStrategy":{"type":"root"}}})).unwrap();
+        }
+        let now = o3_server::store::now_ms();
+        let before = o3_server::store::iso(now - 1000);
+        let reset = o3_server::store::iso(now + 60_000);
+        let (source, continuation) = {
+            let db = state.db.lock().unwrap();
+            let mut query = db.prepare("SELECT id FROM records WHERE kind='runs' AND thread_id='t' ORDER BY json_extract(body,'$.ordinal')").unwrap();
+            let ids = query
+                .query_map([], |r| r.get::<_, String>(0))
+                .unwrap()
+                .map(Result::unwrap)
+                .collect::<Vec<_>>();
+            assert_eq!(ids.len(), 2);
+            (ids[0].clone(), ids[1].clone())
+        };
+        {
+            let db = state.db.lock().unwrap();
+            let mut original: Value = serde_json::from_str(
+                &db.query_row(
+                    "SELECT body FROM records WHERE kind='runs' AND id=?1",
+                    [&source],
+                    |r| r.get::<_, String>(0),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            original["status"] = json!("failed");
+            original["startedAt"] = json!(before);
+            original["completedAt"] = json!(before);
+            original["errorClass"] = json!("usage_limit");
+            put(&db, "runs", &source, "t", &original).unwrap();
+            let mut copy: Value = serde_json::from_str(
+                &db.query_row(
+                    "SELECT body FROM records WHERE kind='runs' AND id=?1",
+                    [&continuation],
+                    |r| r.get::<_, String>(0),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            copy["status"] = json!(if started { "running" } else { "starting" });
+            copy["startedAt"] = if started { json!(before) } else { Value::Null };
+            copy["executionRequested"] = json!(true);
+            copy["usageLimitContinuationOfRunId"] = json!(source);
+            put(&db, "runs", &continuation, "t", &copy).unwrap();
+            let mut thread: Value = serde_json::from_str(&row(
+                &db,
+                "SELECT body FROM records WHERE kind='thread' AND id='t'",
+            ))
+            .unwrap();
+            thread["usageLimitResetAt"] = json!(reset);
+            thread["limitRecovery"] = json!({"runId":source,"resetAt":reset,"autoResume":true,"snooze":false,"requestId":"before-handover"});
+            put(&db, "thread", "t", "t", &thread).unwrap();
+        }
+        t3_shared::export(&state, &mut native).unwrap();
+        let payload: Value = serde_json::from_str(
+            &native
+                .query_row(
+                    "SELECT payload_json FROM orchestration_v2_projection_runs WHERE run_id=?1",
+                    [&continuation],
+                    |r| r.get::<_, String>(0),
+                )
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(payload["usageLimitContinuationOfRunId"], source);
+        assert_eq!(
+            native
+                .query_row(
+                    "SELECT count(*) FROM orchestration_v2_projection_runs",
+                    [],
+                    |r| r.get::<_, i64>(0)
+                )
+                .unwrap(),
+            2
+        );
+
+        // Copy the actual shared SQLite database, not a filesystem tree or live profile.
+        let imported = profile(SCHEMA);
+        let path = t3_shared::database(&imported);
+        // VACUUM requires a missing destination; profile() created this one regular
+        // owned fixture file, so preserve it under a distinct retained name first.
+        std::fs::rename(&path, imported.join("empty-schema-retained.sqlite")).unwrap();
+        native
+            .execute("VACUUM INTO ?1", [path.to_str().unwrap()])
+            .unwrap();
+        {
+            let shared = Connection::open(&path).unwrap();
+            shared.execute("DELETE FROM o3_sync", []).unwrap();
+        }
+        let imported_state = Arc::new(State::open(&imported).unwrap());
+        let mut shared = t3_shared::start(&imported_state).unwrap().unwrap();
+        let nonce = {
+            let mut db = imported_state.db.lock().unwrap();
+            let copy: Value = serde_json::from_str(
+                &db.query_row(
+                    "SELECT body FROM records WHERE kind='runs' AND id=?1",
+                    [&continuation],
+                    |r| r.get::<_, String>(0),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(copy["usageLimitContinuationOfRunId"], source);
+            o3_server::recovery::recover(&mut db).unwrap();
+            let thread: Value = serde_json::from_str(&row(
+                &db,
+                "SELECT body FROM records WHERE kind='thread' AND id='t'",
+            ))
+            .unwrap();
+            let nonce = thread["limitRecovery"]["requestId"].clone();
+            assert_eq!(
+                nonce == "before-handover",
+                started,
+                "only a proven-unsent imported continuation rearms"
+            );
+            assert_eq!(
+                db.query_row("SELECT count(*) FROM records WHERE kind='runs'", [], |r| {
+                    r.get::<_, i64>(0)
+                })
+                .unwrap(),
+                2
+            );
+            o3_server::recovery::recover(&mut db).unwrap();
+            let thread: Value = serde_json::from_str(&row(
+                &db,
+                "SELECT body FROM records WHERE kind='thread' AND id='t'",
+            ))
+            .unwrap();
+            assert_eq!(
+                thread["limitRecovery"]["requestId"], nonce,
+                "repeated recovery does not rotate a cancelled receipt"
+            );
+            nonce
+        };
+        t3_shared::export(&imported_state, &mut shared).unwrap();
+        let copy: Value = serde_json::from_str(
+            &shared
+                .query_row(
+                    "SELECT payload_json FROM orchestration_v2_projection_runs WHERE run_id=?1",
+                    [&continuation],
+                    |r| r.get::<_, String>(0),
+                )
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(copy["usageLimitContinuationOfRunId"], source);
+        assert_eq!(shared.query_row("SELECT json_extract(payload_json,'$.limitRecovery.requestId') FROM orchestration_v2_projection_threads WHERE thread_id='t'",[],|r|r.get::<_,String>(0)).unwrap(),nonce.as_str().unwrap());
+        // No provider adapter is installed or run. All fixture databases are retained.
+    }
+}

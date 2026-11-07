@@ -40,3 +40,19 @@ these checks do not certify every native runtime-reconciliation branch, exact
 schema diagnostic trees or arbitrary JavaScript Date.parse strings. A new complete
 matrix is required after this checkpoint is integrated. No live profile or service
 is migrated by this change.
+
+## Shared schema-80 handover checkpoint
+
+The `usage_continuation_tags_and_recovery_nonce_survive_schema80_handover_without_replay`
+regression uses the real project/message reducers, schema-80 shared exporter and
+importer, retained SQLite snapshots, and the production recovery entrypoint.
+Both minimal and default container modes pass the same case. An unsent tagged
+continuation retains its source run across export/import and rotates its recovery
+nonce once; an already-started continuation does not acquire a fresh nonce.
+Repeated recovery creates no extra run, and the resulting tag/nonce survive the
+next export. No provider adapter is installed or run.
+
+This is actual shared-storage/recovery acceptance against the native schema
+fixture. It is not an official T3 process executing or resuming the new tagged
+turn. The fixture's one regular empty database is renamed to a retained evidence
+file before `VACUUM INTO`; no directory tree is deleted or extracted.
