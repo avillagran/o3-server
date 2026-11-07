@@ -30,7 +30,12 @@ fn watch_native_exit(pid: u32) -> tokio::io::unix::AsyncFd<std::os::fd::OwnedFd>
         unsafe { libc::fcntl(owned.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) },
         0
     );
-    tokio::io::unix::AsyncFd::new(owned).unwrap()
+    // Safety: this OwnedFd is moved into AsyncFd and never exposed or
+    // replaced. Its open file description stays stable until AsyncFd drops.
+    unsafe {
+        tokio::io::unix::AsyncFd::register_with_interest(owned, tokio::io::Interest::READABLE)
+    }
+    .unwrap()
 }
 
 async fn assert_native_exited(exit: tokio::io::unix::AsyncFd<std::os::fd::OwnedFd>) {
