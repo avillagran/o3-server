@@ -234,7 +234,7 @@ fn named_project_scaffolds_and_registers_repository() {
     }
     m.ok("t3_project_delete", json!({"projectId":named["id"]}));
     assert!(root.exists());
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 #[test]
 fn worktree_readers_list_real_checkouts_and_fall_back_after_cleanup() {

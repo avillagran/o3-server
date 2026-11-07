@@ -2244,7 +2244,7 @@ mod internal_run_tests {
             .unwrap();
         initialize_run_internal(&a).unwrap();
         drop((a, b));
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[test]
     fn legacy_run_bookkeeping_migrates_without_entering_any_public_record() {

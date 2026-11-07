@@ -786,6 +786,6 @@ mod cleanup_policy_tests {
         assert_eq!(cleanup(&s).unwrap()["counts"]["removed"], 1);
         assert!(!path.exists());
         drop(s);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

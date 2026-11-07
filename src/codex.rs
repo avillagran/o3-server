@@ -1778,7 +1778,7 @@ mod tests {
         run.cwd = home.clone();
         provider.run(run, out, controls, cancel).await.unwrap();
         provider.dispose().await.unwrap();
-        std::fs::remove_dir_all(home).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[tokio::test]
     async fn discovery_and_runtime_serialize_first_use_of_the_same_native_state_directory() {
@@ -1836,7 +1836,7 @@ mod tests {
         discovery.await.unwrap().unwrap();
         runtime.await.unwrap().unwrap();
         provider.shutdown().await;
-        std::fs::remove_dir_all(home).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[tokio::test]
     async fn signed_in_lazy_provider_is_selectable_by_clients_without_spawning() {
@@ -1862,7 +1862,7 @@ mod tests {
             "readiness spawned app-server"
         );
         let config = provider.config();
-        std::fs::remove_dir_all(&dir).unwrap();
+        // Fixture trees are retained for private container teardown.
         assert_eq!(config[0]["status"], "ready");
         // The real client rule: only `ready` providers offer their models.
         assert_eq!(config[0]["models"][0]["slug"], "a");
@@ -1893,7 +1893,7 @@ mod tests {
         std::fs::remove_file(dir.join("auth.json")).unwrap();
         provider.probe().await.unwrap();
         let signed_out = provider.config()[0]["auth"]["status"].clone();
-        std::fs::remove_dir_all(&dir).unwrap();
+        // Fixture trees are retained for private container teardown.
         assert_eq!(signed_in, "authenticated");
         if std::env::var_os("OPENAI_API_KEY").is_none() {
             assert_eq!(signed_out, "unauthenticated");
@@ -1909,7 +1909,7 @@ mod tests {
             {"slug":"a","display_name":"A","visibility":"list","priority":1}]});
         std::fs::write(dir.join("models_cache.json"), cache.to_string()).unwrap();
         let models = cached_models(Some(&dir));
-        std::fs::remove_dir_all(&dir).unwrap();
+        // Fixture trees are retained for private container teardown.
         assert_eq!(models.as_array().unwrap().len(), 2);
         assert_eq!(
             (&models[0]["slug"], &models[0]["isDefault"]),
@@ -1974,7 +1974,7 @@ mod tests {
         result.unwrap();
         assert!(completed);
         provider.shutdown().await;
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[tokio::test]
     async fn large_outgoing_context_does_not_use_the_incoming_frame_limit() {
@@ -2202,6 +2202,6 @@ mod tests {
         assert!(error.contains("no rollout found for thread id"));
         drop(c);
         provider.shutdown().await;
-        std::fs::remove_dir_all(home).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

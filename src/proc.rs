@@ -353,7 +353,7 @@ mod diff_relative_tests {
         let out = super::git(&sub, &["diff", "--name-only", "HEAD"], super::Opts::READ)
             .await
             .unwrap();
-        std::fs::remove_dir_all(&root).unwrap();
+        // Fixture trees are retained for private container teardown.
         assert!(out.text().contains("out.txt"), "{}", out.text());
     }
 }

@@ -1224,7 +1224,7 @@ mod discovery_budget_tests {
             value["sourceControlProviders"][0]["auth"]["account"]["value"],
             "fixture"
         );
-        fs::remove_dir_all(root).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[tokio::test]
     async fn timed_out_auth_is_unknown_and_its_owned_process_is_reaped() {
@@ -1249,6 +1249,6 @@ mod discovery_budget_tests {
             !Path::new("/proc").join(pid).exists(),
             "probe process was not reaped"
         );
-        fs::remove_dir_all(root).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

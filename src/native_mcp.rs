@@ -424,7 +424,7 @@ mod tests {
         );
         assert!(state.native_mcp.resolve(token).is_none());
         drop(state);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[tokio::test]
     async fn current_modes_generation_and_background_ownership_are_authoritative() {
@@ -535,7 +535,7 @@ mod tests {
         drop(db);
         drop(context);
         drop(state);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[tokio::test]
     async fn process_exit_revokes_even_with_surviving_owner_references() {
@@ -562,6 +562,6 @@ mod tests {
         drop(replacement);
         drop(context);
         drop(state);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

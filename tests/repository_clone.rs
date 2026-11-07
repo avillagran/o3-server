@@ -79,7 +79,7 @@ fn repository_lookup_uses_protocol_and_only_auto_retries_ssh_rejection() {
         .unwrap()
         .iter()
         .any(|p| p["id"] == named["projectId"]));
-    std::fs::remove_dir_all(named_root).unwrap();
+    // Fixture trees are retained for private container teardown.
 
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }

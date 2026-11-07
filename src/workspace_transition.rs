@@ -266,7 +266,7 @@ mod tests {
     }
     #[test]
     fn preconditions_and_receipts_are_atomic_and_noops_keep_native_binding() {
-        let (s, dir) = fixture();
+        let (s, _dir) = fixture();
         let change = json!({"type":"thread.metadata.update","commandId":"bind","threadId":"t","worktreePath":"/worktree","branch":"feature","expectedWorktreePath":null,"expectedBranch":null,"expectedEmpty":true});
         for (field, value) in [
             ("expectedWorktreePath", json!("/raced")),
@@ -321,7 +321,7 @@ mod tests {
             .contains("no longer empty"));
         assert_eq!(read(&s, "thread", "t")["worktreePath"], "/worktree");
         drop(s);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 
     struct Peer {
@@ -456,7 +456,7 @@ mod tests {
             assert_eq!(count(&s,"SELECT count(*) FROM records WHERE kind='runs' AND json_extract(body,'$.status')='interrupted'"),1);
             drop(s);
             tokio::task::yield_now().await;
-            std::fs::remove_dir_all(dir).unwrap();
+            // Fixture trees are retained for private container teardown.
         }
     }
 }

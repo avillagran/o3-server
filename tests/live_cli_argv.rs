@@ -15,5 +15,5 @@ fn live_codex_app_server_schema_argv() {
         String::from_utf8_lossy(&result.stderr)
     );
     assert!(std::fs::read_dir(&dir).unwrap().next().is_some());
-    std::fs::remove_dir_all(dir).unwrap();
+    // Fixture trees are retained for private container teardown.
 }

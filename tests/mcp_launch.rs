@@ -260,7 +260,7 @@ fn worktree_preflight_rejects_outside_and_missing_base_before_claim_and_replays_
             json!(path)
         );
     }
-    std::fs::remove_dir_all(&existing).unwrap();
+    std::fs::rename(&existing, root.join("retained-existing-worktree")).unwrap();
     std::fs::create_dir_all(&existing).unwrap();
     let mut stale = base.clone();
     stale["workspaceStrategy"] = json!({"type":"existing_worktree","worktreePath":existing});

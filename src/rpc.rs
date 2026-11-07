@@ -591,6 +591,6 @@ mod isolation_tests {
         }
         client.close(None).await.unwrap();
         task.await.unwrap();
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

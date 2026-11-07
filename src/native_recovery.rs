@@ -511,6 +511,6 @@ mod tests {
             assert!(bound(&db, &r, "other").unwrap_err().contains("changed"));
         }
         drop(s);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

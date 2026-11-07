@@ -98,6 +98,6 @@ mod tests {
         assert_eq!(t["limitRecovery"]["status"], "expired");
         assert!(s.active.lock().unwrap().is_empty());
         drop(s);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

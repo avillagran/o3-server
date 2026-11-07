@@ -337,7 +337,7 @@ mod audit_tests {
     fn privileged_fake_npm_is_never_offered() {
         use std::os::unix::fs::{symlink, PermissionsExt};
         let root = std::env::temp_dir().join(format!("o3-unsafe-installer-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+        // Fixture trees are retained for private container teardown.
         let pkg = root.join("lib/node_modules/@openai/codex");
         std::fs::create_dir_all(&pkg).unwrap();
         std::fs::create_dir_all(root.join("bin")).unwrap();
@@ -345,12 +345,16 @@ mod audit_tests {
         let cli = pkg.join("codex");
         std::fs::write(&cli, "#!/bin/sh\necho codex-cli 1.0.0\n").unwrap();
         std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
-        symlink("/usr/bin/su", root.join("bin/npm")).unwrap();
+        let privileged = root.join("fixture-privileged-helper");
+        std::fs::write(&privileged, "#!/bin/sh\nexit 91\n").unwrap();
+        std::fs::set_permissions(&privileged, std::fs::Permissions::from_mode(0o4755))
+            .unwrap();
+        symlink(&privileged, root.join("bin/npm")).unwrap();
         assert!(
             detect(&cli, "codex").is_err(),
             "privileged helper advertised as npm"
         );
-        std::fs::remove_dir_all(root).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }
 
@@ -380,7 +384,7 @@ mod probe_tests {
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
         let elapsed = elapsed.expect("probe never succeeded");
-        std::fs::remove_dir_all(root).unwrap();
+        // Fixture trees are retained for private container teardown.
         assert!(
             elapsed < std::time::Duration::from_secs(2),
             "probe waited for inherited stdout"

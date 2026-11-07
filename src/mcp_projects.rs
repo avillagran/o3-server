@@ -245,6 +245,6 @@ mod tests {
         .unwrap_err();
         assert!(error.contains("capability_denied"));
         drop(state);
-        std::fs::remove_dir_all(root).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

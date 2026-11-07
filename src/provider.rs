@@ -1399,7 +1399,7 @@ mod tests {
             .unwrap();
         assert_eq!(std::sync::Arc::strong_count(&s), 1);
         drop(s);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[tokio::test]
     async fn missing_interrupt_acknowledgement_fails_with_unknown_delivery() {
@@ -1450,7 +1450,7 @@ mod tests {
         assert!(crate::events::get(&db, "turnItems", "r-interrupt-result").is_err());
         drop(db);
         drop(s);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[test]
     fn native_interruption_finalizes_result_once_with_claude_root_turn() {
@@ -1491,7 +1491,7 @@ mod tests {
         persist(&s, "t", "r", ProviderEvent::Interrupted).unwrap();
         assert_eq!(crate::events::sequence(&s.db.lock().unwrap()).unwrap(), seq);
         drop(s);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[test]
     fn real_frames_reduce_to_renderable_items_and_native_identity() {
@@ -1562,7 +1562,7 @@ mod tests {
             }
             drop(db);
             drop(s);
-            std::fs::remove_dir_all(dir).unwrap();
+            // Fixture trees are retained for private container teardown.
         }
     }
 }
@@ -1617,7 +1617,7 @@ mod command_tests {
         );
         drop(db);
         drop(state);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }
 
@@ -1674,7 +1674,7 @@ mod restart_tests {
                 tokio::task::yield_now().await;
             }
             drop(state);
-            std::fs::remove_dir_all(dir).unwrap();
+            // Fixture trees are retained for private container teardown.
         }
     }
 }
@@ -2423,7 +2423,7 @@ mod limit_policy_tests {
             assert_eq!(t["snoozedUntil"].is_string(), enabled);
             assert_eq!(t["limitRecovery"].is_object(), enabled);
             drop(s);
-            std::fs::remove_dir_all(dir).unwrap();
+            // Fixture trees are retained for private container teardown.
         }
     }
 }

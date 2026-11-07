@@ -87,5 +87,5 @@ fn power_profile_suspends_and_resumes_actual_git_fetch() {
         .unwrap()
         .iter()
         .any(|v| v["key"] == "backgroundActivityProfile"));
-    std::fs::remove_dir_all(power).unwrap();
+    // Fixture trees are retained for private container teardown.
 }

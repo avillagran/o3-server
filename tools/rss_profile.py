@@ -136,4 +136,4 @@ def run(memory):
         if probe is not None: probe.terminate();probe.wait(timeout=10)
         if watch is not None: watch.terminate();watch.wait(timeout=10)
         process.terminate();process.wait(timeout=10)
-        shutil.rmtree(home)
+        # Retain the isolated measurement workspace for review; never traverse it for cleanup.

@@ -1014,7 +1014,7 @@ mod tests {
             identity(&s, "claudeAgent").unwrap()
         );
         drop(s);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }
 
@@ -1137,7 +1137,7 @@ mod plan_tests {
         );
         drop(db);
         drop(s);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }
 
@@ -1240,7 +1240,7 @@ mod binding_tests {
     }
     #[test]
     fn changed_workspace_compares_the_live_session_cwd_with_the_target_thread_workspace() {
-        let (state, mut thread, _, dir) = fixture();
+        let (state, mut thread, _, _dir) = fixture();
         thread["worktreePath"] = json!("/new-workspace");
         {
             let db = state.db.lock().unwrap();
@@ -1252,7 +1252,7 @@ mod binding_tests {
             assert_eq!(result.release_sessions, vec!["current-session"]);
         }
         drop(state);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[tokio::test]
     async fn selected_historical_bindings_keep_their_owner_keys_across_reopen_and_preserve_target_peers(
@@ -1298,11 +1298,11 @@ mod binding_tests {
             assert_eq!(db.query_row("SELECT count(*) FROM provider_native_bindings WHERE json_extract(payload,'$.releasedAt') IS NOT NULL",[],|r|r.get::<_,i64>(0)).unwrap(),2);
         }
         drop(state);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[test]
     fn historical_selected_session_background_work_refuses_the_whole_selection_atomically() {
-        let (state, mut thread, _, dir) = fixture();
+        let (state, mut thread, _, _dir) = fixture();
         {
             let mut db = state.db.lock().unwrap();
             let tx = db.transaction().unwrap();
@@ -1330,12 +1330,12 @@ mod binding_tests {
             0
         );
         drop(state);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[tokio::test]
     async fn failed_ack_preserves_binding_and_retry_then_rebind_does_not_reuse_an_old_release_receipt(
     ) {
-        let (state, thread, peer, dir) = fixture();
+        let (state, thread, peer, _dir) = fixture();
         {
             let db = state.db.lock().unwrap();
             stage(
@@ -1378,6 +1378,6 @@ mod binding_tests {
             2
         );
         drop(state);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

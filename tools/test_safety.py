@@ -3,6 +3,9 @@ from pathlib import Path
 import re
 
 FORBIDDEN = {"remove_dir_all", "rmtree"}
+RAW = re.compile(r'(?:br|r)(#*)"')
+CHAR = re.compile(r"'(?:\\(?:u\{[0-9a-fA-F_]+\}|.)|[^'\\\n])'")
+WORD = re.compile(r"[a-zA-Z_][a-zA-Z_0-9]*")
 
 
 def tokens(source):
@@ -27,9 +30,9 @@ def tokens(source):
                     index += 2
                 else:
                     index += 1
-        elif raw := re.match(r'(?:br|r)(#*)"', source[index:]):
+        elif raw := RAW.match(source, index):
             marker = '"' + raw.group(1)
-            end = source.find(marker, index + raw.end())
+            end = source.find(marker, raw.end())
             index = len(source) if end < 0 else end + len(marker)
         elif source[index] == '"':
             index += 1
@@ -41,11 +44,11 @@ def tokens(source):
                     break
                 else:
                     index += 1
-        elif char := re.match(r"'(?:\\(?:u\{[0-9a-fA-F_]+\}|.)|[^'\\\n])'", source[index:]):
-            index += char.end()
-        elif word := re.match(r"[a-zA-Z_][a-zA-Z_0-9]*", source[index:]):
+        elif char := CHAR.match(source, index):
+            index = char.end()
+        elif word := WORD.match(source, index):
             result.append((word.group(), line))
-            index += word.end()
+            index = word.end()
         else:
             if not source[index].isspace():
                 result.append((source[index], line))

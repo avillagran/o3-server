@@ -724,9 +724,7 @@ fn upstream_differential() {
     println!("differential evidence: {}", path.display());
     drop(o3);
     drop(upstream);
-    for name in ["t3", "o3", "upstream"] {
-        let _ = std::fs::remove_dir_all(root.join(name));
-    }
+    // Private differential profiles remain available until container teardown.
 
     if std::env::var_os("O3_DIFF_STRICT").is_some() {
         assert!(
@@ -1304,7 +1302,7 @@ fn upstream_concurrent_differential() {
     for name in ["t3", "o3"] {
         let home = root.join(name);
         std::fs::create_dir_all(home.join("bin")).unwrap();
-        std::os::unix::fs::symlink(
+        std::fs::copy(
             Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/concurrent-codex.py"),
             home.join("bin/codex"),
         )
@@ -1354,7 +1352,7 @@ fn upstream_concurrent_differential() {
     );
     drop(o3);
     drop(upstream);
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 
 // Opaque generated identities/revision hashes and wall-clock instants are not
@@ -1581,7 +1579,7 @@ fn upstream_control_windows() {
                     format!("claude-{mode}-{reference}")
                 });
                 std::fs::create_dir_all(home.join("bin")).unwrap();
-                std::os::unix::fs::symlink(
+                std::fs::copy(
                     Path::new(env!("CARGO_MANIFEST_DIR")).join(if instance == "codex" {
                         "tests/fixtures/concurrent-codex.py"
                     } else {
@@ -1810,7 +1808,7 @@ fn upstream_p1_readers() {
     .unwrap();
     eprintln!("P1 reader equality: {}", report["equal"]);
     assert_eq!(views[0], views[1], "consumed P1 reader mismatch");
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 
 #[test]
@@ -1938,7 +1936,7 @@ fn upstream_p2_telemetry_reader() {
     } else {
         eprintln!("Pinned reference returned no samples: CPU equivalence remains unproven");
     }
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 
 #[test]
@@ -2006,7 +2004,7 @@ fn upstream_p2_webhook_reader() {
     }
     eprintln!("signed webhook reference observations: {}", json!(views));
     assert_eq!(views[0], views[1]);
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 
 #[test]
@@ -2098,7 +2096,7 @@ fn upstream_scheduled_tasks_android_contract() {
     ] {
         assert_eq!(views[0][key], views[1][key], "{key}");
     }
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 
 #[test]

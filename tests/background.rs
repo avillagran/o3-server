@@ -261,7 +261,7 @@ fn background_cases(cases: &[(&str, bool, bool, bool)]) {
         );
         let _ = stop.send(());
         handle.join().unwrap();
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }
 
@@ -401,6 +401,6 @@ fn restart_closes_background_ownership_without_inventing_a_native_binding() {
         assert!(v["resolutionReason"].is_string());
         drop(db);
         drop(s);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

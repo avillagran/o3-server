@@ -211,6 +211,6 @@ mod title_tests {
             assert_eq!(events::sequence(&db).unwrap(), seq);
         }
         drop(state);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

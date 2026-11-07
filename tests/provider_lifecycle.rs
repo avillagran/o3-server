@@ -83,7 +83,7 @@ async fn native_forks_are_distinct_and_resume_preserves_identity() {
     }
     claude.shutdown().await;
     codex.shutdown().await;
-    std::fs::remove_dir_all(dir).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 
 #[tokio::test]
@@ -113,7 +113,7 @@ async fn live_claude_native_fork() {
     assert!(!source.is_empty());
     assert_ne!(source, fork);
     provider.shutdown().await;
-    std::fs::remove_dir_all(dir).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 
 #[tokio::test]
@@ -180,6 +180,6 @@ async fn claude_init_guard_emits_no_started_event_after_cancel_or_control() {
             );
         }
         provider.shutdown().await;
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

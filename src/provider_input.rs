@@ -288,7 +288,7 @@ mod tests {
         let attachments = json!([{"id":id,"name":"big.png","mimeType":"image/png"}]);
         let codex = materialize(&root, "look", &attachments, None, false);
         let claude = materialize(&root, "look", &attachments, None, true);
-        std::fs::remove_dir_all(&root).unwrap();
+        // Fixture trees are retained for private container teardown.
         assert!(codex.unwrap().iter().any(|v| v["type"] == "localImage"));
         assert!(claude.is_err());
     }
@@ -331,7 +331,7 @@ mod history_tests {
                 .iter()
                 .any(|v| v["type"] == "image")
         );
-        std::fs::remove_dir_all(root).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }
 
@@ -371,7 +371,7 @@ mod final_budget_tests {
         assert_eq!(files.len(), 1);
         assert_eq!(std::fs::read_to_string(files[0].path()).unwrap(), history);
         assert_eq!(content(&input, false).unwrap(), blocks);
-        std::fs::remove_dir_all(root).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }
 

@@ -41,7 +41,7 @@ fn npm_updates_only_the_original_user_prefix_and_verifies_version() {
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
     let root = std::env::temp_dir().join(format!("o3-external-npm-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
+    // Fixture trees are retained for private container teardown.
     let package = root.join("lib/node_modules/@openai/codex");
     std::fs::create_dir_all(package.join("bin")).unwrap();
     std::fs::create_dir_all(root.join("bin")).unwrap();
@@ -126,5 +126,5 @@ fn npm_updates_only_the_original_user_prefix_and_verifies_version() {
         job.join().unwrap().is_err(),
         "cancelled updater must not report success"
     );
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }

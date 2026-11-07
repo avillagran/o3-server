@@ -268,5 +268,5 @@ async fn removed_default_override_is_discovered_once_and_configured_defaults_sta
         *defaults.discover.lock().unwrap(),
         vec![vec!["codex".to_owned()], vec!["claudeAgent".to_owned()]]
     );
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }

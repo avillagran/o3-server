@@ -740,7 +740,7 @@ mod tests {
             assert_eq!(read(&s, "messages", "m")["text"], "exact durable request");
             wait(|| s.launches.active.lock().unwrap().is_empty()).await;
             drop(s);
-            std::fs::remove_dir_all(dir).unwrap();
+            // Fixture trees are retained for private container teardown.
         }
     }
     #[tokio::test]
@@ -769,7 +769,7 @@ mod tests {
             assert_eq!(*peer.0.lock().unwrap(), vec!["independent request"]);
             wait(|| s.launches.active.lock().unwrap().is_empty()).await;
             drop(s);
-            std::fs::remove_dir_all(dir).unwrap();
+            // Fixture trees are retained for private container teardown.
         }
     }
 }

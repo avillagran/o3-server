@@ -7,7 +7,7 @@ use serde_json::json;
 fn real_glab_status_through_server_and_lib_reader() {
     use std::{
         io::{Read, Write},
-        os::unix::fs::{symlink, PermissionsExt},
+        os::unix::fs::PermissionsExt,
     };
     let cli = std::env::var_os("O3_LIVE_GLAB").expect("O3_LIVE_GLAB required");
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -25,7 +25,7 @@ fn real_glab_status_through_server_and_lib_reader() {
     std::env::set_var("GLAB_CHECK_UPDATE", "false");
     std::env::set_var("GLAB_SEND_TELEMETRY", "false");
     let e = setup("glab-live");
-    symlink(cli, bin_dir().join("glab")).unwrap();
+    std::fs::copy(cli, bin_dir().join("glab")).unwrap();
     let root = e.dir("repo");
     repo(&root);
     write(&root.join("a"), "a\n");
@@ -73,5 +73,5 @@ fn real_glab_status_through_server_and_lib_reader() {
     assert!(failed["pr"].is_null());
     assert_eq!(failed["sourceControlProvider"]["kind"], "gitlab");
     server.join().unwrap();
-    std::fs::remove_dir_all(home).unwrap();
+    // Fixture trees are retained for private container teardown.
 }

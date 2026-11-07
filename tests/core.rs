@@ -56,7 +56,7 @@ fn import_backup_includes_wal_is_idempotent_and_preserves_source() {
     drop(db);
     drop(state);
     drop(source);
-    std::fs::remove_dir_all(dir).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 #[test]
 fn restart_recovers_dead_runs_requests_and_sessions_but_preserves_deferred_runs() {
@@ -128,7 +128,7 @@ fn restart_recovers_dead_runs_requests_and_sessions_but_preserves_deferred_runs(
         3
     );
     drop(s);
-    std::fs::remove_dir_all(dir).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 #[tokio::test]
 async fn snapshot_is_consistent_and_chunks_are_bounded() {
@@ -198,7 +198,7 @@ async fn snapshot_is_consistent_and_chunks_are_bounded() {
         "x".repeat(4096)
     );
     drop(s);
-    std::fs::remove_dir_all(dir).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 #[test]
 fn worktree_and_reuse_launch() {
@@ -272,7 +272,7 @@ fn worktree_and_reuse_launch() {
             == 0
     ));
     drop(s);
-    std::fs::remove_dir_all(dir).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 #[test]
 fn cli_import_operates_only_in_isolated_profile_and_rolls_back_bad_source() {
@@ -330,7 +330,7 @@ fn cli_import_operates_only_in_isolated_profile_and_rolls_back_bad_source() {
         0
     );
     drop(target);
-    std::fs::remove_dir_all(dir).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 
 #[tokio::test]
@@ -365,7 +365,7 @@ async fn shell_stream_has_no_ten_thousand_project_cap() {
     assert_eq!(v["projects"].as_array().unwrap().len(), 10002);
     assert!(chunks > 1);
     drop(s);
-    std::fs::remove_dir_all(dir).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 
 #[test]
@@ -418,7 +418,7 @@ fn control_outbox_is_receipt_atomic_and_restart_reports_uncertain_delivery() {
     assert_eq!(thread["lastControlDeliveryError"]["commandId"], "answer");
     drop(db);
     drop(s);
-    std::fs::remove_dir_all(dir).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 
 #[test]
@@ -512,7 +512,7 @@ fn restart_finalizes_streaming_transcript_and_provider_nodes() {
         count
     );
     drop(s);
-    std::fs::remove_dir_all(dir).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 
 #[test]
@@ -547,5 +547,5 @@ fn import_copies_t3_attachment_files_without_following_links_or_overwriting() {
         std::fs::read(source.join(format!("{id}.png"))).unwrap(),
         b"png bytes"
     );
-    std::fs::remove_dir_all(&dir).unwrap();
+    // Fixture trees are retained for private container teardown.
 }

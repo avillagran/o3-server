@@ -24,11 +24,11 @@ fn spawn_server() -> (String, String) {
 
 fn spawn_with_provider(fake: bool) -> (String, String) {
     let dir = std::env::temp_dir().join(format!(
-        "o3-conformance-{}-{:?}",
+        "o3-conformance-{}-{}",
         std::process::id(),
-        std::thread::current().id()
+        o3_server::store::random_id().unwrap()
     ));
-    let _ = std::fs::remove_dir_all(&dir);
+    // Fixture trees are retained for private container teardown.
     let state = o3_server::store::State::open(&dir).unwrap();
     std::fs::write(
         state.dir.join("settings.json"),

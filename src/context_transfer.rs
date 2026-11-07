@@ -1089,6 +1089,6 @@ mod tests {
             "pending"
         );
         drop(s);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

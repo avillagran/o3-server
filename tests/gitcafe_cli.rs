@@ -28,5 +28,5 @@ fn documented_cafe_api_uses_cli_login_without_exposing_credentials() {
         .unwrap();
     assert_eq!(cafe["auth"]["status"], "authenticated", "{cafe}");
     assert_eq!(cafe["auth"]["account"]["value"], "fixture-reader");
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
