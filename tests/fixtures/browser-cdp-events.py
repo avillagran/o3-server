@@ -3,7 +3,7 @@
 import json, os, sys, threading, time
 profile=next(arg.split('=',1)[1] for arg in sys.argv if arg.startswith('--user-data-dir='))
 with open(profile+'/fixture.pid','w') as output:output.write(str(os.getpid()))
-state_lock=threading.Lock(); output_lock=threading.Lock(); pages={}; sessions={}; sequence=0
+state_lock=threading.Lock(); output_lock=threading.Lock(); pages={}; sessions={}; sequence=0; reject_next_attach=False; hold_next_create=False
 
 def write(message):
     data=json.dumps(message).encode()+b'\0'
@@ -40,25 +40,43 @@ while True:
     while b'\0' in buffer:
         raw,buffer=buffer.split(b'\0',1);command=json.loads(raw)
         with open(profile+'/commands.jsonl','a') as output:output.write(json.dumps(command)+'\n')
-        method=command['method'];params=command.get('params',{});session=command.get('sessionId');result={};events=[]
+        method=command['method'];params=command.get('params',{});session=command.get('sessionId');result={};events=[];deferred=[];held=False;failure=None
         with state_lock:
             if method=='Target.createTarget':
                 sequence+=1;target='target-'+str(sequence);pages[target]={'url':params.get('url','about:blank'),'title':'Initial '+str(sequence),'closed':False};result={'targetId':target}
+                if hold_next_create:hold_next_create=False;time.sleep(6)
             elif method=='Target.attachToTarget':
-                target=params['targetId'];session_id='opaque-session-'+target;sessions[session_id]=target;result={'sessionId':session_id}
+                if reject_next_attach:reject_next_attach=False;failure={'message':'Synthetic attachment rejection'}
+                else:
+                    target=params['targetId'];session_id='opaque-session-'+target;sessions[session_id]=target;result={'sessionId':session_id}
+            elif method=='Target.closeTarget':
+                pages[params['targetId']]['closed']=True;result={'success':True}
+            elif method=='Target.getTargets':result={'targetInfos':[{'type':'page','targetId':target,'url':page['url']} for target,page in pages.items() if not page['closed']]}
             elif session in sessions:
                 target=sessions[session];page=pages[target]
                 if method=='Page.getFrameTree':result={'frameTree':{'frame':{'id':target+'-frame','url':page['url']}}}
                 elif method=='Page.getNavigationHistory':result={'currentIndex':0,'entries':[{'id':1,'url':page['url'],'title':page['title']}]}
-                elif method=='Runtime.evaluate':result={'result':{'value':{'url':page['url'],'title':page['title'],'readyState':'complete'}}}
+                elif method=='Runtime.evaluate':
+                    if params.get('fixtureHold'):
+                        page['held']=(command['id'],session);held=True
+                        events=[{'method':'Page.javascriptDialogOpening','sessionId':session,'params':{'type':'prompt','message':'Owned prompt','defaultPrompt':'default','url':page['url']}}]
+                    else:result={'result':{'value':{'url':page['url'],'title':page['title'],'readyState':'complete'}}}
+                elif method=='Page.handleJavaScriptDialog':
+                    pending=page.pop('held',None)
+                    if pending:
+                        deferred=[{'id':pending[0],'sessionId':pending[1],'result':{'result':{'value':{'unblocked':True,'accepted':params['accept'],'promptText':params.get('promptText')}}}}]
+                    events=[{'method':'Page.javascriptDialogClosed','sessionId':session,'params':{'result':params['accept']}}]
                 elif method=='Page.navigate':
                     page['url']=params['url'];request_id='navigation-'+str(command['id']);result={'frameId':target+'-frame'}
                     events=[{'method':'Network.requestWillBeSent','sessionId':session,'params':{'requestId':request_id,'loaderId':request_id,'frameId':target+'-frame','type':'Document','request':{'url':page['url'],'method':'GET'}}},{'method':'Page.frameStartedLoading','sessionId':session,'params':{'frameId':target+'-frame'}},{'method':'Page.frameNavigated','sessionId':session,'params':{'frame':{'id':target+'-frame','url':page['url']}}},{'method':'Network.responseReceived','sessionId':session,'params':{'requestId':request_id,'response':{'url':page['url'],'status':200}}},{'method':'Network.loadingFinished','sessionId':session,'params':{'requestId':request_id}},{'method':'Page.loadEventFired','sessionId':session,'params':{'timestamp':1}}]
                 elif method=='Page.captureScreenshot':result={'data':'/9j/2Q=='}
+                elif method=='Fixture.holdNextCreate':hold_next_create=True
+                elif method=='Fixture.rejectNextAttach':reject_next_attach=True
                 elif method=='Fixture.setUrl':page['url']=params['url']
                 elif method=='Fixture.emit':
                     events=[dict(event,sessionId=session) for event in params['events']]
                 elif method=='Fixture.schedule':
                     threading.Thread(target=later,args=(session,dict(params)),daemon=True).start();result={'scheduled':True}
-        write({'id':command['id'],'result':result})
+        if not held:write({'id':command['id'],**({'error':failure} if failure is not None else {'result':result})})
         for event in events:write(event)
+        for reply in deferred:write(reply)

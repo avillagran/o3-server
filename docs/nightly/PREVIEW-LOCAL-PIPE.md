@@ -7,8 +7,10 @@ no command is waiting. EOF, truncation, invalid JSON and messages reaching the
 existing 4 MiB limit end the owned connection. Actor finalization aborts and joins
 the reader before process/profile cleanup.
 
-Responses retain command-ID correlation and the existing five-second actor and
-six-second caller deadlines. Unsolicited events use the same source-proven
+Responses retain command-ID correlation and five-second active/six-second caller
+deadlines. The [transport foundation](BROWSER-TRANSPORT-LIMITS.md) adds bounded
+concurrent command correlation and owned writes so dialog answers can unblock
+held evaluations. Unsolicited events use the same source-proven
 navigation projection and strict session, target and main-frame routing as the
 desktop transport. Each local page has its own observer and completion watch;
 a shared profile does not share page identity. A separate process-completion watch

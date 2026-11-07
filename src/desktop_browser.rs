@@ -94,11 +94,19 @@ pub struct Decoded {
 #[derive(Default)]
 pub struct Decoder {
     pending: Vec<u8>,
+    max_json_bytes: Option<usize>,
     after_cr: bool,
     first_done: bool,
     failed: bool,
 }
 impl Decoder {
+    /// Bound JSON payload bytes; delimiters are not part of the pending record.
+    pub(crate) fn bounded(max_json_bytes: usize) -> Self {
+        Self {
+            max_json_bytes: Some(max_json_bytes),
+            ..Self::default()
+        }
+    }
     fn line(&mut self, unterminated: bool, output: &mut Decoded) {
         let line = std::mem::take(&mut self.pending);
         let bytes = if !self.first_done && line.starts_with(&[239, 187, 191]) {
@@ -148,6 +156,14 @@ impl Decoder {
                 }
             } else {
                 self.after_cr = false;
+                if self
+                    .max_json_bytes
+                    .is_some_and(|limit| self.pending.len() >= limit)
+                {
+                    self.pending = Vec::new();
+                    self.fail("FrameTooLarge", false, &mut output);
+                    break;
+                }
                 self.pending.push(*byte);
             }
         }
@@ -326,5 +342,19 @@ mod tests {
                 "{case}"
             );
         }
+    }
+    #[test]
+    fn configured_json_byte_bound_preserves_default_native_decoding() {
+        crate::test_sandbox::assert_isolated();
+        let text = json!({"message":"界🙂"}).to_string();
+        let wire = format!("{text}\n");
+        let mut bounded = Decoder::bounded(text.len());
+        assert_eq!(bounded.feed(wire.as_bytes()).values.len(), 1);
+        let mut small = Decoder::bounded(text.len() - 1);
+        let failed = small.feed(wire.as_bytes());
+        assert_eq!(failed.error.unwrap().reason, "FrameTooLarge");
+        assert!(small.feed(b"{}\n").values.is_empty());
+        assert!(small.finish().values.is_empty());
+        assert_eq!(Decoder::default().feed(wire.as_bytes()).values.len(), 1);
     }
 }

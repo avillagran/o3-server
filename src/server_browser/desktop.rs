@@ -1,7 +1,9 @@
 //! Frontend-owned page adoption through a private channel-owned loopback CDP relay.
 use super::*;
-use futures_util::{SinkExt, StreamExt};
+use futures_util::StreamExt;
 use tokio_tungstenite::tungstenite::Message;
+// Playwright 1.60.0 WebSocketTransport uses this receive-byte bound.
+const MAX_REPLY_BYTES: usize = 256 * 1024 * 1024;
 
 pub(super) async fn launch(
     channel: &crate::desktop_browser_channel::Channel,
@@ -32,21 +34,23 @@ pub(super) async fn launch(
     .await
     .map_err(|_| "Desktop browser connection timed out")?
     .map_err(|_| "Desktop browser connection failed")?;
-    let (mut socket, _) = tokio::time::timeout(
+    let (socket, _) = tokio::time::timeout(
         Duration::from_secs(5),
         tokio_tungstenite::client_async_with_config(
             endpoint.url(),
             stream,
             Some(
                 tokio_tungstenite::tungstenite::protocol::WebSocketConfig::default()
-                    .max_message_size(Some(4 * 1024 * 1024))
-                    .max_frame_size(Some(4 * 1024 * 1024)),
+                    .max_message_size(Some(MAX_REPLY_BYTES))
+                    .max_frame_size(Some(MAX_REPLY_BYTES)),
             ),
         ),
     )
     .await
     .map_err(|_| "Desktop browser connection timed out")?
     .map_err(|_| "Desktop browser connection failed")?;
+    let (output, mut input) = socket.split();
+    let mut writer = write::websocket(output);
     let (tx, mut rx) = mpsc::channel::<Request>(8);
     let (done_tx, done) = tokio::sync::watch::channel(false);
     let pages: events::Shared = Default::default();
@@ -56,70 +60,37 @@ pub(super) async fn launch(
     let thread_owned = thread.to_string();
     let tab_owned = tab.to_string();
     tokio::spawn(async move {
-        let mut id = 0_u64;
+        let mut calls = pending::Calls::default();
+        let mut writing_done = writer.completion();
         loop {
-            let request = tokio::select! {
-                request=rx.recv()=>request,
-                change=changes.next()=>{match change {Some(change) if change.key.thread_id==thread_owned && change.key.tab_id==tab_owned && !change.attached=>break,Some(_)=>continue,None=>break}},
-                _=stop_signal.notified()=>None,
-                incoming=socket.next()=>{
-                    match incoming{Some(Ok(Message::Text(text)))=>{if serde_json::from_str::<Value>(&text).is_ok_and(|value|events::notify(&actor_pages,&value)){break;}continue;},Some(Ok(Message::Ping(payload)))=>{if socket.send(Message::Pong(payload)).await.is_err(){break;}continue;},Some(Ok(Message::Pong(_)))=>continue,_=>break}
-                }
-            };
-            let Some((method, params, session, reply)) = request else {
-                break;
-            };
-            id += 1;
-            let work = async {
-                let mut message = json!({"id":id,"method":method,"params":params});
-                if !method.starts_with("Target.") && !method.starts_with("Browser.") {
-                    if let Some(session) = &session {
-                        message["sessionId"] = json!(session);
+            let expires = calls.deadline();
+            tokio::select! {
+                request=rx.recv(),if !calls.full()=>{
+                    let Some(request)=request else{break;};
+                    let Some(message)=calls.insert(request)else{continue;};
+                    if !writer.send(Message::Text(message.to_string().into())){break;}
+                },
+                _=pending::deadline(expires)=>{if calls.expire(tokio::time::Instant::now()){break;}},
+                _=writing_done.changed()=>break,
+                change=changes.next()=>{match change{Some(change)if change.key.thread_id==thread_owned&&change.key.tab_id==tab_owned&&!change.attached=>break,Some(_)=>{},None=>break}},
+                _=stop_signal.notified()=>break,
+                incoming=input.next()=>{
+                    match incoming{
+                        Some(Ok(Message::Text(text)))=>{
+                            let Ok(value)=serde_json::from_str::<Value>(&text)else{break;};
+                            if events::notify(&actor_pages,&value){break;}
+                            calls.complete(&value,&actor_pages);
+                        },
+                        Some(Ok(Message::Ping(payload)))=>{if !writer.send(Message::Pong(payload)){break;}},
+                        Some(Ok(Message::Pong(_)))=>{},
+                        _=>break
                     }
                 }
-                socket
-                    .send(Message::Text(message.to_string().into()))
-                    .await
-                    .map_err(|_| "CDP write failed".to_string())?;
-                loop {
-                    match socket.next().await {
-                        Some(Ok(Message::Text(text))) => {
-                            let value: Value = serde_json::from_str(&text)
-                                .map_err(|_| "Invalid CDP output".to_string())?;
-                            if events::notify(&actor_pages, &value) {
-                                return Err("Desktop browser disconnected".into());
-                            }
-                            if value["id"] == id {
-                                if value.get("error").is_some() {
-                                    return Err("Browser rejected CDP command".into());
-                                }
-                                if method == "Page.getFrameTree" {
-                                    events::frame(
-                                        &actor_pages,
-                                        session.as_deref(),
-                                        &value["result"],
-                                    );
-                                }
-                                return Ok(value["result"].clone());
-                            }
-                        }
-                        Some(Ok(Message::Ping(payload))) => socket
-                            .send(Message::Pong(payload))
-                            .await
-                            .map_err(|_| "CDP write failed".to_string())?,
-                        Some(Ok(Message::Pong(_))) => {}
-                        _ => return Err("Desktop browser disconnected".into()),
-                    }
-                }
-            };
-            let result = tokio::select! { _=async {loop {match changes.next().await {Some(change) if change.key.thread_id==thread_owned && change.key.tab_id==tab_owned && !change.attached=>break,Some(_)=>{},None=>break}}}=>Err("Desktop browser disconnected".into()),_=stop_signal.notified()=>Err("Desktop browser disconnected".into()),result=tokio::time::timeout(Duration::from_secs(5),work)=>result.unwrap_or_else(|_|Err("Browser command timed out".into()))};
-            let failed = result.is_err();
-            let _ = reply.send(result);
-            if failed {
-                break;
             }
         }
-        let _ = tokio::time::timeout(Duration::from_secs(1), socket.close(None)).await;
+        drop(calls);
+        writer.stop().await;
+        drop(input);
         endpoint.close().await;
         events::stopped(&actor_pages);
         let _ = done_tx.send(true);
@@ -202,7 +173,7 @@ mod tests {
     use super::*;
     use crate::server_browser::events::observe;
     use std::sync::{Arc, Mutex as SyncMutex};
-    use tokio::io::{AsyncBufReadExt, BufReader};
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     struct Peer {
         channel: crate::desktop_browser_channel::Channel,
         events: mpsc::UnboundedSender<Value>,
@@ -225,9 +196,34 @@ mod tests {
         let captured = messages.clone();
         let task = tokio::spawn(async move {
             let mut commands = BufReader::new(commands);
+            let mut held: Option<Value> = None;
             loop {
                 let mut line = String::new();
-                let event = tokio::select! {event=incoming.recv()=>{let Some(event)=event else{break;};event},read=commands.read_line(&mut line)=>{if !read.is_ok_and(|n|n>0){break;}let command:Value=serde_json::from_str(&line).unwrap();captured.lock().unwrap().push(command.clone());if command["type"]!="cdp"{continue;}let packet:Value=serde_json::from_str(command["message"].as_str().unwrap()).unwrap();let unrelated=json!({"type":"cdp","threadId":"thread","tabId":"tab","message":json!({"id":0,"result":{"unrelated":true}}).to_string()});launcher.write_all(format!("{unrelated}\n").as_bytes()).await.unwrap();let result=match string(&packet,"method"){"Target.getTargets"=>json!({"targetInfos":if page{json!([{"type":"worker","targetId":"worker"},{"type":"page","targetId":"first-page"},{"type":"page","targetId":"second-page"}])}else{json!([])}}),"Target.attachToTarget"=>json!({"sessionId":"opaque/session 😀"}),_=>json!({"accepted":true})};json!({"type":"cdp","threadId":"thread","tabId":"tab","message":json!({"id":packet["id"],"result":result}).to_string()})}};
+                let event = tokio::select! {event=incoming.recv()=>{let Some(event)=event else{break;};event},read=commands.read_line(&mut line)=>{
+                    if !read.is_ok_and(|n|n>0){break;}
+                    let command:Value=serde_json::from_str(&line).unwrap();captured.lock().unwrap().push(command.clone());if command["type"]!="cdp"{continue;}
+                    let packet:Value=serde_json::from_str(command["message"].as_str().unwrap()).unwrap();
+                    let envelope=|message:Value|json!({"type":"cdp","threadId":"thread","tabId":"tab","message":message.to_string()});
+                    if packet["method"]=="Runtime.evaluate"&&packet["params"]["fixtureHold"]==true{
+                        held=Some(packet.clone());let opening=envelope(json!({"method":"Page.javascriptDialogOpening","sessionId":packet["sessionId"],"params":{"type":"prompt","message":"Owned desktop prompt","defaultPrompt":"default"}}));
+                        launcher.write_all(format!("{opening}\n").as_bytes()).await.unwrap();continue;
+                    }
+                    if packet["method"]=="Page.handleJavaScriptDialog"{
+                        if let Some(pending)=held.take(){
+                            let closed=envelope(json!({"method":"Page.javascriptDialogClosed","sessionId":pending["sessionId"],"params":{"result":packet["params"]["accept"]}}));
+                            let reply=envelope(json!({"id":pending["id"],"sessionId":pending["sessionId"],"result":{"result":{"value":{"unblocked":true,"accepted":packet["params"]["accept"]}}}}));
+                            launcher.write_all(format!("{closed}\n{reply}\n").as_bytes()).await.unwrap();
+                        }
+                    }
+                    let unrelated=envelope(json!({"id":0,"result":{"unrelated":true}}));launcher.write_all(format!("{unrelated}\n").as_bytes()).await.unwrap();
+                    let result=match string(&packet,"method"){
+                        "Target.getTargets"=>json!({"targetInfos":if page{json!([{"type":"worker","targetId":"worker"},{"type":"page","targetId":"first-page"},{"type":"page","targetId":"second-page"}])}else{json!([])}}),
+                        "Target.attachToTarget"=>json!({"sessionId":"opaque/session 😀"}),
+                        "Page.getFrameTree"=>json!({"frameTree":{"frame":{"id":"first-page","url":"https://example.com/owned"}}}),
+                        "Runtime.evaluate" if packet["params"]["fixtureBytes"].is_u64()=>json!({"result":{"value":packet["params"]["fixtureText"].as_str().unwrap_or("x").repeat(packet["params"]["fixtureBytes"].as_u64().unwrap()as usize)}}),
+                        _=>json!({"accepted":true})};
+                    let mut reply=json!({"id":packet["id"],"result":result});if let Some(session)=packet.get("sessionId"){reply["sessionId"]=session.clone();}envelope(reply)
+                }};
                 launcher
                     .write_all(format!("{event}\n").as_bytes())
                     .await
@@ -392,6 +388,114 @@ mod tests {
             .unwrap()
             .iter()
             .any(|message| message["type"] == "release"));
+        peer.task.abort();
+    }
+    #[tokio::test]
+    async fn desktop_dialog_answer_unblocks_evaluate_with_opaque_session_and_no_page_close() {
+        let peer = setup(true).await;
+        let browser = Arc::new(Browsers::default());
+        browser
+            .open_desktop(&peer.channel, "thread", "tab", "default")
+            .await
+            .unwrap();
+        let owned = browser.clone();
+        let eval = tokio::spawn(async move {
+            owned
+                .command(
+                    "thread",
+                    "tab",
+                    "Runtime.evaluate",
+                    json!({"fixtureHold":true}),
+                )
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !packets(&peer)
+                .iter()
+                .any(|packet| packet["params"]["fixtureHold"] == true)
+            {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(!eval.is_finished());
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            browser.command(
+                "thread",
+                "tab",
+                "Page.handleJavaScriptDialog",
+                json!({"accept":false}),
+            ),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let result = tokio::time::timeout(Duration::from_secs(2), eval)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            result["result"]["value"],
+            json!({"unblocked":true,"accepted":false})
+        );
+        assert_eq!(
+            browser.connection("thread", "tab").await,
+            Some((Origin::Desktop, true))
+        );
+        browser.shutdown().await;
+        assert!(packets(&peer)
+            .iter()
+            .all(|packet| packet["method"] != "Target.closeTarget"
+                && packet["method"] != "Browser.close"));
+        assert!(peer
+            .messages
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|message| message["type"] == "release"));
+        peer.task.abort();
+    }
+    #[tokio::test]
+    async fn desktop_native_sized_reply_crosses_private_fd_endpoint_and_owned_actor() {
+        let peer = setup(true).await;
+        let browser = Browsers::default();
+        browser
+            .open_desktop(&peer.channel, "thread", "tab", "default")
+            .await
+            .unwrap();
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/preview-transport-limits-4288.json"
+        ))
+        .unwrap();
+        assert_eq!(fixture["playwright"]["receiveBytes"], MAX_REPLY_BYTES);
+        assert_eq!(fixture["nativeSerializedValueBudget"], 64 * 1024 * 1024);
+        for index in [2, 3, 4] {
+            let case = &fixture["cases"][index];
+            assert_eq!(case["expected"]["fits"], true);
+            let symbol = case["input"]["text"].as_str().unwrap();
+            let count = case["input"]["repeat"].as_u64().unwrap() as usize;
+            let result = browser
+                .command(
+                    "thread",
+                    "tab",
+                    "Runtime.evaluate",
+                    json!({"fixtureBytes":count,"fixtureText":symbol}),
+                )
+                .await
+                .unwrap();
+            let text = result["result"]["value"].as_str().unwrap();
+            assert_eq!(text.len(), symbol.len() * count);
+            let expected = symbol.chars().next().unwrap();
+            assert!(text.chars().all(|character| character == expected));
+        }
+        assert_eq!(
+            browser.connection("thread", "tab").await,
+            Some((Origin::Desktop, true))
+        );
+        browser.shutdown().await;
         peer.task.abort();
     }
     #[test]

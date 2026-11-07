@@ -24,10 +24,13 @@ pub struct Change {
 }
 struct State {
     kernel: Kernel,
+    input_faulted: bool,
     next_subscription: u64,
     changes: HashMap<u64, mpsc::UnboundedSender<Change>>,
     inbound: HashMap<String, Arc<endpoint::Inbound>>,
 }
+// Client event encoders reserve one byte for LF inside their 256 MiB wire budget.
+const MAX_EVENT_JSON_BYTES: usize = 256 * 1024 * 1024 - 1;
 type Shared = Arc<Mutex<State>>;
 struct Command {
     line: String,
@@ -83,13 +86,21 @@ pub struct Channel {
 impl Channel {
     /// Own both streams until the last channel handle is dropped. Input shutdown
     /// clears visibility but preserves attachment state, as in the native channel.
-    pub fn start<R, W>(mut input: R, mut control: W) -> Self
+    pub fn start<R, W>(input: R, control: W) -> Self
+    where
+        R: AsyncRead + Unpin + Send + 'static,
+        W: AsyncWrite + Unpin + Send + 'static,
+    {
+        Self::start_limited(input, control, MAX_EVENT_JSON_BYTES)
+    }
+    fn start_limited<R, W>(mut input: R, mut control: W, max_json_bytes: usize) -> Self
     where
         R: AsyncRead + Unpin + Send + 'static,
         W: AsyncWrite + Unpin + Send + 'static,
     {
         let state = Arc::new(Mutex::new(State {
             kernel: Kernel::new(true, true),
+            input_faulted: false,
             next_subscription: 0,
             changes: HashMap::new(),
             inbound: HashMap::new(),
@@ -109,7 +120,7 @@ impl Channel {
         let shared = state.clone();
         let reader = tokio::spawn(async move {
             let _guard = ReaderGuard(shared.clone());
-            let mut decoder = Decoder::default();
+            let mut decoder = Decoder::bounded(max_json_bytes);
             let mut buffer = vec![0; 16 * 1024];
             loop {
                 let batch = match input.read(&mut buffer).await {
@@ -117,7 +128,14 @@ impl Channel {
                     Ok(count) => {
                         let batch = decoder.feed(&buffer[..count]);
                         Self::events(&shared, batch.values);
-                        if batch.error.is_some() {
+                        if let Some(error) = batch.error {
+                            if error.reason == "FrameTooLarge" {
+                                let mut state = shared.lock().unwrap();
+                                state.input_faulted = true;
+                                for inbound in state.inbound.values() {
+                                    inbound.fault();
+                                }
+                            }
                             return;
                         }
                         continue;
@@ -361,5 +379,55 @@ mod tests {
         let next: Value = serde_json::from_slice(&line).unwrap();
         assert_eq!(next["threadId"], "next");
         next_write.await.unwrap();
+    }
+    #[tokio::test]
+    async fn configured_record_overflow_fences_the_owned_loopback_endpoint() {
+        use futures_util::StreamExt;
+        use tokio_tungstenite::tungstenite::Message;
+        crate::test_sandbox::assert_isolated();
+        let (mut launcher, input) = tokio::io::duplex(4096);
+        let (control, _commands) = tokio::io::duplex(4096);
+        let channel = Channel::start_limited(input, control, 128);
+        let key = TabKey {
+            thread_id: "thread".into(),
+            tab_id: "tab".into(),
+        };
+        launcher
+            .write_all(b"{\"type\":\"attached\",\"threadId\":\"thread\",\"tabId\":\"tab\"}\n")
+            .await
+            .unwrap();
+        assert!(channel.await_attached(&key, Duration::from_secs(1)).await);
+        let endpoint = channel.endpoint(key).await.unwrap();
+        let address = url::Url::parse(endpoint.url()).expect("invalid owned endpoint");
+        let stream = tokio::net::TcpStream::connect(("127.0.0.1", address.port().unwrap()))
+            .await
+            .expect("owned endpoint unavailable");
+        let Ok(Ok((mut socket, _))) = tokio::time::timeout(
+            Duration::from_secs(2),
+            tokio_tungstenite::client_async(endpoint.url(), stream),
+        )
+        .await
+        else {
+            panic!("private endpoint connection failed");
+        };
+        launcher.write_all(&[b'x'; 129]).await.unwrap();
+        let closed = tokio::time::timeout(Duration::from_secs(2), socket.next())
+            .await
+            .expect("oversized input did not fence endpoint");
+        assert!(matches!(
+            closed,
+            None | Some(Ok(Message::Close(_))) | Some(Err(_))
+        ));
+        assert!(
+            channel
+                .endpoint(TabKey {
+                    thread_id: "thread".into(),
+                    tab_id: "replacement".into()
+                })
+                .await
+                .is_err(),
+            "faulted input cannot admit a replacement endpoint"
+        );
+        endpoint.close().await;
     }
 }

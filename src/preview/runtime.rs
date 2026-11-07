@@ -915,7 +915,18 @@ mod tests {
         peer.events
             .send(json!({"type":"attached","threadId":"thread","tabId":tab}))
             .unwrap();
-        let opened = open.await.unwrap().unwrap();
+        let opened = open.await.unwrap().unwrap_or_else(|error| {
+            let methods = peer
+                .messages
+                .lock()
+                .unwrap()
+                .iter()
+                .filter_map(|message| message["message"].as_str())
+                .filter_map(|message| serde_json::from_str::<Value>(message).ok())
+                .map(|packet| json!({"id":packet["id"],"method":packet["method"]}))
+                .collect::<Vec<_>>();
+            panic!("desktop setup failed: {error}; protocol methods: {methods:?}")
+        });
         assert_eq!(opened["tabId"], tab);
         assert_eq!(
             state
@@ -1786,5 +1797,230 @@ mod tests {
         assert_eq!(status()["description"], "ERR_ABORTED");
         close(&state, "network", Some(tab)).await;
         shutdown(&state.streams.p2.preview).await;
+    }
+    #[tokio::test]
+    async fn local_dialog_answer_unblocks_an_already_pending_evaluate() {
+        let state = state();
+        *state
+            .streams
+            .p2
+            .preview
+            .browser
+            .fixture_binary
+            .lock()
+            .unwrap() = Some(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/browser-cdp-events.py"),
+        );
+        let opened = call(
+            &state,
+            "preview.open",
+            &json!({"threadId":"dialog","runtime":"server","url":"https://example.com/"}),
+        )
+        .await
+        .unwrap();
+        let tab = tab_of(&opened).to_owned();
+        let browser = state.streams.p2.preview.browser.clone();
+        let eval_tab = tab.clone();
+        let eval = tokio::spawn(async move {
+            browser
+                .command(
+                    "dialog",
+                    &eval_tab,
+                    "Runtime.evaluate",
+                    json!({"fixtureHold":true}),
+                )
+                .await
+        });
+        let profile = std::fs::read_dir(state.dir.join("browser-profiles"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        wait(|| {
+            std::fs::read_to_string(profile.join("commands.jsonl")).is_ok_and(|lines| {
+                lines
+                    .lines()
+                    .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+                    .any(|value| {
+                        value["method"] == "Runtime.evaluate"
+                            && value["params"]["fixtureHold"] == true
+                    })
+            })
+        })
+        .await;
+        assert!(!eval.is_finished());
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            state.streams.p2.preview.browser.command(
+                "dialog",
+                &tab,
+                "Page.handleJavaScriptDialog",
+                json!({"accept":true,"promptText":"Owned answer"}),
+            ),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let result = tokio::time::timeout(Duration::from_secs(2), eval)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            result["result"]["value"],
+            json!({"unblocked":true,"accepted":true,"promptText":"Owned answer"})
+        );
+        assert_eq!(
+            state
+                .streams
+                .p2
+                .preview
+                .browser
+                .screenshot("dialog", &tab)
+                .await
+                .unwrap(),
+            vec![255, 216, 255, 217]
+        );
+        close(&state, "dialog", Some(&tab)).await;
+        shutdown(&state.streams.p2.preview).await;
+        assert!(profile.join("commands.jsonl").exists());
+    }
+    #[tokio::test]
+    async fn failed_local_setup_closes_only_its_new_target_in_a_shared_process() {
+        let state = state();
+        *state
+            .streams
+            .p2
+            .preview
+            .browser
+            .fixture_binary
+            .lock()
+            .unwrap() = Some(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/browser-cdp-events.py"),
+        );
+        let first=call(&state,"preview.open",&json!({"threadId":"first","runtime":"server","profileId":"default","url":"https://example.com/first"})).await.unwrap();
+        let tab = tab_of(&first);
+        let browser = &state.streams.p2.preview.browser;
+        browser
+            .command("first", tab, "Fixture.rejectNextAttach", json!({}))
+            .await
+            .unwrap();
+        let failed=call(&state,"preview.open",&json!({"threadId":"second","runtime":"server","profileId":"default","url":"https://example.com/second"})).await.unwrap_err();
+        assert_eq!(failed["message"], "Browser rejected CDP command");
+        let targets = browser
+            .command("first", tab, "Target.getTargets", json!({}))
+            .await
+            .unwrap();
+        assert_eq!(targets["targetInfos"].as_array().unwrap().len(), 1);
+        assert_eq!(targets["targetInfos"][0]["targetId"], "target-1");
+        assert_eq!(
+            browser.screenshot("first", tab).await.unwrap(),
+            vec![255, 216, 255, 217]
+        );
+        assert!(state
+            .streams
+            .p2
+            .preview
+            .inner
+            .lock()
+            .unwrap()
+            .kernel
+            .all()
+            .iter()
+            .all(|snapshot| snapshot["threadId"] != "second"));
+        let profile = std::fs::read_dir(state.dir.join("browser-profiles"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        let pid: i32 = std::fs::read_to_string(profile.join("fixture.pid"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(unsafe { libc::kill(pid, 0) }, 0);
+        close(&state, "first", Some(tab)).await;
+        shutdown(&state.streams.p2.preview).await;
+        assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
+        let commands = std::fs::read_to_string(profile.join("commands.jsonl")).unwrap();
+        let closed = commands
+            .lines()
+            .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+            .filter(|value| value["method"] == "Target.closeTarget")
+            .map(|value| value["params"]["targetId"].clone())
+            .collect::<Vec<_>>();
+        assert_eq!(closed, vec![json!("target-2"), json!("target-1")]);
+    }
+    #[tokio::test]
+    async fn timed_out_local_creation_reaps_its_owned_process_without_an_unknown_target() {
+        let state = state();
+        *state
+            .streams
+            .p2
+            .preview
+            .browser
+            .fixture_binary
+            .lock()
+            .unwrap() = Some(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/browser-cdp-events.py"),
+        );
+        let opened=call(&state,"preview.open",&json!({"threadId":"first","runtime":"server","profileId":"default","url":"https://example.com/"})).await.unwrap();
+        let tab = tab_of(&opened);
+        let browser = &state.streams.p2.preview.browser;
+        let profile = std::fs::read_dir(state.dir.join("browser-profiles"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        let pid: i32 = std::fs::read_to_string(profile.join("fixture.pid"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        browser
+            .command("first", tab, "Fixture.holdNextCreate", json!({}))
+            .await
+            .unwrap();
+        let started = tokio::time::Instant::now();
+        let failed = call(
+            &state,
+            "preview.open",
+            &json!({"threadId":"second","runtime":"server","profileId":"default"}),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(failed["message"], "Browser command timed out");
+        assert!(started.elapsed() >= Duration::from_secs(5));
+        assert_eq!(
+            unsafe { libc::kill(pid, 0) },
+            -1,
+            "unknown late target is fenced by actual process reaping"
+        );
+        wait(|| {
+            state
+                .streams
+                .p2
+                .preview
+                .inner
+                .lock()
+                .unwrap()
+                .kernel
+                .all()
+                .is_empty()
+        })
+        .await;
+        shutdown(&state.streams.p2.preview).await;
+        let commands = std::fs::read_to_string(profile.join("commands.jsonl")).unwrap();
+        assert!(
+            !commands
+                .lines()
+                .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+                .any(|value| value["method"] == "Target.closeTarget"),
+            "no close command invents an unreceived target id"
+        );
     }
 }

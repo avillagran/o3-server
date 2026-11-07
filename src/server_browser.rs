@@ -8,14 +8,13 @@ use std::{
     process::Stdio,
     time::Duration,
 };
-use tokio::{
-    io::AsyncWriteExt,
-    sync::{mpsc, oneshot, Mutex},
-};
+use tokio::sync::{mpsc, oneshot, Mutex};
 
 mod desktop;
 mod events;
+mod pending;
 mod pipe;
+mod write;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Origin {
@@ -24,12 +23,14 @@ pub enum Origin {
 }
 
 const LIFETIME: Duration = Duration::from_secs(1800);
-type Request = (
-    String,
-    Value,
-    Option<String>,
-    oneshot::Sender<Result<Value, String>>,
-);
+struct Request {
+    method: String,
+    params: Value,
+    session: Option<String>,
+    reply: oneshot::Sender<Result<Value, String>>,
+    expires: tokio::time::Instant,
+}
+
 #[derive(Default)]
 pub struct Browsers {
     #[cfg(test)]
@@ -117,10 +118,17 @@ async fn request_in(
     session: Option<String>,
 ) -> Result<Value, String> {
     let (reply, rx) = oneshot::channel();
-    tokio::time::timeout(Duration::from_secs(6), async {
-        tx.send((method.into(), params, session, reply))
-            .await
-            .map_err(|_| "Browser session ended")?;
+    let expires = tokio::time::Instant::now() + Duration::from_secs(6);
+    tokio::time::timeout_at(expires, async {
+        tx.send(Request {
+            method: method.into(),
+            params,
+            session,
+            reply,
+            expires,
+        })
+        .await
+        .map_err(|_| "Browser session ended")?;
         rx.await.map_err(|_| "Browser session ended")?
     })
     .await
@@ -220,7 +228,8 @@ async fn launch(
     drop(child_pipe);
     let group = Group(child.id().unwrap());
     let socket = tokio::net::UnixStream::from_std(parent).map_err(|_| "Cannot open CDP pipe")?;
-    let (input, mut output) = socket.into_split();
+    let (input, output) = socket.into_split();
+    let mut writer = write::pipe(output);
     let (mut incoming, reader_task) = pipe::start(input);
     let reader_abort = pipe::Abort(reader_task.abort_handle());
     let pages: events::Shared = Default::default();
@@ -234,61 +243,31 @@ async fn launch(
         let _reader_abort = reader_abort;
         let deadline = tokio::time::sleep(LIFETIME);
         tokio::pin!(deadline);
-        let mut id = 0_u64;
+        let mut calls = pending::Calls::default();
+        let mut writing_done = writer.completion();
         loop {
-            let next = tokio::select! {
-                request=rx.recv()=>request,
-                _=stop_signal.notified()=>None,
-                _=&mut deadline=>None,
-                _=child.wait()=>None,
-                packet=incoming.recv()=>{match packet{Some(Ok(value))=>{if events::notify(&actor_pages,&value){break;}continue;},_=>break}}
-            };
-            let Some((method, params, session, reply)) = next else {
-                break;
-            };
-            id += 1;
-            let work = async {
-                let mut message = json!({"id":id,"method":method,"params":params});
-                if let Some(session) = session
-                    .as_ref()
-                    .filter(|_| !method.starts_with("Target.") && !method.starts_with("Browser."))
-                {
-                    message["sessionId"] = json!(session);
+            let expires = calls.deadline();
+            tokio::select! {
+                next=rx.recv(),if !calls.full()=>{
+                    let Some(next)=next else{break;};
+                    let Some(message)=calls.insert(next)else{continue;};
+                    let mut packet=match serde_json::to_vec(&message){Ok(packet)=>packet,Err(_)=>break};packet.push(0);
+                    if !writer.send(packet){break;}
+                },
+                _=pending::deadline(expires)=>{if calls.expire(tokio::time::Instant::now()){break;}},
+                _=writing_done.changed()=>break,
+                _=stop_signal.notified()=>break,
+                _=&mut deadline=>break,
+                _=child.wait()=>break,
+                packet=incoming.recv()=>{
+                    let Some(Ok(value))=packet else{break;};
+                    if events::notify(&actor_pages,&value){break;}
+                    calls.complete(&value,&actor_pages);
                 }
-                let mut packet =
-                    serde_json::to_vec(&message).map_err(|_| "Invalid CDP request".to_string())?;
-                packet.push(0);
-                output
-                    .write_all(&packet)
-                    .await
-                    .map_err(|_| "CDP write failed".to_string())?;
-                loop {
-                    let value = incoming.recv().await.ok_or("CDP connection closed")??;
-                    if events::notify(&actor_pages, &value) {
-                        return Err("Browser pages closed".to_string());
-                    }
-                    if value["id"] == id {
-                        if value.get("error").is_some() {
-                            return Err("Browser rejected CDP command".into());
-                        }
-                        if method == "Page.getFrameTree" {
-                            events::frame(&actor_pages, session.as_deref(), &value["result"]);
-                        }
-                        return Ok(value["result"].clone());
-                    }
-                }
-            };
-            let result = tokio::select! {
-                _=stop_signal.notified()=>Err("Browser session ended".into()),
-                _=&mut deadline=>Err("Browser session ended".into()),
-                result=tokio::time::timeout(Duration::from_secs(5),work)=>result.unwrap_or_else(|_|Err("Browser command timed out".into()))
-            };
-            let failed = result.is_err();
-            let _ = reply.send(result);
-            if failed {
-                break;
             }
         }
+        drop(calls);
+        writer.stop().await;
         reader_task.abort();
         let _ = reader_task.await;
         let _ = child.kill().await;
@@ -323,6 +302,29 @@ async fn launch(
         done,
         cancel,
     })
+}
+
+async fn rollback_setup(tabs: &BTreeMap<(String, String), Tab>, browser: Tab, fence: bool) {
+    if let (Some(pages), Some(session)) = (&browser.events, &browser.session) {
+        events::remove(pages, session);
+    }
+    let closed = if let Some(target) = &browser.target {
+        request(
+            &browser.tx,
+            "Target.closeTarget",
+            json!({"targetId":target}),
+        )
+        .await
+        .is_ok()
+    } else {
+        true
+    };
+    let shared = tabs
+        .values()
+        .any(|other| !*other.done.borrow() && other.tx.same_channel(&browser.tx));
+    if fence || !closed || !shared {
+        stop(browser).await;
+    }
 }
 
 struct Viewer<'a> {
@@ -457,86 +459,108 @@ impl Browsers {
                 .await
                 .map_err(error)?
         };
-        // A browser-level request creates a page. The actor routes page commands to
-        // the attached target using flattened sessionId.
-        let target = request(
+        // Setup owns its target before admission, including when a profile reuses a process.
+        browser.target = None;
+        browser.session = None;
+        browser.navigation = None;
+        let target = match request(
             &browser.tx,
             "Target.createTarget",
             json!({"url":"about:blank"}),
         )
         .await
-        .map_err(error)?;
-        let attached = request(
-            &browser.tx,
-            "Target.attachToTarget",
-            json!({"targetId":target["targetId"],"flatten":true}),
-        )
-        .await
-        .map_err(error)?;
-        browser.session = attached["sessionId"].as_str().map(str::to_owned);
-        browser.target = target["targetId"].as_str().map(str::to_owned);
-        if let (Some(pages), Some(session), Some(target)) =
-            (&browser.events, &browser.session, &browser.target)
         {
-            let (done, navigation) = events::register(pages, session, target);
-            browser.done = done;
-            browser.navigation = Some(navigation);
-        }
-        request_in(
-            &browser.tx,
-            "Page.enable",
-            json!({}),
-            browser.session.clone(),
-        )
-        .await
-        .map_err(error)?;
-        request_in(
-            &browser.tx,
-            "Page.getFrameTree",
-            json!({}),
-            browser.session.clone(),
-        )
-        .await
-        .map_err(error)?;
-        request_in(
-            &browser.tx,
-            "Network.enable",
-            json!({}),
-            browser.session.clone(),
-        )
-        .await
-        .map_err(error)?;
-        request_in(
-            &browser.tx,
-            "Network.setBlockedURLs",
-            json!({"urls":["file://*","ftp://*"]}),
-            browser.session.clone(),
-        )
-        .await
-        .map_err(error)?;
-        request(
-            &browser.tx,
-            "Browser.setDownloadBehavior",
-            json!({"behavior":"deny"}),
-        )
-        .await
-        .map_err(error)?;
-        request(
-            &browser.tx,
-            "Target.setDiscoverTargets",
-            json!({"discover":true}),
-        )
-        .await
-        .map_err(error)?;
-        if let Some(url) = url {
+            Ok(target) => target,
+            Err(cause) => {
+                let fence = cause == "Browser command timed out";
+                rollback_setup(&tabs, browser, fence).await;
+                return Err(error(cause));
+            }
+        };
+        let Some(target_id) = target["targetId"]
+            .as_str()
+            .filter(|value| !value.is_empty())
+        else {
+            rollback_setup(&tabs, browser, true).await;
+            return Err(error("Browser target creation failed".into()));
+        };
+        browser.target = Some(target_id.to_owned());
+        let initialized: Result<(), String> = async {
+            let attached = request(
+                &browser.tx,
+                "Target.attachToTarget",
+                json!({"targetId":target["targetId"],"flatten":true}),
+            )
+            .await?;
+            browser.session = Some(
+                attached["sessionId"]
+                    .as_str()
+                    .filter(|value| !value.is_empty())
+                    .ok_or("Browser page attachment failed")?
+                    .to_owned(),
+            );
+            if let (Some(pages), Some(session), Some(target)) =
+                (&browser.events, &browser.session, &browser.target)
+            {
+                let (done, navigation) = events::register(pages, session, target);
+                browser.done = done;
+                browser.navigation = Some(navigation);
+            }
             request_in(
                 &browser.tx,
-                "Page.navigate",
-                json!({"url":url}),
+                "Page.enable",
+                json!({}),
                 browser.session.clone(),
             )
-            .await
-            .map_err(error)?;
+            .await?;
+            request_in(
+                &browser.tx,
+                "Page.getFrameTree",
+                json!({}),
+                browser.session.clone(),
+            )
+            .await?;
+            request_in(
+                &browser.tx,
+                "Network.enable",
+                json!({}),
+                browser.session.clone(),
+            )
+            .await?;
+            request_in(
+                &browser.tx,
+                "Network.setBlockedURLs",
+                json!({"urls":["file://*","ftp://*"]}),
+                browser.session.clone(),
+            )
+            .await?;
+            request(
+                &browser.tx,
+                "Browser.setDownloadBehavior",
+                json!({"behavior":"deny"}),
+            )
+            .await?;
+            request(
+                &browser.tx,
+                "Target.setDiscoverTargets",
+                json!({"discover":true}),
+            )
+            .await?;
+            if let Some(url) = url {
+                request_in(
+                    &browser.tx,
+                    "Page.navigate",
+                    json!({"url":url}),
+                    browser.session.clone(),
+                )
+                .await?;
+            }
+            Ok(())
+        }
+        .await;
+        if let Err(cause) = initialized {
+            rollback_setup(&tabs, browser, false).await;
+            return Err(error(cause));
         }
         tabs.insert((thread.into(), tab.into()), browser);
         Ok(())

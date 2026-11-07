@@ -29,6 +29,7 @@ use tokio_tungstenite::{
 pub(super) struct Inbound {
     state: Mutex<QueueState>,
     changed: Notify,
+    fault_changed: Notify,
 }
 struct Admission {
     path: String,
@@ -50,6 +51,7 @@ impl Callback for Admission {
 struct QueueState {
     messages: VecDeque<String>,
     closed: bool,
+    failed: bool,
 }
 impl Inbound {
     pub(super) fn shutdown(&self) {
@@ -58,6 +60,29 @@ impl Inbound {
         state.messages.clear();
         drop(state);
         self.changed.notify_waiters();
+    }
+    pub(super) fn fault(&self) {
+        let mut state = self.state.lock().unwrap();
+        state.closed = true;
+        state.failed = true;
+        state.messages.clear();
+        drop(state);
+        self.changed.notify_waiters();
+        self.fault_changed.notify_waiters();
+    }
+    fn failed(&self) -> bool {
+        self.state.lock().unwrap().failed
+    }
+    async fn faulted(&self) {
+        loop {
+            let changed = self.fault_changed.notified();
+            tokio::pin!(changed);
+            changed.as_mut().enable();
+            if self.failed() {
+                return;
+            }
+            changed.await;
+        }
     }
     pub(super) fn offer(&self, message: String) {
         let mut state = self.state.lock().unwrap();
@@ -143,6 +168,12 @@ impl Drop for Endpoint {
 
 impl Channel {
     pub async fn endpoint(&self, key: TabKey) -> io::Result<Endpoint> {
+        if self.state.lock().unwrap().input_faulted {
+            return Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "Desktop browser input failed",
+            ));
+        }
         let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).await?;
         let port = listener.local_addr()?.port();
         let mut secret = [0; 24];
@@ -152,11 +183,19 @@ impl Channel {
             state: Mutex::new(QueueState {
                 messages: VecDeque::new(),
                 closed: false,
+                failed: false,
             }),
             changed: Notify::new(),
+            fault_changed: Notify::new(),
         });
         {
             let mut state = self.state.lock().unwrap();
+            if state.input_faulted {
+                return Err(io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    "Desktop browser input failed",
+                ));
+            }
             state.inbound.insert(key.id(), inbound.clone());
             if !state.kernel.is_attached(&key) {
                 state.inbound.remove(&key.id());
@@ -218,6 +257,7 @@ async fn relay(
     let mut outbound = true;
     loop {
         tokio::select! {
+            _=queue.faulted()=>return,
             incoming = socket.next() => {
                 let message = match incoming {
                     Some(Ok(Message::Text(text))) => text.to_string(),
@@ -229,12 +269,12 @@ async fn relay(
                     Some(Ok(Message::Pong(_))) => continue,
                     _ => return,
                 };
-                channel.command(json!({"type":"cdp","threadId":thread_id,"tabId":tab_id,"message":message})).await;
+                tokio::select!{_=queue.faulted()=>return,_=channel.command(json!({"type":"cdp","threadId":thread_id,"tabId":tab_id,"message":message}))=>{}};
             }
             message = queue.next(), if outbound => {
                 match message {
                     Some(message) => if socket.send(Message::Text(message.into())).await.is_err() { return; },
-                    None => { outbound = false; }
+                    None => { if queue.failed(){return;}outbound = false; }
                 }
             }
         }
@@ -431,5 +471,58 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+    #[tokio::test]
+    async fn fault_subscription_cannot_steal_an_ordinary_reply_wakeup() {
+        use std::future::Future as _;
+        crate::test_sandbox::assert_isolated();
+        let queue = Arc::new(Inbound {
+            state: Mutex::new(QueueState {
+                messages: VecDeque::new(),
+                closed: false,
+                failed: false,
+            }),
+            changed: Notify::new(),
+            fault_changed: Notify::new(),
+        });
+        let (ready, registered) = tokio::sync::oneshot::channel();
+        let owned = queue.clone();
+        let fault = tokio::spawn(async move {
+            let mut waiting = Box::pin(owned.faulted());
+            assert!(
+                std::future::poll_fn(|cx| std::task::Poll::Ready(waiting.as_mut().poll(cx)))
+                    .await
+                    .is_pending()
+            );
+            let _ = ready.send(());
+            waiting.await;
+        });
+        registered.await.unwrap();
+        let (ready, registered) = tokio::sync::oneshot::channel();
+        let owned = queue.clone();
+        let read = tokio::spawn(async move {
+            let mut waiting = Box::pin(owned.next());
+            assert!(
+                std::future::poll_fn(|cx| std::task::Poll::Ready(waiting.as_mut().poll(cx)))
+                    .await
+                    .is_pending()
+            );
+            let _ = ready.send(());
+            waiting.await
+        });
+        registered.await.unwrap();
+        queue.offer("owned reply".into());
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), read)
+                .await
+                .unwrap()
+                .unwrap(),
+            Some("owned reply".into())
+        );
+        queue.fault();
+        tokio::time::timeout(Duration::from_secs(1), fault)
+            .await
+            .unwrap()
+            .unwrap();
     }
 }
