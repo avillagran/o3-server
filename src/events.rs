@@ -571,6 +571,20 @@ pub(crate) fn dispatch_prepared(
     c: &Value,
     authority: Option<&crate::mcp_access::Authority>,
 ) -> Result<Value> {
+    dispatch_prepared_with_auto(s, c, authority, false)
+}
+pub(crate) fn dispatch_auto_arm(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
+    if c["type"] != "thread.metadata.update" || !c["limitRecovery"].is_object() {
+        return Err("automatic recovery requires a metadata update".into());
+    }
+    dispatch_prepared_with_auto(s, c, None, true)
+}
+fn dispatch_prepared_with_auto(
+    s: &std::sync::Arc<State>,
+    c: &Value,
+    authority: Option<&crate::mcp_access::Authority>,
+    automatic_recovery: bool,
+) -> Result<Value> {
     if s.rollback_pending
         .load(std::sync::atomic::Ordering::Acquire)
     {
@@ -690,6 +704,20 @@ pub(crate) fn dispatch_prepared(
     if kind != "thread.delete" && !t["deletedAt"].is_null() {
         return Err("The thread was deleted".into());
     }
+    if kind == "message.dispatch" && !crate::limits::admit_continuation(&tx, &mut t, c, now_ms())? {
+        put(&tx, "thread", tid, tid, &t)?;
+        append(&tx, tid, "thread.metadata-updated", t.clone(), &t)?;
+        let result = json!({"sequence":sequence(&tx)?});
+        tx.execute(
+            "INSERT INTO receipts VALUES(?,?)",
+            params![cid, result.to_string()],
+        )
+        .map_err(|error| error.to_string())?;
+        tx.commit().map_err(|error| error.to_string())?;
+        drop(db);
+        s.notify();
+        return Ok(result);
+    }
     let event = match kind {
         "thread.create" => {
             import_native(s, &tx, c, tid, &at, &mut t)?;
@@ -753,11 +781,12 @@ pub(crate) fn dispatch_prepared(
             if c.get("title").is_some() {
                 t["titleRegeneration"] = Value::Null;
             }
-            for k in ["title", "branch", "worktreePath", "limitRecovery"] {
+            for k in ["title", "branch", "worktreePath"] {
                 if let Some(v) = c.get(k) {
                     t[k] = v.clone()
                 }
             }
+            crate::limits::update_recovery(&tx, &mut t, c, &at, automatic_recovery)?;
             "thread.metadata-updated"
         }
         "thread.title.regeneration.complete" => {
@@ -1020,6 +1049,7 @@ pub(crate) fn dispatch_prepared(
             return Ok(result);
         }
         "thread.stop" => {
+            crate::limits::disarm(&tx, &mut t, c, &at)?;
             if t["deletedAt"].is_null() {
                 if let Some(run) = list(&tx, "runs", Some(tid), 10000)?
                     .into_iter()
@@ -1080,6 +1110,10 @@ pub(crate) fn dispatch_prepared(
                 ),
                 None => None,
             };
+            if c["holdQueue"] == true && crate::limits::disarm(&tx, &mut t, c, &at)? {
+                put(&tx, "thread", tid, tid, &t)?;
+                append(&tx, tid, "thread.metadata-updated", t.clone(), &t)?;
+            }
             interrupt_request(&tx, tid, &run, &t, &at, c)?;
             if !native_started || permit.is_none() {
                 crate::projection::finish(&tx, tid, rid, &t, &at, "interrupted")?;
@@ -1866,6 +1900,9 @@ pub(crate) fn stage_message(
         &t["providerInstanceId"]
     };
     let mut run = json!({"id":run_id,"threadId":tid,"ordinal":ordinal,"providerInstanceId":instance,"modelSelection":selection,"providerThreadId":null,"userMessageId":mid,"rootNodeId":null,"activeAttemptId":null,"status":"preparing","queuePosition":null,"requestedAt":at,"startedAt":null,"completedAt":null,"checkpointId":null,"contextHandoffId":null,"executionRequested":c["dispatchMode"]["type"]!="defer_start"});
+    if let Some(source) = c.get("usageLimitContinuationOfRunId") {
+        run["usageLimitContinuationOfRunId"] = source.clone();
+    }
     if c["freshContext"] == true {
         run["freshContext"] = json!(true);
     }
