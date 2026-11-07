@@ -13,6 +13,14 @@ use tokio::{
     sync::{mpsc, oneshot, Mutex},
 };
 
+mod desktop;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Origin {
+    Local,
+    Desktop,
+}
+
 const LIFETIME: Duration = Duration::from_secs(1800);
 type Request = (
     String,
@@ -38,6 +46,7 @@ impl Default for ProfileRemoval {
 }
 #[derive(Clone)]
 struct Tab {
+    origin: Origin,
     session: Option<String>,
     target: Option<String>,
     profile: String,
@@ -276,6 +285,7 @@ async fn launch(
         let _ = done_tx.send(true);
     });
     Ok(Tab {
+        origin: Origin::Local,
         session: None,
         target: None,
         profile: profile.into(),
@@ -321,7 +331,7 @@ impl Browsers {
         let mut tabs = self.tabs.lock().await;
         let keys: Vec<_> = tabs
             .iter()
-            .filter(|(_, t)| t.profile == profile)
+            .filter(|(_, t)| t.origin == Origin::Local && t.profile == profile)
             .map(|(k, _)| k.clone())
             .collect();
         for key in keys {
@@ -359,7 +369,7 @@ impl Browsers {
             .collect();
         for key in keys {
             if let Some(tab) = tabs.remove(&key) {
-                if let Some(target) = &tab.target {
+                if let Some(target) = tab.target.as_ref().filter(|_| tab.origin == Origin::Local) {
                     let _ =
                         request(&tab.tx, "Target.closeTarget", json!({"targetId":target})).await;
                 }
@@ -378,15 +388,15 @@ impl Browsers {
         url: Option<&str>,
     ) -> Result<(), Value> {
         let mut tabs = self.tabs.lock().await;
-        tabs.retain(|_, t| !*t.done.borrow());
-        if tabs.len() >= 8 {
+        tabs.retain(|_, t| t.origin == Origin::Desktop || !*t.done.borrow());
+        if tabs.values().filter(|tab| !*tab.done.borrow()).count() >= 8 {
             return Err(error(
                 "Close a server browser session before opening another".into(),
             ));
         }
         let mut browser = if let Some(existing) = tabs
             .values()
-            .find(|t| t.profile == profile && !*t.done.borrow())
+            .find(|t| t.origin == Origin::Local && t.profile == profile && !*t.done.borrow())
         {
             existing.clone()
         } else {
@@ -456,6 +466,43 @@ impl Browsers {
         .map_err(error)?;
         tabs.insert((thread.into(), tab.into()), browser);
         Ok(())
+    }
+    /// Adopt a frontend-owned page without navigating or creating another target.
+    pub async fn open_desktop(
+        &self,
+        channel: &crate::desktop_browser_channel::Channel,
+        thread: &str,
+        tab: &str,
+        profile: &str,
+    ) -> Result<(), Value> {
+        let mut tabs = self.tabs.lock().await;
+        let key = (thread.into(), tab.into());
+        if let Some(existing) = tabs.get(&key) {
+            if existing.origin != Origin::Desktop {
+                return Err(error("Browser tab is already locally owned".into()));
+            }
+            if !*existing.done.borrow() {
+                return Ok(());
+            }
+        }
+        if tabs.values().filter(|tab| !*tab.done.borrow()).count() >= 8 {
+            return Err(error(
+                "Close a server browser session before opening another".into(),
+            ));
+        }
+        let browser = desktop::launch(channel, thread, tab, profile)
+            .await
+            .map_err(error)?;
+        tabs.insert(key, browser);
+        Ok(())
+    }
+    /// A disconnected desktop page remains frontend-owned and may be reattached.
+    pub async fn connection(&self, thread: &str, tab: &str) -> Option<(Origin, bool)> {
+        self.tabs
+            .lock()
+            .await
+            .get(&(thread.into(), tab.into()))
+            .map(|tab| (tab.origin, !*tab.done.borrow()))
     }
     pub async fn completion(
         &self,
