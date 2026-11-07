@@ -240,12 +240,12 @@ impl Session {
         if self.finished {
             return Ok(());
         }
-        if self.started
-            && tokio::time::timeout_at(deadline, self.loaded.runtime.reset_stream())
-                .await
-                .is_ok_and(|result| result.is_ok())
-        {
-            return Ok(());
+        if self.started {
+            match tokio::time::timeout_at(deadline, self.loaded.runtime.reset_stream()).await {
+                Ok(Ok(())) => return Ok(()),
+                Ok(Err(cause)) => self.inner.retain_unknown(&cause),
+                Err(_) => {}
+            }
         }
         self.inner.dispose().await
     }

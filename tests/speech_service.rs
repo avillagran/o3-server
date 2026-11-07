@@ -1114,3 +1114,62 @@ async fn uncertain_runtime_outcomes_never_retry_or_clear_ownership_claims() {
         );
     }
 }
+
+struct UnknownResetRuntime(Arc<std::sync::atomic::AtomicUsize>);
+impl candidate::ModelRuntime for UnknownResetRuntime {
+    fn close(&self) -> Task<'_, speech_worker::Cleanup> {
+        Box::pin(async {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            speech_worker::Cleanup::Confirmed { graceful: false }
+        })
+    }
+    fn begin_stream<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a o3_server::speech_request::TranscriptionOptions,
+    ) -> Task<'a, Result<(), Error>> {
+        Box::pin(async { Ok(()) })
+    }
+    fn reset_stream(&self) -> Task<'_, Result<(), Error>> {
+        Box::pin(async { Err(Error::CleanupUnknown) })
+    }
+}
+struct UnknownResetEngine(Arc<std::sync::atomic::AtomicUsize>);
+impl Engine for UnknownResetEngine {
+    fn load<'a>(
+        &'a self,
+        _: &'a speech_catalog::Model,
+        _: &'a Path,
+        _: &'a str,
+    ) -> Task<'a, Result<Loaded, Error>> {
+        Box::pin(async {
+            Ok(Loaded {
+                runtime: Arc::new(UnknownResetRuntime(self.0.clone())),
+                metadata: json!({"backend":"CPU","supportsStreaming":true,"supportsLongForm":true}),
+            })
+        })
+    }
+    fn devices(&self) -> Task<'_, Result<Value, Error>> {
+        Box::pin(async { Ok(json!([])) })
+    }
+}
+#[tokio::test]
+async fn reset_unknown_survives_known_owned_close_and_repeated_scope_cleanup() {
+    sandbox::assert_isolated();
+    let (_unused, authority, memory, _) = fixture();
+    let closes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let service = candidate::Service::new(
+        Arc::new(Store::new(memory.clone(), memory)),
+        Arc::new(UnknownResetEngine(closes.clone())),
+        Arc::new(candidate::WallClock),
+        None,
+    );
+    let call = service.bind(authority);
+    let options=o3_server::speech_request::TranscriptionOptions::decode(json!({"speechLanguage":"en","speechTranslateToEnglish":false,"speechRemoveFillerWords":false,"speechCustomWords":[],"speechSilenceFiltering":false})).unwrap();
+    let stream = call.start_stream(options).await.unwrap();
+    assert_eq!(stream.close().await, Err(Error::CleanupUnknown));
+    assert_eq!(stream.close().await, Err(Error::CleanupUnknown));
+    assert_eq!(call.prepare().await, Err(Error::CleanupUnknown));
+    assert_eq!(service.shutdown().await, Err(Error::CleanupUnknown));
+    assert_eq!(closes.load(Ordering::SeqCst), 1);
+}

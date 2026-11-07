@@ -200,3 +200,15 @@ transcript byte lengths only (three bytes in this receipt), not accuracy. There
 is no microphone, real GPU, real Silero inference, new engine cache, live profile,
 HTTP route, or capability activation in these observations. Real-model maximum
 recording-duration performance and total peak-memory bounds remain unclaimed.
+
+### Reset uncertainty follow-up
+
+An explicit `reset_stream` unknown outcome is retained before the final owned
+close. A later confirmed close still releases that exact handle but cannot erase
+the earlier uncertainty or allow reuse. The dedicated virtual-runtime regression
+asserts repeated scope close, preparation and shutdown remain unknown, with one
+actual invocation of the injected close. Five focused cases per feature mode
+cover that contract plus inference uncertainty, earlier cleanup uncertainty,
+physical reset retaining an engine, and physical hung-feed fencing. Both targeted
+strict checks pass. These are separate source-fenced receipts from the preceding
+thirty-case stream checkpoint, not a claim that all cases were rerun afterward.
