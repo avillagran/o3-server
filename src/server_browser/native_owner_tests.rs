@@ -91,12 +91,23 @@ async fn actual_provider_scope_and_callback_lifetime_fence_original_receipts() {
         drop(credential);
         let receipt = invocation.issue_receipt()?;
         assert_eq!(receipt.worker_receipt().len(), 48);
-        entered_tx.send((invocation, read, receipt)).ok().unwrap();
+        entered_tx
+            .send((invocation, read, receipt, context))
+            .ok()
+            .unwrap();
         end_rx.await.unwrap();
         Ok(Value::Null)
     });
-    let (invocation, read, receipt) = entered_rx.await.unwrap();
+    let (invocation, read, receipt, context) = entered_rx.await.unwrap();
     let original = receipt.worker_receipt().to_owned();
+    page.validate_receipt_operation(&original, NativeOperation::Evaluate)
+        .unwrap();
+    assert!(page
+        .validate_receipt_operation(&original, NativeOperation::Snapshot)
+        .is_err());
+    assert!(read.for_operation(NativeOperation::Evaluate).is_err());
+    assert!(read.for_operation(NativeOperation::Act).is_err());
+
     {
         let db = state.db.lock().unwrap();
         let mut thread = crate::events::get(&db, "thread", "thread").unwrap();
@@ -110,7 +121,48 @@ async fn actual_provider_scope_and_callback_lifetime_fence_original_receipts() {
     let read_receipt = read
         .issue_receipt()
         .expect("native metadata remains readable");
+    page.validate_receipt_operation(read_receipt.worker_receipt(), NativeOperation::Snapshot)
+        .unwrap();
+    assert!(page
+        .validate_receipt_operation(read_receipt.worker_receipt(), NativeOperation::Evaluate)
+        .is_err());
+    assert!(page
+        .validate_receipt_operation(read_receipt.worker_receipt(), NativeOperation::Act)
+        .is_err());
     page.finish_receipt(read_receipt).unwrap();
+    for operation in [
+        NativeOperation::Status,
+        NativeOperation::Snapshot,
+        NativeOperation::WaitFor,
+    ] {
+        let allowed = page
+            .admitted_provider(&context, &provider, operation)
+            .unwrap()
+            .issue_receipt()
+            .unwrap();
+        page.validate_receipt_operation(allowed.worker_receipt(), operation)
+            .unwrap();
+        page.finish_receipt(allowed).unwrap();
+    }
+    for operation in [
+        NativeOperation::Open,
+        NativeOperation::Dialog,
+        NativeOperation::Navigate,
+        NativeOperation::Resize,
+        NativeOperation::SetAppearance,
+        NativeOperation::Act,
+        NativeOperation::Evaluate,
+        NativeOperation::RecordingStart,
+        NativeOperation::RecordingStop,
+    ] {
+        assert!(
+            page.admitted_provider(&context, &provider, operation)
+                .is_err(),
+            "{} must act as the actual caller",
+            operation.tool_name()
+        );
+    }
+
     assert!(page
         .command_receipt(
             &original,

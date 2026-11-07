@@ -31,9 +31,10 @@ pub struct NativeInvocation {
     owner: Arc<Owner>,
     context: RunContext,
     caller: Option<Caller>,
+    operation: Option<NativeOperation>,
 }
 /// Fixed broker operation classification. No wire flag chooses read admission.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeOperation {
     Status,
     Open,
@@ -49,6 +50,22 @@ pub enum NativeOperation {
     RecordingStop,
 }
 impl NativeOperation {
+    pub fn tool_name(self) -> &'static str {
+        match self {
+            Self::Status => "preview_status",
+            Self::Open => "preview_open",
+            Self::Dialog => "preview_dialog",
+            Self::Navigate => "preview_navigate",
+            Self::Resize => "preview_resize",
+            Self::SetAppearance => "preview_set_appearance",
+            Self::Snapshot => "preview_snapshot",
+            Self::Act => "preview_act",
+            Self::Evaluate => "preview_evaluate",
+            Self::WaitFor => "preview_wait_for",
+            Self::RecordingStart => "preview_recording_start",
+            Self::RecordingStop => "preview_recording_stop",
+        }
+    }
     fn writes(self) -> bool {
         !matches!(self, Self::Status | Self::Snapshot | Self::WaitFor)
     }
@@ -90,6 +107,7 @@ impl Caller {
 struct Ticket {
     context: RunContext,
     caller: Option<Caller>,
+    operation: Option<NativeOperation>,
 }
 /// Opaque receipt for the sealed worker channel. It carries no browser endpoint
 /// and cannot be constructed from model JSON or reused on another captured Page.
@@ -202,6 +220,9 @@ impl Owner {
         cleanup: Option<Reservation>,
     ) -> Result<Packet, Value> {
         if budget.is_zero() || budget > Duration::from_secs(121) || *self.done.borrow() {
+            if let Some(reservation) = cleanup {
+                self.grants.lock().unwrap().cancelled(&reservation);
+            }
             return Err(fault("closed_or_deadline"));
         }
         let reservation = match cleanup {
@@ -298,6 +319,7 @@ impl NativePage {
             owner: self.inner.clone(),
             context: context.clone(),
             caller: None,
+            operation: None,
         })
     }
     /// Only an opaque context held by the actual provider process can mint this
@@ -320,6 +342,7 @@ impl NativePage {
             return Err(fault("provider_scope"));
         }
         invocation.caller = Some(caller);
+        invocation.operation = Some(operation);
         Ok(invocation)
     }
     /// Resolve only a receipt minted by this owner, preserving its original
@@ -344,9 +367,36 @@ impl NativePage {
             owner: self.inner.clone(),
             context: ticket.context,
             caller: ticket.caller,
+            operation: ticket.operation,
         }
         .command(method, params, session, budget)
         .await
+    }
+    /// The sealed worker wire must prove the original tool class, not infer
+    /// readonly authority from a CDP method or an input field.
+    pub fn validate_receipt_operation(
+        &self,
+        receipt: &str,
+        operation: NativeOperation,
+    ) -> Result<(), Value> {
+        let ticket = self
+            .inner
+            .receipts
+            .lock()
+            .unwrap()
+            .get(receipt)
+            .cloned()
+            .ok_or_else(|| fault("receipt"))?;
+        if ticket.operation != Some(operation)
+            || !self.inner.control.owns_context(&ticket.context)
+            || ticket
+                .caller
+                .as_ref()
+                .is_some_and(|caller| !caller.valid(&self.inner))
+        {
+            return Err(fault("receipt_operation"));
+        }
+        Ok(())
     }
     pub fn finish_receipt(&self, receipt: NativeReceipt) -> Result<(), Value> {
         if !receipt
@@ -426,6 +476,16 @@ impl NativePage {
     }
 }
 impl NativeInvocation {
+    /// Local owner code may bind an unclassified owner admission. A provider
+    /// admission's original class is immutable, including readonly metadata.
+    pub fn for_operation(&self, operation: NativeOperation) -> Result<Self, Value> {
+        if self.operation.is_some_and(|original| original != operation) {
+            return Err(fault("receipt_operation"));
+        }
+        let mut invocation = self.clone();
+        invocation.operation = Some(operation);
+        Ok(invocation)
+    }
     pub fn issue_receipt(&self) -> Result<NativeReceipt, Value> {
         if !self.owner.control.owns_context(&self.context)
             || self
@@ -451,6 +511,7 @@ impl NativeInvocation {
             Ticket {
                 context: self.context.clone(),
                 caller: self.caller.clone(),
+                operation: self.operation,
             },
         );
         Ok(NativeReceipt {
@@ -478,6 +539,7 @@ impl NativeInvocation {
                 Some(Ticket {
                     context: self.context.clone(),
                     caller: self.caller.clone(),
+                    operation: self.operation,
                 }),
                 method,
                 params,
@@ -500,9 +562,17 @@ impl crate::preview::Manager {
             if owner.thread != thread {
                 return Err(fault("thread_scope"));
             }
-            return Ok(NativePage {
-                inner: owner.clone(),
-            });
+            let grants = owner.grants.lock().unwrap();
+            if !grants.closing() {
+                return Ok(NativePage {
+                    inner: owner.clone(),
+                });
+            }
+            if !grants.clean() {
+                return Err(fault("previous_grant_cleanup_unknown"));
+            }
+            // Explicit clean retirement permits a new toolkit binding on the
+            // same visible target. Ordinary handoffs never retire this owner.
         }
         let owner = Arc::new(Owner {
             target: target.clone(),

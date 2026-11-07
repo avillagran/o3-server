@@ -544,6 +544,9 @@ impl State {
     pub fn requests_pending(&self) -> usize {
         self.requests.len()
     }
+    pub fn closing(&self) -> bool {
+        self.closing
+    }
     pub fn close(&mut self) {
         self.closing = true;
     }

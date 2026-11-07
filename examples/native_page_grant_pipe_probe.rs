@@ -139,10 +139,10 @@ async fn main() {
         invocation.command("Runtime.enable", params("{}"), Some(child_session.clone()), Duration::from_secs(3)).await?;
         let child_value = invocation.command("Runtime.evaluate", params(r#"{"expression":"globalThis.childValue","returnByValue":true}"#), Some(child_session), Duration::from_secs(3)).await?;
         assert_eq!(remote_value(&child_value), json!(41));
-        ended_tx.send(invocation).ok().unwrap();
+        ended_tx.send((invocation,own_session)).ok().unwrap();
         Ok(Value::Null)
     }).wait().await.unwrap();
-    let ended = ended_rx.await.unwrap();
+    let (ended, old_native_session) = ended_rx.await.unwrap();
     assert!(ended
         .command("Runtime.enable", params("{}"), None, Duration::from_secs(1))
         .await
@@ -165,8 +165,51 @@ async fn main() {
         json!("legacy alive")
     );
 
+    let reopened = browser.capture_native_page("one", &one).unwrap();
+    assert_eq!(owner.target(), reopened.target());
+    let captured = reopened.clone();
+    reopened
+        .control()
+        .observe_admitted(move |context| async move {
+            let invocation = captured.admitted(&context)?;
+            let attached = invocation
+                .command(
+                    "Target.attachToTarget",
+                    params(&json!({"targetId":captured.target(),"flatten":true}).to_string()),
+                    None,
+                    Duration::from_secs(3),
+                )
+                .await?;
+            let fresh_session = session(&attached);
+            assert_ne!(fresh_session, old_native_session);
+            assert_eq!(
+                remote_value(
+                    &invocation
+                        .command(
+                            "Runtime.evaluate",
+                            params(
+                                r#"{"expression":"'same target reopened'","returnByValue":true}"#
+                            ),
+                            Some(fresh_session),
+                            Duration::from_secs(3)
+                        )
+                        .await?
+                ),
+                json!("same target reopened")
+            );
+            Ok(Value::Null)
+        })
+        .wait()
+        .await
+        .unwrap();
+    assert!(reopened.close(Duration::from_secs(3)).await.clean);
     let three = open(&state, "late").await;
     let late = browser.capture_native_page("late", &three).unwrap();
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(root.join("delay-next-attach"))
+        .unwrap();
     let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
     let captured = late.clone();
     let running = late.control().agent_admitted("private-agent", None, move |context| async move {
@@ -230,10 +273,50 @@ async fn main() {
     assert_eq!(abandoned.unwrap_err()["reason"], "callback_ended");
     let pending_receipt = pending_page.close(Duration::from_secs(3)).await;
     assert!(pending_receipt.clean, "{pending_receipt:?}");
+    let unknown_tab = open(&state, "unknown").await;
+    let unknown = browser
+        .capture_native_page("unknown", &unknown_tab)
+        .unwrap();
+    let captured = unknown.clone();
+    unknown
+        .control()
+        .observe_admitted(move |context| async move {
+            captured
+                .admitted(&context)?
+                .command(
+                    "Target.attachToTarget",
+                    params(&json!({"targetId":captured.target(),"flatten":true}).to_string()),
+                    None,
+                    Duration::from_secs(3),
+                )
+                .await?;
+            Ok(Value::Null)
+        })
+        .wait()
+        .await
+        .unwrap();
+    let unknown_receipt = unknown.close(Duration::ZERO).await;
+    assert!(!unknown_receipt.clean);
+    assert_eq!(
+        browser
+            .capture_native_page("unknown", &unknown_tab)
+            .err()
+            .unwrap()["reason"],
+        "previous_grant_cleanup_unknown"
+    );
+    let recovered = unknown.close(Duration::from_secs(3)).await;
+    assert_eq!(recovered.owned_sessions, 0);
+    assert!(
+        !recovered.clean,
+        "An established unknown outcome remains sticky"
+    );
+    assert!(browser
+        .capture_native_page("unknown", &unknown_tab)
+        .is_err());
     preview::shutdown(&state).await;
     assert_eq!(retained.0.load(Ordering::SeqCst), 0);
     println!(
         "{}",
-        json!({"complete":true,"realActorOwnedSession":true,"borrowedSessionPreserved":true,"foreignTargetAndGlobalCloseRefused":true,"rawOwnedConsoleEvent":true,"actualChildWorkerSession":true,"endedCallbackRefused":true,"lateAttachDrainedAndDetached":true,"otherTabSurvives":true,"normalClose":receipt,"lateClose":late_receipt,"endedCallbackCancelsCorrelationAndLateResultDrains":true,"pendingClose":pending_receipt,"profileRemovalRequests":retained.0.load(Ordering::SeqCst)})
+        json!({"complete":true,"realActorOwnedSession":true,"borrowedSessionPreserved":true,"foreignTargetAndGlobalCloseRefused":true,"rawOwnedConsoleEvent":true,"actualChildWorkerSession":true,"endedCallbackRefused":true,"lateAttachDrainedAndDetached":true,"otherTabSurvives":true,"normalClose":receipt,"lateClose":late_receipt,"endedCallbackCancelsCorrelationAndLateResultDrains":true,"pendingClose":pending_receipt,"cleanSameTargetRecaptureWorks":true,"unknownRecaptureRefused":true,"unknownClose":recovered,"profileRemovalRequests":retained.0.load(Ordering::SeqCst)})
     );
 }

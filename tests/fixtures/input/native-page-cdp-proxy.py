@@ -5,6 +5,7 @@ import json
 import os
 import select
 import socket
+import stat
 import subprocess
 import sys
 import time
@@ -26,7 +27,6 @@ root.settimeout(2)
 parent.settimeout(2)
 root_buffer = b''
 browser_buffer = b''
-attachments = 0
 delayed_id = None
 delayed = []
 sequence = 0
@@ -48,8 +48,10 @@ try:
                     packet, root_buffer = root_buffer.split(b'\0', 1)
                     message = json.loads(packet)
                     if message.get('method') == 'Target.attachToTarget':
-                        attachments += 1
-                        if attachments == 5:
+                        marker = '/out/owner-pipe/delay-next-attach'
+                        if delayed_id is None and os.path.lexists(marker):
+                            identity = os.lstat(marker)
+                            assert stat.S_ISREG(identity.st_mode) and identity.st_uid == os.getuid()
                             delayed_id = message['id']
                     parent.sendall(packet + b'\0')
             else:

@@ -110,3 +110,55 @@ The real page logs its started marker before the callback returns, while its
 fails with `callback_ended`; the actual later browser response is drained before
 individual detach and a clean close receipt. This is a callback-lifetime proof,
 not certification of eight simultaneous native timeout/terminate sequences.
+
+## Clean restart and immutable operation class
+
+An ordinary handoff still returns the same live owner binding. Explicit native
+owner retirement can be recaptured on the same visible target only after its
+clean receipt: the factory allocates a fresh native CDP session while preserving
+the target, its real Control and the borrowed legacy observer. A closing owner
+without a clean receipt remains retained and blocks recapture, even after a
+subsequent attempt releases the recorded sessions. Unknown is not silently reset.
+The actual Chromium proof is
+`/var/tmp/o3-server/page-reopen-operation-physical/result.json`, executable SHA
+`e4b8f9362f98fe1d9b5053725b786718274378e2ff4662413711fe253349f924`.
+The attach-delay fixture now waits for an exclusive, owned phase marker rather
+than depending on the number of earlier attachments.
+
+A provider admission now records its immutable NativeOperation. Rebinding a
+snapshot admission to evaluate or act fails. `validate_receipt_operation` checks
+the original class and live authority; the forthcoming sealed worker wire must
+use it and match the actual dispatched native tool. The generic owner-library
+CDP method is not a wire/MCP authorization surface. CDP Runtime.evaluate cannot
+itself distinguish a native snapshot's trusted DOM script from a model's evaluate
+operation, so its method name is deliberately not a readonly classifier.
+
+`/var/tmp/o3-server/page-bound-operation-units/result.json` records the actual
+Context/Scope.caller regression and ten grant cases in both modes, plus final
+all-target strict checks. To avoid new large retained executable copies, the
+no-follow source artifact is hashed and gzip-sealed under the compile lock;
+only that single executable is expanded into private container tmpfs and checked
+against its uncompressed hash before execution. This is not an archive or
+filesystem-tree fixture. All compressed artifacts and receipts are retained.
+
+## Whole native handler admission oracle
+
+`/var/tmp/o3-server/page-handler-admission-oracle-3/page-apr4kl7w/proof.json`
+evaluates the complete pinned handlers.ts, McpToolAccess.ts and
+McpInvocationContext.ts together with the complete native toolkit and actual
+Effect MCP registration. Caller, broker and attachment services are explicit
+refusing external boundaries; their behavior is not replaced with a copied
+policy reducer. The twelve real handler declarations prove that status,
+snapshot and waitFor use readsAsCaller and the other nine use actsAsCaller.
+The caller-load boundary is reached by writes; reads reach the broker boundary.
+This proves declaration routing, not live provider or attachment execution.
+
+Snapshot's Tool.Readonly annotation is false, but its real handler uses
+readsAsCaller and strips the deprecated includeImage/save flags. Those two facts
+must not be conflated when assigning authority. The actual waitFor schema has
+selector/locator/text/urlIncludes/timeoutMs and no expression input. The oracle
+rejects expression-only input, strips an excess expression field alongside valid
+text, and executes the complete native waitFor function against a private DOM
+boundary. Its original JSON.stringify quoting preserves an isolated UTF-16 unit
+and prevents the synthetic text from becoming script. No read receipt is
+certified for arbitrary evaluate/act dispatch by this oracle.

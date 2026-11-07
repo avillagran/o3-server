@@ -364,6 +364,7 @@ fn close_drains_all_entered_commands_before_certifying_owned_cleanup() {
     state.cancelled(&operation);
     state.close();
     assert!(!state.may_start(&operation, false));
+    assert!(state.closing());
     let detach = state.cleanup_detach("owned-session").unwrap();
     state
         .completed(&detach, &packet(r#"{"id":2,"result":{}}"#))
