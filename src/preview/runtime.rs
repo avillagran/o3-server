@@ -307,29 +307,54 @@ fn spawn(
                 let inner = owned.inner.clone();
                 let browser = Arc::downgrade(&owned.browser);
                 let changed = owned.changed.clone();
-                let monitor =
-                    tokio::spawn(async move {
+                let desktop = owned
+                    .browser
+                    .connection(&key.0, &key.1)
+                    .await
+                    .is_some_and(|(origin, _)| origin == crate::server_browser::Origin::Desktop);
+                let navigation = owned.browser.navigation(&key.0, &key.1).await;
+                let monitor = tokio::spawn(async move {
+                    if let Some(mut navigation) = navigation {
+                        loop {
+                            if let Some(browser) = browser.upgrade() {
+                                super::navigation::sync(
+                                    &browser,
+                                    &inner,
+                                    &changed,
+                                    &key.0,
+                                    &key.1,
+                                    &navigation,
+                                )
+                                .await;
+                            } else {
+                                break;
+                            }
+                            let ended = tokio::select! {result=done.changed()=>result.is_err()||*done.borrow(),result=navigation.changed()=>result.is_err()};
+                            if ended {
+                                break;
+                            }
+                        }
+                    } else {
                         while !*done.borrow() {
                             if done.changed().await.is_err() {
                                 break;
                             }
                         }
-                        if let Some(browser) = browser.upgrade() {
-                            if browser.connection(&key.0, &key.1).await.is_some_and(
-                                |(origin, _)| origin == crate::server_browser::Origin::Desktop,
-                            ) {
-                                return;
-                            }
-                        }
-                        let mut inner = inner.lock().unwrap();
-                        inner
-                            .kernel
-                            .close(&json!({"threadId":key.0,"tabId":key.1}), || iso(now_ms()));
-                        inner.flush();
-                        drop(inner);
-                        bump(&changed);
-                    });
-                owned.monitors.lock().unwrap().push(monitor);
+                    }
+                    if desktop {
+                        return;
+                    }
+                    let mut inner = inner.lock().unwrap();
+                    inner
+                        .kernel
+                        .close(&json!({"threadId":key.0,"tabId":key.1}), || iso(now_ms()));
+                    inner.flush();
+                    drop(inner);
+                    bump(&changed);
+                });
+                let mut monitors = owned.monitors.lock().unwrap();
+                monitors.retain(|monitor| !monitor.is_finished());
+                monitors.push(monitor);
             }
         }
     });
@@ -569,6 +594,7 @@ mod tests {
         channel: crate::desktop_browser_channel::Channel,
         events: tokio::sync::mpsc::UnboundedSender<Value>,
         messages: Arc<Mutex<Vec<Value>>>,
+        navigation: Arc<Mutex<Value>>,
         task: tokio::task::JoinHandle<()>,
     }
     fn state() -> Arc<State> {
@@ -599,17 +625,65 @@ mod tests {
         let (events, mut events_rx) = tokio::sync::mpsc::unbounded_channel();
         let messages = Arc::new(Mutex::new(Vec::new()));
         let observed = messages.clone();
+        let navigation = Arc::new(Mutex::new(Value::Null));
+        let metadata = navigation.clone();
         let task = tokio::spawn(async move {
+            enum Input {
+                Event(Option<Value>),
+                Command(std::io::Result<usize>),
+            }
             let mut commands = BufReader::new(commands);
             loop {
                 let mut line = String::new();
-                let event = tokio::select! {event=events_rx.recv()=>{let Some(event)=event else{break;};event},read=commands.read_line(&mut line)=>{if !read.is_ok_and(|n|n>0){break;}let command:Value=serde_json::from_str(&line).unwrap();observed.lock().unwrap().push(command.clone());if command["type"]!="cdp"{continue;}let packet:Value=serde_json::from_str(command["message"].as_str().unwrap()).unwrap();let result=match packet["method"].as_str().unwrap(){"Target.getTargets"=>json!({"targetInfos":[{"type":"page","targetId":"page"}]}),"Target.attachToTarget"=>json!({"sessionId":"opaque"}),_=>json!({})};json!({"type":"cdp","threadId":command["threadId"],"tabId":command["tabId"],"message":json!({"id":packet["id"],"result":result}).to_string()})}};
-                if launcher
-                    .write_all(format!("{event}\n").as_bytes())
-                    .await
-                    .is_err()
-                {
-                    break;
+                let input = tokio::select! {event=events_rx.recv()=>Input::Event(event),read=commands.read_line(&mut line)=>Input::Command(read)};
+                let events = match input {
+                    Input::Event(Some(event)) => vec![event],
+                    Input::Event(None) => break,
+                    Input::Command(read) => {
+                        if !read.is_ok_and(|count| count > 0) {
+                            break;
+                        }
+                        let command: Value = serde_json::from_str(&line).unwrap();
+                        observed.lock().unwrap().push(command.clone());
+                        if command["type"] != "cdp" {
+                            continue;
+                        }
+                        let packet: Value =
+                            serde_json::from_str(command["message"].as_str().unwrap()).unwrap();
+                        let method = packet["method"].as_str().unwrap();
+                        let (state, during) = {
+                            let mut metadata = metadata.lock().unwrap();
+                            let during = if method == "Runtime.evaluate" {
+                                metadata
+                                    .get_mut("duringTitle")
+                                    .map(Value::take)
+                                    .filter(|value| !value.is_null())
+                            } else {
+                                None
+                            };
+                            (metadata.clone(), during)
+                        };
+                        let result=match method{
+                            "Target.getTargets"=>json!({"targetInfos":[{"type":"page","targetId":"page"}]}),"Target.attachToTarget"=>json!({"sessionId":"opaque"}),"Page.getFrameTree"=>json!({"frameTree":{"frame":{"id":"main-frame"}}}),
+                            "Page.getNavigationHistory" if state.is_object()=>state.get("history").cloned().unwrap_or_else(||json!({"currentIndex":0,"entries":[{"url":state["url"],"title":state["title"]}]})),
+                            "Runtime.evaluate" if state.is_object()=>json!({"result":{"value":{"url":state["url"],"title":state["title"],"readyState":state["readyState"]}}}),_=>json!({})};
+                        let envelope = |message: Value| json!({"type":"cdp","threadId":command["threadId"],"tabId":command["tabId"],"message":message.to_string()});
+                        let mut events = Vec::new();
+                        if let Some(during) = during {
+                            events.push(envelope(during));
+                        }
+                        events.push(envelope(json!({"id":packet["id"],"result":result})));
+                        events
+                    }
+                };
+                for event in events {
+                    if launcher
+                        .write_all(format!("{event}\n").as_bytes())
+                        .await
+                        .is_err()
+                    {
+                        return;
+                    }
                 }
             }
         });
@@ -617,6 +691,7 @@ mod tests {
             channel,
             events,
             messages,
+            navigation,
             task,
         }
     }
@@ -1192,5 +1267,124 @@ mod tests {
                 .all(|message| message["type"] != "cdp"));
             peer.task.abort();
         }
+    }
+    #[tokio::test]
+    async fn desktop_page_notifications_project_live_metadata_with_actor_and_navigation_fences() {
+        let state = state();
+        let peer = peer();
+        *peer.navigation.lock().unwrap() =
+            json!({"url":"https://example.com/initial","title":"Initial","readyState":"complete"});
+        let driver = install_desktop(state.clone(), peer.channel.clone()).await;
+        let open = opening(state.clone());
+        let snapshot = published(&state).await;
+        let tab = tab_of(&snapshot).to_string();
+        peer.events
+            .send(json!({"type":"attached","threadId":"thread","tabId":tab}))
+            .unwrap();
+        open.await.unwrap().unwrap();
+        let status = || {
+            state
+                .streams
+                .p2
+                .preview
+                .inner
+                .lock()
+                .unwrap()
+                .kernel
+                .get("thread", &tab)
+                .unwrap()["navStatus"]
+                .clone()
+        };
+        wait(|| status()["title"] == "Initial").await;
+        let event = |message: Value| json!({"type":"cdp","threadId":"thread","tabId":tab,"message":message.to_string()});
+        let mut watch = state
+            .streams
+            .p2
+            .preview
+            .browser
+            .navigation("thread", &tab)
+            .await
+            .unwrap();
+        watch.borrow_and_update();
+        *peer.navigation.lock().unwrap() =
+            json!({"url":"https://example.com/next","title":"Next","readyState":"complete"});
+        for message in [
+            json!({"method":"Page.frameNavigated","sessionId":"other","params":{"frame":{"id":"main-frame"}}}),
+            json!({"method":"Page.frameNavigated","sessionId":"opaque","params":{"frame":{"id":"child","parentId":"main-frame"}}}),
+            json!({"method":"Page.navigatedWithinDocument","sessionId":"opaque","params":{"frameId":"child"}}),
+            json!({"method":"Page.frameNavigated","sessionId":"opaque","params":{"frame":{"id":"malformed","parentId":null}}}),
+            json!({"method":"Target.targetInfoChanged","params":{"targetInfo":{"targetId":"other"}}}),
+        ] {
+            peer.events.send(event(message)).unwrap();
+        }
+        assert!(
+            tokio::time::timeout(Duration::from_millis(40), watch.changed())
+                .await
+                .is_err()
+        );
+        assert_eq!(status()["title"], "Initial");
+        peer.events.send(event(json!({"method":"Target.targetInfoChanged","params":{"targetInfo":{"targetId":"page"}}}))).unwrap();
+        wait(|| status()["title"] == "Next").await;
+        {
+            let mut inner = state.streams.p2.preview.inner.lock().unwrap();
+            inner.kernel.report_status(&json!({"threadId":"thread","tabId":tab,"serverControlled":true,"navStatus":{"_tag":"LoadFailed","url":"https://example.com/rejected","title":"","code":-105,"description":"Synthetic DNS failure"},"canGoBack":false,"canGoForward":false}),||iso(now_ms())).unwrap();
+            inner.flush();
+        }
+        *peer.navigation.lock().unwrap() = json!({"url":"chrome-error://chromewebdata/","title":"Browser error","readyState":"complete"});
+        let requests = || {
+            peer.messages
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|message| {
+                    message["type"] == "cdp"
+                        && message["message"]
+                            .as_str()
+                            .unwrap()
+                            .contains("Runtime.evaluate")
+                })
+                .count()
+        };
+        let before = requests();
+        peer.events
+            .send(event(
+                json!({"method":"Page.loadEventFired","sessionId":"opaque"}),
+            ))
+            .unwrap();
+        wait(|| requests() > before).await;
+        tokio::task::yield_now().await;
+        assert_eq!(status()["_tag"], "LoadFailed");
+        *peer.navigation.lock().unwrap() = json!({"url":"data:text/html;private=PRIVATE,<PRIVATE>","title":"x".repeat(513),"readyState":"complete"});
+        peer.events.send(event(json!({"method":"Page.navigatedWithinDocument","sessionId":"opaque","params":{"frameId":"main-frame"}}))).unwrap();
+        wait(|| status()["url"] == "data:text/html,…").await;
+        assert_eq!(status()["title"].as_str().unwrap().len(), 512);
+        assert!(!status().to_string().contains("PRIVATE"));
+        *peer.navigation.lock().unwrap() = json!({"url":"https://example.com/final","title":"Final","readyState":"complete","duringTitle":{"method":"Page.frameStartedLoading","sessionId":"opaque","params":{"frameId":"main-frame"}}});
+        let before = requests();
+        peer.events.send(event(json!({"method":"Target.targetInfoChanged","params":{"targetInfo":{"targetId":"page"}}}))).unwrap();
+        wait(|| requests() > before + 1).await;
+        assert_eq!(status()["url"], "data:text/html,…");
+        peer.events
+            .send(event(
+                json!({"method":"Page.loadEventFired","sessionId":"opaque"}),
+            ))
+            .unwrap();
+        wait(|| status()["title"] == "Final").await;
+        peer.events.send(event(json!({"method":"Target.targetInfoChanged","params":{"targetInfo":{"targetId":"page"}}}))).unwrap();
+        close(&state, "thread", Some(&tab)).await;
+        shutdown(&state.streams.p2.preview).await;
+        driver.shutdown().await;
+        assert!(state
+            .streams
+            .p2
+            .preview
+            .inner
+            .lock()
+            .unwrap()
+            .kernel
+            .all()
+            .is_empty());
+        assert!(!state.dir.join("browser-profiles").exists());
+        peer.task.abort();
     }
 }

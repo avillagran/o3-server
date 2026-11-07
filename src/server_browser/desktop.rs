@@ -4,9 +4,62 @@ use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
 
 fn detached(value: &Value, session: Option<&str>) -> bool {
-    value["method"] == "Inspector.detached"
+    (value["method"] == "Inspector.detached"
+        && session.is_some_and(|session| value["sessionId"] == session))
         || (value["method"] == "Target.detachedFromTarget"
             && session.is_some_and(|session| value["params"]["sessionId"] == session))
+}
+fn observe(
+    value: &Value,
+    session: Option<&str>,
+    target: Option<&str>,
+    main_frame: &mut Option<String>,
+    navigation: &tokio::sync::watch::Sender<Navigation>,
+) -> bool {
+    if detached(value, session) {
+        return true;
+    }
+    let scoped = session.is_some_and(|session| value["sessionId"] == session);
+    let method = value["method"].as_str().unwrap_or("");
+    let event = if method == "Target.targetInfoChanged" {
+        target.is_some_and(|target| value["params"]["targetInfo"]["targetId"] == target)
+    } else if scoped {
+        match method {
+            "Page.frameNavigated" => {
+                let frame = &value["params"]["frame"];
+                if frame.get("parentId").is_none() || frame["parentId"].as_str() == Some("") {
+                    if let Some(id) = frame["id"].as_str().filter(|id| !id.is_empty()) {
+                        *main_frame = Some(id.into());
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+            "Page.navigatedWithinDocument" | "Page.frameStartedLoading" => main_frame
+                .as_ref()
+                .is_some_and(|frame| value["params"]["frameId"] == *frame),
+            "Page.loadEventFired" => true,
+            _ => false,
+        }
+    } else {
+        false
+    };
+    if event {
+        navigation.send_modify(|state| {
+            state.revision = state.revision.wrapping_add(1);
+            if method == "Page.frameStartedLoading" {
+                state.generation = state.generation.wrapping_add(1);
+                state.loading = true;
+            }
+            if method == "Page.loadEventFired" {
+                state.loading = false;
+            }
+        });
+    }
+    false
 }
 pub(super) async fn launch(
     channel: &crate::desktop_browser_channel::Channel,
@@ -54,6 +107,7 @@ pub(super) async fn launch(
     .map_err(|_| "Desktop browser connection failed")?;
     let (tx, mut rx) = mpsc::channel::<Request>(8);
     let (done_tx, done) = tokio::sync::watch::channel(false);
+    let (navigation_tx, navigation) = tokio::sync::watch::channel(Navigation::default());
     let cancel = std::sync::Arc::new(tokio::sync::Notify::new());
     let stop_signal = cancel.clone();
     let thread_owned = thread.to_string();
@@ -61,13 +115,15 @@ pub(super) async fn launch(
     tokio::spawn(async move {
         let mut id = 0_u64;
         let mut attached_session: Option<String> = None;
+        let mut attached_target: Option<String> = None;
+        let mut main_frame: Option<String> = None;
         loop {
             let request = tokio::select! {
                 request=rx.recv()=>request,
                 change=changes.next()=>{match change {Some(change) if change.key.thread_id==thread_owned && change.key.tab_id==tab_owned && !change.attached=>break,Some(_)=>continue,None=>break}},
                 _=stop_signal.notified()=>None,
                 incoming=socket.next()=>{
-                    match incoming{Some(Ok(Message::Text(text)))=>{if serde_json::from_str::<Value>(&text).is_ok_and(|value|detached(&value,attached_session.as_deref())){break;}continue;},Some(Ok(Message::Ping(payload)))=>{if socket.send(Message::Pong(payload)).await.is_err(){break;}continue;},Some(Ok(Message::Pong(_)))=>continue,_=>break}
+                    match incoming{Some(Ok(Message::Text(text)))=>{if serde_json::from_str::<Value>(&text).is_ok_and(|value|observe(&value,attached_session.as_deref(),attached_target.as_deref(),&mut main_frame,&navigation_tx)){break;}continue;},Some(Ok(Message::Ping(payload)))=>{if socket.send(Message::Pong(payload)).await.is_err(){break;}continue;},Some(Ok(Message::Pong(_)))=>continue,_=>break}
                 }
             };
             let Some((method, params, session, reply)) = request else {
@@ -90,7 +146,13 @@ pub(super) async fn launch(
                         Some(Ok(Message::Text(text))) => {
                             let value: Value = serde_json::from_str(&text)
                                 .map_err(|_| "Invalid CDP output".to_string())?;
-                            if detached(&value, attached_session.as_deref()) {
+                            if observe(
+                                &value,
+                                attached_session.as_deref(),
+                                attached_target.as_deref(),
+                                &mut main_frame,
+                                &navigation_tx,
+                            ) {
                                 return Err("Desktop browser disconnected".into());
                             }
                             if value["id"] == id {
@@ -100,6 +162,13 @@ pub(super) async fn launch(
                                 if method == "Target.attachToTarget" {
                                     attached_session =
                                         value["result"]["sessionId"].as_str().map(str::to_owned);
+                                    attached_target =
+                                        message["params"]["targetId"].as_str().map(str::to_owned);
+                                }
+                                if method == "Page.getFrameTree" {
+                                    main_frame = value["result"]["frameTree"]["frame"]["id"]
+                                        .as_str()
+                                        .map(str::to_owned);
                                 }
                                 return Ok(value["result"].clone());
                             }
@@ -130,6 +199,7 @@ pub(super) async fn launch(
         profile: profile.into(),
         origin: Origin::Desktop,
         desktop_channel: Some(channel.clone()),
+        navigation: Some(navigation),
         tx,
         done,
         cancel,
@@ -153,6 +223,25 @@ pub(super) async fn launch(
             .ok_or("Desktop page attachment failed")?
             .to_owned();
         request_in(&browser.tx, "Page.enable", json!({}), Some(session.clone())).await?;
+        request(
+            &browser.tx,
+            "Target.setDiscoverTargets",
+            json!({"discover":true}),
+        )
+        .await?;
+        request(
+            &browser.tx,
+            "Target.setAutoAttach",
+            json!({"autoAttach":true,"waitForDebuggerOnStart":false,"flatten":true}),
+        )
+        .await?;
+        request_in(
+            &browser.tx,
+            "Page.getFrameTree",
+            json!({}),
+            Some(session.clone()),
+        )
+        .await?;
         browser.target = Some(target);
         browser.session = Some(session);
         Ok::<(), String>(())
@@ -252,7 +341,14 @@ mod tests {
                 .iter()
                 .map(|packet| string(packet, "method"))
                 .collect::<Vec<_>>(),
-            vec!["Target.getTargets", "Target.attachToTarget", "Page.enable"]
+            vec![
+                "Target.getTargets",
+                "Target.attachToTarget",
+                "Page.enable",
+                "Target.setDiscoverTargets",
+                "Target.setAutoAttach",
+                "Page.getFrameTree"
+            ]
         );
         assert_eq!(
             initial[1]["params"],
@@ -351,5 +447,45 @@ mod tests {
             .iter()
             .any(|message| message["type"] == "release"));
         peer.task.abort();
+    }
+    #[test]
+    fn actual_native_relay_frames_require_auto_attach_and_preserve_opaque_sessions() {
+        crate::test_sandbox::assert_isolated();
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/preview-navigation-4288.json"
+        ))
+        .unwrap();
+        assert_eq!(fixture["relayCases"].as_array().unwrap().len(), 2);
+        for case in fixture["relayCases"].as_array().unwrap() {
+            let session = case["sessionId"].as_str().unwrap();
+            let (tx, rx) = tokio::sync::watch::channel(Navigation::default());
+            let mut frame = Some("main-frame".to_string());
+            for event in case["events"].as_array().unwrap() {
+                assert!(!observe(
+                    event,
+                    Some(session),
+                    Some("page"),
+                    &mut frame,
+                    &tx
+                ));
+            }
+            assert_eq!(
+                rx.borrow().revision,
+                if case["autoAttach"] == true { 1 } else { 0 }
+            );
+            assert_eq!(case["closes"], 0);
+            assert!(case["calls"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|call| call["method"] == "Page.getFrameTree" && call["owner"] == session));
+            assert!(!observe(
+                &json!({"method":"Inspector.detached","sessionId":"unrelated-child"}),
+                Some(session),
+                Some("page"),
+                &mut frame,
+                &tx
+            ));
+        }
     }
 }

@@ -44,10 +44,17 @@ impl Default for ProfileRemoval {
         )))
     }
 }
+#[derive(Clone, Copy, Default)]
+pub(crate) struct Navigation {
+    pub revision: u64,
+    pub generation: u64,
+    pub loading: bool,
+}
 #[derive(Clone)]
 struct Tab {
     origin: Origin,
     desktop_channel: Option<crate::desktop_browser_channel::Channel>,
+    navigation: Option<tokio::sync::watch::Receiver<Navigation>>,
     session: Option<String>,
     target: Option<String>,
     profile: String,
@@ -288,6 +295,7 @@ async fn launch(
     Ok(Tab {
         origin: Origin::Local,
         desktop_channel: None,
+        navigation: None,
         session: None,
         target: None,
         profile: profile.into(),
@@ -506,6 +514,17 @@ impl Browsers {
             .await
             .get(&(thread.into(), tab.into()))
             .map(|tab| (tab.origin, !*tab.done.borrow()))
+    }
+    pub(crate) async fn navigation(
+        &self,
+        thread: &str,
+        tab: &str,
+    ) -> Option<tokio::sync::watch::Receiver<Navigation>> {
+        self.tabs
+            .lock()
+            .await
+            .get(&(thread.into(), tab.into()))
+            .and_then(|tab| tab.navigation.clone())
     }
     pub async fn completion(
         &self,

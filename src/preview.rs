@@ -30,6 +30,7 @@ pub fn handles(tag: &str) -> bool {
     )
 }
 
+mod navigation;
 mod runtime;
 pub use runtime::{install_desktop, DesktopDriver};
 struct Inner {
@@ -198,6 +199,18 @@ const ZOOMS: [f64; 17] = [
 /// Reconcile CDP's actual history with the client registry (also after viewer navigation).
 pub async fn sync_navigation(s: &State, thread: &str, tab: &str) {
     let browser = &s.streams.p2.preview.browser;
+    if let Some(watch) = browser.navigation(thread, tab).await {
+        navigation::sync(
+            browser,
+            &s.streams.p2.preview.inner,
+            &s.streams.changed,
+            thread,
+            tab,
+            &watch,
+        )
+        .await;
+        return;
+    }
     let Ok(history) = browser
         .command(thread, tab, "Page.getNavigationHistory", json!({}))
         .await

@@ -54,8 +54,6 @@ retain their trees. No SDK, real frontend browser or live desktop service is use
 Startup descriptor admission, capability publication and actual CLI wire proofs
 are tracked by their separate startup acceptance.
 
-Live page-notification projection remains a separate follow-up: this checkpoint
-refreshes navigation through existing listing/viewer synchronization and reconnects
-returned pages, but does not yet turn every unsolicited desktop CDP navigation or
-title event into an immediate manager update. Reconnection acceptance does not
-claim that remaining notification consumer.
+Desktop live page notifications are now projected by the consumer described in
+`PREVIEW-NAVIGATION.md`. Local inherited-pipe notifications and the remaining native
+network/download/dialog consumers retain their separate acceptance boundaries.
