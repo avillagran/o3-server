@@ -92,7 +92,9 @@ async fn timeout_and_future_cancellation_stop_the_owned_process_group() {
         o3_server::store::random_id().unwrap()
     ));
     std::fs::create_dir(&directory).unwrap();
-    let code = "import os,sys,time; open(sys.argv[1],'w').write(str(os.getpid())); time.sleep(30)";
+    // Existence is the readiness signal, so publish only the closed, complete
+    // PID file. The private staging name remains in the same owned fixture.
+    let code = "import os,sys,time\nwith open(sys.argv[1]+'.pending','x') as ready:\n ready.write(str(os.getpid()))\nos.rename(sys.argv[1]+'.pending',sys.argv[1])\ntime.sleep(30)";
     let pid_path = directory.join("timeout.pid");
     let error = proc::run_with_input(
         "/usr/bin/python3",
