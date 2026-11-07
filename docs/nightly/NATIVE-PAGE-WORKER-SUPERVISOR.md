@@ -102,9 +102,9 @@ JavaScript/CDP assertions remain in the same probe. Cleanup requests retained
 by the artifact adapter are reported separately from physical recursive
 removals; no recursive removal executes.
 
-The full public toolkit remains inactive. In particular, nonretiring metadata
-broker timeouts, a reserved owner-invalidation control lane, complete operation
-consumers and authenticated provider-to-MCP selection still require acceptance.
+The full public toolkit remains inactive. Complete operation consumers and
+authenticated provider-to-MCP selection still require acceptance. The following
+checkpoint covers nonretiring metadata and the reserved owner control lane.
 
 ### Metadata deadlines and the owner lane
 
