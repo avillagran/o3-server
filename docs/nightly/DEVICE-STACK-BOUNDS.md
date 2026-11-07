@@ -57,3 +57,37 @@ The test runs on Linux, where the pthread allocation is inspected directly.
 Diagnostic layout experiments do not poll futures or execute SSH/SDK commands;
 raw snapshots and assembly evidence stay in private build artifacts. No desktop
 notification settings or system crash-capture configuration are changed.
+
+## Full-suite pthread cache isolation
+
+A later full minimal suite passed 339 cases, but this test rejected an
+actual worker allocation of 2,097,152 bytes, despite requesting 524,288. This was
+an assertion failure, not another observed stack overflow. The earlier stack
+pressure fix and its production budget remain unchanged.
+
+GNU glibc 2.41's
+[`get_cached_stack`](https://github.com/bminor/glibc/blob/glibc-2.41/nptl/allocatestack.c#L52-L135)
+selects an available cached stack at least as large as the request and rejects
+it only above four times the requested allocation. Thus a completed 2 MiB thread
+can supply a later 512 KiB request. The
+[GNU pthread tunable documentation](https://sourceware.org/glibc/manual/latest/html_node/POSIX-Thread-Tunables.html)
+describes `glibc.pthread.stack_cache_size`; setting it to zero prevents retaining
+unused stacks. Tunables must be supplied when the child process starts.
+
+A separate pthread-only executable reproduced this in the same private glibc
+2.41 container, without invoking the failing device test:
+
+| Sequence | Default cache | Cache disabled at exec |
+| --- | ---: | ---: |
+| Request 2 MiB, join | 2,097,152 | 2,097,152 |
+| Then request 512 KiB, join | 2,097,152 | 524,288 |
+
+The acceptance test now executes only itself in a fresh child with the cache
+disabled, using the bounded process runner and a 90-second deadline. The child
+rechecks container isolation, creates the original 512 KiB Tokio runtime, measures
+the actual pthread stack, and runs the unchanged protocol2 SSH/media consumer
+flow. Its parent also requires the measured 524,288-byte diagnostic, preventing a
+zero-test child invocation from passing. The environment change applies only to
+that child; production workers and other tests retain their configuration.
+No assertion was relaxed, no worker budget increased, and no runtime path was
+skipped. Reproduction artifacts remain under the private build cache.

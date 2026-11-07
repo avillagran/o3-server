@@ -191,6 +191,59 @@ async fn unverified_remote_tools_never_create_a_forward_or_session() {
 #[test]
 fn ssh_rpc_media_consumers_fit_production_512kib_worker_stack() {
     crate::test_sandbox::assert_isolated();
+    const CHILD: &str = "O3_PRIVATE_DEVICE_STACK_CHILD";
+    const CACHE_OFF: &str = "glibc.pthread.stack_cache_size=0";
+    if std::env::var_os(CHILD).is_none() {
+        // glibc may reuse a cached 2 MiB stack for a 512 KiB request. Its
+        // tunable is read at process startup, so isolate this same test by exec.
+        // The private-container assertion above applies before either branch.
+        let executable = std::env::current_exe().unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let out = runtime.block_on(crate::proc::run(
+            executable.to_str().unwrap(),
+            &std::env::current_dir().unwrap(),
+            &[
+                "--exact",
+                "device::device_native_registry_tests::ssh_rpc_media_consumers_fit_production_512kib_worker_stack",
+                "--nocapture",
+                "--test-threads=1",
+            ],
+            crate::proc::Opts {
+                timeout: std::time::Duration::from_secs(90),
+                cap: 256 * 1024,
+                allow_truncate: false,
+            },
+            &[
+                (CHILD, std::path::Path::new("1")),
+                ("GLIBC_TUNABLES", std::path::Path::new(CACHE_OFF)),
+            ],
+        )).unwrap();
+        assert!(
+            out.ok(),
+            "Private stack child failed: {}\n{}",
+            out.text(),
+            out.stderr
+        );
+        assert!(
+            out.text()
+                .contains("Private device consumer Tokio worker stack: 524288 bytes"),
+            "Child must execute and measure the real 512 KiB worker flow: {}",
+            out.text()
+        );
+        // Keep the actual measurements and wire stages without printing a
+        // second libtest summary that a full-suite reporter could double count.
+        for line in out.text().lines() {
+            if let Some(start) = line.find("Private ") {
+                println!("{}", &line[start..]);
+            }
+        }
+        return;
+    }
+    assert_eq!(std::env::var(CHILD).unwrap(), "1");
+    assert_eq!(std::env::var("GLIBC_TUNABLES").unwrap(), CACHE_OFF);
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .thread_stack_size(512 * 1024)
