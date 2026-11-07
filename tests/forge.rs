@@ -23,7 +23,11 @@ fn star_controls_require_write_scope_and_redact_keyed_credentials() {
             hosts["signIns"]["github.com"],
             o3_server::settings::SENTINEL
         );
-        assert_eq!(hosts["tokens"]["ref.test"], secret_ref);
+        assert_eq!(
+            hosts["tokens"]["ref.test"],
+            o3_server::settings::SENTINEL,
+            "clients without secret-reference negotiation see the native saved-secret marker"
+        );
         assert!(!public.to_string().contains("fixture-private"));
     }
     let public = owner.rpc("server.getSettings", json!({})).unwrap();
@@ -33,11 +37,24 @@ fn star_controls_require_write_scope_and_redact_keyed_credentials() {
             json!({"patch":{"sourceControlHosts":public["sourceControlHosts"]}}),
         )
         .unwrap();
+    let stored = o3_server::settings::read(&server.state).unwrap();
+    assert_eq!(
+        stored["sourceControlHosts"]["github"]["tokens"]["github.com"],
+        o3_server::settings::SENTINEL,
+        "private settings keep the saved-secret marker"
+    );
+    let materialized =
+        o3_server::settings_secrets::materialize_profile(&server.dir, &stored).unwrap();
+    assert_eq!(
+        materialized["sourceControlHosts"]["github"]["tokens"]["github.com"],
+        "fixture-private-token",
+        "round-tripping public settings preserves the private credential slot"
+    );
     assert_eq!(
         o3_server::settings::read(&server.state).unwrap()["sourceControlHosts"]["github"]["tokens"]
-            ["github.com"],
-        "fixture-private-token",
-        "round-tripping public settings preserves the private literal"
+            ["ref.test"],
+        secret_ref,
+        "round-tripping the saved-secret marker preserves the private reference"
     );
     let read = server.limited(&owner, &["orchestration:read"]);
     let payload = json!({"provider":"github","host":"github.com","repository":"o/r"});
