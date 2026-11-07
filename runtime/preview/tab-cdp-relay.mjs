@@ -4,11 +4,12 @@ import {randomBytes} from 'node:crypto';
 const PAGE_DOMAINS=new Set(['Accessibility','Animation','DOM','DOMSnapshot','Emulation','Input','Inspector','LayerTree','Log','Network','Page','Performance','Runtime']);
 const FORBIDDEN_PAGE_METHODS=new Set(['Network.getAllCookies','Network.getCookies','Network.setCookie','Network.setCookies','Network.deleteCookies','Network.clearBrowserCookies','Network.clearBrowserCache','Page.crash','Page.close','Page.setDownloadBehavior','DOM.setFileInputFiles']);
 export class TabCdpRelay {
- #attachments=new Set();#cleanupTimeout;#cleanupState='open';#cleanupReceipts=[];#upstream;#target;#alive;#sessions=new Map();#targetInfo;#server;#ws;#path;#client;#connected=false;#closed=false;#event;#denied=0;#windows=new Set();#virtualSequence=0;#closeTask;#namespace=randomBytes(8).toString('hex');
- constructor({upstream,targetId,admitted,WebSocketServer,cleanupTimeoutMs=15000}){
+ #receiptRequired;#cleanupReceipt;#attachments=new Set();#cleanupTimeout;#cleanupState='open';#cleanupReceipts=[];#upstream;#target;#alive;#sessions=new Map();#targetInfo;#server;#ws;#path;#client;#connected=false;#closed=false;#event;#denied=0;#windows=new Set();#virtualSequence=0;#closeTask;#namespace=randomBytes(8).toString('hex');
+ constructor({upstream,targetId,admitted,WebSocketServer,cleanupTimeoutMs=15000,requireReceipt=false,cleanupReceipt}){
   if(!targetId||typeof admitted!=='function')throw Error('Owner target grant required');
   if(!Number.isSafeInteger(cleanupTimeoutMs)||cleanupTimeoutMs<=0||cleanupTimeoutMs>30000)throw Error('Invalid owner cleanup deadline');
-  this.#cleanupTimeout=cleanupTimeoutMs;
+  if(requireReceipt&&(typeof cleanupReceipt!=='string'||!/^[a-f0-9]{48}$/.test(cleanupReceipt)))throw Error('Owner cleanup receipt required');
+  this.#receiptRequired=requireReceipt;this.#cleanupReceipt=cleanupReceipt;this.#cleanupTimeout=cleanupTimeoutMs;
   this.#upstream=upstream;this.#target=targetId;this.#alive=admitted;
   this.#path='/'+randomBytes(32).toString('base64url');this.#server=http.createServer((_q,r)=>{r.writeHead(404);r.end();});
   this.#ws=new WebSocketServer({noServer:true,maxPayload:256*1024*1024,perMessageDeflate:false});
@@ -23,17 +24,17 @@ export class TabCdpRelay {
  async listen(){await new Promise((resolve,reject)=>{this.#server.once('error',reject);this.#server.listen(0,'127.0.0.1',resolve);});return `ws://127.0.0.1:${this.#server.address().port}${this.#path}`;}
  #assert(){if(this.#closed||!this.#alive())throw Error('Browser grant revoked');}
  #send(packet){if(this.#client?.readyState===1)this.#client.send(JSON.stringify(packet));}
- async #info(){if(!this.#targetInfo){const r=await this.#upstream.send('Target.getTargetInfo',{targetId:this.#target});this.#assert();if(r.targetInfo?.targetId!==this.#target)throw Error('Owner target changed');this.#targetInfo=r.targetInfo;}return this.#targetInfo;}
+ async #info(receipt){if(!this.#targetInfo){const r=await this.#upstream.send('Target.getTargetInfo',{targetId:this.#target},undefined,receipt);this.#assert();if(r.targetInfo?.targetId!==this.#target)throw Error('Owner target changed');this.#targetInfo=r.targetInfo;}return this.#targetInfo;}
  #knownTarget(id){return id===this.#target||[...this.#sessions.values()].some(v=>v.targetId===id);}
  async #detach(sessionId){
-  await this.#upstream.send('Target.detachFromTarget',{sessionId});
-  this.#sessions.delete(sessionId);this.#cleanupReceipts.push({kind:'detached-owned-session'});
+  const result=await this.#upstream.send('Target.detachFromTarget',{sessionId},undefined,this.#cleanupReceipt);
+  this.#sessions.delete(sessionId);this.#cleanupReceipts.push({kind:'detached-owned-session'});return result;
  }
- #attach(targetId){
+ #attach(targetId,receipt){
   if(!this.#knownTarget(targetId))throw Error('Target outside grant');
   const work=(async()=>{
    let result;
-   try{result=await this.#upstream.send('Target.attachToTarget',{targetId,flatten:true});}
+   try{result=await this.#upstream.send('Target.attachToTarget',{targetId,flatten:true},undefined,receipt);}
    catch(error){this.#cleanupReceipts.push({kind:'attachment-outcome-unknown'});this.#cleanupState='unknown';throw error;}
    if(typeof result.sessionId!=='string'||!result.sessionId){this.#cleanupState='unknown';throw Error('Attachment outcome unknown');}
    this.#sessions.set(result.sessionId,{targetId});
@@ -47,48 +48,49 @@ export class TabCdpRelay {
   work.then(()=>this.#attachments.delete(work),()=>this.#attachments.delete(work));
   return work;
  }
- async #command(method,params,sessionId){
+ async #command(method,params,sessionId,receipt){
   this.#assert();
   if(sessionId&&!this.#sessions.has(sessionId))throw Error('Session outside grant');
   if(method==='Target.attachToBrowserTarget'&&!sessionId){const id=`owned-browser-${this.#namespace}-${++this.#virtualSequence}`;this.#sessions.set(id,{targetId:this.#target,virtual:true});return {sessionId:id};}
   if(sessionId&&this.#sessions.get(sessionId).virtual)sessionId=undefined;
-  if(method==='Browser.getVersion'&&!sessionId)return this.#upstream.send(method,{});
-  if(method==='Target.getTargets'&&!sessionId)return {targetInfos:[await this.#info()]};
+  if(method==='Browser.getVersion'&&!sessionId)return this.#upstream.send(method,{},undefined,receipt);
+  if(method==='Target.getTargets'&&!sessionId)return {targetInfos:[await this.#info(receipt)]};
   if(method==='Target.getTargetInfo'){
    const targetId=params.targetId??(sessionId?this.#sessions.get(sessionId).targetId:this.#target);
    if(!this.#knownTarget(targetId))throw Error('Target outside grant');
-   return this.#upstream.send(method,{targetId});
+   return this.#upstream.send(method,{targetId},undefined,receipt);
   }
   if(method==='Target.setAutoAttach'&&!sessionId){
    if(params.autoAttach!==true||params.flatten!==true)throw Error('Unsupported root attachment');
    if(![...this.#sessions.values()].some(v=>v.targetId===this.#target)){
-    const info=await this.#info();const attached=await this.#attach(this.#target);
+    const info=await this.#info(receipt);const attached=await this.#attach(this.#target,receipt);
     this.#send({method:'Target.attachedToTarget',params:{sessionId:attached.sessionId,targetInfo:info,waitingForDebugger:false}});
    }
    return {};
   }
-  if(method==='Target.attachToTarget'){if(params.flatten!==true)throw Error('Unflattened attachment refused');return this.#attach(params.targetId);}
+  if(method==='Target.attachToTarget'){if(params.flatten!==true)throw Error('Unflattened attachment refused');return this.#attach(params.targetId,receipt);}
   if(method==='Target.detachFromTarget'){
    if(!this.#sessions.has(params.sessionId))throw Error('Session outside grant');
    if(this.#sessions.get(params.sessionId).virtual){this.#sessions.delete(params.sessionId);return {};}
-   const r=await this.#upstream.send(method,{sessionId:params.sessionId});this.#sessions.delete(params.sessionId);return r;
+   return this.#detach(params.sessionId);
   }
   if(method==='Target.setAutoAttach'&&sessionId){
    if(params.flatten!==true)throw Error('Unflattened child attachment refused');
-   return this.#upstream.send(method,params,sessionId);
+   return this.#upstream.send(method,params,sessionId,receipt);
   }
   if(method==='Browser.getWindowForTarget'){
    if(params.targetId!==this.#target)throw Error('Target outside grant');
-   const r=await this.#upstream.send(method,{targetId:this.#target});this.#assert();this.#windows.add(r.windowId);return r;
+   const r=await this.#upstream.send(method,{targetId:this.#target},undefined,receipt);this.#assert();this.#windows.add(r.windowId);return r;
   }
-  if(method==='Browser.getWindowBounds'&&this.#windows.has(params.windowId))return this.#upstream.send(method,{windowId:params.windowId});
+  if(method==='Browser.getWindowBounds'&&this.#windows.has(params.windowId))return this.#upstream.send(method,{windowId:params.windowId},undefined,receipt);
   const domain=method.split('.')[0];
   if(!sessionId||!PAGE_DOMAINS.has(domain)||FORBIDDEN_PAGE_METHODS.has(method))throw Error('Method outside grant');
-  return this.#upstream.send(method,params,sessionId);
+  return this.#upstream.send(method,params,sessionId,receipt);
  }
  async #receive(data){
   let request;try{request=JSON.parse(data.toString());if(!Number.isSafeInteger(request.id)||typeof request.method!=='string')throw Error('Invalid CDP command');
-   const result=await this.#command(request.method,request.params??{},request.sessionId);this.#assert();this.#send({id:request.id,result,...(request.sessionId?{sessionId:request.sessionId}:{})});
+   const receipt=request.__o3OwnerReceipt;if(this.#receiptRequired&&(typeof receipt!=='string'||!/^[a-f0-9]{48}$/.test(receipt)))throw Error('Owner receipt required');
+   const result=await this.#command(request.method,request.params??{},request.sessionId,receipt);this.#assert();this.#send({id:request.id,result,...(request.sessionId?{sessionId:request.sessionId}:{})});
   }catch{this.#denied++;if(request?.id!==undefined)this.#send({id:request.id,error:{code:-32000,message:'Command unavailable for this browser grant'},...(request.sessionId?{sessionId:request.sessionId}:{})});}
  }
  #forward(packet){

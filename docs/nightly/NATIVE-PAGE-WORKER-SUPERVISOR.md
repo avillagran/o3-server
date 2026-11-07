@@ -140,3 +140,28 @@ its expression, invalidates references through the owner lane, then releases
 and drains the eight actual late responses. The same Page and Keyboard remain
 usable. These owner-library transport receipts do not activate the public
 catalog or establish authenticated MCP admission.
+
+### Callback identity across the public WebSocket transport
+
+`OwnerScopeTransport` is an explicit adapter for the public `send` method of
+one private endpoint's WebSocket class from the pinned Playwright runtime. It
+uses `AsyncLocalStorage` to retain an opaque owner-issued receipt across the
+original Page functions. The receipt is outside CDP parameters. The relay can
+require it and carries it to its owner upstream; cleanup uses a separate fixed
+owner receipt. The adapter neither issues authorization tickets nor derives
+permissions from model input. It preserves the remaining arguments and the
+original return value, and restores the original descriptor at disposal.
+
+The private real-Chromium probe observes the original bootstrap, evaluate,
+press, type, click, snapshot, concurrent wait/snapshot and close paths. A second
+probe applies the adapter and a synthetic owner-ticket boundary. A retired
+callback's delayed mutation retains its old receipt while a successor runs and
+is refused before browser dispatch. An unscoped mutation is refused even when
+the fault-reporting callback throws. Native evaluation timeout termination
+retains its original callback context, and isolated UTF-16 units survive.
+
+This adapter is not loaded by the product entry point yet. The synthetic ticket
+issuer does not prove Rust authorization, session revocation or MCP admission.
+Those require the actual captured actor and real callback receipts, including
+separate durable resource receipts for recording and upload. The inherited
+actor's 4 MiB bound remains a foundation gap, not final native payload parity.
