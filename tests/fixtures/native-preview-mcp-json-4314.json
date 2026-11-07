@@ -1,0 +1,39 @@
+{
+  "complete": true,
+  "wholeNativeToolkit": true,
+  "wholeEffectMcpRegisterToolkit": true,
+  "injectedBoundaries": "Opaque services and synthetic application handler only; no native policy/HTTP claim",
+  "cases": [
+    {
+      "name": "high",
+      "encoded": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"value\\\":\\\"\\\\ud800\\\"}\"}],\"structuredContent\":{\"value\":\"\\ud800\"},\"isError\":false}}"
+    },
+    {
+      "name": "low",
+      "encoded": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"value\\\":\\\"\\\\udfff\\\"}\"}],\"structuredContent\":{\"value\":\"\\udfff\"},\"isError\":false}}"
+    },
+    {
+      "name": "pair",
+      "encoded": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"value\\\":\\\"\ud83d\ude00\\\"}\"}],\"structuredContent\":{\"value\":\"\ud83d\ude00\"},\"isError\":false}}"
+    },
+    {
+      "name": "object-key",
+      "encoded": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"value\\\":{\\\"\\\\ud800\\\":\\\"\\\\udfff\\\"}}\"}],\"structuredContent\":{\"value\":{\"\\ud800\":\"\\udfff\"}},\"isError\":false}}"
+    },
+    {
+      "name": "literal-escape",
+      "encoded": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"value\\\":\\\"\\\\\\\\ud800\\\"}\"}],\"structuredContent\":{\"value\":\"\\\\ud800\"},\"isError\":false}}"
+    },
+    {
+      "name": "controls",
+      "encoded": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"value\\\":\\\"\\\\u0000\\\\n\\\\t\u2028\\\"}\"}],\"structuredContent\":{\"value\":\"\\u0000\\n\\t\u2028\"},\"isError\":false}}"
+    },
+    {
+      "name": "nested",
+      "encoded": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"value\\\":{\\\"list\\\":[\\\"a\\\\ud800b\\\",{\\\"last\\\":\\\"\\\\udfff\\\"}]}}\"}],\"structuredContent\":{\"value\":{\"list\":[\"a\\ud800b\",{\"last\":\"\\udfff\"}]}},\"isError\":false}}"
+    }
+  ],
+  "sourceRevision": "83a3674ffd84ffb33de768210c806cb1ac53fd80",
+  "effectVersion": "4.1.2",
+  "scope": "Actual toolkit success schema and complete MCP registration handler; no provider/admission/CDP consumer claim"
+}

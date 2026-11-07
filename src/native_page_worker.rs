@@ -1,5 +1,7 @@
 //! Inactive native Page process supervisor. Only a trusted owner can supply a
 //! scoped grant; this module is not an MCP endpoint or a browser launcher.
+pub mod control;
+
 use serde_json::{json, Value};
 use std::{
     collections::BTreeMap, future::Future, path::PathBuf, pin::Pin, process::Stdio, sync::Arc,
@@ -286,6 +288,17 @@ impl Worker {
             }
         }
     }
+    /// Owner-only reference invalidation. It preserves this process, Page and
+    /// keyboard; an MCP caller must not choose private protocol operations.
+    pub async fn invalidate_refs(&self) -> Result<(), Fault> {
+        match self
+            .invoke("$owner.invalidateRefs", Value::Null, Duration::from_secs(5))
+            .await?
+        {
+            OperationResult::Value(Value::Bool(true)) => Ok(()),
+            _ => Err(Fault::Protocol),
+        }
+    }
     pub async fn invoke(
         &self,
         operation: &str,
@@ -304,6 +317,11 @@ impl Worker {
         native_timeout: Duration,
         update_current_tab: bool,
     ) -> Result<OperationResult, Fault> {
+        if native_timeout.as_millis() == 0
+            || !native_timeout.subsec_nanos().is_multiple_of(1_000_000)
+        {
+            return Err(Fault::Deadline);
+        }
         self.invoke_budget(
             operation,
             input,
@@ -692,6 +710,81 @@ mod tests {
             }),
             close_deadline: Duration::from_millis(100),
         }
+    }
+    #[tokio::test]
+    async fn closed_control_before_binding_reaps_the_late_worker() {
+        let worker = Worker::spawn(spec("echo"), Owner::new(false))
+            .await
+            .unwrap();
+        let mut closed = worker.handle.closed.clone();
+        let control = crate::preview_control::runtime::Control::new(Some("agent".into()));
+        control.close().wait().await.unwrap();
+        let bound = control::ControlledPage::new(worker, control.clone());
+        let receipt = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if let Some(receipt) = closed.borrow().clone() {
+                    break receipt;
+                }
+                closed.changed().await.unwrap();
+            }
+        })
+        .await
+        .unwrap();
+        assert!(receipt.worker_reaped && receipt.owner_grant_closed);
+        assert!(matches!(
+            bound
+                .agent("agent", "press", json!({}), Duration::from_secs(1), true)
+                .await,
+            Err(control::Error::Control(_))
+        ));
+        control.shutdown().await.unwrap();
+    }
+    #[tokio::test]
+    async fn actual_control_handoffs_retain_process_and_fence_foreign_agents() {
+        let worker = Worker::spawn(spec("echo"), Owner::new(false))
+            .await
+            .unwrap();
+        let control = crate::preview_control::runtime::Control::new(Some("agent".into()));
+        let bound = control::ControlledPage::new(worker.clone(), control.clone());
+        let OperationResult::Value(first) = bound
+            .agent("agent", "press", json!({}), Duration::from_secs(2), true)
+            .await
+            .unwrap()
+        else {
+            panic!("Expected first result")
+        };
+        control.take("viewer").wait().await.unwrap();
+        assert!(matches!(
+            bound
+                .agent("agent", "press", json!({}), Duration::from_secs(2), true)
+                .await,
+            Err(control::Error::Control(_))
+        ));
+        control
+            .release("viewer", || async { Ok(Value::Null) })
+            .wait()
+            .await
+            .unwrap();
+        let OperationResult::Value(second) = bound
+            .agent("agent", "press", json!({}), Duration::from_secs(2), true)
+            .await
+            .unwrap()
+        else {
+            panic!("Expected second result")
+        };
+        assert_eq!(first["pid"], second["pid"]);
+        assert!(
+            second["invalidations"].as_u64().unwrap() > first["invalidations"].as_u64().unwrap()
+        );
+        assert!(matches!(
+            bound
+                .agent("foreign", "press", json!({}), Duration::from_secs(2), true)
+                .await,
+            Err(control::Error::Control(_))
+        ));
+        assert!(bound.close().await.owner_grant_closed);
+        control.close().wait().await.unwrap();
+        control.shutdown().await.unwrap();
     }
     #[tokio::test]
     async fn javascript_payload_retains_lone_units_without_relaxing_envelope() {

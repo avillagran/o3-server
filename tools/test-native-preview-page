@@ -2,7 +2,7 @@
 """Run reviewed whole-native page functions against a retained private Chromium owner."""
 import argparse,json,os,pathlib,subprocess,tempfile,hashlib,uuid
 from node_admission import snapshot as snapshot_node, environment as node_environment
-p=argparse.ArgumentParser(description=__doc__);p.add_argument('--supervisor-bin',type=pathlib.Path);p.add_argument('--case',choices=['real-page','retention','contracts','relay','supervised','supervised-revoke','entry-protocol','framing'],default='real-page');p.add_argument('--native',type=pathlib.Path,required=True);p.add_argument('--playwright',type=pathlib.Path,required=True);p.add_argument('--deps',type=pathlib.Path,required=True);p.add_argument('--node',type=pathlib.Path,required=True);p.add_argument('--guard',type=pathlib.Path,required=True);p.add_argument('--evidence-root',type=pathlib.Path,required=True);a=p.parse_args()
+p=argparse.ArgumentParser(description=__doc__);p.add_argument('--supervisor-bin',type=pathlib.Path);p.add_argument('--case',choices=['real-page','retention','contracts','relay','supervised','supervised-revoke','entry-protocol','framing','mcp-output'],default='real-page');p.add_argument('--native',type=pathlib.Path,required=True);p.add_argument('--playwright',type=pathlib.Path,required=True);p.add_argument('--deps',type=pathlib.Path,required=True);p.add_argument('--node',type=pathlib.Path,required=True);p.add_argument('--guard',type=pathlib.Path,required=True);p.add_argument('--evidence-root',type=pathlib.Path,required=True);a=p.parse_args()
 node_binary=a.node/'bin/node';node_stat=node_binary.lstat()
 assert node_binary.is_file() and not node_binary.is_symlink() and node_stat.st_mode&0o111
 node_sha=hashlib.sha256(node_binary.read_bytes()).hexdigest()
@@ -14,6 +14,9 @@ manifest=json.loads((pathlib.Path(__file__).resolve().parent.parent/'runtime/pre
 for name,digest in manifest['files'].items():
  item=a.native/name;assert item.is_file() and not item.is_symlink() and hashlib.sha256(item.read_bytes()).hexdigest()==digest,name
 assert json.loads((a.deps/'node_modules/effect/package.json').read_text())['version']=='4.1.2'
+effect_manifest=json.loads((pathlib.Path(__file__).resolve().parent.parent/'runtime/preview/effect-manifest.json').read_text())
+for name,digest in effect_manifest['files'].items():
+ item=a.deps/'node_modules/effect'/name;assert item.is_file() and not item.is_symlink() and hashlib.sha256(item.read_bytes()).hexdigest()==digest,name
 artifact=a.playwright.parent/'artifact.json';assert hashlib.sha256(artifact.read_bytes()).hexdigest()=='58221afe10da094f6bc55b5e9166eff06b6ff761ad4031e97614f0f15e941a09'
 for row in json.loads(artifact.read_text())['files']:
  item=a.playwright.parent/row['path'];assert item.is_file() and not item.is_symlink() and hashlib.sha256(item.read_bytes()).hexdigest()==row['sha256'],row['path']

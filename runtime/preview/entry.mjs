@@ -37,13 +37,13 @@ async function invoke(packet){
  active++;
  const run=async()=>{
   if(closing)return;
-  try{const value=await page.invoke(operation,input,packet.timeoutMs);if(!closing)await send({kind:'result',id:packet.id,nonce,ok:true,value:value??null});}
+  try{const value=operation==='$owner.invalidateRefs'?(page.invalidateRefs(),true):await page.invoke(operation,input,packet.timeoutMs);if(!closing)await send({kind:'result',id:packet.id,nonce,ok:true,value:value??null});}
   catch(error){if(!closing){const failure=nativePageModule.toOperationError(error,packet.timeoutMs);await send({kind:'result',id:packet.id,nonce,ok:false,error:{tag:failure.tag,message:failure.message,...(failure.detail===undefined?{}:{detail:failure.detail})}});}}
   finally{active--;}
  };
  // The owner still supplies control receipts. One canonical Page keyboard is
  // shared by legacy aliases and preview_act, never a second Rust key state.
- if(operation==='snapshot'||operation==='waitFor')void run().catch(fatal);
+ if(operation==='snapshot'||operation==='waitFor'||operation==='$owner.invalidateRefs')void run().catch(fatal);
  else{const result=tail.then(run);tail=result.catch(()=>{});void result.catch(fatal);}
 }
 function finish(success=true){

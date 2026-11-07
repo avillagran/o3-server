@@ -134,6 +134,11 @@ async fn main() {
         );
         return;
     }
+    let control = o3_server::preview_control::runtime::Control::new(Some("agent".into()));
+    let controlled = o3_server::native_page_worker::control::ControlledPage::new(
+        worker.clone(),
+        control.clone(),
+    );
     let html="<input id='field'><button id='button' onclick=\"this.textContent='Clicked'\">Click</button>";
     let expression = format!(
         "document.body.innerHTML={}; true",
@@ -261,7 +266,75 @@ async fn main() {
         .as_str()
         .unwrap()
         .contains("ref=t3-"));
-    let receipt = worker.close().await;
+    let tree = snapshot["accessibilityTree"].as_str().unwrap();
+    let old_ref = tree
+        .split("ref=")
+        .nth(1)
+        .unwrap()
+        .split(']')
+        .next()
+        .unwrap();
+    control.take("viewer").wait().await.unwrap();
+    control
+        .release("viewer", || async { Ok(Value::Null) })
+        .wait()
+        .await
+        .unwrap();
+    controlled
+        .agent(
+            "agent",
+            "evaluate",
+            json!({"expression":"true"}),
+            Duration::from_secs(3),
+            true,
+        )
+        .await
+        .unwrap();
+    let OperationResult::NativeError(stale) = controlled
+        .agent(
+            "agent",
+            "click",
+            json!({"locator":format!("aria-ref={old_ref}"),"timeoutMs":100}),
+            Duration::from_secs(3),
+            true,
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("Expected stale reference refusal")
+    };
+    assert_eq!(stale["tag"], "PreviewAutomationInvalidSelectorError");
+    assert_eq!(stale["detail"]["staleRef"], true);
+    worker
+        .invoke(
+            "preview_press",
+            json!({"key":"End"}),
+            Duration::from_secs(3),
+        )
+        .await
+        .unwrap();
+    worker
+        .invoke(
+            "preview_act",
+            json!({"action":"type","locator":"#field","text":"after-handoff","clear":true}),
+            Duration::from_secs(3),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        worker
+            .invoke(
+                "evaluate",
+                json!({"expression":"document.querySelector('#field').value"}),
+                Duration::from_secs(3)
+            )
+            .await
+            .unwrap(),
+        OperationResult::Value(json!("after-handoff"))
+    );
+    let receipt = controlled.close().await;
+    control.close().wait().await.unwrap();
+    control.shutdown().await.unwrap();
     assert!(
         receipt.worker_reaped && receipt.owner_grant_closed && receipt.graceful_worker,
         "{receipt:?}"
@@ -269,6 +342,6 @@ async fn main() {
     assert_eq!(receipt.executed_recursive_removals, Some(0));
     println!(
         "{}",
-        json!({"complete":true,"rustSupervisor":true,"nativePageChildProcess":true,"sameKeyboardAliases":true,"failedChordStateCrossesAliases":true,"workerReaped":receipt.worker_reaped,"ownerClosed":receipt.owner_grant_closed,"nativeRecursiveCleanupRequests":receipt.native_cleanup_requests,"executedRecursiveRemovals":receipt.executed_recursive_removals})
+        json!({"complete":true,"rustSupervisor":true,"nativePageChildProcess":true,"sameKeyboardAliases":true,"failedChordStateCrossesAliases":true,"ownerRefInvalidationPreservesPage":true,"workerReaped":receipt.worker_reaped,"ownerClosed":receipt.owner_grant_closed,"nativeRecursiveCleanupRequests":receipt.native_cleanup_requests,"executedRecursiveRemovals":receipt.executed_recursive_removals})
     );
 }
