@@ -7,12 +7,18 @@ struct Item<T> {
     value: T,
     permit: Option<Permit>,
 }
+pub(super) trait Authority: Send + Sync {
+    fn valid(&self) -> bool;
+    /// Linearize a frame start with owner revocation under the same grant lock.
+    fn begin(&self) -> bool;
+}
 #[derive(Clone)]
 pub(super) struct Permit {
     state: std::sync::Arc<std::sync::atomic::AtomicU8>,
     expires: tokio::time::Instant,
     done: tokio::sync::watch::Receiver<bool>,
-    control: tokio::sync::watch::Receiver<crate::preview_control::runtime::Snapshot>,
+    control: Option<tokio::sync::watch::Receiver<crate::preview_control::runtime::Snapshot>>,
+    authority: Option<std::sync::Arc<dyn Authority>>,
     wake: std::sync::Arc<tokio::sync::Notify>,
 }
 pub(super) struct CancelOnDrop(Permit);
@@ -32,7 +38,23 @@ impl Permit {
             state: std::sync::Arc::new(std::sync::atomic::AtomicU8::new(0)),
             expires,
             done,
-            control,
+            control: Some(control),
+            authority: None,
+            wake,
+        }
+    }
+    pub fn leased(
+        expires: tokio::time::Instant,
+        done: tokio::sync::watch::Receiver<bool>,
+        authority: std::sync::Arc<dyn Authority>,
+        wake: std::sync::Arc<tokio::sync::Notify>,
+    ) -> Self {
+        Self {
+            state: std::sync::Arc::new(std::sync::atomic::AtomicU8::new(0)),
+            expires,
+            done,
+            control: None,
+            authority: Some(authority),
             wake,
         }
     }
@@ -62,23 +84,43 @@ impl Permit {
         self.state.load(std::sync::atomic::Ordering::Acquire) == 0
             && tokio::time::Instant::now() < self.expires
             && self.done.has_changed().is_ok()
-            && self.control.has_changed().is_ok()
             && !*self.done.borrow()
-            && !self.control.borrow().closed
+            && self
+                .control
+                .as_ref()
+                .is_none_or(|control| control.has_changed().is_ok() && !control.borrow().closed)
+            && self
+                .authority
+                .as_ref()
+                .is_none_or(|authority| authority.valid())
     }
     pub fn begin(&self) -> bool {
         if !self.can_queue() {
             self.cancel();
             return false;
         }
-        self.state
+        let claimed = self
+            .state
             .compare_exchange(
                 0,
                 1,
                 std::sync::atomic::Ordering::AcqRel,
                 std::sync::atomic::Ordering::Acquire,
             )
-            .is_ok()
+            .is_ok();
+        if !claimed {
+            return false;
+        }
+        if self
+            .authority
+            .as_ref()
+            .is_some_and(|authority| !authority.begin())
+        {
+            self.state.store(2, std::sync::atomic::Ordering::Release);
+            self.wake.notify_one();
+            return false;
+        }
+        true
     }
 }
 struct Queue<T> {
@@ -311,6 +353,48 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(&after, b"other");
+        writer.stop().await;
+        control.shutdown().await.unwrap();
+    }
+    #[tokio::test]
+    async fn ended_callback_fences_an_unwritten_frame_while_plain_traffic_survives() {
+        crate::test_sandbox::assert_isolated();
+        let control = crate::preview_control::runtime::Control::new(None);
+        let (entered, context) = tokio::sync::oneshot::channel();
+        let (release, gate) = tokio::sync::oneshot::channel();
+        let running = control.agent_admitted("agent", None, move |context| async move {
+            entered.send(context).unwrap();
+            gate.await.unwrap();
+            Ok(Value::Null)
+        });
+        let context = context.await.unwrap();
+        let authority = std::sync::Arc::new(exact::CallbackAuthority {
+            control: control.clone(),
+            context: context.clone(),
+        });
+        let (_done, done) = tokio::sync::watch::channel(false);
+        let permit = Permit::leased(
+            tokio::time::Instant::now() + Duration::from_secs(2),
+            done,
+            authority,
+            Default::default(),
+        );
+        assert!(permit.can_queue());
+        release.send(()).unwrap();
+        running.wait().await.unwrap();
+        assert!(!context.is_active());
+        let (left, mut right) = tokio::net::UnixStream::pair().unwrap();
+        let (_input, output) = left.into_split();
+        let mut writer = pipe(output);
+        assert!(writer.send_exact(b"stale-context".to_vec(), permit.clone()));
+        assert!(writer.send(b"other".to_vec()));
+        let mut received = [0; 5];
+        tokio::time::timeout(Duration::from_secs(1), right.read_exact(&mut received))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(&received, b"other");
+        assert!(permit.cancelled());
         writer.stop().await;
         control.shutdown().await.unwrap();
     }

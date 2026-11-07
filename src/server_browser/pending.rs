@@ -7,17 +7,22 @@ struct Call {
     reply: oneshot::Sender<Result<Value, String>>,
 }
 struct ExactCall {
+    observer: Option<std::sync::Arc<dyn exact::Observer>>,
     permit: write::Permit,
-    session: String,
+    session: Option<String>,
     expires: tokio::time::Instant,
     reply: oneshot::Sender<Result<crate::native_page_worker::cdp::Packet, exact::Fault>>,
+}
+struct Late {
+    session: Option<String>,
+    observer: Option<std::sync::Arc<dyn exact::Observer>>,
 }
 #[derive(Default)]
 pub(super) struct Calls {
     next: u64,
     calls: BTreeMap<u64, Call>,
     exact: BTreeMap<u64, ExactCall>,
-    exact_late: BTreeMap<u64, String>,
+    exact_late: BTreeMap<u64, Late>,
 }
 impl Calls {
     pub fn full(&self) -> bool {
@@ -58,6 +63,8 @@ impl Calls {
         request: exact::Request,
     ) -> Option<(u64, Vec<u8>, write::Permit)> {
         let exact::Request {
+            method,
+            observer,
             params,
             session,
             expires,
@@ -65,26 +72,38 @@ impl Calls {
             permit,
         } = request;
         if reply.is_closed() || expires <= tokio::time::Instant::now() {
+            if let Some(observer) = &observer {
+                observer.cancelled(false);
+            }
             let _ = reply.send(Err(exact::Fault::Deadline));
             return None;
         }
         if self.exact_late.len() + self.exact.len() >= 64 {
+            if let Some(observer) = &observer {
+                observer.cancelled(false);
+            }
             let _ = reply.send(Err(exact::Fault::Busy));
             return None;
         }
         if self.next >= 9_007_199_254_740_991 {
+            if let Some(observer) = &observer {
+                observer.cancelled(false);
+            }
             let _ = reply.send(Err(exact::Fault::Protocol));
             return None;
         }
         self.next += 1;
         let bytes = match serde_json::to_vec(&exact::Command {
             id: self.next,
-            method: "Runtime.evaluate",
+            method: &method,
             params: &params,
-            session: &session,
+            session: session.as_deref(),
         }) {
             Ok(bytes) => bytes,
             Err(_) => {
+                if let Some(observer) = &observer {
+                    observer.cancelled(false);
+                }
                 let _ = reply.send(Err(exact::Fault::Protocol));
                 return None;
             }
@@ -92,6 +111,7 @@ impl Calls {
         self.exact.insert(
             self.next,
             ExactCall {
+                observer,
                 permit: permit.clone(),
                 session,
                 expires,
@@ -103,6 +123,9 @@ impl Calls {
     pub fn exact_unsent(&mut self, id: u64) {
         if let Some(call) = self.exact.remove(&id) {
             call.permit.cancel();
+            if let Some(observer) = &call.observer {
+                observer.cancelled(false);
+            }
             let _ = call.reply.send(Err(exact::Fault::Busy));
         }
     }
@@ -115,8 +138,18 @@ impl Calls {
             .collect::<Vec<_>>();
         for id in ids {
             if let Some(call) = self.exact.remove(&id) {
-                if call.permit.cancel() {
-                    self.exact_late.insert(id, call.session);
+                let started = call.permit.cancel();
+                if let Some(observer) = &call.observer {
+                    observer.cancelled(false);
+                }
+                if started {
+                    self.exact_late.insert(
+                        id,
+                        Late {
+                            session: call.session,
+                            observer: call.observer.clone(),
+                        },
+                    );
                 }
                 let fault = if call.expires <= tokio::time::Instant::now() {
                     exact::Fault::Deadline
@@ -138,8 +171,11 @@ impl Calls {
         let Some(id) = packet.id() else {
             return false;
         };
-        if let Some(session) = self.exact_late.get(&id) {
-            if packet.session() == Some(session.as_str()) {
+        if let Some(late) = self.exact_late.get(&id) {
+            if packet.session() == late.session.as_deref() {
+                if let Some(observer) = &late.observer {
+                    observer.completed(&packet);
+                }
                 self.exact_late.remove(&id);
             }
             return true;
@@ -147,10 +183,13 @@ impl Calls {
         let Some(call) = self.exact.get(&id) else {
             return false;
         };
-        if packet.session() != Some(call.session.as_str()) {
+        if packet.session() != call.session.as_deref() {
             return true;
         }
         let call = self.exact.remove(&id).unwrap();
+        if let Some(observer) = &call.observer {
+            observer.completed(&packet);
+        }
         if call.expires <= tokio::time::Instant::now() {
             let _ = call.reply.send(Err(exact::Fault::Deadline));
             return true;
@@ -224,8 +263,18 @@ impl Calls {
             .collect::<Vec<_>>();
         for id in expired {
             if let Some(call) = self.exact.remove(&id) {
-                if call.permit.cancel() {
-                    self.exact_late.insert(id, call.session);
+                let started = call.permit.cancel();
+                if let Some(observer) = &call.observer {
+                    observer.cancelled(started);
+                }
+                if started {
+                    self.exact_late.insert(
+                        id,
+                        Late {
+                            session: call.session,
+                            observer: call.observer.clone(),
+                        },
+                    );
                 }
                 let _ = call.reply.send(Err(exact::Fault::Deadline));
             }
@@ -236,8 +285,16 @@ impl Calls {
 impl Drop for Calls {
     fn drop(&mut self) {
         for (_, call) in std::mem::take(&mut self.exact) {
-            call.permit.cancel();
+            let started = call.permit.cancel();
+            if let Some(observer) = &call.observer {
+                observer.cancelled(started);
+            }
             let _ = call.reply.send(Err(exact::Fault::Closed));
+        }
+        for (_, late) in std::mem::take(&mut self.exact_late) {
+            if let Some(observer) = &late.observer {
+                observer.cancelled(true);
+            }
         }
         for (_, call) in std::mem::take(&mut self.calls) {
             let _ = call.reply.send(Err("Browser session ended".into()));
@@ -284,10 +341,12 @@ mod tests {
         let permit = write::Permit::new(expires, done, control.subscribe(), Default::default());
         (
             exact::Request {
+                method: "Runtime.evaluate".into(),
+                observer: None,
                 permit,
                 params: exact::parameters(br#"{"expression":"'\ud800'","returnByValue":true}"#)
                     .unwrap(),
-                session: "exact-session".into(),
+                session: Some("exact-session".into()),
                 expires,
                 reply,
             },
@@ -437,5 +496,75 @@ mod tests {
         calls.insert(create).unwrap();
         assert!(calls.expire(calls.deadline().unwrap()));
         assert!(timed_out.await.unwrap().is_err());
+    }
+    #[derive(Default)]
+    struct RecordObserver {
+        completed: std::sync::Mutex<Vec<crate::native_page_worker::cdp::Packet>>,
+        cancelled: std::sync::Mutex<Vec<bool>>,
+    }
+    impl exact::Observer for RecordObserver {
+        fn completed(&self, packet: &crate::native_page_worker::cdp::Packet) {
+            self.completed.lock().unwrap().push(packet.clone());
+        }
+        fn cancelled(&self, unknown: bool) {
+            self.cancelled.lock().unwrap().push(unknown);
+        }
+    }
+    #[tokio::test]
+    async fn late_root_attachment_retains_its_completion_hook_after_caller_close() {
+        crate::test_sandbox::assert_isolated();
+        let (mut request, received, _lease) =
+            exact_request(tokio::time::Instant::now() + Duration::from_secs(3));
+        let observer = std::sync::Arc::new(RecordObserver::default());
+        request.method = "Target.attachToTarget".into();
+        request.session = None;
+        request.observer = Some(observer.clone());
+        request.params = crate::native_page_worker::JavaScriptJson::parse(
+            r#"{"targetId":"owned","flatten":true}"#.into(),
+        )
+        .unwrap();
+        let mut calls = Calls::default();
+        let (id, bytes, permit) = calls.insert_exact(request).unwrap();
+        assert_eq!(id, 1);
+        assert!(permit.begin());
+        let value: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(value["method"], "Target.attachToTarget");
+        assert!(value.get("sessionId").is_none());
+        drop(received);
+        calls.cancel_exact();
+        assert_eq!(*observer.cancelled.lock().unwrap(), vec![false]);
+        assert_eq!(calls.exact_late.len(), 1);
+        assert!(calls.complete_exact(
+            br#"{"id":1,"sessionId":"foreign","result":{"sessionId":"must-not-register"}}"#
+        ));
+        assert!(observer.completed.lock().unwrap().is_empty());
+        assert!(calls.complete_exact(
+            br#"{"id":1,"result":{"sessionId":"late-owned","metadata":"\ud800"}}"#
+        ));
+        let records = observer.completed.lock().unwrap();
+        assert_eq!(records.len(), 1);
+        let crate::native_page_worker::cdp::Payload::Result(raw) = records[0].payload().unwrap()
+        else {
+            panic!("result missing")
+        };
+        assert!(raw.json().contains("late-owned"));
+        assert!(raw.json().contains("\\ud800"));
+        assert!(calls.exact_late.is_empty());
+    }
+    #[tokio::test]
+    async fn losing_the_actor_marks_retained_late_completion_as_unknown() {
+        crate::test_sandbox::assert_isolated();
+        let (mut request, received, _lease) =
+            exact_request(tokio::time::Instant::now() + Duration::from_secs(3));
+        let observer = std::sync::Arc::new(RecordObserver::default());
+        request.observer = Some(observer.clone());
+        let mut calls = Calls::default();
+        let (_, _, permit) = calls.insert_exact(request).unwrap();
+        assert!(permit.begin());
+        drop(received);
+        calls.cancel_exact();
+        drop(calls);
+        assert_eq!(*observer.cancelled.lock().unwrap(), vec![false, true]);
+        assert!(observer.completed.lock().unwrap().is_empty());
     }
 }

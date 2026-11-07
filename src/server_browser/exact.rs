@@ -10,9 +10,15 @@ pub(super) enum Fault {
     Protocol,
     Busy,
 }
+pub(super) trait Observer: Send + Sync {
+    fn completed(&self, packet: &Packet);
+    fn cancelled(&self, outcome_unknown: bool);
+}
 pub(super) struct Request {
+    pub method: String,
+    pub observer: Option<std::sync::Arc<dyn Observer>>,
     pub params: JavaScriptJson,
-    pub session: String,
+    pub session: Option<String>,
     pub expires: tokio::time::Instant,
     pub reply: oneshot::Sender<Result<Packet, Fault>>,
     pub permit: write::Permit,
@@ -20,10 +26,10 @@ pub(super) struct Request {
 #[derive(Serialize)]
 pub(super) struct Command<'a> {
     pub id: u64,
-    pub method: &'static str,
+    pub method: &'a str,
     pub params: &'a JavaScriptJson,
-    #[serde(rename = "sessionId")]
-    pub session: &'a str,
+    #[serde(rename = "sessionId", skip_serializing_if = "Option::is_none")]
+    pub session: Option<&'a str>,
 }
 pub(super) fn parameters(bytes: &[u8]) -> Result<JavaScriptJson, Fault> {
     if bytes.is_empty() || bytes.len() >= 4 * 1024 * 1024 {
@@ -54,6 +60,95 @@ pub(super) fn parameters(bytes: &[u8]) -> Result<JavaScriptJson, Fault> {
     )
     .map_err(|_| Fault::Protocol)
 }
+/// Fixed Runtime.evaluate on a captured real page, authorized by that page's
+/// actual callback admission. This is an owner library API, not an MCP route.
+#[derive(Clone)]
+pub struct CapturedEvaluation {
+    actor: mpsc::WeakSender<Request>,
+    session: String,
+    done: tokio::sync::watch::Receiver<bool>,
+    control: crate::preview_control::runtime::Control,
+    wake: std::sync::Arc<tokio::sync::Notify>,
+}
+pub(super) struct CallbackAuthority {
+    pub(super) control: crate::preview_control::runtime::Control,
+    pub(super) context: crate::preview_control::runtime::RunContext,
+}
+impl write::Authority for CallbackAuthority {
+    fn valid(&self) -> bool {
+        self.control.owns_context(&self.context)
+    }
+    fn begin(&self) -> bool {
+        self.control.authorize_context_write(&self.context)
+    }
+}
+impl CapturedEvaluation {
+    /// The real captured scheduler, never a caller-provided controller epoch.
+    pub fn control(&self) -> crate::preview_control::runtime::Control {
+        self.control.clone()
+    }
+    pub async fn evaluate(
+        &self,
+        context: &crate::preview_control::runtime::RunContext,
+        params: &[u8],
+        budget: Duration,
+    ) -> Result<Packet, Value> {
+        if !self.control.owns_context(context) {
+            return Err(
+                json!({"message":"Browser callback admission is unavailable","reason":"scope"}),
+            );
+        }
+        self.evaluate_inner(context, params, budget)
+            .await
+            .map_err(fault_value)
+    }
+    async fn evaluate_inner(
+        &self,
+        context: &crate::preview_control::runtime::RunContext,
+        params: &[u8],
+        budget: Duration,
+    ) -> Result<Packet, Fault> {
+        if *self.done.borrow() {
+            return Err(Fault::Closed);
+        }
+        if budget.is_zero() || budget > Duration::from_secs(121) {
+            return Err(Fault::Deadline);
+        }
+        let params = parameters(params)?;
+        let expires = tokio::time::Instant::now() + budget;
+        let authority = std::sync::Arc::new(CallbackAuthority {
+            control: self.control.clone(),
+            context: context.clone(),
+        });
+        let permit =
+            write::Permit::leased(expires, self.done.clone(), authority, self.wake.clone());
+        let _cancel = permit.hold();
+        let actor = self.actor.upgrade().ok_or(Fault::Closed)?;
+        let (reply, result) = oneshot::channel();
+        tokio::time::timeout_at(
+            expires,
+            actor.send(Request {
+                method: "Runtime.evaluate".into(),
+                observer: None,
+                params,
+                session: Some(self.session.clone()),
+                expires,
+                reply,
+                permit,
+            }),
+        )
+        .await
+        .map_err(|_| Fault::Deadline)?
+        .map_err(|_| Fault::Closed)?;
+        tokio::time::timeout_at(expires, result)
+            .await
+            .map_err(|_| Fault::Deadline)?
+            .map_err(|_| Fault::Closed)?
+    }
+}
+fn fault_value(fault: Fault) -> Value {
+    json!({"message":"Exact browser evaluation did not complete","reason":match fault{Fault::Closed=>"closed",Fault::Deadline=>"deadline",Fault::Protocol=>"protocol",Fault::Busy=>"busy"}})
+}
 impl Page {
     pub(super) async fn evaluate_exact(
         &self,
@@ -78,8 +173,10 @@ impl Page {
         tokio::time::timeout_at(
             expires,
             self.tab.exact_tx.send(Request {
+                method: "Runtime.evaluate".into(),
+                observer: None,
                 params,
-                session,
+                session: Some(session),
                 expires,
                 reply,
                 permit,
@@ -114,6 +211,24 @@ impl Browsers {
 }
 
 impl crate::preview::Manager {
+    /// Capture only the selected real tab/session before controlled work. The
+    /// caller must already have authenticated its thread and tab scope.
+    pub fn capture_evaluation(&self, thread: &str, tab: &str) -> Result<CapturedEvaluation, Value> {
+        let page = self.browser.page(thread, tab)?;
+        let session = page
+            .tab
+            .session
+            .clone()
+            .ok_or_else(|| json!({"message":"Browser session is unavailable"}))?;
+        Ok(CapturedEvaluation {
+            actor: page.tab.exact_tx.downgrade(),
+            session,
+            done: page.tab.done.clone(),
+            control: page.control(),
+            wake: page.tab.exact_wake.clone(),
+        })
+    }
+
     /// Owner-library exact evaluation; this does not register a public RPC or
     /// replace authenticated MCP/control admission and native result encoding.
     pub async fn evaluate_exact(

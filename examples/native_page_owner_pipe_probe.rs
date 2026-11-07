@@ -138,6 +138,76 @@ async fn main() {
         .unwrap();
     assert_eq!(ordinary.session(), before_refresh.session());
     assert_eq!(remote_value(&ordinary), json!("other target survives"));
+    // The captured actor accepts only a real admission from this actual tab.
+    // Human takeover and close fence arrivals, but the already entered callback
+    // may still begin its owned frame before that callback itself completes.
+    let admitted_tab = open(&state, "admitted").await;
+    assert!(browser.capture_evaluation("two", &admitted_tab).is_err());
+    let captured = browser
+        .capture_evaluation("admitted", &admitted_tab)
+        .unwrap();
+    let control = captured.control();
+    let (entered, context) = tokio::sync::oneshot::channel();
+    let (release, gate) = tokio::sync::oneshot::channel();
+    let (completed, result) = tokio::sync::oneshot::channel();
+    let target = captured.clone();
+    let running = control.agent_admitted("private-agent", None, move |context| async move {
+        entered.send(context.clone()).unwrap();
+        gate.await.unwrap();
+        let packet = target
+            .evaluate(
+                &context,
+                br#"{"expression":"'\ud800'","returnByValue":true}"#,
+                Duration::from_secs(3),
+            )
+            .await?;
+        completed.send(packet).unwrap();
+        Ok(Value::Null)
+    });
+    let context = context.await.unwrap();
+    let foreign = browser.capture_evaluation("two", &two).unwrap();
+    let target = captured.clone();
+    foreign
+        .control()
+        .agent_admitted("private-agent", None, move |foreign_context| async move {
+            let error = target
+                .evaluate(
+                    &foreign_context,
+                    br#"{"expression":"globalThis.foreignContextMustNotRun=true"}"#,
+                    Duration::from_secs(1),
+                )
+                .await
+                .unwrap_err();
+            assert_eq!(error["reason"], "scope");
+            Ok(Value::Null)
+        })
+        .wait()
+        .await
+        .unwrap();
+    let taking = control.take("human-viewer");
+    let closing = control.close();
+    release.send(()).unwrap();
+    running.wait().await.unwrap();
+    let packet = result.await.unwrap();
+    let Some(Payload::Result(value)) = packet.payload() else {
+        panic!("Admitted raw result missing")
+    };
+    assert!(value.json().to_ascii_lowercase().contains("\\ud800"));
+    assert!(!context.is_active());
+    assert_eq!(
+        captured
+            .evaluate(
+                &context,
+                br#"{"expression":"true"}"#,
+                Duration::from_secs(1)
+            )
+            .await
+            .unwrap_err()["reason"],
+        "scope"
+    );
+    let _ = taking.wait().await;
+    closing.wait().await.unwrap();
+    assert_eq!(remote_value(&browser.evaluate_exact("two",&two,br#"{"expression":"typeof globalThis.foreignContextMustNotRun","returnByValue":true}"#,Duration::from_secs(3)).await.unwrap()),json!("undefined"));
     preview::shutdown(&state).await;
     assert_eq!(retained.0.load(Ordering::SeqCst), 0);
     assert!(browser
@@ -146,6 +216,6 @@ async fn main() {
         .is_err());
     println!(
         "{}",
-        json!({"complete":true,"actualRustOwnerPipe":true,"exactArguments":true,"exactResult":true,"lateResponseDrained":true,"otherTargetSurvived":true,"sharedProfileDirectory":true,"contextOverrideRefused":true,"closedOwnerRefused":true,"profileRemovalRequests":retained.0.load(Ordering::SeqCst)})
+        json!({"complete":true,"actualRustOwnerPipe":true,"exactArguments":true,"exactResult":true,"lateResponseDrained":true,"otherTargetSurvived":true,"sharedProfileDirectory":true,"contextOverrideRefused":true,"closedOwnerRefused":true,"admittedFrameDrainsThroughTakeAndClose":true,"foreignAndEndedContextsRefused":true,"profileRemovalRequests":retained.0.load(Ordering::SeqCst)})
     );
 }

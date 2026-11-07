@@ -50,3 +50,31 @@ That physical probe runs the actual Rust tab owner and inherited pipe into real 
 Exact writes additionally carry a one-use metadata-only admission permit. At the actual write boundary it checks the caller's remaining deadline, captured process/control watches and cancellation state. Dropping that caller's future wakes the shared actor to release only its own active correlation; a write which may have started retains a late-result tombstone. Invalid unsent exact frames are purged from the bounded FIFO without dropping or reordering legacy traffic. The permit contains watch receivers and an atomic token, not a socket/sender/target lease, and an old token cannot cancel a successor's independent token. Once a partial frame may have started, cancellation does not truncate it into another session's stream: it finishes or encounters the original fatal five-second transport write deadline, with application outcome still unknown. A rejected exact enqueue returns Busy for that request instead of closing the shared actor.
 
 Real anonymous-socket tests hold the writer behind a bounded send buffer, expire/cancel queued exact frames, reclaim their capacity and verify that no exact bytes precede surviving ordinary traffic. A separate case submits stale/closed authority with no intervening producer and verifies refusal at the actual write boundary. These tests execute no filesystem cleanup or host shell.
+
+### Actual callback-bound fixed evaluation
+
+The trusted owner can capture `CapturedEvaluation` from an existing real tab.
+It stores the captured session and a weak actor sender, not another browser
+endpoint or a replacement controller. Its fixed `Runtime.evaluate` still accepts
+only expression, awaitPromise and returnByValue. The owner remains responsible
+for authenticating the thread/tab and choosing the canonical operation and
+admission path; this library interface is not MCP authorization.
+
+A frame's callback identity must belong to that captured Control and remain
+active. Frame start and EndAdmission share a mutex gate, giving them a defined
+order. Generation changes and Control close do not revoke a callback already
+entered. Callback completion prevents an unwritten frame from starting. The
+existing direct owner evaluation retains its original closed-Control gate.
+
+The actual inherited-pipe Chromium probe creates three tabs in one retained
+private profile. A foreign real tab's callback is refused; a callback entered
+on the captured tab can still send its exact UTF-16 result after takeover and
+Control close; that same receipt is refused after completion. Another target
+continues to work. This proves the fixed evaluation consumer, not the full
+native Page grant, session/event router or authenticated MCP toolkit.
+
+The bounded correlation layer also retains an optional completion observer on
+late root responses. Cancellation cannot discard the observer before a late
+attachment response, and loss of the actor explicitly marks that retained
+outcome unknown. The actual session-grant factory and its owned detach consumer
+remain unselected until their separate physical transport acceptance is done.

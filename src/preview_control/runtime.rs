@@ -23,7 +23,7 @@ pub struct RunContext {
     action: ActionId,
     generation: u64,
     identity: std::sync::Weak<()>,
-    active: Arc<std::sync::atomic::AtomicBool>,
+    active: Arc<Mutex<bool>>,
 }
 impl RunContext {
     pub fn action_id(&self) -> ActionId {
@@ -33,13 +33,13 @@ impl RunContext {
         self.generation
     }
     pub fn is_active(&self) -> bool {
-        self.active.load(std::sync::atomic::Ordering::Acquire)
+        *self.active.lock().unwrap()
     }
 }
-struct EndAdmission(Arc<std::sync::atomic::AtomicBool>);
+struct EndAdmission(Arc<Mutex<bool>>);
 impl Drop for EndAdmission {
     fn drop(&mut self) {
-        self.0.store(false, std::sync::atomic::Ordering::Release);
+        *self.0.lock().unwrap() = false;
     }
 }
 
@@ -297,6 +297,13 @@ impl Control {
         context.is_active()
             && std::sync::Weak::ptr_eq(&context.identity, &Arc::downgrade(&self.0.shared.identity))
     }
+    /// Linearize the start of one owned frame with callback completion. A
+    /// generation/owner change does not revoke a callback already entered.
+    pub(crate) fn authorize_context_write(&self, context: &RunContext) -> bool {
+        let active = context.active.lock().unwrap();
+        *active
+            && std::sync::Weak::ptr_eq(&context.identity, &Arc::downgrade(&self.0.shared.identity))
+    }
     pub fn human<F>(&self, viewer: &str, work: impl FnOnce() -> F + Send + 'static) -> Call
     where
         F: Future<Output = ResultValue> + Send + 'static,
@@ -521,7 +528,7 @@ async fn run(shared: Arc<Shared>, done: watch::Sender<bool>) {
                         action,
                         generation,
                         identity: Arc::downgrade(&shared.identity),
-                        active: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+                        active: Arc::new(Mutex::new(true)),
                     };
                     jobs.spawn(async move {
                         let _end = EndAdmission(context.active.clone());

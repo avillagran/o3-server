@@ -13,7 +13,7 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 mod desktop;
 pub(crate) mod dialog;
 mod events;
-mod exact;
+pub(crate) mod exact;
 #[cfg(test)]
 mod lifetime_tests;
 #[cfg(test)]

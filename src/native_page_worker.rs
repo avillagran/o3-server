@@ -1,6 +1,7 @@
 //! Inactive native Page process supervisor. Only a trusted owner can supply a
 //! scoped grant; this module is not an MCP endpoint or a browser launcher.
 pub mod cdp;
+pub use crate::server_browser::exact::CapturedEvaluation;
 pub mod control;
 
 use serde_json::{json, Value};
