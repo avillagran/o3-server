@@ -770,9 +770,11 @@ fn actual_service_cancelled_inference_is_fenced_after_caller_disappears() {
     process::runtime().block_on(async {tokio::spawn(async {
   process::assert_stack();let (_unused,authority,memory,_)=fixture();let engine=process::Engine::new("hang");
   let service=candidate::Service::new(Arc::new(Store::new(memory.clone(),memory)),engine.clone(),Arc::new(candidate::WallClock),None);
+  // Cold runtime capture is readiness work, outside this inference-entry witness.
+  service.bind(authority.clone()).prepare().await.unwrap();assert_eq!(engine.placements(),vec!["cpu"]);
   let owner=service.clone();let auth=authority.clone();
-  let caller=tokio::spawn(async move {owner.bind(auth).transcribe(0.25f32.to_le_bytes().to_vec(),o3_server::speech_request::TranscriptionOptions::decode(json!({"speechLanguage":"en","speechTranslateToEnglish":false,"speechCustomWords":[],"speechRemoveFillerWords":false,"speechSilenceFiltering":false})).unwrap()).await});
-  let pid=engine.entered().await;let exit=process::exit(pid);
+  let mut caller=tokio::spawn(async move {owner.bind(auth).transcribe(0.25f32.to_le_bytes().to_vec(),o3_server::speech_request::TranscriptionOptions::decode(json!({"speechLanguage":"en","speechTranslateToEnglish":false,"speechCustomWords":[],"speechRemoveFillerWords":false,"speechSilenceFiltering":false})).unwrap()).await});
+  let pid=tokio::select! {pid=engine.entered()=>pid,result=&mut caller=>panic!("Hung inference completed before its entry witness: {result:?}")};let exit=process::exit(pid);
   assert_eq!(service.bind(authority).status().await.unwrap()["state"],"transcribing");
   caller.abort();let _=caller.await;service.shutdown().await.unwrap();
   let _event=tokio::time::timeout(std::time::Duration::from_secs(2),exit.readable()).await.unwrap().unwrap();

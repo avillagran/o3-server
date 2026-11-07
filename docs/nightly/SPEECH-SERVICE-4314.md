@@ -212,3 +212,18 @@ cover that contract plus inference uncertainty, earlier cleanup uncertainty,
 physical reset retaining an engine, and physical hung-feed fencing. Both targeted
 strict checks pass. These are separate source-fenced receipts from the preceding
 thirty-case stream checkpoint, not a claim that all cases were rerun afterward.
+
+### Cold readiness and the inference-cancellation witness
+
+The cancellation fixture now prepares the same Service and asserts one CPU load
+before starting its specifically hung inference. Its ten-second entry witness no
+longer includes per-child Node capture, hashing, copying and startup. Buffered
+transcription flushes final audio, so its single valid sample does reach ASR;
+this was not the live stream's sub-frame case. Premature caller completion is
+reported directly rather than hidden behind a later entry timeout. Startup,
+operation, entry and close budgets remain 10, 5, 10 and 2 seconds respectively.
+
+The actual twenty-case service binary passes in both feature modes with default
+libtest parallelism, no test-thread override, in private four-CPU containers.
+Targeted strict checks also pass. This is a test-only readiness correction;
+current HTTP development is not included in its commit or parity claim.
