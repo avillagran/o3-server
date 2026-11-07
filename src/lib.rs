@@ -28,6 +28,7 @@ pub mod speech_catalog;
 pub mod speech_kernel;
 pub mod speech_model_store;
 pub mod speech_request;
+pub mod speech_service;
 pub mod speech_worker;
 pub mod store;
 #[cfg(test)]
