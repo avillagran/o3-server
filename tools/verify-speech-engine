@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+"""Verify a private speech installation against source pins without executing it."""
+import os,pathlib,json,hashlib,base64,tarfile,stat,sys
+assert pathlib.Path('/run/.containerenv').exists(),'Verification requires private rootless Podman'
+source=pathlib.Path(__file__).resolve().parent.parent
+root=pathlib.Path(sys.argv[1]);assert root.is_absolute()
+manifest=json.loads((source/'runtime/speech/engine-packages-4314.json').read_text())
+receipt=json.loads((root/'engine-receipt.json').read_text());assert receipt['nativeRevision']==manifest['nativeRevision'] and receipt['platform']==manifest['platform']
+assert len(receipt['packages'])==len(manifest['packages'])
+def regular(path):
+ assert path.is_absolute() and os.path.normpath(path)==str(path)
+ directory=os.open('/',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
+ try:
+  for component in path.parts[1:-1]:
+   child=os.open(component,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC,dir_fd=directory);os.close(directory);directory=child
+  fd=os.open(path.name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_CLOEXEC,dir_fd=directory)
+ finally:os.close(directory)
+ info=os.fstat(fd)
+ if not stat.S_ISREG(info.st_mode):os.close(fd);raise ValueError('Nonregular acquired file')
+ return os.fdopen(fd,'rb')
+expected=set()
+for index,(pin,package) in enumerate(zip(manifest['packages'],receipt['packages'])):
+ assert (pin['name'],pin['version'],pin['integrity'])==(package['name'],package['version'],package['sri'])
+ assert package['installScriptsExecuted'] is False
+ with regular(root/f'package-{index}.tgz') as archive:
+  assert 'sha512-'+base64.b64encode(hashlib.file_digest(archive,'sha512').digest()).decode()==pin['integrity'];archive.seek(0)
+  seen=set();by_path={record['path']:record for record in package['files']};assert len(by_path)==len(package['files'])==pin['fileCount']
+  with tarfile.open(fileobj=archive,mode='r:gz') as tar:
+   for member in tar:
+    if member.isdir():continue
+    assert member.isfile() and not member.islnk() and not member.issym()
+    parts=member.name.split('/');assert parts[0]=='package' and all(part not in ('','..','.') for part in parts[1:])
+    relative=pathlib.PurePosixPath('node_modules',pin['name'],*parts[1:]);name=str(relative)
+    assert name not in seen and name not in expected;seen.add(name);expected.add(name)
+    record=by_path[name];assert record['bytes']==member.size
+    with tar.extractfile(member) as contents:assert hashlib.file_digest(contents,'sha256').hexdigest()==record['sha256']
+    with regular(root/'graph'/relative) as actual:assert hashlib.file_digest(actual,'sha256').hexdigest()==record['sha256']
+  assert seen==set(by_path)
+actual=set()
+for directory,dirs,files in os.walk(root/'graph',followlinks=False):
+ for name in dirs:assert stat.S_ISDIR(pathlib.Path(directory,name).lstat().st_mode)
+ for name in files:actual.add(str(pathlib.Path(directory,name).relative_to(root/'graph')))
+assert actual==expected
+catalog_bytes=(source/'runtime/speech/catalog-4314.json').read_bytes();assert hashlib.sha256(catalog_bytes).hexdigest()==manifest['catalogSha256']
+model=json.loads((root/'model-receipt.json').read_text());matches=[value for value in json.loads(catalog_bytes)['models'] if value['id']==model['catalog']['id']]
+assert len(matches)==1 and model['catalog']==matches[0]
+with regular(root/'model.gguf') as contents:
+ assert os.fstat(contents.fileno()).st_size==matches[0]['size']
+ assert hashlib.file_digest(contents,'sha256').hexdigest()==matches[0]['sha256']
+print(json.dumps({'packages':len(manifest['packages']),'graphFiles':len(expected),'allArchiveSRIAndFileHashesVerified':True,'modelId':matches[0]['id'],'modelBytes':matches[0]['size'],'license':matches[0]['license']}))

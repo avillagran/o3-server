@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+"""Compile on the host, snapshot under lock, then execute offline in private Podman."""
+import pathlib,os,subprocess,fcntl,json,hashlib,uuid,sys,argparse,stat
+parser=argparse.ArgumentParser(description='Run the actual pinned engine and tiny catalog model inside private Podman.')
+parser.add_argument('--inputs',required=True,type=pathlib.Path)
+parser.add_argument('--node',required=True,type=pathlib.Path)
+parser.add_argument('--evidence-root',required=True,type=pathlib.Path)
+parser.add_argument('--image',default='localhost/o3-server-tests:local')
+parser.add_argument('--default-features',action='store_true')
+args=parser.parse_args()
+root=pathlib.Path(__file__).resolve().parent.parent;out=args.evidence_root
+if not args.inputs.is_absolute() or not args.inputs.is_dir() or args.inputs.is_symlink():parser.error('--inputs must be an existing absolute acquisition directory')
+sys.path.insert(0,str(root/'tools'));import node_admission
+runtime=out/('real-engine-'+uuid.uuid4().hex);runtime.mkdir(mode=0o700)
+env=dict(os.environ,PATH='/home/node/.cargo/bin:'+os.environ['PATH'],CARGO_TARGET_DIR=os.environ.get('CARGO_TARGET_DIR','/var/tmp/o3-server/fresh-context-target'),CARGO_BUILD_JOBS='2',CARGO_NET_OFFLINE='true')
+node=json.loads(subprocess.check_output(['python3',str(root/'tools/admit-node'),'--node',str(args.node),'--image',args.image],text=True))
+with open('/var/tmp/o3-build/o3-parity-compile.lock','a') as lock:
+ fcntl.flock(lock,fcntl.LOCK_EX)
+ with (runtime/'compile.log').open('w') as log:r=subprocess.run(['cargo','build','--locked']+([] if args.default_features else ['--no-default-features'])+['--example','speech_engine_acceptance'],cwd=root,env=env,stdout=log,stderr=subprocess.STDOUT)
+ if r.returncode:raise SystemExit(r.returncode)
+ binary=pathlib.Path(env['CARGO_TARGET_DIR'])/'debug/examples/speech_engine_acceptance'
+ def copy_artifact(source_path,target_path,executable):
+  target_path.parent.mkdir(mode=0o700,parents=True,exist_ok=True)
+  source_fd=os.open(source_path,os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC)
+  with os.fdopen(source_fd,'rb') as source,target_path.open('xb') as target:
+   before=os.fstat(source.fileno());assert stat.S_ISREG(before.st_mode)
+   while block:=source.read(1024*1024):target.write(block)
+   after=os.fstat(source.fileno());identity=lambda value:(value.st_dev,value.st_ino,value.st_size,value.st_mtime_ns,value.st_ctime_ns)
+   assert identity(before)==identity(after)
+  target_path.chmod(0o500 if executable else 0o400)
+ copy_artifact(binary,runtime/'acceptance',True)
+ libraries=[]
+ for library in sorted((pathlib.Path(env['CARGO_TARGET_DIR'])/'debug/deps').glob('*.so')):
+  target=runtime/'deps'/library.name;copy_artifact(library,target,False)
+  libraries.append({'path':str(target.relative_to(runtime)),'sha256':hashlib.sha256(target.read_bytes()).hexdigest()})
+ (runtime/'acceptance').chmod(0o500);node_admission.snapshot(node,runtime/'node-bin/node')
+verify=['podman','--remote=false','run','--rm','--pull=never','--http-proxy=false','--userns=keep-id','--user',f'{os.getuid()}:{os.getgid()}','--read-only','--network=none','--cap-drop=ALL','--security-opt=no-new-privileges','--memory=256m','-v',f'{root}:/source:ro','-v',f'{args.inputs}:/inputs:ro',args.image,'python3','/source/tools/verify-speech-engine','/inputs']
+with (runtime/'verification.log').open('w') as log:verified=subprocess.run(verify,stdout=log,stderr=subprocess.STDOUT)
+if verified.returncode:raise SystemExit(verified.returncode)
+cmd=['podman','--remote=false','run','--rm','--pull=never','--http-proxy=false','--timeout=180','--userns=keep-id','--user',f'{os.getuid()}:{os.getgid()}','--read-only','--network=none','--cap-drop=ALL','--security-opt=no-new-privileges','--pids-limit=128','--memory=4g','--tmpfs','/tmp:rw,exec,size=1g,mode=1777','--env','HOME=/tmp/home','--env','LD_LIBRARY_PATH=/runtime/deps','--env','O3_SPEECH_INPUT=/inputs','--env','O3_ADMITTED_NODE=/runtime/node-bin/node','--env','O3_ADMITTED_NODE_VERSION=26.13.0','--env',f'O3_ADMITTED_NODE_SHA256={node["sha256"]}','-v',f'{args.inputs}:/inputs:ro','-v',f'{runtime}:/runtime:ro',args.image,'/runtime/acceptance']
+with (runtime/'physical.log').open('w') as log:r=subprocess.run(cmd,stdout=log,stderr=subprocess.STDOUT)
+(runtime/'result.json').write_text(json.dumps({'returncode':r.returncode,'binarySha256':hashlib.sha256((runtime/'acceptance').read_bytes()).hexdigest(),'node':node,'runtimeLibraries':libraries,'defaultFeatures':args.default_features,'scope':'actual pinned engine and native catalog model, CPU only, synthetic silence, no network/devices/display'},indent=2));print(runtime);print((runtime/'physical.log').read_text());raise SystemExit(r.returncode)

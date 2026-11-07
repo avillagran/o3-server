@@ -1,0 +1,26 @@
+#!/usr/bin/env python3
+"""Acquire only pinned speech packages in private Podman; never run install scripts."""
+import argparse,json,os,pathlib,subprocess
+p=argparse.ArgumentParser(description=__doc__)
+p.add_argument('--out',required=True,type=pathlib.Path,help='New retained installation directory')
+p.add_argument('--cache',type=pathlib.Path,help='Explicit read-only prior acquisition, reverified before reuse')
+p.add_argument('--model-id',help='Optional exact native catalog ID; no model is downloaded by default')
+p.add_argument('--offline',action='store_true',help='Require an explicit cache and disable all network access')
+p.add_argument('--image',default='localhost/o3-server-tests:local')
+a=p.parse_args();root=pathlib.Path(__file__).resolve().parent.parent
+if not a.out.is_absolute():p.error('--out must be absolute')
+if a.model_id:
+ catalog=json.loads((root/'runtime/speech/catalog-4314.json').read_text())
+ if not any(model['id']==a.model_id for model in catalog['models']):p.error('Select an existing pinned catalog model')
+if a.offline and not a.cache:p.error('--offline requires --cache')
+a.out.mkdir(mode=0o700)
+cmd=['podman','--remote=false','run','--rm','--pull=never','--http-proxy=false','--userns=keep-id','--user',f'{os.getuid()}:{os.getgid()}','--read-only','--cap-drop=ALL','--security-opt=no-new-privileges','--pids-limit=64','--memory=512m','--tmpfs','/tmp:rw,size=128m,mode=1777','-v',f'{root}:/source:ro','-v',f'{a.out}:/out:rw']
+if a.offline:cmd+=['--network=none']
+if a.cache:
+ if not a.cache.is_absolute() or not a.cache.is_dir() or a.cache.is_symlink():p.error('--cache must be an existing absolute directory')
+ cmd+=['-v',f'{a.cache}:/archive-cache:ro']
+if a.model_id:cmd+=['--env',f'O3_SPEECH_ACQUIRE_MODEL={a.model_id}']
+cmd += [a.image,'python3','/source/tools/speech_engine_acquire.py']
+with (a.out/'acquisition.log').open('x') as log:r=subprocess.run(cmd,stdout=log,stderr=subprocess.STDOUT)
+(a.out/'acquisition-result.json').write_text(json.dumps({'returncode':r.returncode,'modelId':a.model_id,'scriptsExecuted':False,'source':'runtime/speech/engine-packages-4314.json'},indent=2)+'\n')
+print(a.out);print((a.out/'acquisition.log').read_text());raise SystemExit(r.returncode)
