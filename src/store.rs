@@ -69,7 +69,7 @@ pub struct State {
             tokio::sync::mpsc::Sender<crate::provider::ProviderControl>,
         >,
     >,
-    pub settings_lock: Mutex<()>,
+    pub settings_lock: std::sync::Arc<Mutex<()>>,
     pub launch_lock: Mutex<()>,
     pub(crate) shared_export: Mutex<()>,
     pub(crate) managed_policy: crate::managed_policy::Policy,
@@ -243,7 +243,7 @@ impl State {
             worktree_handoffs: Default::default(),
             #[cfg(feature = "bridge")]
             bridge_endpoints: Mutex::new(Vec::new()),
-            settings_lock: Mutex::new(()),
+            settings_lock: std::sync::Arc::new(Mutex::new(())),
             launch_lock: Mutex::new(()),
             shared_export: Mutex::new(()),
             managed_policy: policy,

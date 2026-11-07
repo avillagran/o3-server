@@ -380,6 +380,7 @@ fn main() -> std::io::Result<()> {
                 .with_agent_scopes(state.agent_scopes.clone())
                 .with_policy(provider_policy.clone())
                 .with_secret_resolver(state.secret_resolver())
+                .with_settings_lock(state.settings_lock.clone())
                 .with_notifications(state.changed.clone()),
             ));
             let mut term =

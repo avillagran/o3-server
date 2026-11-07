@@ -182,17 +182,55 @@ pub(crate) fn read_materialized(s: &State) -> Result<Value, String> {
     let _guard = s.settings_lock.lock().unwrap();
     crate::settings_secrets::materialize_profile(&s.dir, &read(s)?)
 }
-fn private_projection(value: &Value) -> Value {
-    json!({"providerInstances":{},"sourceControlHosts":value["sourceControlHosts"],"usageLimitSources":value["usageLimitSources"],"easDeviceHosts":[],"simlockDeviceHosts":[],"secretProviders":{}})
+fn private_projection(value: &Value) -> Result<Value, String> {
+    let providers = value["providerInstances"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter(|(_, entry)| matches!(entry["driver"].as_str(), Some("codex" | "claudeAgent")))
+        .map(|(id, entry)| (id.clone(), entry.clone()))
+        .collect::<serde_json::Map<_, _>>();
+    let mut decoded=crate::managed_settings_codec::decode_patch(json!({"providerInstances":providers,"sourceControlHosts":value["sourceControlHosts"],"usageLimitSources":value["usageLimitSources"]}))
+        .map_err(|_|"Invalid private settings fields".to_owned())?;
+    decoded["easDeviceHosts"] = json!([]);
+    decoded["simlockDeviceHosts"] = json!([]);
+    decoded["secretProviders"] = json!({});
+    Ok(decoded)
 }
-fn redact_client(value: &mut Value) {
-    // Reference capability negotiation remains gated. Existing clients receive
-    // native legacy markers for these two activated credential families.
-    let projected = crate::settings_secret_transaction::redact(&private_projection(value), false);
-    redact(value);
+fn apply_private_projection(value: &mut Value, projected: &Value) -> Result<(), String> {
+    let encoded = crate::managed_settings_codec::encode_sparse(projected.clone())
+        .map_err(|_| "Invalid private settings encoding".to_owned())?;
     for key in ["sourceControlHosts", "usageLimitSources"] {
-        value[key] = projected[key].clone();
+        value[key] = encoded[key].clone();
     }
+    for (id, entry) in encoded["providerInstances"]
+        .as_object()
+        .into_iter()
+        .flatten()
+    {
+        value["providerInstances"][id] = entry.clone();
+    }
+    Ok(())
+}
+fn redact_client(value: &mut Value) -> Result<(), String> {
+    // Full client reference capability negotiation remains gated.
+    let projected = crate::settings_secret_transaction::redact(&private_projection(value)?, false);
+    redact(value);
+    let encoded = crate::managed_settings_codec::encode_sparse(projected)
+        .map_err(|_| "Invalid private settings encoding".to_owned())?;
+    for key in ["sourceControlHosts", "usageLimitSources"] {
+        value[key] = encoded[key].clone();
+    }
+    for (id, entry) in encoded["providerInstances"]
+        .as_object()
+        .into_iter()
+        .flatten()
+    {
+        if let Some(environment) = entry.get("environment") {
+            value["providerInstances"][id]["environment"] = environment.clone();
+        }
+    }
+    Ok(())
 }
 fn private_error(s: &State, error: &crate::settings_secret_transaction::TransactionError) -> Value {
     for failure in &error.rollback_errors {
@@ -210,7 +248,7 @@ fn private_error(s: &State, error: &crate::settings_secret_transaction::Transact
 }
 pub fn get(s: &State) -> Result<Value, String> {
     let mut v = read(s)?;
-    redact_client(&mut v);
+    redact_client(&mut v)?;
     Ok(v)
 }
 pub fn update(s: &State, p: &Value) -> Result<Value, String> {
@@ -227,6 +265,9 @@ pub(crate) fn update_rpc(s: &State, p: &Value) -> Result<Value, Value> {
     })
 }
 fn update_inner(s: &State, p: &Value, policy_error: &mut Option<Value>) -> Result<Value, String> {
+    // Never acquire the provider pointer mutex while holding the settings lock:
+    // provider inspection takes the shared settings snapshot lock itself.
+    let provider = s.provider.lock().unwrap().clone();
     let _guard = s.settings_lock.lock().unwrap();
     let patch = p
         .get("patch")
@@ -352,10 +393,8 @@ fn update_inner(s: &State, p: &Value, policy_error: &mut Option<Value>) -> Resul
             *policy_error = Some(error);
             message
         })?;
-    let native_private = crate::managed_settings_codec::decode_patch(json!({
-        "sourceControlHosts": v["sourceControlHosts"], "usageLimitSources": v["usageLimitSources"]
-    }))
-    .map_err(|_| {
+    let mut previous_private = private_projection(&previous)?;
+    let next_private = private_projection(&v).map_err(|_| {
         let message = format!(
             "Server settings normalize failed at {}.",
             s.dir.join("settings.json").display()
@@ -363,16 +402,17 @@ fn update_inner(s: &State, p: &Value, policy_error: &mut Option<Value>) -> Resul
         *policy_error = Some(json!({"operation":"normalize","message":message}));
         message
     })?;
-    for key in ["sourceControlHosts", "usageLimitSources"] {
-        v[key] = native_private[key].clone();
+    // Switching to an unsupported driver leaves its opaque private state alone.
+    // Its storage/launch activation is a separate consumer boundary.
+    if let Some(entries) = previous_private["providerInstances"].as_object_mut() {
+        entries.retain(|id, _| {
+            v["providerInstances"].get(id).is_none()
+                || next_private["providerInstances"].get(id).is_some()
+        });
     }
-    let (private_settings, private_changes) = crate::settings_secret_transaction::plan(
-        &private_projection(&previous),
-        &private_projection(&v),
-    );
-    for key in ["sourceControlHosts", "usageLimitSources"] {
-        v[key] = private_settings[key].clone();
-    }
+    let (private_settings, private_changes) =
+        crate::settings_secret_transaction::plan(&previous_private, &next_private);
+    apply_private_projection(&mut v, &private_settings)?;
     let persisted = if let Some(controls) = s.managed_policy.settings_controls()? {
         let decoded = crate::managed_settings_codec::decode(v.clone())
             .map_err(|_| "Invalid managed settings persistence")?;
@@ -469,10 +509,7 @@ fn update_inner(s: &State, p: &Value, policy_error: &mut Option<Value>) -> Resul
         || patch.get("projectSettingsOverrides").is_some()
         || p.get("providerInstanceMutation").is_some()
     {
-        if let (Ok(runtime), Some(provider)) = (
-            tokio::runtime::Handle::try_current(),
-            s.provider.lock().unwrap().clone(),
-        ) {
+        if let (Ok(runtime), Some(provider)) = (tokio::runtime::Handle::try_current(), provider) {
             let changed = s.changed.clone();
             let cwd = std::env::current_dir().unwrap_or_else(|_| s.dir.clone());
             runtime.spawn(async move {
@@ -482,7 +519,7 @@ fn update_inner(s: &State, p: &Value, policy_error: &mut Option<Value>) -> Resul
         }
     }
     v = s.managed_policy.effective_settings(&v)?;
-    redact_client(&mut v);
+    redact_client(&mut v)?;
     Ok(v)
 }
 fn preserve_environment(old: &Value, patch: &mut Value) {
@@ -494,15 +531,15 @@ fn preserve_environment(old: &Value, patch: &mut Value) {
             if let Some(vars) = instance["environment"].as_array_mut() {
                 for var in vars {
                     if var["valueRedacted"] == true {
-                        if let Some(prev) = old["providerInstances"][id]["environment"]
+                        let previous = old["providerInstances"][id]["environment"]
                             .as_array()
-                            .and_then(|a| a.iter().find(|p| p["name"] == var["name"]))
-                        {
-                            var["value"] = prev["value"].clone();
-                        } else {
-                            var["value"] = json!("");
+                            .and_then(|a| a.iter().find(|p| p["name"] == var["name"]));
+                        var["value"] = previous
+                            .map(|prev| prev["value"].clone())
+                            .unwrap_or_else(|| json!(""));
+                        if previous.is_none_or(|prev| prev["valueRedacted"] != true) {
+                            var.as_object_mut().unwrap().remove("valueRedacted");
                         }
-                        var.as_object_mut().unwrap().remove("valueRedacted");
                     }
                 }
             }
@@ -511,7 +548,11 @@ fn preserve_environment(old: &Value, patch: &mut Value) {
 }
 pub fn config(s: &State) -> Result<Value, String> {
     let (keybindings, issues) = crate::keybind::resolved(s);
-    let mut config = json!({"environment":descriptor(s),"directEndpoints":direct_endpoints(s),"auth":auth_descriptor_for(s),"cwd":std::env::current_dir().unwrap_or_default(),"keybindingsConfigPath":s.dir.join("keybindings.json"),"keybindings":keybindings,"issues":issues,"providers":s.provider.lock().unwrap().as_ref().map(|p|p.config()).unwrap_or_default(),"availableEditors":crate::files::available_editors(),"observability":{"logsDirectoryPath":s.dir.join("logs"),"localTracingEnabled":false,"otlpTracesEnabled":false,"otlpMetricsEnabled":false,"otlpLogsEnabled":false},"settings":get(s)?,"shellResumeCompletionMarker":true,"threadResumeCompletionMarker":true,"shellThreadFamilies":false,"shellOlderSettled":false,"threadSnapshotPagination":false});
+    let provider = s.provider.lock().unwrap().clone();
+    let providers = provider
+        .map(|provider| provider.config())
+        .unwrap_or_default();
+    let mut config = json!({"environment":descriptor(s),"directEndpoints":direct_endpoints(s),"auth":auth_descriptor_for(s),"cwd":std::env::current_dir().unwrap_or_default(),"keybindingsConfigPath":s.dir.join("keybindings.json"),"keybindings":keybindings,"issues":issues,"providers":providers,"availableEditors":crate::files::available_editors(),"observability":{"logsDirectoryPath":s.dir.join("logs"),"localTracingEnabled":false,"otlpTracesEnabled":false,"otlpMetricsEnabled":false,"otlpLogsEnabled":false},"settings":get(s)?,"shellResumeCompletionMarker":true,"threadResumeCompletionMarker":true,"shellThreadFamilies":false,"shellOlderSettled":false,"threadSnapshotPagination":false});
     config["settingsSupport"] = json!({"enableAgentBrowserAccess":{"supported":true},"projectAgentBrowserAccessOverrides":{"supported":true}});
     if let Some(summary) = s.managed_policy.basic_summary() {
         config["managedPolicy"] = summary;

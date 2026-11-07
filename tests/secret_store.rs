@@ -415,3 +415,24 @@ fn temporary_collision_and_fifo_never_remove_or_read_unowned_entries() {
     assert!(store.remove("fifo").is_err());
     assert!(fifo.symlink_metadata().unwrap().file_type().is_fifo());
 }
+
+#[test]
+fn existing_reader_never_creates_or_changes_directories() {
+    let root = private_directory();
+    let absent = root.join("absent");
+    assert!(FileSecretStore::open_existing(&absent).unwrap().is_none());
+    assert!(!absent.exists());
+    let directory = root.join("present");
+    std::fs::create_dir(&directory).unwrap();
+    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o750)).unwrap();
+    std::fs::write(directory.join("existing.bin"), b"private").unwrap();
+    let reader = FileSecretStore::open_existing(&directory).unwrap().unwrap();
+    assert_eq!(reader.get("existing").unwrap(), Some(b"private".to_vec()));
+    assert_eq!(
+        directory.metadata().unwrap().permissions().mode() & 0o777,
+        0o750
+    );
+    let linked = root.join("linked");
+    std::os::unix::fs::symlink(&directory, &linked).unwrap();
+    assert!(FileSecretStore::open_existing(&linked).is_err());
+}

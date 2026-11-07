@@ -264,6 +264,53 @@ fn js_trim(value: &str) -> &str {
     value.trim_matches(|c|matches!(c,'\u{0009}'..='\u{000d}'|'\u{0020}'|'\u{00a0}'|'\u{1680}'|'\u{2000}'..='\u{200a}'|'\u{2028}'|'\u{2029}'|'\u{202f}'|'\u{205f}'|'\u{3000}'|'\u{feff}'))
 }
 
+/// Materialize only supported native entries. The caller holds the shared
+/// settings transaction lock through both raw-file read and this snapshot.
+fn private_entry(
+    profile: Option<&std::path::Path>,
+    id: &str,
+    raw: &Value,
+) -> Result<Value, String> {
+    if !matches!(raw["driver"].as_str(), Some("codex" | "claudeAgent")) {
+        return Ok(raw.clone());
+    }
+    let decoded = codec::decode_provider_instance(raw.clone())
+        .map_err(|_| format!("Invalid provider instance '{id}'"))?;
+    let pending = decoded["environment"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|v| v["sensitive"] == true && v["valueRedacted"] == true);
+    if !pending {
+        return Ok(raw.clone());
+    }
+    let profile = profile.ok_or_else(|| {
+        format!("Private environment for instance '{id}' requires the shared settings lock.")
+    })?;
+    let store =
+        crate::server_secret_store::FileSecretStore::open_existing(&profile.join("secrets"))
+            .map_err(|_| format!("Failed to read private environment for instance '{id}'."))?;
+    let input = json!({"providerInstances":{id:decoded},"sourceControlHosts":{},"usageLimitSources":{},"easDeviceHosts":[],"simlockDeviceHosts":[],"secretProviders":{}});
+    use crate::server_secret_store::SecretStore;
+    let materialized =
+        crate::settings_secret_transaction::materialize_with(&input, |name| match &store {
+            Some(store) => store.get(name),
+            None => Ok(None),
+        })
+        .map_err(|_| format!("Failed to read private environment for instance '{id}'."))?;
+    codec::encode_provider_instance(materialized["providerInstances"][id].clone())
+        .map_err(|_| format!("Invalid private environment for instance '{id}'."))
+}
+fn private_fingerprint(value: &Result<Value, String>) -> Result<[u8; 32], String> {
+    use sha2::Digest;
+    value
+        .as_ref()
+        .map(|value| {
+            sha2::Sha256::digest(serde_json::to_vec(value).expect("JSON value encoding")).into()
+        })
+        .map_err(Clone::clone)
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Status {
     Ready { entry: Value, secrets: Secrets },
@@ -272,6 +319,7 @@ pub(crate) enum Status {
 }
 struct Slot {
     raw: Value,
+    private_fingerprint: Result<[u8; 32], String>,
     prepared: Option<Prepared>,
     status: Status,
     ticket: u64,
@@ -280,6 +328,7 @@ struct Slot {
 /// A registry's raw identities and resolved values have separate lifetimes.
 pub(crate) struct Registry {
     resolver: std::sync::Arc<SecretResolver>,
+    private_profile: Option<std::path::PathBuf>,
     slots: std::sync::Arc<std::sync::Mutex<std::collections::BTreeMap<String, Slot>>>,
     changed: tokio::sync::watch::Sender<u64>,
     notify: Option<tokio::sync::watch::Sender<u64>>,
@@ -290,12 +339,17 @@ impl Registry {
     pub(crate) fn new(resolver: std::sync::Arc<SecretResolver>) -> Self {
         Self {
             resolver,
+            private_profile: None,
             slots: Default::default(),
             changed: tokio::sync::watch::channel(0).0,
             notify: None,
             ticket: std::sync::atomic::AtomicU64::new(0),
             jobs: Default::default(),
         }
+    }
+    pub(crate) fn with_private_profile(mut self, profile: std::path::PathBuf) -> Self {
+        self.private_profile = Some(profile);
+        self
     }
     pub(crate) fn with_resolver(mut self, resolver: std::sync::Arc<SecretResolver>) -> Self {
         self.resolver = resolver;
@@ -321,15 +375,46 @@ impl Registry {
         use std::sync::atomic::Ordering;
         let runtime = tokio::runtime::Handle::try_current().ok();
         let mut jobs = Vec::new();
+        let private_entries = entries
+            .as_object()
+            .into_iter()
+            .flatten()
+            .map(|(id, raw)| {
+                let input = if policy
+                    .driver_denial(raw["driver"].as_str().unwrap_or(""))
+                    .is_some()
+                {
+                    Ok(raw.clone())
+                } else {
+                    private_entry(self.private_profile.as_deref(), id, raw)
+                };
+                (id.clone(), (private_fingerprint(&input), input))
+            })
+            .collect::<std::collections::BTreeMap<_, _>>();
         let mut slots = self.slots.lock().unwrap();
-        slots.retain(|id, slot| entries.get(id).is_some_and(|entry| *entry == slot.raw));
+        slots.retain(|id, slot| {
+            entries.get(id).is_some_and(|entry| *entry == slot.raw)
+                && private_entries
+                    .get(id)
+                    .is_some_and(|(fingerprint, _)| *fingerprint == slot.private_fingerprint)
+        });
         for (id, raw) in entries.as_object().into_iter().flatten() {
             if !slots.contains_key(id) {
                 let ticket = self.ticket.fetch_add(1, Ordering::Relaxed);
                 let prepared = policy
                     .driver_denial(raw["driver"].as_str().unwrap_or(""))
                     .map_or_else(
-                        || Prepared::new(raw),
+                        || {
+                            private_entries[id]
+                                .1
+                                .as_ref()
+                                .map_err(|reason| PreparationError::Blocked(reason.clone()))
+                                .and_then(Prepared::new)
+                                .map(|mut prepared| {
+                                    prepared.raw = raw.clone();
+                                    prepared
+                                })
+                        },
                         |reason| Err(PreparationError::Blocked(reason)),
                     );
                 let (prepared, status) = match prepared {
@@ -351,6 +436,7 @@ impl Registry {
                     id.clone(),
                     Slot {
                         raw: raw.clone(),
+                        private_fingerprint: private_entries[id].0.clone(),
                         prepared,
                         status,
                         ticket,
@@ -427,6 +513,7 @@ impl Registry {
             }
         }
     }
+    #[cfg(test)]
     pub(crate) async fn reload(
         &self,
         entries: &Value,
@@ -435,6 +522,9 @@ impl Registry {
         instance: Option<&str>,
     ) {
         self.reconcile(entries, settings, policy);
+        self.reload_reconciled(settings, instance).await;
+    }
+    pub(crate) async fn reload_reconciled(&self, settings: &Value, instance: Option<&str>) {
         self.wait().await;
         let targets = self
             .slots

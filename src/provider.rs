@@ -1688,6 +1688,7 @@ pub struct ConfiguredProviders {
     pub directory: std::path::PathBuf,
     instances: std::sync::Mutex<std::collections::BTreeMap<String, Instance>>,
     last_settings: std::sync::Mutex<serde_json::Value>,
+    settings_lock: Option<std::sync::Arc<std::sync::Mutex<()>>>,
     secrets: crate::provider_secrets::Registry,
     discovered_defaults: std::sync::Mutex<std::collections::HashSet<String>>,
     retired: std::sync::Mutex<Vec<std::sync::Arc<crate::provider_lifetime::Pool>>>,
@@ -1717,6 +1718,7 @@ impl ConfiguredProviders {
             directory,
             instances: Default::default(),
             last_settings: std::sync::Mutex::new(serde_json::json!({})),
+            settings_lock: None,
             secrets: crate::provider_secrets::Registry::new(std::sync::Arc::new(
                 crate::secret_resolver::SecretResolver::system(),
             )),
@@ -1724,6 +1726,12 @@ impl ConfiguredProviders {
             retired: Default::default(),
             builtin_scopes: Default::default(),
         }
+    }
+    /// Share the writer's lock before enabling private environment hydration.
+    pub fn with_settings_lock(mut self, lock: std::sync::Arc<std::sync::Mutex<()>>) -> Self {
+        self.settings_lock = Some(lock);
+        self.secrets = self.secrets.with_private_profile(self.directory.clone());
+        self
     }
     pub fn with_secret_resolver(
         mut self,
@@ -1802,6 +1810,7 @@ impl ConfiguredProviders {
     }
     fn sync(&self) -> serde_json::Value {
         use serde_json::json;
+        let _settings_guard = self.settings_lock.as_ref().map(|lock| lock.lock().unwrap());
         let settings = self.settings();
         let hydrated = crate::provider_policy::hydrate(&settings);
         let secret_states = self.secrets.reconcile(&hydrated, &settings, &self.policy);
@@ -2236,12 +2245,9 @@ impl Provider for ConfiguredProviders {
         instance: Option<&'a str>,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(async move {
-            let settings = self.settings();
-            let entries = crate::provider_policy::hydrate(&settings);
+            let settings = self.sync();
             let instance = instance.map(|id| crate::provider_policy::configured_id(&settings, id));
-            self.secrets
-                .reload(&entries, &settings, &self.policy, instance)
-                .await;
+            self.secrets.reload_reconciled(&settings, instance).await;
             self.sync();
             self.close_retired().await
         })

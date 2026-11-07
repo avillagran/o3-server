@@ -1,6 +1,6 @@
 # Private secret-store and settings transaction leaf
 
-The source boundary is T3 Code nightly `32a0531748c44b25072d7495ce0b9bd7e9450a87` with Effect 4.1.2. The core is independently tested. The first consumer activates private writes only for `sourceControlHosts` and `usageLimitSources`; provider/environment/device private writes remain gated. This does not migrate authentication material, change signing or session identities, or advertise complete private-secret support.
+The source boundary is T3 Code nightly `32a0531748c44b25072d7495ce0b9bd7e9450a87` with Effect 4.1.2. The core is independently tested. Active consumers cover `sourceControlHosts`, `usageLimitSources`, and sensitive environment literals on the supported `codex` and `claudeAgent` instances. Other provider drivers and device private writes remain gated. This does not migrate authentication material, change signing or session identities, or advertise complete private-secret support.
 
 ## Native observations
 
@@ -41,3 +41,15 @@ tools/test-scheduled-modes --integration settings_private --default-features --c
 ```
 
 Broader test execution remains subject to the repository's independent fixture-cleanup safety audit. JavaScript UTF-16 isolated surrogate inputs remain outside the Rust JSON/string boundary. Filesystem error representations are projected to typed store/settings operations rather than reproducing platform exception objects.
+
+## Supported native provider environment consumer
+
+The pinned native descriptors declare no secret configuration fields for Codex or Claude. This consumer therefore handles their schema-declared sensitive environment variables; it does not infer credential names inside driver config. Supported literal values are written to the native `provider-env-<instance>-<name>.bin` slots, with empty public values and `valueRedacted: true` in settings. Existing literal inline values migrate on the next admitted settings write. Echoes retain the saved value, and explicit replacement, clearing, or removal uses the same transactional rollback path as source credentials.
+
+`ConfiguredProviders::with_settings_lock` shares the state's settings lock. The production executable wires it explicitly. A registry that was not given this lock refuses private-marker preparation rather than reading an incoherent snapshot or falling back to another account. Provider-pointer locks are released before inspection; the writer captures the pointer before acquiring the settings lock, preventing inverted lock ordering.
+
+The registry reads the raw definition and the private environment while holding the shared snapshot lock, then releases it before any asynchronous external-reference resolution. A read-only secret-directory opener neither creates directories nor changes their modes and refuses symlink components. Missing slots become the native empty literal; unreadable or nonregular entries refuse preparation. External reference success/failure caching and explicit refresh semantics retain their existing separate boundary.
+
+Stored definitions remain the identity used by the instance cache. A separate in-memory fingerprint of the materialized input invalidates preparation when private bytes change despite unchanged public JSON. Existing resolution tickets discard stale asynchronous completions. Resolved environment values remain in private runtime state; they are not copied into stored definitions or public configuration. Unsupported-driver transitions retain their opaque private state instead of treating the excluded entry as a removed supported instance.
+
+Focused real native-peer tests run both Codex and Claude through literal save, launch, echo, failed publication, rollback, and replacement. A neighboring instance checks scope isolation. Additional tests distinguish missing/unreadable private slots, refuse hydration without the shared lock, verify reader/writer lock ordering, and preserve signing/session identity. The native descriptor fixture checks that configuration secret annotations remain empty. Fixtures use copied synthetic executables and private provider homes; they never mount real authentication state or invoke a real vault or inference service.

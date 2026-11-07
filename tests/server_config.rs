@@ -12,10 +12,10 @@ use std::{
 #[test]
 fn custom_instances_route_native_binary_environment_and_home_and_reconfigure() {
     let server = support::start(|s| {
-        *s.provider.lock().unwrap() = Some(Arc::new(ConfiguredProviders::new(
-            Arc::new(ScriptedProvider),
-            s.dir.clone(),
-        )));
+        *s.provider.lock().unwrap() = Some(Arc::new(
+            ConfiguredProviders::new(Arc::new(ScriptedProvider), s.dir.clone())
+                .with_settings_lock(s.settings_lock.clone()),
+        ));
     });
     let c = server.connect();
     let binary = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -160,10 +160,10 @@ fn custom_instances_route_native_binary_environment_and_home_and_reconfigure() {
 fn failed_native_discovery_does_not_report_an_installed_binary_as_missing() {
     use std::os::unix::fs::PermissionsExt;
     let server = support::start(|s| {
-        *s.provider.lock().unwrap() = Some(Arc::new(ConfiguredProviders::new(
-            Arc::new(ScriptedProvider),
-            s.dir.clone(),
-        )));
+        *s.provider.lock().unwrap() = Some(Arc::new(
+            ConfiguredProviders::new(Arc::new(ScriptedProvider), s.dir.clone())
+                .with_settings_lock(s.settings_lock.clone()),
+        ));
     });
     let binary = server.dir.join("unhealthy-codex");
     std::fs::write(&binary, "#!/bin/sh\nexit 17\n").unwrap();

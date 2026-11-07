@@ -182,6 +182,12 @@ pub fn plan(current: &Value, next: &Value) -> (Value, Vec<Change>) {
     (settings, changes)
 }
 pub fn materialize(store: &impl SecretStore, settings: &Value) -> Result<Value, TransactionError> {
+    materialize_with(settings, |name| store.get(name))
+}
+pub fn materialize_with(
+    settings: &Value,
+    mut get: impl FnMut(&str) -> Result<Option<Vec<u8>>, StoreError>,
+) -> Result<Value, TransactionError> {
     let mut pending = Vec::new();
     settings_secrets::map_secrets(settings, |secret| {
         if secret.sensitive && secret.redacted {
@@ -201,8 +207,7 @@ pub fn materialize(store: &impl SecretStore, settings: &Value) -> Result<Value, 
     });
     let mut values = HashMap::new();
     for secret in pending {
-        let bytes = store
-            .get(&secret.secret_name)
+        let bytes = get(&secret.secret_name)
             .map_err(|e| {
                 TransactionError::new(
                     "read-secret",

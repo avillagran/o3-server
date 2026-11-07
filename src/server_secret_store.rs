@@ -105,6 +105,38 @@ impl Drop for OwnedTemporary<'_> {
         }
     }
 }
+fn directory_handle(directory: &Path, create: bool) -> io::Result<File> {
+    let mut current = File::open("/")?;
+    if directory.parent().is_none() || !directory.is_absolute() {
+        return Err(io::Error::other("absolute path required"));
+    }
+    for component in directory.components() {
+        let Component::Normal(part) = component else {
+            if component == Component::RootDir {
+                continue;
+            }
+            return Err(io::Error::other("invalid directory"));
+        };
+        let part = part
+            .to_str()
+            .ok_or_else(|| io::Error::other("invalid directory"))?;
+        current = match open(&current, part, libc::O_RDONLY | libc::O_DIRECTORY, 0) {
+            Ok(next) => next,
+            Err(e) if create && e.kind() == io::ErrorKind::NotFound => {
+                let c = name(part)?;
+                if unsafe { libc::mkdirat(current.as_raw_fd(), c.as_ptr(), 0o700) } < 0 {
+                    let e = io::Error::last_os_error();
+                    if e.kind() != io::ErrorKind::AlreadyExists {
+                        return Err(e);
+                    }
+                }
+                open(&current, part, libc::O_RDONLY | libc::O_DIRECTORY, 0)?
+            }
+            Err(e) => return Err(e),
+        };
+    }
+    Ok(current)
+}
 impl FileSecretStore {
     pub fn open(directory: &Path) -> Result<Self, StoreError> {
         let secure = |_: io::Error| StoreError {
@@ -112,37 +144,21 @@ impl FileSecretStore {
             resource: format!("secrets directory {}", directory.display()),
             already_exists: false,
         };
-        let mut current = File::open("/").map_err(secure)?;
-        if directory.parent().is_none() || !directory.is_absolute() {
-            return Err(secure(io::Error::other("absolute path required")));
-        }
-        for component in directory.components() {
-            let Component::Normal(part) = component else {
-                if component == Component::RootDir {
-                    continue;
-                }
-                return Err(secure(io::Error::other("invalid directory")));
-            };
-            let part = part
-                .to_str()
-                .ok_or_else(|| secure(io::Error::other("invalid directory")))?;
-            current = match open(&current, part, libc::O_RDONLY | libc::O_DIRECTORY, 0) {
-                Ok(next) => next,
-                Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                    let c = name(part).map_err(secure)?;
-                    if unsafe { libc::mkdirat(current.as_raw_fd(), c.as_ptr(), 0o700) } < 0 {
-                        let e = io::Error::last_os_error();
-                        if e.kind() != io::ErrorKind::AlreadyExists {
-                            return Err(secure(e));
-                        }
-                    }
-                    open(&current, part, libc::O_RDONLY | libc::O_DIRECTORY, 0).map_err(secure)?
-                }
-                Err(e) => return Err(secure(e)),
-            };
-        }
+        let current = directory_handle(directory, true).map_err(secure)?;
         chmod(&current, 0o700).map_err(secure)?;
         Ok(Self { directory: current })
+    }
+    /// Open a snapshot reader without creating a directory or changing its mode.
+    pub fn open_existing(directory: &Path) -> Result<Option<Self>, StoreError> {
+        match directory_handle(directory, false) {
+            Ok(directory) => Ok(Some(Self { directory })),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(_) => Err(StoreError {
+                tag: "SecretStoreReadError",
+                resource: format!("secrets directory {}", directory.display()),
+                already_exists: false,
+            }),
+        }
     }
     fn persist(&self, secret: &str, bytes: &[u8], exclusive: bool) -> Result<(), StoreError> {
         let target =
