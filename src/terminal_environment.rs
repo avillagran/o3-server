@@ -74,6 +74,18 @@ pub(crate) fn resolve_with(
     } else if BUILT_INS.contains(&id) {
         fallback = json!({"driver":id});
         &fallback
+    } else if matches!(
+        id,
+        "constructor"
+            | "toString"
+            | "toLocaleString"
+            | "valueOf"
+            | "hasOwnProperty"
+            | "isPrototypeOf"
+            | "propertyIsEnumerable"
+    ) {
+        // The native lookup uses a plain object; inherited methods have no environment.
+        return Ok(env);
     } else {
         return Err(
             json!({"_tag":"TerminalProviderInstanceNotFoundError","providerInstanceId":id,
@@ -87,7 +99,10 @@ pub(crate) fn resolve_with(
             } else {
                 value.to_owned()
             };
-            env.insert(name.to_owned(), value);
+            // Native assignment cannot create this inherited setter as a string property.
+            if name != "__proto__" || env.contains_key(name) {
+                env.insert(name.to_owned(), value);
+            }
         }
     }
     let driver = entry["driver"].as_str().unwrap_or("");

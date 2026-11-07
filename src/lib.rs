@@ -203,3 +203,6 @@ pub mod selection_transition;
 pub mod cleanup;
 
 pub mod worktree_removal;
+
+#[cfg(test)]
+mod terminal_environment_oracle_tests;

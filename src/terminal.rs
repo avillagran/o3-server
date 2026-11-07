@@ -852,9 +852,21 @@ fn launch_of(s: &State, p: &Value, cwd_required: bool) -> Result<Launch, Value> 
 
 fn provider_env(s: &State, p: &Value) -> Result<Option<BTreeMap<String, String>>, Value> {
     let explicit = env_of(p)?;
-    let Some(id) = p["providerInstanceId"].as_str() else {
+    let Some(value) = p.get("providerInstanceId") else {
         return Ok(explicit);
     };
+    let id = value
+        .as_str()
+        .map(crate::native_goal::trim)
+        .filter(|id| {
+            !id.is_empty()
+                && id.len() <= 64
+                && id.as_bytes()[0].is_ascii_alphabetic()
+                && id
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-'))
+        })
+        .ok_or_else(|| invalid("providerInstanceId must be a provider instance identifier"))?;
     let env = crate::terminal_environment::resolve(s, id, explicit.unwrap_or_default())?;
     for (name, value) in &env {
         if name.is_empty() || name.contains(['=', '\0']) || value.contains('\0') {

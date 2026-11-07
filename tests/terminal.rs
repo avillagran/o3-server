@@ -636,6 +636,46 @@ fn provider_terminal_launch_rejects_missing_instances_and_refreshes_private_envi
 }
 
 #[test]
+fn provider_terminal_identifier_decodes_before_private_settings_or_pty_launch() {
+    let e = common::setup("terminal-provider-id");
+    let cwd = e.dir("workspace");
+    for value in [
+        Value::Null,
+        json!(false),
+        json!(7),
+        json!({}),
+        json!([]),
+        json!(""),
+        json!(" "),
+        json!("1codex"),
+        json!("__proto__"),
+        json!("not.valid"),
+        json!("a".repeat(65)),
+        json!("日本"),
+    ] {
+        let failure = e
+            .conn
+            .rpc(
+                "terminal.open",
+                json!({"threadId":"t","terminalId":"invalid","cwd":cwd,"providerInstanceId":value}),
+            )
+            .unwrap_err();
+        assert!(
+            failure.contains("providerInstanceId"),
+            "{value:?}: {failure}"
+        );
+    }
+    let result = e.conn.rpc("terminal.open", json!({"threadId":"t","terminalId":"trimmed","cwd":cwd,"providerInstanceId":" \u{feff}codex\u{a0} "})).unwrap();
+    assert_eq!(result["status"], "running");
+    e.conn
+        .rpc(
+            "terminal.close",
+            json!({"threadId":"t","terminalId":"trimmed"}),
+        )
+        .unwrap();
+}
+
+#[test]
 fn bounded_history_survives_state_reopen_for_attach_and_open() {
     let (s, cwd) = server();
     let c = s.connect();
