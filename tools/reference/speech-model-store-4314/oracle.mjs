@@ -12,6 +12,7 @@ import crypto from 'node:crypto';
 import nodepath from 'node:path';
 import fs from 'node:fs';
 import {createRequire} from 'node:module';
+import {pathToFileURL} from 'node:url';
 if(process.versions.node!=='26.13.0')throw Error('Pinned Node26.13.0 required');
 if(JSON.parse(fs.readFileSync('/deps/node_modules/effect/package.json','utf8')).version!=='4.1.2')throw Error('Pinned Effect4.1.2 required');
 const nativeRequire=createRequire('file:///native/apps/server/src/speech/SpeechModelStore.ts');
@@ -22,7 +23,7 @@ const data=Uint8Array.from({length:64},(_,index)=>(index*7)%256);
 const sha=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
 const model={id:'fixture/speech-model',revision:'a'.repeat(40),filename:'model.gguf',size:64,sha256:sha(data)};
 const directory='/fixture/speech/models',final=directory+'/model.gguf';
-function harness(config){
+export function harness(config){
  const files=new Map(),events=[],requests=[];let nextInode=100n,tick=1000,hashes=0,uuid=0,requestIndex=0,changed=false;
  const put=(path,bytes,info)=>{files.set(path,{bytes:Uint8Array.from(bytes),ino:info?.ino??nextInode++,mtime:info?.mtime??tick++,type:info?.type??'File'});};
  const err=(method,path)=>({_tag:'SystemError',reason:'NotFound',module:'FileSystem',method,pathOrDescriptor:path});
@@ -68,7 +69,8 @@ function harness(config){
   const before=[yield* store.isReady(model),(yield* store.installedPath(model))??null,yield* store.isReady(model)];
   const outcome=yield* Effect.result(store.download(model,{onProgress:bytes=>events.push({kind:'progress',bytes}),onVerificationStart:()=>events.push({kind:'verify'})}));
   const after=[yield* store.isReady(model),(yield* store.installedPath(model))??null,yield* store.isReady(model)];
-  return {before,outcome:outcome._tag==='Success'?{ok:true,path:outcome.success}:{ok:false,tag:outcome.failure._tag,reason:outcome.failure.reason??null,status:outcome.failure.status??null,message:outcome.failure.message},after,requests,events,hashes,files:[...files].sort(([a],[b])=>a.localeCompare(b)).map(([path,file])=>({path,bytes:file.bytes.length,sha256:sha(file.bytes),text:path.endsWith('.verified')?new TextDecoder().decode(file.bytes):null}))};
+  const observed={before,outcome:outcome._tag==='Success'?{ok:true,path:outcome.success}:{ok:false,tag:outcome.failure._tag,reason:outcome.failure.reason??null,status:outcome.failure.status??null,message:outcome.failure.message},after,requests,events,hashes,files:[...files].sort(([a],[b])=>a.localeCompare(b)).map(([path,file])=>({path,bytes:file.bytes.length,sha256:sha(file.bytes),text:path.endsWith('.verified')?new TextDecoder().decode(file.bytes):null}))};
+  Object.defineProperty(observed,'failureObject',{value:outcome._tag==='Failure'?outcome.failure:undefined});return observed;
  }).pipe(Effect.provideService(FileSystem.FileSystem,disk),Effect.provideService(Path.Path,nodepath.posix),Effect.provideService(SecureRandom.SecureRandom,random),Effect.provideService(ServerConfig,{stateDir:'/fixture'}),Effect.provideService(HttpClient.HttpClient,client));
  return Effect.runPromise(program);
 }
@@ -102,6 +104,9 @@ for(const [label,digits] of [['max-finite','f'.repeat(13)+'8'+'0'.repeat(242)],[
   cases.push({name:'length-'+label+'-radix'+radix,numberFinite:Number.isFinite(Number(length)),responses:[{chunks:['all'],headers:{'content-length':length}}]});
  }
 }
+if(import.meta.url===pathToFileURL(process.argv[1]).href){
 const results=[];for(const input of cases)results.push({input,expected:await harness(input)});
 fs.writeFileSync(process.argv[2],JSON.stringify({nativeRevision:'83a3674ffd84ffb33de768210c806cb1ac53fd80',model,cases:results},null,2)+'\n',{flag:'wx'});
 console.log(JSON.stringify({cases:results.length,actualWholeModule:true,filesystem:'in-memory operations only; no native real deletion'}));
+
+}

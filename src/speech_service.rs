@@ -66,10 +66,6 @@ pub enum Error {
         operation: &'static str,
         cause: String,
     },
-    Download {
-        model_id: String,
-        failure: crate::speech_model_store::Failure,
-    },
     Unsupported {
         platform: String,
         architecture: String,
@@ -716,9 +712,6 @@ impl Call {
                     .map(|(path, _)| path);
                     let result = match result {
                         Ok(_) | Err(crate::speech_model_store::Error::Cancelled) => Ok(()),
-                        Err(crate::speech_model_store::Error::Download { model_id, failure }) => {
-                            Err(Error::Download { model_id, failure })
-                        }
                         Err(cause) => Err(operation_error("model download", cause)),
                     };
                     if let Ok(mut state) = owner.state.lock() {
