@@ -6,6 +6,10 @@ The reference is nightly 4288, commit
 complete `DesktopBrowserChannel` constructor with injected configuration, input,
 socket-construction and write boundaries. The committed fixture records source
 hashes, 346 schema cases, 32 lifecycle traces and 93 native NDJSON byte traces.
+The separate 242 parent-control traces execute `Stream.decodeText`, `splitLines`
+and optional per-line command decoding. They cover lossy UTF-8, BOM/EOF/line
+boundaries, ignored malformed lines and JSON numeric overflow in stripped fields.
+These are not the server input decoder's fatal NDJSON semantics.
 With `--endpoints`, it also runs a real native loopback WebSocket roundtrip,
 including opaque frames in both directions, a 24-byte endpoint secret and scoped
 release. A separate physical Rust relay test compares the same wire trace.

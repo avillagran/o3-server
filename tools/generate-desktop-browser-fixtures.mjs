@@ -69,6 +69,22 @@ const bom=[239,187,191],transportInputs=[[],[encode('\n \t\r\n')],[bom],[[...bom
 const bytes=encode(cdp+'\n');for(let index=0;index<=bytes.length;index++)transportInputs.push([bytes.slice(0,index),bytes.slice(index)]);
 const transportCases=[];
 for(const chunks of transportInputs){const values=[];const result=await Effect.runPromise(Stream.fromIterable(chunks.map(chunk=>Uint8Array.from(chunk))).pipe(Stream.pipeThroughChannel(Ndjson.decode({ignoreEmptyLines:true})),Stream.runForEach(value=>Effect.sync(()=>{values.push(value);})),Effect.result));transportCases.push({chunks,expected:{values,...(result._tag==='Failure'?{error:result.failure.reason,unterminated:result.failure.unterminated}:{})}});}
+// Parent control direction uses text decoding + splitLines, then per-line optional schema decoding.
+const controlDecode=Schema.decodeUnknownOption(Schema.fromJsonString(contract.DesktopBrowserCommand));
+const turn=JSON.stringify({type:'turn',threadId:' \ufeff thread ',active:true});
+const pointer=JSON.stringify({type:'pointer',...key,phase:'move',x:-1.5,y:2.5});
+const controlInputs=[...transportInputs,[encode(turn)],[encode(turn+'\r'+pointer+'\r\n'+cdp+'\n')],[encode('bad\n'+turn+'\n'+pointer)],[encode('\n \t\r\n'+turn)],[encode('{"type":"cdp","threadId":"thread","tabId":"tab","message":"'),[255],encode('"}\n'+turn)],[encode(turn+'\n'),[255,10],encode(pointer)],[[...bom,...encode(turn+'\n')]]];
+for(const line of [
+ '{"type":"cdp","threadId":"thread","tabId":"tab","message":"opaque 1e400","future":1e400}',
+ '{"type":"cdp","threadId":"thread","tabId":"tab","message":"opaque","future":{"nested":[-1e400,1e400]}}',
+ '{"type":"pointer","threadId":"thread","tabId":"tab","phase":"move","x":1e400,"y":0}',
+ '{"type":"cdp","threadId":"thread","tabId":"tab","message":"opaque","future":1e400.0}',
+ '{"type":"cdp","threadId":"thread","tabId":"tab","message":"opaque","future":1e400e2}',
+ '{"type":"pointer","threadId":"thread","tabId":"tab","phase":"move","x":1e-400,"y":-0}',
+])controlInputs.push([encode(line+'\n'+turn+'\n')]);
+const controlBytes=encode(cdp+'\r\n'+turn);for(let index=0;index<=controlBytes.length;index++)controlInputs.push([controlBytes.slice(0,index),controlBytes.slice(index)]);
+const controlTransportCases=[];
+for(const chunks of controlInputs){const lines=[],commands=[];const result=await Effect.runPromise(Stream.fromIterable(chunks.map(chunk=>Uint8Array.from(chunk))).pipe(Stream.decodeText(),Stream.splitLines,Stream.filter(line=>line.length>0),Stream.runForEach(line=>Effect.sync(()=>{lines.push(line);const decoded=controlDecode(line);if(Option.isSome(decoded))commands.push(decoded.value);})),Effect.result));controlTransportCases.push({chunks,expected:{lines,commands,...(result._tag==='Failure'?{error:String(result.failure)}:{})}});}
 const endpointCases=[];
 if(process.argv.includes('--endpoints')){
  const deadline=(promise,phase)=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Native endpoint timed out: '+phase)),2000);promise.then(value=>{clearTimeout(timer);resolve(value);},error=>{clearTimeout(timer);reject(error);});});
@@ -97,5 +113,5 @@ if(process.argv.includes('--endpoints')){
  })));
  endpointCases.push({scenario:'first-client-roundtrip',expected:{...expected,writes:globalThis.browserProbeWrites,destroyed:globalThis.browserProbeDestroyed}});
 }
-fs.writeFileSync(output,JSON.stringify({revision,effect:'4.1.2',sources,schemaCases,stateCases,transportCases,...(endpointCases.length?{endpointCases}:{})},null,2)+'\n');
-console.log(`${schemaCases.length} native browser schema cases, ${stateCases.length} full-channel lifecycle traces, ${transportCases.length} NDJSON byte-stream cases`);
+fs.writeFileSync(output,JSON.stringify({revision,effect:'4.1.2',sources,schemaCases,stateCases,transportCases,controlTransportCases,...(endpointCases.length?{endpointCases}:{})},null,2)+'\n');
+console.log(`${schemaCases.length} native browser schema cases, ${stateCases.length} full-channel lifecycle traces, ${transportCases.length} NDJSON and ${controlTransportCases.length} parent-control byte-stream cases`);
