@@ -17,6 +17,7 @@ pub struct Server {
     pub dir: std::path::PathBuf,
 }
 
+pub mod desktop_pipe;
 pub mod profile_removal;
 pub mod signals;
 use signals::shield_client_thread_from_sigchld;

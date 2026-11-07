@@ -80,7 +80,8 @@ pub fn enabled(s: &State, project: &str) -> bool {
     crate::settings::read(s).is_ok_and(|v| {
         v["enableAgentBrowserAccess"] == true
             && v["projectSettingsOverrides"][project]["enableAgentBrowserAccess"] != false
-    }) && crate::server_browser::executable().is_some()
+    }) && (s.streams.p2.preview.desktop_available()
+        || crate::server_browser::executable().is_some())
 }
 impl Broker {
     pub(crate) fn access(&self) -> Access {

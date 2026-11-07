@@ -3,6 +3,135 @@ mod support;
 use serde_json::json;
 static BROWSER_ENVIRONMENT: std::sync::Mutex<()> = std::sync::Mutex::new(());
 #[test]
+fn provider_mcp_uses_the_owned_desktop_without_a_local_browser() {
+    let _browser_environment = BROWSER_ENVIRONMENT.lock().unwrap();
+    use std::{sync::Arc, time::Duration};
+    let previous = std::env::var_os("O3_BROWSER_BINARY");
+    struct Restore(Option<std::ffi::OsString>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            match &self.0 {
+                Some(value) => std::env::set_var("O3_BROWSER_BINARY", value),
+                None => std::env::remove_var("O3_BROWSER_BINARY"),
+            }
+        }
+    }
+    let _restore = Restore(previous);
+    std::env::set_var("O3_BROWSER_BINARY", "/no-such-owned-browser");
+    let provider = Arc::new(o3_server::codex::CodexProvider::new(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/agent-browser-peer.py"),
+        None,
+    ));
+    let removals = Arc::new(support::profile_removal::Recording::default());
+    let server = support::start(|state| {
+        state
+            .streams
+            .p2
+            .preview
+            .set_profile_removal(removals.clone());
+        *state.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::Providers {
+            claude: None,
+            codex: provider.clone(),
+        }));
+    });
+    let client = server.connect();
+    assert_eq!(
+        t3_protocol::api::server::config(&client).unwrap()["environment"]["capabilities"]
+            ["agentBrowserAccess"],
+        false
+    );
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let (driver, peer, messages) =
+        runtime.block_on(support::desktop_pipe::install(server.state.clone()));
+    assert_eq!(
+        t3_protocol::api::server::config(&client).unwrap()["environment"]["capabilities"]
+            ["agentBrowserAccess"],
+        true
+    );
+    client.rpc("projects.mutate",json!({"type":"project.create","commandId":"project","projectId":"p","title":"Private desktop","workspaceRoot":server.dir})).unwrap();
+    for (id, mode) in [("t", "approval-required"), ("higher", "full-access")] {
+        client.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":id,"threadId":id,"projectId":"p","title":"Desktop","modelSelection":{"instanceId":"codex","model":"test"},"runtimeMode":mode,"interactionMode":"default"})).unwrap();
+    }
+    let capture = server.dir.join("desktop-observation.json");
+    client.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"turn","messageId":"turn","threadId":"t","text":format!("enabled|{}",capture.display()),"attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
+    assert!(support::wait_for(Duration::from_secs(15), || {
+        let projection = t3_protocol::api::orchestration::thread_projection(&client, "t").unwrap();
+        let runs = projection["runs"].as_array().unwrap();
+        assert!(
+            !runs.iter().any(|run| run["status"] == "failed"),
+            "{projection}"
+        );
+        runs.len() == 1 && runs[0]["status"] == "completed"
+    }));
+    assert!(capture.is_file());
+    assert!(
+        !server.dir.join("browser-profiles").exists(),
+        "desktop admission never starts a local profile"
+    );
+    let methods = messages
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|message| message["type"] == "cdp")
+        .map(|message| {
+            serde_json::from_str::<serde_json::Value>(message["message"].as_str().unwrap()).unwrap()
+                ["method"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect::<Vec<_>>();
+    for method in [
+        "Target.getTargets",
+        "Target.attachToTarget",
+        "Page.navigate",
+        "Runtime.evaluate",
+    ] {
+        assert!(methods.iter().any(|actual| actual == method), "{methods:?}");
+    }
+    assert!(!methods
+        .iter()
+        .any(|method| method == "Target.createTarget" || method == "Browser.close"));
+    client
+        .rpc(
+            "server.updateSettings",
+            json!({"patch":{"enableAgentBrowserAccess":false}}),
+        )
+        .unwrap();
+    assert_eq!(
+        t3_protocol::api::server::config(&client).unwrap()["environment"]["capabilities"]
+            ["agentBrowserAccess"],
+        false
+    );
+    runtime.block_on(async {
+        provider.shutdown().await;
+        o3_server::preview::shutdown(&server.state).await;
+        driver.shutdown().await;
+        peer.abort();
+        let _ = peer.await;
+    });
+    client
+        .rpc(
+            "server.updateSettings",
+            json!({"patch":{"enableAgentBrowserAccess":true}}),
+        )
+        .unwrap();
+    assert_eq!(
+        t3_protocol::api::server::config(&client).unwrap()["environment"]["capabilities"]
+            ["agentBrowserAccess"],
+        false
+    );
+    assert!(
+        removals.0.lock().unwrap().is_empty(),
+        "desktop route has no profile removal plan"
+    );
+}
+#[test]
 fn browser_capability_tracks_settings_and_fixture_availability() {
     let _browser_environment = BROWSER_ENVIRONMENT.lock().unwrap();
     std::env::set_var(
