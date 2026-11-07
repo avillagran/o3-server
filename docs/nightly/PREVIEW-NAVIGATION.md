@@ -38,6 +38,6 @@ module; the socket fixture uses a synthetic protocol peer. No real browser, SDK,
 profile or desktop service is exercised.
 
 This checkpoint implements desktop loaded-metadata notification projection. Local
-inherited-pipe event consumption still uses the existing listing/viewer sync path.
+inherited-pipe notification delivery is implemented in `PREVIEW-LOCAL-PIPE.md`.
 Native request-failure/download/network/console/dialog/popup projections are
 separate consumers; this proof does not claim them or enable additional capabilities.

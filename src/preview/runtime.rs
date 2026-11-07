@@ -365,7 +365,7 @@ fn spawn(
 }
 pub(super) async fn close(s: &State, thread: &str, tab: Option<&str>) {
     let m = &s.streams.p2.preview;
-    let ready = {
+    let (ready, pending) = {
         let mut inner = m.inner.lock().unwrap();
         let targets = if let Some(tab) = tab.filter(|tab| !tab.is_empty()) {
             inner
@@ -383,6 +383,7 @@ pub(super) async fn close(s: &State, thread: &str, tab: Option<&str>) {
                 .collect::<Vec<_>>()
         };
         let mut ready = Vec::new();
+        let mut waiting = false;
         for snapshot in targets {
             let key = (
                 thread_of(&snapshot).to_string(),
@@ -390,19 +391,29 @@ pub(super) async fn close(s: &State, thread: &str, tab: Option<&str>) {
             );
             if let Some(pending) = inner.pending.get(&key) {
                 pending.cancel.send_replace(true);
+                waiting = true;
             } else {
                 ready.push(key);
+            }
+        }
+        for ((tid, id), pending) in &inner.pending {
+            if tid == thread && tab.is_none_or(|tab| tab == id) {
+                pending.cancel.send_replace(true);
+                waiting = true;
             }
         }
         inner
             .kernel
             .close(&json!({"threadId":thread,"tabId":tab}), || iso(now_ms()));
         inner.flush();
-        ready
+        (ready, waiting)
     };
     bump(&s.streams.changed);
     for (thread, tab) in ready {
         m.browser.close(&thread, Some(&tab)).await;
+    }
+    if !pending {
+        m.browser.close(thread, tab).await;
     }
 }
 
@@ -442,6 +453,7 @@ pub(super) async fn cleanup_thread(s: &State, thread: &str) {
     for pending in pending {
         let _ = result(pending).await;
     }
+    s.streams.p2.preview.browser.close(thread, None).await;
 }
 pub(super) async fn close_settled(s: &State, thread: &str, tab: &str) {
     let pending = s
@@ -1386,5 +1398,133 @@ mod tests {
             .is_empty());
         assert!(!state.dir.join("browser-profiles").exists());
         peer.task.abort();
+    }
+    #[tokio::test]
+    async fn idle_local_pipe_notifications_update_only_the_owned_page_and_reap_last_process() {
+        let state = state();
+        *state
+            .streams
+            .p2
+            .preview
+            .browser
+            .fixture_binary
+            .lock()
+            .unwrap() = Some(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/browser-cdp-events.py"),
+        );
+        let first=call(&state,"preview.open",&json!({"threadId":"first","runtime":"server","profileId":"default","url":"https://example.com/first"})).await.unwrap();
+        let second=call(&state,"preview.open",&json!({"threadId":"second","runtime":"server","profileId":"default","url":"https://example.com/second"})).await.unwrap();
+        let third=call(&state,"preview.open",&json!({"threadId":"third","runtime":"server","profileId":"default","url":"https://example.com/third"})).await.unwrap();
+        let a = tab_of(&first);
+        let b = tab_of(&second);
+        let c = tab_of(&third);
+        let title = |thread: &str, tab: &str| {
+            state
+                .streams
+                .p2
+                .preview
+                .inner
+                .lock()
+                .unwrap()
+                .kernel
+                .get(thread, tab)
+                .map(|snapshot| snapshot["navStatus"]["title"].clone())
+        };
+        wait(|| {
+            title("first", a) == Some(json!("Initial 1"))
+                && title("second", b) == Some(json!("Initial 2"))
+        })
+        .await;
+        let profile = std::fs::read_dir(state.dir.join("browser-profiles"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        let pid: i32 = std::fs::read_to_string(profile.join("fixture.pid"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        state.streams.p2.preview.browser.command("first",a,"Fixture.schedule",json!({"serial":1,"wrongSession":true,"url":"https://example.com/ignored","title":"Ignored"})).await.unwrap();
+        wait(|| {
+            std::fs::read_to_string(profile.join("event-sent")).is_ok_and(|value| value == "1")
+        })
+        .await;
+        assert_eq!(title("first", a), Some(json!("Initial 1")));
+        assert_eq!(title("second", b), Some(json!("Initial 2")));
+        state.streams.p2.preview.browser.command("first",a,"Fixture.schedule",json!({"serial":2,"url":"https://example.com/idle","title":"Unsolicited idle update"})).await.unwrap();
+        wait(|| title("first", a) == Some(json!("Unsolicited idle update"))).await;
+        assert_eq!(title("second", b), Some(json!("Initial 2")));
+        state
+            .streams
+            .p2
+            .preview
+            .browser
+            .command(
+                "first",
+                a,
+                "Fixture.schedule",
+                json!({"serial":3,"close":true}),
+            )
+            .await
+            .unwrap();
+        wait(|| title("first", a).is_none()).await;
+        assert_eq!(title("second", b), Some(json!("Initial 2")));
+        super::super::cleanup(&state, "first").await.unwrap();
+        assert_eq!(unsafe { libc::kill(pid, 0) }, 0);
+        assert_eq!(
+            state
+                .streams
+                .p2
+                .preview
+                .browser
+                .screenshot("second", b)
+                .await
+                .unwrap(),
+            vec![255, 216, 255, 217]
+        );
+        state
+            .streams
+            .p2
+            .preview
+            .browser
+            .command(
+                "third",
+                c,
+                "Fixture.schedule",
+                json!({"serial":4,"close":true}),
+            )
+            .await
+            .unwrap();
+        wait(|| title("third", c).is_none()).await;
+        close(&state, "second", Some(b)).await;
+        assert_eq!(
+            unsafe { libc::kill(pid, 0) },
+            -1,
+            "a detached stale tab cannot delay the last live page's process reap"
+        );
+        let commands = std::fs::read_to_string(profile.join("commands.jsonl")).unwrap();
+        let closes = commands
+            .lines()
+            .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+            .filter(|message| message["method"] == "Target.closeTarget")
+            .map(|message| message["params"]["targetId"].clone())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            closes,
+            vec![json!("target-2")],
+            "only the live owned page is closed"
+        );
+        shutdown(&state.streams.p2.preview).await;
+        assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ESRCH)
+        );
+        assert!(
+            profile.join("commands.jsonl").exists(),
+            "private fixture tree retained"
+        );
     }
 }

@@ -55,5 +55,6 @@ Startup descriptor admission, capability publication and actual CLI wire proofs
 are tracked by their separate startup acceptance.
 
 Desktop live page notifications are now projected by the consumer described in
-`PREVIEW-NAVIGATION.md`. Local inherited-pipe notifications and the remaining native
-network/download/dialog consumers retain their separate acceptance boundaries.
+`PREVIEW-NAVIGATION.md`; local inherited-pipe notification ownership is described in
+`PREVIEW-LOCAL-PIPE.md`. Native network/download/dialog consumers retain their
+separate acceptance boundaries.

@@ -1,0 +1,36 @@
+# Local browser notification ownership
+
+A dedicated reader continuously consumes the inherited Chromium CDP pipe. It
+retains NUL framing across fragmented reads, validates each bounded JSON packet,
+and delivers at most eight pending packets to the actor. It remains active while
+no command is waiting. EOF, truncation, invalid JSON and messages reaching the
+existing 4 MiB limit end the owned connection. Actor finalization aborts and joins
+the reader before process/profile cleanup.
+
+Responses retain command-ID correlation and the existing five-second actor and
+six-second caller deadlines. Unsolicited events use the same source-proven
+navigation projection and strict session, target and main-frame routing as the
+desktop transport. Each local page has its own observer and completion watch;
+a shared profile does not share page identity. A separate process-completion watch
+acknowledges actual process reaping and existing identity-checked cleanup.
+
+A detached/destroyed page stops only its observer. A live sibling keeps its shared
+process and remains controllable. When the final live page closes, stale detached
+tab metadata cannot defer process reaping. Closing an already-detached page sends
+no stale target-close command; closing a live owned page still sends its command.
+Thread cleanup also removes stale actor entries without stopping another thread's
+live page. Existing production profile-removal behavior and explicit fixture
+removal injection remain unchanged.
+
+The physical test uses an actual inherited pipe and owned Python peer. Three
+independent pages share one process. Delayed fragmented notifications arrive
+while the actor is idle, update only the matching page, and ignore unrelated
+sessions. External page closure preserves a live sibling, thread cleanup remains
+isolated, and the final close verifies the real child PID was reaped. All fixture
+trees remain present. Pure reader tests cover framing, truncated input and the
+message bound; observer tests cover per-page closure. Existing preview, desktop,
+agent and deletion tests provide adjacent acceptance.
+
+This implements notification delivery and loaded-state projection, not the
+remaining native request-failure, network/console, dialog, popup or download
+consumers. No capability is inferred from generic CDP command forwarding.

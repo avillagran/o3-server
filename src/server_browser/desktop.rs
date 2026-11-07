@@ -3,64 +3,8 @@ use super::*;
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
 
-fn detached(value: &Value, session: Option<&str>) -> bool {
-    (value["method"] == "Inspector.detached"
-        && session.is_some_and(|session| value["sessionId"] == session))
-        || (value["method"] == "Target.detachedFromTarget"
-            && session.is_some_and(|session| value["params"]["sessionId"] == session))
-}
-fn observe(
-    value: &Value,
-    session: Option<&str>,
-    target: Option<&str>,
-    main_frame: &mut Option<String>,
-    navigation: &tokio::sync::watch::Sender<Navigation>,
-) -> bool {
-    if detached(value, session) {
-        return true;
-    }
-    let scoped = session.is_some_and(|session| value["sessionId"] == session);
-    let method = value["method"].as_str().unwrap_or("");
-    let event = if method == "Target.targetInfoChanged" {
-        target.is_some_and(|target| value["params"]["targetInfo"]["targetId"] == target)
-    } else if scoped {
-        match method {
-            "Page.frameNavigated" => {
-                let frame = &value["params"]["frame"];
-                if frame.get("parentId").is_none() || frame["parentId"].as_str() == Some("") {
-                    if let Some(id) = frame["id"].as_str().filter(|id| !id.is_empty()) {
-                        *main_frame = Some(id.into());
-                        true
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            }
-            "Page.navigatedWithinDocument" | "Page.frameStartedLoading" => main_frame
-                .as_ref()
-                .is_some_and(|frame| value["params"]["frameId"] == *frame),
-            "Page.loadEventFired" => true,
-            _ => false,
-        }
-    } else {
-        false
-    };
-    if event {
-        navigation.send_modify(|state| {
-            state.revision = state.revision.wrapping_add(1);
-            if method == "Page.frameStartedLoading" {
-                state.generation = state.generation.wrapping_add(1);
-                state.loading = true;
-            }
-            if method == "Page.loadEventFired" {
-                state.loading = false;
-            }
-        });
-    }
-    false
-}
+use super::events::observe;
+
 pub(super) async fn launch(
     channel: &crate::desktop_browser_channel::Channel,
     thread: &str,
@@ -200,6 +144,8 @@ pub(super) async fn launch(
         origin: Origin::Desktop,
         desktop_channel: Some(channel.clone()),
         navigation: Some(navigation),
+        events: None,
+        process_done: done.clone(),
         tx,
         done,
         cancel,
@@ -258,6 +204,7 @@ pub(super) async fn launch(
 mod tests {
     use super::*;
     use std::sync::{Arc, Mutex as SyncMutex};
+    use tokio::io::{AsyncBufReadExt, BufReader};
     struct Peer {
         channel: crate::desktop_browser_channel::Channel,
         events: mpsc::UnboundedSender<Value>,

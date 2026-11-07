@@ -1,4 +1,4 @@
-//! Lazy system Chromium, controlled over an inherited CDP pipe (no debugging listener).
+//! Owned Chromium pipe sessions and frontend desktop CDP connections.
 use base64::Engine;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -9,11 +9,13 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::AsyncWriteExt,
     sync::{mpsc, oneshot, Mutex},
 };
 
 mod desktop;
+mod events;
+mod pipe;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Origin {
@@ -55,6 +57,8 @@ struct Tab {
     origin: Origin,
     desktop_channel: Option<crate::desktop_browser_channel::Channel>,
     navigation: Option<tokio::sync::watch::Receiver<Navigation>>,
+    events: Option<events::Shared>,
+    process_done: tokio::sync::watch::Receiver<bool>,
     session: Option<String>,
     target: Option<String>,
     profile: String,
@@ -209,71 +213,77 @@ async fn launch(
     drop(child_pipe);
     let group = Group(child.id().unwrap());
     let socket = tokio::net::UnixStream::from_std(parent).map_err(|_| "Cannot open CDP pipe")?;
-    let (r, mut w) = socket.into_split();
-    let mut reader = BufReader::new(r);
+    let (input, mut output) = socket.into_split();
+    let (mut incoming, reader_task) = pipe::start(input);
+    let reader_abort = pipe::Abort(reader_task.abort_handle());
+    let pages: events::Shared = Default::default();
+    let actor_pages = pages.clone();
     let (tx, mut rx) = mpsc::channel::<Request>(8);
     let (done_tx, done) = tokio::sync::watch::channel(false);
     let cancel = std::sync::Arc::new(tokio::sync::Notify::new());
     let stop_signal = cancel.clone();
     tokio::spawn(async move {
         let _group = group;
+        let _reader_abort = reader_abort;
         let deadline = tokio::time::sleep(LIFETIME);
         tokio::pin!(deadline);
-        let mut id = 0u64;
+        let mut id = 0_u64;
         loop {
-            let next = tokio::select! {r=rx.recv()=>r,_=stop_signal.notified()=>None,_=&mut deadline=>None,_=child.wait()=>None};
+            let next = tokio::select! {
+                request=rx.recv()=>request,
+                _=stop_signal.notified()=>None,
+                _=&mut deadline=>None,
+                _=child.wait()=>None,
+                packet=incoming.recv()=>{match packet{Some(Ok(value))=>{if events::notify(&actor_pages,&value){break;}continue;},_=>break}}
+            };
             let Some((method, params, session, reply)) = next else {
                 break;
             };
             id += 1;
             let work = async {
                 let mut message = json!({"id":id,"method":method,"params":params});
-                if !method.starts_with("Target.") && !method.starts_with("Browser.") {
-                    if let Some(session) = &session {
-                        message["sessionId"] = json!(session);
-                    }
+                if let Some(session) = session
+                    .as_ref()
+                    .filter(|_| !method.starts_with("Target.") && !method.starts_with("Browser."))
+                {
+                    message["sessionId"] = json!(session);
                 }
-                let mut packet = serde_json::to_vec(&message).unwrap();
+                let mut packet =
+                    serde_json::to_vec(&message).map_err(|_| "Invalid CDP request".to_string())?;
                 packet.push(0);
-                w.write_all(&packet).await.map_err(|_| "CDP write failed")?;
+                output
+                    .write_all(&packet)
+                    .await
+                    .map_err(|_| "CDP write failed".to_string())?;
                 loop {
-                    let mut buf = Vec::new();
-                    // Bound every inbound JSON message, including unsolicited CDP events.
-                    use tokio::io::AsyncReadExt;
-                    let n = (&mut reader)
-                        .take(4 * 1024 * 1024)
-                        .read_until(0, &mut buf)
-                        .await
-                        .map_err(|_| "CDP read failed")?;
-                    if n == 0 || n >= 4 * 1024 * 1024 {
-                        return Err("CDP output limit or connection closed".into());
+                    let value = incoming.recv().await.ok_or("CDP connection closed")??;
+                    if events::notify(&actor_pages, &value) {
+                        return Err("Browser pages closed".to_string());
                     }
-                    buf.pop();
-                    let v: Value =
-                        serde_json::from_slice(&buf).map_err(|_| "Invalid CDP output")?;
-                    if v["id"] == id {
-                        return if v.get("error").is_some() {
-                            Err("Browser rejected CDP command".into())
-                        } else {
-                            Ok(v["result"].clone())
-                        };
+                    if value["id"] == id {
+                        if value.get("error").is_some() {
+                            return Err("Browser rejected CDP command".into());
+                        }
+                        if method == "Page.getFrameTree" {
+                            events::frame(&actor_pages, session.as_deref(), &value["result"]);
+                        }
+                        return Ok(value["result"].clone());
                     }
                 }
             };
-            match tokio::time::timeout(Duration::from_secs(5), work).await {
-                Ok(result) => {
-                    let failed = result.is_err();
-                    let _ = reply.send(result);
-                    if failed {
-                        break;
-                    }
-                }
-                Err(_) => {
-                    let _ = reply.send(Err("Browser command timed out".into()));
-                    break;
-                }
+            let result = tokio::select! {
+                _=stop_signal.notified()=>Err("Browser session ended".into()),
+                _=&mut deadline=>Err("Browser session ended".into()),
+                result=tokio::time::timeout(Duration::from_secs(5),work)=>result.unwrap_or_else(|_|Err("Browser command timed out".into()))
+            };
+            let failed = result.is_err();
+            let _ = reply.send(result);
+            if failed {
+                break;
             }
         }
+        reader_task.abort();
+        let _ = reader_task.await;
         let _ = child.kill().await;
         let _ = child.wait().await;
         drop(_group);
@@ -290,12 +300,15 @@ async fn launch(
                 }
             }
         }
+        events::stopped(&actor_pages);
         let _ = done_tx.send(true);
     });
     Ok(Tab {
         origin: Origin::Local,
         desktop_channel: None,
         navigation: None,
+        events: Some(pages),
+        process_done: done.clone(),
         session: None,
         target: None,
         profile: profile.into(),
@@ -379,11 +392,22 @@ impl Browsers {
             .collect();
         for key in keys {
             if let Some(tab) = tabs.remove(&key) {
-                if let Some(target) = tab.target.as_ref().filter(|_| tab.origin == Origin::Local) {
+                let was_live = !*tab.done.borrow();
+                if let (Some(pages), Some(session)) = (&tab.events, &tab.session) {
+                    events::remove(pages, session);
+                }
+                if let Some(target) = tab
+                    .target
+                    .as_ref()
+                    .filter(|_| tab.origin == Origin::Local && was_live)
+                {
                     let _ =
                         request(&tab.tx, "Target.closeTarget", json!({"targetId":target})).await;
                 }
-                if !tabs.values().any(|other| other.tx.same_channel(&tab.tx)) {
+                if !tabs
+                    .values()
+                    .any(|other| !*other.done.borrow() && other.tx.same_channel(&tab.tx))
+                {
                     stop(tab).await;
                 }
             }
@@ -444,6 +468,13 @@ impl Browsers {
         .map_err(error)?;
         browser.session = attached["sessionId"].as_str().map(str::to_owned);
         browser.target = target["targetId"].as_str().map(str::to_owned);
+        if let (Some(pages), Some(session), Some(target)) =
+            (&browser.events, &browser.session, &browser.target)
+        {
+            let (done, navigation) = events::register(pages, session, target);
+            browser.done = done;
+            browser.navigation = Some(navigation);
+        }
         request_in(
             &browser.tx,
             "Page.enable",
@@ -472,6 +503,21 @@ impl Browsers {
             &browser.tx,
             "Browser.setDownloadBehavior",
             json!({"behavior":"deny"}),
+        )
+        .await
+        .map_err(error)?;
+        request(
+            &browser.tx,
+            "Target.setDiscoverTargets",
+            json!({"discover":true}),
+        )
+        .await
+        .map_err(error)?;
+        request_in(
+            &browser.tx,
+            "Page.getFrameTree",
+            json!({}),
+            browser.session.clone(),
         )
         .await
         .map_err(error)?;
@@ -600,7 +646,7 @@ impl Browsers {
 async fn stop(tab: Tab) -> bool {
     let Tab {
         tx,
-        mut done,
+        process_done: mut done,
         cancel,
         ..
     } = tab;
