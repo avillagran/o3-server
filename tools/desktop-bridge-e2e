@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Isolated native desktop management against the embedded bridge (no services)."""
-import json, os, pathlib, subprocess, tempfile, time, urllib.request
+from runtime_safety import require_private_runtime, retained_directory
+require_private_runtime()
+import json, os, pathlib, shutil, subprocess, time, urllib.request
 root = pathlib.Path('/var/tmp/o3-build')
 server = pathlib.Path(os.environ.get('O3_BIN', str(root / 'main/debug/o3-server'))).resolve()
 client = pathlib.Path(os.environ.get('O3_DESKTOP_BIN', str(root / 'main/debug/omarchy-t3-client'))).resolve()
-with tempfile.TemporaryDirectory(prefix='db-', dir=root) as temp:
+with retained_directory(prefix='db-', dir=root) as temp:
     p = pathlib.Path(temp)
     (p/'bin').mkdir()
-    (p/'bin/t3').symlink_to(server)
+    shutil.copy2(server, p/'bin/t3')
     env = {**os.environ, 'HOME':temp, 'T3CODE_HOME':str(p/'t3'), 'XDG_CONFIG_HOME':str(p/'config'),
            'XDG_DATA_HOME':str(p/'data'), 'XDG_STATE_HOME':str(p/'state'), 'XDG_RUNTIME_DIR':str(p/'run'),
            'CODEX_HOME':str(p/'codex'), 'CLAUDE_CONFIG_DIR':str(p/'claude'), 'TMPDIR':str(root/'tmp'),

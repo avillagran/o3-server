@@ -1,10 +1,10 @@
 """Real desktop probe. Private records stay in memory and the isolated disk copy."""
 import shutil
-import argparse, hashlib, json, os, pathlib, queue, signal, sqlite3, subprocess, threading, time, urllib.request
+from runtime_safety import require_private_runtime
+import argparse, hashlib, json, os, pathlib, queue, signal, sqlite3, subprocess, threading, time, tempfile, urllib.request
 
 def run(memory):
-    if not pathlib.Path('/run/.containerenv').is_file():
-        raise SystemExit('RSS runtime measurement requires a private rootless container.')
+    require_private_runtime()
     parser = argparse.ArgumentParser()
     parser.add_argument('binary', nargs='?', default='/var/tmp/o3-build/main/release/o3-server')
     parser.add_argument('--profile', required=True)
@@ -23,7 +23,7 @@ def run(memory):
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     # A consistent read-only backup, never open the source in writable mode.
     source = pathlib.Path(args.profile).resolve() / 'userdata/o3.sqlite'
-    home = root / ('run-' + str(time.time_ns()))
+    home = pathlib.Path(tempfile.mkdtemp(prefix='run-', dir=root))
     profile = home/'t3'
     (profile/'userdata').mkdir(parents=True, mode=0o700)
     with sqlite3.connect(source.as_uri()+'?mode=ro', uri=True) as src, sqlite3.connect(profile/'userdata/o3.sqlite') as dst:
@@ -33,7 +33,7 @@ def run(memory):
     src.close()
     dst.close()
     (home/'bin').mkdir()
-    (home/'bin/t3').symlink_to(binary)
+    shutil.copy2(binary, home/'bin/t3')
     env = {**os.environ, 'HOME':str(home), 'T3CODE_HOME':str(profile), 'TMPDIR':'/var/tmp/o3-build/tmp',
            'CODEX_HOME':str(home/'codex'), 'CLAUDE_CONFIG_DIR':str(home/'claude'),
            'PATH':str(home/'bin')+':/usr/bin:/bin'}

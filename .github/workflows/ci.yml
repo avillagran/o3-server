@@ -45,3 +45,4 @@ jobs:
       - run: cargo clippy --locked --all-targets -j 4 ${{ matrix.features }} -- -D warnings
       - run: python3 tools/gen-compat && git -c safe.directory="$GITHUB_WORKSPACE" diff --exit-code -- docs/COMPATIBILITY.md
       - run: python3 tools/test-nightly-watch.py
+      - run: python3 tools/test_runtime_safety.py
