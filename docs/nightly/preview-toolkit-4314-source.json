@@ -1,0 +1,19 @@
+{
+  "revision": "83a3674ffd84ffb33de768210c806cb1ac53fd80",
+  "sourceFiles": {
+    "LICENSE": "935d8f2af0c703f9c39517ee57cc4930b19d02d533be930b63f0e82f93614b43",
+    "apps/server/package.json": "57653c19d043385889c2a0f47ab7ad95db23e381ebd7646c32c16d511290e406",
+    "pnpm-lock.yaml": "c17756114f2002ffc2f66ee725eb953ba17a1a0e8a97f1448643c8fa2de17cd0",
+    "apps/server/src/mcp/toolkits/preview/tools.ts": "bfb5b9d6d87560e1dc3baeaae67eb21a78bc94507b94417d82c0472fe4718b9c",
+    "apps/server/src/mcp/toolkits/preview/handlers.ts": "72f759f56dbb9ce70db1197a489930a1c78090d86462e775c4b5feee8beae31b",
+    "apps/server/src/preview/ServerBrowserPage.ts": "d5e1058f13b57c9f0a52f2ac68f88b656958e202a1ca81050a093bd7e8f1001b",
+    "apps/server/src/preview/SessionControl.ts": "8c95decfa0302f227c29e12391b777135e942b4ac0c9f58def4db6c07fb55c83",
+    "apps/server/src/preview/ServerBrowser.ts": "e8b025a1c7de82ba8089c5fa7d4439ee69e1d19a74af7657a26a419a51cdfab6",
+    "apps/server/src/preview/ServerBrowserContexts.ts": "71aae266a17e577bad933cad935fe87249fba63349a206856caa26bcb0c44cdf",
+    "packages/contracts/src/previewAutomation.ts": "6d45ec1a545c3e1324c86dba7d2418f4821d4cbc467a4bebbb052d476c628b31"
+  },
+  "status": "Read-only intake; no worker/catalog activation",
+  "playwright": "1.60.0",
+  "effect": "4.1.2",
+  "base": "9ca6a01645100ff5012e2376cd7c0c3799996998"
+}
