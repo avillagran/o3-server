@@ -8,4 +8,20 @@ const virtual=(await call('Target.attachToBrowserTarget')).result.sessionId;asse
 for(const [method,params,session]of [['Target.attachToTarget',{targetId:'foreign',flatten:true}],['Target.getTargetInfo',{targetId:'foreign'}],['Target.detachFromTarget',{sessionId:'foreign'}],['Runtime.evaluate',{expression:'1'},'foreign'],['Browser.close',{},virtual],['Target.createBrowserContext',{},virtual],['Browser.setDownloadBehavior',{behavior:'allow',downloadPath:'/tmp/foreign'},virtual]])assert((await call(method,params,session)).error);
 assert.equal(upstream.calls.length,0);upstream.emit('event',{method:'Target.targetCreated',params:{targetInfo:{targetId:'foreign'}}});upstream.emit('event',{sessionId:'foreign',method:'Runtime.consoleAPICalled',params:{}});upstream.emit('event',{sessionId:virtual,method:'Target.attachedToTarget',params:{sessionId:'foreign',targetInfo:{type:'iframe',targetId:'foreign'}}});await new Promise(resolve=>setTimeout(resolve,10));assert.equal(events.length,0);
 const pending=call('Target.attachToTarget',{targetId:'owned',flatten:true});while(!upstream.resolveAttach)await new Promise(resolve=>setTimeout(resolve,1));admitted=false;upstream.resolveAttach({sessionId:'owned-pending'});assert((await pending).error);await relay.close();assert(upstream.calls.some(c=>c.method==='Target.detachFromTarget'&&c.params.sessionId==='owned-pending'));
-assert.equal(upstream.calls.filter(c=>c.method==='Target.attachToTarget').length,1);fs.writeFileSync('/out/proof.json',JSON.stringify({complete:true,crossTargetSessionContextMutationsRefused:7,foreignAndVirtualEventsFiltered:3,revokedPendingAttachReaped:true,virtualBrowserNeverUpstream:true},null,2)+'\n');console.log('TAB_CDP_RELAY_BOUNDARY_PASS');
+assert.equal(upstream.calls.filter(c=>c.method==='Target.attachToTarget').length,1);
+async function closeBeforeReply(timeout){
+ const raw=new Upstream();const grant=new TabCdpRelay({upstream:raw,targetId:'owned',admitted:()=>true,WebSocketServer,cleanupTimeoutMs:timeout?25:1000});
+ const ws=new WebSocket(await grant.listen());await once(ws,'open');ws.send(JSON.stringify({id:1,method:'Target.attachToTarget',params:{targetId:'owned',flatten:true}}));
+ while(!raw.resolveAttach)await new Promise(resolve=>setTimeout(resolve,1));
+ let complete=false;const closing=grant.close().then(()=>{complete=true;return null;},error=>error);
+ if(timeout){const error=await closing;assert(error.message.includes('unknown'));assert.equal(grant.cleanup.state,'unknown');assert.equal(grant.cleanup.pendingAttachments,1);assert(!complete);}
+ else{await new Promise(resolve=>setTimeout(resolve,10));assert(!complete);assert.equal(grant.cleanup.state,'draining');}
+ raw.resolveAttach({sessionId:timeout?'late-after-deadline':'late-after-close'});
+ if(!timeout){assert.equal(await closing,null);assert(complete);assert.equal(grant.cleanup.state,'complete');}
+ for(let attempt=0;grant.cleanup.pendingAttachments&&attempt<100;attempt++)await new Promise(resolve=>setTimeout(resolve,1));
+ assert.equal(grant.cleanup.pendingAttachments,0);assert(raw.calls.some(c=>c.method==='Target.detachFromTarget'&&c.params.sessionId===(timeout?'late-after-deadline':'late-after-close')));
+ assert(grant.cleanup.receipts.some(r=>r.kind==='detached-owned-session'));
+ if(timeout)assert.equal(grant.cleanup.state,'unknown');
+}
+await closeBeforeReply(false);await closeBeforeReply(true);
+fs.writeFileSync('/out/proof.json',JSON.stringify({complete:true,crossTargetSessionContextMutationsRefused:7,foreignAndVirtualEventsFiltered:3,revokedPendingAttachReaped:true,virtualBrowserNeverUpstream:true,closeBeforeAttachReplyWaits:true,lateReplyDetachedAfterDeadline:true,deadlineRemainsExplicitUnknown:true},null,2)+'\n');console.log('TAB_CDP_RELAY_BOUNDARY_PASS');

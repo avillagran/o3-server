@@ -4,25 +4,49 @@ import {randomBytes} from 'node:crypto';
 const PAGE_DOMAINS=new Set(['Accessibility','Animation','DOM','DOMSnapshot','Emulation','Input','Inspector','LayerTree','Log','Network','Page','Performance','Runtime']);
 const FORBIDDEN_PAGE_METHODS=new Set(['Network.getAllCookies','Network.getCookies','Network.setCookie','Network.setCookies','Network.deleteCookies','Network.clearBrowserCookies','Network.clearBrowserCache','Page.crash','Page.close','Page.setDownloadBehavior','DOM.setFileInputFiles']);
 export class TabCdpRelay {
- #upstream;#target;#alive;#sessions=new Map();#targetInfo;#server;#ws;#path;#client;#connected=false;#closed=false;#event;#denied=0;#windows=new Set();#virtualSequence=0;#closeTask;#namespace=randomBytes(8).toString('hex');
- constructor({upstream,targetId,admitted,WebSocketServer}){
+ #attachments=new Set();#cleanupTimeout;#cleanupState='open';#cleanupReceipts=[];#upstream;#target;#alive;#sessions=new Map();#targetInfo;#server;#ws;#path;#client;#connected=false;#closed=false;#event;#denied=0;#windows=new Set();#virtualSequence=0;#closeTask;#namespace=randomBytes(8).toString('hex');
+ constructor({upstream,targetId,admitted,WebSocketServer,cleanupTimeoutMs=15000}){
   if(!targetId||typeof admitted!=='function')throw Error('Owner target grant required');
+  if(!Number.isSafeInteger(cleanupTimeoutMs)||cleanupTimeoutMs<=0||cleanupTimeoutMs>30000)throw Error('Invalid owner cleanup deadline');
+  this.#cleanupTimeout=cleanupTimeoutMs;
   this.#upstream=upstream;this.#target=targetId;this.#alive=admitted;
   this.#path='/'+randomBytes(32).toString('base64url');this.#server=http.createServer((_q,r)=>{r.writeHead(404);r.end();});
   this.#ws=new WebSocketServer({noServer:true,maxPayload:256*1024*1024,perMessageDeflate:false});
   this.#server.on('upgrade',(request,socket,head)=>{
    if(this.#closed||!this.#alive()||this.#connected||request.url!==this.#path||request.headers.origin||!['127.0.0.1','::ffff:127.0.0.1'].includes(socket.remoteAddress)){socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');return;}
-   this.#connected=true;this.#ws.handleUpgrade(request,socket,head,client=>{this.#client=client;client.on('message',data=>{void this.#receive(data);});client.on('close',()=>{void this.close();});});
+   this.#connected=true;this.#ws.handleUpgrade(request,socket,head,client=>{this.#client=client;client.on('message',data=>{void this.#receive(data);});client.on('close',()=>{this.close().catch(()=>{ /* Rejected owner receipt remains observable through close/cleanup. */ });});});
   });
   this.#event=packet=>this.#forward(packet);upstream.on('event',this.#event);
  }
  get denied(){return this.#denied;}
+ get cleanup(){return {state:this.#cleanupState,pendingAttachments:this.#attachments.size,receipts:structuredClone(this.#cleanupReceipts)};}
  async listen(){await new Promise((resolve,reject)=>{this.#server.once('error',reject);this.#server.listen(0,'127.0.0.1',resolve);});return `ws://127.0.0.1:${this.#server.address().port}${this.#path}`;}
  #assert(){if(this.#closed||!this.#alive())throw Error('Browser grant revoked');}
  #send(packet){if(this.#client?.readyState===1)this.#client.send(JSON.stringify(packet));}
  async #info(){if(!this.#targetInfo){const r=await this.#upstream.send('Target.getTargetInfo',{targetId:this.#target});this.#assert();if(r.targetInfo?.targetId!==this.#target)throw Error('Owner target changed');this.#targetInfo=r.targetInfo;}return this.#targetInfo;}
  #knownTarget(id){return id===this.#target||[...this.#sessions.values()].some(v=>v.targetId===id);}
- async #attach(targetId){if(!this.#knownTarget(targetId))throw Error('Target outside grant');const result=await this.#upstream.send('Target.attachToTarget',{targetId,flatten:true});this.#sessions.set(result.sessionId,{targetId});this.#assert();return result;}
+ async #detach(sessionId){
+  await this.#upstream.send('Target.detachFromTarget',{sessionId});
+  this.#sessions.delete(sessionId);this.#cleanupReceipts.push({kind:'detached-owned-session'});
+ }
+ #attach(targetId){
+  if(!this.#knownTarget(targetId))throw Error('Target outside grant');
+  const work=(async()=>{
+   let result;
+   try{result=await this.#upstream.send('Target.attachToTarget',{targetId,flatten:true});}
+   catch(error){this.#cleanupReceipts.push({kind:'attachment-outcome-unknown'});this.#cleanupState='unknown';throw error;}
+   if(typeof result.sessionId!=='string'||!result.sessionId){this.#cleanupState='unknown';throw Error('Attachment outcome unknown');}
+   this.#sessions.set(result.sessionId,{targetId});
+   if(this.#closed||!this.#alive()){
+    try{await this.#detach(result.sessionId);}catch(error){this.#cleanupState='unknown';throw error;}
+    throw Error('Browser grant revoked');
+   }
+   return result;
+  })();
+  this.#attachments.add(work);
+  work.then(()=>this.#attachments.delete(work),()=>this.#attachments.delete(work));
+  return work;
+ }
  async #command(method,params,sessionId){
   this.#assert();
   if(sessionId&&!this.#sessions.has(sessionId))throw Error('Session outside grant');
@@ -83,11 +107,25 @@ export class TabCdpRelay {
   if(packet.method==='Target.detachedFromTarget')this.#sessions.delete(packet.params?.sessionId);
   this.#send(packet);
  }
- close(){if(!this.#closeTask)this.#closeTask=this.#release();return this.#closeTask;}
+ close(){if(!this.#closeTask){this.#closed=true;this.#closeTask=Promise.resolve().then(()=>this.#release());}return this.#closeTask;}
  async #release(){
-  if(this.#closed)return;this.#closed=true;this.#upstream.off('event',this.#event);
-  this.#client?.terminate();this.#ws.close();const listenerClosed=new Promise(resolve=>this.#server.close(resolve));
-  const sessions=[...this.#sessions].filter(([,value])=>!value.virtual).map(([id])=>id);this.#sessions.clear();
-  await Promise.all([listenerClosed,Promise.allSettled(sessions.map(sessionId=>this.#upstream.send('Target.detachFromTarget',{sessionId})))]);
+  const alreadyUnknown=this.#cleanupState==='unknown';this.#cleanupState=alreadyUnknown?'unknown':'draining';
+  this.#upstream.off('event',this.#event);this.#client?.terminate();this.#ws.close();
+  const listenerClosed=new Promise(resolve=>this.#server.close(resolve));
+  const drain=(async()=>{
+   // No new attach can enter after #closed. Late replies retain their own
+   // detach receipt inside the tracked work, including after a deadline.
+   await Promise.allSettled([...this.#attachments]);
+   const sessions=[...this.#sessions].filter(([,value])=>!value.virtual).map(([id])=>id);
+   const outcomes=await Promise.allSettled(sessions.map(sessionId=>this.#detach(sessionId)));
+   if(outcomes.some(r=>r.status==='rejected')||this.#cleanupState==='unknown')throw Error('Owned cleanup outcome unknown');
+   this.#sessions.clear();await listenerClosed;
+  })();
+  let timer;
+  try{
+   await Promise.race([drain,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Owned cleanup deadline; outcome unknown')),this.#cleanupTimeout);})]);
+   this.#cleanupState='complete';
+  }catch(error){this.#cleanupState='unknown';throw error;}
+  finally{clearTimeout(timer);}
  }
 }
