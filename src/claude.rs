@@ -87,7 +87,7 @@ struct Session {
     idle_since: tokio::time::Instant,
 }
 // Claude accepts --mcp-config as a JSON file path. Never serialize credentials in argv.
-struct PrivateConfig(PathBuf);
+struct PrivateConfig(PathBuf, crate::cleanup::Identity);
 impl PrivateConfig {
     fn create(value: &Value) -> Result<Self, String> {
         use std::{
@@ -99,7 +99,11 @@ impl PrivateConfig {
             .mode(0o700)
             .create(&dir)
             .map_err(|e| e.to_string())?;
-        let guard = Self(dir);
+        use crate::cleanup::Tree;
+        let identity = crate::cleanup::FileTree
+            .identity(&dir)
+            .map_err(|error| error.to_string())?;
+        let guard = Self(dir, identity);
         let mut file = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -113,7 +117,7 @@ impl PrivateConfig {
 }
 impl Drop for PrivateConfig {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
+        let _ = crate::cleanup::remove_owned_files(&self.0, self.1, &["config.json"]);
     }
 }
 impl ClaudeProvider {
@@ -1204,7 +1208,7 @@ mod tests {
             env_of(&cmd)["CLAUDE_CODE_ENTRYPOINT"].as_deref(),
             Some("custom")
         );
-        std::fs::remove_dir_all(home).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[tokio::test]
     async fn spawned_child_does_not_join_the_launching_session() {
@@ -1219,7 +1223,7 @@ mod tests {
         let text = std::fs::read_to_string(out).unwrap();
         assert!(!text.contains("CLAUDECODE=") && !text.contains("CLAUDE_CODE_SESSION_ID="));
         assert!(text.contains("CLAUDE_CODE_ENTRYPOINT=t3-code"));
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[test]
     fn text_only_mcp_config_literal_has_the_required_schema() {
@@ -1339,7 +1343,7 @@ mod tests {
         assert!(provider.sessions.lock().unwrap().contains_key("collision"));
         assert!(std::path::Path::new(&format!("/proc/{pid}")).exists());
         provider.shutdown().await;
-        std::fs::remove_dir_all(dir.parent().unwrap()).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[test]
     fn replay_real_partial_text_tools_results_and_usage() {
@@ -1679,6 +1683,6 @@ mod tests {
             .any(|e| matches!(e,ProviderEvent::TextDelta(t) if t.contains("741"))));
         let mut s = provider.sessions.lock().unwrap().remove("live").unwrap();
         s.child.kill().await.unwrap();
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

@@ -13,6 +13,19 @@ fn clear_profile_rejects_unsafe_storage() {
 }
 
 #[test]
+fn clear_profile_refuses_an_unknown_regular_file_at_the_profile_slot() {
+    use sha2::{Digest, Sha256};
+    let server = support::start(|_| {});
+    let client = server.connect();
+    let base = server.dir.join("browser-profiles");
+    std::fs::create_dir(&base).unwrap();
+    let slot = base.join(format!("{:x}", Sha256::digest(b"default")));
+    std::fs::write(&slot, "unknown user data").unwrap();
+    assert!(t3_protocol::api::preview::clear_profile(&client, "default").is_err());
+    assert_eq!(std::fs::read_to_string(slot).unwrap(), "unknown user data");
+}
+
+#[test]
 fn fixture_browser_lifecycle_and_profile_clear() {
     use t3_protocol::api::preview::{self, PreviewOpen};
     // This test file must run with one thread: O3_BROWSER_BINARY is process-wide.
@@ -20,7 +33,11 @@ fn fixture_browser_lifecycle_and_profile_clear() {
         "O3_BROWSER_BINARY",
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/browser-cdp.py"),
     );
-    let server = support::start(|_| {});
+    let removed = std::sync::Arc::new(RecordingRemoval::default());
+    let inject = removed.clone();
+    let server = support::start(move |state| {
+        state.streams.p2.preview.set_profile_removal(inject);
+    });
     let c = server.connect();
     assert_eq!(
         t3_protocol::api::server::config(&c).unwrap()["environment"]["capabilities"]
@@ -130,7 +147,20 @@ fn fixture_browser_lifecycle_and_profile_clear() {
     )
     .unwrap();
     preview::clear_profile(&c, "default").unwrap();
-    assert!(!path.exists());
+    assert!(
+        path.exists(),
+        "Recording executor must retain the entire fixture profile"
+    );
+    let plans = removed.0.lock().unwrap();
+    assert_eq!(plans.len(), 1);
+    let operations = plans[0].operations();
+    assert_eq!(operations.last().unwrap().path, path);
+    assert!(operations
+        .iter()
+        .any(|operation| operation.path == path.join("fixture.pid")));
+    assert!(operations
+        .iter()
+        .any(|operation| operation.path == path.join("commands.jsonl")));
     assert_eq!(
         unsafe { libc::kill(pid, 0) },
         -1,
@@ -215,4 +245,64 @@ fn rejected_navigation_reaches_reader() {
 #[test]
 fn dead_browsers_release_capacity_and_tabs() {
     audit_browser_case("lifecycle");
+}
+
+#[derive(Default)]
+struct RecordingRemoval(std::sync::Mutex<Vec<o3_server::cleanup::RemovalPlan>>);
+impl o3_server::cleanup::Removal for RecordingRemoval {
+    fn execute(&self, plan: &o3_server::cleanup::RemovalPlan) -> std::io::Result<()> {
+        self.0.lock().unwrap().push(plan.clone());
+        Ok(())
+    }
+}
+
+#[test]
+fn fixture_incognito_exit_retains_the_owned_profile_without_tree_deletion() {
+    use t3_protocol::api::preview::{self, PreviewOpen};
+    std::env::set_var(
+        "O3_BROWSER_BINARY",
+        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/browser-cdp.py"),
+    );
+    let server = support::start(|_| {});
+    let client = server.connect();
+    let opened = preview::open(
+        &client,
+        "private-incognito-thread",
+        &PreviewOpen {
+            runtime: Some("server".into()),
+            profile_id: Some("incognito".into()),
+            url: Some("http://localhost:1234".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let base = server.dir.join("browser-profiles");
+    let original = std::fs::read_dir(&base)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let pid: i32 = std::fs::read_to_string(original.join("fixture.pid"))
+        .unwrap()
+        .parse()
+        .unwrap();
+    preview::close(
+        &client,
+        "private-incognito-thread",
+        opened["tabId"].as_str(),
+    )
+    .unwrap();
+    assert_eq!(
+        unsafe { libc::kill(pid, 0) },
+        -1,
+        "Ephemeral browser must exit before retention"
+    );
+    let retained = std::fs::read_dir(base).unwrap().next().unwrap().unwrap();
+    assert!(retained
+        .file_name()
+        .to_string_lossy()
+        .starts_with(".o3-retained-"));
+    assert!(retained.path().join("fixture.pid").is_file());
+    assert!(!original.exists());
 }

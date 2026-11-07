@@ -10,7 +10,9 @@ const T: Duration = Duration::from_secs(10);
 #[test]
 fn preview_registry_events_and_refusal_of_the_server_runtime() {
     std::env::set_var("O3_BROWSER_BINARY", "/nonexistent/o3-test-browser");
-    let server = start(|_| {});
+    let recorder = std::sync::Arc::new(RecordingRemoval::default());
+    let inject = recorder.clone();
+    let server = start(move |state| state.streams.p2.preview.set_profile_removal(inject));
     let c = server.connect();
     let mut events = subscribe(server.connect(), "subscribePreviewEvents", json!({}));
     // This stream sends no first item to wait on, and requests on separate sockets do not order.
@@ -206,4 +208,13 @@ fn discovered_local_servers_lists_http_listeners_only_while_subscribed() {
         .iter()
         .any(|s| s["port"] == silent_port));
     assert!(found["scannedAt"].is_string());
+}
+
+#[derive(Default)]
+struct RecordingRemoval(std::sync::Mutex<Vec<o3_server::cleanup::RemovalPlan>>);
+impl o3_server::cleanup::Removal for RecordingRemoval {
+    fn execute(&self, plan: &o3_server::cleanup::RemovalPlan) -> std::io::Result<()> {
+        self.0.lock().unwrap().push(plan.clone());
+        Ok(())
+    }
 }

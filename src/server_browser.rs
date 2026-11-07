@@ -24,8 +24,17 @@ type Request = (
 pub struct Browsers {
     #[cfg(test)]
     pub(crate) fixture_binary: std::sync::Mutex<Option<PathBuf>>,
+    removal: ProfileRemoval,
     tabs: Mutex<BTreeMap<(String, String), Tab>>,
     viewers: std::sync::Mutex<std::collections::BTreeSet<(String, String)>>,
+}
+struct ProfileRemoval(std::sync::Mutex<std::sync::Arc<dyn crate::cleanup::Removal>>);
+impl Default for ProfileRemoval {
+    fn default() -> Self {
+        Self(std::sync::Mutex::new(std::sync::Arc::new(
+            crate::cleanup::RealRemoval,
+        )))
+    }
 }
 #[derive(Clone)]
 struct Tab {
@@ -113,7 +122,22 @@ async fn launch(
             profile.into()
         },
     )?;
-    std::fs::create_dir_all(&dir).map_err(|_| "Cannot create browser profile")?;
+    if ephemeral {
+        std::fs::create_dir(&dir)
+    } else {
+        std::fs::create_dir_all(&dir)
+    }
+    .map_err(|_| "Cannot create browser profile")?;
+    use crate::cleanup::Tree;
+    let ephemeral_identity = if ephemeral {
+        Some(
+            crate::cleanup::FileTree
+                .identity(&dir)
+                .map_err(|_| "Cannot identify isolated browser profile")?,
+        )
+    } else {
+        None
+    };
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
         .map_err(|_| "Cannot restrict browser profile permissions")?;
@@ -238,8 +262,8 @@ async fn launch(
         if let Some(scope) = agent_scope.as_mut() {
             scope.stop().await;
         }
-        if ephemeral {
-            let _ = std::fs::remove_dir_all(&dir);
+        if let Some(identity) = ephemeral_identity {
+            let _ = crate::cleanup::quarantine_owned(&dir, identity);
         }
         let _ = done_tx.send(true);
     });
@@ -263,6 +287,10 @@ impl Drop for Viewer<'_> {
     }
 }
 impl Browsers {
+    pub(crate) fn set_profile_removal(&self, removal: std::sync::Arc<dyn crate::cleanup::Removal>) {
+        *self.removal.0.lock().unwrap() = removal;
+    }
+
     pub fn human_controls(&self, thread: &str, tab: &str) -> bool {
         self.viewers
             .lock()
@@ -300,7 +328,9 @@ impl Browsers {
         let path = directory(root, profile).map_err(error)?;
         // Processes must have acknowledged exit before removal: refuse active profiles.
         if path.exists() {
-            std::fs::remove_dir_all(path).map_err(|_| {
+            let plan = crate::cleanup::RemovalPlan::prepare(&path, &crate::cleanup::FileTree)
+                .map_err(|_| error("Cannot safely inspect browser profile for removal".into()))?;
+            self.removal.0.lock().unwrap().execute(&plan).map_err(|_| {
                 error("Cannot clear browser profile; retry after closing its sessions".into())
             })?;
         }

@@ -46,6 +46,14 @@ pub struct Manager {
     pub(crate) browser: crate::server_browser::Browsers,
 }
 
+impl Manager {
+    /// Supply a profile-removal executor before serving requests.
+    /// Production defaults to identity-checked, no-follow removal.
+    pub fn set_profile_removal(&self, removal: Arc<dyn crate::cleanup::Removal>) {
+        self.browser.set_profile_removal(removal);
+    }
+}
+
 impl Inner {
     fn epoch(&mut self) -> String {
         if self.epoch.is_empty() {
