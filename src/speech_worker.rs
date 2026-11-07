@@ -29,6 +29,10 @@ const MANIFEST: &[u8] = include_bytes!("../runtime/speech/native-manifest.json")
 const TEXT_MANIFEST: &[u8] = include_bytes!("../runtime/speech/text/manifest.json");
 const TEXT_MODULES: &[(&str, &[u8])] = &[
     (
+        "transcription-post-processing.mjs",
+        include_bytes!("../runtime/speech/text/transcription-post-processing.mjs"),
+    ),
+    (
         "custom-words.mjs",
         include_bytes!("../runtime/speech/text/custom-words.mjs"),
     ),
@@ -107,6 +111,56 @@ pub struct WorkerSpec {
     pub startup_deadline: Duration,
     pub operation_deadline: Duration,
     pub close_deadline: Duration,
+}
+
+/// The text-only resource has no engine, model, VAD, package URL, or import authority.
+pub struct TextWorkerSpec {
+    pub node: Arc<NodeRuntime>,
+    pub directory: PathBuf,
+    pub startup_deadline: Duration,
+    pub operation_deadline: Duration,
+    pub close_deadline: Duration,
+}
+struct RuntimeSpec {
+    node: Arc<NodeRuntime>,
+    engine: Option<EnginePackage>,
+    model: Option<SealedFile>,
+    vad: Option<SealedFile>,
+    directory: PathBuf,
+    acceleration: String,
+    startup_deadline: Duration,
+    operation_deadline: Duration,
+    close_deadline: Duration,
+}
+impl From<WorkerSpec> for RuntimeSpec {
+    fn from(spec: WorkerSpec) -> Self {
+        Self {
+            node: spec.node,
+            engine: Some(spec.engine),
+            model: spec.model,
+            vad: spec.vad,
+            directory: spec.directory,
+            acceleration: spec.acceleration,
+            startup_deadline: spec.startup_deadline,
+            operation_deadline: spec.operation_deadline,
+            close_deadline: spec.close_deadline,
+        }
+    }
+}
+impl From<TextWorkerSpec> for RuntimeSpec {
+    fn from(spec: TextWorkerSpec) -> Self {
+        Self {
+            node: spec.node,
+            engine: None,
+            model: None,
+            vad: None,
+            directory: spec.directory,
+            acceleration: "cpu".into(),
+            startup_deadline: spec.startup_deadline,
+            operation_deadline: spec.operation_deadline,
+            close_deadline: spec.close_deadline,
+        }
+    }
 }
 
 /// A failed runtime startup still carries its explicit terminal receipt. Callers
@@ -220,11 +274,11 @@ fn create(path: &Path, bytes: &[u8]) -> io::Result<()> {
 }
 
 struct Prepared {
-    spec: WorkerSpec,
+    spec: RuntimeSpec,
     owner: String,
     command: Command,
 }
-fn prepare(spec: WorkerSpec) -> io::Result<Prepared> {
+fn prepare(spec: RuntimeSpec) -> io::Result<Prepared> {
     if !spec.node.file.is_executable()?
         || crate::managed_settings_codec::decode_patch(
             json!({"speechAcceleration":&spec.acceleration}),
@@ -249,7 +303,11 @@ fn prepare(spec: WorkerSpec) -> io::Result<Prepared> {
         .mode(0o700)
         .create(spec.directory.join("tmp"))?;
 
-    let engine = spec.engine.snapshot(&spec.directory.join("engine"))?;
+    let engine = spec
+        .engine
+        .as_ref()
+        .map(|engine| engine.snapshot(&spec.directory.join("engine")))
+        .transpose()?;
     let model = spec
         .model
         .as_ref()
@@ -262,7 +320,7 @@ fn prepare(spec: WorkerSpec) -> io::Result<Prepared> {
         .transpose()?;
     let owner = crate::store::random_id().map_err(io::Error::other)?;
     let document = json!({"version":1,"owner":owner,"nativeSha256":format!("{:x}",Sha256::digest(NATIVE)),
-            "textManifestSha256":format!("{:x}",Sha256::digest(TEXT_MANIFEST)),"engine":engine.receipt(),"model":model.as_ref().map(SealedFile::receipt),"vad":vad.as_ref().map(SealedFile::receipt),"acceleration":spec.acceleration});
+            "mode":if spec.engine.is_some(){"speech"}else{"text"},"textManifestSha256":format!("{:x}",Sha256::digest(TEXT_MANIFEST)),"engine":engine.as_ref().map(SealedFile::receipt),"model":model.as_ref().map(SealedFile::receipt),"vad":vad.as_ref().map(SealedFile::receipt),"acceleration":spec.acceleration});
     let bytes = serde_json::to_vec(&document)?;
     create(&spec.directory.join("spec.json"), &bytes)?;
     create(&spec.directory.join("native-worker.mjs"), NATIVE)?;
@@ -284,7 +342,13 @@ fn prepare(spec: WorkerSpec) -> io::Result<Prepared> {
         ));
     }
     let trusted = serde_json::to_string(&trusted)?;
-    let admitted = serde_json::to_string(&spec.engine.paths(&spec.directory.join("engine")))?;
+    let admitted = serde_json::to_string(
+        &spec
+            .engine
+            .as_ref()
+            .map(|engine| engine.paths(&spec.directory.join("engine")))
+            .unwrap_or_default(),
+    )?;
     let guard=format!("import {{registerHooks,isBuiltin}} from 'node:module';\nimport {{fileURLToPath}} from 'node:url';\nconst files=new Set({admitted});\nconst trusted=new Set({trusted});\nregisterHooks({{resolve(specifier,context,next){{const result=next(specifier,context);if(isBuiltin(result.url)||trusted.has(result.url))return result;if(result.url.startsWith('file:')&&files.has(fileURLToPath(result.url)))return result;throw Error('Unadmitted speech package import');}}}});\n");
     let guard_path = spec.directory.join("import-guard.mjs");
     create(&guard_path, guard.as_bytes())?;
@@ -310,7 +374,7 @@ fn prepare(spec: WorkerSpec) -> io::Result<Prepared> {
 }
 impl Worker {
     pub async fn start(spec: WorkerSpec) -> io::Result<Self> {
-        Self::start_owned(spec, None).await
+        Self::start_owned(spec.into(), None).await
     }
     /// A trusted owner may cancel admission/startup without abandoning the
     /// post-spawn process receipt. Pre-spawn private preparation is retained.
@@ -318,10 +382,16 @@ impl Worker {
         spec: WorkerSpec,
         cancel: watch::Receiver<bool>,
     ) -> io::Result<Self> {
-        Self::start_owned(spec, Some(cancel)).await
+        Self::start_owned(spec.into(), Some(cancel)).await
+    }
+    pub async fn start_text(
+        spec: TextWorkerSpec,
+        cancel: watch::Receiver<bool>,
+    ) -> io::Result<Self> {
+        Self::start_owned(spec.into(), Some(cancel)).await
     }
     async fn start_owned(
-        spec: WorkerSpec,
+        spec: RuntimeSpec,
         mut cancel: Option<watch::Receiver<bool>>,
     ) -> io::Result<Self> {
         if cancelled_now(&cancel) {
@@ -409,6 +479,67 @@ impl Worker {
             drop(spec);
         });
         Ok(Self { shared })
+    }
+
+    pub async fn text_ready(&self) -> Result<(), Error> {
+        let value = self
+            .request(|| json!({"kind":"text-ready"}), None, false, false, false)
+            .await?
+            .0;
+        if value == true {
+            Ok(())
+        } else {
+            Err(Error::Protocol)
+        }
+    }
+    pub async fn correct_cloud(
+        &self,
+        text: &str,
+        options: &crate::speech_request::TranscriptionOptions,
+        language: &str,
+    ) -> Result<String, Error> {
+        self.request(|| json!({"kind":"cloud-correct","text":text,"options":options.as_value(),"language":language}),None,false,false,false).await?.0.as_str().map(str::to_owned).ok_or(Error::Protocol)
+    }
+    /// Preserve exact UTF-16 units when native slicing cuts an astral pair.
+    pub async fn postprocess_prompt(
+        &self,
+        instructions: &str,
+        transcript: &str,
+        draft: &Value,
+        correction: &str,
+    ) -> Result<Vec<u16>, Error> {
+        let result=self.request(||json!({"kind":"postprocess-prompt","instructions":instructions,"transcript":transcript,"draft":draft,"correction":correction}),None,false,false,false).await?.0;
+        result
+            .as_array()
+            .ok_or(Error::Protocol)?
+            .iter()
+            .map(|value| {
+                value
+                    .as_u64()
+                    .and_then(|unit| u16::try_from(unit).ok())
+                    .ok_or(Error::Protocol)
+            })
+            .collect()
+    }
+
+    pub async fn correct_postprocess(
+        &self,
+        text: &str,
+        original: &str,
+        words: &Value,
+    ) -> Result<String, Error> {
+        self.request(
+            || json!({"kind":"postprocess-correct","text":text,"original":original,"words":words}),
+            None,
+            false,
+            false,
+            false,
+        )
+        .await?
+        .0
+        .as_str()
+        .map(str::to_owned)
+        .ok_or(Error::Protocol)
     }
 
     async fn request(

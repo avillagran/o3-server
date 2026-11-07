@@ -19,7 +19,7 @@ with node:
  assert hashlib.file_digest(node,'sha256').hexdigest()=='0adde40d1b7dfa57c8bc83cbc319758c3ec6ebba21363bb2fa752ea6b267ad1b'
 a.out.mkdir(mode=0o700);stage=a.out/'source';stage.mkdir(mode=0o700);generated=a.out/'generated';generated.mkdir(mode=0o700)
 files={}
-for name in ['LICENSE','packages/shared/src/speech.ts']+['apps/server/src/speech/'+name for name in ['customWords.ts','fillerWords.ts','nativeLanguage.ts','model.ts','catalog.json']]:
+for name in ['LICENSE','packages/shared/src/speech.ts','apps/server/src/textGeneration/TranscriptionPostProcessing.ts']+['apps/server/src/speech/'+name for name in ['customWords.ts','fillerWords.ts','nativeLanguage.ts','model.ts','catalog.json']]:
  data=subprocess.check_output(['git','-C',str(a.source),'show',pin+':'+name]);destination=stage/name;destination.parent.mkdir(parents=True,exist_ok=True);destination.write_bytes(data);files[name]=hashlib.sha256(data).hexdigest()
 (stage/'SOURCE.json').write_text(json.dumps({'revision':pin,'files':files},indent=2)+'\n')
 cmd=['podman','--remote=false','run','--rm','--pull=never','--http-proxy=false','--userns=keep-id','--user',f'{os.getuid()}:{os.getgid()}','--read-only','--network=none','--cap-drop=ALL','--security-opt=no-new-privileges','--memory=512m','--tmpfs','/tmp:rw,size=64m,mode=1777','-v',f'{a.node.parent}:/node-bin:ro','-v',f'{a.source}:/native:ro','-v',f'{a.deps}:/deps:ro','-v',f'{stage}:/source:ro','-v',f'{root}:/server:ro','-v',f'{generated}:/out:rw',a.image,'/node-bin/'+a.node.name,'--import','/server/tools/reference/speech-text-4314/hook.mjs','/server/tools/generate-speech-text.mjs','/source','/out']

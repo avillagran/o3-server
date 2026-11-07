@@ -11,6 +11,7 @@ use hyper::{body::Incoming, header, Method, Request, Response, StatusCode};
 use serde_json::{json, Value};
 use std::sync::Arc;
 
+mod cloud;
 mod socket;
 const PCM_BODY_LIMIT: usize =
     crate::speech_kernel::MAX_SPEECH_BYTES + crate::speech_request::MAX_OPTIONS_BYTES + 4;
@@ -70,7 +71,7 @@ impl Action {
     }
 }
 pub(crate) fn matches(path: &str) -> bool {
-    path == "/ws/voice" || Action::parse(path).is_some()
+    path == "/ws/voice" || Action::parse(path).is_some() || cloud::matches(path)
 }
 fn empty(status: StatusCode) -> Reply {
     Response::builder()
@@ -191,6 +192,9 @@ async fn collect(request: Request<Incoming>, limit: usize) -> Result<hyper::body
     .map_err(|_| ())
 }
 pub(crate) async fn handle(state: Arc<State>, request: Request<Incoming>) -> Reply {
+    if cloud::matches(request.uri().path()) {
+        return cloud::handle(state, request).await;
+    }
     if request.uri().path() == "/ws/voice" {
         return socket::upgrade(state, request).await;
     }

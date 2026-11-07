@@ -82,6 +82,7 @@ pub mod bridge;
 mod bridge_forwards;
 pub mod claude;
 mod claude_projection;
+pub mod cloud_speech;
 pub mod codex;
 mod codex_projection;
 mod content_search;

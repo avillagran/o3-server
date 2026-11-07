@@ -12,9 +12,9 @@ const sha=data=>crypto.createHash('sha256').update(data).digest('hex');
 function read(name){const bytes=fs.readFileSync(path.join(source,name));if(sha(bytes)!==intake.files[name])throw Error('Changed source '+name);return bytes.toString();}
 const license=read('LICENSE');
 const files={},functions={};
-const mappings=[['customWords.ts','custom-words.mjs'],['fillerWords.ts','filler-words.mjs'],['nativeLanguage.ts','native-language.mjs'],['model.ts','model.mjs']];
+const mappings=[['customWords.ts','custom-words.mjs'],['fillerWords.ts','filler-words.mjs'],['nativeLanguage.ts','native-language.mjs'],['model.ts','model.mjs'],['../textGeneration/TranscriptionPostProcessing.ts','transcription-post-processing.mjs']];
 for(const [original,target] of mappings){
- const full='apps/server/src/speech/'+original;
+ const full=path.posix.normalize('apps/server/src/speech/'+original);
  let erased=stripTypeScriptTypes(read(full),{mode:'strip'});
  if(original==='model.ts'){
   const needle='import catalog from "./catalog.json" with { type: "json" };';

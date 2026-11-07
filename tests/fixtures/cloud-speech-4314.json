@@ -1,0 +1,5335 @@
+{
+  "nativeRevision": "83a3674ffd84ffb33de768210c806cb1ac53fd80",
+  "node": "26.13.0",
+  "cloudSpeechLanguages": {
+    "supportsLanguageDetection": true,
+    "languages": [
+      "ar",
+      "bg",
+      "ca",
+      "cs",
+      "da",
+      "de",
+      "el",
+      "en",
+      "es",
+      "fa",
+      "fi",
+      "fr",
+      "hi",
+      "hr",
+      "hu",
+      "id",
+      "it",
+      "ja",
+      "ko",
+      "mk",
+      "ms",
+      "nl",
+      "pl",
+      "pt",
+      "ro",
+      "ru",
+      "sk",
+      "sv",
+      "th",
+      "tr",
+      "uk",
+      "ur",
+      "vi",
+      "zh"
+    ]
+  },
+  "description": "Whole original CloudSpeech layer, actual FetchHttpClient/Schema/SettingsSecret helper; fixture settings/resolver/fetch only; no provider network",
+  "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+  "cases": [
+    {
+      "name": "openai-configured-multipart-or-json",
+      "input": {
+        "credentials": {
+          "openai": "fixture-openai"
+        }
+      },
+      "observations": [
+        {
+          "label": "configured",
+          "ok": true,
+          "value": {
+            "openai": true,
+            "xai": false,
+            "openrouter": false
+          }
+        },
+        {
+          "label": "transcribe",
+          "ok": true,
+          "value": "T3 Code"
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [
+              {
+                "term": "T3 Code",
+                "aliases": [
+                  "oh three"
+                ]
+              },
+              {
+                "term": "<skip>",
+                "aliases": []
+              },
+              {
+                "term": "line\nterm",
+                "aliases": []
+              }
+            ],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://api.openai.com/v1/audio/transcriptions",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-openai"
+          },
+          "form": [
+            [
+              "model",
+              "gpt-transcribe"
+            ],
+            [
+              "languages[]",
+              "en"
+            ],
+            [
+              "keywords[]",
+              "T3 Code"
+            ],
+            [
+              "file",
+              {
+                "name": "dictation.wav",
+                "type": "audio/wav",
+                "bytes": 56,
+                "hex": "524946463000000057415645666d74201000000001000100803e0000007d000002001000646174610c0000000000004000c0ff7f00800100"
+              }
+            ]
+          ]
+        }
+      ],
+      "credentials": {
+        "openai": "fixture-openai"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "openai-status-401",
+      "input": {
+        "credentials": {
+          "openai": "fixture-openai"
+        },
+        "status": 401
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openai",
+          "reason": "rejected-key",
+          "message": "OpenAI rejected this API key. Check its permissions and billing in Settings → Voice."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://api.openai.com/v1/audio/transcriptions",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-openai"
+          },
+          "form": [
+            [
+              "model",
+              "gpt-transcribe"
+            ],
+            [
+              "languages[]",
+              "en"
+            ],
+            [
+              "file",
+              {
+                "name": "dictation.wav",
+                "type": "audio/wav",
+                "bytes": 56,
+                "hex": "524946463000000057415645666d74201000000001000100803e0000007d000002001000646174610c0000000000004000c0ff7f00800100"
+              }
+            ]
+          ]
+        }
+      ],
+      "credentials": {
+        "openai": "fixture-openai"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "openai-status-402",
+      "input": {
+        "credentials": {
+          "openai": "fixture-openai"
+        },
+        "status": 402
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openai",
+          "reason": "rejected-key",
+          "message": "OpenAI rejected this API key. Check its permissions and billing in Settings → Voice."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://api.openai.com/v1/audio/transcriptions",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-openai"
+          },
+          "form": [
+            [
+              "model",
+              "gpt-transcribe"
+            ],
+            [
+              "languages[]",
+              "en"
+            ],
+            [
+              "file",
+              {
+                "name": "dictation.wav",
+                "type": "audio/wav",
+                "bytes": 56,
+                "hex": "524946463000000057415645666d74201000000001000100803e0000007d000002001000646174610c0000000000004000c0ff7f00800100"
+              }
+            ]
+          ]
+        }
+      ],
+      "credentials": {
+        "openai": "fixture-openai"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "openai-status-403",
+      "input": {
+        "credentials": {
+          "openai": "fixture-openai"
+        },
+        "status": 403
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openai",
+          "reason": "rejected-key",
+          "message": "OpenAI rejected this API key. Check its permissions and billing in Settings → Voice."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://api.openai.com/v1/audio/transcriptions",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-openai"
+          },
+          "form": [
+            [
+              "model",
+              "gpt-transcribe"
+            ],
+            [
+              "languages[]",
+              "en"
+            ],
+            [
+              "file",
+              {
+                "name": "dictation.wav",
+                "type": "audio/wav",
+                "bytes": 56,
+                "hex": "524946463000000057415645666d74201000000001000100803e0000007d000002001000646174610c0000000000004000c0ff7f00800100"
+              }
+            ]
+          ]
+        }
+      ],
+      "credentials": {
+        "openai": "fixture-openai"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "openai-status-404",
+      "input": {
+        "credentials": {
+          "openai": "fixture-openai"
+        },
+        "status": 404
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openai",
+          "reason": "unavailable",
+          "message": "OpenAI couldn’t transcribe this recording. Try again later."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://api.openai.com/v1/audio/transcriptions",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-openai"
+          },
+          "form": [
+            [
+              "model",
+              "gpt-transcribe"
+            ],
+            [
+              "languages[]",
+              "en"
+            ],
+            [
+              "file",
+              {
+                "name": "dictation.wav",
+                "type": "audio/wav",
+                "bytes": 56,
+                "hex": "524946463000000057415645666d74201000000001000100803e0000007d000002001000646174610c0000000000004000c0ff7f00800100"
+              }
+            ]
+          ]
+        }
+      ],
+      "credentials": {
+        "openai": "fixture-openai"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "openai-status-429",
+      "input": {
+        "credentials": {
+          "openai": "fixture-openai"
+        },
+        "status": 429
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openai",
+          "reason": "rate-limit",
+          "message": "OpenAI reached a usage limit. Check the account's quota or try again later."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://api.openai.com/v1/audio/transcriptions",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-openai"
+          },
+          "form": [
+            [
+              "model",
+              "gpt-transcribe"
+            ],
+            [
+              "languages[]",
+              "en"
+            ],
+            [
+              "file",
+              {
+                "name": "dictation.wav",
+                "type": "audio/wav",
+                "bytes": 56,
+                "hex": "524946463000000057415645666d74201000000001000100803e0000007d000002001000646174610c0000000000004000c0ff7f00800100"
+              }
+            ]
+          ]
+        }
+      ],
+      "credentials": {
+        "openai": "fixture-openai"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "openai-status-500",
+      "input": {
+        "credentials": {
+          "openai": "fixture-openai"
+        },
+        "status": 500
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openai",
+          "reason": "unavailable",
+          "message": "OpenAI couldn’t transcribe this recording. Try again later."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://api.openai.com/v1/audio/transcriptions",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-openai"
+          },
+          "form": [
+            [
+              "model",
+              "gpt-transcribe"
+            ],
+            [
+              "languages[]",
+              "en"
+            ],
+            [
+              "file",
+              {
+                "name": "dictation.wav",
+                "type": "audio/wav",
+                "bytes": 56,
+                "hex": "524946463000000057415645666d74201000000001000100803e0000007d000002001000646174610c0000000000004000c0ff7f00800100"
+              }
+            ]
+          ]
+        }
+      ],
+      "credentials": {
+        "openai": "fixture-openai"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "openai-bad-result-{\"text\":7}",
+      "input": {
+        "credentials": {
+          "openai": "fixture-openai"
+        },
+        "reply": {
+          "text": 7
+        }
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openai",
+          "reason": "unavailable",
+          "message": "OpenAI couldn’t transcribe this recording. Try again later."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://api.openai.com/v1/audio/transcriptions",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-openai"
+          },
+          "form": [
+            [
+              "model",
+              "gpt-transcribe"
+            ],
+            [
+              "languages[]",
+              "en"
+            ],
+            [
+              "file",
+              {
+                "name": "dictation.wav",
+                "type": "audio/wav",
+                "bytes": 56,
+                "hex": "524946463000000057415645666d74201000000001000100803e0000007d000002001000646174610c0000000000004000c0ff7f00800100"
+              }
+            ]
+          ]
+        }
+      ],
+      "credentials": {
+        "openai": "fixture-openai"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "openai-bad-result-{\"other\":\"no text\"}",
+      "input": {
+        "credentials": {
+          "openai": "fixture-openai"
+        },
+        "reply": {
+          "other": "no text"
+        }
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openai",
+          "reason": "unavailable",
+          "message": "OpenAI couldn’t transcribe this recording. Try again later."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://api.openai.com/v1/audio/transcriptions",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-openai"
+          },
+          "form": [
+            [
+              "model",
+              "gpt-transcribe"
+            ],
+            [
+              "languages[]",
+              "en"
+            ],
+            [
+              "file",
+              {
+                "name": "dictation.wav",
+                "type": "audio/wav",
+                "bytes": 56,
+                "hex": "524946463000000057415645666d74201000000001000100803e0000007d000002001000646174610c0000000000004000c0ff7f00800100"
+              }
+            ]
+          ]
+        }
+      ],
+      "credentials": {
+        "openai": "fixture-openai"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "openai-bad-result-null",
+      "input": {
+        "credentials": {
+          "openai": "fixture-openai"
+        },
+        "reply": null
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openai",
+          "reason": "unavailable",
+          "message": "OpenAI couldn’t transcribe this recording. Try again later."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://api.openai.com/v1/audio/transcriptions",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-openai"
+          },
+          "form": [
+            [
+              "model",
+              "gpt-transcribe"
+            ],
+            [
+              "languages[]",
+              "en"
+            ],
+            [
+              "file",
+              {
+                "name": "dictation.wav",
+                "type": "audio/wav",
+                "bytes": 56,
+                "hex": "524946463000000057415645666d74201000000001000100803e0000007d000002001000646174610c0000000000004000c0ff7f00800100"
+              }
+            ]
+          ]
+        }
+      ],
+      "credentials": {
+        "openai": "fixture-openai"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "openai-missing-key",
+      "input": {},
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openai",
+          "reason": "missing-key",
+          "message": "Add your OpenAI API key in Settings → Voice."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openai",
+          "pcmHex": "000000",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [],
+      "credentials": {},
+      "catalogFetches": 0
+    },
+    {
+      "name": "openai-invalid-pcm",
+      "input": {
+        "credentials": {
+          "openai": "fixture-key"
+        }
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "SpeechInvalidAudioError",
+          "provider": null,
+          "reason": null,
+          "message": "Invalid PCM audio."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openai",
+          "pcmHex": "000000",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [],
+      "credentials": {
+        "openai": "fixture-key"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "openai-transport-failure",
+      "input": {
+        "credentials": {
+          "openai": "fixture-key"
+        },
+        "rejectFetch": true
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openai",
+          "reason": "unavailable",
+          "message": "OpenAI couldn’t transcribe this recording. Try again later."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://api.openai.com/v1/audio/transcriptions",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-key"
+          },
+          "form": [
+            [
+              "model",
+              "gpt-transcribe"
+            ],
+            [
+              "languages[]",
+              "en"
+            ],
+            [
+              "file",
+              {
+                "name": "dictation.wav",
+                "type": "audio/wav",
+                "bytes": 56,
+                "hex": "524946463000000057415645666d74201000000001000100803e0000007d000002001000646174610c0000000000004000c0ff7f00800100"
+              }
+            ]
+          ]
+        }
+      ],
+      "credentials": {
+        "openai": "fixture-key"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "openai-reference-undefined",
+      "input": {
+        "credentials": {
+          "openai": {
+            "provider": "fixture-vault",
+            "reference": "fixture/voice/key"
+          }
+        }
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openai",
+          "reason": "unreadable-key",
+          "message": "Couldn’t read the OpenAI API key. Unlock the vault on the selected environment or update the key in Settings → Voice. No audio was sent to OpenAI."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "invalidate",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "secret-read",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        }
+      ],
+      "requests": [],
+      "credentials": {
+        "openai": {
+          "provider": "fixture-vault",
+          "reference": "fixture/voice/key"
+        }
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "openai-reference-\"\"",
+      "input": {
+        "credentials": {
+          "openai": {
+            "provider": "fixture-vault",
+            "reference": "fixture/voice/key"
+          }
+        },
+        "resolved": ""
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openai",
+          "reason": "unreadable-key",
+          "message": "Couldn’t read the OpenAI API key. Unlock the vault on the selected environment or update the key in Settings → Voice. No audio was sent to OpenAI."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "invalidate",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "secret-read",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        }
+      ],
+      "requests": [],
+      "credentials": {
+        "openai": {
+          "provider": "fixture-vault",
+          "reference": "fixture/voice/key"
+        }
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "openai-reference-\" \"",
+      "input": {
+        "credentials": {
+          "openai": {
+            "provider": "fixture-vault",
+            "reference": "fixture/voice/key"
+          }
+        },
+        "resolved": " "
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openai",
+          "reason": "unreadable-key",
+          "message": "Couldn’t read the OpenAI API key. Unlock the vault on the selected environment or update the key in Settings → Voice. No audio was sent to OpenAI."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "invalidate",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "secret-read",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        }
+      ],
+      "requests": [],
+      "credentials": {
+        "openai": {
+          "provider": "fixture-vault",
+          "reference": "fixture/voice/key"
+        }
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "openai-reference-\" https://fixture.invalid\"",
+      "input": {
+        "credentials": {
+          "openai": {
+            "provider": "fixture-vault",
+            "reference": "fixture/voice/key"
+          }
+        },
+        "resolved": " https://fixture.invalid"
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openai",
+          "reason": "unreadable-key",
+          "message": "Couldn’t read the OpenAI API key. Unlock the vault on the selected environment or update the key in Settings → Voice. No audio was sent to OpenAI."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "invalidate",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "secret-read",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        }
+      ],
+      "requests": [],
+      "credentials": {
+        "openai": {
+          "provider": "fixture-vault",
+          "reference": "fixture/voice/key"
+        }
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "openai-reference-\"https://fixture.invalid\"",
+      "input": {
+        "credentials": {
+          "openai": {
+            "provider": "fixture-vault",
+            "reference": "fixture/voice/key"
+          }
+        },
+        "resolved": "https://fixture.invalid"
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openai",
+          "reason": "unreadable-key",
+          "message": "Couldn’t read the OpenAI API key. Unlock the vault on the selected environment or update the key in Settings → Voice. No audio was sent to OpenAI."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "invalidate",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "secret-read",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        }
+      ],
+      "requests": [],
+      "credentials": {
+        "openai": {
+          "provider": "fixture-vault",
+          "reference": "fixture/voice/key"
+        }
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "openai-reference-\"fixture-key\"",
+      "input": {
+        "credentials": {
+          "openai": {
+            "provider": "fixture-vault",
+            "reference": "fixture/voice/key"
+          }
+        },
+        "resolved": "fixture-key"
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": true,
+          "value": "oh three"
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "invalidate",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "secret-read",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://api.openai.com/v1/audio/transcriptions",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-key"
+          },
+          "form": [
+            [
+              "model",
+              "gpt-transcribe"
+            ],
+            [
+              "languages[]",
+              "en"
+            ],
+            [
+              "file",
+              {
+                "name": "dictation.wav",
+                "type": "audio/wav",
+                "bytes": 56,
+                "hex": "524946463000000057415645666d74201000000001000100803e0000007d000002001000646174610c0000000000004000c0ff7f00800100"
+              }
+            ]
+          ]
+        }
+      ],
+      "credentials": {
+        "openai": {
+          "provider": "fixture-vault",
+          "reference": "fixture/voice/key"
+        }
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "openai-key-changed-during-secret-read",
+      "input": {
+        "credentials": {
+          "openai": {
+            "provider": "fixture-vault",
+            "reference": "fixture/voice/key"
+          }
+        },
+        "resolved": "fixture-resolved",
+        "afterSecretRead": {
+          "openai": "fixture-replacement"
+        }
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openai",
+          "reason": "key-changed",
+          "message": "The OpenAI key changed before your recording was sent. Try again."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "invalidate",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "secret-read",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [],
+      "credentials": {
+        "openai": "fixture-replacement"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "openai-key-removed-during-secret-read",
+      "input": {
+        "credentials": {
+          "openai": {
+            "provider": "fixture-vault",
+            "reference": "fixture/voice/key"
+          }
+        },
+        "resolved": "fixture-resolved",
+        "afterSecretRead": {}
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openai",
+          "reason": "missing-key",
+          "message": "Add your OpenAI API key in Settings → Voice."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "invalidate",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "secret-read",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [],
+      "credentials": {},
+      "catalogFetches": 0
+    },
+    {
+      "name": "xai-configured-multipart-or-json",
+      "input": {
+        "credentials": {
+          "xai": "fixture-xai"
+        }
+      },
+      "observations": [
+        {
+          "label": "configured",
+          "ok": true,
+          "value": {
+            "openai": false,
+            "xai": true,
+            "openrouter": false
+          }
+        },
+        {
+          "label": "transcribe",
+          "ok": true,
+          "value": "T3 Code"
+        }
+      ],
+      "commands": [
+        {
+          "provider": "xai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [
+              {
+                "term": "T3 Code",
+                "aliases": [
+                  "oh three"
+                ]
+              },
+              {
+                "term": "<skip>",
+                "aliases": []
+              },
+              {
+                "term": "line\nterm",
+                "aliases": []
+              }
+            ],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://api.x.ai/v1/stt",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-xai"
+          },
+          "form": [
+            [
+              "model",
+              "grok-voice-transcribe-2.0"
+            ],
+            [
+              "language",
+              "en"
+            ],
+            [
+              "keyterm",
+              "T3 Code"
+            ],
+            [
+              "keyterm",
+              "<skip>"
+            ],
+            [
+              "keyterm",
+              "line\nterm"
+            ],
+            [
+              "format",
+              "true"
+            ],
+            [
+              "filler_words",
+              "false"
+            ],
+            [
+              "vad_threshold",
+              "0"
+            ],
+            [
+              "file",
+              {
+                "name": "dictation.wav",
+                "type": "audio/wav",
+                "bytes": 56,
+                "hex": "524946463000000057415645666d74201000000001000100803e0000007d000002001000646174610c0000000000004000c0ff7f00800100"
+              }
+            ]
+          ]
+        }
+      ],
+      "credentials": {
+        "xai": "fixture-xai"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "xai-status-401",
+      "input": {
+        "credentials": {
+          "xai": "fixture-xai"
+        },
+        "status": 401
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "xai",
+          "reason": "rejected-key",
+          "message": "xAI rejected this API key. Check its permissions and billing in Settings → Voice."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "xai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://api.x.ai/v1/stt",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-xai"
+          },
+          "form": [
+            [
+              "model",
+              "grok-voice-transcribe-2.0"
+            ],
+            [
+              "language",
+              "en"
+            ],
+            [
+              "format",
+              "true"
+            ],
+            [
+              "filler_words",
+              "false"
+            ],
+            [
+              "vad_threshold",
+              "0"
+            ],
+            [
+              "file",
+              {
+                "name": "dictation.wav",
+                "type": "audio/wav",
+                "bytes": 56,
+                "hex": "524946463000000057415645666d74201000000001000100803e0000007d000002001000646174610c0000000000004000c0ff7f00800100"
+              }
+            ]
+          ]
+        }
+      ],
+      "credentials": {
+        "xai": "fixture-xai"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "xai-status-402",
+      "input": {
+        "credentials": {
+          "xai": "fixture-xai"
+        },
+        "status": 402
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "xai",
+          "reason": "rejected-key",
+          "message": "xAI rejected this API key. Check its permissions and billing in Settings → Voice."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "xai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://api.x.ai/v1/stt",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-xai"
+          },
+          "form": [
+            [
+              "model",
+              "grok-voice-transcribe-2.0"
+            ],
+            [
+              "language",
+              "en"
+            ],
+            [
+              "format",
+              "true"
+            ],
+            [
+              "filler_words",
+              "false"
+            ],
+            [
+              "vad_threshold",
+              "0"
+            ],
+            [
+              "file",
+              {
+                "name": "dictation.wav",
+                "type": "audio/wav",
+                "bytes": 56,
+                "hex": "524946463000000057415645666d74201000000001000100803e0000007d000002001000646174610c0000000000004000c0ff7f00800100"
+              }
+            ]
+          ]
+        }
+      ],
+      "credentials": {
+        "xai": "fixture-xai"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "xai-status-403",
+      "input": {
+        "credentials": {
+          "xai": "fixture-xai"
+        },
+        "status": 403
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "xai",
+          "reason": "rejected-key",
+          "message": "xAI rejected this API key. Check its permissions and billing in Settings → Voice."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "xai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://api.x.ai/v1/stt",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-xai"
+          },
+          "form": [
+            [
+              "model",
+              "grok-voice-transcribe-2.0"
+            ],
+            [
+              "language",
+              "en"
+            ],
+            [
+              "format",
+              "true"
+            ],
+            [
+              "filler_words",
+              "false"
+            ],
+            [
+              "vad_threshold",
+              "0"
+            ],
+            [
+              "file",
+              {
+                "name": "dictation.wav",
+                "type": "audio/wav",
+                "bytes": 56,
+                "hex": "524946463000000057415645666d74201000000001000100803e0000007d000002001000646174610c0000000000004000c0ff7f00800100"
+              }
+            ]
+          ]
+        }
+      ],
+      "credentials": {
+        "xai": "fixture-xai"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "xai-status-404",
+      "input": {
+        "credentials": {
+          "xai": "fixture-xai"
+        },
+        "status": 404
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "xai",
+          "reason": "unavailable",
+          "message": "xAI couldn’t transcribe this recording. Try again later."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "xai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://api.x.ai/v1/stt",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-xai"
+          },
+          "form": [
+            [
+              "model",
+              "grok-voice-transcribe-2.0"
+            ],
+            [
+              "language",
+              "en"
+            ],
+            [
+              "format",
+              "true"
+            ],
+            [
+              "filler_words",
+              "false"
+            ],
+            [
+              "vad_threshold",
+              "0"
+            ],
+            [
+              "file",
+              {
+                "name": "dictation.wav",
+                "type": "audio/wav",
+                "bytes": 56,
+                "hex": "524946463000000057415645666d74201000000001000100803e0000007d000002001000646174610c0000000000004000c0ff7f00800100"
+              }
+            ]
+          ]
+        }
+      ],
+      "credentials": {
+        "xai": "fixture-xai"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "xai-status-429",
+      "input": {
+        "credentials": {
+          "xai": "fixture-xai"
+        },
+        "status": 429
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "xai",
+          "reason": "rate-limit",
+          "message": "xAI reached a usage limit. Check the account's quota or try again later."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "xai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://api.x.ai/v1/stt",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-xai"
+          },
+          "form": [
+            [
+              "model",
+              "grok-voice-transcribe-2.0"
+            ],
+            [
+              "language",
+              "en"
+            ],
+            [
+              "format",
+              "true"
+            ],
+            [
+              "filler_words",
+              "false"
+            ],
+            [
+              "vad_threshold",
+              "0"
+            ],
+            [
+              "file",
+              {
+                "name": "dictation.wav",
+                "type": "audio/wav",
+                "bytes": 56,
+                "hex": "524946463000000057415645666d74201000000001000100803e0000007d000002001000646174610c0000000000004000c0ff7f00800100"
+              }
+            ]
+          ]
+        }
+      ],
+      "credentials": {
+        "xai": "fixture-xai"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "xai-status-500",
+      "input": {
+        "credentials": {
+          "xai": "fixture-xai"
+        },
+        "status": 500
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "xai",
+          "reason": "unavailable",
+          "message": "xAI couldn’t transcribe this recording. Try again later."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "xai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://api.x.ai/v1/stt",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-xai"
+          },
+          "form": [
+            [
+              "model",
+              "grok-voice-transcribe-2.0"
+            ],
+            [
+              "language",
+              "en"
+            ],
+            [
+              "format",
+              "true"
+            ],
+            [
+              "filler_words",
+              "false"
+            ],
+            [
+              "vad_threshold",
+              "0"
+            ],
+            [
+              "file",
+              {
+                "name": "dictation.wav",
+                "type": "audio/wav",
+                "bytes": 56,
+                "hex": "524946463000000057415645666d74201000000001000100803e0000007d000002001000646174610c0000000000004000c0ff7f00800100"
+              }
+            ]
+          ]
+        }
+      ],
+      "credentials": {
+        "xai": "fixture-xai"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "xai-bad-result-{\"text\":7}",
+      "input": {
+        "credentials": {
+          "xai": "fixture-xai"
+        },
+        "reply": {
+          "text": 7
+        }
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "xai",
+          "reason": "unavailable",
+          "message": "xAI couldn’t transcribe this recording. Try again later."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "xai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://api.x.ai/v1/stt",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-xai"
+          },
+          "form": [
+            [
+              "model",
+              "grok-voice-transcribe-2.0"
+            ],
+            [
+              "language",
+              "en"
+            ],
+            [
+              "format",
+              "true"
+            ],
+            [
+              "filler_words",
+              "false"
+            ],
+            [
+              "vad_threshold",
+              "0"
+            ],
+            [
+              "file",
+              {
+                "name": "dictation.wav",
+                "type": "audio/wav",
+                "bytes": 56,
+                "hex": "524946463000000057415645666d74201000000001000100803e0000007d000002001000646174610c0000000000004000c0ff7f00800100"
+              }
+            ]
+          ]
+        }
+      ],
+      "credentials": {
+        "xai": "fixture-xai"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "xai-bad-result-{\"other\":\"no text\"}",
+      "input": {
+        "credentials": {
+          "xai": "fixture-xai"
+        },
+        "reply": {
+          "other": "no text"
+        }
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "xai",
+          "reason": "unavailable",
+          "message": "xAI couldn’t transcribe this recording. Try again later."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "xai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://api.x.ai/v1/stt",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-xai"
+          },
+          "form": [
+            [
+              "model",
+              "grok-voice-transcribe-2.0"
+            ],
+            [
+              "language",
+              "en"
+            ],
+            [
+              "format",
+              "true"
+            ],
+            [
+              "filler_words",
+              "false"
+            ],
+            [
+              "vad_threshold",
+              "0"
+            ],
+            [
+              "file",
+              {
+                "name": "dictation.wav",
+                "type": "audio/wav",
+                "bytes": 56,
+                "hex": "524946463000000057415645666d74201000000001000100803e0000007d000002001000646174610c0000000000004000c0ff7f00800100"
+              }
+            ]
+          ]
+        }
+      ],
+      "credentials": {
+        "xai": "fixture-xai"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "xai-bad-result-null",
+      "input": {
+        "credentials": {
+          "xai": "fixture-xai"
+        },
+        "reply": null
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "xai",
+          "reason": "unavailable",
+          "message": "xAI couldn’t transcribe this recording. Try again later."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "xai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://api.x.ai/v1/stt",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-xai"
+          },
+          "form": [
+            [
+              "model",
+              "grok-voice-transcribe-2.0"
+            ],
+            [
+              "language",
+              "en"
+            ],
+            [
+              "format",
+              "true"
+            ],
+            [
+              "filler_words",
+              "false"
+            ],
+            [
+              "vad_threshold",
+              "0"
+            ],
+            [
+              "file",
+              {
+                "name": "dictation.wav",
+                "type": "audio/wav",
+                "bytes": 56,
+                "hex": "524946463000000057415645666d74201000000001000100803e0000007d000002001000646174610c0000000000004000c0ff7f00800100"
+              }
+            ]
+          ]
+        }
+      ],
+      "credentials": {
+        "xai": "fixture-xai"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "xai-missing-key",
+      "input": {},
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "xai",
+          "reason": "missing-key",
+          "message": "Add your xAI API key in Settings → Voice."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "xai",
+          "pcmHex": "000000",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [],
+      "credentials": {},
+      "catalogFetches": 0
+    },
+    {
+      "name": "xai-invalid-pcm",
+      "input": {
+        "credentials": {
+          "xai": "fixture-key"
+        }
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "SpeechInvalidAudioError",
+          "provider": null,
+          "reason": null,
+          "message": "Invalid PCM audio."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "xai",
+          "pcmHex": "000000",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [],
+      "credentials": {
+        "xai": "fixture-key"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "xai-transport-failure",
+      "input": {
+        "credentials": {
+          "xai": "fixture-key"
+        },
+        "rejectFetch": true
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "xai",
+          "reason": "unavailable",
+          "message": "xAI couldn’t transcribe this recording. Try again later."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "xai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://api.x.ai/v1/stt",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-key"
+          },
+          "form": [
+            [
+              "model",
+              "grok-voice-transcribe-2.0"
+            ],
+            [
+              "language",
+              "en"
+            ],
+            [
+              "format",
+              "true"
+            ],
+            [
+              "filler_words",
+              "false"
+            ],
+            [
+              "vad_threshold",
+              "0"
+            ],
+            [
+              "file",
+              {
+                "name": "dictation.wav",
+                "type": "audio/wav",
+                "bytes": 56,
+                "hex": "524946463000000057415645666d74201000000001000100803e0000007d000002001000646174610c0000000000004000c0ff7f00800100"
+              }
+            ]
+          ]
+        }
+      ],
+      "credentials": {
+        "xai": "fixture-key"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "xai-reference-undefined",
+      "input": {
+        "credentials": {
+          "xai": {
+            "provider": "fixture-vault",
+            "reference": "fixture/voice/key"
+          }
+        }
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "xai",
+          "reason": "unreadable-key",
+          "message": "Couldn’t read the xAI API key. Unlock the vault on the selected environment or update the key in Settings → Voice. No audio was sent to xAI."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "xai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "invalidate",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "secret-read",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        }
+      ],
+      "requests": [],
+      "credentials": {
+        "xai": {
+          "provider": "fixture-vault",
+          "reference": "fixture/voice/key"
+        }
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "xai-reference-\"\"",
+      "input": {
+        "credentials": {
+          "xai": {
+            "provider": "fixture-vault",
+            "reference": "fixture/voice/key"
+          }
+        },
+        "resolved": ""
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "xai",
+          "reason": "unreadable-key",
+          "message": "Couldn’t read the xAI API key. Unlock the vault on the selected environment or update the key in Settings → Voice. No audio was sent to xAI."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "xai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "invalidate",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "secret-read",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        }
+      ],
+      "requests": [],
+      "credentials": {
+        "xai": {
+          "provider": "fixture-vault",
+          "reference": "fixture/voice/key"
+        }
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "xai-reference-\" \"",
+      "input": {
+        "credentials": {
+          "xai": {
+            "provider": "fixture-vault",
+            "reference": "fixture/voice/key"
+          }
+        },
+        "resolved": " "
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "xai",
+          "reason": "unreadable-key",
+          "message": "Couldn’t read the xAI API key. Unlock the vault on the selected environment or update the key in Settings → Voice. No audio was sent to xAI."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "xai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "invalidate",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "secret-read",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        }
+      ],
+      "requests": [],
+      "credentials": {
+        "xai": {
+          "provider": "fixture-vault",
+          "reference": "fixture/voice/key"
+        }
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "xai-reference-\" https://fixture.invalid\"",
+      "input": {
+        "credentials": {
+          "xai": {
+            "provider": "fixture-vault",
+            "reference": "fixture/voice/key"
+          }
+        },
+        "resolved": " https://fixture.invalid"
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "xai",
+          "reason": "unreadable-key",
+          "message": "Couldn’t read the xAI API key. Unlock the vault on the selected environment or update the key in Settings → Voice. No audio was sent to xAI."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "xai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "invalidate",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "secret-read",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        }
+      ],
+      "requests": [],
+      "credentials": {
+        "xai": {
+          "provider": "fixture-vault",
+          "reference": "fixture/voice/key"
+        }
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "xai-reference-\"https://fixture.invalid\"",
+      "input": {
+        "credentials": {
+          "xai": {
+            "provider": "fixture-vault",
+            "reference": "fixture/voice/key"
+          }
+        },
+        "resolved": "https://fixture.invalid"
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "xai",
+          "reason": "unreadable-key",
+          "message": "Couldn’t read the xAI API key. Unlock the vault on the selected environment or update the key in Settings → Voice. No audio was sent to xAI."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "xai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "invalidate",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "secret-read",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        }
+      ],
+      "requests": [],
+      "credentials": {
+        "xai": {
+          "provider": "fixture-vault",
+          "reference": "fixture/voice/key"
+        }
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "xai-reference-\"fixture-key\"",
+      "input": {
+        "credentials": {
+          "xai": {
+            "provider": "fixture-vault",
+            "reference": "fixture/voice/key"
+          }
+        },
+        "resolved": "fixture-key"
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": true,
+          "value": "oh three"
+        }
+      ],
+      "commands": [
+        {
+          "provider": "xai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "invalidate",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "secret-read",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://api.x.ai/v1/stt",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-key"
+          },
+          "form": [
+            [
+              "model",
+              "grok-voice-transcribe-2.0"
+            ],
+            [
+              "language",
+              "en"
+            ],
+            [
+              "format",
+              "true"
+            ],
+            [
+              "filler_words",
+              "false"
+            ],
+            [
+              "vad_threshold",
+              "0"
+            ],
+            [
+              "file",
+              {
+                "name": "dictation.wav",
+                "type": "audio/wav",
+                "bytes": 56,
+                "hex": "524946463000000057415645666d74201000000001000100803e0000007d000002001000646174610c0000000000004000c0ff7f00800100"
+              }
+            ]
+          ]
+        }
+      ],
+      "credentials": {
+        "xai": {
+          "provider": "fixture-vault",
+          "reference": "fixture/voice/key"
+        }
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "xai-key-changed-during-secret-read",
+      "input": {
+        "credentials": {
+          "xai": {
+            "provider": "fixture-vault",
+            "reference": "fixture/voice/key"
+          }
+        },
+        "resolved": "fixture-resolved",
+        "afterSecretRead": {
+          "xai": "fixture-replacement"
+        }
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "xai",
+          "reason": "key-changed",
+          "message": "The xAI key changed before your recording was sent. Try again."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "xai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "invalidate",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "secret-read",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [],
+      "credentials": {
+        "xai": "fixture-replacement"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "xai-key-removed-during-secret-read",
+      "input": {
+        "credentials": {
+          "xai": {
+            "provider": "fixture-vault",
+            "reference": "fixture/voice/key"
+          }
+        },
+        "resolved": "fixture-resolved",
+        "afterSecretRead": {}
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "xai",
+          "reason": "missing-key",
+          "message": "Add your xAI API key in Settings → Voice."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "xai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "invalidate",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "secret-read",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [],
+      "credentials": {},
+      "catalogFetches": 0
+    },
+    {
+      "name": "openrouter-configured-multipart-or-json",
+      "input": {
+        "credentials": {
+          "openrouter": "fixture-openrouter"
+        }
+      },
+      "observations": [
+        {
+          "label": "configured",
+          "ok": true,
+          "value": {
+            "openai": false,
+            "xai": false,
+            "openrouter": true
+          }
+        },
+        {
+          "label": "transcribe",
+          "ok": true,
+          "value": "T3 Code"
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [
+              {
+                "term": "T3 Code",
+                "aliases": [
+                  "oh three"
+                ]
+              },
+              {
+                "term": "<skip>",
+                "aliases": []
+              },
+              {
+                "term": "line\nterm",
+                "aliases": []
+              }
+            ],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "fixture/transcribe"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://openrouter.ai/api/v1/models?output_modalities=transcription&zdr=true",
+          "method": "GET",
+          "redirect": "error",
+          "headers": {}
+        },
+        {
+          "url": "https://openrouter.ai/api/v1/audio/transcriptions",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-openrouter",
+            "content-type": "application/json"
+          },
+          "json": {
+            "model": "fixture/transcribe",
+            "input_audio": {
+              "data": "UklGRjAAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQwAAAAAAABAAMD/fwCAAQA=",
+              "format": "wav"
+            },
+            "language": "en",
+            "provider": {
+              "zdr": true
+            }
+          }
+        }
+      ],
+      "credentials": {
+        "openrouter": "fixture-openrouter"
+      },
+      "catalogFetches": 1
+    },
+    {
+      "name": "openrouter-status-401",
+      "input": {
+        "credentials": {
+          "openrouter": "fixture-openrouter"
+        },
+        "status": 401
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openrouter",
+          "reason": "rejected-key",
+          "message": "OpenRouter rejected this API key. Check its permissions and billing in Settings → Voice."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "fixture/transcribe"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://openrouter.ai/api/v1/models?output_modalities=transcription&zdr=true",
+          "method": "GET",
+          "redirect": "error",
+          "headers": {}
+        },
+        {
+          "url": "https://openrouter.ai/api/v1/audio/transcriptions",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-openrouter",
+            "content-type": "application/json"
+          },
+          "json": {
+            "model": "fixture/transcribe",
+            "input_audio": {
+              "data": "UklGRjAAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQwAAAAAAABAAMD/fwCAAQA=",
+              "format": "wav"
+            },
+            "language": "en",
+            "provider": {
+              "zdr": true
+            }
+          }
+        }
+      ],
+      "credentials": {
+        "openrouter": "fixture-openrouter"
+      },
+      "catalogFetches": 1
+    },
+    {
+      "name": "openrouter-status-402",
+      "input": {
+        "credentials": {
+          "openrouter": "fixture-openrouter"
+        },
+        "status": 402
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openrouter",
+          "reason": "rejected-key",
+          "message": "OpenRouter rejected this API key. Check its permissions and billing in Settings → Voice."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "fixture/transcribe"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://openrouter.ai/api/v1/models?output_modalities=transcription&zdr=true",
+          "method": "GET",
+          "redirect": "error",
+          "headers": {}
+        },
+        {
+          "url": "https://openrouter.ai/api/v1/audio/transcriptions",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-openrouter",
+            "content-type": "application/json"
+          },
+          "json": {
+            "model": "fixture/transcribe",
+            "input_audio": {
+              "data": "UklGRjAAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQwAAAAAAABAAMD/fwCAAQA=",
+              "format": "wav"
+            },
+            "language": "en",
+            "provider": {
+              "zdr": true
+            }
+          }
+        }
+      ],
+      "credentials": {
+        "openrouter": "fixture-openrouter"
+      },
+      "catalogFetches": 1
+    },
+    {
+      "name": "openrouter-status-403",
+      "input": {
+        "credentials": {
+          "openrouter": "fixture-openrouter"
+        },
+        "status": 403
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openrouter",
+          "reason": "rejected-key",
+          "message": "OpenRouter rejected this API key. Check its permissions and billing in Settings → Voice."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "fixture/transcribe"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://openrouter.ai/api/v1/models?output_modalities=transcription&zdr=true",
+          "method": "GET",
+          "redirect": "error",
+          "headers": {}
+        },
+        {
+          "url": "https://openrouter.ai/api/v1/audio/transcriptions",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-openrouter",
+            "content-type": "application/json"
+          },
+          "json": {
+            "model": "fixture/transcribe",
+            "input_audio": {
+              "data": "UklGRjAAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQwAAAAAAABAAMD/fwCAAQA=",
+              "format": "wav"
+            },
+            "language": "en",
+            "provider": {
+              "zdr": true
+            }
+          }
+        }
+      ],
+      "credentials": {
+        "openrouter": "fixture-openrouter"
+      },
+      "catalogFetches": 1
+    },
+    {
+      "name": "openrouter-status-404",
+      "input": {
+        "credentials": {
+          "openrouter": "fixture-openrouter"
+        },
+        "status": 404
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openrouter",
+          "reason": "model-unavailable",
+          "message": "The chosen model isn’t available on OpenRouter. Choose another model in Settings → Voice."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "fixture/transcribe"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://openrouter.ai/api/v1/models?output_modalities=transcription&zdr=true",
+          "method": "GET",
+          "redirect": "error",
+          "headers": {}
+        },
+        {
+          "url": "https://openrouter.ai/api/v1/audio/transcriptions",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-openrouter",
+            "content-type": "application/json"
+          },
+          "json": {
+            "model": "fixture/transcribe",
+            "input_audio": {
+              "data": "UklGRjAAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQwAAAAAAABAAMD/fwCAAQA=",
+              "format": "wav"
+            },
+            "language": "en",
+            "provider": {
+              "zdr": true
+            }
+          }
+        }
+      ],
+      "credentials": {
+        "openrouter": "fixture-openrouter"
+      },
+      "catalogFetches": 1
+    },
+    {
+      "name": "openrouter-status-429",
+      "input": {
+        "credentials": {
+          "openrouter": "fixture-openrouter"
+        },
+        "status": 429
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openrouter",
+          "reason": "rate-limit",
+          "message": "OpenRouter reached a usage limit. Check the account's quota or try again later."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "fixture/transcribe"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://openrouter.ai/api/v1/models?output_modalities=transcription&zdr=true",
+          "method": "GET",
+          "redirect": "error",
+          "headers": {}
+        },
+        {
+          "url": "https://openrouter.ai/api/v1/audio/transcriptions",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-openrouter",
+            "content-type": "application/json"
+          },
+          "json": {
+            "model": "fixture/transcribe",
+            "input_audio": {
+              "data": "UklGRjAAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQwAAAAAAABAAMD/fwCAAQA=",
+              "format": "wav"
+            },
+            "language": "en",
+            "provider": {
+              "zdr": true
+            }
+          }
+        }
+      ],
+      "credentials": {
+        "openrouter": "fixture-openrouter"
+      },
+      "catalogFetches": 1
+    },
+    {
+      "name": "openrouter-status-500",
+      "input": {
+        "credentials": {
+          "openrouter": "fixture-openrouter"
+        },
+        "status": 500
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openrouter",
+          "reason": "unavailable",
+          "message": "OpenRouter couldn’t transcribe this recording. Try again later."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "fixture/transcribe"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://openrouter.ai/api/v1/models?output_modalities=transcription&zdr=true",
+          "method": "GET",
+          "redirect": "error",
+          "headers": {}
+        },
+        {
+          "url": "https://openrouter.ai/api/v1/audio/transcriptions",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-openrouter",
+            "content-type": "application/json"
+          },
+          "json": {
+            "model": "fixture/transcribe",
+            "input_audio": {
+              "data": "UklGRjAAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQwAAAAAAABAAMD/fwCAAQA=",
+              "format": "wav"
+            },
+            "language": "en",
+            "provider": {
+              "zdr": true
+            }
+          }
+        }
+      ],
+      "credentials": {
+        "openrouter": "fixture-openrouter"
+      },
+      "catalogFetches": 1
+    },
+    {
+      "name": "openrouter-bad-result-{\"text\":7}",
+      "input": {
+        "credentials": {
+          "openrouter": "fixture-openrouter"
+        },
+        "reply": {
+          "text": 7
+        }
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openrouter",
+          "reason": "unavailable",
+          "message": "OpenRouter couldn’t transcribe this recording. Try again later."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "fixture/transcribe"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://openrouter.ai/api/v1/models?output_modalities=transcription&zdr=true",
+          "method": "GET",
+          "redirect": "error",
+          "headers": {}
+        },
+        {
+          "url": "https://openrouter.ai/api/v1/audio/transcriptions",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-openrouter",
+            "content-type": "application/json"
+          },
+          "json": {
+            "model": "fixture/transcribe",
+            "input_audio": {
+              "data": "UklGRjAAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQwAAAAAAABAAMD/fwCAAQA=",
+              "format": "wav"
+            },
+            "language": "en",
+            "provider": {
+              "zdr": true
+            }
+          }
+        }
+      ],
+      "credentials": {
+        "openrouter": "fixture-openrouter"
+      },
+      "catalogFetches": 1
+    },
+    {
+      "name": "openrouter-bad-result-{\"other\":\"no text\"}",
+      "input": {
+        "credentials": {
+          "openrouter": "fixture-openrouter"
+        },
+        "reply": {
+          "other": "no text"
+        }
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openrouter",
+          "reason": "unavailable",
+          "message": "OpenRouter couldn’t transcribe this recording. Try again later."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "fixture/transcribe"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://openrouter.ai/api/v1/models?output_modalities=transcription&zdr=true",
+          "method": "GET",
+          "redirect": "error",
+          "headers": {}
+        },
+        {
+          "url": "https://openrouter.ai/api/v1/audio/transcriptions",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-openrouter",
+            "content-type": "application/json"
+          },
+          "json": {
+            "model": "fixture/transcribe",
+            "input_audio": {
+              "data": "UklGRjAAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQwAAAAAAABAAMD/fwCAAQA=",
+              "format": "wav"
+            },
+            "language": "en",
+            "provider": {
+              "zdr": true
+            }
+          }
+        }
+      ],
+      "credentials": {
+        "openrouter": "fixture-openrouter"
+      },
+      "catalogFetches": 1
+    },
+    {
+      "name": "openrouter-bad-result-null",
+      "input": {
+        "credentials": {
+          "openrouter": "fixture-openrouter"
+        },
+        "reply": null
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openrouter",
+          "reason": "unavailable",
+          "message": "OpenRouter couldn’t transcribe this recording. Try again later."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "fixture/transcribe"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://openrouter.ai/api/v1/models?output_modalities=transcription&zdr=true",
+          "method": "GET",
+          "redirect": "error",
+          "headers": {}
+        },
+        {
+          "url": "https://openrouter.ai/api/v1/audio/transcriptions",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-openrouter",
+            "content-type": "application/json"
+          },
+          "json": {
+            "model": "fixture/transcribe",
+            "input_audio": {
+              "data": "UklGRjAAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQwAAAAAAABAAMD/fwCAAQA=",
+              "format": "wav"
+            },
+            "language": "en",
+            "provider": {
+              "zdr": true
+            }
+          }
+        }
+      ],
+      "credentials": {
+        "openrouter": "fixture-openrouter"
+      },
+      "catalogFetches": 1
+    },
+    {
+      "name": "openrouter-missing-key",
+      "input": {},
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openrouter",
+          "reason": "missing-key",
+          "message": "Add your OpenRouter API key in Settings → Voice."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "fixture/transcribe"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [],
+      "credentials": {},
+      "catalogFetches": 0
+    },
+    {
+      "name": "openrouter-invalid-pcm",
+      "input": {
+        "credentials": {
+          "openrouter": "fixture-key"
+        }
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "SpeechInvalidAudioError",
+          "provider": null,
+          "reason": null,
+          "message": "Invalid PCM audio."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "fixture/transcribe"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [],
+      "credentials": {
+        "openrouter": "fixture-key"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "openrouter-transport-failure",
+      "input": {
+        "credentials": {
+          "openrouter": "fixture-key"
+        },
+        "rejectFetch": true
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openrouter",
+          "reason": "unavailable",
+          "message": "OpenRouter couldn’t transcribe this recording. Try again later."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "fixture/transcribe"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://openrouter.ai/api/v1/models?output_modalities=transcription&zdr=true",
+          "method": "GET",
+          "redirect": "error",
+          "headers": {}
+        },
+        {
+          "url": "https://openrouter.ai/api/v1/audio/transcriptions",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-key",
+            "content-type": "application/json"
+          },
+          "json": {
+            "model": "fixture/transcribe",
+            "input_audio": {
+              "data": "UklGRjAAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQwAAAAAAABAAMD/fwCAAQA=",
+              "format": "wav"
+            },
+            "language": "en",
+            "provider": {
+              "zdr": true
+            }
+          }
+        }
+      ],
+      "credentials": {
+        "openrouter": "fixture-key"
+      },
+      "catalogFetches": 1
+    },
+    {
+      "name": "openrouter-reference-undefined",
+      "input": {
+        "credentials": {
+          "openrouter": {
+            "provider": "fixture-vault",
+            "reference": "fixture/voice/key"
+          }
+        }
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openrouter",
+          "reason": "unreadable-key",
+          "message": "Couldn’t read the OpenRouter API key. Unlock the vault on the selected environment or update the key in Settings → Voice. No audio was sent to OpenRouter."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "fixture/transcribe"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "invalidate",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "secret-read",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://openrouter.ai/api/v1/models?output_modalities=transcription&zdr=true",
+          "method": "GET",
+          "redirect": "error",
+          "headers": {}
+        }
+      ],
+      "credentials": {
+        "openrouter": {
+          "provider": "fixture-vault",
+          "reference": "fixture/voice/key"
+        }
+      },
+      "catalogFetches": 1
+    },
+    {
+      "name": "openrouter-reference-\"\"",
+      "input": {
+        "credentials": {
+          "openrouter": {
+            "provider": "fixture-vault",
+            "reference": "fixture/voice/key"
+          }
+        },
+        "resolved": ""
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openrouter",
+          "reason": "unreadable-key",
+          "message": "Couldn’t read the OpenRouter API key. Unlock the vault on the selected environment or update the key in Settings → Voice. No audio was sent to OpenRouter."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "fixture/transcribe"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "invalidate",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "secret-read",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://openrouter.ai/api/v1/models?output_modalities=transcription&zdr=true",
+          "method": "GET",
+          "redirect": "error",
+          "headers": {}
+        }
+      ],
+      "credentials": {
+        "openrouter": {
+          "provider": "fixture-vault",
+          "reference": "fixture/voice/key"
+        }
+      },
+      "catalogFetches": 1
+    },
+    {
+      "name": "openrouter-reference-\" \"",
+      "input": {
+        "credentials": {
+          "openrouter": {
+            "provider": "fixture-vault",
+            "reference": "fixture/voice/key"
+          }
+        },
+        "resolved": " "
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openrouter",
+          "reason": "unreadable-key",
+          "message": "Couldn’t read the OpenRouter API key. Unlock the vault on the selected environment or update the key in Settings → Voice. No audio was sent to OpenRouter."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "fixture/transcribe"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "invalidate",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "secret-read",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://openrouter.ai/api/v1/models?output_modalities=transcription&zdr=true",
+          "method": "GET",
+          "redirect": "error",
+          "headers": {}
+        }
+      ],
+      "credentials": {
+        "openrouter": {
+          "provider": "fixture-vault",
+          "reference": "fixture/voice/key"
+        }
+      },
+      "catalogFetches": 1
+    },
+    {
+      "name": "openrouter-reference-\" https://fixture.invalid\"",
+      "input": {
+        "credentials": {
+          "openrouter": {
+            "provider": "fixture-vault",
+            "reference": "fixture/voice/key"
+          }
+        },
+        "resolved": " https://fixture.invalid"
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openrouter",
+          "reason": "unreadable-key",
+          "message": "Couldn’t read the OpenRouter API key. Unlock the vault on the selected environment or update the key in Settings → Voice. No audio was sent to OpenRouter."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "fixture/transcribe"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "invalidate",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "secret-read",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://openrouter.ai/api/v1/models?output_modalities=transcription&zdr=true",
+          "method": "GET",
+          "redirect": "error",
+          "headers": {}
+        }
+      ],
+      "credentials": {
+        "openrouter": {
+          "provider": "fixture-vault",
+          "reference": "fixture/voice/key"
+        }
+      },
+      "catalogFetches": 1
+    },
+    {
+      "name": "openrouter-reference-\"https://fixture.invalid\"",
+      "input": {
+        "credentials": {
+          "openrouter": {
+            "provider": "fixture-vault",
+            "reference": "fixture/voice/key"
+          }
+        },
+        "resolved": "https://fixture.invalid"
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openrouter",
+          "reason": "unreadable-key",
+          "message": "Couldn’t read the OpenRouter API key. Unlock the vault on the selected environment or update the key in Settings → Voice. No audio was sent to OpenRouter."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "fixture/transcribe"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "invalidate",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "secret-read",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://openrouter.ai/api/v1/models?output_modalities=transcription&zdr=true",
+          "method": "GET",
+          "redirect": "error",
+          "headers": {}
+        }
+      ],
+      "credentials": {
+        "openrouter": {
+          "provider": "fixture-vault",
+          "reference": "fixture/voice/key"
+        }
+      },
+      "catalogFetches": 1
+    },
+    {
+      "name": "openrouter-reference-\"fixture-key\"",
+      "input": {
+        "credentials": {
+          "openrouter": {
+            "provider": "fixture-vault",
+            "reference": "fixture/voice/key"
+          }
+        },
+        "resolved": "fixture-key"
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": true,
+          "value": "oh three"
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "fixture/transcribe"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "invalidate",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "secret-read",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://openrouter.ai/api/v1/models?output_modalities=transcription&zdr=true",
+          "method": "GET",
+          "redirect": "error",
+          "headers": {}
+        },
+        {
+          "url": "https://openrouter.ai/api/v1/audio/transcriptions",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-key",
+            "content-type": "application/json"
+          },
+          "json": {
+            "model": "fixture/transcribe",
+            "input_audio": {
+              "data": "UklGRjAAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQwAAAAAAABAAMD/fwCAAQA=",
+              "format": "wav"
+            },
+            "language": "en",
+            "provider": {
+              "zdr": true
+            }
+          }
+        }
+      ],
+      "credentials": {
+        "openrouter": {
+          "provider": "fixture-vault",
+          "reference": "fixture/voice/key"
+        }
+      },
+      "catalogFetches": 1
+    },
+    {
+      "name": "openrouter-key-changed-during-secret-read",
+      "input": {
+        "credentials": {
+          "openrouter": {
+            "provider": "fixture-vault",
+            "reference": "fixture/voice/key"
+          }
+        },
+        "resolved": "fixture-resolved",
+        "afterSecretRead": {
+          "openrouter": "fixture-replacement"
+        }
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openrouter",
+          "reason": "key-changed",
+          "message": "The OpenRouter key changed before your recording was sent. Try again."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "fixture/transcribe"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "invalidate",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "secret-read",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://openrouter.ai/api/v1/models?output_modalities=transcription&zdr=true",
+          "method": "GET",
+          "redirect": "error",
+          "headers": {}
+        }
+      ],
+      "credentials": {
+        "openrouter": "fixture-replacement"
+      },
+      "catalogFetches": 1
+    },
+    {
+      "name": "openrouter-key-removed-during-secret-read",
+      "input": {
+        "credentials": {
+          "openrouter": {
+            "provider": "fixture-vault",
+            "reference": "fixture/voice/key"
+          }
+        },
+        "resolved": "fixture-resolved",
+        "afterSecretRead": {}
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openrouter",
+          "reason": "missing-key",
+          "message": "Add your OpenRouter API key in Settings → Voice."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "fixture/transcribe"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "invalidate",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "secret-read",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://openrouter.ai/api/v1/models?output_modalities=transcription&zdr=true",
+          "method": "GET",
+          "redirect": "error",
+          "headers": {}
+        }
+      ],
+      "credentials": {},
+      "catalogFetches": 1
+    },
+    {
+      "name": "set-key-and-vault-relock",
+      "input": {},
+      "observations": [
+        {
+          "label": "empty",
+          "ok": true,
+          "value": {
+            "openai": false,
+            "xai": false,
+            "openrouter": false
+          }
+        },
+        {
+          "label": "save",
+          "ok": true,
+          "value": null
+        },
+        {
+          "label": "configured",
+          "ok": true,
+          "value": {
+            "openai": true,
+            "xai": false,
+            "openrouter": false
+          }
+        },
+        {
+          "label": "clear",
+          "ok": true,
+          "value": null
+        },
+        {
+          "label": "cleared",
+          "ok": true,
+          "value": {
+            "openai": false,
+            "xai": false,
+            "openrouter": false
+          }
+        },
+        {
+          "label": "set-reference",
+          "ok": true,
+          "value": null
+        },
+        {
+          "label": "unlocked",
+          "ok": true,
+          "value": "oh three"
+        },
+        {
+          "label": "locked-again",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openai",
+          "reason": "unreadable-key",
+          "message": "Couldn’t read the OpenAI API key. Unlock the vault on the selected environment or update the key in Settings → Voice. No audio was sent to OpenAI."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        },
+        {
+          "provider": "openai",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-write",
+          "patch": {
+            "cloudSpeechCredentials": {
+              "openai": "fixture-chosen"
+            }
+          }
+        },
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-write",
+          "patch": {
+            "cloudSpeechCredentials": {
+              "openai": ""
+            }
+          }
+        },
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-write",
+          "patch": {
+            "cloudSpeechCredentials": {
+              "openai": {
+                "provider": "fixture-vault",
+                "reference": "fixture/voice/key"
+              }
+            }
+          }
+        },
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "invalidate",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "secret-read",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "invalidate",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        },
+        {
+          "kind": "secret-read",
+          "references": [
+            {
+              "provider": "fixture-vault",
+              "reference": "fixture/voice/key"
+            }
+          ]
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://api.openai.com/v1/audio/transcriptions",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-unlocked"
+          },
+          "form": [
+            [
+              "model",
+              "gpt-transcribe"
+            ],
+            [
+              "languages[]",
+              "en"
+            ],
+            [
+              "file",
+              {
+                "name": "dictation.wav",
+                "type": "audio/wav",
+                "bytes": 56,
+                "hex": "524946463000000057415645666d74201000000001000100803e0000007d000002001000646174610c0000000000004000c0ff7f00800100"
+              }
+            ]
+          ]
+        }
+      ],
+      "credentials": {
+        "openai": {
+          "provider": "fixture-vault",
+          "reference": "fixture/voice/key"
+        }
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "router-catalog-cache-success",
+      "input": {
+        "credentials": {
+          "openrouter": "fixture-key"
+        }
+      },
+      "observations": [
+        {
+          "label": "first",
+          "ok": true,
+          "value": [
+            {
+              "id": "fixture/transcribe",
+              "name": "Fixture ASR"
+            },
+            {
+              "id": "other/model",
+              "name": "other/model"
+            },
+            {
+              "id": "fixture/blank",
+              "name": "fixture/blank"
+            }
+          ]
+        },
+        {
+          "label": "second",
+          "ok": true,
+          "value": [
+            {
+              "id": "fixture/transcribe",
+              "name": "Fixture ASR"
+            },
+            {
+              "id": "other/model",
+              "name": "other/model"
+            },
+            {
+              "id": "fixture/blank",
+              "name": "fixture/blank"
+            }
+          ]
+        },
+        {
+          "label": "transcribe",
+          "ok": true,
+          "value": "oh three"
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "fixture/transcribe"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://openrouter.ai/api/v1/models?output_modalities=transcription&zdr=true",
+          "method": "GET",
+          "redirect": "error",
+          "headers": {}
+        },
+        {
+          "url": "https://openrouter.ai/api/v1/audio/transcriptions",
+          "method": "POST",
+          "redirect": "error",
+          "headers": {
+            "authorization": "Bearer fixture-key",
+            "content-type": "application/json"
+          },
+          "json": {
+            "model": "fixture/transcribe",
+            "input_audio": {
+              "data": "UklGRjAAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQwAAAAAAABAAMD/fwCAAQA=",
+              "format": "wav"
+            },
+            "language": "en",
+            "provider": {
+              "zdr": true
+            }
+          }
+        }
+      ],
+      "credentials": {
+        "openrouter": "fixture-key"
+      },
+      "catalogFetches": 1
+    },
+    {
+      "name": "router-catalog-failure-not-cached",
+      "input": {
+        "credentials": {
+          "openrouter": "fixture-key"
+        },
+        "catalogStatus": 503
+      },
+      "observations": [
+        {
+          "label": "first",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openrouter",
+          "reason": "unavailable",
+          "message": "OpenRouter couldn’t transcribe this recording. Try again later."
+        },
+        {
+          "label": "second",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openrouter",
+          "reason": "unavailable",
+          "message": "OpenRouter couldn’t transcribe this recording. Try again later."
+        }
+      ],
+      "commands": [],
+      "events": [],
+      "requests": [
+        {
+          "url": "https://openrouter.ai/api/v1/models?output_modalities=transcription&zdr=true",
+          "method": "GET",
+          "redirect": "error",
+          "headers": {}
+        },
+        {
+          "url": "https://openrouter.ai/api/v1/models?output_modalities=transcription&zdr=true",
+          "method": "GET",
+          "redirect": "error",
+          "headers": {}
+        }
+      ],
+      "credentials": {
+        "openrouter": "fixture-key"
+      },
+      "catalogFetches": 2
+    },
+    {
+      "name": "router-model-undefined",
+      "input": {
+        "credentials": {
+          "openrouter": "fixture-key"
+        }
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openrouter",
+          "reason": "model-unavailable",
+          "message": "The chosen model isn’t available on OpenRouter. Choose another model in Settings → Voice."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [],
+      "credentials": {
+        "openrouter": "fixture-key"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "router-model-\"openrouter/auto\"",
+      "input": {
+        "credentials": {
+          "openrouter": "fixture-key"
+        }
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openrouter",
+          "reason": "model-unavailable",
+          "message": "The chosen model isn’t available on OpenRouter. Choose another model in Settings → Voice."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "openrouter/auto"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [],
+      "credentials": {
+        "openrouter": "fixture-key"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "router-model-\"fixture/transcribe:nitro\"",
+      "input": {
+        "credentials": {
+          "openrouter": "fixture-key"
+        }
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openrouter",
+          "reason": "model-unavailable",
+          "message": "The chosen model isn’t available on OpenRouter. Choose another model in Settings → Voice."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "fixture/transcribe:nitro"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [],
+      "credentials": {
+        "openrouter": "fixture-key"
+      },
+      "catalogFetches": 0
+    },
+    {
+      "name": "router-model-\"fixture/missing\"",
+      "input": {
+        "credentials": {
+          "openrouter": "fixture-key"
+        }
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openrouter",
+          "reason": "model-unavailable",
+          "message": "The chosen model isn’t available on OpenRouter. Choose another model in Settings → Voice."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "fixture/missing"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://openrouter.ai/api/v1/models?output_modalities=transcription&zdr=true",
+          "method": "GET",
+          "redirect": "error",
+          "headers": {}
+        }
+      ],
+      "credentials": {
+        "openrouter": "fixture-key"
+      },
+      "catalogFetches": 1
+    },
+    {
+      "name": "router-key-changed-after-catalog-{}",
+      "input": {
+        "credentials": {
+          "openrouter": "fixture-old"
+        },
+        "afterCatalog": {}
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openrouter",
+          "reason": "missing-key",
+          "message": "Add your OpenRouter API key in Settings → Voice."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "fixture/transcribe"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://openrouter.ai/api/v1/models?output_modalities=transcription&zdr=true",
+          "method": "GET",
+          "redirect": "error",
+          "headers": {}
+        }
+      ],
+      "credentials": {},
+      "catalogFetches": 1
+    },
+    {
+      "name": "router-key-changed-after-catalog-{\"openrouter\":\"fixture-new\"}",
+      "input": {
+        "credentials": {
+          "openrouter": "fixture-old"
+        },
+        "afterCatalog": {
+          "openrouter": "fixture-new"
+        }
+      },
+      "observations": [
+        {
+          "label": "transcribe",
+          "ok": false,
+          "tag": "CloudSpeechError",
+          "provider": "openrouter",
+          "reason": "key-changed",
+          "message": "The OpenRouter key changed before your recording was sent. Try again."
+        }
+      ],
+      "commands": [
+        {
+          "provider": "openrouter",
+          "pcmHex": "000000000000003f000000bf0000803f000080bf00010038",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          },
+          "model": "fixture/transcribe"
+        }
+      ],
+      "events": [
+        {
+          "kind": "settings-read"
+        },
+        {
+          "kind": "settings-read"
+        }
+      ],
+      "requests": [
+        {
+          "url": "https://openrouter.ai/api/v1/models?output_modalities=transcription&zdr=true",
+          "method": "GET",
+          "redirect": "error",
+          "headers": {}
+        }
+      ],
+      "credentials": {
+        "openrouter": "fixture-new"
+      },
+      "catalogFetches": 1
+    }
+  ]
+}

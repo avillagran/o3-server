@@ -84,6 +84,14 @@ struct Plan {
     config_key: String,
 }
 
+pub(crate) struct ReadReceipt {
+    pub value: Option<String>,
+    pub identity: Option<String>,
+}
+fn identity(plan: &Plan) -> String {
+    serde_json::to_string(&json!({"kind":plan.driver.kind(),"config":plan.config_key}))
+        .expect("decoded secret provider identity")
+}
 pub struct SecretResolver {
     drivers: HashMap<String, Arc<dyn SecretDriver>>,
     cache: Mutex<HashMap<String, CachedSecret>>,
@@ -154,16 +162,50 @@ impl SecretResolver {
         providers: &Value,
         references: &[SecretReference],
     ) -> Vec<Option<String>> {
-        let plans: Vec<_> = references
+        let plans = references
             .iter()
             .map(|reference| self.plan(providers, reference))
-            .collect();
+            .collect::<Vec<_>>();
+        self.read_planned(references, &plans).await
+    }
+    /// The identity comes from the exact decoded plan used for this lookup/cache answer.
+    pub(crate) async fn read_with_identity(
+        &self,
+        providers: &Value,
+        references: &[SecretReference],
+    ) -> Vec<ReadReceipt> {
+        let plans = references
+            .iter()
+            .map(|reference| self.plan(providers, reference))
+            .collect::<Vec<_>>();
+        self.read_planned(references, &plans)
+            .await
+            .into_iter()
+            .zip(&plans)
+            .map(|(value, plan)| ReadReceipt {
+                value,
+                identity: plan.as_ref().map(identity),
+            })
+            .collect()
+    }
+    pub(crate) fn identity(
+        &self,
+        providers: &Value,
+        reference: &SecretReference,
+    ) -> Option<String> {
+        self.plan(providers, reference).as_ref().map(identity)
+    }
+    async fn read_planned(
+        &self,
+        references: &[SecretReference],
+        plans: &[Option<Plan>],
+    ) -> Vec<Option<String>> {
         if !references
             .iter()
-            .zip(&plans)
+            .zip(plans)
             .any(|(r, p)| p.as_ref().is_some_and(|p| !self.cached(r, p)))
         {
-            return self.answer(references, &plans);
+            return self.answer(references, plans);
         }
         let _permit = self
             .semaphore
@@ -172,7 +214,7 @@ impl SecretResolver {
             .expect("resolver semaphore stays open");
         let mut wanted: IndexMap<String, (Plan, IndexMap<String, Vec<&SecretReference>>)> =
             IndexMap::new();
-        for (reference, plan) in references.iter().zip(&plans) {
+        for (reference, plan) in references.iter().zip(plans) {
             let Some(plan) = plan.as_ref().filter(|p| !self.cached(reference, p)) else {
                 continue;
             };
@@ -203,7 +245,7 @@ impl SecretResolver {
                 }
             }
         }
-        self.answer(references, &plans)
+        self.answer(references, plans)
     }
     /// Serializes with pending unlocks; None invalidates every cached success and failure.
     pub async fn invalidate(&self, references: Option<&[SecretReference]>) {

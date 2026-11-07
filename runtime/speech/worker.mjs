@@ -40,7 +40,7 @@ async function textModule(name){
  if(!expected||bytes.length!==expected.bytes||crypto.createHash('sha256').update(bytes).digest('hex')!==expected.sha256)throw Error('Changed speech text resource');
  return await import('data:text/javascript;base64,'+bytes.toString('base64'));
 }
-const [dictionary,filler,language,catalog]=await Promise.all(['custom-words.mjs','filler-words.mjs','native-language.mjs','model.mjs'].map(textModule));
+const [dictionary,filler,language,catalog,prompt]=await Promise.all(['custom-words.mjs','filler-words.mjs','native-language.mjs','model.mjs','transcription-post-processing.mjs'].map(textModule));
 function serviceContext(modelId,options,streaming=false){
  const definition=catalog.getSpeechModel(modelId);if(!definition||!options||Array.isArray(options)||typeof options!=='object')throw Error('Invalid owned service options');
  const intent=catalog.effectiveSpeechLanguage(definition,options.speechLanguage);
@@ -104,7 +104,20 @@ async function dispatch(frame){
  const id=frame.id;
  try{
   let result=null;
-  if(frame.kind==='load'){
+  if(frame.kind==='text-ready'&&spec.mode==='text'){result=true;
+  }else if(frame.kind==='cloud-correct'){
+   if(typeof frame.text!=='string'||typeof frame.language!=='string'||!frame.options||!Array.isArray(frame.options.speechCustomWords))throw Error('Invalid owned cloud text');
+   const corrected=dictionary.applySpeechAliases(frame.text,frame.options.speechCustomWords);
+   result=(frame.options.speechRemoveFillerWords?filler.removeSpeechFillerWords(corrected,frame.language,frame.options.speechCorrectionWord):corrected).trim();
+  }else if(frame.kind==='postprocess-prompt'){
+   if(typeof frame.instructions!=='string'||typeof frame.transcript!=='string'||typeof frame.correction!=='string'||typeof frame.draft?.text!=='string'||typeof frame.draft?.selection?.start!=='number'||typeof frame.draft?.selection?.end!=='number')throw Error('Invalid owned cleanup prompt');
+   const text=prompt.buildTranscriptionPostProcessingPrompt(frame.instructions,frame.transcript,frame.draft,frame.correction);
+   result=Array.from({length:text.length},(_,index)=>text.charCodeAt(index));
+  }else if(frame.kind==='postprocess-correct'){
+   if(typeof frame.text!=='string'||typeof frame.original!=='string'||!Array.isArray(frame.words))throw Error('Invalid owned postprocessing text');
+   const text=frame.text.trim();result=text.length>0?dictionary.applySpeechAliases(text,frame.words):frame.original;
+  }else if(spec.mode==='text')throw Error('Text resource has no native engine authority');
+  else if(frame.kind==='load'){
    if(model||loading||!spec.model)throw Error('Invalid owned model load');
    loading=(async()=>{
     const engine=await seal(spec.engine);

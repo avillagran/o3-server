@@ -4,13 +4,22 @@ use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 
 #[derive(Default)]
-pub(crate) struct Registry(Mutex<Option<speech::Service>>);
+pub(crate) struct Registry {
+    local: Mutex<Option<speech::Service>>,
+    cloud: Mutex<Option<crate::cloud_speech::Service>>,
+}
 impl Registry {
     pub(crate) fn service(&self) -> Option<speech::Service> {
-        self.0.lock().ok()?.clone()
+        self.local.lock().ok()?.clone()
+    }
+    pub(crate) fn cloud(&self) -> Option<crate::cloud_speech::Service> {
+        self.cloud.lock().ok()?.clone()
     }
     pub(crate) fn signal_shutdown(&self) {
         if let Some(service) = self.service() {
+            service.begin_shutdown();
+        }
+        if let Some(service) = self.cloud() {
             service.begin_shutdown();
         }
     }
@@ -20,7 +29,7 @@ impl Registry {
 pub fn install(state: &State, service: speech::Service) -> Result<(), String> {
     let mut slot = state
         .speech
-        .0
+        .local
         .lock()
         .map_err(|_| "Speech resource lock failed")?;
     if state
@@ -33,6 +42,29 @@ pub fn install(state: &State, service: speech::Service) -> Result<(), String> {
     *slot = Some(service);
     Ok(())
 }
+/// Only application startup may install this resource; never an HTTP/RPC decoder.
+pub fn install_cloud(state: &State, service: crate::cloud_speech::Service) -> Result<(), String> {
+    let mut slot = state
+        .speech
+        .cloud
+        .lock()
+        .map_err(|_| "Cloud speech resource lock failed")?;
+    if state
+        .shutting_down
+        .load(std::sync::atomic::Ordering::Acquire)
+        || slot.is_some()
+    {
+        return Err("Cloud speech resource is already installed or closing".into());
+    }
+    *slot = Some(service);
+    Ok(())
+}
+pub fn cloud_available(state: &State) -> bool {
+    !state
+        .shutting_down
+        .load(std::sync::atomic::Ordering::Acquire)
+        && state.speech.cloud().is_some()
+}
 pub fn available(state: &State) -> bool {
     !state
         .shutting_down
@@ -40,10 +72,18 @@ pub fn available(state: &State) -> bool {
         && state.speech.service().is_some()
 }
 pub async fn shutdown(state: &State) -> Result<(), speech::Error> {
-    match state.speech.service() {
+    let local = match state.speech.service() {
         Some(service) => service.shutdown().await,
         None => Ok(()),
-    }
+    };
+    let cloud = match state.speech.cloud() {
+        Some(service) => service
+            .shutdown()
+            .await
+            .map_err(|_| speech::Error::CleanupUnknown),
+        None => Ok(()),
+    };
+    local.and(cloud)
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Denied {
@@ -104,6 +144,62 @@ impl Authority {
                 operation: "resource",
                 cause: "Speech resource is not installed".into(),
             })
+    }
+}
+impl crate::cloud_speech::Settings for Authority {
+    fn check(&self) -> Result<(), crate::cloud_speech::Error> {
+        self.check()
+            .map_err(|_| crate::cloud_speech::Error::Settings)
+    }
+    fn read(
+        &self,
+    ) -> crate::cloud_speech::Task<
+        '_,
+        Result<crate::cloud_speech::Snapshot, crate::cloud_speech::Error>,
+    > {
+        Box::pin(async move {
+            self.check()
+                .map_err(|_| crate::cloud_speech::Error::Settings)?;
+            let settings = {
+                let _guard = self
+                    .state
+                    .settings_lock
+                    .lock()
+                    .map_err(|_| crate::cloud_speech::Error::Settings)?;
+                self.check()
+                    .map_err(|_| crate::cloud_speech::Error::Settings)?;
+                let effective = crate::settings::read(&self.state)
+                    .map_err(|_| crate::cloud_speech::Error::Settings)?;
+                crate::settings_secrets::materialize_profile(&self.state.dir, &effective)
+                    .map_err(|_| crate::cloud_speech::Error::Settings)?
+            };
+            self.check()
+                .map_err(|_| crate::cloud_speech::Error::Settings)?;
+            let credentials = crate::managed_settings_codec::decode_field(
+                "cloudSpeechCredentials",
+                settings.get("cloudSpeechCredentials").cloned(),
+            )
+            .map_err(|_| crate::cloud_speech::Error::Settings)?;
+            Ok(crate::cloud_speech::Snapshot {
+                credentials,
+                secret_providers: settings["secretProviders"].clone(),
+            })
+        })
+    }
+    fn patch<'a>(
+        &'a self,
+        patch: Value,
+    ) -> crate::cloud_speech::Task<'a, Result<(), crate::cloud_speech::Error>> {
+        Box::pin(async move {
+            self.check_required("settings:write")
+                .map_err(|_| crate::cloud_speech::Error::Settings)?;
+            crate::settings::update_checked(&self.state, &json!({"patch":patch}), &mut || {
+                self.check_required("settings:write")
+                    .map_err(|_| "Current cloud speech authority refused".into())
+            })
+            .map(|_| ())
+            .map_err(|_| crate::cloud_speech::Error::Settings)
+        })
     }
 }
 impl speech::Settings for Authority {
