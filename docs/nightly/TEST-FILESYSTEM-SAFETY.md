@@ -17,9 +17,15 @@ lexical check does not establish transitive filesystem safety or inspect every
 external script; those paths require review. Six pure scanner regressions run
 without creating or removing fixture files.
 
-The `tests/SAFETY-AUDIT-PENDING` marker prevents complete runtime matrices through
-the local runner and CI. Remove it only when the production-operation and link
-fixture audits finish. Individually reviewed focused targets can run privately.
+When present, `tests/SAFETY-AUDIT-PENDING` prevents complete runtime matrices through
+the local runner and CI. On 2026-11-06, the marker was removed after independent
+and parent review of the default server Cargo matrix and CI Python tools. The
+four destructive Git consumers have explicit retaining test executors; browser
+clear uses a recording plan, and auto-cleaning tool directories retain fixtures.
+Owned link targets and indirect cleanup paths were reviewed. This admits a new
+private complete-matrix verification; it does not turn earlier runs into policy
+acceptance. Desktop/QML, ignored live providers, real SDKs and hardware remain
+separate acceptance scopes. Reintroduce the marker if a new audit blocker appears.
 Use `--integration TARGET --case-filter EXACT_TEST_NAME` to run a single reviewed
 integration case without copying or bypassing the guarded container runner.
 
