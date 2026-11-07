@@ -1,11 +1,62 @@
 //! Per-page identity and lifecycle routing shared by inherited-pipe and desktop actors.
 use super::*;
-fn detached(value: &Value, session: Option<&str>) -> bool {
-    (value["method"] == "Inspector.detached"
+use crate::preview::network;
+#[derive(Clone, Copy)]
+enum PageEvent {
+    Start,
+    Load,
+    Changed,
+}
+fn classify(
+    value: &Value,
+    session: Option<&str>,
+    target: Option<&str>,
+    main_frame: &mut Option<String>,
+) -> Result<Option<PageEvent>, ()> {
+    if (value["method"] == "Inspector.detached"
         && session.is_some_and(|session| value["sessionId"] == session))
         || (value["method"] == "Target.detachedFromTarget"
             && session.is_some_and(|session| value["params"]["sessionId"] == session))
+        || (value["method"] == "Target.targetDestroyed"
+            && target.is_some_and(|target| value["params"]["targetId"] == target))
+    {
+        return Err(());
+    }
+    let scoped = session.is_some_and(|session| value["sessionId"] == session);
+    let method = value["method"].as_str().unwrap_or("");
+    Ok(if method == "Target.targetInfoChanged" {
+        target
+            .filter(|target| value["params"]["targetInfo"]["targetId"] == *target)
+            .map(|_| PageEvent::Changed)
+    } else if scoped {
+        match method {
+            "Page.frameNavigated" => {
+                let frame = &value["params"]["frame"];
+                if frame.get("parentId").is_none() || frame["parentId"].as_str() == Some("") {
+                    frame["id"].as_str().filter(|id| !id.is_empty()).map(|id| {
+                        *main_frame = Some(id.into());
+                        PageEvent::Changed
+                    })
+                } else {
+                    None
+                }
+            }
+            "Page.navigatedWithinDocument" => main_frame
+                .as_ref()
+                .filter(|frame| value["params"]["frameId"] == frame.as_str())
+                .map(|_| PageEvent::Changed),
+            "Page.frameStartedLoading" => main_frame
+                .as_ref()
+                .filter(|frame| value["params"]["frameId"] == frame.as_str())
+                .map(|_| PageEvent::Start),
+            "Page.loadEventFired" => Some(PageEvent::Load),
+            _ => None,
+        }
+    } else {
+        None
+    })
 }
+#[cfg(test)]
 pub(super) fn observe(
     value: &Value,
     session: Option<&str>,
@@ -13,60 +64,149 @@ pub(super) fn observe(
     main_frame: &mut Option<String>,
     navigation: &tokio::sync::watch::Sender<Navigation>,
 ) -> bool {
-    if detached(value, session)
-        || (value["method"] == "Target.targetDestroyed"
-            && target.is_some_and(|target| value["params"]["targetId"] == target))
-    {
-        return true;
-    }
-    let scoped = session.is_some_and(|session| value["sessionId"] == session);
-    let method = value["method"].as_str().unwrap_or("");
-    let event = if method == "Target.targetInfoChanged" {
-        target.is_some_and(|target| value["params"]["targetInfo"]["targetId"] == target)
-    } else if scoped {
-        match method {
-            "Page.frameNavigated" => {
-                let frame = &value["params"]["frame"];
-                if frame.get("parentId").is_none() || frame["parentId"].as_str() == Some("") {
-                    if let Some(id) = frame["id"].as_str().filter(|id| !id.is_empty()) {
-                        *main_frame = Some(id.into());
-                        true
-                    } else {
-                        false
+    match classify(value, session, target, main_frame) {
+        Err(()) => true,
+        Ok(None) => false,
+        Ok(Some(event)) => {
+            navigation.send_modify(|state| {
+                state.revision = state.revision.wrapping_add(1);
+                match event {
+                    PageEvent::Start => {
+                        state.generation += 1;
+                        state.loading = true;
                     }
-                } else {
-                    false
+                    PageEvent::Load => state.loading = false,
+                    PageEvent::Changed => {}
                 }
-            }
-            "Page.navigatedWithinDocument" | "Page.frameStartedLoading" => main_frame
-                .as_ref()
-                .is_some_and(|frame| value["params"]["frameId"] == *frame),
-            "Page.loadEventFired" => true,
-            _ => false,
+            });
+            false
         }
-    } else {
-        false
-    };
-    if event {
-        navigation.send_modify(|state| {
-            state.revision = state.revision.wrapping_add(1);
-            if method == "Page.frameStartedLoading" {
-                state.generation = state.generation.wrapping_add(1);
-                state.loading = true;
-            }
-            if method == "Page.loadEventFired" {
-                state.loading = false;
-            }
-        });
     }
-    false
 }
-
+fn request_step(params: &Value, main_frame: Option<&str>) -> Option<Value> {
+    let id = params["requestId"].as_str()?;
+    let url = params["request"]["url"]
+        .as_str()
+        .filter(|url| !url.starts_with("data:"))?;
+    Some(
+        json!({"kind":"request","id":id,"url":url.split('#').next().unwrap_or(url),"verb":params["request"]["method"].as_str().unwrap_or("GET"),"main":main_frame.is_some_and(|frame|params["frameId"]==frame),"navigation":params["loaderId"]==id&&params["type"]=="Document"}),
+    )
+}
 struct Observer {
     target: String,
     main_frame: Option<String>,
     navigation: tokio::sync::watch::Sender<Navigation>,
     done: tokio::sync::watch::Sender<bool>,
+    network: network::Kernel,
+}
+impl Observer {
+    fn publish(&mut self, transition: network::Transition, clear: bool) {
+        self.navigation.send_modify(|state| {
+            state.revision = state.revision.wrapping_add(1);
+            state.generation = self.network.generation;
+            state.loading = self.network.loading;
+            if let Some(report) = transition.reports.last() {
+                state.report = Some(report.clone());
+            } else if clear || transition.loaded_calls > 0 {
+                state.report = None;
+            }
+            state.aborted = self.network.aborted.as_ref().map(|aborted| {
+                state
+                    .aborted
+                    .as_ref()
+                    .filter(|wait| wait.token == aborted.token)
+                    .cloned()
+                    .unwrap_or(AbortWait {
+                        token: aborted.token,
+                        expires: tokio::time::Instant::now() + Duration::from_secs(5),
+                    })
+            });
+        });
+    }
+    fn accept(&mut self, value: &Value, session: &str) -> bool {
+        let event = match classify(
+            value,
+            Some(session),
+            Some(&self.target),
+            &mut self.main_frame,
+        ) {
+            Err(()) => return true,
+            Ok(event) => event,
+        };
+        if value["sessionId"] == session
+            && value["method"]
+                .as_str()
+                .is_some_and(|method| method.starts_with("Network."))
+        {
+            let params = &value["params"];
+            let Some(id) = params["requestId"].as_str() else {
+                return false;
+            };
+            let at = crate::store::iso(crate::store::now_ms());
+            let before = self.network.aborted.as_ref().map(|value| value.token);
+            let transition = match value["method"].as_str().unwrap() {
+                "Network.requestWillBeSent" => {
+                    let Some(step) = request_step(params, self.main_frame.as_deref()) else {
+                        return false;
+                    };
+                    if self.network.has_request(id) && params["redirectResponse"].is_object() {
+                        self.network.apply(&json!({"kind":"response","id":id,"status":params["redirectResponse"]["status"]}),&at);
+                    }
+                    self.network.replace_request(id);
+                    self.network.apply(&step, &at)
+                }
+                "Network.responseReceived" if self.network.has_request(id) => self.network.apply(
+                    &json!({"kind":"response","id":id,"status":params["response"]["status"]}),
+                    &at,
+                ),
+                "Network.loadingFailed" if self.network.has_request(id) => {
+                    let error = params["errorText"]
+                        .as_str()
+                        .filter(|value| !value.is_empty())
+                        .or_else(|| params["blockedReason"].as_str())
+                        .unwrap_or("");
+                    let result = self
+                        .network
+                        .apply(&json!({"kind":"failed","id":id,"errorText":error}), &at);
+                    self.network.forget(id);
+                    result
+                }
+                "Network.loadingFinished" => {
+                    self.network.forget(id);
+                    network::Transition::default()
+                }
+                _ => return false,
+            };
+            if !transition.reports.is_empty()
+                || before != self.network.aborted.as_ref().map(|value| value.token)
+            {
+                self.publish(transition, false);
+            }
+            return false;
+        }
+        if let Some(event) = event {
+            let url = value["params"]["frame"]["url"]
+                .as_str()
+                .or_else(|| value["params"]["url"].as_str())
+                .or_else(|| value["params"]["targetInfo"]["url"].as_str());
+            if let Some(url) = url {
+                self.network.apply(&json!({"kind":"pageUrl","url":url}), "");
+            }
+            let (clear, transition) = match event {
+                PageEvent::Start => {
+                    self.network.loading = true;
+                    (false, network::Transition::default())
+                }
+                PageEvent::Load => (true, self.network.apply(&json!({"kind":"load"}), "")),
+                PageEvent::Changed => {
+                    let clear = !self.network.loading;
+                    (clear, network::Transition::default())
+                }
+            };
+            self.publish(transition, clear);
+        }
+        false
+    }
 }
 #[derive(Default)]
 pub(super) struct Registry {
@@ -93,6 +233,7 @@ pub(super) fn register(
             main_frame: None,
             navigation: nav_tx,
             done: done_tx,
+            network: network::Kernel::new("about:blank".into()),
         },
     ) {
         old.done.send_replace(true);
@@ -106,6 +247,9 @@ pub(super) fn frame(registry: &Shared, session: Option<&str>, result: &Value) {
             .as_str()
             .filter(|id| !id.is_empty())
             .map(str::to_owned);
+        if let Some(url) = result["frameTree"]["frame"]["url"].as_str() {
+            page.network.apply(&json!({"kind":"pageUrl","url":url}), "");
+        }
     }
 }
 pub(super) fn remove(registry: &Shared, session: &str) {
@@ -117,21 +261,16 @@ pub(super) fn notify(registry: &Shared, value: &Value) -> bool {
     let mut registry = registry.lock().unwrap();
     let mut detached = Vec::new();
     for (session, page) in &mut registry.pages {
-        if observe(
-            value,
-            Some(session),
-            Some(&page.target),
-            &mut page.main_frame,
-            &page.navigation,
-        ) {
+        if page.accept(value, session) {
             page.done.send_replace(true);
             detached.push(session.clone());
         }
     }
+    let removed = !detached.is_empty();
     for session in detached {
         registry.pages.remove(&session);
     }
-    registry.registered && registry.pages.is_empty()
+    removed && registry.registered && registry.pages.is_empty()
 }
 pub(super) fn stopped(registry: &Shared) {
     let mut registry = registry.lock().unwrap();
@@ -140,10 +279,81 @@ pub(super) fn stopped(registry: &Shared) {
     }
     registry.pages.clear();
 }
-
+pub(super) fn entries(registry: &Shared, session: &str) -> Option<Vec<Value>> {
+    registry
+        .lock()
+        .unwrap()
+        .pages
+        .get(session)
+        .map(|page| page.network.entries())
+}
+pub(super) fn note_url(registry: &Shared, session: &str, url: &str) {
+    if let Some(page) = registry.lock().unwrap().pages.get_mut(session) {
+        page.network.apply(&json!({"kind":"pageUrl","url":url}), "");
+    }
+}
+pub(super) fn expire(registry: &Shared, session: &str, token: u64) {
+    if let Some(page) = registry.lock().unwrap().pages.get_mut(session) {
+        if page
+            .network
+            .aborted
+            .as_ref()
+            .is_some_and(|aborted| aborted.token == token)
+        {
+            let transition = page.network.apply(&json!({"kind":"tick"}), "");
+            page.publish(transition, false);
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn explicit_observer_removal_does_not_abort_the_following_close_command() {
+        crate::test_sandbox::assert_isolated();
+        let pages: Shared = Default::default();
+        let (done, _) = register(&pages, "opaque", "target");
+        remove(&pages, "opaque");
+        assert!(*done.borrow());
+        assert!(!notify(&pages, &json!({"id":19,"result":{}})));
+    }
+    #[test]
+    fn frame_loading_preserves_the_native_main_request_report() {
+        crate::test_sandbox::assert_isolated();
+        let pages: Shared = Default::default();
+        let (_, nav) = register(&pages, "opaque", "target");
+        frame(
+            &pages,
+            Some("opaque"),
+            &json!({"frameTree":{"frame":{"id":"frame"}}}),
+        );
+        notify(
+            &pages,
+            &json!({"method":"Network.requestWillBeSent","sessionId":"opaque","params":{"requestId":"request","loaderId":"request","type":"Document","frameId":"frame","request":{"url":"https://example.com/","method":"GET"}}}),
+        );
+        notify(
+            &pages,
+            &json!({"method":"Page.frameStartedLoading","sessionId":"opaque","params":{"frameId":"frame"}}),
+        );
+        assert_eq!(nav.borrow().report.as_ref().unwrap()["_tag"], "Loading");
+        assert_eq!(nav.borrow().generation, 1);
+    }
+    #[test]
+    fn pinned_upstream_request_classification_matches() {
+        crate::test_sandbox::assert_isolated();
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/preview-network-4288.json"
+        ))
+        .unwrap();
+        let cases = fixture["adapterCases"].as_array().unwrap();
+        assert_eq!(cases.len(), 192);
+        for case in cases {
+            assert_eq!(
+                request_step(&case["input"], Some("main-frame")).unwrap_or(Value::Null),
+                case["expected"]
+            );
+        }
+    }
     #[test]
     fn page_detachment_preserves_sibling_identity_and_process_completion() {
         crate::test_sandbox::assert_isolated();

@@ -70,6 +70,11 @@ def check(text):
     assert tool('preview_navigate',{'tabId':'foreign','url':'http://localhost'})['isError']
     assert not tool('preview_navigate',{'tabId':tab,'url':'http://localhost:1234/next'})['isError']
     assert not tool('preview_evaluate',{'tabId':tab,'expression':'1+1'})['isError']
+    snapshot=tool('preview_snapshot',{'tabId':tab})
+    assert not snapshot['isError'],snapshot
+    value=json.loads(snapshot['content'][0]['text'])['value']
+    assert value['networkEntries']==[],value
+    assert value['title']=='Owned fixture',value
     assert not tool('preview_status',{})['isError']
 for line in sys.stdin:
     f=json.loads(line)

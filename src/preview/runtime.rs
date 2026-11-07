@@ -329,7 +329,12 @@ fn spawn(
                             } else {
                                 break;
                             }
-                            let ended = tokio::select! {result=done.changed()=>result.is_err()||*done.borrow(),result=navigation.changed()=>result.is_err()};
+                            let aborted = navigation.borrow().aborted.clone();
+                            let ended = tokio::select! {
+                                result=done.changed()=>result.is_err()||*done.borrow(),
+                                result=navigation.changed()=>result.is_err(),
+                                _=async{if let Some(wait)=&aborted{tokio::time::sleep_until(wait.expires).await;}else{std::future::pending::<()>().await;}}=>{if let(Some(browser),Some(wait))=(browser.upgrade(),aborted){browser.expire_navigation(&key.0,&key.1,&navigation,wait.token).await;}false}
+                            };
                             if ended {
                                 break;
                             }
@@ -1526,5 +1531,141 @@ mod tests {
             profile.join("commands.jsonl").exists(),
             "private fixture tree retained"
         );
+    }
+    #[tokio::test]
+    async fn local_pipe_network_failures_are_generation_fenced_and_bounded() {
+        let state = state();
+        *state
+            .streams
+            .p2
+            .preview
+            .browser
+            .fixture_binary
+            .lock()
+            .unwrap() = Some(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/browser-cdp-events.py"),
+        );
+        let opened = call(
+            &state,
+            "preview.open",
+            &json!({"threadId":"network","runtime":"server","url":"https://example.com/initial"}),
+        )
+        .await
+        .unwrap();
+        let tab = tab_of(&opened);
+        let status = || {
+            state
+                .streams
+                .p2
+                .preview
+                .inner
+                .lock()
+                .unwrap()
+                .kernel
+                .get("network", tab)
+                .unwrap()["navStatus"]
+                .clone()
+        };
+        wait(|| status()["_tag"] == "Success").await;
+        let request = |id: &str, url: &str| json!({"method":"Network.requestWillBeSent","params":{"requestId":id,"loaderId":id,"frameId":"target-1-frame","type":"Document","request":{"url":url,"method":"POST"}}});
+        let failed = |id: &str, error: &str| json!({"method":"Network.loadingFailed","params":{"requestId":id,"errorText":error}});
+        state.streams.p2.preview.browser.command("network",tab,"Fixture.emit",json!({"events":[request("old","https://example.com/old#secret"),request("new","https://example.com/new"),failed("old","net::ERR_CONNECTION_REFUSED"),failed("new","net::ERR_NAME_NOT_RESOLVED")]})).await.unwrap();
+        wait(|| status()["_tag"] == "LoadFailed" && status()["code"] == -105).await;
+        assert_eq!(status()["url"], "https://example.com/new");
+        let entries = state
+            .streams
+            .p2
+            .preview
+            .browser
+            .network_entries("network", tab)
+            .await
+            .unwrap();
+        assert_eq!(
+            entries.last().unwrap()["errorText"],
+            "net::ERR_NAME_NOT_RESOLVED"
+        );
+        assert!(entries
+            .iter()
+            .any(|entry| entry["url"] == "https://example.com/old" && entry["failed"] == true));
+        let events = (0..205).flat_map(|index| {
+            let id=format!("asset-{index}");
+            [json!({"method":"Network.requestWillBeSent","params":{"requestId":id,"loaderId":"not-navigation","frameId":"target-1-frame","type":"Image","request":{"url":format!("https://example.com/{index}#fragment"),"method":"GET"}}}),json!({"method":"Network.responseReceived","params":{"requestId":id,"response":{"url":"https://untrusted.invalid/ignored","status":200}}}),json!({"method":"Network.loadingFinished","params":{"requestId":id}})]
+        }).collect::<Vec<_>>();
+        state
+            .streams
+            .p2
+            .preview
+            .browser
+            .command("network", tab, "Fixture.emit", json!({"events":events}))
+            .await
+            .unwrap();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let entries = state
+                .streams
+                .p2
+                .preview
+                .browser
+                .network_entries("network", tab)
+                .await
+                .unwrap();
+            if entries
+                .last()
+                .is_some_and(|entry| entry["url"] == "https://example.com/204")
+            {
+                assert_eq!(entries.len(), 200);
+                assert_eq!(entries[0]["url"], "https://example.com/5");
+                assert!(entries.iter().all(|entry| entry["method"] == "GET"
+                    && entry["status"] == 200
+                    && entry["failed"] == false));
+                break;
+            }
+            assert!(tokio::time::Instant::now() < deadline);
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(
+            status()["code"],
+            -105,
+            "subresource diagnostics cannot replace main navigation failure"
+        );
+        state
+            .streams
+            .p2
+            .preview
+            .browser
+            .command(
+                "network",
+                tab,
+                "Fixture.setUrl",
+                json!({"url":"about:blank"}),
+            )
+            .await
+            .unwrap();
+        let started = tokio::time::Instant::now();
+        state.streams.p2.preview.browser.command("network",tab,"Fixture.emit",json!({"events":[{"method":"Page.frameNavigated","params":{"frame":{"id":"target-1-frame","url":"about:blank"}}},request("abort","https://example.com/download"),failed("abort","net::ERR_ABORTED")]})).await.unwrap();
+        wait(|| status()["_tag"] == "Loading").await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(
+            status()["_tag"],
+            "Loading",
+            "aborted navigation must await native settlement window"
+        );
+        let deadline = started + Duration::from_secs(7);
+        loop {
+            if status()["_tag"] == "LoadFailed" && status()["code"] == -3 {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "aborted navigation did not settle: {}",
+                status()
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(started.elapsed() >= Duration::from_secs(5));
+        assert_eq!(status()["description"], "ERR_ABORTED");
+        close(&state, "network", Some(tab)).await;
+        shutdown(&state.streams.p2.preview).await;
     }
 }

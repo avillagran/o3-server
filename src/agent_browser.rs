@@ -99,7 +99,7 @@ pub(crate) fn tools() -> Vec<Value> {
         ("preview_close","Close this session's tab"),
         ("preview_resize","Set viewport width and height"),
         ("preview_evaluate","Evaluate JavaScript; returns a bounded JSON value"),
-        ("preview_snapshot","Read page text and title"),
+        ("preview_snapshot","Read page text, title and bounded network diagnostics"),
         ("preview_click","Click a CSS locator"),
         ("preview_type","Fill a CSS locator with text"),
         ("preview_press","Press a key"),
@@ -232,7 +232,23 @@ impl Scope {
                 if result.get("exceptionDetails").is_some() {
                     return Err(json!({"message":"Page expression failed"}));
                 }
-                let value = result["result"]["value"].clone();
+                let mut value = result["result"]["value"].clone();
+                if name == "preview_snapshot" {
+                    if let Some(snapshot) = value.as_object_mut() {
+                        snapshot.insert(
+                            "networkEntries".into(),
+                            json!(
+                                state
+                                    .streams
+                                    .p2
+                                    .preview
+                                    .browser
+                                    .network_entries(&self.thread, &tab)
+                                    .await?
+                            ),
+                        );
+                    }
+                }
                 if value.to_string().len() > 65536 {
                     return Err(json!({"message":"Evaluation result exceeds 64 KiB"}));
                 }

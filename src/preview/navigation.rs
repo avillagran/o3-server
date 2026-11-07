@@ -100,7 +100,7 @@ impl AsciiUnit for u16 {
         lower(*self) == lower(other)
     }
 }
-fn slice_utf16(value: &str, limit: usize) -> String {
+pub(super) fn slice_utf16(value: &str, limit: usize) -> String {
     String::from_utf16_lossy(&value.encode_utf16().take(limit).collect::<Vec<_>>())
 }
 pub(super) struct Loaded<'a> {
@@ -142,13 +142,48 @@ pub(super) async fn sync(
     tab: &str,
     watch: &tokio::sync::watch::Receiver<crate::server_browser::Navigation>,
 ) {
-    let before = *watch.borrow();
+    let before = watch.borrow().clone();
     let Ok(history) = browser
         .command(thread, tab, "Page.getNavigationHistory", json!({}))
         .await
     else {
         return;
     };
+    if let Some(nav) = before.report.clone() {
+        if before.revision != watch.borrow().revision
+            || !browser
+                .connection(thread, tab)
+                .await
+                .is_some_and(|(_, live)| live)
+            || !browser
+                .navigation(thread, tab)
+                .await
+                .is_some_and(|current| current.same_channel(watch))
+        {
+            return;
+        }
+        let report = report(thread, tab, nav, Some(&history));
+        let mut inner = inner.lock().unwrap();
+        let Some(snapshot) = inner.kernel.get(thread, tab) else {
+            return;
+        };
+        if snapshot["navStatus"] == report["navStatus"]
+            && snapshot["canGoBack"] == report["canGoBack"]
+            && snapshot["canGoForward"] == report["canGoForward"]
+        {
+            return;
+        }
+        if inner
+            .kernel
+            .report_status(&report, || crate::store::iso(crate::store::now_ms()))
+            .is_ok()
+        {
+            inner.flush();
+            drop(inner);
+            crate::terminal::bump(changed);
+        }
+        return;
+    }
     let before_url = history["currentIndex"]
         .as_u64()
         .and_then(|index| {
@@ -163,7 +198,7 @@ pub(super) async fn sync(
     let Some(url) = metadata["url"].as_str() else {
         return;
     };
-    let after = *watch.borrow();
+    let after = watch.borrow().clone();
     if before.revision != after.revision
         || !browser
             .connection(thread, tab)
@@ -176,6 +211,7 @@ pub(super) async fn sync(
     {
         return;
     }
+    browser.note_navigation_url(thread, tab, watch, url).await;
     let Some(nav) = loaded(Loaded {
         before_url: before_url.as_deref().unwrap_or(url),
         after_url: url,

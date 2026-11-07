@@ -3,8 +3,6 @@ use super::*;
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
 
-use super::events::observe;
-
 pub(super) async fn launch(
     channel: &crate::desktop_browser_channel::Channel,
     thread: &str,
@@ -51,23 +49,21 @@ pub(super) async fn launch(
     .map_err(|_| "Desktop browser connection failed")?;
     let (tx, mut rx) = mpsc::channel::<Request>(8);
     let (done_tx, done) = tokio::sync::watch::channel(false);
-    let (navigation_tx, navigation) = tokio::sync::watch::channel(Navigation::default());
+    let pages: events::Shared = Default::default();
+    let actor_pages = pages.clone();
     let cancel = std::sync::Arc::new(tokio::sync::Notify::new());
     let stop_signal = cancel.clone();
     let thread_owned = thread.to_string();
     let tab_owned = tab.to_string();
     tokio::spawn(async move {
         let mut id = 0_u64;
-        let mut attached_session: Option<String> = None;
-        let mut attached_target: Option<String> = None;
-        let mut main_frame: Option<String> = None;
         loop {
             let request = tokio::select! {
                 request=rx.recv()=>request,
                 change=changes.next()=>{match change {Some(change) if change.key.thread_id==thread_owned && change.key.tab_id==tab_owned && !change.attached=>break,Some(_)=>continue,None=>break}},
                 _=stop_signal.notified()=>None,
                 incoming=socket.next()=>{
-                    match incoming{Some(Ok(Message::Text(text)))=>{if serde_json::from_str::<Value>(&text).is_ok_and(|value|observe(&value,attached_session.as_deref(),attached_target.as_deref(),&mut main_frame,&navigation_tx)){break;}continue;},Some(Ok(Message::Ping(payload)))=>{if socket.send(Message::Pong(payload)).await.is_err(){break;}continue;},Some(Ok(Message::Pong(_)))=>continue,_=>break}
+                    match incoming{Some(Ok(Message::Text(text)))=>{if serde_json::from_str::<Value>(&text).is_ok_and(|value|events::notify(&actor_pages,&value)){break;}continue;},Some(Ok(Message::Ping(payload)))=>{if socket.send(Message::Pong(payload)).await.is_err(){break;}continue;},Some(Ok(Message::Pong(_)))=>continue,_=>break}
                 }
             };
             let Some((method, params, session, reply)) = request else {
@@ -77,7 +73,7 @@ pub(super) async fn launch(
             let work = async {
                 let mut message = json!({"id":id,"method":method,"params":params});
                 if !method.starts_with("Target.") && !method.starts_with("Browser.") {
-                    if let Some(session) = session {
+                    if let Some(session) = &session {
                         message["sessionId"] = json!(session);
                     }
                 }
@@ -90,29 +86,19 @@ pub(super) async fn launch(
                         Some(Ok(Message::Text(text))) => {
                             let value: Value = serde_json::from_str(&text)
                                 .map_err(|_| "Invalid CDP output".to_string())?;
-                            if observe(
-                                &value,
-                                attached_session.as_deref(),
-                                attached_target.as_deref(),
-                                &mut main_frame,
-                                &navigation_tx,
-                            ) {
+                            if events::notify(&actor_pages, &value) {
                                 return Err("Desktop browser disconnected".into());
                             }
                             if value["id"] == id {
                                 if value.get("error").is_some() {
                                     return Err("Browser rejected CDP command".into());
                                 }
-                                if method == "Target.attachToTarget" {
-                                    attached_session =
-                                        value["result"]["sessionId"].as_str().map(str::to_owned);
-                                    attached_target =
-                                        message["params"]["targetId"].as_str().map(str::to_owned);
-                                }
                                 if method == "Page.getFrameTree" {
-                                    main_frame = value["result"]["frameTree"]["frame"]["id"]
-                                        .as_str()
-                                        .map(str::to_owned);
+                                    events::frame(
+                                        &actor_pages,
+                                        session.as_deref(),
+                                        &value["result"],
+                                    );
                                 }
                                 return Ok(value["result"].clone());
                             }
@@ -135,6 +121,7 @@ pub(super) async fn launch(
         }
         let _ = tokio::time::timeout(Duration::from_secs(1), socket.close(None)).await;
         endpoint.close().await;
+        events::stopped(&actor_pages);
         let _ = done_tx.send(true);
     });
     let mut browser = Tab {
@@ -143,8 +130,8 @@ pub(super) async fn launch(
         profile: profile.into(),
         origin: Origin::Desktop,
         desktop_channel: Some(channel.clone()),
-        navigation: Some(navigation),
-        events: None,
+        navigation: None,
+        events: Some(pages.clone()),
         process_done: done.clone(),
         tx,
         done,
@@ -168,6 +155,9 @@ pub(super) async fn launch(
             .as_str()
             .ok_or("Desktop page attachment failed")?
             .to_owned();
+        let (page_done, navigation) = events::register(&pages, &session, &target);
+        browser.done = page_done;
+        browser.navigation = Some(navigation);
         request_in(&browser.tx, "Page.enable", json!({}), Some(session.clone())).await?;
         request(
             &browser.tx,
@@ -188,6 +178,13 @@ pub(super) async fn launch(
             Some(session.clone()),
         )
         .await?;
+        request_in(
+            &browser.tx,
+            "Network.enable",
+            json!({}),
+            Some(session.clone()),
+        )
+        .await?;
         browser.target = Some(target);
         browser.session = Some(session);
         Ok::<(), String>(())
@@ -203,6 +200,7 @@ pub(super) async fn launch(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::server_browser::events::observe;
     use std::sync::{Arc, Mutex as SyncMutex};
     use tokio::io::{AsyncBufReadExt, BufReader};
     struct Peer {
@@ -294,7 +292,8 @@ mod tests {
                 "Page.enable",
                 "Target.setDiscoverTargets",
                 "Target.setAutoAttach",
-                "Page.getFrameTree"
+                "Page.getFrameTree",
+                "Network.enable"
             ]
         );
         assert_eq!(

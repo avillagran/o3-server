@@ -46,11 +46,18 @@ impl Default for ProfileRemoval {
         )))
     }
 }
-#[derive(Clone, Copy, Default)]
+#[derive(Clone)]
+pub(crate) struct AbortWait {
+    pub token: u64,
+    pub expires: tokio::time::Instant,
+}
+#[derive(Clone, Default)]
 pub(crate) struct Navigation {
     pub revision: u64,
     pub generation: u64,
     pub loading: bool,
+    pub report: Option<Value>,
+    pub aborted: Option<AbortWait>,
 }
 #[derive(Clone)]
 struct Tab {
@@ -455,7 +462,7 @@ impl Browsers {
         let target = request(
             &browser.tx,
             "Target.createTarget",
-            json!({"url":url.unwrap_or("about:blank")}),
+            json!({"url":"about:blank"}),
         )
         .await
         .map_err(error)?;
@@ -478,6 +485,14 @@ impl Browsers {
         request_in(
             &browser.tx,
             "Page.enable",
+            json!({}),
+            browser.session.clone(),
+        )
+        .await
+        .map_err(error)?;
+        request_in(
+            &browser.tx,
+            "Page.getFrameTree",
             json!({}),
             browser.session.clone(),
         )
@@ -513,14 +528,16 @@ impl Browsers {
         )
         .await
         .map_err(error)?;
-        request_in(
-            &browser.tx,
-            "Page.getFrameTree",
-            json!({}),
-            browser.session.clone(),
-        )
-        .await
-        .map_err(error)?;
+        if let Some(url) = url {
+            request_in(
+                &browser.tx,
+                "Page.navigate",
+                json!({"url":url}),
+                browser.session.clone(),
+            )
+            .await
+            .map_err(error)?;
+        }
         tabs.insert((thread.into(), tab.into()), browser);
         Ok(())
     }
@@ -540,6 +557,9 @@ impl Browsers {
             }
             if !*existing.done.borrow() {
                 return Ok(());
+            }
+            if !stop(existing.clone()).await {
+                return Err(error("Desktop browser connection is still closing".into()));
             }
         }
         if tabs.values().filter(|tab| !*tab.done.borrow()).count() >= 8 {
@@ -571,6 +591,59 @@ impl Browsers {
             .await
             .get(&(thread.into(), tab.into()))
             .and_then(|tab| tab.navigation.clone())
+    }
+    pub(crate) async fn network_entries(
+        &self,
+        thread: &str,
+        tab: &str,
+    ) -> Result<Vec<Value>, Value> {
+        let tabs = self.tabs.lock().await;
+        let tab = tabs
+            .get(&(thread.into(), tab.into()))
+            .ok_or_else(|| error("Browser tab is closed".into()))?;
+        let entries = tab
+            .events
+            .as_ref()
+            .zip(tab.session.as_deref())
+            .and_then(|(pages, session)| events::entries(pages, session))
+            .ok_or_else(|| error("Browser tab is closed".into()))?;
+        Ok(entries)
+    }
+    pub(crate) async fn note_navigation_url(
+        &self,
+        thread: &str,
+        tab: &str,
+        watch: &tokio::sync::watch::Receiver<Navigation>,
+        url: &str,
+    ) {
+        let tabs = self.tabs.lock().await;
+        if let Some(tab) = tabs.get(&(thread.into(), tab.into())).filter(|tab| {
+            tab.navigation
+                .as_ref()
+                .is_some_and(|current| current.same_channel(watch))
+        }) {
+            if let (Some(pages), Some(session)) = (&tab.events, &tab.session) {
+                events::note_url(pages, session, url);
+            }
+        }
+    }
+    pub(crate) async fn expire_navigation(
+        &self,
+        thread: &str,
+        tab: &str,
+        watch: &tokio::sync::watch::Receiver<Navigation>,
+        token: u64,
+    ) {
+        let tabs = self.tabs.lock().await;
+        if let Some(tab) = tabs.get(&(thread.into(), tab.into())).filter(|tab| {
+            tab.navigation
+                .as_ref()
+                .is_some_and(|current| current.same_channel(watch))
+        }) {
+            if let (Some(pages), Some(session)) = (&tab.events, &tab.session) {
+                events::expire(pages, session, token);
+            }
+        }
     }
     pub async fn completion(
         &self,

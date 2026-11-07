@@ -20,5 +20,6 @@ while True:
             result={'targetId':'fixture-target-'+str(sequence)}
         if v['method']=='Target.attachToTarget':result={'sessionId':'fixture-session-'+v['params']['targetId']}
         if v['method']=='Page.navigate' and v['params'].get('url','').endswith('/rejected'):result={'errorText':'net::ERR_CONNECTION_REFUSED'}
+        if v['method']=='Runtime.evaluate' and 'document.body.innerText' in v['params'].get('expression',''):result={'result':{'value':{'url':'http://localhost:1234/next','title':'Owned fixture','text':'Fixture body'}}}
         if v['method']=='Page.captureScreenshot':result={'data':'/9j/2Q=='}
         os.write(4,json.dumps({'id':v['id'],'result':result}).encode()+b'\0')

@@ -31,6 +31,7 @@ pub fn handles(tag: &str) -> bool {
 }
 
 mod navigation;
+pub(crate) mod network;
 mod runtime;
 pub use runtime::{install_desktop, DesktopDriver};
 struct Inner {
@@ -403,6 +404,11 @@ pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
     let mut inner = m.inner.lock().unwrap();
     let result = match tag {
         "preview.refresh" => Ok(Value::Null),
+        "preview.navigate" if server_tab => inner
+            .kernel
+            .get(thread, tab)
+            .cloned()
+            .ok_or_else(|| lookup_error(thread, tab)),
         "preview.navigate" => {
             let nav = json!({"_tag":"Success","url":normalize_url(str_field(p,"url")?)?,"title":p["resolvedTitle"].as_str().unwrap_or(snapshot["navStatus"]["title"].as_str().unwrap_or(""))});
             inner.kernel.report_status(&json!({"threadId":thread,"tabId":tab,"navStatus":nav,"canGoBack":snapshot["canGoBack"],"canGoForward":snapshot["canGoForward"],"serverControlled":server_tab}),||iso(now_ms())).map_err(|error|error.value())?;

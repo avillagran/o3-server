@@ -31,6 +31,6 @@ trees remain present. Pure reader tests cover framing, truncated input and the
 message bound; observer tests cover per-page closure. Existing preview, desktop,
 agent and deletion tests provide adjacent acceptance.
 
-This implements notification delivery and loaded-state projection, not the
-remaining native request-failure, network/console, dialog, popup or download
-consumers. No capability is inferred from generic CDP command forwarding.
+The subsequent [network increment](PREVIEW-NETWORK.md) adds bounded diagnostics
+and request-failure projection. Console, dialog, popup and download consumers
+remain separate work. No capability is inferred from generic CDP command forwarding.
