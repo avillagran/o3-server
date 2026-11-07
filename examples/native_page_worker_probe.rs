@@ -435,13 +435,23 @@ async fn main() {
         .await
         .unwrap()
         .unwrap();
-    let closing = control.close();
+    let mut changed = control.subscribe();
+    let closing_page = controlled.clone();
+    let closing = tokio::spawn(async move { closing_page.close().await });
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while !changed.borrow().closed {
+            changed.changed().await.unwrap();
+        }
+    })
+    .await
+    .unwrap();
     owner.exchange("release-drain-two").unwrap();
     assert_eq!(
         running.await.unwrap().unwrap(),
         OperationResult::Value(json!("drained-close"))
     );
-    closing.wait().await.unwrap();
+    let owner_close = closing.await.unwrap();
+    assert!(owner_close.worker_reaped && owner_close.owner_grant_closed);
     let receipt = controlled.close().await;
     control.close().wait().await.unwrap();
     control.shutdown().await.unwrap();

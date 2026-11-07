@@ -144,8 +144,11 @@ impl ControlledPage {
     pub async fn synchronize_references(&self) -> Result<(), Fault> {
         synchronize(&self.0).await
     }
+    /// Fence new callbacks and drain the admitted native tail before retiring
+    /// this worker. Hard transport/watchdog faults still retire it directly.
     pub async fn close(&self) -> CloseReceipt {
         let _ = self.0.stop.send(true);
+        let _ = self.0.control.close().wait().await;
         self.0.worker.close().await
     }
 }
