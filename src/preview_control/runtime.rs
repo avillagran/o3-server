@@ -9,7 +9,40 @@ use std::{
 };
 use tokio::sync::{watch, Notify};
 type ResultValue = Result<Value, Value>;
-type Work = Box<dyn FnOnce(Value) -> Pin<Box<dyn Future<Output = ResultValue> + Send>> + Send>;
+type PlainWork = Box<dyn FnOnce(Value) -> Pin<Box<dyn Future<Output = ResultValue> + Send>> + Send>;
+type AdmittedWork =
+    Box<dyn FnOnce(Value, RunContext) -> Pin<Box<dyn Future<Output = ResultValue> + Send>> + Send>;
+enum Work {
+    Plain(PlainWork),
+    Admitted(AdmittedWork),
+}
+/// A callback admission minted by this actual Control, never deserialized from
+/// caller arguments. Generation changes do not revoke an already running tail.
+#[derive(Clone, Debug)]
+pub struct RunContext {
+    action: ActionId,
+    generation: u64,
+    identity: std::sync::Weak<()>,
+    active: Arc<std::sync::atomic::AtomicBool>,
+}
+impl RunContext {
+    pub fn action_id(&self) -> ActionId {
+        self.action
+    }
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+    pub fn is_active(&self) -> bool {
+        self.active.load(std::sync::atomic::Ordering::Acquire)
+    }
+}
+struct EndAdmission(Arc<std::sync::atomic::AtomicBool>);
+impl Drop for EndAdmission {
+    fn drop(&mut self) {
+        self.0.store(false, std::sync::atomic::Ordering::Release);
+    }
+}
+
 type Tracked = Pin<Box<dyn Future<Output = ()> + Send>>;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Snapshot {
@@ -44,6 +77,7 @@ fn ended() -> Value {
 struct State {
     kernel: Kernel,
     callbacks: BTreeMap<CallbackId, Work>,
+    callback_generations: BTreeMap<CallbackId, u64>,
     discarded: Vec<Work>,
     action_callbacks: BTreeMap<ActionId, CallbackId>,
     results: BTreeMap<ActionId, watch::Sender<Option<ResultValue>>>,
@@ -105,6 +139,7 @@ impl State {
     }
 }
 struct Shared {
+    identity: Arc<()>,
     state: Mutex<State>,
     wake: Notify,
     clock: tokio::time::Instant,
@@ -138,9 +173,11 @@ impl Control {
         };
         let (snapshot, _) = watch::channel(initial);
         let shared = Arc::new(Shared {
+            identity: Arc::new(()),
             state: Mutex::new(State {
                 kernel: Kernel::new(agent_id),
                 callbacks: BTreeMap::new(),
+                callback_generations: BTreeMap::new(),
                 discarded: Vec::new(),
                 action_callbacks: BTreeMap::new(),
                 results: BTreeMap::new(),
@@ -182,6 +219,10 @@ impl Control {
             return Call { action: 0, result };
         }
         let callback = state.sequence();
+        if matches!(&submission, Submission::Observe) && matches!(&work, Work::Admitted(_)) {
+            let generation = state.kernel.generation();
+            state.callback_generations.insert(callback, generation);
+        }
         state.callbacks.insert(callback, work);
         let action = match submission {
             Submission::Agent(caller, deadline) => state.kernel.agent(
@@ -219,9 +260,42 @@ impl Control {
         self.submit(
             Submission::Agent(caller, deadline),
             Value::Null,
-            Box::new(move |_| Box::pin(work())),
+            Work::Plain(Box::new(move |_| Box::pin(work()))),
             |_, next| next,
         )
+    }
+    /// Admit using the same kernel guard/queue as agent(), while carrying the
+    /// exact admission generation into a transport consumer's draining callback.
+    pub fn agent_admitted<F>(
+        &self,
+        caller: &str,
+        deadline: Option<tokio::time::Instant>,
+        work: impl FnOnce(RunContext) -> F + Send + 'static,
+    ) -> Call
+    where
+        F: Future<Output = ResultValue> + Send + 'static,
+    {
+        self.submit(
+            Submission::Agent(caller, deadline),
+            Value::Null,
+            Work::Admitted(Box::new(move |_, context| Box::pin(work(context)))),
+            |_, next| next,
+        )
+    }
+    pub fn observe_admitted<F>(&self, work: impl FnOnce(RunContext) -> F + Send + 'static) -> Call
+    where
+        F: Future<Output = ResultValue> + Send + 'static,
+    {
+        self.submit(
+            Submission::Observe,
+            Value::Null,
+            Work::Admitted(Box::new(move |_, context| Box::pin(work(context)))),
+            |_, next| next,
+        )
+    }
+    pub fn owns_context(&self, context: &RunContext) -> bool {
+        context.is_active()
+            && std::sync::Weak::ptr_eq(&context.identity, &Arc::downgrade(&self.0.shared.identity))
     }
     pub fn human<F>(&self, viewer: &str, work: impl FnOnce() -> F + Send + 'static) -> Call
     where
@@ -230,7 +304,7 @@ impl Control {
         self.submit(
             Submission::Human(viewer),
             Value::Null,
-            Box::new(move |_| Box::pin(work())),
+            Work::Plain(Box::new(move |_| Box::pin(work()))),
             |_, next| next,
         )
     }
@@ -248,7 +322,7 @@ impl Control {
         self.submit(
             Submission::Latest(viewer, key),
             input,
-            Box::new(move |input| Box::pin(work(input))),
+            Work::Plain(Box::new(move |input| Box::pin(work(input)))),
             merge,
         )
     }
@@ -259,7 +333,7 @@ impl Control {
         self.submit(
             Submission::Observe,
             Value::Null,
-            Box::new(move |_| Box::pin(work())),
+            Work::Plain(Box::new(move |_| Box::pin(work()))),
             |_, next| next,
         )
     }
@@ -270,7 +344,7 @@ impl Control {
         self.submit(
             Submission::System,
             Value::Null,
-            Box::new(move |_| Box::pin(work())),
+            Work::Plain(Box::new(move |_| Box::pin(work()))),
             |_, next| next,
         )
     }
@@ -297,9 +371,10 @@ impl Control {
     {
         self.transition(|state| {
             let callback = state.sequence();
-            state
-                .callbacks
-                .insert(callback, Box::new(move |_| Box::pin(after_drain())));
+            state.callbacks.insert(
+                callback,
+                Work::Plain(Box::new(move |_| Box::pin(after_drain()))),
+            );
             let action = state.kernel.release(viewer, Some(callback));
             state.action_callbacks.insert(action, callback);
             action
@@ -315,9 +390,10 @@ impl Control {
     {
         self.transition(|state| {
             let callback = state.sequence();
-            state
-                .callbacks
-                .insert(callback, Box::new(move |_| Box::pin(after_drain())));
+            state.callbacks.insert(
+                callback,
+                Work::Plain(Box::new(move |_| Box::pin(after_drain()))),
+            );
             let action = state.kernel.disconnect(viewer, Some(callback));
             state.action_callbacks.insert(action, callback);
             action
@@ -398,8 +474,12 @@ async fn run(shared: Arc<Shared>, done: watch::Sender<bool>) {
                         callback,
                         input,
                     } => {
+                        let generation = state
+                            .callback_generations
+                            .remove(&callback)
+                            .unwrap_or_else(|| state.kernel.generation());
                         if let Some(callback) = state.callbacks.remove(&callback) {
-                            work.push((action, callback, input));
+                            work.push((action, callback, input, generation));
                         } else {
                             state.kernel.finish_action(action, Err(ended()));
                             shared.wake.notify_one();
@@ -407,6 +487,7 @@ async fn run(shared: Arc<Shared>, done: watch::Sender<bool>) {
                     }
                     Event::Complete { action, result } => {
                         if let Some(callback) = state.action_callbacks.remove(&action) {
+                            state.callback_generations.remove(&callback);
                             if let Some(work) = state.callbacks.remove(&callback) {
                                 state.discarded.push(work);
                             }
@@ -430,8 +511,24 @@ async fn run(shared: Arc<Shared>, done: watch::Sender<bool>) {
         };
         // Destructors may release the final owner and re-enter this driver's state.
         drop(discarded);
-        for (action, callback, input) in work {
-            let handle = jobs.spawn(async move { Finished::Action(action, callback(input).await) });
+        for (action, callback, input, generation) in work {
+            let handle = match callback {
+                Work::Plain(callback) => {
+                    jobs.spawn(async move { Finished::Action(action, callback(input).await) })
+                }
+                Work::Admitted(callback) => {
+                    let context = RunContext {
+                        action,
+                        generation,
+                        identity: Arc::downgrade(&shared.identity),
+                        active: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+                    };
+                    jobs.spawn(async move {
+                        let _end = EndAdmission(context.active.clone());
+                        Finished::Action(action, callback(input, context).await)
+                    })
+                }
+            };
             receipts.insert(handle.id(), Receipt::Action(action));
         }
         for (dependency, work) in dependencies {

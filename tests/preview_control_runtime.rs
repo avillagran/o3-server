@@ -337,3 +337,64 @@ async fn tracking_after_shutdown_disposes_reentrant_future_outside_the_state_loc
     control.track(async move { drop(probe) });
     assert_eq!(dropped.load(Ordering::SeqCst), 1);
 }
+
+#[tokio::test]
+async fn admitted_context_is_owner_bound_and_drains_after_take_and_close() {
+    sandbox::assert_isolated();
+    let control = Control::new(Some("A".into()));
+    let foreign = Control::new(Some("A".into()));
+    let (entered, context) = oneshot::channel();
+    let (release, gate) = oneshot::channel();
+    let running = control.agent_admitted("A", None, move |context| async move {
+        entered.send(context).unwrap();
+        gate.await.unwrap();
+        Ok(json!("written"))
+    });
+    let context = bounded(context).await.unwrap();
+    assert_eq!(context.action_id(), running.action_id());
+    assert!(control.owns_context(&context));
+    assert!(!foreign.owns_context(&context));
+    let generation = context.generation();
+    let invoked = Arc::new(AtomicUsize::new(0));
+    let count = invoked.clone();
+    let queued = control.agent_admitted("A", None, move |_| async move {
+        count.fetch_add(1, Ordering::SeqCst);
+        Ok(Value::Null)
+    });
+    let take = control.take("human");
+    assert_ne!(generation, control.snapshot().generation);
+    assert!(control.owns_context(&context));
+    let close = control.close();
+    assert!(control.snapshot().closed);
+    assert!(control.owns_context(&context));
+    release.send(()).unwrap();
+    assert_eq!(bounded(running.wait()).await.unwrap(), json!("written"));
+    assert!(!context.is_active());
+    assert!(!control.owns_context(&context));
+    assert!(bounded(queued.wait()).await.is_err());
+    assert_eq!(invoked.load(Ordering::SeqCst), 0);
+    let _ = bounded(take.wait()).await;
+    bounded(close.wait()).await.unwrap();
+    bounded(control.shutdown()).await.unwrap();
+    bounded(foreign.shutdown()).await.unwrap();
+}
+
+#[tokio::test]
+async fn observer_admission_captures_submission_generation_before_first_poll() {
+    sandbox::assert_isolated();
+    let control = Control::new(None);
+    let generation = control.snapshot().generation;
+    let (entered, context) = oneshot::channel();
+    let observe = control.observe_admitted(move |context| async move {
+        entered.send(context).unwrap();
+        Ok(Value::Null)
+    });
+    let take = control.take("human");
+    assert_ne!(generation, control.snapshot().generation);
+    let context = bounded(context).await.unwrap();
+    assert_eq!(context.generation(), generation);
+    bounded(observe.wait()).await.unwrap();
+    bounded(take.wait()).await.unwrap();
+    assert!(!context.is_active());
+    bounded(control.shutdown()).await.unwrap();
+}

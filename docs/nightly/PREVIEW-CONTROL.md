@@ -75,3 +75,25 @@ now use the typed raw-dialog sidecar; other CDP fields retain strict rejection. 
 the native 30-minute idle retention and one-minute sweep require a separate
 lifetime consumer. Navigation commit/handoff tracking, complete viewer input
 mapping, popup adoption and full toolkit admission remain explicit gaps.
+
+### Callback admission receipt
+
+`runtime::RunContext` is created only by the actual scheduler when it admits a
+callback. It carries the admitted generation, action identifier, weak owner
+identity and a callback-lifetime fence. A context from another Control never
+admits a transport write. Takeover and close do not revoke a callback already
+entered into the native draining tail; finishing, callback cancellation or unwinding
+ends the receipt. Observers preserve their submission generation even if a
+handoff precedes the first Rust future poll.
+
+The focused private `preview_control_runtime` suite passes eleven cases,
+including owner binding, entered callback drainage through takeover/close,
+queued callback rejection, receipt expiration and observer admission timing.
+This proves the scheduler receipt, not production broker admission. The direct
+owner CDP lane still uses its original closed-tab gate. A future admitted
+transport consumer must validate this receipt against its captured Control,
+retain target/session ownership independently, and drain the entered callback
+before declaring its worker closed. It must also repeat reference invalidation
+in the native operation finally path after a handoff. Metadata-only broker
+timeouts must not retire an otherwise valid host; that separate transport
+policy remains an activation prerequisite.
