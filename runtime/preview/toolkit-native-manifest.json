@@ -1,0 +1,29 @@
+{
+  "revision": "83a3674ffd84ffb33de768210c806cb1ac53fd80",
+  "files": {
+    "LICENSE": "935d8f2af0c703f9c39517ee57cc4930b19d02d533be930b63f0e82f93614b43",
+    "apps/server/src/mcp/McpInvocationContext.ts": "c0bf05105036c1e05a872219a2e548d05ba4ae1b7fc79bde581dd5dec63782f0",
+    "apps/server/src/mcp/McpToolAccess.ts": "17a5a70ffa74153911e3092c4358a6e6d3dd3703d78512914434850df1250df1",
+    "apps/server/src/mcp/threadAccess.ts": "a8e9d2ca932736b4826ae3b9166937dc7e57f2cab50c3c807b5db6da415a577a",
+    "apps/server/src/mcp/PreviewAutomationBroker.ts": "25207d4e247dcae0b84d352890956ba9c300a0f728d098ca921805306643cf86",
+    "apps/server/src/mcp/delegatedTaskModes.ts": "041447811a67bcf62c2af83c4165572dae6dc90af51cf7e039f72b52f82b8909",
+    "apps/server/src/mcp/toolkits/preview/tools.ts": "bfb5b9d6d87560e1dc3baeaae67eb21a78bc94507b94417d82c0472fe4718b9c",
+    "apps/server/src/mcp/toolkits/preview/handlers.ts": "72f759f56dbb9ce70db1197a489930a1c78090d86462e775c4b5feee8beae31b",
+    "apps/server/src/attachmentStore.ts": "61957d2009ea4374e670b4a2f877ea27a5f56c828119dd35da7070bfe7a0adbe",
+    "apps/server/src/attachmentPaths.ts": "64711380def8de87f612b44388be65ac86b3658082300e0cff2b673ecad7bea1",
+    "apps/server/src/imageMime.ts": "2a10a9a3dc5f80561332e1f05e5f105cf381257435eb2a895806cab37e4f7160",
+    "packages/shared/src/threadLinks.ts": "df6f710445a0f09515ee60e9c679b670de07e756f7784218262a80513997d237",
+    "packages/shared/src/connectAuth.ts": "287baca5ab6ca54e9dac18fb357e66a41d5031f795d925fa0033a35f4be985a6",
+    "packages/shared/src/remote.ts": "de815ac7f3e17e217d4ca6345d9d0715892d669a660a3707dcd1b99c75f4fdfb",
+    "packages/shared/src/orchestrationV2PendingBackgroundWork.ts": "e4275660f29810c8e819de34b0d5ae6fc10be9829013772932ac40ea6b642d15",
+    "packages/shared/src/t3McpToolPresentation.ts": "3215e846e75e9d095a858cc5b1dc70bbd097e82531ba8445f0ec387d0ed21eee",
+    "apps/server/src/orchestration-v2/ProjectionStore.ts": "a5295e7d9f0aa9db402d4992e852eb4f75fde1c44a048eb3ca90c142d2af07dd",
+    "apps/server/src/orchestration-v2/threadHistoryPaging.ts": "b496c00c3f9816f1472b464f976e0ec4936bc51ce3fdd6119be349a5a8a75473",
+    "packages/shared/src/orchestrationV2Timeline.ts": "2eecea399b817ed50296ec141244c21995b85e9023aa54eecf270b5cf8c8a49b",
+    "packages/shared/src/mcpApp.ts": "571def390605d33cd4b16d0faebd083cabb4905978e2601c7c6ee9df5e67f604",
+    "apps/server/src/sourceControl/threadPullRequests.ts": "5178678360a09404f552a7fc31e2edee6020797645a87811235acdae1f557d26",
+    "packages/source-control-core/src/shared/threadPullRequests.ts": "a59ec59de6ea0ea21bca91e69802659c9c1ee77f8e90d102e095fa7dc0bec81c",
+    "packages/shared/src/threadPullRequests.ts": "a894c17a83ecd3762e9e8ade439373128efd2da9e9898869d14b0a5d164482b7",
+    "packages/shared/src/orchestrationV2ThreadError.ts": "69acc204f0c4c0cf6377ab253d417de3ed90636f97a531918099b205c451b943"
+  }
+}

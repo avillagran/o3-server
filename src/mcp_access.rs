@@ -137,6 +137,12 @@ impl Authority {
         }
         Ok(p)
     }
+    pub(crate) fn native_caller(&self, db: &Connection, write: bool) -> Result<Value, Value> {
+        self.native
+            .as_ref()
+            .ok_or_else(|| failure("capability_denied", "Native caller required."))?
+            .caller(db, write)
+    }
     pub(crate) fn browser_admission(&self, state: &State, write: bool) -> Result<(), Value> {
         let scope = self
             .native

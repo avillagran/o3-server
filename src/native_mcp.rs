@@ -42,6 +42,7 @@ pub(crate) struct Scope {
     pub thread: String,
     pub instance: String,
     generation: String,
+    issued_at: i64,
     state: Weak<State>,
     revoked: AtomicBool,
     revocation: tokio::sync::watch::Sender<bool>,
@@ -55,6 +56,9 @@ impl Drop for Context {
     }
 }
 impl Context {
+    pub(crate) fn issued_at(&self) -> i64 {
+        self.scope.issued_at
+    }
     pub(crate) fn page_authority(&self) -> (Weak<State>, crate::mcp_access::Authority) {
         (
             self.scope.state.clone(),
@@ -251,6 +255,7 @@ impl Registry {
             thread: thread.into(),
             instance: instance.into(),
             generation,
+            issued_at: now_ms(),
             state: Arc::downgrade(state),
             revoked: AtomicBool::new(false),
             revocation: tokio::sync::watch::channel(false).0,
