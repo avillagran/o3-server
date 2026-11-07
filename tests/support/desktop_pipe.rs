@@ -56,6 +56,7 @@ pub async fn install(
                     if command["type"] != "cdp" { continue; }
                     let packet: Value = serde_json::from_str(command["message"].as_str().unwrap()).unwrap();
                     let result = match packet["method"].as_str().unwrap() {
+                        "Browser.getVersion" => json!({"userAgent":"Mozilla/5.0 (X11; Linux x86_64) Chrome/144.0.0.0"}),
                         "Target.getTargets" => json!({"targetInfos":[{"type":"page","targetId":"owned-page"}]}),
                         "Target.attachToTarget" => json!({"sessionId":"owned-session"}),
                         "Page.getFrameTree" => json!({"frameTree":{"frame":{"id":"main"}}}),

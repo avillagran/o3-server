@@ -2,6 +2,37 @@ mod common;
 mod support;
 use serde_json::json;
 static BROWSER_ENVIRONMENT: std::sync::Mutex<()> = std::sync::Mutex::new(());
+fn assert_native_keyboard_packets(packets: &[serde_json::Value]) {
+    let input = packets
+        .iter()
+        .filter(|packet| packet["method"] == "Input.dispatchKeyEvent")
+        .map(|packet| &packet["params"])
+        .collect::<Vec<_>>();
+    assert!(input.iter().any(|event| event["type"] == "rawKeyDown"
+        && event["code"] == "KeyV"
+        && event["key"] == "v"
+        && event["modifiers"] == 2
+        && event["text"] == ""));
+    assert!(
+        input
+            .iter()
+            .any(|event| event["code"] == "ControlLeft" && event["autoRepeat"] == true),
+        "failed chord preserves its already-pressed modifier"
+    );
+    assert!(input.iter().any(|event| event["type"] == "keyDown"
+        && event["code"] == "Digit1"
+        && event["text"] == "!"
+        && event["modifiers"] == 8));
+    assert!(input.iter().any(|event| event["type"] == "keyUp"
+        && event["code"] == "ControlLeft"
+        && event["modifiers"] == 0));
+    assert!(
+        input.iter().all(|event| event["key"]
+            .as_str()
+            .is_some_and(|key| !key.contains("Control+"))),
+        "a chord is never sent as a literal CDP key"
+    );
+}
 #[test]
 fn provider_mcp_uses_the_owned_desktop_without_a_local_browser() {
     let _browser_environment = BROWSER_ENVIRONMENT.lock().unwrap();
@@ -97,6 +128,14 @@ fn provider_mcp_uses_the_owned_desktop_without_a_local_browser() {
     assert!(!methods
         .iter()
         .any(|method| method == "Target.createTarget" || method == "Browser.close"));
+    let packets = messages
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|message| message["type"] == "cdp")
+        .map(|message| serde_json::from_str(message["message"].as_str().unwrap()).unwrap())
+        .collect::<Vec<_>>();
+    assert_native_keyboard_packets(&packets);
     client
         .rpc(
             "server.updateSettings",
@@ -336,6 +375,12 @@ fn native_sessions_reuse_mcp_credentials_enforce_modes_and_revoke_on_exit() {
                 let root = &plan.operations().last().unwrap().path;
                 assert!(root.starts_with(s.dir.join("browser-profiles")));
                 assert!(root.join("fixture.pid").is_file());
+                let packets = std::fs::read_to_string(root.join("commands.jsonl"))
+                    .unwrap()
+                    .lines()
+                    .map(|line| serde_json::from_str(line).unwrap())
+                    .collect::<Vec<_>>();
+                assert_native_keyboard_packets(&packets);
             }
         }
     }

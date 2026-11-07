@@ -69,6 +69,7 @@ pub(crate) struct Navigation {
 #[derive(Clone)]
 struct Tab {
     closing: bool,
+    keyboard: std::sync::Arc<std::sync::Mutex<crate::browser_keyboard::Keyboard>>,
     activity: std::sync::Arc<TabActivity>,
     control: Option<crate::preview_control::runtime::Control>,
     origin: Origin,
@@ -122,6 +123,28 @@ pub(crate) struct Page {
     tab: Tab,
 }
 impl Page {
+    pub(crate) async fn press(&self, chord: &str) -> Result<(), Value> {
+        let known = self.tab.keyboard.lock().unwrap().browser_mac.is_some();
+        if !known {
+            let version = self.command("Browser.getVersion", json!({})).await?;
+            let agent = version["userAgent"]
+                .as_str()
+                .ok_or_else(|| error("Browser platform is unavailable".into()))?;
+            self.tab.keyboard.lock().unwrap().browser_mac =
+                Some(crate::browser_keyboard::browser_mac(agent));
+        }
+        for (down, key) in crate::browser_keyboard::steps(chord) {
+            let params = self
+                .tab
+                .keyboard
+                .lock()
+                .unwrap()
+                .event(down, &key, cfg!(target_os = "macos"))
+                .map_err(error)?;
+            self.command("Input.dispatchKeyEvent", params).await?;
+        }
+        Ok(())
+    }
     pub(crate) fn key(&self) -> (&str, &str) {
         (&self.key.0, &self.key.1)
     }
@@ -436,6 +459,7 @@ async fn launch(
         }
     });
     Ok(Tab {
+        keyboard: Default::default(),
         closing: false,
         activity: Default::default(),
         control: None,
@@ -950,6 +974,7 @@ impl Browsers {
             owner.map(str::to_owned),
         ));
         browser.activity = Default::default();
+        browser.keyboard = Default::default();
         browser.closing = true;
         // A canceled setup retains a non-usable cleanup receipt, including before target discovery.
         self.tabs

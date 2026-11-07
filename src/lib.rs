@@ -207,6 +207,7 @@ pub mod cleanup;
 
 pub mod worktree_removal;
 
+mod browser_keyboard;
 mod browser_lifetime;
 #[cfg(test)]
 mod terminal_environment_oracle_tests;

@@ -27,6 +27,7 @@ async fn unconfirmed_profile_owner_survives_retry_and_caller_cancellation() {
     browser.tabs.lock().unwrap().insert(
         ("thread".into(), "tab".into()),
         Tab {
+            keyboard: Default::default(),
             closing: false,
             activity: Default::default(),
             control: None,
@@ -116,6 +117,7 @@ async fn process_acknowledgement_cannot_clear_a_profile_before_owned_observation
     browser.tabs.lock().unwrap().insert(
         ("thread".into(), "tab".into()),
         Tab {
+            keyboard: Default::default(),
             closing: false,
             activity: Default::default(),
             control: Some(control.clone()),

@@ -15,6 +15,7 @@ while True:
         v=json.loads(raw)
         with open(profile+'/commands.jsonl','a') as f:f.write(json.dumps(v)+'\n')
         result={}
+        if v['method']=='Browser.getVersion':result={'userAgent':'Mozilla/5.0 (X11; Linux x86_64) HeadlessChrome/144.0.0.0'}
         if v['method']=='Target.createTarget':
             sequence+=1
             result={'targetId':'fixture-target-'+str(sequence)}

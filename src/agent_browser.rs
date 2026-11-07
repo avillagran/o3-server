@@ -7,6 +7,28 @@ use std::sync::{
 };
 use tokio::sync::Mutex;
 
+fn press_chord(input: &Value) -> Result<String, Value> {
+    let key = input["key"]
+        .as_str()
+        .filter(|key| !key.is_empty() && crate::native_goal::trim(key) == *key)
+        .ok_or_else(|| json!({"message":"Expected a nonempty trimmed key"}))?;
+    let mut parts = match input.get("modifiers") {
+        None => vec![],
+        Some(Value::Array(values)) => values
+            .iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .filter(|value| matches!(*value, "Alt" | "Control" | "Meta" | "Shift"))
+                    .ok_or_else(|| json!({"message":"Invalid key modifier"}))
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+        Some(_) => return Err(json!({"message":"Expected key modifiers array"})),
+    };
+    parts.push(key);
+    Ok(parts.join("+"))
+}
+
 pub(crate) struct BrowserOutput {
     pub value: Value,
     pub text_override: Option<String>,
@@ -129,6 +151,13 @@ pub(crate) fn tools() -> Vec<Value> {
             open["inputSchema"]["properties"][flag] = json!({"type":"boolean"});
         }
     }
+    if let Some(press) = tools
+        .iter_mut()
+        .find(|tool| tool["name"] == "preview_press")
+    {
+        press["inputSchema"]["properties"]["modifiers"] = json!({"type":"array","items":{"type":"string","enum":["Alt","Control","Meta","Shift"]}});
+        press["inputSchema"]["required"] = json!(["key"]);
+    }
     let native: Value = serde_json::from_str(include_str!(
         "../tests/fixtures/native-preview-dialog-tool-4288.json"
     ))
@@ -231,6 +260,9 @@ impl Scope {
     ) -> Result<BrowserOutput, Value> {
         if !p.is_object() {
             return Err(json!({"message":"Expected browser input object"}));
+        }
+        if name == "preview_press" {
+            press_chord(p)?;
         }
         let state = self
             .state
@@ -525,11 +557,7 @@ impl Scope {
                 preview::call_page(state, "preview.resize", &args, page).await
             }
             "preview_press" => {
-                let key = p["key"].as_str().unwrap_or("Enter");
-                for event in ["keyDown", "keyUp"] {
-                    page.command("Input.dispatchKeyEvent", json!({"type":event,"key":key}))
-                        .await?;
-                }
+                page.press(&press_chord(p)?).await?;
                 Ok(json!({"success":true}))
             }
             "preview_evaluate" | "preview_snapshot" | "preview_click" | "preview_type" => {

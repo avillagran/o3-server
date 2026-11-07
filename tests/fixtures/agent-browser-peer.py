@@ -141,6 +141,14 @@ def check(text):
     assert value['networkEntries']==[],value
     assert value['title']=='Owned fixture',value
     assert not tool('preview_status',{})['isError']
+    # These are trusted input events through the real admitted actor, not a literal key name.
+    assert tool('preview_press',{})['isError']
+    assert tool('preview_press',{'key':' v '})['isError']
+    assert tool('preview_press',{'key':'v','modifiers':['ControlOrMeta']})['isError']
+    assert tool('preview_press',{'key':'Control+NoSuchKey'})['isError']
+    assert not tool('preview_press',{'key':'Control+v'})['isError']
+    assert not tool('preview_press',{'key':'c','modifiers':['Control']})['isError']
+    assert not tool('preview_press',{'key':'Shift+Digit1'})['isError']
 for line in sys.stdin:
     f=json.loads(line)
     if claude:

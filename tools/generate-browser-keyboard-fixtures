@@ -1,0 +1,25 @@
+#!/usr/bin/env python3
+"""Run the lock-verified keyboard reference inside private rootless Podman."""
+import argparse, json, os, pathlib, subprocess, tempfile
+p = argparse.ArgumentParser(description=__doc__)
+p.add_argument('--artifact', type=pathlib.Path, required=True)
+p.add_argument('--node', type=pathlib.Path, required=True)
+p.add_argument('--evidence-root', type=pathlib.Path, required=True)
+p.add_argument('--image', default='localhost/o3-rust-tests:latest')
+a = p.parse_args()
+if subprocess.check_output(['podman','--remote=false','info','--format','{{.Host.Security.Rootless}}'],text=True).strip() != 'true':
+    raise SystemExit('Rootless Podman required')
+a.evidence_root.mkdir(parents=True,exist_ok=True)
+out = pathlib.Path(tempfile.mkdtemp(prefix='keyboard-',dir=a.evidence_root)); out.chmod(0o700)
+script = pathlib.Path(__file__).with_suffix('.mjs')
+cmd = ['podman','--remote=false','run','--rm','--pull=never','--http-proxy=false','--userns=keep-id','--user',f'{os.getuid()}:{os.getgid()}',
+       '--network=none','--read-only','--cap-drop=all','--security-opt=no-new-privileges','--pids-limit=128','--memory=1g',
+       '--tmpfs','/tmp:rw,size=256m,mode=1777','--env','HOME=/tmp/private']
+for source,target,mode in [(pathlib.Path('/usr'),'/usr','ro'),(a.node,'/node','ro'),(a.artifact,'/artifact','ro'),(script,'/generator.mjs','ro'),(out,'/output','rw')]:
+    cmd += ['-v',f'{source.resolve()}:{target}:{mode}']
+cmd += [a.image,'/node/bin/node','/generator.mjs','/artifact','/output']
+result = subprocess.run(cmd,capture_output=True,text=True,timeout=90)
+(out/'output.log').write_text(result.stdout+result.stderr)
+(out/'result.json').write_text(json.dumps({'exit':result.returncode,'rootless':True,'network':'none','retained':str(out)},indent=2)+'\n')
+print(out)
+raise SystemExit(result.returncode)

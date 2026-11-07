@@ -57,6 +57,41 @@ async fn wait(mut ready: impl FnMut() -> bool) {
     .unwrap();
 }
 #[tokio::test]
+async fn native_keyboard_modifiers_are_per_page_even_when_a_process_is_shared() {
+    let (state, _) = state();
+    let one = open(&state, "thread", Some("one"), "default").await;
+    let two = open(&state, "thread", Some("two"), "default").await;
+    assert!(one.press("Control+NoSuchKey").await.is_err());
+    two.press("v").await.unwrap();
+    one.press("v").await.unwrap();
+    one.press("Control").await.unwrap();
+    crate::preview::shutdown(&state).await;
+    let profiles = std::fs::read_dir(state.dir.join("browser-profiles"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect::<Vec<_>>();
+    assert_eq!(profiles.len(), 1, "the fixture process is shared");
+    let commands = std::fs::read_to_string(profiles[0].join("commands.jsonl"))
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    let key_v = commands
+        .iter()
+        .filter(|command| {
+            command["method"] == "Input.dispatchKeyEvent"
+                && command["params"]["code"] == "KeyV"
+                && command["params"]["type"] != "keyUp"
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(key_v.len(), 2);
+    assert_eq!(key_v[0]["params"]["text"], "v");
+    assert_eq!(key_v[0]["params"]["modifiers"], 0);
+    assert_eq!(key_v[1]["params"]["text"], "");
+    assert_eq!(key_v[1]["params"]["modifiers"], 2);
+    assert_ne!(key_v[0]["sessionId"], key_v[1]["sessionId"]);
+}
+#[tokio::test]
 async fn rejected_agent_open_does_not_sweep_an_idle_tab() {
     let (state, _) = state();
     let page = open(&state, "thread", Some("agent"), "agent:invalid-url").await;
