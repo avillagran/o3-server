@@ -27,6 +27,7 @@ pub const STANDARD_SCOPES: [&str; 16] = [
 ];
 
 pub struct State {
+    pub(crate) speech: crate::speech_state::Registry,
     pub(crate) shutting_down: std::sync::atomic::AtomicBool,
     pub agent_scopes: std::sync::Arc<crate::agent_scope::Registry>,
     pub(crate) forge: crate::forge::GitHub,
@@ -226,6 +227,7 @@ impl State {
         streams.terminals.set_agent_scopes(agent_scopes.clone());
         streams.terminals.restore(&dir.join("terminal-history"))?;
         let state = Self {
+            speech: Default::default(),
             shutting_down: Default::default(),
             agent_scopes,
             forge: Default::default(),
@@ -612,6 +614,16 @@ impl State {
             &self.signing_key,
         ))
     }
+    pub(crate) fn current_session(&self, session: &Value) -> Option<Value> {
+        if self
+            .shutting_down
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            return None;
+        }
+        self.live(session.clone(), now_ms())
+            .filter(|session| session["sub"] != "mcp-client")
+    }
     pub fn session_live(&self, session: &Value) -> bool {
         self.live(session.clone(), now_ms()).is_some()
     }
@@ -626,6 +638,8 @@ impl State {
         self.shutting_down
             .store(true, std::sync::atomic::Ordering::Release);
         self.notify();
+        drop(_db);
+        self.speech.signal_shutdown();
     }
 
     pub fn notify(&self) {

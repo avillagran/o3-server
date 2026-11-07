@@ -57,7 +57,7 @@ fn unauthorized() -> Reply {
     json_reply(StatusCode::UNAUTHORIZED, json!({ "_tag":"EnvironmentAuthInvalidError", "code": "auth_invalid", "reason": "invalid_credential", "traceId":crate::store::random_id().unwrap_or_default() }).to_string())
 }
 
-fn bearer(request: &Request<Incoming>) -> Option<&str> {
+pub(crate) fn bearer(request: &Request<Incoming>) -> Option<&str> {
     request
         .headers()
         .get(header::AUTHORIZATION)?
@@ -227,6 +227,9 @@ fn upgrade(state: Arc<State>, session: Value, mut request: Request<Incoming>) ->
 
 async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Reply, Infallible> {
     let path = request.uri().path().to_owned();
+    if crate::speech_http::matches(&path) {
+        return Ok(Box::pin(crate::speech_http::handle(state, request)).await);
+    }
     Ok(match (request.method().clone(), path.as_str()) {
         (_, "/mcp") => crate::mcp::handle(state, request).await,
         (Method::GET, "/.well-known/t3/environment") => json_reply(

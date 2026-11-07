@@ -52,6 +52,39 @@ pub struct NodeRuntime {
     file: SealedFile,
 }
 impl NodeRuntime {
+    /// Reuse only an exclusive, private, read-only snapshot with the admitted
+    /// digest. An unknown/partial destination is retained and never overwritten.
+    pub fn capture_or_reuse(file: SealedFile, destination: &Path) -> io::Result<Arc<Self>> {
+        let receipt = file.receipt();
+        match std::fs::symlink_metadata(destination) {
+            Err(cause) if cause.kind() == io::ErrorKind::NotFound => {
+                Self::capture(file, destination)
+            }
+            Err(cause) => Err(cause),
+            Ok(_) => {
+                let _parent = seal::directory(
+                    destination
+                        .parent()
+                        .ok_or_else(|| io::Error::other("Missing private Node parent"))?,
+                )?;
+                let snapshot = SealedFile::admit(
+                    destination,
+                    receipt["sha256"].as_str().unwrap(),
+                    receipt["bytes"]
+                        .as_str()
+                        .unwrap()
+                        .parse()
+                        .map_err(io::Error::other)?,
+                )?;
+                if !snapshot.is_private_immutable_executable()? {
+                    return Err(io::Error::other(
+                        "Node snapshot is not private and immutable",
+                    ));
+                }
+                Ok(Arc::new(Self { file: snapshot }))
+            }
+        }
+    }
     pub fn capture(file: SealedFile, destination: &Path) -> io::Result<Arc<Self>> {
         if !file.is_executable()? {
             return Err(io::Error::other("Invalid Node executable"));

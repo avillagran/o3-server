@@ -25,10 +25,13 @@ pub mod rpc;
 mod rpc_input;
 pub mod shared_readiness;
 pub mod speech_catalog;
+mod speech_http;
 pub mod speech_kernel;
 pub mod speech_model_store;
 pub mod speech_request;
+pub mod speech_runtime;
 pub mod speech_service;
+pub mod speech_state;
 pub mod speech_worker;
 pub mod store;
 #[cfg(test)]

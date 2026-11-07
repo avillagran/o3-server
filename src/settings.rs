@@ -3,7 +3,7 @@ use crate::store::State;
 use serde_json::{json, Value};
 pub const SENTINEL: &str = "••••••";
 pub fn descriptor(s: &State) -> Value {
-    json!({"environmentId":s.environment_id,"label":s.label,"platform":{"os":std::env::consts::OS,"arch":match std::env::consts::ARCH {"x86_64"=>"x64","aarch64"=>"arm64",_=>"other"}},"serverVersion":crate::rpc::SERVER_VERSION,"orchestrationProtocolVersion":2,"capabilities":{"serverBrowser":s.streams.p2.preview.desktop_available() || crate::server_browser::executable().is_some(),"agentBrowserAccess":crate::agent_browser::enabled(s, ""),"devices":crate::device::available_for(s),"repositoryIdentity":true,"threadSettlement":true,"threadSnooze":true,"threadPinning":true,"threadAutoSettleOptOut":true,"threadTitleRegeneration":true,"attachmentUploads":true,"fileAttachments":{"maxUploadBytes":52428800},"inlineMessageContext":true,"pullRequests":crate::executable::resolve(std::path::Path::new("gh")).is_some(),"pullRequestChecks":true,"threadAutoSettlement":true,"storageCleanup":true,"storageCleanupRun":true,"projectWorktreeCleanup":true,"worktreesDirectory":true,"projectSettingsOverrides":true,"environmentThemes":true,"usageLimitSources":true,"threadPinReorder":true,"threadActiveReorder":true,"threadVisitedTracking":true,"threadPullRequestLinking":true,"threadPullRequests":true,"threadPullRequestWatch":true,"pullRequestStackActions":true,"otlpEndpointCheck":true,"commandOutputStreaming":true,"freshContext":true,"scheduledTaskThreadModes":true}})
+    json!({"environmentId":s.environment_id,"label":s.label,"platform":{"os":std::env::consts::OS,"arch":match std::env::consts::ARCH {"x86_64"=>"x64","aarch64"=>"arm64",_=>"other"}},"serverVersion":crate::rpc::SERVER_VERSION,"orchestrationProtocolVersion":2,"capabilities":{"voiceTranscription":crate::speech_state::available(s),"serverBrowser":s.streams.p2.preview.desktop_available() || crate::server_browser::executable().is_some(),"agentBrowserAccess":crate::agent_browser::enabled(s, ""),"devices":crate::device::available_for(s),"repositoryIdentity":true,"threadSettlement":true,"threadSnooze":true,"threadPinning":true,"threadAutoSettleOptOut":true,"threadTitleRegeneration":true,"attachmentUploads":true,"fileAttachments":{"maxUploadBytes":52428800},"inlineMessageContext":true,"pullRequests":crate::executable::resolve(std::path::Path::new("gh")).is_some(),"pullRequestChecks":true,"threadAutoSettlement":true,"storageCleanup":true,"storageCleanupRun":true,"projectWorktreeCleanup":true,"worktreesDirectory":true,"projectSettingsOverrides":true,"environmentThemes":true,"usageLimitSources":true,"threadPinReorder":true,"threadActiveReorder":true,"threadVisitedTracking":true,"threadPullRequestLinking":true,"threadPullRequests":true,"threadPullRequestWatch":true,"pullRequestStackActions":true,"otlpEndpointCheck":true,"commandOutputStreaming":true,"freshContext":true,"scheduledTaskThreadModes":true}})
 }
 pub fn auth_descriptor() -> Value {
     json!({"policy":"loopback-browser","bootstrapMethods":["pairing-token"],"sessionMethods":["bearer-access-token"],"sessionCookieName":"t3code_session"})
@@ -306,11 +306,11 @@ pub fn get(s: &State) -> Result<Value, String> {
     Ok(v)
 }
 pub fn update(s: &State, p: &Value) -> Result<Value, String> {
-    update_inner(s, p, &mut None)
+    update_inner(s, p, &mut None, None)
 }
 pub(crate) fn update_rpc(s: &State, p: &Value) -> Result<Value, Value> {
     let mut policy_error = None;
-    update_inner(s, p, &mut policy_error).map_err(|message| {
+    update_inner(s, p, &mut policy_error, None).map_err(|message| {
         let mut error =
             policy_error.unwrap_or_else(|| json!({"operation":"write","message":message}));
         error["_tag"] = json!("ServerSettingsError");
@@ -318,11 +318,28 @@ pub(crate) fn update_rpc(s: &State, p: &Value) -> Result<Value, Value> {
         error
     })
 }
-fn update_inner(s: &State, p: &Value, policy_error: &mut Option<Value>) -> Result<Value, String> {
+/// Recheck a caller's authority under the existing writer lock, before any
+/// settings, private-secret or provider side effect. Typed denial stays with the caller.
+pub(crate) fn update_checked(
+    s: &State,
+    p: &Value,
+    check: &mut dyn FnMut() -> Result<(), String>,
+) -> Result<Value, String> {
+    update_inner(s, p, &mut None, Some(check))
+}
+fn update_inner(
+    s: &State,
+    p: &Value,
+    policy_error: &mut Option<Value>,
+    check: Option<&mut dyn FnMut() -> Result<(), String>>,
+) -> Result<Value, String> {
     // Never acquire the provider pointer mutex while holding the settings lock:
     // provider inspection takes the shared settings snapshot lock itself.
     let provider = s.provider.lock().unwrap().clone();
     let _guard = s.settings_lock.lock().unwrap();
+    if let Some(check) = check {
+        check()?;
+    }
     let patch = p
         .get("patch")
         .filter(|v| v.is_object())

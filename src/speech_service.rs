@@ -13,6 +13,7 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+pub(crate) use stream::Pending;
 pub use stream::Stream;
 use tokio::sync::watch;
 pub type Task<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -996,6 +997,9 @@ impl Inner {
 }
 impl Service {
     /// Marks closing before awaiting any operation. No fresh work can resurrect a model.
+    pub(crate) fn begin_shutdown(&self) {
+        self.inner.begin_shutdown();
+    }
     pub async fn shutdown(&self) -> Result<(), Error> {
         let inner = self.inner.clone();
         inner.begin_shutdown();

@@ -291,7 +291,7 @@ fn valid_range(value: &str, offset: u64, size: u64) -> bool {
             && parts[3].parse::<u64>().ok() == Some(size)
     })
 }
-fn js_number(value: &str) -> f64 {
+pub(crate) fn js_number(value: &str) -> f64 {
     let value = crate::native_goal::trim(value);
     if value.is_empty() {
         return 0.0;

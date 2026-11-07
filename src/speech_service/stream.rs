@@ -86,11 +86,24 @@ impl Stream {
 fn not_ready() -> Error {
     operation_error("streaming transcription", "Speech stream is not ready.")
 }
-struct Opening {
+pub(crate) struct Pending {
     cancel: watch::Sender<bool>,
+    result: oneshot::Receiver<Result<Stream, Error>>,
     armed: bool,
 }
-impl Drop for Opening {
+impl Pending {
+    pub(crate) fn cancel(&self) {
+        self.cancel.send_replace(true);
+    }
+    pub(crate) async fn ready(&mut self) -> Result<Stream, Error> {
+        let result = (&mut self.result)
+            .await
+            .map_err(|_| Error::CleanupUnknown)?;
+        self.armed = false;
+        result
+    }
+}
+impl Drop for Pending {
     fn drop(&mut self) {
         if self.armed {
             self.cancel.send_replace(true);
@@ -302,6 +315,14 @@ impl Call {
         &self,
         options: crate::speech_request::TranscriptionOptions,
     ) -> Result<Stream, Error> {
+        self.opening_stream(options)?.ready().await
+    }
+    pub(crate) fn opening_stream(
+        &self,
+        options: crate::speech_request::TranscriptionOptions,
+    ) -> Result<Pending, Error> {
+        let runtime = tokio::runtime::Handle::try_current()
+            .map_err(|cause| operation_error("streaming transcription", cause))?;
         self.supported()?;
         let inner = self.service.inner.clone();
         let mut permit = inner.reserve("streaming transcription")?;
@@ -312,76 +333,84 @@ impl Call {
             state.active_cancel = Some(cancel.clone());
             permit.transcribing = true;
         }
-        let mut opening = Opening {
-            cancel: cancel.clone(),
-            armed: true,
+        let pending_cancel = cancel.clone();
+        let call = Call {
+            service: self.service.clone(),
+            settings: self.settings.clone(),
         };
-        let snapshot = self.snapshot("streaming transcription").await?;
-        let model = speech_catalog::selected(&snapshot.model_id);
-        let result = owned(async move {
-            let path = inner.installed_model_path(model).await?;
-            let loaded = inner
-                .load_cached_at(model, &snapshot.acceleration, stop.clone(), &path)
-                .await?;
-            let mut session = Session {
-                inner: inner.clone(),
-                _permit: permit,
-                model,
-                path,
-                settings: snapshot,
-                options,
-                loaded,
-                stop,
-                vad: None,
-                received: vec![],
-                byte_length: 0,
-                retried: false,
-                started: false,
-                finished: false,
-                revision_base: 0,
-                last_revision: 0,
-            };
-            let needs_vad = session.options.as_value()["speechSilenceFiltering"] == true
-                || !(session.loaded.metadata["supportsStreaming"] == true
-                    || session.loaded.metadata["supportsLongForm"] == true);
-            let setup = async {
-                if needs_vad {
-                    if let Some(path) = inner
-                        .silence
-                        .acquire(silence::Purpose::Recording, session.stop.clone())
-                        .await
-                        .map_err(|cause| operation_error("streaming transcription", cause))?
-                    {
-                        session.vad = Some(path);
+        let (reply, result) = oneshot::channel();
+        runtime.spawn(async move {
+            let result = async move {
+                let snapshot = call.snapshot("streaming transcription").await?;
+                let model = speech_catalog::selected(&snapshot.model_id);
+                let path = inner.installed_model_path(model).await?;
+                let loaded = inner
+                    .load_cached_at(model, &snapshot.acceleration, stop.clone(), &path)
+                    .await?;
+                let mut session = Session {
+                    inner: inner.clone(),
+                    _permit: permit,
+                    model,
+                    path,
+                    settings: snapshot,
+                    options,
+                    loaded,
+                    stop,
+                    vad: None,
+                    received: vec![],
+                    byte_length: 0,
+                    retried: false,
+                    started: false,
+                    finished: false,
+                    revision_base: 0,
+                    last_revision: 0,
+                };
+                let needs_vad = session.options.as_value()["speechSilenceFiltering"] == true
+                    || !(session.loaded.metadata["supportsStreaming"] == true
+                        || session.loaded.metadata["supportsLongForm"] == true);
+                let setup = async {
+                    if needs_vad {
+                        if let Some(path) = inner
+                            .silence
+                            .acquire(silence::Purpose::Recording, session.stop.clone())
+                            .await
+                            .map_err(|cause| operation_error("streaming transcription", cause))?
+                        {
+                            session.vad = Some(path);
+                        }
                     }
+                    if let Err(cause) = session.begin().await {
+                        session.recover(cause).await?;
+                    }
+                    Ok::<_, Error>(())
                 }
-                if let Err(cause) = session.begin().await {
-                    session.recover(cause).await?;
+                .await;
+                if let Err(cause) = setup {
+                    inner.dispose().await?;
+                    return Err(cause);
                 }
-                Ok::<_, Error>(())
+                let (commands, receiver) = mpsc::channel(1);
+                let (done, completion) = watch::channel(None);
+                let shared = Arc::new(Shared {
+                    commands,
+                    busy: AtomicBool::new(false),
+                    stop: cancel.clone(),
+                    done: completion,
+                });
+                let stream = Stream {
+                    shared,
+                    _lease: Arc::new(Lease(cancel)),
+                };
+                tokio::spawn(session.run(receiver, done));
+                Ok(stream)
             }
             .await;
-            if let Err(cause) = setup {
-                inner.dispose().await?;
-                return Err(cause);
-            }
-            let (commands, receiver) = mpsc::channel(1);
-            let (done, completion) = watch::channel(None);
-            let shared = Arc::new(Shared {
-                commands,
-                busy: AtomicBool::new(false),
-                stop: cancel.clone(),
-                done: completion,
-            });
-            let stream = Stream {
-                shared,
-                _lease: Arc::new(Lease(cancel)),
-            };
-            tokio::spawn(session.run(receiver, done));
-            Ok(stream)
+            let _ = reply.send(result);
+        });
+        Ok(Pending {
+            cancel: pending_cancel,
+            result,
+            armed: true,
         })
-        .await;
-        opening.armed = false;
-        result
     }
 }

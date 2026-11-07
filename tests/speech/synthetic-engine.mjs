@@ -31,7 +31,7 @@ export const TranscribeModel={load:async(model,placement)=>{
  createSession:()=>({dispose(){record({kind:'session-dispose'});},stream:async options=>{
   let step=0;const text={full:'',committed:'',tentative:''};
   return {text,feed:async pcm=>{
-   if(mode==='stream-hang'){fs.writeFileSync(path.join(process.env.HOME,'entered.staging'),String(process.pid));fs.renameSync(path.join(process.env.HOME,'entered.staging'),path.join(process.env.HOME,'entered'));while(true){}}
+   if(mode==='stream-hang'){record({kind:'stream-feed-entered'});fs.writeFileSync(path.join(process.env.HOME,'entered.staging'),String(process.pid));fs.renameSync(path.join(process.env.HOME,'entered.staging'),path.join(process.env.HOME,'entered'));while(true){}}
    if(mode==='gpu-stream'){record({kind:'feed',backend:placement.backend,length:pcm.length});if(placement.backend!=='cpu'&&step===1)throw Error('Synthetic native stream feed failed');step++;text.full=text.committed='oh three '+step;text.tentative='um';return {committedChanged:true,tentativeChanged:true};}
    text.full=text.committed=options.language+':'+pcm[0];record({kind:'feed',language:options.language});return {committedChanged:true,tentativeChanged:false};},finalize:async()=>{if(mode==='gpu-stream')text.full='um oh three';},reset(){record({kind:'stream-reset'});}};
  }})};

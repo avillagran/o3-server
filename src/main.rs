@@ -22,6 +22,10 @@ Commands:
   shared-profile-readiness  Inspect legacy webhook handover without changing the profile
   --version                 Print the version
 
+Local speech startup (optional, no PATH discovery):
+  --speech-node PATH        Exact admitted Node 26.13.0 executable
+  --speech-bundle DIR       Installed pinned engine bundle (contains graph/)
+
 The profile comes from T3CODE_HOME (default ~/.t3).
 ";
 fn option<'a>(a: &'a [String], name: &str) -> Option<&'a str> {
@@ -117,6 +121,11 @@ fn main() -> std::io::Result<()> {
     let is_serving = args
         .first()
         .is_none_or(|arg| matches!(arg.as_str(), "serve" | "start") || arg.starts_with('-'));
+    let speech_config = if is_serving {
+        o3_server::speech_runtime::Config::from_args(&args).map_err(std::io::Error::other)?
+    } else {
+        None
+    };
     let mut startup = if is_serving {
         Some(
             tokio::runtime::Builder::new_current_thread()
@@ -407,6 +416,11 @@ fn main() -> std::io::Result<()> {
                 }
             };
             let state = Arc::new(state);
+            if let Some(config)=speech_config {
+                if let Err(cause)=o3_server::speech_runtime::install(state.clone(),config).await {
+                    o3_server::desktop_startup::log_stderr(format_args!("Local speech runtime not admitted: {cause}"))?;
+                }
+            }
             let desktop_driver = if let Some(descriptors) = startup.as_mut().and_then(|startup| startup.browser.take()) {
                 Some(o3_server::preview::install_desktop(state.clone(), descriptors.into_channel()?).await)
             } else { None };
@@ -484,12 +498,13 @@ fn main() -> std::io::Result<()> {
             }
             probe_task.abort();
             let _ = probe_task.await;
+            let speech_cleanup=o3_server::speech_state::shutdown(&state).await;
             o3_server::preview::shutdown(&state).await;
             if let Some(driver) = desktop_driver { driver.shutdown().await; }
             codex.shutdown().await;
             if let Some(exporter) = exporter {
                 exporter.finish();
             }
-            result
+            if speech_cleanup.is_err() && result.is_ok() {Err(std::io::Error::other("Owned speech cleanup remains unknown"))}else{result}
         })
 }

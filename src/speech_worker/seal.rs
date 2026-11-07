@@ -147,6 +147,13 @@ impl SealedFile {
     pub fn path(&self) -> &Path {
         &self.path
     }
+    pub(super) fn is_private_immutable_executable(&self) -> io::Result<bool> {
+        let info = self.lease.metadata()?;
+        Ok(info.uid() == unsafe { libc::geteuid() }
+            && info.nlink() == 1
+            && info.mode() & 0o222 == 0
+            && self.is_executable()?)
+    }
     pub fn is_executable(&self) -> io::Result<bool> {
         let mode = self.lease.metadata()?.mode();
         Ok(mode & 0o111 != 0 && mode & 0o6000 == 0)

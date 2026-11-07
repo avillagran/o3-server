@@ -711,3 +711,42 @@ fn startup_cancellation_fences_before_hello_and_prevents_pre_cancelled_spawn() {
         assert_native_exited(exit).await;
     });
 }
+
+#[test]
+fn immutable_node_cache_reuses_only_the_exact_exclusive_owned_file() {
+    use std::os::unix::fs::{symlink, MetadataExt, PermissionsExt};
+    sandbox::assert_isolated();
+    let directory = root();
+    let source = directory.join("admitted-input");
+    fs::write(&source, b"private executable fixture; never executed").unwrap();
+    fs::set_permissions(&source, fs::Permissions::from_mode(0o500)).unwrap();
+    let destination = directory.join("cached-node");
+    let first = NodeRuntime::capture_or_reuse(seal(&source), &destination).unwrap();
+    let identity = fs::metadata(&destination).unwrap();
+    let second = NodeRuntime::capture_or_reuse(seal(&source), &destination).unwrap();
+    assert_eq!(identity.ino(), fs::metadata(&destination).unwrap().ino());
+    drop((first, second));
+    for kind in ["different", "writable", "hardlink", "symlink"] {
+        let candidate = directory.join(kind);
+        match kind {
+            "different" => {
+                fs::write(&candidate, b"unrelated retained fixture").unwrap();
+                fs::set_permissions(&candidate, fs::Permissions::from_mode(0o500)).unwrap();
+            }
+            "writable" => {
+                fs::copy(&source, &candidate).unwrap();
+                fs::set_permissions(&candidate, fs::Permissions::from_mode(0o700)).unwrap();
+            }
+            "hardlink" => fs::hard_link(&destination, &candidate).unwrap(),
+            "symlink" => symlink(&source, &candidate).unwrap(),
+            _ => unreachable!(),
+        }
+        let before = fs::read(&candidate).unwrap();
+        assert!(NodeRuntime::capture_or_reuse(seal(&source), &candidate).is_err());
+        assert_eq!(fs::read(&candidate).unwrap(), before);
+    }
+    assert_eq!(
+        fs::read(&source).unwrap(),
+        b"private executable fixture; never executed"
+    );
+}
