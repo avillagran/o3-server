@@ -161,6 +161,7 @@ mod source_control;
 
 mod limits;
 
+mod cdp_dialog_json;
 pub mod usage_rates;
 mod utf16_json;
 

@@ -23,15 +23,23 @@ does not provide general lone-surrogate support for CDP replies, object keys,
 URLs, GUI text, structured MCP content or arbitrary event fields.
 
 The oracle executes native JavaScript `JSON.parse`, `JSON.stringify`, UTF-16
-`charCodeAt` and `toWellFormed`, rather than a second custom decoder. Its140
+`charCodeAt` and `toWellFormed`, rather than a second custom decoder. Its 140
 observations include control characters, escaped backslashes, valid pairs,
 isolated high and low surrogates, duplicate fields and replacement of a string
 by a non-string. Separate malformed JSON and non-dialog cases preserve the
 existing rejection behavior. Tests allocate only in memory and execute through
 the private rootless container runner.
 
-This leaf is not registered in `lib.rs` and is not yet a live transport change.
-Integration must carry the sidecar from both the inherited pipe and desktop
-socket into the same captured dialog state, clip the original units there, and
-retain ordinary reply correlation. Actual authenticated MCP acceptance must
-cover an original lone surrogate before this boundary is claimed as complete.
+Both production readers now carry the typed packet from the inherited NUL pipe
+and desktop WebSocket into the same session-fenced dialog observer. Dialog state
+clips original units at the native 4,000-unit limit; ordinary response correlation
+continues to use the compatibility value. A sidecar cannot be recovered from a
+later mutable page lookup or supplied through a reserved untrusted property.
+
+Private acceptance exercises a desktop event through inherited control FDs and
+the owned endpoint socket, plus an authenticated provider/MCP interaction with a
+held evaluate, an original high and low surrogate in the modal, concurrent status,
+answer and continued connection. Exact units are exposed through the structured
+inner `content.text` renderer. Raw `structuredContent` explicitly remains a lossy
+compatibility projection. These proofs do not establish arbitrary-field Unicode
+parity or browser-engine execution of a real JavaScript alert.

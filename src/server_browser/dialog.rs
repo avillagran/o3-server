@@ -15,13 +15,21 @@ pub(crate) struct State {
     pub broadcast_revision: u64,
 }
 impl State {
+    #[cfg(test)]
     pub fn open(&mut self, kind: &str, message: &str, default_value: &str) {
+        self.open_units(
+            kind,
+            &message.encode_utf16().collect::<Vec<_>>(),
+            &default_value.encode_utf16().collect::<Vec<_>>(),
+        );
+    }
+    pub fn open_units(&mut self, kind: &str, message: &[u16], default_value: &[u16]) {
         self.next_token = self.next_token.wrapping_add(1);
         self.pending = Some(Pending {
             token: self.next_token,
             kind: kind.into(),
-            message: message.encode_utf16().take(4000).collect(),
-            default_value: default_value.encode_utf16().take(4000).collect(),
+            message: message.iter().copied().take(4000).collect(),
+            default_value: default_value.iter().copied().take(4000).collect(),
             handled: false,
         });
         self.broadcast_revision = self.broadcast_revision.wrapping_add(1);

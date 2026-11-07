@@ -70,8 +70,8 @@ the replacement even if the frontend reuses an opaque session identifier.
 
 Status renders exact UTF-16 dialog units into inner MCP `content.text`, including
 a surrogate pair split at the native 4,000-unit boundary. Raw structured content
-remains a compatibility projection, and initially unpaired incoming CDP strings
-remain a separate decoder gap. Existing foreground-turn cleanup is unchanged;
+remains a compatibility projection. Original unpaired incoming dialog fields
+now use the typed raw-dialog sidecar; other CDP fields retain strict rejection. Existing foreground-turn cleanup is unchanged;
 the native 30-minute idle retention and one-minute sweep require a separate
 lifetime consumer. Navigation commit/handoff tracking, complete viewer input
 mapping, popup adoption and full toolkit admission remain explicit gaps.

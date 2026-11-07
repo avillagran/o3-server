@@ -63,10 +63,11 @@ while True:
                         page['held']=(command['id'],session);held=True
                         events=[{'method':'Page.javascriptDialogOpening','sessionId':session,'params':{'type':'prompt','message':'Title race prompt','defaultPrompt':'race'}}]
                     elif params.get('expression')=='document.title':result={'result':{'value':page['title']}}
-                    elif params.get('fixtureHold') or params.get('expression') in ('fixtureDialog()','fixtureDialogUtf16()'):
+                    elif params.get('fixtureHold') or params.get('expression') in ('fixtureDialog()','fixtureDialogUtf16()','fixtureDialogRawUtf16()'):
                         page['held']=(command['id'],session);held=True
                         message='a'*3999+'🙂' if params.get('expression')=='fixtureDialogUtf16()' else 'Owned prompt'
                         default='b'*3999+'🙂' if params.get('expression')=='fixtureDialogUtf16()' else 'default'
+                        if params.get('expression')=='fixtureDialogRawUtf16()':message='\ud800A\udfff🙂';default='\udc00'
                         events=[{'method':'Page.javascriptDialogOpening','sessionId':session,'params':{'type':'prompt','message':message,'defaultPrompt':default,'url':page['url']}}]
                     else:result={'result':{'value':{'url':page['url'],'title':page['title'],'readyState':'complete'}}}
                 elif method=='Page.handleJavaScriptDialog':

@@ -1,12 +1,11 @@
 //! Continuously bounded NUL-delimited inherited CDP input, including idle notifications.
-use serde_json::Value;
 use tokio::{
     io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader},
     sync::mpsc,
     task::JoinHandle,
 };
 const LIMIT: u64 = 4 * 1024 * 1024;
-type Packet = Result<Value, String>;
+type Packet = Result<crate::cdp_dialog_json::Packet, String>;
 type Inbox = mpsc::Receiver<Packet>;
 pub(super) fn start<R: AsyncRead + Unpin + Send + 'static>(input: R) -> (Inbox, JoinHandle<()>) {
     let (tx, rx) = mpsc::channel::<Packet>(8);
@@ -21,7 +20,7 @@ pub(super) fn start<R: AsyncRead + Unpin + Send + 'static>(input: R) -> (Inbox, 
                 }
                 Ok(_) => {
                     packet.pop();
-                    serde_json::from_slice(&packet).map_err(|_| "Invalid CDP output".into())
+                    crate::cdp_dialog_json::decode(&packet).map_err(|_| "Invalid CDP output".into())
                 }
                 Err(_) => Err("CDP read failed".into()),
             };
@@ -61,10 +60,10 @@ mod tests {
                 .unwrap();
         });
         assert_eq!(
-            incoming.recv().await.unwrap().unwrap()["method"],
+            incoming.recv().await.unwrap().unwrap().value["method"],
             "Page.loadEventFired"
         );
-        assert_eq!(incoming.recv().await.unwrap().unwrap()["id"], 7);
+        assert_eq!(incoming.recv().await.unwrap().unwrap().value["id"], 7);
         assert!(incoming
             .recv()
             .await

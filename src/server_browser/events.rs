@@ -125,7 +125,12 @@ impl Observer {
             });
         });
     }
-    fn accept(&mut self, value: &Value, session: &str) -> bool {
+    fn accept(
+        &mut self,
+        value: &Value,
+        session: &str,
+        dialog_text: Option<&crate::cdp_dialog_json::DialogText>,
+    ) -> bool {
         if value["sessionId"] == session {
             if value["method"] == "Page.javascriptDialogOpening" && self.main_frame.is_some() {
                 let params = &value["params"];
@@ -133,11 +138,21 @@ impl Observer {
                     (params["type"].as_str(), params["message"].as_str())
                 {
                     self.dialog.send_modify(|state| {
-                        state.open(
-                            kind,
-                            message,
-                            params["defaultPrompt"].as_str().unwrap_or(""),
-                        )
+                        let message = dialog_text
+                            .and_then(|text| text.message.as_ref())
+                            .cloned()
+                            .unwrap_or_else(|| message.encode_utf16().collect());
+                        let default = dialog_text
+                            .and_then(|text| text.default_prompt.as_ref())
+                            .cloned()
+                            .unwrap_or_else(|| {
+                                params["defaultPrompt"]
+                                    .as_str()
+                                    .unwrap_or("")
+                                    .encode_utf16()
+                                    .collect()
+                            });
+                        state.open_units(kind, &message, &default)
                     });
                 }
             } else if self.desktop && value["method"] == "Page.javascriptDialogClosed" {
@@ -309,11 +324,22 @@ pub(super) fn remove(registry: &Shared, session: &str) {
         page.done.send_replace(true);
     }
 }
+#[cfg(test)]
 pub(super) fn notify(registry: &Shared, value: &Value) -> bool {
+    notify_packet(
+        registry,
+        &crate::cdp_dialog_json::Packet {
+            value: value.clone(),
+            dialog: None,
+        },
+    )
+}
+pub(super) fn notify_packet(registry: &Shared, packet: &crate::cdp_dialog_json::Packet) -> bool {
+    let value = &packet.value;
     let mut registry = registry.lock().unwrap();
     let mut detached = Vec::new();
     for (session, page) in &mut registry.pages {
-        if page.accept(value, session) {
+        if page.accept(value, session, packet.dialog.as_ref()) {
             page.done.send_replace(true);
             detached.push(session.clone());
         }

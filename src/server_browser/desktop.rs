@@ -78,9 +78,9 @@ pub(super) async fn launch(
                 incoming=input.next()=>{
                     match incoming{
                         Some(Ok(Message::Text(text)))=>{
-                            let Ok(value)=serde_json::from_str::<Value>(&text)else{break;};
-                            if events::notify(&actor_pages,&value){break;}
-                            calls.complete(&value,&actor_pages);
+                            let Ok(packet)=crate::cdp_dialog_json::decode(text.as_bytes())else{break;};
+                            if events::notify_packet(&actor_pages,&packet){break;}
+                            calls.complete(&packet.value,&actor_pages);
                         },
                         Some(Ok(Message::Ping(payload)))=>{if !writer.send(Message::Pong(payload)){break;}},
                         Some(Ok(Message::Pong(_)))=>{},
@@ -490,6 +490,23 @@ mod tests {
             json!({"unblocked":true,"accepted":false})
         );
         assert_eq!(browser.dialog_status("thread", "tab").unwrap(), Value::Null);
+        peer.events.send(json!({"type":"cdp","threadId":"thread","tabId":"tab","message":r#"{"method":"Page.javascriptDialogOpening","sessionId":"opaque/session 😀","params":{"type":"prompt","message":"\ud800A\udfff🙂","defaultPrompt":"\udc00"}}"#})).unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let state = browser.dialog_state("thread", "tab").unwrap();
+                if state.json_text().stringify().contains(r#"\ud800A\udfff"#) {
+                    assert!(state.json_text().stringify().contains(r#"\udc00"#));
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        browser
+            .answer_dialog("thread", "tab", false, None)
+            .await
+            .unwrap();
         assert_eq!(
             browser.connection("thread", "tab").await,
             Some((Origin::Desktop, true))

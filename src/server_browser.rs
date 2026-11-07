@@ -366,9 +366,9 @@ async fn launch(
                 _=&mut deadline=>break,
                 _=child.wait()=>break,
                 packet=incoming.recv()=>{
-                    let Some(Ok(value))=packet else{break;};
-                    if events::notify(&actor_pages,&value){break;}
-                    calls.complete(&value,&actor_pages);
+                    let Some(Ok(packet))=packet else{break;};
+                    if events::notify_packet(&actor_pages,&packet){break;}
+                    calls.complete(&packet.value,&actor_pages);
                 }
             }
         }

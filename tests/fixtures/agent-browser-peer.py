@@ -113,6 +113,24 @@ def check(text):
         assert not tool('preview_dialog',{'tabId':tab,'accept':False})['isError']
         worker.join(3);assert not worker.is_alive()
         assert len(utf)==1 and isinstance(utf[0],dict) and not utf[0]['isError'],utf
+        raw=[]
+        def raw_evaluate():
+            try: raw.append(tool('preview_evaluate',{'tabId':tab,'expression':'fixtureDialogRawUtf16()'}))
+            except BaseException as error: raw.append(str(error))
+        worker=threading.Thread(target=raw_evaluate);worker.start()
+        for attempt in range(100):
+            encoded=tool('preview_status',{'tabId':tab})
+            assert not encoded['isError'],encoded
+            pending=json.loads(encoded['content'][0]['text'])
+            if pending.get('dialog'):break
+            time.sleep(.01)
+        assert pending['dialog']['message']=='\ud800A\udfff🙂'
+        assert pending['dialog']['defaultValue']=='\udc00'
+        assert encoded['structuredContent']['dialog']['message']=='\ufffdA\ufffd🙂'
+        assert not tool('preview_dialog',{'tabId':tab,'accept':False})['isError']
+        worker.join(3);assert not worker.is_alive()
+        assert len(raw)==1 and isinstance(raw[0],dict) and not raw[0]['isError'],raw
+        assert not tool('preview_status',{'tabId':tab})['isError'], 'connection survives raw UTF-16 modal'
         return
     assert tool('preview_navigate',{'tabId':'foreign','url':'http://localhost'})['isError']
     assert not tool('preview_navigate',{'tabId':tab,'url':'http://localhost:1234/next'})['isError']
