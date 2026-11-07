@@ -1,0 +1,1100 @@
+{
+  "revision": "32a0531748c44b25072d7495ce0b9bd7e9450a87",
+  "effect": "4.1.2",
+  "sources": {
+    "packages/contracts/src/baseSchemas.ts": "edd4d2c73cc79ce5e50bffd35b9c861fe091de23a1ac792db864d3b71b09a7af",
+    "packages/contracts/src/browserProfile.ts": "a8995cb24686afddd7dc66a85b2c61019d1ffbd551dac26864fffbc13e9f10e2",
+    "packages/contracts/src/preview.ts": "d93c13bf3c0510629d61cce4249192cc083b3849d00c7e9f2c4abd70b1d4fb3d",
+    "packages/shared/src/hostClassification.ts": "cc3499701601884850cf130b2fde4e43e08f0f5f4a21d8d8ac091e8b7bca0381",
+    "packages/shared/src/preview.ts": "9cbc2280ff93819ddf457f298383914ed47d86e968a4d83add23c3bf204ce488",
+    "apps/server/src/preview/Manager.ts": "54cca40642c36da824e03390e72153d66c072e629403fef0eccdb47c77b765da"
+  },
+  "urlCases": [
+    {
+      "input": "",
+      "openSchemaAccepted": false,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (empty; input length 0). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 0,
+          "reason": "empty"
+        }
+      }
+    },
+    {
+      "input": " ",
+      "openSchemaAccepted": false,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (empty; input length 1). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 1,
+          "reason": "empty"
+        }
+      }
+    },
+    {
+      "input": "﻿",
+      "openSchemaAccepted": false,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (empty; input length 1). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 1,
+          "reason": "empty"
+        }
+      }
+    },
+    {
+      "input": "localhost:5173",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "http://localhost:5173/"
+      }
+    },
+    {
+      "input": "LOCALHOST/x",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "http://localhost/x"
+      }
+    },
+    {
+      "input": "127.0.0.1:3000",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "http://127.0.0.1:3000/"
+      }
+    },
+    {
+      "input": "0.0.0.0/x",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "http://0.0.0.0/x"
+      }
+    },
+    {
+      "input": "[::1]:8080/x",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "http://[::1]:8080/x"
+      }
+    },
+    {
+      "input": "[::]/x",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "http://[::]/x"
+      }
+    },
+    {
+      "input": "example.com",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "https://example.com/"
+      }
+    },
+    {
+      "input": "https://example.com/x?q=a#b",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "https://example.com/x?q=a#b"
+      }
+    },
+    {
+      "input": "http://[",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (parse: http:; input length 8). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 8,
+          "reason": "parse",
+          "protocol": "http:"
+        }
+      }
+    },
+    {
+      "input": "http://[😀",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (parse: http:; input length 10). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 10,
+          "reason": "parse",
+          "protocol": "http:"
+        }
+      }
+    },
+    {
+      "input": "https://example.com/😀",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "https://example.com/%F0%9F%98%80"
+      }
+    },
+    {
+      "input": "http://",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (parse: http:; input length 7). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 7,
+          "reason": "parse",
+          "protocol": "http:"
+        }
+      }
+    },
+    {
+      "input": "https://a:bad",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (parse: https:; input length 13). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 13,
+          "reason": "parse",
+          "protocol": "https:"
+        }
+      }
+    },
+    {
+      "input": "https://user:pass@example.com",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "https://user:pass@example.com/"
+      }
+    },
+    {
+      "input": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+      "openSchemaAccepted": false,
+      "expected": {
+        "url": "https://xn--e28haaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"
+      }
+    },
+    {
+      "input": "about:value",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: about:; input length 11). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 11,
+          "reason": "unsupported-protocol",
+          "protocol": "about:"
+        }
+      }
+    },
+    {
+      "input": "about:VALUE",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: about:; input length 11). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 11,
+          "reason": "unsupported-protocol",
+          "protocol": "about:"
+        }
+      }
+    },
+    {
+      "input": "about://example.com/x",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: about:; input length 21). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 21,
+          "reason": "unsupported-protocol",
+          "protocol": "about:"
+        }
+      }
+    },
+    {
+      "input": "blob:value",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: blob:; input length 10). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 10,
+          "reason": "unsupported-protocol",
+          "protocol": "blob:"
+        }
+      }
+    },
+    {
+      "input": "blob:VALUE",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: blob:; input length 10). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 10,
+          "reason": "unsupported-protocol",
+          "protocol": "blob:"
+        }
+      }
+    },
+    {
+      "input": "blob://example.com/x",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: blob:; input length 20). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 20,
+          "reason": "unsupported-protocol",
+          "protocol": "blob:"
+        }
+      }
+    },
+    {
+      "input": "chrome:value",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: chrome:; input length 12). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 12,
+          "reason": "unsupported-protocol",
+          "protocol": "chrome:"
+        }
+      }
+    },
+    {
+      "input": "chrome:VALUE",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: chrome:; input length 12). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 12,
+          "reason": "unsupported-protocol",
+          "protocol": "chrome:"
+        }
+      }
+    },
+    {
+      "input": "chrome://example.com/x",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: chrome:; input length 22). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 22,
+          "reason": "unsupported-protocol",
+          "protocol": "chrome:"
+        }
+      }
+    },
+    {
+      "input": "data:value",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: data:; input length 10). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 10,
+          "reason": "unsupported-protocol",
+          "protocol": "data:"
+        }
+      }
+    },
+    {
+      "input": "data:VALUE",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: data:; input length 10). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 10,
+          "reason": "unsupported-protocol",
+          "protocol": "data:"
+        }
+      }
+    },
+    {
+      "input": "data://example.com/x",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: data:; input length 20). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 20,
+          "reason": "unsupported-protocol",
+          "protocol": "data:"
+        }
+      }
+    },
+    {
+      "input": "file:value",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: file:; input length 10). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 10,
+          "reason": "unsupported-protocol",
+          "protocol": "file:"
+        }
+      }
+    },
+    {
+      "input": "file:VALUE",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: file:; input length 10). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 10,
+          "reason": "unsupported-protocol",
+          "protocol": "file:"
+        }
+      }
+    },
+    {
+      "input": "file://example.com/x",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: file:; input length 20). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 20,
+          "reason": "unsupported-protocol",
+          "protocol": "file:"
+        }
+      }
+    },
+    {
+      "input": "ftp:value",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: ftp:; input length 9). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 9,
+          "reason": "unsupported-protocol",
+          "protocol": "ftp:"
+        }
+      }
+    },
+    {
+      "input": "ftp:VALUE",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: ftp:; input length 9). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 9,
+          "reason": "unsupported-protocol",
+          "protocol": "ftp:"
+        }
+      }
+    },
+    {
+      "input": "ftp://example.com/x",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: ftp:; input length 19). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 19,
+          "reason": "unsupported-protocol",
+          "protocol": "ftp:"
+        }
+      }
+    },
+    {
+      "input": "javascript:value",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: javascript:; input length 16). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 16,
+          "reason": "unsupported-protocol",
+          "protocol": "javascript:"
+        }
+      }
+    },
+    {
+      "input": "javascript:VALUE",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: javascript:; input length 16). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 16,
+          "reason": "unsupported-protocol",
+          "protocol": "javascript:"
+        }
+      }
+    },
+    {
+      "input": "javascript://example.com/x",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: javascript:; input length 26). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 26,
+          "reason": "unsupported-protocol",
+          "protocol": "javascript:"
+        }
+      }
+    },
+    {
+      "input": "mailto:value",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: mailto:; input length 12). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 12,
+          "reason": "unsupported-protocol",
+          "protocol": "mailto:"
+        }
+      }
+    },
+    {
+      "input": "mailto:VALUE",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: mailto:; input length 12). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 12,
+          "reason": "unsupported-protocol",
+          "protocol": "mailto:"
+        }
+      }
+    },
+    {
+      "input": "mailto://example.com/x",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: mailto:; input length 22). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 22,
+          "reason": "unsupported-protocol",
+          "protocol": "mailto:"
+        }
+      }
+    },
+    {
+      "input": "sms:value",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: sms:; input length 9). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 9,
+          "reason": "unsupported-protocol",
+          "protocol": "sms:"
+        }
+      }
+    },
+    {
+      "input": "sms:VALUE",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: sms:; input length 9). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 9,
+          "reason": "unsupported-protocol",
+          "protocol": "sms:"
+        }
+      }
+    },
+    {
+      "input": "sms://example.com/x",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: sms:; input length 19). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 19,
+          "reason": "unsupported-protocol",
+          "protocol": "sms:"
+        }
+      }
+    },
+    {
+      "input": "ssh:value",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: ssh:; input length 9). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 9,
+          "reason": "unsupported-protocol",
+          "protocol": "ssh:"
+        }
+      }
+    },
+    {
+      "input": "ssh:VALUE",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: ssh:; input length 9). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 9,
+          "reason": "unsupported-protocol",
+          "protocol": "ssh:"
+        }
+      }
+    },
+    {
+      "input": "ssh://example.com/x",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: ssh:; input length 19). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 19,
+          "reason": "unsupported-protocol",
+          "protocol": "ssh:"
+        }
+      }
+    },
+    {
+      "input": "tel:value",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: tel:; input length 9). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 9,
+          "reason": "unsupported-protocol",
+          "protocol": "tel:"
+        }
+      }
+    },
+    {
+      "input": "tel:VALUE",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: tel:; input length 9). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 9,
+          "reason": "unsupported-protocol",
+          "protocol": "tel:"
+        }
+      }
+    },
+    {
+      "input": "tel://example.com/x",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: tel:; input length 19). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 19,
+          "reason": "unsupported-protocol",
+          "protocol": "tel:"
+        }
+      }
+    },
+    {
+      "input": "view-source:value",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: view-source:; input length 17). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 17,
+          "reason": "unsupported-protocol",
+          "protocol": "view-source:"
+        }
+      }
+    },
+    {
+      "input": "view-source:VALUE",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: view-source:; input length 17). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 17,
+          "reason": "unsupported-protocol",
+          "protocol": "view-source:"
+        }
+      }
+    },
+    {
+      "input": "view-source://example.com/x",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: view-source:; input length 27). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 27,
+          "reason": "unsupported-protocol",
+          "protocol": "view-source:"
+        }
+      }
+    },
+    {
+      "input": "ws:value",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: ws:; input length 8). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 8,
+          "reason": "unsupported-protocol",
+          "protocol": "ws:"
+        }
+      }
+    },
+    {
+      "input": "ws:VALUE",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: ws:; input length 8). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 8,
+          "reason": "unsupported-protocol",
+          "protocol": "ws:"
+        }
+      }
+    },
+    {
+      "input": "ws://example.com/x",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: ws:; input length 18). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 18,
+          "reason": "unsupported-protocol",
+          "protocol": "ws:"
+        }
+      }
+    },
+    {
+      "input": "wss:value",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: wss:; input length 9). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 9,
+          "reason": "unsupported-protocol",
+          "protocol": "wss:"
+        }
+      }
+    },
+    {
+      "input": "wss:VALUE",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: wss:; input length 9). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 9,
+          "reason": "unsupported-protocol",
+          "protocol": "wss:"
+        }
+      }
+    },
+    {
+      "input": "wss://example.com/x",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: wss:; input length 19). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 19,
+          "reason": "unsupported-protocol",
+          "protocol": "wss:"
+        }
+      }
+    },
+    {
+      "input": "custom:value",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (parse: https:; input length 12). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 12,
+          "reason": "parse",
+          "protocol": "https:"
+        }
+      }
+    },
+    {
+      "input": "custom:VALUE",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (parse: https:; input length 12). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 12,
+          "reason": "parse",
+          "protocol": "https:"
+        }
+      }
+    },
+    {
+      "input": "custom://example.com/x",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (unsupported-protocol: custom:; input length 22). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 22,
+          "reason": "unsupported-protocol",
+          "protocol": "custom:"
+        }
+      }
+    },
+    {
+      "input": "http:value",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (parse: https:; input length 10). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 10,
+          "reason": "parse",
+          "protocol": "https:"
+        }
+      }
+    },
+    {
+      "input": "http:VALUE",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (parse: https:; input length 10). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 10,
+          "reason": "parse",
+          "protocol": "https:"
+        }
+      }
+    },
+    {
+      "input": "http://example.com/x",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "http://example.com/x"
+      }
+    },
+    {
+      "input": "https:value",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (parse: https:; input length 11). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 11,
+          "reason": "parse",
+          "protocol": "https:"
+        }
+      }
+    },
+    {
+      "input": "https:VALUE",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (parse: https:; input length 11). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 11,
+          "reason": "parse",
+          "protocol": "https:"
+        }
+      }
+    },
+    {
+      "input": "https://example.com/x",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "https://example.com/x"
+      }
+    },
+    {
+      "input": "example.com\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "https://example.com/"
+      }
+    },
+    {
+      "input": " ﻿ example.com\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "https://example.com/"
+      }
+    },
+    {
+      "input": "example.com\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (parse: https:; input length 13). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 13,
+          "reason": "parse",
+          "protocol": "https:"
+        }
+      }
+    },
+    {
+      "input": "localhost\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "http://localhost/"
+      }
+    },
+    {
+      "input": " ﻿ localhost\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "http://localhost/"
+      }
+    },
+    {
+      "input": "localhost\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (parse: https:; input length 11). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 11,
+          "reason": "parse",
+          "protocol": "https:"
+        }
+      }
+    },
+    {
+      "input": "localhost.\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "https://localhost./"
+      }
+    },
+    {
+      "input": " ﻿ localhost.\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "https://localhost./"
+      }
+    },
+    {
+      "input": "localhost.\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (parse: https:; input length 12). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 12,
+          "reason": "parse",
+          "protocol": "https:"
+        }
+      }
+    },
+    {
+      "input": "127.1\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "https://127.0.0.1/"
+      }
+    },
+    {
+      "input": " ﻿ 127.1\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "https://127.0.0.1/"
+      }
+    },
+    {
+      "input": "127.1\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (parse: https:; input length 7). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 7,
+          "reason": "parse",
+          "protocol": "https:"
+        }
+      }
+    },
+    {
+      "input": "127.0.0.1\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "http://127.0.0.1/"
+      }
+    },
+    {
+      "input": " ﻿ 127.0.0.1\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "http://127.0.0.1/"
+      }
+    },
+    {
+      "input": "127.0.0.1\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (parse: https:; input length 11). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 11,
+          "reason": "parse",
+          "protocol": "https:"
+        }
+      }
+    },
+    {
+      "input": "0.0.0.0\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "http://0.0.0.0/"
+      }
+    },
+    {
+      "input": " ﻿ 0.0.0.0\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "http://0.0.0.0/"
+      }
+    },
+    {
+      "input": "0.0.0.0\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (parse: https:; input length 9). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 9,
+          "reason": "parse",
+          "protocol": "https:"
+        }
+      }
+    },
+    {
+      "input": "[::1]\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "http://[::1]/"
+      }
+    },
+    {
+      "input": " ﻿ [::1]\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "http://[::1]/"
+      }
+    },
+    {
+      "input": "[::1]\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (parse: https:; input length 7). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 7,
+          "reason": "parse",
+          "protocol": "https:"
+        }
+      }
+    },
+    {
+      "input": "[::]\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "http://[::]/"
+      }
+    },
+    {
+      "input": " ﻿ [::]\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "http://[::]/"
+      }
+    },
+    {
+      "input": "[::]\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (parse: https:; input length 6). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 6,
+          "reason": "parse",
+          "protocol": "https:"
+        }
+      }
+    },
+    {
+      "input": "münich.example\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "https://xn--mnich-kva.example/"
+      }
+    },
+    {
+      "input": " ﻿ münich.example\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "https://xn--mnich-kva.example/"
+      }
+    },
+    {
+      "input": "münich.example\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (parse: https:; input length 16). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 16,
+          "reason": "parse",
+          "protocol": "https:"
+        }
+      }
+    },
+    {
+      "input": "example.com:80\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "https://example.com:80/"
+      }
+    },
+    {
+      "input": " ﻿ example.com:80\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "url": "https://example.com:80/"
+      }
+    },
+    {
+      "input": "example.com:80\n",
+      "openSchemaAccepted": true,
+      "expected": {
+        "error": {
+          "_tag": "PreviewUrlNormalizationError",
+          "message": "Invalid preview URL (parse: https:; input length 16). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.",
+          "inputLength": 16,
+          "reason": "parse",
+          "protocol": "https:"
+        }
+      }
+    }
+  ]
+}

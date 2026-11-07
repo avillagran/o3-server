@@ -76,19 +76,58 @@ fn lookup_error(thread: &str, tab: &str) -> Value {
     json!({"_tag":"PreviewSessionLookupError","threadId":thread,"tabId":tab,"message":format!("Unknown preview session: thread={thread}, tab={tab}")})
 }
 fn url_error(input: &str, reason: &str, protocol: Option<&str>) -> Value {
-    let mut v = json!({"_tag":"PreviewInvalidUrlError","inputLength":input.chars().count(),"reason":reason,
-        "message":format!("Invalid preview URL ({reason}; input length {}).",input.chars().count())});
+    let length = input.encode_utf16().count();
+    let suffix = protocol
+        .map(|value| format!(": {value}"))
+        .unwrap_or_default();
+    let mut v = json!({"_tag":"PreviewInvalidUrlError","inputLength":length,"reason":reason,
+        "message":format!("Invalid preview URL ({reason}{suffix}; input length {length}). Use an http(s) URL or a schemeless host such as localhost:5173. With preview_open, omit url when creating a new tab to open a blank tab.")});
     if let Some(p) = protocol {
         v["protocol"] = json!(p);
     }
     v
 }
 
+fn url_protocol(raw: &str) -> Option<String> {
+    let (scheme, _) = raw.split_once(':')?;
+    if scheme.starts_with(|value: char| value.is_ascii_alphabetic())
+        && scheme
+            .chars()
+            .all(|value| value.is_ascii_alphanumeric() || "+.-".contains(value))
+    {
+        Some(format!("{}:", scheme.to_ascii_lowercase()))
+    } else {
+        None
+    }
+}
+
 /// T3 `normalizePreviewUrl`: bare hosts become https (http for loopback); only http(s) is previewed.
 pub fn normalize_url(raw: &str) -> Result<String, Value> {
-    let trimmed = raw.trim();
+    let trimmed = crate::native_goal::trim(raw);
     if trimmed.is_empty() {
         return Err(url_error(raw, "empty", None));
+    }
+    let protocol = url_protocol(trimmed);
+    if protocol.as_deref().is_some_and(|value| {
+        matches!(
+            value,
+            "about:"
+                | "blob:"
+                | "chrome:"
+                | "data:"
+                | "file:"
+                | "ftp:"
+                | "javascript:"
+                | "mailto:"
+                | "sms:"
+                | "ssh:"
+                | "tel:"
+                | "view-source:"
+                | "ws:"
+                | "wss:"
+        )
+    }) {
+        return Err(url_error(raw, "unsupported-protocol", protocol.as_deref()));
     }
     let lower = trimmed.to_lowercase();
     let loopback = ["localhost", "127.0.0.1", "0.0.0.0", "[::1]", "[::]"]
@@ -111,7 +150,8 @@ pub fn normalize_url(raw: &str) -> Result<String, Value> {
     } else {
         format!("{}://{trimmed}", if loopback { "http" } else { "https" })
     };
-    let parsed = url::Url::parse(&candidate).map_err(|_| url_error(raw, "parse", None))?;
+    let parsed = url::Url::parse(&candidate)
+        .map_err(|_| url_error(raw, "parse", url_protocol(&candidate).as_deref()))?;
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err(url_error(
             raw,
@@ -948,5 +988,37 @@ mod scan_cache_tests {
         scan_servers(&[], &mut cache, t0 + Duration::from_secs(64));
         assert_eq!(silent_hits.load(Ordering::SeqCst), 3);
         assert_eq!(web_hits.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[cfg(test)]
+mod url_oracle_tests {
+    use super::*;
+
+    #[test]
+    fn native_url_outputs_typed_errors_and_public_schema_budget() {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/preview-url-4288.json")).unwrap();
+        let mut outside_public_budget = 0;
+        for case in fixture["urlCases"].as_array().unwrap() {
+            let input = case["input"].as_str().unwrap();
+            if case["openSchemaAccepted"] == false && case["expected"]["url"].is_string() {
+                // Native public inputs reject this oversized value before URL normalization.
+                // Rust IDNA also refuses its oversized Unicode label; do not claim raw-helper parity.
+                assert!(input.encode_utf16().count() > 2048);
+                assert!(normalize_url(input).is_err());
+                outside_public_budget += 1;
+            } else {
+                match normalize_url(input) {
+                    Ok(url) => assert_eq!(json!({"url":url}), case["expected"], "{input:?}"),
+                    Err(mut error) => {
+                        // The manager wraps the same shared helper in its public error class.
+                        error["_tag"] = json!("PreviewUrlNormalizationError");
+                        assert_eq!(json!({"error":error}), case["expected"], "{input:?}");
+                    }
+                }
+            }
+        }
+        assert_eq!(outside_public_budget, 1);
     }
 }
