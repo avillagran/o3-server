@@ -36,3 +36,26 @@ Regenerate with `tools/generate-preview-control-fixtures --checkout ... --staged
 Podman, read-only source/dependency mounts and no network. Output uses a new
 retained evidence directory. Do not execute the native reference bodies on the
 host. The standalone differential test uses the shared private-test sandbox guard.
+
+## Owned runtime adapter
+
+The runtime adapter owns queued callbacks and tracked futures in a task set.
+Callers receive cloneable result observations; dropping or timing out one does not
+cancel its callback. Reservations and snapshot publication happen synchronously
+before the returned observation is polled. The monotonic deadline clock is sampled
+when a valid queued action can start, preserving the native guard/error precedence.
+
+The source `close` operation waits for its queue tail. The adapter's separate
+lifecycle `shutdown` additionally drains every owned callback and tracking task.
+The page owner must settle its transport and navigation watches before waiting
+for shutdown. Dropping the final runtime owner closes admission while retaining
+already-running work until it settles. This is an internal ownership guarantee,
+not a new wire operation or permission grant.
+
+Seven private Tokio tests cover immediate takeover and stale-queue rejection,
+dropped result receivers, independent observations, pending-navigation versus
+handoff barriers, adjacent latest-input aliasing, close/shutdown cancellation,
+expired queued work and final-owner disposal. The tests also compile and execute
+result/shutdown futures as owned `Send` tasks. Production actor/Scope integration
+and filesystem cleanup acknowledgements remain a separate consumer step; this
+adapter alone does not establish those lifecycle boundaries or enable adoption.

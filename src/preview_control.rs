@@ -1,4 +1,5 @@
 //! Immediate browser-control reservations with externally owned asynchronous work.
+pub mod runtime;
 use serde_json::{json, Value};
 use std::collections::{BTreeSet, VecDeque};
 
@@ -322,7 +323,7 @@ impl Kernel {
             job.waiting.remove(&dependency);
         }
     }
-    fn check(&self, job: &Job, now: f64) -> Result<(), Value> {
+    fn check(&self, job: &Job, now: &mut impl FnMut() -> f64) -> Result<(), Value> {
         if !matches!(job.guard, Guard::Release) && self.closed {
             return Err(closed());
         }
@@ -338,7 +339,7 @@ impl Kernel {
         if !allowed {
             return Err(changed());
         }
-        if job.deadline.is_some_and(|deadline| now >= deadline) {
+        if job.deadline.is_some_and(|deadline| now() >= deadline) {
             return Err(
                 json!({"name":"TimeoutError","message":"This browser request expired before it could start."}),
             );
@@ -347,6 +348,9 @@ impl Kernel {
     }
     /// Run ready queue transitions without polling or borrowing a caller future.
     pub fn drain(&mut self, now: f64) -> Vec<Event> {
+        self.drain_with_clock(|| now)
+    }
+    pub fn drain_with_clock(&mut self, mut now: impl FnMut() -> f64) -> Vec<Event> {
         loop {
             if !self.barrier.is_empty() {
                 break;
@@ -378,7 +382,7 @@ impl Kernel {
             if self.latest == Some(job.id) {
                 self.latest = None;
             }
-            if let Err(error) = self.check(&job, now) {
+            if let Err(error) = self.check(&job, &mut now) {
                 self.complete(job.id, Err(error));
                 self.barrier = self.pending.clone();
                 continue;
