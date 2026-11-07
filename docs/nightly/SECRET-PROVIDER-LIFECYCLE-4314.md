@@ -39,3 +39,13 @@ speech foundation adds the cloud group through the same physical boundaries.
 
 All runtime fixtures are private and retained. No test removes a filesystem
 tree, invokes a real vault, installs a provider or runs a paid model.
+
+Stored secret-provider envelopes also require a nonempty trimmed `label`. The
+stored schema accepts labels longer than the current 64-character write limit;
+missing, empty and whitespace-only labels are invalid. The pinned native
+persisted schema reuses that exact field. Its whole-file loader falls back to
+managed defaults on malformed settings and retains a parse failure that blocks
+writes. O3 retains its existing typed private-projection refusal for malformed
+input; this fixture correction does not relax that privacy boundary or claim
+whole-loader fallback parity. Synthetic usage-source fixtures must provide valid
+provider envelopes when they assert successful public settings reads.

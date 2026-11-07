@@ -26,7 +26,7 @@ async fn private_op_management_key_reaches_only_the_synthetic_hub() {
     )]));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
-    let settings = json!({"secretProviders":{"vault":{"kind":"one_password","config":{"account":"fixture.1password.test"}}},"usageLimitSources":{"hub":{"kind":"cliproxy","url":base,"managementKey":{"provider":"vault","reference":"op://fixture/hub/key"}}}});
+    let settings = json!({"secretProviders":{"vault":{"kind":"one_password","label":"Private fixture vault","config":{"account":"fixture.1password.test"}}},"usageLimitSources":{"hub":{"kind":"cliproxy","url":base,"managementKey":{"provider":"vault","reference":"op://fixture/hub/key"}}}});
     std::fs::write(directory.join("settings.json"), settings.to_string()).unwrap();
     let server = tokio::spawn(async move {
         let (mut socket, _) = listener.accept().await.unwrap();
@@ -111,7 +111,7 @@ async fn private_op_reset_route_serializes_refresh_and_publishes_redeemed_credit
     let state = Arc::new(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
-    let settings = json!({"secretProviders":{"vault":{"kind":"one_password","config":{"account":"fixture.1password.test"}}},"usageLimitSources":{"hub":{"kind":"cliproxy","url":format!("{base}/management.html"),"managementKey":{"provider":"vault","reference":"op://fixture/hub/key"}}}});
+    let settings = json!({"secretProviders":{"vault":{"kind":"one_password","label":"Private fixture vault","config":{"account":"fixture.1password.test"}}},"usageLimitSources":{"hub":{"kind":"cliproxy","url":format!("{base}/management.html"),"managementKey":{"provider":"vault","reference":"op://fixture/hub/key"}}}});
     std::fs::write(directory.join("settings.json"), settings.to_string()).unwrap();
     let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
     let (release_tx, release_rx) = tokio::sync::oneshot::channel();
