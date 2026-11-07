@@ -16,7 +16,20 @@ fn cleanup_does_not_hold_database_while_git_is_slow() {
         std::fs::create_dir_all(p).unwrap();
     }
     let marker = s.dir.join("git-started");
-    let script = format!("#!/bin/sh\ntouch '{}'\nsleep 1\nexit 1\n", marker.display());
+    let release = s.dir.join("git-release");
+    struct Release(std::path::PathBuf);
+    impl Drop for Release {
+        fn drop(&mut self) {
+            // Release the exact owned command on assertion failure as well.
+            std::fs::write(&self.0, "release").unwrap();
+        }
+    }
+    let release_guard = Release(release.clone());
+    let script = format!(
+        "#!/bin/sh\ntouch '{}'\nwhile ! test -f '{}'; do sleep 0.01; done\nexit 1\n",
+        marker.display(),
+        release.display()
+    );
     std::fs::write(bin.join("git"), script).unwrap();
     std::fs::set_permissions(bin.join("git"), std::fs::Permissions::from_mode(0o700)).unwrap();
     std::env::set_var(
@@ -49,14 +62,25 @@ fn cleanup_does_not_hold_database_while_git_is_slow() {
         std::thread::sleep(Duration::from_millis(10));
     }
     assert!(
-        s.state.db.try_lock().is_ok(),
+        support::wait_for(Duration::from_secs(1), || s.state.db.try_lock().is_ok()),
         "git held global database mutex"
     );
+    assert!(
+        !worker.is_finished(),
+        "owned Git must remain blocked during both probes"
+    );
+    assert!(!release.exists());
     let c = s.connect();
     let before = Instant::now();
     c.rpc("orchestration.getThreadProjection", json!({"threadId":"t"}))
         .unwrap();
     assert!(before.elapsed() < Duration::from_millis(500));
+    assert!(
+        !worker.is_finished(),
+        "RPC completed while owned Git was still blocked"
+    );
+    assert!(!release.exists());
+    drop(release_guard);
     worker.join().unwrap();
     assert!(tree.exists());
 }
