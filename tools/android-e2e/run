@@ -3,6 +3,7 @@
 import os, sys, pathlib, subprocess, json, time, re, shutil
 import signal
 if not (pathlib.Path('/run/.containerenv').is_file()
+        and os.environ.get('ANDROID_SANDBOX') == '1'
         and os.environ.get('HOME') == '/sandbox/home'
         and os.environ.get('ANDROID_SDK_ROOT') == '/opt/android-sdk'):
     raise SystemExit('Android E2E operations require android-sandbox --sh; host execution is forbidden.')

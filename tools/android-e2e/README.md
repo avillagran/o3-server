@@ -1,5 +1,19 @@
 # Android regression helper
 
+All Android compilation and test operations must run through `android-sandbox`.
+Host execution is forbidden and the runner refuses it before creating files.
+Enter one sandbox shell for the entire scenario:
+
+```sh
+android-sandbox --sh 'exec bash'
+```
+
+The remaining commands describe the legacy scenario **inside that sandbox only**.
+They require its private runtime to contain the release server, provider binaries,
+emulator image and writable evidence paths. The current guard/retention change does
+not establish that those runtime prerequisites are available or certify emulator
+execution in the default build image. Do not fall back to host execution.
+
 Run from the repository root. The helper is deliberately resumable: it never silently
 replaces an existing server/emulator. It fixes the SDK device to `emulator-5570`, port
 38900, release executable `/var/tmp/o3-build/main/release/o3-server`, profile
@@ -68,5 +82,6 @@ observation times; a requested 2s delay plus UI dump does not mean a 2s detectio
 Finally run `tools/android-e2e/verify` before cleanup. It checks this run's fixed evidence
 names and emits a sanitized report; missing evidence fails, never defaults to PASS.
 `run cleanup` removes reverse, clears only the emulator app, stops the isolated server,
-shuts the designated emulator down, and deletes copied credentials/profile. Retain
+shuts the designated emulator down, and unlinks only the named copied credentials.
+The profile tree is retained for private container teardown. Retain
 raw evidence locally; publish only synthetic screenshots and the sanitized report.

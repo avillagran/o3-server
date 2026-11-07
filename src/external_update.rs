@@ -347,8 +347,7 @@ mod audit_tests {
         std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
         let privileged = root.join("fixture-privileged-helper");
         std::fs::write(&privileged, "#!/bin/sh\nexit 91\n").unwrap();
-        std::fs::set_permissions(&privileged, std::fs::Permissions::from_mode(0o4755))
-            .unwrap();
+        std::fs::set_permissions(&privileged, std::fs::Permissions::from_mode(0o4755)).unwrap();
         symlink(&privileged, root.join("bin/npm")).unwrap();
         assert!(
             detect(&cli, "codex").is_err(),
