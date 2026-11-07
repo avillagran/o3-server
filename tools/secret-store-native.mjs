@@ -30,9 +30,9 @@ export async function loadSecretStoreNative(checkout,contracts,output,source){
  const knownKinds=definitions.builtInSecretProviderDefinitions.definitions.map(definition=>definition.kind);
  const header='import {isSecretReference,ServerSettingsError} from '+JSON.stringify(pathToFileURL(contracts+'/src/index.ts').href)+';\n'+['Effect','Option','Schema'].map(n=>'import * as '+n+' from '+JSON.stringify(url(n))+';').join('\n')+'\n';
  const secretModule=Object.keys(settings.secrets).map(name=>'const '+name+'=secrets.'+name+';').join('\n');
- const methodSource=slice('const secretProviderConfigGuards = ', '\n// Rejects a kind')+'\n'+redaction+'\n'+materialize+'\n'+transaction;
+ const methodSource=slice('const secretProviderConfigGuards = ', '\n// Rejects a kind')+'\n'+slice('function ensureSecretProviderWritesAllowed(', '\nfunction ensureProviderInstanceMutationAllowed(')+'\n'+redaction+'\n'+materialize+'\n'+transaction;
  const methodJs=stripTypeScriptTypes(methodSource,{mode:'strip'}).replace('export function redactServerSettingsForClient','function redactServerSettingsForClient');
- const file=path.join(output,'transactions.mjs');fs.writeFileSync(file,header+'export function transactionMethods(secretStore,settingsPath,secrets,secretProviderDefinitions){\n'+secretModule+'\nconst textEncoder=new TextEncoder();const textDecoder=new TextDecoder();\n'+methodJs+'\nreturn {redact:redactServerSettingsForClient,echo:withEchoedSecretReferences,materialize:materializeSettingsSecrets,plan:persistSettingsSecrets,apply:applySettingsSecretChanges};\n}\n');
+ const file=path.join(output,'transactions.mjs');fs.writeFileSync(file,header+'export function transactionMethods(secretStore,settingsPath,secrets,secretProviderDefinitions){\n'+secretModule+'\nconst textEncoder=new TextEncoder();const textDecoder=new TextDecoder();\n'+methodJs+'\nreturn {ensureWrites:ensureSecretProviderWritesAllowed,redact:redactServerSettingsForClient,echo:withEchoedSecretReferences,materialize:materializeSettingsSecrets,plan:persistSettingsSecrets,apply:applySettingsSecretChanges};\n}\n');
 
  const methods=await import(pathToFileURL(file).href);return{store:nativeStore,config:nativeConfig,methods,settings,C,knownKinds,definitions:definitions.builtInSecretProviderDefinitions};
 }

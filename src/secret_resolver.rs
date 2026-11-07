@@ -100,6 +100,11 @@ impl SecretResolver {
             semaphore: Semaphore::new(1),
         }
     }
+    pub(crate) fn validates_config(&self, kind: &str, value: &Value) -> Option<bool> {
+        self.drivers
+            .get(kind)
+            .map(|driver| driver.decode_config(value).is_some())
+    }
     pub fn system() -> Self {
         Self::new(vec![Arc::new(OnePassword::system())])
     }

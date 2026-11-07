@@ -94,7 +94,7 @@ pub fn authorize(session: &Value, tag: &str, p: &Value) -> Result<(), Value> {
             m.keys().any(|k| {
                 matches!(
                     k.as_str(),
-                    "providers" | "providerInstances" | "usageLimitSources"
+                    "providers" | "providerInstances" | "usageLimitSources" | "secretProviders"
                 )
             })
         }) || p.get("providerInstanceMutation").is_some();
@@ -102,10 +102,13 @@ pub fn authorize(session: &Value, tag: &str, p: &Value) -> Result<(), Value> {
             m.keys().any(|k| {
                 !matches!(
                     k.as_str(),
-                    "providers" | "providerInstances" | "usageLimitSources"
+                    "providers" | "providerInstances" | "usageLimitSources" | "secretProviders"
                 )
             })
-        }) || !providers;
+        }) || !providers
+            || p["patch"]["secretProviders"]
+                .as_object()
+                .is_some_and(|entries| entries.values().any(Value::is_null));
         if settings {
             check("settings:write")?;
         }

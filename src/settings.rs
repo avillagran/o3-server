@@ -59,7 +59,7 @@ pub(crate) fn read_stored(s: &State) -> Result<Value, String> {
             merge(&mut v, &filled);
             // These complete source records contain public saved-secret markers.
             // Generic legacy merge skips markers, which would erase their slots.
-            for key in ["sourceControlHosts", "usageLimitSources"] {
+            for key in ["sourceControlHosts", "usageLimitSources", "secretProviders"] {
                 if let Some(value) = filled.get(key) {
                     v[key] = value.clone();
                 }
@@ -194,13 +194,52 @@ fn private_projection(value: &Value) -> Result<Value, String> {
         .map_err(|_|"Invalid private settings fields".to_owned())?;
     decoded["easDeviceHosts"] = json!([]);
     decoded["simlockDeviceHosts"] = json!([]);
-    decoded["secretProviders"] = json!({});
+    decoded["secretProviders"] = crate::managed_settings_codec::decode_field(
+        "secretProviders",
+        value.get("secretProviders").cloned(),
+    )
+    .map_err(|_| "Invalid private settings fields")?;
     Ok(decoded)
+}
+fn clear_removed_provider_references(current: &Value, next: &Value) -> Result<Value, String> {
+    let removed = current["secretProviders"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .any(|(id, _)| next["secretProviders"].get(id).is_none());
+    if !removed {
+        return Ok(next.clone());
+    }
+    let transform = |settings: &Value, encode: bool| -> Result<Value, String> {
+        let mut result = settings.clone();
+        for (id, entry) in settings["providerInstances"]
+            .as_object()
+            .into_iter()
+            .flatten()
+        {
+            if let Some(environment) = entry.get("environment") {
+                result["providerInstances"][id]["environment"] =
+                    crate::managed_settings_codec::provider_environment(
+                        environment.clone(),
+                        encode,
+                    )
+                    .map_err(|_| "Invalid provider environment")?;
+            }
+        }
+        Ok(result)
+    };
+    // Native cleanup consumes decoded reference values; shared-profile files
+    // encode those same provider variables with a separate `secret` member.
+    let decoded = transform(next, false)?;
+    transform(
+        &crate::settings_secrets::without_removed_providers(current, &decoded),
+        true,
+    )
 }
 fn apply_private_projection(value: &mut Value, projected: &Value) -> Result<(), String> {
     let encoded = crate::managed_settings_codec::encode_sparse(projected.clone())
         .map_err(|_| "Invalid private settings encoding".to_owned())?;
-    for key in ["sourceControlHosts", "usageLimitSources"] {
+    for key in ["sourceControlHosts", "usageLimitSources", "secretProviders"] {
         value[key] = encoded[key].clone();
     }
     for (id, entry) in encoded["providerInstances"]
@@ -218,7 +257,7 @@ fn redact_client(value: &mut Value) -> Result<(), String> {
     redact(value);
     let encoded = crate::managed_settings_codec::encode_sparse(projected)
         .map_err(|_| "Invalid private settings encoding".to_owned())?;
-    for key in ["sourceControlHosts", "usageLimitSources"] {
+    for key in ["sourceControlHosts", "usageLimitSources", "secretProviders"] {
         value[key] = encoded[key].clone();
     }
     for (id, entry) in encoded["providerInstances"]
@@ -277,6 +316,33 @@ fn update_inner(s: &State, p: &Value, policy_error: &mut Option<Value>) -> Resul
     let previous = v.clone();
     // Preserve sensitive environment values echoed by clients as valueRedacted.
     let mut patch = patch.clone();
+    if let Some(entries) = patch.get("secretProviders") {
+        let decoded =
+            crate::managed_settings_codec::decode_patch(json!({"secretProviders":entries}))
+                .map_err(|_| "Invalid secret provider patch")?;
+        for (id, entry) in decoded["secretProviders"].as_object().unwrap() {
+            if entry.is_null() {
+                continue;
+            }
+            let kind = entry["kind"].as_str().unwrap();
+            let problem = match s.secret_resolver.validates_config(kind, &entry["config"]) {
+                None => Some(format!("Unsupported secret provider kind: {kind}.")),
+                Some(false) => Some(format!("Invalid {kind} config for secret provider {id}.")),
+                Some(true) => None,
+            };
+            if let Some(problem) = problem {
+                let message = format!(
+                    "Server settings write-secret-provider failed at {}.",
+                    s.dir.join("settings.json").display()
+                );
+                *policy_error = Some(
+                    json!({"operation":"write-secret-provider","message":message,"cause":{"_tag":"Error","message":problem}}),
+                );
+                return Err(message);
+            }
+        }
+        patch["secretProviders"] = decoded["secretProviders"].clone();
+    }
     preserve_environment(&v, &mut patch);
     merge(&mut v, &patch);
     apply_entry_patches(&previous, &mut v, &patch)?;
@@ -350,6 +416,7 @@ fn update_inner(s: &State, p: &Value, policy_error: &mut Option<Value>) -> Resul
             v["textGenerationModelSelection"]["options"] = json!([]);
         }
     }
+    v = crate::settings_secret_transaction::echo(&previous, &v);
     normalize_preferences(&previous, &mut v, &patch)?;
     normalize(&mut v, &patch)?;
     if let Some(controls) = s.managed_policy.settings_controls()? {
@@ -393,6 +460,7 @@ fn update_inner(s: &State, p: &Value, policy_error: &mut Option<Value>) -> Resul
             *policy_error = Some(error);
             message
         })?;
+    v = clear_removed_provider_references(&previous, &v)?;
     let mut previous_private = private_projection(&previous)?;
     let next_private = private_projection(&v).map_err(|_| {
         let message = format!(
@@ -590,6 +658,7 @@ fn retain_sentinels(old: &Value, new: &mut Value) {
 fn apply_entry_patches(old: &Value, next: &mut Value, patch: &Value) -> Result<(), String> {
     for field in [
         "usageLimitSources",
+        "secretProviders",
         "usagePriceOverrides",
         "usageModelAliases",
         "projectSettingsOverrides",

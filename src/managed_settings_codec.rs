@@ -22,6 +22,11 @@ pub(crate) fn is_secret_reference(value: &Value) -> bool {
 pub(crate) fn secret_fields() -> &'static Value {
     &PROGRAM["secretFields"]
 }
+/// Decode one stored field with its full-schema rules, rather than write-only limits.
+pub(crate) fn decode_field(field: &str, value: Option<Value>) -> Result<Value> {
+    let node = PROGRAM["fields"].get(field).ok_or(())?;
+    run(id(node), value, false, false)?.ok_or(())
+}
 pub(crate) fn defaults() -> Value {
     PROGRAM["defaults"].clone()
 }
@@ -48,6 +53,17 @@ pub(crate) fn read_source_host_settings(kind: &str, value: Value) -> Option<Valu
 }
 pub(crate) fn decode_usage_config(value: Value) -> Result<Value> {
     run(id(&PROGRAM["usageConfigRoot"]), Some(value), false, false)?.ok_or(())
+}
+/// Transform the shared environment field without interpreting opaque driver configuration.
+pub(crate) fn provider_environment(value: Value, encode: bool) -> Result<Value> {
+    let root = node(id(&PROGRAM["providerInstanceRoot"]));
+    let field = root["properties"]
+        .as_array()
+        .ok_or(())?
+        .iter()
+        .find(|field| field["name"] == "environment")
+        .ok_or(())?;
+    run(id(&field["type"]), Some(value), encode, false)?.ok_or(())
 }
 pub(crate) fn encode_provider_instance(value: Value) -> Result<Value> {
     run(
