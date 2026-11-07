@@ -20,7 +20,7 @@ use tokio::{
 use tokio_tungstenite::{
     accept_hdr_async_with_config,
     tungstenite::{
-        handshake::server::{Request, Response},
+        handshake::server::{Callback, ErrorResponse, Request, Response},
         protocol::WebSocketConfig,
         Message,
     },
@@ -29,6 +29,23 @@ use tokio_tungstenite::{
 pub(super) struct Inbound {
     state: Mutex<QueueState>,
     changed: Notify,
+}
+struct Admission {
+    path: String,
+    connected: Arc<AtomicBool>,
+}
+impl Callback for Admission {
+    fn on_request(self, request: &Request, response: Response) -> Result<Response, ErrorResponse> {
+        if request.uri().path() != self.path || self.connected.swap(true, Ordering::AcqRel) {
+            let mut rejected = tokio_tungstenite::tungstenite::http::Response::new(Some(
+                "Unavailable desktop endpoint".to_owned(),
+            ));
+            *rejected.status_mut() = tokio_tungstenite::tungstenite::http::StatusCode::FORBIDDEN;
+            Err(rejected)
+        } else {
+            Ok(response)
+        }
+    }
 }
 struct QueueState {
     messages: VecDeque<String>,
@@ -170,13 +187,7 @@ impl Channel {
                         // this handshake here so exactly that client owns the queue.
                         let config = WebSocketConfig::default().max_message_size(Some(100*1024*1024)).max_frame_size(Some(100*1024*1024));
                         clients.spawn(async move {
-                        let handshake = accept_hdr_async_with_config(stream,move |request:&Request,response:Response| {
-                            if request.uri().path()!=path || connected.swap(true,Ordering::AcqRel) {
-                                let mut rejected = tokio_tungstenite::tungstenite::http::Response::new(Some("Unavailable desktop endpoint".to_owned()));
-                                *rejected.status_mut() = tokio_tungstenite::tungstenite::http::StatusCode::FORBIDDEN;
-                                Err(rejected)
-                            } else { Ok(response) }
-                        },Some(config));
+                        let handshake = accept_hdr_async_with_config(stream,Admission {path,connected},Some(config));
                         if let Ok(Ok(socket)) = tokio::time::timeout(Duration::from_secs(5),handshake).await {
                             relay(socket,queue,channel,thread_id,tab_id).await;
                         }
@@ -194,6 +205,39 @@ impl Channel {
             task,
             released: false,
         })
+    }
+}
+
+async fn relay(
+    mut socket: tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
+    queue: Arc<Inbound>,
+    channel: Channel,
+    thread_id: String,
+    tab_id: String,
+) {
+    let mut outbound = true;
+    loop {
+        tokio::select! {
+            incoming = socket.next() => {
+                let message = match incoming {
+                    Some(Ok(Message::Text(text))) => text.to_string(),
+                    Some(Ok(Message::Binary(bytes))) => {
+                        let text = String::from_utf8_lossy(&bytes);
+                        text.strip_prefix('\u{feff}').unwrap_or(&text).to_owned()
+                    }
+                    Some(Ok(Message::Ping(bytes))) => { if socket.send(Message::Pong(bytes)).await.is_err() { return; } continue; }
+                    Some(Ok(Message::Pong(_))) => continue,
+                    _ => return,
+                };
+                channel.command(json!({"type":"cdp","threadId":thread_id,"tabId":tab_id,"message":message})).await;
+            }
+            message = queue.next(), if outbound => {
+                match message {
+                    Some(message) => if socket.send(Message::Text(message.into())).await.is_err() { return; },
+                    None => { outbound = false; }
+                }
+            }
+        }
     }
 }
 
@@ -387,38 +431,5 @@ mod tests {
                 .await
                 .is_err()
         );
-    }
-}
-
-async fn relay(
-    mut socket: tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
-    queue: Arc<Inbound>,
-    channel: Channel,
-    thread_id: String,
-    tab_id: String,
-) {
-    let mut outbound = true;
-    loop {
-        tokio::select! {
-            incoming = socket.next() => {
-                let message = match incoming {
-                    Some(Ok(Message::Text(text))) => text.to_string(),
-                    Some(Ok(Message::Binary(bytes))) => {
-                        let text = String::from_utf8_lossy(&bytes);
-                        text.strip_prefix('\u{feff}').unwrap_or(&text).to_owned()
-                    }
-                    Some(Ok(Message::Ping(bytes))) => { if socket.send(Message::Pong(bytes)).await.is_err() { return; } continue; }
-                    Some(Ok(Message::Pong(_))) => continue,
-                    _ => return,
-                };
-                channel.command(json!({"type":"cdp","threadId":thread_id,"tabId":tab_id,"message":message})).await;
-            }
-            message = queue.next(), if outbound => {
-                match message {
-                    Some(message) => if socket.send(Message::Text(message.into())).await.is_err() { return; },
-                    None => { outbound = false; }
-                }
-            }
-        }
     }
 }
