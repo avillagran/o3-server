@@ -56,3 +56,4 @@ jobs:
       - run: python3 tools/test-nightly-watch.py
       - run: python3 tools/test_runtime_safety.py
       - run: python3 tools/test_node_admission.py
+      - run: python3 tools/test_speech_runtime_admission.py

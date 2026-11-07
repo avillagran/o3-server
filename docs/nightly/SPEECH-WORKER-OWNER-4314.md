@@ -3,8 +3,11 @@
 This foundation runs the complete pinned native speech factory behind an owned
 Rust process lifetime. It does not register HTTP routes, a speech engine/catalog,
 a model downloader, cloud providers, microphone capture, or a voice capability.
-Actual `transcribe-cpp0.4.1`, model/VAD acquisition and real inference remain
-unaccepted. Physical fixtures use an explicitly synthetic engine.
+The owner fixtures use an explicitly synthetic engine. The separate
+[engine acquisition checkpoint](SPEECH-ENGINE-ACQUISITION-4314.md) now verifies
+the complete Linux x64 package graph and real `transcribe-cpp0.4.1` CPU inference
+with the pinned tiny catalog model. Other models, VAD and GPU execution remain
+unaccepted.
 
 ## Resource and authority boundary
 
@@ -79,11 +82,20 @@ container init and is not falsely reported as Rust reaping every descendant.
 
 The operation, startup and close deadlines are owner inputs. They do not redefine
 the application HTTP/client deadlines. Full speech service, streaming admission,
-engine acquisition and application shutdown integration are later consumers.
+ModelStore and application shutdown integration are later consumers; verified
+engine acquisition and the real CPU path are documented separately above.
 Rust string transport also does not claim preservation of arbitrary lone UTF16
 surrogates in native engine output.
 
 ## Focused validation
+
+Crash/cancellation fixtures capture a pidfd for the native child before the
+trigger and wait for its exit within the existing two-second close budget.
+An accepted process-group kill can precede the child's next scheduler turn, so
+an immediate `/proc` state is not an exit receipt. The pidfd also excludes PID
+reuse. Graceful disposal still additionally requires native child reaping;
+forced group fencing does not claim that the Rust owner reaps orphaned children.
+The observed descriptor is owned and registered only for readable readiness.
 
 Private acceptance covers actual Rust→admitted Node→whole factory execution with
 synthetic inference, full19.2MB PCM, stream generations, hung-child cancellation,
