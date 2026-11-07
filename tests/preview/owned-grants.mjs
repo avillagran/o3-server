@@ -10,7 +10,7 @@ await import('/guard.mjs');
 const result=spawnSync('/supervisor',[],{encoding:'utf8',timeout:30000,maxBuffer:65536});
 assert.equal(result.status,0,(result.stderr??'').slice(-8192));
 const proof=JSON.parse(result.stdout);
-for (const key of ['complete','realActorOwnedSession','borrowedSessionPreserved','foreignTargetAndGlobalCloseRefused','rawOwnedConsoleEvent','endedCallbackRefused','lateAttachDrainedAndDetached','otherTabSurvives']) assert.equal(proof[key],true,key);
+for (const key of ['complete','realActorOwnedSession','borrowedSessionPreserved','foreignTargetAndGlobalCloseRefused','rawOwnedConsoleEvent','endedCallbackRefused','lateAttachDrainedAndDetached','otherTabSurvives','endedCallbackCancelsCorrelationAndLateResultDrains']) assert.equal(proof[key],true,key);
 assert.equal(proof.profileRemovalRequests,0);
 assert.equal(proof.normalClose.clean,true);
 assert.equal(proof.lateClose.clean,true);

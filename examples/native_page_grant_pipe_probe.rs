@@ -203,10 +203,37 @@ async fn main() {
         ),
         json!("other tab alive")
     );
+    let pending_tab = open(&state, "pending").await;
+    let pending_page = browser
+        .capture_native_page("pending", &pending_tab)
+        .unwrap();
+    let mut events = pending_page.events();
+    let captured = pending_page.clone();
+    let (background_tx, background_rx) = tokio::sync::oneshot::channel();
+    pending_page.control().observe_admitted(move |context| async move {
+        let invocation = captured.admitted(&context)?;
+        let own = session(&invocation.command("Target.attachToTarget", params(&json!({"targetId":captured.target(),"flatten":true}).to_string()), None, Duration::from_secs(3)).await?);
+        invocation.command("Runtime.enable", params("{}"), Some(own.clone()), Duration::from_secs(3)).await?;
+        let background = tokio::spawn(async move {
+            invocation.command("Runtime.evaluate",params(r#"{"expression":"console.log('native-end-watch-started');new Promise(resolve=>setTimeout(()=>resolve(true),350))","awaitPromise":true,"returnByValue":true}"#),Some(own),Duration::from_secs(3)).await
+        });
+        tokio::time::timeout(Duration::from_secs(3),async {
+            loop { let event = events.recv().await.unwrap(); if event.method()==Some("Runtime.consoleAPICalled") { break; } }
+        }).await.unwrap();
+        background_tx.send(background).ok().unwrap();
+        Ok(Value::Null)
+    }).wait().await.unwrap();
+    let abandoned = tokio::time::timeout(Duration::from_secs(1), background_rx.await.unwrap())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(abandoned.unwrap_err()["reason"], "callback_ended");
+    let pending_receipt = pending_page.close(Duration::from_secs(3)).await;
+    assert!(pending_receipt.clean, "{pending_receipt:?}");
     preview::shutdown(&state).await;
     assert_eq!(retained.0.load(Ordering::SeqCst), 0);
     println!(
         "{}",
-        json!({"complete":true,"realActorOwnedSession":true,"borrowedSessionPreserved":true,"foreignTargetAndGlobalCloseRefused":true,"rawOwnedConsoleEvent":true,"actualChildWorkerSession":true,"endedCallbackRefused":true,"lateAttachDrainedAndDetached":true,"otherTabSurvives":true,"normalClose":receipt,"lateClose":late_receipt,"profileRemovalRequests":retained.0.load(Ordering::SeqCst)})
+        json!({"complete":true,"realActorOwnedSession":true,"borrowedSessionPreserved":true,"foreignTargetAndGlobalCloseRefused":true,"rawOwnedConsoleEvent":true,"actualChildWorkerSession":true,"endedCallbackRefused":true,"lateAttachDrainedAndDetached":true,"otherTabSurvives":true,"normalClose":receipt,"lateClose":late_receipt,"endedCallbackCancelsCorrelationAndLateResultDrains":true,"pendingClose":pending_receipt,"profileRemovalRequests":retained.0.load(Ordering::SeqCst)})
     );
 }

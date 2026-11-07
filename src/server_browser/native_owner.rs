@@ -217,6 +217,7 @@ impl Owner {
             owner: self.clone(),
             reservation,
         });
+        let completion = admission.as_ref().map(|ticket| ticket.context.completion());
         let authority = Arc::new(FrameAuthority {
             tracked: tracked.clone(),
             context: admission
@@ -230,26 +231,47 @@ impl Owner {
         let _cancel = permit.hold();
         let actor = self.actor.upgrade().ok_or_else(|| fault("closed"))?;
         let (reply, result) = oneshot::channel();
-        tokio::time::timeout_at(
-            expires,
-            actor.send(exact::Request {
-                method: method.into(),
-                params,
-                session,
+        let exchange = async {
+            tokio::time::timeout_at(
                 expires,
-                reply,
-                permit,
-                observer: Some(tracked),
-            }),
-        )
-        .await
-        .map_err(|_| fault("deadline"))?
-        .map_err(|_| fault("closed"))?;
-        tokio::time::timeout_at(expires, result)
+                actor.send(exact::Request {
+                    method: method.into(),
+                    params,
+                    session,
+                    expires,
+                    reply,
+                    permit,
+                    observer: Some(tracked),
+                }),
+            )
             .await
             .map_err(|_| fault("deadline"))?
-            .map_err(|_| fault("closed"))?
-            .map_err(|_| fault("transport"))
+            .map_err(|_| fault("closed"))?;
+            tokio::time::timeout_at(expires, result)
+                .await
+                .map_err(|_| fault("deadline"))?
+                .map_err(|_| fault("closed"))?
+                .map_err(|_| fault("transport"))
+        };
+        let callback_ended = async {
+            if let Some(mut completion) = completion {
+                loop {
+                    if *completion.borrow_and_update() {
+                        break;
+                    }
+                    if completion.changed().await.is_err() {
+                        break;
+                    }
+                }
+            } else {
+                std::future::pending::<()>().await;
+            }
+        };
+        tokio::select! {
+            biased;
+            _ = callback_ended => Err(fault("callback_ended")),
+            result = exchange => result,
+        }
     }
     fn receipt(&self) -> NativeCloseReceipt {
         let grants = self.grants.lock().unwrap();

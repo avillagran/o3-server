@@ -24,6 +24,7 @@ pub struct RunContext {
     generation: u64,
     identity: std::sync::Weak<()>,
     active: Arc<Mutex<bool>>,
+    ended: watch::Receiver<bool>,
 }
 impl RunContext {
     pub fn action_id(&self) -> ActionId {
@@ -32,14 +33,20 @@ impl RunContext {
     pub fn generation(&self) -> u64 {
         self.generation
     }
+    /// Notification of this callback ending; take/release/close generations do
+    /// not complete it while the callback remains entered.
+    pub fn completion(&self) -> watch::Receiver<bool> {
+        self.ended.clone()
+    }
     pub fn is_active(&self) -> bool {
         *self.active.lock().unwrap()
     }
 }
-struct EndAdmission(Arc<Mutex<bool>>);
+struct EndAdmission(Arc<Mutex<bool>>, watch::Sender<bool>);
 impl Drop for EndAdmission {
     fn drop(&mut self) {
         *self.0.lock().unwrap() = false;
+        self.1.send_replace(true);
     }
 }
 
@@ -524,14 +531,16 @@ async fn run(shared: Arc<Shared>, done: watch::Sender<bool>) {
                     jobs.spawn(async move { Finished::Action(action, callback(input).await) })
                 }
                 Work::Admitted(callback) => {
+                    let (end, ended) = watch::channel(false);
                     let context = RunContext {
                         action,
                         generation,
                         identity: Arc::downgrade(&shared.identity),
                         active: Arc::new(Mutex::new(true)),
+                        ended,
                     };
                     jobs.spawn(async move {
-                        let _end = EndAdmission(context.active.clone());
+                        let _end = EndAdmission(context.active.clone(), end);
                         Finished::Action(action, callback(input, context).await)
                     })
                 }

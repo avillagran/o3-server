@@ -89,3 +89,24 @@ consolidated receipt and final source hashes are in
 `/var/tmp/o3-server/page-real-owner-focused-3/proof.json`. The only declaration
 change after functional execution moves public reexports before the test module;
 all-target strict checks use that final declaration order.
+
+## Exact callback completion
+
+RunContext now exposes a read-only completion receiver. EndAdmission clears the
+same active gate and then publishes completion on return, panic or callback
+future drop. A human takeover or normal Control close does not publish completion
+while that entered callback still drains. The native owner command future selects
+this exact terminal notification; an abandoned transport future therefore drops
+its existing permit, wakes the actor, and leaves any written response tracked by
+the existing late-receipt path. It does not create a ninth correlation slot,
+change a native timeout, relabel a ticket, or close the shared browser.
+
+`/var/tmp/o3-server/page-callback-end-units/result.json` records twelve Control
+runtime cases and strict checks in both modes. The separate physical receipt
+`/var/tmp/o3-server/page-callback-end-physical/result.json` uses immutable
+executable SHA `7209487f446458cec5c4fbdd2971fd616b413628d9996c2c44ee366d8299e321`.
+The real page logs its started marker before the callback returns, while its
+350 ms awaited promise remains outstanding. The retained background caller then
+fails with `callback_ended`; the actual later browser response is drained before
+individual detach and a clean close receipt. This is a callback-lifetime proof,
+not certification of eight simultaneous native timeout/terminate sequences.

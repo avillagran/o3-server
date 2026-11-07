@@ -354,6 +354,8 @@ async fn admitted_context_is_owner_bound_and_drains_after_take_and_close() {
     assert_eq!(context.action_id(), running.action_id());
     assert!(control.owns_context(&context));
     assert!(!foreign.owns_context(&context));
+    let mut completion = context.completion();
+    assert!(!*completion.borrow_and_update());
     let generation = context.generation();
     let invoked = Arc::new(AtomicUsize::new(0));
     let count = invoked.clone();
@@ -367,9 +369,12 @@ async fn admitted_context_is_owner_bound_and_drains_after_take_and_close() {
     let close = control.close();
     assert!(control.snapshot().closed);
     assert!(control.owns_context(&context));
+    assert!(!*completion.borrow());
     release.send(()).unwrap();
     assert_eq!(bounded(running.wait()).await.unwrap(), json!("written"));
     assert!(!context.is_active());
+    bounded(completion.changed()).await.unwrap();
+    assert!(*completion.borrow());
     assert!(!control.owns_context(&context));
     assert!(bounded(queued.wait()).await.is_err());
     assert_eq!(invoked.load(Ordering::SeqCst), 0);
@@ -395,6 +400,26 @@ async fn observer_admission_captures_submission_generation_before_first_poll() {
     assert_eq!(context.generation(), generation);
     bounded(observe.wait()).await.unwrap();
     bounded(take.wait()).await.unwrap();
+    assert!(!context.is_active());
+    bounded(control.shutdown()).await.unwrap();
+}
+
+#[tokio::test]
+async fn admitted_callback_panic_publishes_its_exact_completion_notification() {
+    sandbox::assert_isolated();
+    let control = Control::new(None);
+    let (entered, context) = oneshot::channel();
+    let failed = control.observe_admitted(move |context| async move {
+        entered.send(context).unwrap();
+        std::panic::resume_unwind(Box::new("Private callback failure fixture"));
+    });
+    let context = bounded(context).await.unwrap();
+    let mut completion = context.completion();
+    assert!(bounded(failed.wait()).await.is_err());
+    if !*completion.borrow_and_update() {
+        bounded(completion.changed()).await.unwrap();
+    }
+    assert!(*completion.borrow());
     assert!(!context.is_active());
     bounded(control.shutdown()).await.unwrap();
 }
