@@ -39,7 +39,7 @@ def check(text):
         assert call('initialize',{'protocolVersion':'2025-06-18','capabilities':{},'clientInfo':{'name':'native-peer','version':'1'}})['serverInfo']['name']=='T3 Code'
     tools=call('tools/list')['tools']
     assert any(t['name']=='t3_thread_configure' for t in tools)
-    assert any(t['name']=='preview_open' for t in tools)==(text=='enabled')
+    assert any(t['name']=='preview_open' for t in tools)==(text in ('enabled','dialog'))
     def tool(name,args):
         return call('tools/call',{'name':name,'arguments':args})
     configured=tool('t3_thread_configure',{})
@@ -67,6 +67,35 @@ def check(text):
     opened=tool('preview_open',{'url':'http://localhost:1234'})
     assert not opened['isError'],opened
     tab=json.loads(opened['content'][0]['text'])['tabId']
+    if text=='dialog':
+        expected_tool=json.load(open(os.path.join(os.path.dirname(__file__),'native-preview-dialog-tool-4288.json')))['toolMetadata']
+        assert next(tool for tool in tools if tool['name']=='preview_dialog')==expected_tool
+        import threading,time
+        observed=[]
+        def evaluate():
+            try: observed.append(tool('preview_evaluate',{'tabId':tab,'expression':'fixtureDialog()'}))
+            except BaseException as error: observed.append(str(error))
+        worker=threading.Thread(target=evaluate);worker.start()
+        pending=None
+        for attempt in range(100):
+            status=tool('preview_status',{'tabId':tab})
+            assert not status['isError'],status
+            pending=json.loads(status['content'][0]['text'])
+            if pending.get('dialog'):break
+            time.sleep(.01)
+        assert pending['dialog']=={'type':'prompt','message':'Owned prompt','defaultValue':'default'},pending
+        trimmed=tool('preview_status',{'tabId':' '+tab+' '})
+        assert not trimmed['isError'] and json.loads(trimmed['content'][0]['text'])['tabId']==tab,trimmed
+        assert tool('preview_status',{'tabId':None})['isError']
+        assert tool('preview_dialog',{'tabId':'foreign','accept':True})['isError']
+        assert tool('preview_dialog',{'tabId':tab,'accept':None})['isError']
+        answered=tool('preview_dialog',{'tabId':tab,'accept':True,'promptText':'Owned MCP answer'})
+        assert not answered['isError'],answered
+        assert json.loads(answered['content'][0]['text'])['dialog'] is None,answered
+        worker.join(3);assert not worker.is_alive()
+        assert len(observed)==1 and isinstance(observed[0],dict) and not observed[0]['isError'],observed
+        assert tool('preview_dialog',{'tabId':tab,'accept':True})['isError']
+        return
     assert tool('preview_navigate',{'tabId':'foreign','url':'http://localhost'})['isError']
     assert not tool('preview_navigate',{'tabId':tab,'url':'http://localhost:1234/next'})['isError']
     assert not tool('preview_evaluate',{'tabId':tab,'expression':'1+1'})['isError']

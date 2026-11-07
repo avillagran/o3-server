@@ -11,6 +11,7 @@ use std::{
 use tokio::sync::{mpsc, oneshot, Mutex};
 
 mod desktop;
+pub(crate) mod dialog;
 mod events;
 #[cfg(test)]
 mod ownership_tests;
@@ -767,6 +768,61 @@ impl Browsers {
             .get(&(thread.into(), tab.into()))
             .map(|t| t.done.clone())
     }
+    fn dialog_tab(&self, thread: &str, tab: &str) -> Result<Tab, Value> {
+        self.tabs
+            .lock()
+            .unwrap()
+            .get(&(thread.into(), tab.into()))
+            .filter(|tab| !tab.closing && !*tab.done.borrow())
+            .cloned()
+            .ok_or_else(|| error("Browser tab is closed".into()))
+    }
+    pub(crate) fn dialog_status(&self, thread: &str, tab: &str) -> Result<Value, Value> {
+        let tab = self.dialog_tab(thread, tab)?;
+        Ok(tab
+            .events
+            .as_ref()
+            .zip(tab.session.as_deref())
+            .and_then(|(pages, session)| events::dialog_state(pages, session))
+            .map_or(Value::Null, |state| state.status()))
+    }
+    pub(crate) fn dialog_watch(
+        &self,
+        thread: &str,
+        tab: &str,
+    ) -> Option<tokio::sync::watch::Receiver<dialog::State>> {
+        let tab = self.dialog_tab(thread, tab).ok()?;
+        tab.events
+            .as_ref()
+            .zip(tab.session.as_deref())
+            .and_then(|(pages, session)| events::dialog_watch(pages, session))
+    }
+    pub(crate) async fn answer_dialog(
+        &self,
+        thread: &str,
+        tab: &str,
+        accept: bool,
+        prompt: Option<&str>,
+    ) -> Result<(), Value> {
+        let tab = self.dialog_tab(thread, tab)?;
+        let (pages, session) = tab
+            .events
+            .as_ref()
+            .zip(tab.session.as_deref())
+            .ok_or_else(|| error("Browser tab is closed".into()))?;
+        let (token, params) = events::begin_dialog(pages, session, accept, prompt)
+            .map_err(|cause| error(cause.into()))?;
+        request_in(
+            &tab.tx,
+            "Page.handleJavaScriptDialog",
+            params,
+            tab.session.clone(),
+        )
+        .await
+        .map_err(error)?;
+        events::finish_dialog(pages, session, token);
+        Ok(())
+    }
     pub async fn command(
         &self,
         thread: &str,
@@ -867,7 +923,11 @@ pub async fn stream<S>(
     };
     let operate = viewer.is_some();
     let _viewer = viewer;
-    let hello = json!({"type":"control","canOperate":operate,"controller":if operate{"you"}else{"unclaimed"},"generation":1,"dialog":null});
+    let Some(mut dialogs) = state.streams.p2.preview.browser.dialog_watch(&thread, &tab) else {
+        return;
+    };
+    let mut dialog_revision = dialogs.borrow().broadcast_revision;
+    let hello = json!({"type":"control","_tag":"control","canOperate":operate,"controller":if operate{"you"}else{"unclaimed"},"generation":1,"dialog":dialogs.borrow().status()});
     if socket
         .send(Message::Text(hello.to_string().into()))
         .await
@@ -879,17 +939,33 @@ pub async fn stream<S>(
     let deadline = tokio::time::sleep(LIFETIME);
     tokio::pin!(deadline);
     let mut waiting: Option<std::time::Instant> = None;
+    type Frame =
+        std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<u8>, Value>> + Send>>;
+    let mut frame_task: Option<Frame> = None;
     loop {
         tokio::select! {
             _=&mut deadline=>break,
+            changed=dialogs.changed()=>{
+                if changed.is_err(){break;}
+                let snapshot=dialogs.borrow_and_update().clone();
+                if snapshot.broadcast_revision!=dialog_revision {
+                    dialog_revision=snapshot.broadcast_revision;
+                    let control=json!({"type":"control","_tag":"control","canOperate":operate,"controller":if operate{"you"}else{"unclaimed"},"generation":1,"dialog":snapshot.status()});
+                    if !matches!(tokio::time::timeout(Duration::from_secs(3),socket.send(Message::Text(control.to_string().into()))).await,Ok(Ok(()))){break;}
+                }
+            }
+            frame=async {match frame_task.as_mut(){Some(task)=>task.await,None=>std::future::pending().await}},if frame_task.is_some()=>{
+                frame_task=None;
+                let Ok(frame)=frame else{break;};
+                if !matches!(tokio::time::timeout(Duration::from_secs(3),socket.send(Message::Binary(frame.into()))).await,Ok(Ok(()))){break;}
+                waiting=Some(std::time::Instant::now());
+            }
             _=interval.tick()=>{
                 let valid=session["sid"].as_str().is_some_and(|sid|state.db.lock().unwrap().query_row("SELECT EXISTS(SELECT 1 FROM auth_sessions WHERE session_id=? AND revoked_at IS NULL AND expires_at>?)",rusqlite::params![sid,crate::store::now_ms()],|r|r.get::<_,bool>(0)).unwrap_or(false));
                 if !valid||waiting.is_some_and(|at|at.elapsed()>Duration::from_secs(10)){break;}
-                if waiting.is_some(){continue;}
-                let Ok(frame)=state.streams.p2.preview.browser.screenshot(&thread,&tab).await else{break;};
-                if !matches!(tokio::time::timeout(Duration::from_secs(3),socket.send(Message::Binary(frame.into()))).await,Ok(Ok(()))){break;}
-                waiting=Some(std::time::Instant::now());
-                crate::preview::sync_navigation(&state,&thread,&tab).await;
+                if waiting.is_some()||frame_task.is_some(){continue;}
+                let owner=state.clone();let thread=thread.clone();let tab=tab.clone();
+                frame_task=Some(Box::pin(async move{owner.streams.p2.preview.browser.screenshot(&thread,&tab).await}));
             }
             incoming=socket.next()=>{
                 let Some(Ok(Message::Text(raw)))=incoming else{break;};
@@ -897,6 +973,10 @@ pub async fn stream<S>(
                 let Ok(v)=serde_json::from_str::<Value>(&raw) else{continue;};
                 if v["type"]=="ack" {waiting=None;continue;}
                 if !operate {continue;}
+                if v["type"]=="dialog" {
+                    if let Some(accept)=v["accept"].as_bool(){let _=state.streams.p2.preview.browser.answer_dialog(&thread,&tab,accept,v["promptText"].as_str()).await;}
+                    continue;
+                }
                 let (method,params)=match v["type"].as_str(){
                     Some("text")=>("Input.insertText",json!({"text":v["text"].as_str().unwrap_or("").chars().take(10000).collect::<String>()})),
                     Some("navigate")=>{let Ok(url)=crate::preview::normalize_url(v["url"].as_str().unwrap_or(""))else{continue;};("Page.navigate",json!({"url":url}))},

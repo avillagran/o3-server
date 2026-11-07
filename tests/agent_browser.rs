@@ -223,3 +223,46 @@ fn native_request(
     );
     (code, serde_json::from_slice(&body).unwrap())
 }
+
+#[test]
+fn actual_mcp_dialog_status_and_answer_bypass_a_held_owned_evaluate() {
+    use std::{sync::Arc, time::Duration};
+    std::env::set_var(
+        "O3_BROWSER_BINARY",
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/browser-cdp-events.py"),
+    );
+    let provider = Arc::new(o3_server::codex::CodexProvider::new(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/agent-browser-peer.py"),
+        None,
+    ));
+    let removals = Arc::new(support::profile_removal::Recording::default());
+    let server = support::start(|state| {
+        state
+            .streams
+            .p2
+            .preview
+            .set_profile_removal(removals.clone());
+        *state.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::Providers {
+            claude: None,
+            codex: provider.clone(),
+        }));
+    });
+    let client = server.connect();
+    client.rpc("projects.mutate",json!({"type":"project.create","commandId":"project","projectId":"p","title":"Private dialog","workspaceRoot":server.dir})).unwrap();
+    client.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"create","threadId":"t","projectId":"p","title":"Dialog","modelSelection":{"instanceId":"codex","model":"test"},"runtimeMode":"approval-required","interactionMode":"default"})).unwrap();
+    client.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"higher","threadId":"higher","projectId":"p","title":"Higher","modelSelection":{"instanceId":"codex","model":"test"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
+    let capture = server.dir.join("dialog-observation.json");
+    client.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"turn","messageId":"turn","threadId":"t","text":format!("dialog|{}",capture.display()),"attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
+    assert!(support::wait_for(Duration::from_secs(15), || {
+        let projection = t3_protocol::api::orchestration::thread_projection(&client, "t").unwrap();
+        let runs = projection["runs"].as_array().unwrap();
+        assert!(
+            !runs.iter().any(|run| run["status"] == "failed"),
+            "{projection}"
+        );
+        runs.len() == 1 && runs[0]["status"] == "completed"
+    }));
+    assert!(capture.exists());
+}

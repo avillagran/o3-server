@@ -48,9 +48,10 @@ existing 4 MiB bound; the desktop receive change does not upgrade that separate
 limit.
 
 Held-evaluation tests cover both an inherited pipe and a desktop WebSocket.
-Dialog state, native automation status/tool results and viewer broadcasts remain
-the next consumer increment. No browser capability is enabled by this transport
-foundation alone.
+Pending dialog state, the native dialog tool and independent viewer broadcasts
+are implemented in the later [dialog consumer increment](BROWSER-DIALOGS.md), with
+its explicit ownership, wire-string and lifecycle limitations. No browser
+capability is enabled by the transport foundation alone.
 
 ## Cleanup ownership and concurrent calls
 

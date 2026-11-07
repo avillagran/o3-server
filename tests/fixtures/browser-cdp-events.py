@@ -57,7 +57,7 @@ while True:
                 if method=='Page.getFrameTree':result={'frameTree':{'frame':{'id':target+'-frame','url':page['url']}}}
                 elif method=='Page.getNavigationHistory':result={'currentIndex':0,'entries':[{'id':1,'url':page['url'],'title':page['title']}]}
                 elif method=='Runtime.evaluate':
-                    if params.get('fixtureHold'):
+                    if params.get('fixtureHold') or params.get('expression')=='fixtureDialog()':
                         page['held']=(command['id'],session);held=True
                         events=[{'method':'Page.javascriptDialogOpening','sessionId':session,'params':{'type':'prompt','message':'Owned prompt','defaultPrompt':'default','url':page['url']}}]
                     else:result={'result':{'value':{'url':page['url'],'title':page['title'],'readyState':'complete'}}}
@@ -65,11 +65,19 @@ while True:
                     pending=page.pop('held',None)
                     if pending:
                         deferred=[{'id':pending[0],'sessionId':pending[1],'result':{'result':{'value':{'unblocked':True,'accepted':params['accept'],'promptText':params.get('promptText')}}}}]
+                    screenshot=page.pop('screenshot',None)
+                    if screenshot:
+                        deferred.append({'id':screenshot[0],'sessionId':screenshot[1],'result':{'data':'/9j/2Q=='}})
+                        page['holdScreenshot']=False
                     events=[{'method':'Page.javascriptDialogClosed','sessionId':session,'params':{'result':params['accept']}}]
                 elif method=='Page.navigate':
                     page['url']=params['url'];request_id='navigation-'+str(command['id']);result={'frameId':target+'-frame'}
                     events=[{'method':'Network.requestWillBeSent','sessionId':session,'params':{'requestId':request_id,'loaderId':request_id,'frameId':target+'-frame','type':'Document','request':{'url':page['url'],'method':'GET'}}},{'method':'Page.frameStartedLoading','sessionId':session,'params':{'frameId':target+'-frame'}},{'method':'Page.frameNavigated','sessionId':session,'params':{'frame':{'id':target+'-frame','url':page['url']}}},{'method':'Network.responseReceived','sessionId':session,'params':{'requestId':request_id,'response':{'url':page['url'],'status':200}}},{'method':'Network.loadingFinished','sessionId':session,'params':{'requestId':request_id}},{'method':'Page.loadEventFired','sessionId':session,'params':{'timestamp':1}}]
-                elif method=='Page.captureScreenshot':result={'data':'/9j/2Q=='}
+                elif method=='Page.captureScreenshot':
+                    if page.get('holdScreenshot'):
+                        page['screenshot']=(command['id'],session);held=True
+                    else:result={'data':'/9j/2Q=='}
+                elif method=='Fixture.holdScreenshot':page['holdScreenshot']=True
                 elif method=='Fixture.holdNextCreate':hold_next_create=True
                 elif method=='Fixture.rejectNextAttach':reject_next_attach=True
                 elif method=='Fixture.setUrl':page['url']=params['url']

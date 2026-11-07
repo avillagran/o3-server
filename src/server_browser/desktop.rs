@@ -127,7 +127,7 @@ pub(super) async fn launch(
             .as_str()
             .ok_or("Desktop page attachment failed")?
             .to_owned();
-        let (page_done, navigation) = events::register(&pages, &session, &target);
+        let (page_done, navigation) = events::register_desktop(&pages, &session, &target);
         browser.done = page_done;
         browser.navigation = Some(navigation);
         request_in(&browser.tx, "Page.enable", json!({}), Some(session.clone())).await?;
@@ -420,15 +420,19 @@ mod tests {
         })
         .await
         .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while browser.dialog_status("thread", "tab").unwrap()["message"]
+                != "Owned desktop prompt"
+            {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
         assert!(!eval.is_finished());
         tokio::time::timeout(
             Duration::from_secs(2),
-            browser.command(
-                "thread",
-                "tab",
-                "Page.handleJavaScriptDialog",
-                json!({"accept":false}),
-            ),
+            browser.answer_dialog("thread", "tab", false, None),
         )
         .await
         .unwrap()
@@ -442,6 +446,7 @@ mod tests {
             result["result"]["value"],
             json!({"unblocked":true,"accepted":false})
         );
+        assert_eq!(browser.dialog_status("thread", "tab").unwrap(), Value::Null);
         assert_eq!(
             browser.connection("thread", "tab").await,
             Some((Origin::Desktop, true))

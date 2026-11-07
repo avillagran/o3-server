@@ -94,6 +94,8 @@ fn request_step(params: &Value, main_frame: Option<&str>) -> Option<Value> {
 }
 struct Observer {
     target: String,
+    desktop: bool,
+    dialog: tokio::sync::watch::Sender<dialog::State>,
     main_frame: Option<String>,
     navigation: tokio::sync::watch::Sender<Navigation>,
     done: tokio::sync::watch::Sender<bool>,
@@ -124,6 +126,24 @@ impl Observer {
         });
     }
     fn accept(&mut self, value: &Value, session: &str) -> bool {
+        if value["sessionId"] == session {
+            if value["method"] == "Page.javascriptDialogOpening" && self.main_frame.is_some() {
+                let params = &value["params"];
+                if let (Some(kind), Some(message)) =
+                    (params["type"].as_str(), params["message"].as_str())
+                {
+                    self.dialog.send_modify(|state| {
+                        state.open(
+                            kind,
+                            message,
+                            params["defaultPrompt"].as_str().unwrap_or(""),
+                        )
+                    });
+                }
+            } else if self.desktop && value["method"] == "Page.javascriptDialogClosed" {
+                self.dialog.send_modify(dialog::State::external_close);
+            }
+        }
         let event = match classify(
             value,
             Some(session),
@@ -230,6 +250,8 @@ pub(super) fn register(
         session.into(),
         Observer {
             target: target.into(),
+            desktop: false,
+            dialog: tokio::sync::watch::channel(dialog::State::default()).0,
             main_frame: None,
             navigation: nav_tx,
             done: done_tx,
@@ -239,6 +261,24 @@ pub(super) fn register(
         old.done.send_replace(true);
     }
     (done, navigation)
+}
+pub(super) fn register_desktop(
+    registry: &Shared,
+    session: &str,
+    target: &str,
+) -> (
+    tokio::sync::watch::Receiver<bool>,
+    tokio::sync::watch::Receiver<Navigation>,
+) {
+    let watch = register(registry, session, target);
+    registry
+        .lock()
+        .unwrap()
+        .pages
+        .get_mut(session)
+        .unwrap()
+        .desktop = true;
+    watch
 }
 pub(super) fn frame(registry: &Shared, session: Option<&str>, result: &Value) {
     let mut registry = registry.lock().unwrap();
@@ -303,6 +343,46 @@ pub(super) fn expire(registry: &Shared, session: &str, token: u64) {
             let transition = page.network.apply(&json!({"kind":"tick"}), "");
             page.publish(transition, false);
         }
+    }
+}
+pub(super) fn dialog_state(registry: &Shared, session: &str) -> Option<dialog::State> {
+    registry
+        .lock()
+        .unwrap()
+        .pages
+        .get(session)
+        .map(|page| page.dialog.borrow().clone())
+}
+pub(super) fn dialog_watch(
+    registry: &Shared,
+    session: &str,
+) -> Option<tokio::sync::watch::Receiver<dialog::State>> {
+    registry
+        .lock()
+        .unwrap()
+        .pages
+        .get(session)
+        .map(|page| page.dialog.subscribe())
+}
+pub(super) fn begin_dialog(
+    registry: &Shared,
+    session: &str,
+    accept: bool,
+    prompt: Option<&str>,
+) -> Result<(u64, Value), &'static str> {
+    let mut registry = registry.lock().unwrap();
+    let page = registry
+        .pages
+        .get_mut(session)
+        .ok_or("Browser tab is closed")?;
+    let mut result = Err("No dialog is pending.");
+    page.dialog
+        .send_modify(|state| result = state.begin(accept, prompt));
+    result
+}
+pub(super) fn finish_dialog(registry: &Shared, session: &str, token: u64) {
+    if let Some(page) = registry.lock().unwrap().pages.get_mut(session) {
+        page.dialog.send_modify(|state| state.finish(token));
     }
 }
 #[cfg(test)]
@@ -382,5 +462,46 @@ mod tests {
             &json!({"method":"Target.targetDestroyed","params":{"targetId":"target-b"}})
         ));
         assert!(*done_b.borrow());
+    }
+    #[test]
+    fn dialogs_require_live_frame_and_exact_opaque_session_and_drop_on_detachment() {
+        crate::test_sandbox::assert_isolated();
+        let pages: Shared = Default::default();
+        register_desktop(&pages, "opaque-a", "target-a");
+        register(&pages, "opaque-b", "target-b");
+        let opening = json!({"method":"Page.javascriptDialogOpening","sessionId":"opaque-a","params":{"type":"prompt","message":"Owned","defaultPrompt":"default"}});
+        notify(&pages, &opening);
+        assert!(dialog_state(&pages, "opaque-a").unwrap().status().is_null());
+        frame(
+            &pages,
+            Some("opaque-a"),
+            &json!({"frameTree":{"frame":{"id":"frame-a"}}}),
+        );
+        notify(&pages, &opening);
+        assert_eq!(
+            dialog_state(&pages, "opaque-a").unwrap().status()["message"],
+            "Owned"
+        );
+        assert!(dialog_state(&pages, "opaque-b").unwrap().status().is_null());
+        let revision = dialog_state(&pages, "opaque-a").unwrap().broadcast_revision;
+        notify(
+            &pages,
+            &json!({"method":"Page.javascriptDialogClosed","sessionId":"opaque-b"}),
+        );
+        assert!(!dialog_state(&pages, "opaque-a").unwrap().status().is_null());
+        notify(
+            &pages,
+            &json!({"method":"Page.javascriptDialogClosed","sessionId":"opaque-a"}),
+        );
+        assert!(dialog_state(&pages, "opaque-a").unwrap().status().is_null());
+        assert_eq!(
+            dialog_state(&pages, "opaque-a").unwrap().broadcast_revision,
+            revision
+        );
+        notify(&pages, &opening);
+        remove(&pages, "opaque-a");
+        notify(&pages, &opening);
+        assert!(dialog_state(&pages, "opaque-a").is_none());
+        assert!(begin_dialog(&pages, "opaque-a", true, None).is_err());
     }
 }

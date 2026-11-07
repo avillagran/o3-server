@@ -1,0 +1,55 @@
+{
+  "revision": "32a0531748c44b25072d7495ce0b9bd7e9450a87",
+  "toolMetadata": {
+    "name": "preview_dialog",
+    "description": "Accept or dismiss the dialog `preview_status` reports. Pass `promptText` to accept a prompt. Needs your own tab, or an unclaimed one. Desktop hosts may not support this.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "accept": {
+          "type": "boolean"
+        },
+        "promptText": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "accept"
+      ],
+      "additionalProperties": true
+    },
+    "annotations": {
+      "title": "Resolve browser dialog",
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    }
+  },
+  "toolSource": {
+    "file": "apps/server/src/mcp/toolkits/preview/tools.ts",
+    "sha256": "bfb5b9d6d87560e1dc3baeaae67eb21a78bc94507b94417d82c0472fe4718b9c"
+  },
+  "frameworkSources": {
+    "ai/McpServer.ts": "4419fb85d20067d72306e4aded4537d40b208f492b688fade5bff882d363b179",
+    "ai/Tool.ts": "f1b8e565abd7393ee7932a06458bc9102b1d269fd7cc0fe20507f2433606a405",
+    "ai/Toolkit.ts": "24b04666c03b5ab26a26d438b85313275d817603c77ba5d627bb124708db6db1"
+  }
+}

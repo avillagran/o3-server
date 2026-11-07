@@ -1820,6 +1820,41 @@ mod tests {
         .await
         .unwrap();
         let tab = tab_of(&opened).to_owned();
+        use futures_util::{SinkExt, StreamExt};
+        use tokio_tungstenite::{
+            tungstenite::{protocol::Role, Message},
+            WebSocketStream,
+        };
+        state.db.lock().unwrap().execute("INSERT INTO auth_sessions(session_id,subject,scopes,method,client,issued_at,expires_at) VALUES('dialog-viewer','fixture','preview:operate','bearer-access-token','{}',0,?)",[crate::store::now_ms()+60000]).unwrap();
+        state
+            .streams
+            .p2
+            .preview
+            .browser
+            .command("dialog", &tab, "Fixture.holdScreenshot", json!({}))
+            .await
+            .unwrap();
+        let (server, client) = tokio::io::duplex(65536);
+        let server = WebSocketStream::from_raw_socket(server, Role::Server, None).await;
+        let mut viewer = WebSocketStream::from_raw_socket(client, Role::Client, None).await;
+        let owned = state.clone();
+        let viewer_tab = tab.clone();
+        let task = tokio::spawn(async move {
+            crate::server_browser::stream(
+                server,
+                owned,
+                json!({"sid":"dialog-viewer","scopes":["preview:operate"]}),
+                "dialog".into(),
+                viewer_tab,
+                true,
+            )
+            .await;
+        });
+        let hello = viewer.next().await.unwrap().unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(hello.to_text().unwrap()).unwrap()["dialog"],
+            Value::Null
+        );
         let browser = state.streams.p2.preview.browser.clone();
         let eval_tab = tab.clone();
         let eval = tokio::spawn(async move {
@@ -1840,28 +1875,61 @@ mod tests {
             .path();
         wait(|| {
             std::fs::read_to_string(profile.join("commands.jsonl")).is_ok_and(|lines| {
-                lines
-                    .lines()
-                    .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-                    .any(|value| {
-                        value["method"] == "Runtime.evaluate"
-                            && value["params"]["fixtureHold"] == true
-                    })
+                lines.contains("Page.captureScreenshot")
+                    && lines
+                        .lines()
+                        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+                        .any(|value| {
+                            value["method"] == "Runtime.evaluate"
+                                && value["params"]["fixtureHold"] == true
+                        })
             })
         })
         .await;
+        wait(|| {
+            state
+                .streams
+                .p2
+                .preview
+                .browser
+                .dialog_status("dialog", &tab)
+                .is_ok_and(|status| status["message"] == "Owned prompt")
+        })
+        .await;
         assert!(!eval.is_finished());
-        tokio::time::timeout(
-            Duration::from_secs(2),
-            state.streams.p2.preview.browser.command(
-                "dialog",
-                &tab,
-                "Page.handleJavaScriptDialog",
-                json!({"accept":true,"promptText":"Owned answer"}),
-            ),
-        )
+        let opening = tokio::time::timeout(Duration::from_secs(2), viewer.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let opening: Value = serde_json::from_str(opening.to_text().unwrap()).unwrap();
+        assert_eq!(opening["_tag"], "control");
+        assert_eq!(opening["dialog"]["message"], "Owned prompt");
+        viewer
+            .send(Message::Text(
+                json!({"type":"dialog","accept":true,"promptText":"Owned answer"})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let message = viewer.next().await.unwrap().unwrap();
+                if message.is_binary() {
+                    viewer
+                        .send(Message::Text(json!({"type":"ack"}).to_string().into()))
+                        .await
+                        .unwrap();
+                    continue;
+                }
+                let control: Value = serde_json::from_str(message.to_text().unwrap()).unwrap();
+                if control["_tag"] == "control" && control["dialog"].is_null() {
+                    break;
+                }
+            }
+        })
         .await
-        .unwrap()
         .unwrap();
         let result = tokio::time::timeout(Duration::from_secs(2), eval)
             .await
@@ -1878,11 +1946,26 @@ mod tests {
                 .p2
                 .preview
                 .browser
+                .dialog_status("dialog", &tab)
+                .unwrap(),
+            Value::Null
+        );
+        assert_eq!(
+            state
+                .streams
+                .p2
+                .preview
+                .browser
                 .screenshot("dialog", &tab)
                 .await
                 .unwrap(),
             vec![255, 216, 255, 217]
         );
+        viewer.close(None).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(2), task)
+            .await
+            .unwrap()
+            .unwrap();
         close(&state, "dialog", Some(&tab)).await;
         shutdown(&state.streams.p2.preview).await;
         assert!(profile.join("commands.jsonl").exists());
