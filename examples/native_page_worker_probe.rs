@@ -111,6 +111,113 @@ async fn main() {
         close_deadline: Duration::from_secs(3),
     };
     let worker = Worker::spawn(spec, owner.clone()).await.unwrap();
+    if c["mode"] == "execution" {
+        let control = o3_server::preview_control::runtime::Control::new(Some("agent".into()));
+        let controlled = o3_server::native_page_worker::control::ControlledPage::new(
+            worker.clone(),
+            control.clone(),
+        );
+        let (entered, context) = tokio::sync::oneshot::channel();
+        let executing = worker.clone();
+        let observed_control = control.clone();
+        let call = control.observe_admitted(move |context| async move {
+            let generation = context.generation();
+            entered.send(context).unwrap();
+            let value = executing
+                .invoke_execution(
+                    "waitFor",
+                    json!({"text":"not-ever","timeoutMs":5000}),
+                    Duration::from_millis(500),
+                )
+                .await;
+            if generation != observed_control.snapshot().generation {
+                executing
+                    .invalidate_refs()
+                    .await
+                    .map_err(|_| json!({"message":"reference acknowledgment failed"}))?;
+            }
+            assert_eq!(value.unwrap(), OperationResult::Value(Value::Null));
+            Ok(Value::Null)
+        });
+        let context = context.await.unwrap();
+        let mut completion = context.completion();
+        let barrier = owner.clone();
+        tokio::task::spawn_blocking(move || barrier.exchange("await-read"))
+            .await
+            .unwrap()
+            .unwrap();
+        let mut response = Box::pin(call.wait());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(500), &mut response)
+                .await
+                .is_err()
+        );
+        assert!(context.is_active());
+        assert!(!*completion.borrow_and_update());
+        control.take("viewer").wait().await.unwrap();
+        assert!(
+            context.is_active(),
+            "the actual readonly callback survives human takeover"
+        );
+        let release = owner.clone();
+        tokio::task::spawn_blocking(move || release.exchange("release-read"))
+            .await
+            .unwrap()
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(3), response)
+            .await
+            .unwrap()
+            .unwrap();
+        if !*completion.borrow_and_update() {
+            completion.changed().await.unwrap();
+        }
+        assert!(*completion.borrow());
+        assert!(!context.is_active());
+        assert_eq!(
+            controlled
+                .observe(
+                    "waitFor",
+                    json!({"text":"not-ever"}),
+                    Duration::from_secs(3),
+                    true
+                )
+                .await
+                .unwrap(),
+            OperationResult::Value(Value::Null)
+        );
+        assert!(matches!(
+            controlled
+                .agent(
+                    "agent",
+                    "press",
+                    json!({"key":"End"}),
+                    Duration::from_secs(1),
+                    true
+                )
+                .await,
+            Err(o3_server::native_page_worker::control::Error::Control(_))
+        ));
+        assert!(matches!(
+            controlled
+                .observe(
+                    "evaluate",
+                    json!({"expression":"true"}),
+                    Duration::from_secs(1),
+                    true
+                )
+                .await,
+            Err(o3_server::native_page_worker::control::Error::Control(_))
+        ));
+        let receipt = controlled.close().await;
+        assert!(receipt.worker_reaped && receipt.owner_grant_closed);
+        assert_eq!(receipt.executed_recursive_removals, Some(0));
+        control.shutdown().await.unwrap();
+        println!(
+            "{}",
+            json!({"complete":true,"metadataExecutionHeld":true,"actualNativeWaitFor":true,"callerTimedOutBeforeExecutionTerminal":true,"realContextActiveAcrossTakeUntilResult":true,"readonlyAllowedUnderHumanControl":true,"mutatorObserveRefused":true,"humanControlRefusesAgentWrite":true,"workerReaped":receipt.worker_reaped,"ownerClosed":receipt.owner_grant_closed,"nativeRecursiveCleanupRequests":receipt.native_cleanup_requests,"executedRecursiveRemovals":receipt.executed_recursive_removals})
+        );
+        return;
+    }
     if c["mode"] == "revoke" {
         let call = worker.clone();
         let pending = tokio::spawn(async move {

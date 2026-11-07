@@ -17,6 +17,9 @@ function handle(packet){
  if(packet.kind==='invoke'){
   fs.writeFileSync(process.env.HOME+'/peer-invocations.json',JSON.stringify({count:++invocations}));
   if(mode==='surrogate'){send({kind:'result',nonce:init.nonce,id:packet.id,ok:true,value:{'\ud800':'\udfff',pair:'😀'}});return;}
+  if(mode==='execution-gate'){
+   const timer=setInterval(()=>{try{const marker=fs.lstatSync(process.env.HOME+'/release-execution');if(!marker.isFile()||marker.isSymbolicLink())process.exit(2);clearInterval(timer);send({kind:'result',nonce:init.nonce,id:packet.id,ok:true,value:{nativeTimeoutMs:packet.timeoutMs,pid:process.pid}});}catch(error){if(error.code!=='ENOENT')process.exit(2);}},5);return;
+  }
   if(mode==='grace'){setTimeout(()=>send({kind:'result',nonce:init.nonce,id:packet.id,ok:true,value:{nativeTimeoutMs:packet.timeoutMs}}),packet.timeoutMs+60);return;}
   if(mode==='crash'){process.exit(17);}
   if(mode==='hang')return;

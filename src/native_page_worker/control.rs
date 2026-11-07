@@ -80,6 +80,40 @@ impl ControlledPage {
         native_timeout: Duration,
         update_current_tab: bool,
     ) -> Result<OperationResult, Error> {
+        self.run(
+            Some(caller),
+            operation,
+            input,
+            native_timeout,
+            update_current_tab,
+        )
+        .await
+    }
+    /// Source readonly operations observe without joining the agent tail. The
+    /// broker chooses this entry from its fixed operation, never a model flag.
+    pub async fn observe(
+        &self,
+        operation: &str,
+        input: Value,
+        native_timeout: Duration,
+        update_current_tab: bool,
+    ) -> Result<OperationResult, Error> {
+        if !matches!(operation, "status" | "snapshot" | "waitFor") {
+            return Err(Error::Control(
+                json!({"reason":"readOperationRequired","message":"Expected a native readonly operation"}),
+            ));
+        }
+        self.run(None, operation, input, native_timeout, update_current_tab)
+            .await
+    }
+    async fn run(
+        &self,
+        caller: Option<&str>,
+        operation: &str,
+        input: Value,
+        native_timeout: Duration,
+        update_current_tab: bool,
+    ) -> Result<OperationResult, Error> {
         if native_timeout.is_zero() || native_timeout > Duration::from_secs(120) {
             return Err(Error::Transport(Fault::Deadline));
         }
@@ -94,35 +128,46 @@ impl ControlledPage {
         let output = result.clone();
         let state = self.0.clone();
         let operation = operation.to_owned();
-        let action = self.0.control.agent_admitted(
-            caller,
-            Some(tokio::time::Instant::now() + native_timeout),
-            move |admission| async move {
-                let generation = admission.generation();
-                let mut value = match synchronize(&state).await {
-                    Ok(()) => {
+        let work = move |admission: crate::preview_control::runtime::RunContext| async move {
+            let generation = admission.generation();
+            let mut value = match synchronize(&state).await {
+                Ok(()) => {
+                    if update_current_tab {
                         state
                             .worker
-                            .invoke_native(&operation, input, native_timeout, update_current_tab)
+                            .invoke_native(&operation, input, native_timeout, true)
+                            .await
+                    } else {
+                        state
+                            .worker
+                            .invoke_execution(&operation, input, native_timeout)
                             .await
                     }
-                    Err(error) => Err(error),
-                };
-                // A takeover invalidates immediately and again after the old
-                // callback drains, as in the native runOperation finally block.
-                if generation != state.control.snapshot().generation {
-                    if let Err(error) = state.worker.invalidate_refs().await {
-                        if value.is_ok() {
-                            value = Err(error);
-                        }
+                }
+                Err(error) => Err(error),
+            };
+            // A takeover invalidates immediately and again after the old
+            // callback drains, as in the native runOperation finally block.
+            if generation != state.control.snapshot().generation {
+                if let Err(error) = state.worker.invalidate_refs().await {
+                    if value.is_ok() {
+                        value = Err(error);
                     }
                 }
-                *output.lock().unwrap() = Some(value);
-                // The scheduler receives no scalar approximation of JavaScript
-                // output. This per-action sidecar is read only after its receipt.
-                Ok(Value::Null)
-            },
-        );
+            }
+            *output.lock().unwrap() = Some(value);
+            // The scheduler receives no scalar approximation of JavaScript
+            // output. This per-action sidecar is read only after its receipt.
+            Ok(Value::Null)
+        };
+        let action = match caller {
+            Some(caller) => self.0.control.agent_admitted(
+                caller,
+                Some(tokio::time::Instant::now() + native_timeout),
+                work,
+            ),
+            None => self.0.control.observe_admitted(work),
+        };
         match tokio::time::timeout_at(response_deadline, action.wait()).await {
             Ok(result) => {
                 result.map_err(Error::Control)?;
