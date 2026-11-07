@@ -8,6 +8,22 @@ CHAR = re.compile(r"'(?:\\(?:u\{[0-9a-fA-F_]+\}|.)|[^'\\\n])'")
 WORD = re.compile(r"[a-zA-Z_][a-zA-Z_0-9]*")
 
 
+def positive_test_attribute(attributes):
+    """Find test inside cfg expressions, accounting for nested not(...) groups."""
+    negations = [False]
+    previous = None
+    for value in attributes:
+        if value == "(":
+            negations.append(negations[-1] ^ (previous == "not"))
+        elif value == ")":
+            if len(negations) > 1:
+                negations.pop()
+        elif value == "test" and not negations[-1]:
+            return True
+        previous = value
+    return False
+
+
 def tokens(source):
     result = []
     index = 0
@@ -79,10 +95,12 @@ def recursive_calls(source, integration=False):
                 if depth:
                     attributes.append(value)
                 end += 1
-            test_attribute = attributes == ["test"] or (
-                attributes[:4] in (["tokio", ":", ":", "test"], ["actix_rt", ":", ":", "test"])
+            prefix = attributes[:attributes.index("(")] if "(" in attributes else attributes
+            test_attribute = prefix == ["test"] or (
+                bool(prefix) and prefix[-1] == "test" and ":" in prefix
             )
-            test_cfg = attributes[:2] == ["cfg", "("] and "test" in attributes and "not" not in attributes
+            test_cfg = attributes[:2] == ["cfg", "("] and positive_test_attribute(attributes)
+            test_cfg = test_cfg or attributes[:2] == ["cfg_attr", "("] and positive_test_attribute(attributes)
             pending = pending or test_attribute or test_cfg
             index = end
             continue

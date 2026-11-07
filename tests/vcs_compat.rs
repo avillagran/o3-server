@@ -298,7 +298,9 @@ fn pull_reports_state_and_branch_changes_against_the_default_branch() {
     assert!(!msg.is_empty());
     assert!(!r.join("e.txt").exists());
     // On a feature branch the status carries the totals against the default branch, and refs list remotes.
-    git(&r, &["reset", "-q", "--hard", "origin/main"]);
+    // Keep the divergent fixture intact; use a fresh clone for the independent ref scenario.
+    let r = e.scratch.join("feature-repo");
+    git(&e.scratch, &["clone", "-q", s(&bare), s(&r)]);
     c.rpc(
         "vcs.createRef",
         json!({"cwd":s(&r),"refName":"feat","switchRef":true}),

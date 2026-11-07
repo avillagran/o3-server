@@ -32,6 +32,14 @@ class SafetyScannerTests(unittest.TestCase):
         source = '#[test] fn safe() {} fn production() { fs::remove_dir_all(p); }'
         self.assertEqual(recursive_calls(source), [])
 
+    def test_nested_cfg_negation_does_not_hide_test_cleanup(self):
+        source = '#[cfg(all(test, not(feature="optional")))] mod tests { fn helper() { fs::remove_dir_all(p); } }'
+        self.assertEqual(len(recursive_calls(source)), 1)
+        production = '#[cfg(not(any(test, feature="optional")))] fn production() { fs::remove_dir_all(p); }'
+        self.assertEqual(recursive_calls(production), [])
+        conditional = '#[cfg_attr(test, async_std::test)] async fn helper() { fs::remove_dir_all(p); }'
+        self.assertEqual(len(recursive_calls(conditional)), 1)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -12,6 +12,7 @@ from test_safety import check
 
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--default-features",action="store_true")
+parser.add_argument("--case-filter",help="Run one exact test case with --integration")
 selection=parser.add_mutually_exclusive_group()
 selection.add_argument("--unit-filter")
 selection.add_argument("--integration")
@@ -20,6 +21,8 @@ parser.add_argument("--resume-from", help="With --all-tests, resume at an exact 
 parser.add_argument("--resume-manifest", type=pathlib.Path, help="Retained result.json supplying the original compiled binary order")
 parser.add_argument("--compile-lock", type=pathlib.Path, help="Serialize compilation while allowing isolated test execution to run independently")
 options=parser.parse_args()
+if options.case_filter and not options.integration:
+    parser.error("--case-filter requires --integration")
 if (options.resume_from or options.resume_manifest) and not (options.all_tests and options.resume_from and options.resume_manifest):
     parser.error("resume requires --all-tests, --resume-from and --resume-manifest")
 root = pathlib.Path(__file__).resolve().parent.parent
@@ -72,6 +75,7 @@ report = {
     'allTests': options.all_tests,
     'integration': options.integration,
     'unitFilter': options.unit_filter,
+    'caseFilter': options.case_filter,
     'resumeFrom': options.resume_from,
     'resumeManifest': str(options.resume_manifest) if options.resume_manifest else None,
     'image': test_image,
@@ -91,16 +95,21 @@ case "$binary" in
     /test-bin/"$binary" webhook::crash_tests --test-threads=1
     /test-bin/"$binary" fresh_context::tests --test-threads=1
     /test-bin/"$binary" native_goal::tests --test-threads=1 ;;
-  *) exec /test-bin/"$binary" --test-threads=1 ;;
+  *)
+    if test -n "$O3_CASE_FILTER"; then exec /test-bin/"$binary" "$O3_CASE_FILTER" --exact --test-threads=1; fi
+    exec /test-bin/"$binary" --test-threads=1 ;;
 esac
 """
 for index, binary in enumerate(binaries):
     name = 'o3-scheduled-tests-' + uuid.uuid4().hex
-    args = ['podman', 'run', '--rm', '--name', name, '--userns=keep-id', '--user', f'{os.getuid()}:{os.getgid()}', '--read-only', '--tmpfs', '/tmp:rw,exec,size=1g,mode=1777', '--cap-drop=ALL', '--security-opt=no-new-privileges', '--pids-limit=512', '--memory=4g', '--network=none', f'--workdir={root}', '--env', 'HOME=/tmp/home', '--env', f'O3_UNIT_FILTER={options.unit_filter or ""}', '--env', f'O3_ALL_TESTS={int(options.all_tests)}', '-v', f'{root}:{root}:ro', '-v', f'{binary.parent}:/test-bin:ro', '-v', f'{binary.parent.parent}:{binary.parent.parent}:ro', test_image, 'sh', '-c', script, 'scheduled-nightly', binary.name]
+    args = ['podman', 'run', '--rm', '--name', name, '--userns=keep-id', '--user', f'{os.getuid()}:{os.getgid()}', '--read-only', '--tmpfs', '/tmp:rw,exec,size=1g,mode=1777', '--cap-drop=ALL', '--security-opt=no-new-privileges', '--pids-limit=512', '--memory=4g', '--network=none', f'--workdir={root}', '--env', 'HOME=/tmp/home', '--env', f'O3_UNIT_FILTER={options.unit_filter or ""}', '--env', f'O3_CASE_FILTER={options.case_filter or ""}', '--env', f'O3_ALL_TESTS={int(options.all_tests)}', '-v', f'{root}:{root}:ro', '-v', f'{binary.parent}:/test-bin:ro', '-v', f'{binary.parent.parent}:{binary.parent.parent}:ro', test_image, 'sh', '-c', script, 'scheduled-nightly', binary.name]
     try:
         try:
             result = subprocess.run(args, cwd=root, timeout=300, capture_output=True, text=True)
             code, output = result.returncode, result.stdout+result.stderr
+            if options.case_filter and code == 0 and "\nrunning 0 tests\n" in "\n" + output:
+                code = 2
+                output += "\nExact integration case did not match a test.\n"
         except subprocess.TimeoutExpired as error:
             def decoded(value):
                 return value.decode(errors='replace') if isinstance(value, bytes) else value or ''

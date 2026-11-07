@@ -14,12 +14,14 @@ The production executor remains real and separately reviewed.
 `tools/check-test-safety` detects explicit recursive cleanup identifiers in Rust
 integration tests and test scopes. It ignores inert comments and strings. This
 lexical check does not establish transitive filesystem safety or inspect every
-external script; those paths require review. Five pure scanner regressions run
+external script; those paths require review. Six pure scanner regressions run
 without creating or removing fixture files.
 
 The `tests/SAFETY-AUDIT-PENDING` marker prevents complete runtime matrices through
 the local runner and CI. Remove it only when the production-operation and link
 fixture audits finish. Individually reviewed focused targets can run privately.
+Use `--integration TARGET --case-filter EXACT_TEST_NAME` to run a single reviewed
+integration case without copying or bypassing the guarded container runner.
 
 Earlier full-suite counts are historical functional evidence. Legacy recursive
 fixture cleanup was discovered after those runs. Container isolation does not
