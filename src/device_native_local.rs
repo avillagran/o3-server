@@ -437,10 +437,11 @@ http.server.ThreadingHTTPServer(('127.0.0.1',port),Handler).serve_forever()
             .unwrap()
             .is_empty());
         assert_eq!(runtime.snapshot()["sessions"].as_array().unwrap().len(), 1);
+        // Screenshot reads and the input socket require independent native scopes.
         let token = state
             .issue_session(
                 "private-fixture",
-                &["orchestration:operate".into()],
+                &["orchestration:read".into(), "orchestration:operate".into()],
                 60_000,
                 "Private fixture",
             )
