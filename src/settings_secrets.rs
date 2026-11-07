@@ -475,55 +475,33 @@ mod tests;
 
 /// Read native private slots into a consumer snapshot; the persisted settings are never changed.
 pub fn materialize_profile(profile: &std::path::Path, settings: &Value) -> Result<Value, String> {
-    use std::{io::Read, os::unix::fs::OpenOptionsExt};
+    use crate::server_secret_store::{FileSecretStore, SecretStore};
     let mut decoded = settings.clone();
     for (id, entry) in entries(&settings["providerInstances"]) {
         if let Ok(entry) = codec::decode_provider_instance(entry) {
             decoded["providerInstances"][id] = entry;
         }
     }
-    let mut pending = indexmap::IndexMap::new();
+    let mut pending = false;
     map_secrets(&decoded, |secret| {
-        if secret.sensitive && secret.redacted {
-            pending.insert(secret.secret_name.clone(), secret.clone());
-        }
+        pending |= secret.sensitive && secret.redacted;
         SecretValue {
             value: secret.value,
             redacted: secret.redacted,
         }
     });
-    let mut values = std::collections::HashMap::new();
-    for secret in pending.values() {
-        let path = profile
-            .join("secrets")
-            .join(format!("{}.bin", secret.secret_name));
-        let value = match std::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-            .open(&path)
-        {
-            Ok(mut file) => {
-                if !file.metadata().is_ok_and(|m| m.is_file()) {
-                    return Err(format!("Failed to read secret {}.", secret.secret_name));
-                }
-                let mut bytes = Vec::new();
-                file.read_to_end(&mut bytes)
-                    .map_err(|_| format!("Failed to read secret {}.", secret.secret_name))?;
-                String::from_utf8_lossy(&bytes).into_owned()
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
-            Err(_) => return Err(format!("Failed to read secret {}.", secret.secret_name)),
-        };
-        values.insert(secret.secret_name.clone(), value);
-    }
-    let mut materialized = map_secrets(&decoded, |secret| SecretValue {
-        value: if secret.sensitive && secret.redacted {
-            values.get(&secret.secret_name).cloned().unwrap_or_default()
-        } else {
-            secret.value
-        },
-        redacted: secret.sensitive && secret.kind == "environment" && secret.redacted,
-    });
+    let store = if pending {
+        FileSecretStore::open_existing(&profile.join("secrets"))
+            .map_err(|_| "Failed to read private settings directory.".to_owned())?
+    } else {
+        None
+    };
+    let mut materialized =
+        crate::settings_secret_transaction::materialize_with(&decoded, |name| match &store {
+            Some(store) => store.get(name),
+            None => Ok(None),
+        })
+        .map_err(|error| format!("Failed to read {}.", error.cause.resource))?;
     for (id, entry) in entries(&materialized["providerInstances"]) {
         if let Ok(entry) = codec::encode_provider_instance(entry) {
             materialized["providerInstances"][id] = entry;

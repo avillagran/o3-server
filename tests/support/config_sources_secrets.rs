@@ -253,3 +253,64 @@ async fn private_op_reset_route_serializes_refresh_and_publishes_redeemed_credit
         .to_string()
         .contains("private-reset-key"));
 }
+
+#[tokio::test]
+async fn native_bom_private_file_value_reaches_actual_http_header_without_marker_or_bom() {
+    crate::test_sandbox::assert_isolated();
+    let fixture: Value =
+        serde_json::from_str(include_str!("../fixtures/secret-store-4288.json")).unwrap();
+    let case = fixture["profileCases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["label"] == "bom-ascii-usage")
+        .unwrap();
+    let directory = std::env::temp_dir().join(format!(
+        "usage-native-bom-{}",
+        crate::store::random_id().unwrap()
+    ));
+    let state = State::open(&directory).unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut settings = case["settings"].clone();
+    settings["usageLimitSources"]["hub"]["url"] =
+        json!(format!("http://{}", listener.local_addr().unwrap()));
+    std::fs::write(directory.join("settings.json"), settings.to_string()).unwrap();
+    for (path, file) in case["files"].as_object().unwrap() {
+        let name = path.strip_prefix("/private-fixture/secrets/").unwrap();
+        assert!(!name.contains('/'));
+        let bytes: Vec<u8> = serde_json::from_value(file["bytes"].clone()).unwrap();
+        std::fs::write(directory.join("secrets").join(name), bytes).unwrap();
+    }
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut request = Vec::new();
+        loop {
+            let mut byte = [0];
+            socket.read_exact(&mut byte).await.unwrap();
+            request.extend(byte);
+            if request.ends_with(b"\r\n\r\n") {
+                break;
+            }
+            assert!(request.len() < 16384);
+        }
+        let body = "{\"files\":[]}";
+        socket.write_all(format!("HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",body.len()).as_bytes()).await.unwrap();
+        String::from_utf8(request).unwrap()
+    });
+    let sources = tokio::time::timeout(std::time::Duration::from_secs(5), refresh(&state))
+        .await
+        .unwrap();
+    assert_eq!(sources.len(), 1);
+    assert!(sources[0]["error"].is_null(), "{sources:?}");
+    let request = server.await.unwrap();
+    let expected = case["result"]["usageLimitSources"]["hub"]["managementKey"]
+        .as_str()
+        .unwrap();
+    assert!(request.contains(&format!("authorization: Bearer {expected}\r\n")));
+    assert!(!request.contains('\u{feff}'));
+    assert!(!crate::settings::get(&state)
+        .unwrap()
+        .to_string()
+        .contains(expected));
+    assert!(!serde_json::to_string(&sources).unwrap().contains(expected));
+}

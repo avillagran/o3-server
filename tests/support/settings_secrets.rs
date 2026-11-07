@@ -225,3 +225,88 @@ async fn native_schema_reference_resolution_and_literal_refusal() {
         }
     }
 }
+
+#[test]
+fn native_profile_materialization_matches_complete_method_observations() {
+    crate::test_sandbox::assert_isolated();
+    let fixture: Value =
+        serde_json::from_str(include_str!("../fixtures/secret-store-4288.json")).unwrap();
+    assert_eq!(fixture["profileCases"].as_array().unwrap().len(), 403);
+    let root = std::env::temp_dir().join(format!(
+        "profile-native-materialization-{}",
+        crate::store::random_id().unwrap()
+    ));
+    std::fs::create_dir(&root).unwrap();
+    for (index, case) in fixture["profileCases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+    {
+        let profile = root.join(format!("case-{index}"));
+        std::fs::create_dir(&profile).unwrap();
+        if !case["files"].as_object().unwrap().is_empty() {
+            std::fs::create_dir(profile.join("secrets")).unwrap();
+            for (path, file) in case["files"].as_object().unwrap() {
+                let slot = path.strip_prefix("/private-fixture/secrets/").unwrap();
+                assert!(!slot.contains('/'));
+                let bytes: Vec<u8> = serde_json::from_value(file["bytes"].clone()).unwrap();
+                std::fs::write(profile.join("secrets").join(slot), bytes).unwrap();
+            }
+        }
+        let actual = materialize_profile(&profile, &case["settings"]).unwrap();
+        assert_eq!(actual, case["result"], "{}", case["label"]);
+        for (path, file) in case["files"].as_object().unwrap() {
+            let slot = path.strip_prefix("/private-fixture/secrets/").unwrap();
+            let bytes: Vec<u8> = serde_json::from_value(file["bytes"].clone()).unwrap();
+            assert_eq!(
+                std::fs::read(profile.join("secrets").join(slot)).unwrap(),
+                bytes,
+                "materialization must not rewrite private bytes"
+            );
+        }
+        if case["files"].as_object().unwrap().is_empty() {
+            assert!(!profile.join("secrets").exists());
+        }
+    }
+}
+#[test]
+fn profile_reader_refuses_ancestor_symlinks_and_keeps_missing_distinct_from_unreadable() {
+    crate::test_sandbox::assert_isolated();
+    let root = std::env::temp_dir().join(format!(
+        "profile-symlink-refusal-{}",
+        crate::store::random_id().unwrap()
+    ));
+    std::fs::create_dir(&root).unwrap();
+    let settings = json!({"providerInstances":{},"sourceControlHosts":{},"usageLimitSources":{"synthetic":{"kind":"cliproxy","managementKey":"••••••"}},"easDeviceHosts":[],"simlockDeviceHosts":[],"secretProviders":{}});
+    let owned = root.join("owned");
+    std::fs::create_dir(&owned).unwrap();
+    let slots = owned.join("secrets");
+    std::fs::create_dir(&slots).unwrap();
+    let name = "usage-limit-source-c3ludGhldGlj.bin";
+    std::fs::write(slots.join(name), b"private-owned-value").unwrap();
+    let alias = root.join("profile-alias");
+    std::os::unix::fs::symlink(&owned, &alias).unwrap();
+    assert!(materialize_profile(&alias, &settings).is_err());
+    let directory = root.join("directory-alias");
+    std::fs::create_dir(&directory).unwrap();
+    std::os::unix::fs::symlink(&slots, directory.join("secrets")).unwrap();
+    assert!(materialize_profile(&directory, &settings).is_err());
+    let missing = root.join("missing");
+    std::fs::create_dir(&missing).unwrap();
+    assert_eq!(
+        materialize_profile(&missing, &settings).unwrap()["usageLimitSources"]["synthetic"]
+            ["managementKey"],
+        ""
+    );
+    assert!(!missing.join("secrets").exists());
+    let unreadable = root.join("unreadable");
+    std::fs::create_dir(&unreadable).unwrap();
+    std::fs::create_dir(unreadable.join("secrets")).unwrap();
+    std::fs::create_dir(unreadable.join("secrets").join(name)).unwrap();
+    assert!(materialize_profile(&unreadable, &settings).is_err());
+    assert_eq!(
+        std::fs::read(slots.join(name)).unwrap(),
+        b"private-owned-value"
+    );
+}

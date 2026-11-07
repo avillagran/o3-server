@@ -4,7 +4,7 @@ import fs from'node:fs';import path from'node:path';import crypto from'node:cryp
 const[checkout,contracts,output]=process.argv.slice(2);if(!output)throw Error('usage: generate-secret-store-fixtures.mjs CHECKOUT CONTRACTS OUTPUT');const revision='32a0531748c44b25072d7495ce0b9bd7e9450a87',require=createRequire(contracts+'/package.json');if(require('effect/package.json').version!=='4.1.2')throw Error('Effect4.1.2 required');fs.mkdirSync(output,{recursive:true});const sources={};
 function source(file){const value=execFileSync('git',['-C',checkout,'show',revision+':'+file],{encoding:'utf8'});sources[file]=crypto.createHash('sha256').update(value).digest('hex');return value;}
 const checked=new Set();function check(file){if(checked.has(file))return;checked.add(file);const value=source(path.relative(checkout,file));if(fs.readFileSync(file,'utf8')!==value)throw Error('Contract source mismatch '+file);for(const m of value.matchAll(/\bfrom\s+["'](\.[^"']+)["']/g))check(path.resolve(path.dirname(file),m[1]));}check(contracts+'/src/index.ts');
-const load=async name=>import(pathToFileURL(require.resolve('effect/'+name)).href);const Effect=await load('Effect'),Option=await load('Option'),FileSystem=await load('FileSystem'),SecureRandom=await load('crypto/SecureRandom'),Path=await load('Path'),PlatformError=await load('PlatformError');const native=await loadSecretStoreNative(checkout,contracts,path.join(output,'runtime'),source);
+const load=async name=>import(pathToFileURL(require.resolve('effect/'+name)).href);const Schema=await load('Schema'),Effect=await load('Effect'),Option=await load('Option'),FileSystem=await load('FileSystem'),SecureRandom=await load('crypto/SecureRandom'),Path=await load('Path'),PlatformError=await load('PlatformError');const native=await loadSecretStoreNative(checkout,contracts,path.join(output,'runtime'),source);
 const directory='/private-fixture/secrets';
 function model(input={}){
  const files=new Map(Object.entries(input.files??{}).map(([name,value])=>[name,{bytes:[...value.bytes],mode:value.mode??384}])),dirs=new Map(),trace=[],counts={};let uuid=0,random=0;
@@ -68,4 +68,28 @@ for(const row of seed.cases){
   if(variant==='stored'&&Object.keys(files).length){const failed=model({files,fail:{method:'readFile'}});const error=await failed.run(Effect.result(Effect.gen(function*(){const store=yield*native.store.make;return yield*native.methods.transactionMethods(store,'/private-fixture/settings.json',native.settings.secrets,native.definitions).materialize(settings);})));materializeErrors.push({label:row.label,settings,files,result:normalize(resultValue(error))});}
  }
 }
-fs.writeFileSync(path.join(output,'fixtures.json'),JSON.stringify({revision,effect:'4.1.2',sources,directory,knownKinds:native.knownKinds,seedSha256:crypto.createHash('sha256').update(seedText).digest('hex'),cases,transactionCases,applyCases,materializeCases,materializeErrors},null,2)+'\n');console.log(JSON.stringify({store:cases.length,planning:transactionCases.length,apply:applyCases.length,materialize:materializeCases.length,materializeErrors:materializeErrors.length}));
+
+// Exercise the real persisted provider-envelope codec on both sides of the
+// complete materialization method. This is a transport boundary, not a reducer.
+const profileCases=[];
+for(const row of materializeCases){
+ const encodedInput=structuredClone(row.settings),decodedInput=structuredClone(row.settings);
+ for(const[id,entry]of Object.entries(row.settings.providerInstances)){
+  encodedInput.providerInstances[id]=Schema.encodeSync(native.C.ProviderInstanceConfig)(entry);
+  decodedInput.providerInstances[id]=Schema.decodeUnknownSync(native.C.ProviderInstanceConfig)(encodedInput.providerInstances[id]);
+ }
+ const state=model({files:row.files});
+ const decodedResult=await state.run(Effect.gen(function*(){const store=yield*native.store.make;return yield*native.methods.transactionMethods(store,'/private-fixture/settings.json',native.settings.secrets,native.definitions).materialize(decodedInput);}));
+ const encodedResult=structuredClone(decodedResult);
+ for(const[id,entry]of Object.entries(decodedResult.providerInstances))encodedResult.providerInstances[id]=Schema.encodeSync(native.C.ProviderInstanceConfig)(entry);
+ profileCases.push({label:row.label,settings:normalize(encodedInput),files:row.files,result:normalize(encodedResult)});
+}
+
+{
+ const settings={providerInstances:{},sourceControlHosts:{},usageLimitSources:{hub:{kind:'cliproxy',url:'http://127.0.0.1:1',managementKey:'••••••',enabled:true}},easDeviceHosts:[],simlockDeviceHosts:[],secretProviders:{}};
+ settings.usageLimitSources.hub=Schema.decodeUnknownSync(native.C.UsageLimitSourceConfig)(settings.usageLimitSources.hub);
+ const files={};native.settings.secrets.mapSettingsSecrets(settings,secret=>{if(secret.sensitive&&secret.redacted)files[directory+'/'+secret.secretName+'.bin']={bytes:[239,187,191,...new TextEncoder().encode('private-native-bom')],mode:384};return secret;});
+ const state=model({files});const result=await state.run(Effect.gen(function*(){const store=yield*native.store.make;return yield*native.methods.transactionMethods(store,'/private-fixture/settings.json',native.settings.secrets,native.definitions).materialize(settings);}));
+ profileCases.push({label:'bom-ascii-usage',settings,files,result:normalize(result)});
+}
+fs.writeFileSync(path.join(output,'fixtures.json'),JSON.stringify({revision,effect:'4.1.2',sources,directory,knownKinds:native.knownKinds,seedSha256:crypto.createHash('sha256').update(seedText).digest('hex'),cases,transactionCases,applyCases,materializeCases,materializeErrors,profileCases},null,2)+'\n');console.log(JSON.stringify({store:cases.length,planning:transactionCases.length,apply:applyCases.length,materialize:materializeCases.length,materializeErrors:materializeErrors.length,profiles:profileCases.length}));
