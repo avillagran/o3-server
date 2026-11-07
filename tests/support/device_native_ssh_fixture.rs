@@ -92,8 +92,9 @@ impl Fixture {
             }
         });
         // Never create/write a runnable file while parallel tests spawn children.
-        // The checked-in executable is mounted read-only; its per-fixture
-        // settings travel through the existing explicit SSH identity argv slot.
+        // This fixture never copies or rewrites the checked-in executable.
+        // Private local proofs mount it read-only; CI keeps it in checkout.
+        // Per-fixture settings use the explicit SSH identity argv slot.
         let executable = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/fixtures/device/ssh-private-cli.py");
         let settings_path = base.join("key with ' quote.json");
@@ -122,7 +123,7 @@ impl Fixture {
     }
     pub fn settings(&self, patch: Value) {
         let path = &self.settings_path;
-        let mut value: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let mut value: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
         for (key, data) in patch.as_object().unwrap() {
             value[key] = data.clone();
         }

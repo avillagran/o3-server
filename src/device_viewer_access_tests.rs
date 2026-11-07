@@ -53,9 +53,7 @@ fn token(state: &State, scopes: &[&str]) -> String {
 async fn native_human_viewer_and_scopes_work_without_agent_access() {
     crate::test_sandbox::assert_isolated();
     let fixture = ssh_fixture::Fixture::make(0).await;
-    let state = Arc::new(
-        State::open(&fixture.executable.parent().unwrap().join("viewer-profile")).unwrap(),
-    );
+    let state = Arc::new(State::open(&fixture.directory.join("viewer-profile")).unwrap());
     state
         .streams
         .p2
