@@ -498,7 +498,7 @@ fn provider_inspection_does_not_invert_writer_pointer_and_settings_locks() {
 #[test]
 fn supported_native_config_secret_annotations_remain_empty() {
     let fields: Value =
-        serde_json::from_str(include_str!("fixtures/settings-secrets-4288.json")).unwrap();
+        serde_json::from_str(include_str!("fixtures/settings-secrets-4314.json")).unwrap();
     for driver in ["codex", "claudeAgent"] {
         assert_eq!(
             fields["descriptors"]["providers"][driver]["secretFields"],

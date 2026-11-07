@@ -20,7 +20,7 @@ struct ReferenceField {
     keyed: bool,
 }
 static DESCRIPTORS: LazyLock<Value> = LazyLock::new(|| {
-    serde_json::from_str(include_str!("settings-secret-fields-4288.json"))
+    serde_json::from_str(include_str!("settings-secret-fields-4314.json"))
         .expect("native secret descriptors")
 });
 #[derive(Clone, Serialize, Debug, PartialEq)]
@@ -51,6 +51,7 @@ struct Group {
 }
 #[derive(Clone)]
 enum Key {
+    Root,
     Named(String),
     Index(usize),
 }
@@ -87,6 +88,7 @@ fn entries(value: &Value) -> Vec<(String, Value)> {
 impl Group {
     fn value<'a>(&self, settings: &'a Value) -> &'a Value {
         let entry = match &self.key {
+            Key::Root => &settings[self.section],
             Key::Named(key) => &settings[self.section][key],
             Key::Index(index) => &settings[self.section][*index],
         };
@@ -94,6 +96,7 @@ impl Group {
     }
     fn set(&self, settings: &mut Value, value: Value) {
         let entry = match &self.key {
+            Key::Root => &mut settings[self.section],
             Key::Named(key) => &mut settings[self.section][key],
             Key::Index(index) => &mut settings[self.section][*index],
         };
@@ -104,6 +107,9 @@ impl Group {
         }
     }
     fn name(&self, field: &str, host: Option<&str>) -> String {
+        if self.section == "cloudSpeechCredentials" {
+            return format!("voice-cloud-{field}");
+        }
         let encoded = self.identity.iter().map(|v| encode(v)).collect::<Vec<_>>();
         let mut name = match self.section {
             "providerInstances" => format!(
@@ -180,6 +186,13 @@ fn groups(settings: &Value) -> Vec<Group> {
             });
         }
     }
+    groups.push(Group {
+        section: "cloudSpeechCredentials",
+        key: Key::Root,
+        nested: None,
+        descriptor: descriptor(&DESCRIPTORS["voice"]),
+        identity: Vec::new(),
+    });
     groups
 }
 fn read_values(value: &Value) -> Vec<(Option<String>, String)> {
@@ -423,6 +436,11 @@ pub fn collect_settings_references(settings: &Value) -> Vec<SecretReference> {
                 .filter_map(|v| reference(&v[field])),
         );
     }
+    out.extend(
+        entries(&settings["cloudSpeechCredentials"])
+            .into_iter()
+            .filter_map(|(_, value)| reference(&value)),
+    );
     out
 }
 pub async fn invalidate(resolver: &SecretResolver, settings: Option<&Value>) {

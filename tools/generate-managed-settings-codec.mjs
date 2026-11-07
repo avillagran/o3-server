@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Compile the complete pinned settings AST into a closed, reviewable Rust decoder program.
 import fs from 'node:fs';
+import {pinnedSource} from './native-source-input.mjs';
 import {loadManagedSettingsNative} from './managed-settings-native.mjs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -18,9 +19,10 @@ const Effect=await import(pathToFileURL(require.resolve('effect/Effect')).href);
 const Option=await import(pathToFileURL(require.resolve('effect/Option')).href);
 const Duration=await import(pathToFileURL(require.resolve('effect/Duration')).href);
 const C=await import(pathToFileURL(contracts+'/src/index.ts').href);
+if(!S.is(C.ProviderInstanceId)('codex'))throw Error('Canonical Effect schema identity required');
 fs.mkdirSync(output,{recursive:true});
 const sources={};
-function source(file){const value=execFileSync('git',['-C',checkout,'show',`${revision}:${file}`],{encoding:'utf8'});sources[file]=crypto.createHash('sha256').update(value).digest('hex');return value;}
+const source=pinnedSource(checkout,revision,sources);
 for(const file of ['settings.ts','baseSchemas.ts','model.ts','device.ts','speech.ts','providerInstance.ts','settingsSecretValue.ts','secretReference.ts']){
  const name='packages/contracts/src/'+file;const original=source(name);
  if(fs.readFileSync(path.join(contracts,'src',file),'utf8')!==original)throw Error('Contract source mismatch: '+name);
@@ -209,9 +211,10 @@ for(const value of ['secret','••••••','',{provider:'vault',reference
  for(const [driver,key]of [['antigravity','apiKey'],['opencode','serverPassword'],['codex','apiKey']])managedCase('provider-secret:'+managedCases.length,{'providerInstances.custom':{value:{driver,config:{[key]:value}},locked:true}});
  for(const [kind,key]of [['github','tokens'],['bitbucket','accessToken'],['gitcafe','token']])managedCase('host-secret:'+managedCases.length,{sourceControlHosts:{value:{[kind]:{[key]:value}},locked:true}});
 }
+if(C.CloudSpeechCredentials)for(const provider of ['openai','xai','openrouter'])for(const value of ['secret','••••••','',{provider:'vault',reference:'token'}])for(const locked of [false,true])managedCase('voice-secret:'+managedCases.length,{cloudSpeechCredentials:{value:{[provider]:value},locked}});
 for(const sensitive of [true,false])for(const valueRedacted of [true,false])for(const value of ['secret','',{provider:'vault',reference:'token'}])managedCase('environment:'+managedCases.length,{'providerInstances.custom':{value:{driver:'codex',environment:[{name:'KEY',value,sensitive,valueRedacted}]},locked:true}});
 fs.writeFileSync(path.join(output,'managed-fixtures.json'),JSON.stringify({revision,effect:'4.1.2',cases:managedCases},null,2)+'\n');
-const secretFields={providers:Object.fromEntries(native.secrets.providerSecretFields),hosts:Object.fromEntries(native.hosts.SOURCE_CONTROL_HOST_SECRET_FIELDS),usage:native.secrets.usageLimitSecretFields,eas:native.secrets.easDeviceHostSecretFields,simlock:native.secrets.simlockDeviceHostSecretFields};
+const secretFields={providers:Object.fromEntries(native.secrets.providerSecretFields),hosts:Object.fromEntries(native.hosts.SOURCE_CONTROL_HOST_SECRET_FIELDS),usage:native.secrets.usageLimitSecretFields,eas:native.secrets.easDeviceHostSecretFields,simlock:native.secrets.simlockDeviceHostSecretFields,...(native.secrets.voiceSecretFields?{voice:native.secrets.voiceSecretFields}:{})};
 const secretReference=compile(C.SecretReference.ast,'secretReference');
 const patchRoot=compile(C.ServerSettingsPatch.ast,'patch');
 const persistedRoot=compile(native.persisted.PersistedServerSettings.ast,'persisted');

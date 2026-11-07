@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // Execute native methods with an in-memory filesystem and deterministic random service only.
+import {pinnedSource} from './native-source-input.mjs';
 import fs from'node:fs';import path from'node:path';import crypto from'node:crypto';import{execFileSync}from'node:child_process';import{createRequire}from'node:module';import{pathToFileURL}from'node:url';import{loadSecretStoreNative}from'./secret-store-native.mjs';
-const[checkout,contracts,output]=process.argv.slice(2);if(!output)throw Error('usage: generate-secret-store-fixtures.mjs CHECKOUT CONTRACTS OUTPUT');const revision='32a0531748c44b25072d7495ce0b9bd7e9450a87',require=createRequire(contracts+'/package.json');if(require('effect/package.json').version!=='4.1.2')throw Error('Effect4.1.2 required');fs.mkdirSync(output,{recursive:true});const sources={};
-function source(file){const value=execFileSync('git',['-C',checkout,'show',revision+':'+file],{encoding:'utf8'});sources[file]=crypto.createHash('sha256').update(value).digest('hex');return value;}
+const[checkout,contracts,output,override,seedOverride]=process.argv.slice(2);if(!output)throw Error('usage: generate-secret-store-fixtures.mjs CHECKOUT CONTRACTS OUTPUT');const revision=override??'32a0531748c44b25072d7495ce0b9bd7e9450a87',require=createRequire(contracts+'/package.json');if(require('effect/package.json').version!=='4.1.2')throw Error('Effect4.1.2 required');fs.mkdirSync(output,{recursive:true});const sources={};
+const source=pinnedSource(checkout,revision,sources);
 const checked=new Set();function check(file){if(checked.has(file))return;checked.add(file);const value=source(path.relative(checkout,file));if(fs.readFileSync(file,'utf8')!==value)throw Error('Contract source mismatch '+file);for(const m of value.matchAll(/\bfrom\s+["'](\.[^"']+)["']/g))check(path.resolve(path.dirname(file),m[1]));}check(contracts+'/src/index.ts');
 const load=async name=>import(pathToFileURL(require.resolve('effect/'+name)).href);const Schema=await load('Schema'),Effect=await load('Effect'),Option=await load('Option'),FileSystem=await load('FileSystem'),SecureRandom=await load('crypto/SecureRandom'),Path=await load('Path'),PlatformError=await load('PlatformError');const native=await loadSecretStoreNative(checkout,contracts,path.join(output,'runtime'),source);
 const directory='/private-fixture/secrets';
@@ -33,7 +34,7 @@ for(const[operation,fail]of[['set',{method:'uuidV4'}],['create',{method:'uuidV4'
 await add('random:concurrent-winner','random',{raceWinner:[88,89,90]});
 await add('random:concurrent-disappeared','random',{raceWinner:[88],disappearAfterRace:true});
 await add('create:existing-temporary-path','create',{files:{[directory+'/slot.bin.00000000-0000-4000-8000-000000000001.tmp']:{bytes:[66],mode:384}}});
-const seedPath=new URL('../tests/fixtures/settings-secrets-4288.json',import.meta.url);const seedText=fs.readFileSync(seedPath,'utf8'),seed=JSON.parse(seedText);if(seed.revision!==revision)throw Error('Secret mapping fixture pin changed');
+const seedPath=seedOverride??new URL(revision==='83a3674ffd84ffb33de768210c806cb1ac53fd80'?'../tests/fixtures/settings-secrets-4314.json':'../tests/fixtures/settings-secrets-4288.json',import.meta.url);const seedText=fs.readFileSync(seedPath,'utf8'),seed=JSON.parse(seedText);if(seed.revision!==revision)throw Error('Secret mapping fixture pin changed');
 const empty={providerInstances:{},sourceControlHosts:{},usageLimitSources:{},easDeviceHosts:[],simlockDeviceHosts:[],secretProviders:{}};
 const normalize=value=>JSON.parse(JSON.stringify(value,(_k,v)=>v instanceof Uint8Array?Array.from(v):v));
 const transactionCases=[];

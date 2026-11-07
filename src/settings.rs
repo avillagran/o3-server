@@ -59,7 +59,12 @@ pub(crate) fn read_stored(s: &State) -> Result<Value, String> {
             merge(&mut v, &filled);
             // These complete source records contain public saved-secret markers.
             // Generic legacy merge skips markers, which would erase their slots.
-            for key in ["sourceControlHosts", "usageLimitSources", "secretProviders"] {
+            for key in [
+                "sourceControlHosts",
+                "usageLimitSources",
+                "secretProviders",
+                "cloudSpeechCredentials",
+            ] {
                 if let Some(value) = filled.get(key) {
                     v[key] = value.clone();
                 }
@@ -190,7 +195,7 @@ fn private_projection(value: &Value) -> Result<Value, String> {
         .filter(|(_, entry)| matches!(entry["driver"].as_str(), Some("codex" | "claudeAgent")))
         .map(|(id, entry)| (id.clone(), entry.clone()))
         .collect::<serde_json::Map<_, _>>();
-    let mut decoded=crate::managed_settings_codec::decode_patch(json!({"providerInstances":providers,"sourceControlHosts":value["sourceControlHosts"],"usageLimitSources":value["usageLimitSources"]}))
+    let mut decoded=crate::managed_settings_codec::decode_patch(json!({"providerInstances":providers,"sourceControlHosts":value["sourceControlHosts"],"usageLimitSources":value["usageLimitSources"],"cloudSpeechCredentials":value["cloudSpeechCredentials"]}))
         .map_err(|_|"Invalid private settings fields".to_owned())?;
     decoded["easDeviceHosts"] = json!([]);
     decoded["simlockDeviceHosts"] = json!([]);
@@ -239,7 +244,12 @@ fn clear_removed_provider_references(current: &Value, next: &Value) -> Result<Va
 fn apply_private_projection(value: &mut Value, projected: &Value) -> Result<(), String> {
     let encoded = crate::managed_settings_codec::encode_sparse(projected.clone())
         .map_err(|_| "Invalid private settings encoding".to_owned())?;
-    for key in ["sourceControlHosts", "usageLimitSources", "secretProviders"] {
+    for key in [
+        "sourceControlHosts",
+        "usageLimitSources",
+        "secretProviders",
+        "cloudSpeechCredentials",
+    ] {
         value[key] = encoded[key].clone();
     }
     for (id, entry) in encoded["providerInstances"]
@@ -257,7 +267,12 @@ fn redact_client(value: &mut Value) -> Result<(), String> {
     redact(value);
     let encoded = crate::managed_settings_codec::encode_sparse(projected)
         .map_err(|_| "Invalid private settings encoding".to_owned())?;
-    for key in ["sourceControlHosts", "usageLimitSources", "secretProviders"] {
+    for key in [
+        "sourceControlHosts",
+        "usageLimitSources",
+        "secretProviders",
+        "cloudSpeechCredentials",
+    ] {
         value[key] = encoded[key].clone();
     }
     for (id, entry) in encoded["providerInstances"]

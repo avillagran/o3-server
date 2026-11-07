@@ -36,7 +36,7 @@ export async function loadManagedSettingsNative(checkout,contracts,output,source
    const start=text.indexOf('const providerSecretFields = new Map('),end=text.indexOf('const usageLimitSecretFields');
    if(start<0||end<start)throw Error('Native provider descriptor declaration changed');
    const schemas=text.slice(start,end).replace('const providerSecretFields','const providerSettingsSchemas').replace(/secretSettingsFields\(([A-Za-z_][A-Za-z0-9_.]*)\)/g,'$1');
-   text+='\n'+schemas+'\nexport {providerSettingsSchemas,providerSecretFields,usageLimitSecretFields,easDeviceHostSecretFields,simlockDeviceHostSecretFields};\n';
+   text+='\n'+schemas+'\nexport {providerSettingsSchemas,providerSecretFields,usageLimitSecretFields,easDeviceHostSecretFields,simlockDeviceHostSecretFields'+(text.includes('const voiceSecretFields')?',voiceSecretFields':'')+'};\n';
   }
   if(relative==='apps/server/src/sourceControl/sourceControlHostSecrets.ts')text+='\nexport {hostSettingsSchemas};\n';
   fs.writeFileSync(destination,text);return url;

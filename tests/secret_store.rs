@@ -16,7 +16,7 @@ use std::{
     sync::{Arc, Barrier},
 };
 fn fixture() -> Value {
-    serde_json::from_str(include_str!("fixtures/secret-store-4288.json")).unwrap()
+    serde_json::from_str(include_str!("fixtures/secret-store-4314.json")).unwrap()
 }
 #[derive(Default)]
 struct Memory {
@@ -99,7 +99,7 @@ fn native_planning_and_reference_only_client_projection() {
         serde_json::json!(["one_password"]),
         "update the pinned redaction registry before accepting another kind"
     );
-    assert_eq!(f["revision"], "32a0531748c44b25072d7495ce0b9bd7e9450a87");
+    assert_eq!(f["revision"], "83a3674ffd84ffb33de768210c806cb1ac53fd80");
     for c in f["transactionCases"].as_array().unwrap() {
         let (settings, changes) = tx::plan(&c["current"], &c["next"]);
         assert_eq!(settings, c["settings"], "{} settings", c["label"]);
@@ -368,7 +368,7 @@ fn actual_native_materialization_errors_keep_slot_metadata() {
 fn physical_cross_slot_transaction_and_rollback_leave_references_only() {
     let root = private_directory();
     let store = FileSecretStore::open(&root.join("secrets")).unwrap();
-    let current = serde_json::json!({"providerInstances":{},"sourceControlHosts":{},"usageLimitSources":{"synthetic":{"managementKey":"first-private-value"}},"easDeviceHosts":[],"simlockDeviceHosts":[],"secretProviders":{}});
+    let current = serde_json::json!({"providerInstances":{},"sourceControlHosts":{},"usageLimitSources":{"synthetic":{"managementKey":"first-private-value"}},"easDeviceHosts":[],"simlockDeviceHosts":[],"secretProviders":{},"cloudSpeechCredentials":{}});
     let (settings, changes) = tx::plan(&current, &current);
     let writes = tx::apply(&store, &changes).unwrap();
     assert!(!settings.to_string().contains("first-private-value"));

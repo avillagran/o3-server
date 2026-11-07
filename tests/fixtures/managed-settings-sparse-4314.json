@@ -1,0 +1,722 @@
+[
+  {
+    "input": {},
+    "encoded": {}
+  },
+  {
+    "input": {
+      "favorites": null
+    },
+    "encoded": {
+      "favorites": null
+    }
+  },
+  {
+    "input": {
+      "providerModelPreferences": null
+    },
+    "encoded": {
+      "providerModelPreferences": null
+    }
+  },
+  {
+    "input": {
+      "worktreeCleanup": null
+    },
+    "encoded": {
+      "worktreeCleanup": null
+    }
+  },
+  {
+    "input": {
+      "storageCleanup": {
+        "worktreeKeepWhen": "uncommitted-changes",
+        "worktreeAfterDays": null,
+        "worktreeSettledAfterDays": null,
+        "worktreeOnMerge": false,
+        "worktreeOnDelete": false,
+        "worktreeUnchanged": false,
+        "browserArtifactsAfterDays": null,
+        "logsAfterDays": null
+      }
+    },
+    "encoded": {
+      "storageCleanup": {
+        "worktreeKeepWhen": "uncommitted-changes",
+        "worktreeAfterDays": null,
+        "worktreeSettledAfterDays": null,
+        "worktreeOnMerge": false,
+        "worktreeOnDelete": false,
+        "worktreeUnchanged": false,
+        "browserArtifactsAfterDays": null,
+        "logsAfterDays": null
+      }
+    }
+  },
+  {
+    "input": {
+      "worktreesDirectory": ""
+    },
+    "encoded": {
+      "worktreesDirectory": ""
+    }
+  },
+  {
+    "input": {
+      "previousWorktreesDirectories": []
+    },
+    "encoded": {
+      "previousWorktreesDirectories": []
+    }
+  },
+  {
+    "input": {
+      "responseStreamingMode": "paragraph"
+    },
+    "encoded": {
+      "responseStreamingMode": "paragraph"
+    }
+  },
+  {
+    "input": {
+      "enableProviderUpdateChecks": true
+    },
+    "encoded": {
+      "enableProviderUpdateChecks": true
+    }
+  },
+  {
+    "input": {
+      "continueThreadsAfterServerUpdate": true
+    },
+    "encoded": {
+      "continueThreadsAfterServerUpdate": true
+    }
+  },
+  {
+    "input": {
+      "enableAgentBrowserAccess": true
+    },
+    "encoded": {
+      "enableAgentBrowserAccess": true
+    }
+  },
+  {
+    "input": {
+      "cloudSpeechCredentials": {
+        "openai": "",
+        "xai": "",
+        "openrouter": ""
+      }
+    },
+    "encoded": {
+      "cloudSpeechCredentials": {
+        "openai": "",
+        "xai": "",
+        "openrouter": ""
+      }
+    }
+  },
+  {
+    "input": {
+      "speechModelId": "handy-computer/parakeet-unified-en-0.6b-gguf"
+    },
+    "encoded": {
+      "speechModelId": "handy-computer/parakeet-unified-en-0.6b-gguf"
+    }
+  },
+  {
+    "input": {
+      "speechAcceleration": "auto"
+    },
+    "encoded": {
+      "speechAcceleration": "auto"
+    }
+  },
+  {
+    "input": {
+      "speechModelUnloadTimeout": "min_15"
+    },
+    "encoded": {
+      "speechModelUnloadTimeout": "min_15"
+    }
+  },
+  {
+    "input": {
+      "speechProjectCustomWords": []
+    },
+    "encoded": {
+      "speechProjectCustomWords": []
+    }
+  },
+  {
+    "input": {
+      "speechPostProcessingModelSelection": null
+    },
+    "encoded": {
+      "speechPostProcessingModelSelection": null
+    }
+  },
+  {
+    "input": {
+      "projectAgentBrowserAccessOverrides": {}
+    },
+    "encoded": {
+      "projectAgentBrowserAccessOverrides": {}
+    }
+  },
+  {
+    "input": {
+      "defaultAutoPull": false
+    },
+    "encoded": {
+      "defaultAutoPull": false
+    }
+  },
+  {
+    "input": {
+      "defaultProjectScripts": []
+    },
+    "encoded": {
+      "defaultProjectScripts": []
+    }
+  },
+  {
+    "input": {
+      "projectScriptOverrides": {}
+    },
+    "encoded": {
+      "projectScriptOverrides": {}
+    }
+  },
+  {
+    "input": {
+      "projectAutoPullOverrides": {}
+    },
+    "encoded": {
+      "projectAutoPullOverrides": {}
+    }
+  },
+  {
+    "input": {
+      "defaultModelSelection": null
+    },
+    "encoded": {
+      "defaultModelSelection": null
+    }
+  },
+  {
+    "input": {
+      "fallbackModelSelection": null
+    },
+    "encoded": {
+      "fallbackModelSelection": null
+    }
+  },
+  {
+    "input": {
+      "defaultRuntimeMode": "full-access"
+    },
+    "encoded": {
+      "defaultRuntimeMode": "full-access"
+    }
+  },
+  {
+    "input": {
+      "projectSettingsOverrides": {}
+    },
+    "encoded": {
+      "projectSettingsOverrides": {}
+    }
+  },
+  {
+    "input": {
+      "projectSettingsFolded": false
+    },
+    "encoded": {
+      "projectSettingsFolded": false
+    }
+  },
+  {
+    "input": {
+      "enableAgentDeviceAccess": false
+    },
+    "encoded": {
+      "enableAgentDeviceAccess": false
+    }
+  },
+  {
+    "input": {
+      "enableDeviceSupport": false
+    },
+    "encoded": {
+      "enableDeviceSupport": false
+    }
+  },
+  {
+    "input": {
+      "deviceOnboardingCompleted": false
+    },
+    "encoded": {
+      "deviceOnboardingCompleted": false
+    }
+  },
+  {
+    "input": {
+      "deviceHosts": []
+    },
+    "encoded": {
+      "deviceHosts": []
+    }
+  },
+  {
+    "input": {
+      "easDeviceHosts": []
+    },
+    "encoded": {
+      "easDeviceHosts": []
+    }
+  },
+  {
+    "input": {
+      "simlockDeviceHosts": []
+    },
+    "encoded": {
+      "simlockDeviceHosts": []
+    }
+  },
+  {
+    "input": {
+      "simlockDeviceHostsEnabled": false
+    },
+    "encoded": {
+      "simlockDeviceHostsEnabled": false
+    }
+  },
+  {
+    "input": {
+      "sidebarAutoSettleAfterDays": 7
+    },
+    "encoded": {
+      "sidebarAutoSettleAfterDays": 7
+    }
+  },
+  {
+    "input": {
+      "compactIdleThreads": false
+    },
+    "encoded": {
+      "compactIdleThreads": false
+    }
+  },
+  {
+    "input": {
+      "snoozeLimitedThreads": false
+    },
+    "encoded": {
+      "snoozeLimitedThreads": false
+    }
+  },
+  {
+    "input": {
+      "autoResumeLimitedThreads": false
+    },
+    "encoded": {
+      "autoResumeLimitedThreads": false
+    }
+  },
+  {
+    "input": {
+      "snoozePresets": [
+        {
+          "kind": "after",
+          "minutes": 60
+        },
+        {
+          "kind": "after",
+          "minutes": 180
+        },
+        {
+          "kind": "at",
+          "day": "today",
+          "time": "18:00"
+        },
+        {
+          "kind": "at",
+          "day": "tomorrow",
+          "time": "09:00"
+        },
+        {
+          "kind": "at",
+          "day": "monday",
+          "time": "09:00"
+        }
+      ]
+    },
+    "encoded": {
+      "snoozePresets": [
+        {
+          "kind": "after",
+          "minutes": 60
+        },
+        {
+          "kind": "after",
+          "minutes": 180
+        },
+        {
+          "kind": "at",
+          "day": "today",
+          "time": "18:00"
+        },
+        {
+          "kind": "at",
+          "day": "tomorrow",
+          "time": "09:00"
+        },
+        {
+          "kind": "at",
+          "day": "monday",
+          "time": "09:00"
+        }
+      ]
+    }
+  },
+  {
+    "input": {
+      "hiddenThreadTags": []
+    },
+    "encoded": {
+      "hiddenThreadTags": []
+    }
+  },
+  {
+    "input": {
+      "hideTaggedThreads": false
+    },
+    "encoded": {
+      "hideTaggedThreads": false
+    }
+  },
+  {
+    "input": {
+      "guestSharingEnabled": false
+    },
+    "encoded": {
+      "guestSharingEnabled": false
+    }
+  },
+  {
+    "input": {
+      "linkedEnvironmentsEnabled": false
+    },
+    "encoded": {
+      "linkedEnvironmentsEnabled": false
+    }
+  },
+  {
+    "input": {
+      "sidebarAutoSettleKeepPullRequests": false
+    },
+    "encoded": {
+      "sidebarAutoSettleKeepPullRequests": false
+    }
+  },
+  {
+    "input": {
+      "sidebarAutoSettleOnMerge": true
+    },
+    "encoded": {
+      "sidebarAutoSettleOnMerge": true
+    }
+  },
+  {
+    "input": {
+      "backgroundActivity": {
+        "schemaVersion": 1,
+        "profile": "balanced",
+        "overrides": {}
+      }
+    },
+    "encoded": {
+      "backgroundActivity": {
+        "schemaVersion": 1,
+        "profile": "balanced",
+        "overrides": {}
+      }
+    }
+  },
+  {
+    "input": {
+      "automaticGitFetchInterval": 30000
+    },
+    "encoded": {
+      "automaticGitFetchInterval": 30000
+    }
+  },
+  {
+    "input": {
+      "providerHealthRefreshInterval": 300000
+    },
+    "encoded": {
+      "providerHealthRefreshInterval": 300000
+    }
+  },
+  {
+    "input": {
+      "backgroundActivityProfile": "balanced"
+    },
+    "encoded": {
+      "backgroundActivityProfile": "balanced"
+    }
+  },
+  {
+    "input": {
+      "defaultTheme": ""
+    },
+    "encoded": {
+      "defaultTheme": ""
+    }
+  },
+  {
+    "input": {
+      "defaultThemeSetAt": ""
+    },
+    "encoded": {
+      "defaultThemeSetAt": ""
+    }
+  },
+  {
+    "input": {
+      "environmentIcon": null
+    },
+    "encoded": {
+      "environmentIcon": null
+    }
+  },
+  {
+    "input": {
+      "newWorktreesStartFromOrigin": true
+    },
+    "encoded": {
+      "newWorktreesStartFromOrigin": true
+    }
+  },
+  {
+    "input": {
+      "worktreeSubmodules": null
+    },
+    "encoded": {
+      "worktreeSubmodules": null
+    }
+  },
+  {
+    "input": {
+      "addProjectBaseDirectory": ""
+    },
+    "encoded": {
+      "addProjectBaseDirectory": ""
+    }
+  },
+  {
+    "input": {
+      "ghqCloneLayout": false
+    },
+    "encoded": {
+      "ghqCloneLayout": false
+    }
+  },
+  {
+    "input": {
+      "textGenerationModelSelection": {
+        "instanceId": "codex",
+        "model": "gpt-6-luna",
+        "options": [
+          {
+            "id": "reasoningEffort",
+            "value": "low"
+          }
+        ]
+      }
+    },
+    "encoded": {
+      "textGenerationModelSelection": {
+        "instanceId": "codex",
+        "model": "gpt-6-luna",
+        "options": [
+          {
+            "id": "reasoningEffort",
+            "value": "low"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "input": {
+      "threadTitleInstructions": ""
+    },
+    "encoded": {
+      "threadTitleInstructions": ""
+    }
+  },
+  {
+    "input": {
+      "branchNamingMode": "static"
+    },
+    "encoded": {
+      "branchNamingMode": "static"
+    }
+  },
+  {
+    "input": {
+      "branchNamePrefix": "t3"
+    },
+    "encoded": {
+      "branchNamePrefix": "t3"
+    }
+  },
+  {
+    "input": {
+      "branchNameInstructions": ""
+    },
+    "encoded": {
+      "branchNameInstructions": ""
+    }
+  },
+  {
+    "input": {
+      "removeAgentCreditsOnMerge": false
+    },
+    "encoded": {
+      "removeAgentCreditsOnMerge": false
+    }
+  },
+  {
+    "input": {
+      "sourceControlWritingStyle": {
+        "mode": "repo_conventions",
+        "customInstructions": "",
+        "followChangeRequestTemplates": true
+      }
+    },
+    "encoded": {
+      "sourceControlWritingStyle": {
+        "mode": "repo_conventions",
+        "customInstructions": "",
+        "followChangeRequestTemplates": true
+      }
+    }
+  },
+  {
+    "input": {
+      "sourceControlWriterModelSelection": null
+    },
+    "encoded": {
+      "sourceControlWriterModelSelection": null
+    }
+  },
+  {
+    "input": {
+      "reviewGuidesEnabled": false
+    },
+    "encoded": {
+      "reviewGuidesEnabled": false
+    }
+  },
+  {
+    "input": {
+      "reviewGuideModelSelection": null
+    },
+    "encoded": {
+      "reviewGuideModelSelection": null
+    }
+  },
+  {
+    "input": {
+      "reviewGuideInstructions": ""
+    },
+    "encoded": {
+      "reviewGuideInstructions": ""
+    }
+  },
+  {
+    "input": {
+      "pullRequestMergeMethod": null
+    },
+    "encoded": {
+      "pullRequestMergeMethod": null
+    }
+  },
+  {
+    "input": {
+      "providerInstances": {}
+    },
+    "encoded": {
+      "providerInstances": {}
+    }
+  },
+  {
+    "input": {
+      "observability": {
+        "otlpTracesUrl": "",
+        "otlpMetricsUrl": "",
+        "otlpLogsUrl": ""
+      }
+    },
+    "encoded": {
+      "observability": {
+        "otlpTracesUrl": "",
+        "otlpMetricsUrl": "",
+        "otlpLogsUrl": ""
+      }
+    }
+  },
+  {
+    "input": {
+      "sourceControlHosts": {}
+    },
+    "encoded": {
+      "sourceControlHosts": {}
+    }
+  },
+  {
+    "input": {
+      "usageLimitSources": {}
+    },
+    "encoded": {
+      "usageLimitSources": {}
+    }
+  },
+  {
+    "input": {
+      "secretProviders": {}
+    },
+    "encoded": {
+      "secretProviders": {}
+    }
+  },
+  {
+    "input": {
+      "cursorKeychainUsageEnabled": false
+    },
+    "encoded": {
+      "cursorKeychainUsageEnabled": false
+    }
+  },
+  {
+    "input": {
+      "usagePriceOverrides": {}
+    },
+    "encoded": {
+      "usagePriceOverrides": {}
+    }
+  },
+  {
+    "input": {
+      "usageModelAliases": {}
+    },
+    "encoded": {
+      "usageModelAliases": {}
+    }
+  }
+]

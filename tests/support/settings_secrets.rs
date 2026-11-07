@@ -1,6 +1,6 @@
 use super::*;
 fn fixtures() -> Value {
-    serde_json::from_str(include_str!("../fixtures/settings-secrets-4288.json")).unwrap()
+    serde_json::from_str(include_str!("../fixtures/settings-secrets-4314.json")).unwrap()
 }
 #[test]
 fn native_mapping_slots_values_and_provider_removal() {
@@ -95,32 +95,34 @@ async fn selective_refresh_retries_settings_refs_without_evicting_instance_refs(
     let providers = json!({"vault":{"kind":"fixture","config":{}}});
     let setting = json!({"provider":"vault","reference":"fixture://settings"});
     let instance = json!({"provider":"vault","reference":"fixture://instance"});
+    let voice = json!({"provider":"vault","reference":"fixture://voice"});
     let references = vec![
         SecretReference::decode(&setting).unwrap(),
         SecretReference::decode(&instance).unwrap(),
+        SecretReference::decode(&voice).unwrap(),
     ];
     resolver.read(&providers, &references).await;
-    assert_eq!(calls.load(Ordering::SeqCst), 2);
-    let settings = json!({"sourceControlHosts":{"github":{"tokens":{"fixture.test":setting}}},"providerInstances":{"fixture":{"env":{"TOKEN":instance}}}});
+    assert_eq!(calls.load(Ordering::SeqCst), 3);
+    let settings = json!({"sourceControlHosts":{"github":{"tokens":{"fixture.test":setting}}},"providerInstances":{"fixture":{"env":{"TOKEN":instance}}},"cloudSpeechCredentials":{"openai":voice}});
     invalidate(&resolver, Some(&settings)).await;
     resolver.read(&providers, &references).await;
     assert_eq!(
         calls.load(Ordering::SeqCst),
-        3,
+        5,
         "global settings reload must leave instance-scoped cached references intact"
     );
     invalidate(&resolver, Some(&json!({}))).await;
     resolver.read(&providers, &references).await;
     assert_eq!(
         calls.load(Ordering::SeqCst),
-        3,
+        5,
         "empty settings invalidate no references"
     );
     invalidate(&resolver, None).await;
     resolver.read(&providers, &references).await;
     assert_eq!(
         calls.load(Ordering::SeqCst),
-        5,
+        8,
         "unreadable settings invalidate all"
     );
 }
@@ -230,8 +232,8 @@ async fn native_schema_reference_resolution_and_literal_refusal() {
 fn native_profile_materialization_matches_complete_method_observations() {
     crate::test_sandbox::assert_isolated();
     let fixture: Value =
-        serde_json::from_str(include_str!("../fixtures/secret-store-4288.json")).unwrap();
-    assert_eq!(fixture["profileCases"].as_array().unwrap().len(), 403);
+        serde_json::from_str(include_str!("../fixtures/secret-store-4314.json")).unwrap();
+    assert_eq!(fixture["profileCases"].as_array().unwrap().len(), 517);
     let root = std::env::temp_dir().join(format!(
         "profile-native-materialization-{}",
         crate::store::random_id().unwrap()

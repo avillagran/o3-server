@@ -5,7 +5,7 @@ use std::{collections::HashSet, sync::LazyLock};
 use unicode_normalization::UnicodeNormalization;
 
 static PROGRAM: LazyLock<Value> = LazyLock::new(|| {
-    serde_json::from_str(include_str!("managed-settings-codec-4262.json"))
+    serde_json::from_str(include_str!("managed-settings-codec-4314.json"))
         .expect("pinned settings codec")
 });
 type Result<T> = std::result::Result<T, ()>;
@@ -639,9 +639,10 @@ mod tests {
     use super::*;
     #[test]
     fn native_provider_config_decode_and_errors() {
-        let fixtures: Value =
-            serde_json::from_str(include_str!("../tests/fixtures/provider-config-4262.json"))
-                .unwrap();
+        let fixtures: Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/provider-config-codec-4314.json"
+        ))
+        .unwrap();
         for c in fixtures.as_array().unwrap() {
             let actual = decode_provider_config(c["driver"].as_str().unwrap(), c["input"].clone());
             if let Some(error) = c["error"].as_str() {
@@ -654,7 +655,7 @@ mod tests {
     #[test]
     fn native_sparse_encoding() {
         let fixture: Value = serde_json::from_str(include_str!(
-            "../tests/fixtures/managed-settings-sparse-4262.json"
+            "../tests/fixtures/managed-settings-sparse-4314.json"
         ))
         .unwrap();
         for case in fixture.as_array().unwrap() {
@@ -675,29 +676,10 @@ mod tests {
             json!({"responseStreamingMode":"paragraph","future":1})
         );
     }
-    // Historical corpus values retain their original pin. Only the separately
-    // source-proven4314 missing-field default is projected into those outcomes.
-    fn current_default_expected(mut expected: Value, index: usize, input: Option<&Value>) -> Value {
-        let field = id(&PROGRAM["fields"]["sidebarAutoSettleAfterDays"]);
-        let missing = input.is_none();
-        if index == field && missing {
-            expected["value"] = PROGRAM["nodes"][field]["default"].clone();
-        }
-        if [id(&PROGRAM["root"]), id(&PROGRAM["persistedRoot"])].contains(&index)
-            && input.is_some_and(|value| {
-                value.is_object() && value.get("sidebarAutoSettleAfterDays").is_none()
-            })
-            && expected["value"].is_object()
-        {
-            expected["value"]["sidebarAutoSettleAfterDays"] =
-                PROGRAM["nodes"][field]["default"].clone();
-        }
-        expected
-    }
     #[test]
     fn pinned_every_ast_node() {
         let fixture: Value = serde_json::from_str(include_str!(
-            "../tests/fixtures/managed-settings-nodes-4262.json"
+            "../tests/fixtures/managed-settings-nodes-4314.json"
         ))
         .unwrap();
         for case in fixture["cases"].as_array().unwrap() {
@@ -706,7 +688,7 @@ mod tests {
             let result = if input.is_none() && !optional(index) {
                 Err(())
             } else {
-                run(index, input.clone(), false, false)
+                run(index, input, false, false)
             };
             if case["invalid"] == true {
                 assert!(
@@ -717,21 +699,13 @@ mod tests {
             }
             assert_eq!(
                 result,
-                Ok(
-                    current_default_expected(case["decoded"].clone(), index, input.as_ref())
-                        .get("value")
-                        .cloned()
-                ),
+                Ok(case["decoded"].get("value").cloned()),
                 "node {index} case {case}: decode"
             );
             let encoded = run(index, result.unwrap(), true, false);
             assert_eq!(
                 encoded,
-                Ok(
-                    current_default_expected(case["encoded"].clone(), index, input.as_ref())
-                        .get("value")
-                        .cloned()
-                ),
+                Ok(case["encoded"].get("value").cloned()),
                 "node {index} case {case}: encode"
             );
         }
@@ -739,7 +713,7 @@ mod tests {
     #[test]
     fn pinned_full_schema_codec() {
         let fixtures: Value = serde_json::from_str(include_str!(
-            "../tests/fixtures/managed-settings-codec-4262.json"
+            "../tests/fixtures/managed-settings-codec-4314.json"
         ))
         .unwrap();
         for case in fixtures["cases"].as_array().unwrap() {
@@ -755,7 +729,6 @@ mod tests {
             } else {
                 input[key] = case["value"].clone();
             }
-            let missing = case["missing"] == true;
             let result = decode(input);
             if case["invalid"] == true {
                 assert!(result.is_err(), "{label}: unexpectedly valid {result:?}");
@@ -764,23 +737,13 @@ mod tests {
             let result = result.unwrap_or_else(|()| panic!("{label}: unexpectedly invalid"));
             assert_eq!(
                 result.get(key),
-                current_default_expected(
-                    case["decoded"].clone(),
-                    id(&PROGRAM["fields"][key]),
-                    if missing { None } else { Some(&case["value"]) }
-                )
-                .get("value"),
+                case["decoded"].get("value"),
                 "{label}: decoded"
             );
             let encoded = encode(result).unwrap_or_else(|()| panic!("{label}: encode failed"));
             assert_eq!(
                 encoded.get(key),
-                current_default_expected(
-                    case["encoded"].clone(),
-                    id(&PROGRAM["fields"][key]),
-                    if missing { None } else { Some(&case["value"]) }
-                )
-                .get("value"),
+                case["encoded"].get("value"),
                 "{label}: encoded"
             );
         }

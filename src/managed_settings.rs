@@ -128,6 +128,9 @@ fn holds_credential(settings: &Value) -> bool {
             .flatten()
             .any(|key| value.get(key.as_str().unwrap()).is_some_and(credential))
     };
+    if has_fields(&settings["cloudSpeechCredentials"], &descriptors["voice"]) {
+        return true;
+    }
     if settings["providerInstances"]
         .as_object()
         .into_iter()
@@ -468,7 +471,7 @@ mod tests {
     #[test]
     fn pinned_native_overlay_and_writes() {
         let fixtures: Value =
-            serde_json::from_str(include_str!("../tests/fixtures/managed-settings-4262.json"))
+            serde_json::from_str(include_str!("../tests/fixtures/managed-settings-4314.json"))
                 .unwrap();
         for c in fixtures["cases"].as_array().unwrap() {
             let label = c["label"].as_str().unwrap();
@@ -492,27 +495,16 @@ mod tests {
                 serde_json::from_value::<Vec<String>>(c["lockedPaths"].clone()).unwrap(),
                 "{label}: paths"
             );
-            // Historical fixtures omit explicit3 because it equaled that pin's
-            // built-in default. In4314 it is a meaningful policy override.
-            let auto = &c["settings"]["sidebarAutoSettleAfterDays"];
-            let mut expected_defaults = expanded(&c["defaults"]);
-            if auto["value"] == 3 && auto["locked"] == false {
-                expected_defaults["sidebarAutoSettleAfterDays"] = json!(3);
-            }
             assert_eq!(
                 codec::encode(policy.defaults_value.clone()).unwrap(),
-                expected_defaults,
+                expanded(&c["defaults"]),
                 "{label}: defaults"
             );
             let current = codec::decode(merged(&codec::encoded_defaults(), &c["current"]))
                 .unwrap_or_else(|()| panic!("{label}: current invalid"));
-            let mut expected_applied = expanded(&c["applied"]);
-            if auto["value"] == 3 && auto["locked"] == true {
-                expected_applied["sidebarAutoSettleAfterDays"] = json!(3);
-            }
             assert_eq!(
                 codec::encode(policy.apply_locks(&current).unwrap()).unwrap(),
-                expected_applied,
+                expanded(&c["applied"]),
                 "{label}: applied"
             );
             for fill in c["fills"].as_array().unwrap() {
