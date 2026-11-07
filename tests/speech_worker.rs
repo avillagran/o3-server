@@ -659,3 +659,55 @@ fn complete_text_helpers_match_whole_native_service_with_actual_factory() {
         .unwrap();
     });
 }
+
+#[test]
+fn startup_cancellation_fences_before_hello_and_prevents_pre_cancelled_spawn() {
+    sandbox::assert_isolated();
+    let base = root();
+    let node_path = base.join("held-node.py");
+    let marker = base.join("entered");
+    fs::write(&node_path, format!("#!/usr/bin/python3\nimport os,time\nwith open({:?},'x') as output: output.write(str(os.getpid()))\nwhile True: time.sleep(1)\n", marker.to_str().unwrap())).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(&node_path, fs::Permissions::from_mode(0o500)).unwrap();
+    let node = NodeRuntime::capture(seal(&node_path), &base.join("executable")).unwrap();
+    let engine = base.join("unused.mjs");
+    fs::write(&engine, "throw Error('Must not execute')").unwrap();
+    let spec = |directory| WorkerSpec {
+        node: node.clone(),
+        engine: EnginePackage::admit(
+            "unused.mjs".into(),
+            vec![("unused.mjs".into(), seal(&engine))],
+        )
+        .unwrap(),
+        model: None,
+        vad: None,
+        directory,
+        acceleration: "cpu".into(),
+        startup_deadline: Duration::from_secs(30),
+        operation_deadline: Duration::from_secs(2),
+        close_deadline: CLOSE_DEADLINE,
+    };
+    runtime().block_on(async {
+        let (cancel, receiver) = tokio::sync::watch::channel(false);
+        cancel.send_replace(true);
+        let directory = base.join("never-created");
+        assert!(matches!(Worker::start_cancellable(spec(directory.clone()),receiver).await,Err(error) if error.kind()==std::io::ErrorKind::Interrupted));
+        assert!(!directory.exists());
+        assert!(!marker.exists());
+        let (cancel, receiver) = tokio::sync::watch::channel(false);
+        let startup = tokio::spawn(Worker::start_cancellable(spec(base.join("runtime")),receiver));
+        let pid = tokio::time::timeout(Duration::from_secs(5),async {
+            loop {
+                if let Ok(value)=fs::read_to_string(&marker) { if let Ok(pid)=value.parse::<u32>() {break pid;} }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        }).await.unwrap();
+        let exit = watch_native_exit(pid);
+        cancel.send_replace(true);
+        let result=tokio::time::timeout(CLOSE_DEADLINE+Duration::from_secs(1),startup).await.unwrap().unwrap();
+        let error=match result {Ok(_)=>panic!("Cancelled startup cannot publish"),Err(error)=>error};
+        let failure=error.get_ref().and_then(|error|error.downcast_ref::<o3_server::speech_worker::StartupFailure>()).unwrap();
+        assert!(matches!(failure.cleanup,Cleanup::Confirmed{graceful:false}));
+        assert_native_exited(exit).await;
+    });
+}

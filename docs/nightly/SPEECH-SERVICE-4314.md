@@ -124,3 +124,9 @@ The existing worker and pure options/PCM leaves do not by themselves close those
 speech or HTTP parity follows from control tests or the earlier inference proof.
 The ModelStore's retained staging/foreign-file safety differences remain as
 documented in `SPEECH-MODEL-STORE-4314.md`.
+
+### Startup cancellation receipt
+
+The admitted Worker also accepts an owner cancellation receiver during startup. A cancellation already present before admission creates no private runtime or process. Cancellation while waiting for the owned hello fences the group and reaps its leader before returning the same typed startup cleanup receipt used for protocol failure. Private graph preparation is awaited and retained; it is never detached by dropping its future. This receiver covers startup, not the subsequent engine lifetime. Wiring it into the Service preparation deadline remains a separate consumer step.
+
+The private held-before-hello regression captures a pidfd before signalling cancellation and requires both confirmed cleanup and actual process exit. It passes in both feature modes, alongside targeted strict checks. This is a synthetic startup peer, not a native inference claim.

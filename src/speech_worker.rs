@@ -152,6 +152,23 @@ impl Drop for Reservation {
     }
 }
 
+fn cancelled_now(cancel: &Option<watch::Receiver<bool>>) -> bool {
+    cancel
+        .as_ref()
+        .is_some_and(|cancel| *cancel.borrow() || cancel.has_changed().is_err())
+}
+async fn wait_cancel(cancel: &mut Option<watch::Receiver<bool>>) {
+    if let Some(cancel) = cancel {
+        loop {
+            if *cancel.borrow() || cancel.changed().await.is_err() {
+                return;
+            }
+        }
+    } else {
+        std::future::pending::<()>().await;
+    }
+}
+
 fn random_identity() -> io::Result<[u8; 16]> {
     let mut identity = [0; 16];
     getrandom::fill(&mut identity).map_err(io::Error::other)?;
@@ -260,6 +277,26 @@ fn prepare(spec: WorkerSpec) -> io::Result<Prepared> {
 }
 impl Worker {
     pub async fn start(spec: WorkerSpec) -> io::Result<Self> {
+        Self::start_owned(spec, None).await
+    }
+    /// A trusted owner may cancel admission/startup without abandoning the
+    /// post-spawn process receipt. Pre-spawn private preparation is retained.
+    pub async fn start_cancellable(
+        spec: WorkerSpec,
+        cancel: watch::Receiver<bool>,
+    ) -> io::Result<Self> {
+        Self::start_owned(spec, Some(cancel)).await
+    }
+    async fn start_owned(
+        spec: WorkerSpec,
+        mut cancel: Option<watch::Receiver<bool>>,
+    ) -> io::Result<Self> {
+        if cancelled_now(&cancel) {
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "Owned speech startup cancelled",
+            ));
+        }
         // Reserve fallible local state before any process exists, so an entropy
         // error cannot bypass the post-spawn terminal cleanup receipt.
         let identity = random_identity()?;
@@ -270,6 +307,12 @@ impl Worker {
         } = tokio::task::spawn_blocking(move || prepare(spec))
             .await
             .map_err(io::Error::other)??;
+        if cancelled_now(&cancel) {
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "Owned speech startup cancelled",
+            ));
+        }
         let mut process = OwnedProcess::spawn(&mut command)?;
         let (input, output) = match process.take_pipes() {
             Ok(pipes) => pipes,
@@ -279,8 +322,11 @@ impl Worker {
             }
         };
         let mut reader = Reader::new(output);
-        let hello = tokio::time::timeout(spec.startup_deadline, reader.next()).await;
-        if !matches!(&hello, Ok(Ok(Some(value))) if value.get("type")==Some(&json!("hello")) && value.get("owner")==Some(&json!(owner)) && value.get("node")==Some(&json!("26.13.0")) && value.get("pid").and_then(Value::as_u64)==Some(u64::from(process.id())))
+        let hello = tokio::select! {biased;
+            _=wait_cancel(&mut cancel)=>None,
+            value=tokio::time::timeout(spec.startup_deadline,reader.next())=>Some(value),
+        };
+        if !matches!(&hello, Some(Ok(Ok(Some(value)))) if value.get("type")==Some(&json!("hello")) && value.get("owner")==Some(&json!(owner)) && value.get("node")==Some(&json!("26.13.0")) && value.get("pid").and_then(Value::as_u64)==Some(u64::from(process.id())))
         {
             let cleanup = process.close(async { false }, spec.close_deadline).await;
             return Err(io::Error::other(StartupFailure { cleanup }));
