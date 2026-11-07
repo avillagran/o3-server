@@ -26,6 +26,7 @@ export async function loadSourceCredentialsNative(checkout,contracts,output,sour
  const importFile=relative=>import(write(path.join(checkout,relative)));
  return {
   cafe:await importFile('packages/source-control-gitcafe/src/server/GitCafeCredentials.ts'),
+  cafeApi:await importFile('packages/source-control-gitcafe/src/server/GitCafeApi.ts'),
   cafeDiscovery:await importFile('packages/source-control-gitcafe/src/server/GitCafeSourceControlProvider.ts'),
   bitbucket:await importFile('packages/source-control-bitbucket/src/server/BitbucketApi.ts'),
   host:await importFile('packages/source-control-core/src/server/SourceControlHost.ts'),

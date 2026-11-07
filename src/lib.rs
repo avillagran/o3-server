@@ -33,6 +33,7 @@ pub mod command_output;
 mod command_shared;
 mod composer_context;
 pub mod events;
+pub mod gitcafe_api;
 pub mod managed_clients;
 pub mod managed_limits;
 pub mod managed_policy;

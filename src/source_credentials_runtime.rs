@@ -162,97 +162,225 @@ impl Context for Physical<'_> {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(u16, Vec<u8>), ()>> + Send + 'a>>
     {
         Box::pin(async move {
-            let services = &self.state.forge.source_credentials;
-            let _slot = services.slots.acquire().await.map_err(|_| ())?;
-            let parsed = url::Url::parse(&url).map_err(|_| ())?;
-            if !matches!(parsed.scheme(), "http" | "https")
-                || !parsed.username().is_empty()
-                || parsed.password().is_some()
-            {
-                return Err(());
-            }
-            if services.client.get().is_none() {
-                let client = reqwest::Client::builder()
-                    .redirect(reqwest::redirect::Policy::none())
-                    .timeout(Duration::from_secs(30))
-                    .build()
-                    .map_err(|_| ())?;
-                let _ = services.client.set(client);
-            }
-            let mut request = services
-                .client
-                .get()
-                .ok_or(())?
-                .get(parsed)
-                .header("Accept", "application/json")
-                .header("User-Agent", "t3code");
-            if let Some(credential) = credential {
-                request = request.header("Authorization", credential.authorization());
-            }
-            let mut response = request.send().await.map_err(|_| ())?;
-            let status = response.status().as_u16();
-            let mut body = Vec::new();
-            while let Some(chunk) = response.chunk().await.map_err(|_| ())? {
-                if body.len() + chunk.len() > 8 * 1024 * 1024 {
-                    return Err(());
-                }
-                body.extend_from_slice(&chunk);
-            }
-            Ok((status, body))
+            let response = self
+                .send_http(
+                    url,
+                    reqwest::Method::GET,
+                    credential.map(|c| c.authorization()),
+                    None,
+                )
+                .await?;
+            Ok((response.status, response.bytes))
         })
     }
 }
-pub(crate) async fn auth(state: &State, kind: &str) -> Option<Value> {
-    let context = Physical { state };
-    if kind == "bitbucket" {
-        return Some(bitbucket_probe(&context).await);
+struct HttpResponse {
+    status: u16,
+    location: Option<String>,
+    bytes: Vec<u8>,
+}
+fn authorization(value: &str) -> Result<reqwest::header::HeaderValue, ()> {
+    let mut header = reqwest::header::HeaderValue::from_str(value).map_err(|_| ())?;
+    header.set_sensitive(true);
+    Ok(header)
+}
+impl Physical<'_> {
+    async fn send_http(
+        &self,
+        url: String,
+        method: reqwest::Method,
+        credential: Option<String>,
+        body: Option<Value>,
+    ) -> Result<HttpResponse, ()> {
+        let services = &self.state.forge.source_credentials;
+        let _slot = services.slots.acquire().await.map_err(|_| ())?;
+        let parsed = url::Url::parse(&url).map_err(|_| ())?;
+        if !matches!(parsed.scheme(), "http" | "https")
+            || !parsed.username().is_empty()
+            || parsed.password().is_some()
+        {
+            return Err(());
+        }
+        if services.client.get().is_none() {
+            let client = reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .timeout(Duration::from_secs(30))
+                .build()
+                .map_err(|_| ())?;
+            let _ = services.client.set(client);
+        }
+        let mut request = services
+            .client
+            .get()
+            .ok_or(())?
+            .request(method, parsed)
+            .header("Accept", "application/json")
+            .header("User-Agent", "t3code");
+        if let Some(credential) = credential {
+            request = request.header(reqwest::header::AUTHORIZATION, authorization(&credential)?);
+        }
+        if let Some(body) = body {
+            request = request.json(&body);
+        }
+        let mut response = request.send().await.map_err(|_| ())?;
+        let status = response.status().as_u16();
+        let location = response
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned);
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(|_| ())? {
+            if bytes.len() + chunk.len() > 8 * 1024 * 1024 {
+                return Err(());
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok(HttpResponse {
+            status,
+            location,
+            bytes,
+        })
     }
-    let services = &state.forge.source_credentials;
-    let unknown = |status: &str, detail: Option<String>| json!({"status":status,"host":{"_tag":"Some","value":"git.cafe"},"account":{"_tag":"None"},"detail":detail.map(|v|json!({"_tag":"Some","value":v})).unwrap_or(json!({"_tag":"None"}))});
-    Some(match services.cafe.get(&context, "git.cafe").await {
-        Err(CredentialError::Unresolved(message)) => unknown("unauthenticated", Some(message)),
-        Err(_) => return None,
-        Ok(credential) => {
-            let endpoint = "https://git.cafe/api/auth/principal".to_owned();
+}
+struct CafePhysical<'a> {
+    inner: Physical<'a>,
+    token: OnceLock<String>,
+}
+impl crate::gitcafe_api::Context for CafePhysical<'_> {
+    fn credential<'a>(
+        &'a self,
+        host: &'a str,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<CafeCredential, CredentialError>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            let credential = self
+                .inner
+                .state
+                .forge
+                .source_credentials
+                .cafe
+                .get(&self.inner, host)
+                .await?;
+            let _ = self.token.set(credential.token.clone());
+            Ok(credential)
+        })
+    }
+    fn invalidate<'a>(
+        &'a self,
+        host: &'a str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>> {
+        Box::pin(async move {
+            self.inner
+                .state
+                .forge
+                .source_credentials
+                .cafe
+                .invalidate(host);
+        })
+    }
+    fn send<'a>(
+        &'a self,
+        request: crate::gitcafe_api::Outgoing,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<crate::gitcafe_api::Response, ()>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            let endpoint = request.url;
             #[cfg(test)]
-            let endpoint = services
+            let endpoint = if let Some((fixture, _)) = self
+                .inner
+                .state
+                .forge
+                .source_credentials
                 .endpoints
                 .lock()
                 .unwrap()
                 .clone()
-                .map(|v| v.0)
-                .unwrap_or(endpoint);
-            match context
-                .http(
-                    endpoint,
-                    Some(BitbucketCredential::Access(credential.token.clone())),
-                )
-                .await
             {
-                Ok((401, _)) => {
-                    services.cafe.invalidate("git.cafe");
-                    unknown("unauthenticated", None)
+                let canonical = url::Url::parse(&endpoint).map_err(|_| ())?;
+                if canonical.path() == "/api/auth/principal" {
+                    fixture
+                } else {
+                    let mut target = url::Url::parse(&fixture).map_err(|_| ())?;
+                    target.set_path(canonical.path());
+                    target.set_query(canonical.query());
+                    target.set_fragment(canonical.fragment());
+                    target.to_string()
                 }
-                Ok((status, bytes)) if (200..300).contains(&status) => {
-                    let bytes = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(&bytes);
-                    let principal: Value = serde_json::from_str(&String::from_utf8_lossy(bytes))
-                        .unwrap_or(Value::Null);
-                    let mut auth = unknown("unknown", None);
-                    if principal["actorId"].as_str().is_some_and(|v| !v.is_empty()) {
-                        if let Some(handle) = principal["handle"]
-                            .as_str()
-                            .filter(|v| !v.is_empty() && v.len() <= 200 && *v != credential.token)
-                        {
-                            auth["status"] = json!("authenticated");
-                            auth["account"] = json!({"_tag":"Some","value":handle});
-                        }
+            } else {
+                endpoint
+            };
+            let response = self
+                .inner
+                .send_http(
+                    endpoint,
+                    reqwest::Method::from_bytes(request.method.as_str().as_bytes())
+                        .map_err(|_| ())?,
+                    Some(format!("Bearer {}", request.token)),
+                    request.body,
+                )
+                .await?;
+            let bytes = response
+                .bytes
+                .strip_prefix(&[0xef, 0xbb, 0xbf])
+                .unwrap_or(&response.bytes);
+            Ok(crate::gitcafe_api::Response {
+                status: response.status,
+                location: response.location,
+                text: String::from_utf8_lossy(bytes).into_owned(),
+            })
+        })
+    }
+}
+pub(crate) async fn auth(state: &State, kind: &str) -> Option<Value> {
+    if kind == "bitbucket" {
+        return Some(bitbucket_probe(&Physical { state }).await);
+    }
+    let context = CafePhysical {
+        inner: Physical { state },
+        token: OnceLock::new(),
+    };
+    let unknown = |status: &str, detail: Option<String>| json!({"status":status,"host":{"_tag":"Some","value":"git.cafe"},"account":{"_tag":"None"},"detail":detail.map(|v|json!({"_tag":"Some","value":v})).unwrap_or(json!({"_tag":"None"}))});
+    Some(
+        match crate::gitcafe_api::request(
+            &context,
+            &crate::gitcafe_api::Request {
+                host: "git.cafe".into(),
+                operation: "get principal".into(),
+                path: "/auth/principal".into(),
+                method: None,
+                body: None,
+            },
+        )
+        .await
+        {
+            Ok(text) => {
+                let principal: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+                let mut auth = unknown("unknown", None);
+                if principal["actorId"].as_str().is_some_and(|v| !v.is_empty()) {
+                    if let Some(handle) = principal["handle"].as_str().filter(|v| {
+                        !v.is_empty()
+                            && v.len() <= 200
+                            && context.token.get().is_none_or(|token| *v != token.as_str())
+                    }) {
+                        auth["status"] = json!("authenticated");
+                        auth["account"] = json!({"_tag":"Some","value":handle});
                     }
-                    auth
                 }
-                _ => unknown("unknown", None),
+                auth
             }
-        }
-    })
+            Err(error) => match error.credential {
+                Some(CredentialError::Unresolved(message)) => {
+                    unknown("unauthenticated", Some(message))
+                }
+                Some(_) => return None,
+                None if error.status == Some(401) => unknown("unauthenticated", None),
+                _ => unknown("unknown", None),
+            },
+        },
+    )
 }
 
 #[cfg(test)]
@@ -263,6 +391,148 @@ mod tests {
         os::unix::fs::PermissionsExt,
         sync::{Arc, Mutex},
     };
+    #[test]
+    fn authorization_metadata_is_sensitive() {
+        crate::test_sandbox::assert_isolated();
+        let value = authorization("Bearer fixture-private-token").unwrap();
+        assert!(value.is_sensitive());
+        assert!(!format!("{value:?}").contains("fixture-private-token"));
+    }
+    #[test]
+    fn actual_rpc_redirect_refusal_and_401_rotation_never_expose_tokens() {
+        crate::test_sandbox::assert_isolated();
+        let trap = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        trap.set_nonblocking(true).unwrap();
+        let forbidden = format!(
+            "http://{}/api/must-not-receive-token",
+            trap.local_addr().unwrap()
+        );
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!(
+            "http://{}/api/auth/principal",
+            listener.local_addr().unwrap()
+        );
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let captured = requests.clone();
+        let http = std::thread::spawn(move || {
+            let responses = [
+                (
+                    302,
+                    Some("/api/principal-renumbered".to_owned()),
+                    "moving".to_owned(),
+                ),
+                (
+                    200,
+                    None,
+                    r#"{"actorId":"fixture","handle":"reader-one"}"#.to_owned(),
+                ),
+                (307, Some(forbidden), "do not follow".to_owned()),
+                (
+                    401,
+                    None,
+                    r#"{"detail":"fixture-rotated-1 must never appear in auth output"}"#.to_owned(),
+                ),
+                (
+                    200,
+                    None,
+                    "\u{feff}".to_owned() + r#"{"actorId":"fixture","handle":"reader-two"}"#,
+                ),
+                (
+                    200,
+                    None,
+                    r#"{"actorId":"fixture","handle":"fixture-rotated-2"}"#.to_owned(),
+                ),
+            ];
+            for (status, location, body) in responses {
+                let (mut socket, _) = listener.accept().unwrap();
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(10)))
+                    .unwrap();
+                let mut bytes = Vec::new();
+                let mut byte = [0];
+                while !bytes.ends_with(b"\r\n\r\n") {
+                    assert_eq!(socket.read(&mut byte).unwrap(), 1);
+                    bytes.push(byte[0]);
+                    assert!(bytes.len() < 16384);
+                }
+                captured
+                    .lock()
+                    .unwrap()
+                    .push(String::from_utf8(bytes).unwrap());
+                let location = location
+                    .map(|v| format!("Location: {v}\r\n"))
+                    .unwrap_or_default();
+                write!(socket,"HTTP/1.1 {status} Fixture\r\n{location}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+            }
+        });
+        let server = crate::checkpoint::recovery_test_support::start(|state| {
+            let script = state.dir.join("native-api-cafe.py");
+            std::fs::write(
+                &script,
+                r#"#!/usr/bin/python3
+import sys
+assert sys.argv[1:]==['auth','http','credential','--host','https://git.cafe/api','get']
+assert sys.stdin.read()=='protocol=https\nhost=git.cafe\n\n'
+try:
+    with open('native-api-calls') as f: count=int(f.read())
+except FileNotFoundError:
+    count=0
+with open('native-api-calls','w') as f:f.write(str(count+1))
+print('password=fixture-rotated-'+str(count+1))
+"#,
+            )
+            .unwrap();
+            std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+            *state.forge.source_credentials.executable.lock().unwrap() =
+                Some(script.to_string_lossy().into_owned());
+            *state.forge.source_credentials.endpoints.lock().unwrap() =
+                Some((endpoint, "http://127.0.0.1:1/unused".into()));
+        });
+        let client = server.connect();
+        for (status, account) in [
+            ("authenticated", Some("reader-one")),
+            ("unknown", None),
+            ("unauthenticated", None),
+            ("authenticated", Some("reader-two")),
+            ("unknown", None),
+        ] {
+            let reply = client
+                .rpc("server.discoverSourceControl", json!({}))
+                .unwrap();
+            let cafe = reply["sourceControlProviders"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|v| v["kind"] == "gitcafe")
+                .unwrap();
+            assert_eq!(cafe["auth"]["status"], status, "{cafe}");
+            assert_eq!(
+                cafe["auth"]["account"],
+                account
+                    .map(|v| json!({"_tag":"Some","value":v}))
+                    .unwrap_or(json!({"_tag":"None"}))
+            );
+            assert!(!reply.to_string().contains("fixture-rotated-"));
+            assert_eq!(
+                trap.accept().unwrap_err().kind(),
+                std::io::ErrorKind::WouldBlock
+            );
+        }
+        http.join().unwrap();
+        assert_eq!(
+            std::fs::read_to_string(server.dir.join("native-api-calls")).unwrap(),
+            "2"
+        );
+        let requests = requests.lock().unwrap();
+        assert_eq!(requests.len(), 6);
+        assert!(requests[1].starts_with("GET /api/principal-renumbered HTTP/1.1"));
+        assert!(requests[..4]
+            .iter()
+            .all(|v| v.contains("Bearer fixture-rotated-1")));
+        assert!(requests[4..]
+            .iter()
+            .all(|v| v.contains("Bearer fixture-rotated-2")));
+    }
     #[test]
     fn actual_rpc_uses_native_credentials_private_cli_and_refusal_boundaries() {
         crate::test_sandbox::assert_isolated();
