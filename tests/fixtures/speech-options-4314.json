@@ -1,0 +1,2848 @@
+{
+  "revision": "83a3674ffd84ffb33de768210c806cb1ac53fd80",
+  "effect": "4.1.2",
+  "cases": [
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "decoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "encoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      }
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": null,
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": true,
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": false,
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": 0,
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": [],
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": {},
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": null,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": "",
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": true,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "decoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": true,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "encoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": true,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      }
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "decoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "encoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      }
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": 0,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": [],
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": {},
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": null,
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": "",
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": true,
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": false,
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": 0,
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "decoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "encoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      }
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": {},
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": null,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": "",
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "decoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "encoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      }
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": false,
+        "speechSilenceFiltering": true
+      },
+      "decoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": false,
+        "speechSilenceFiltering": true
+      },
+      "encoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": false,
+        "speechSilenceFiltering": true
+      }
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": 0,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": [],
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": {},
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "decoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "encoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      }
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true,
+        "speechCorrectionWord": null
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true,
+        "speechCorrectionWord": ""
+      },
+      "decoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechCorrectionWord": "",
+        "speechSilenceFiltering": true
+      },
+      "encoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechCorrectionWord": "",
+        "speechSilenceFiltering": true
+      }
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true,
+        "speechCorrectionWord": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true,
+        "speechCorrectionWord": false
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true,
+        "speechCorrectionWord": 0
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true,
+        "speechCorrectionWord": []
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true,
+        "speechCorrectionWord": {}
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true
+      },
+      "decoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "encoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      }
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": null
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": ""
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "decoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "encoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      }
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": false
+      },
+      "decoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": false
+      },
+      "encoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": false
+      }
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": 0
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": []
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": {}
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "e",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "eeeeeeeeeeeeeeee",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "decoded": {
+        "speechLanguage": "eeeeeeeeeeeeeeee",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "encoded": {
+        "speechLanguage": "eeeeeeeeeeeeeeee",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      }
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "eeeeeeeeeeeeeeeee",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "😀😀😀😀😀😀😀😀",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "decoded": {
+        "speechLanguage": "😀😀😀😀😀😀😀😀",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "encoded": {
+        "speechLanguage": "😀😀😀😀😀😀😀😀",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      }
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "😀😀😀😀😀😀😀😀😀",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "﻿en",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "decoded": {
+        "speechLanguage": "﻿en",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "encoded": {
+        "speechLanguage": "﻿en",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      }
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [
+          {
+            "term": "é",
+            "aliases": [
+              "é"
+            ]
+          }
+        ],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [
+          {
+            "term": " word ",
+            "aliases": [
+              "WORD"
+            ]
+          }
+        ],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [
+          {
+            "term": "valid",
+            "aliases": [
+              " "
+            ]
+          }
+        ],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [
+          {
+            "term": "term0",
+            "aliases": []
+          },
+          {
+            "term": "term1",
+            "aliases": []
+          },
+          {
+            "term": "term2",
+            "aliases": []
+          },
+          {
+            "term": "term3",
+            "aliases": []
+          },
+          {
+            "term": "term4",
+            "aliases": []
+          },
+          {
+            "term": "term5",
+            "aliases": []
+          },
+          {
+            "term": "term6",
+            "aliases": []
+          },
+          {
+            "term": "term7",
+            "aliases": []
+          },
+          {
+            "term": "term8",
+            "aliases": []
+          },
+          {
+            "term": "term9",
+            "aliases": []
+          },
+          {
+            "term": "term10",
+            "aliases": []
+          },
+          {
+            "term": "term11",
+            "aliases": []
+          },
+          {
+            "term": "term12",
+            "aliases": []
+          },
+          {
+            "term": "term13",
+            "aliases": []
+          },
+          {
+            "term": "term14",
+            "aliases": []
+          },
+          {
+            "term": "term15",
+            "aliases": []
+          },
+          {
+            "term": "term16",
+            "aliases": []
+          },
+          {
+            "term": "term17",
+            "aliases": []
+          },
+          {
+            "term": "term18",
+            "aliases": []
+          },
+          {
+            "term": "term19",
+            "aliases": []
+          },
+          {
+            "term": "term20",
+            "aliases": []
+          },
+          {
+            "term": "term21",
+            "aliases": []
+          },
+          {
+            "term": "term22",
+            "aliases": []
+          },
+          {
+            "term": "term23",
+            "aliases": []
+          },
+          {
+            "term": "term24",
+            "aliases": []
+          },
+          {
+            "term": "term25",
+            "aliases": []
+          },
+          {
+            "term": "term26",
+            "aliases": []
+          },
+          {
+            "term": "term27",
+            "aliases": []
+          },
+          {
+            "term": "term28",
+            "aliases": []
+          },
+          {
+            "term": "term29",
+            "aliases": []
+          },
+          {
+            "term": "term30",
+            "aliases": []
+          },
+          {
+            "term": "term31",
+            "aliases": []
+          },
+          {
+            "term": "term32",
+            "aliases": []
+          },
+          {
+            "term": "term33",
+            "aliases": []
+          },
+          {
+            "term": "term34",
+            "aliases": []
+          },
+          {
+            "term": "term35",
+            "aliases": []
+          },
+          {
+            "term": "term36",
+            "aliases": []
+          },
+          {
+            "term": "term37",
+            "aliases": []
+          },
+          {
+            "term": "term38",
+            "aliases": []
+          },
+          {
+            "term": "term39",
+            "aliases": []
+          },
+          {
+            "term": "term40",
+            "aliases": []
+          },
+          {
+            "term": "term41",
+            "aliases": []
+          },
+          {
+            "term": "term42",
+            "aliases": []
+          },
+          {
+            "term": "term43",
+            "aliases": []
+          },
+          {
+            "term": "term44",
+            "aliases": []
+          },
+          {
+            "term": "term45",
+            "aliases": []
+          },
+          {
+            "term": "term46",
+            "aliases": []
+          },
+          {
+            "term": "term47",
+            "aliases": []
+          },
+          {
+            "term": "term48",
+            "aliases": []
+          },
+          {
+            "term": "term49",
+            "aliases": []
+          },
+          {
+            "term": "term50",
+            "aliases": []
+          },
+          {
+            "term": "term51",
+            "aliases": []
+          },
+          {
+            "term": "term52",
+            "aliases": []
+          },
+          {
+            "term": "term53",
+            "aliases": []
+          },
+          {
+            "term": "term54",
+            "aliases": []
+          },
+          {
+            "term": "term55",
+            "aliases": []
+          },
+          {
+            "term": "term56",
+            "aliases": []
+          },
+          {
+            "term": "term57",
+            "aliases": []
+          },
+          {
+            "term": "term58",
+            "aliases": []
+          },
+          {
+            "term": "term59",
+            "aliases": []
+          },
+          {
+            "term": "term60",
+            "aliases": []
+          },
+          {
+            "term": "term61",
+            "aliases": []
+          },
+          {
+            "term": "term62",
+            "aliases": []
+          },
+          {
+            "term": "term63",
+            "aliases": []
+          },
+          {
+            "term": "term64",
+            "aliases": []
+          },
+          {
+            "term": "term65",
+            "aliases": []
+          },
+          {
+            "term": "term66",
+            "aliases": []
+          },
+          {
+            "term": "term67",
+            "aliases": []
+          },
+          {
+            "term": "term68",
+            "aliases": []
+          },
+          {
+            "term": "term69",
+            "aliases": []
+          },
+          {
+            "term": "term70",
+            "aliases": []
+          },
+          {
+            "term": "term71",
+            "aliases": []
+          },
+          {
+            "term": "term72",
+            "aliases": []
+          },
+          {
+            "term": "term73",
+            "aliases": []
+          },
+          {
+            "term": "term74",
+            "aliases": []
+          },
+          {
+            "term": "term75",
+            "aliases": []
+          },
+          {
+            "term": "term76",
+            "aliases": []
+          },
+          {
+            "term": "term77",
+            "aliases": []
+          },
+          {
+            "term": "term78",
+            "aliases": []
+          },
+          {
+            "term": "term79",
+            "aliases": []
+          },
+          {
+            "term": "term80",
+            "aliases": []
+          },
+          {
+            "term": "term81",
+            "aliases": []
+          },
+          {
+            "term": "term82",
+            "aliases": []
+          },
+          {
+            "term": "term83",
+            "aliases": []
+          },
+          {
+            "term": "term84",
+            "aliases": []
+          },
+          {
+            "term": "term85",
+            "aliases": []
+          },
+          {
+            "term": "term86",
+            "aliases": []
+          },
+          {
+            "term": "term87",
+            "aliases": []
+          },
+          {
+            "term": "term88",
+            "aliases": []
+          },
+          {
+            "term": "term89",
+            "aliases": []
+          },
+          {
+            "term": "term90",
+            "aliases": []
+          },
+          {
+            "term": "term91",
+            "aliases": []
+          },
+          {
+            "term": "term92",
+            "aliases": []
+          },
+          {
+            "term": "term93",
+            "aliases": []
+          },
+          {
+            "term": "term94",
+            "aliases": []
+          },
+          {
+            "term": "term95",
+            "aliases": []
+          },
+          {
+            "term": "term96",
+            "aliases": []
+          },
+          {
+            "term": "term97",
+            "aliases": []
+          },
+          {
+            "term": "term98",
+            "aliases": []
+          },
+          {
+            "term": "term99",
+            "aliases": []
+          }
+        ],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "decoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [
+          {
+            "term": "term0",
+            "aliases": []
+          },
+          {
+            "term": "term1",
+            "aliases": []
+          },
+          {
+            "term": "term2",
+            "aliases": []
+          },
+          {
+            "term": "term3",
+            "aliases": []
+          },
+          {
+            "term": "term4",
+            "aliases": []
+          },
+          {
+            "term": "term5",
+            "aliases": []
+          },
+          {
+            "term": "term6",
+            "aliases": []
+          },
+          {
+            "term": "term7",
+            "aliases": []
+          },
+          {
+            "term": "term8",
+            "aliases": []
+          },
+          {
+            "term": "term9",
+            "aliases": []
+          },
+          {
+            "term": "term10",
+            "aliases": []
+          },
+          {
+            "term": "term11",
+            "aliases": []
+          },
+          {
+            "term": "term12",
+            "aliases": []
+          },
+          {
+            "term": "term13",
+            "aliases": []
+          },
+          {
+            "term": "term14",
+            "aliases": []
+          },
+          {
+            "term": "term15",
+            "aliases": []
+          },
+          {
+            "term": "term16",
+            "aliases": []
+          },
+          {
+            "term": "term17",
+            "aliases": []
+          },
+          {
+            "term": "term18",
+            "aliases": []
+          },
+          {
+            "term": "term19",
+            "aliases": []
+          },
+          {
+            "term": "term20",
+            "aliases": []
+          },
+          {
+            "term": "term21",
+            "aliases": []
+          },
+          {
+            "term": "term22",
+            "aliases": []
+          },
+          {
+            "term": "term23",
+            "aliases": []
+          },
+          {
+            "term": "term24",
+            "aliases": []
+          },
+          {
+            "term": "term25",
+            "aliases": []
+          },
+          {
+            "term": "term26",
+            "aliases": []
+          },
+          {
+            "term": "term27",
+            "aliases": []
+          },
+          {
+            "term": "term28",
+            "aliases": []
+          },
+          {
+            "term": "term29",
+            "aliases": []
+          },
+          {
+            "term": "term30",
+            "aliases": []
+          },
+          {
+            "term": "term31",
+            "aliases": []
+          },
+          {
+            "term": "term32",
+            "aliases": []
+          },
+          {
+            "term": "term33",
+            "aliases": []
+          },
+          {
+            "term": "term34",
+            "aliases": []
+          },
+          {
+            "term": "term35",
+            "aliases": []
+          },
+          {
+            "term": "term36",
+            "aliases": []
+          },
+          {
+            "term": "term37",
+            "aliases": []
+          },
+          {
+            "term": "term38",
+            "aliases": []
+          },
+          {
+            "term": "term39",
+            "aliases": []
+          },
+          {
+            "term": "term40",
+            "aliases": []
+          },
+          {
+            "term": "term41",
+            "aliases": []
+          },
+          {
+            "term": "term42",
+            "aliases": []
+          },
+          {
+            "term": "term43",
+            "aliases": []
+          },
+          {
+            "term": "term44",
+            "aliases": []
+          },
+          {
+            "term": "term45",
+            "aliases": []
+          },
+          {
+            "term": "term46",
+            "aliases": []
+          },
+          {
+            "term": "term47",
+            "aliases": []
+          },
+          {
+            "term": "term48",
+            "aliases": []
+          },
+          {
+            "term": "term49",
+            "aliases": []
+          },
+          {
+            "term": "term50",
+            "aliases": []
+          },
+          {
+            "term": "term51",
+            "aliases": []
+          },
+          {
+            "term": "term52",
+            "aliases": []
+          },
+          {
+            "term": "term53",
+            "aliases": []
+          },
+          {
+            "term": "term54",
+            "aliases": []
+          },
+          {
+            "term": "term55",
+            "aliases": []
+          },
+          {
+            "term": "term56",
+            "aliases": []
+          },
+          {
+            "term": "term57",
+            "aliases": []
+          },
+          {
+            "term": "term58",
+            "aliases": []
+          },
+          {
+            "term": "term59",
+            "aliases": []
+          },
+          {
+            "term": "term60",
+            "aliases": []
+          },
+          {
+            "term": "term61",
+            "aliases": []
+          },
+          {
+            "term": "term62",
+            "aliases": []
+          },
+          {
+            "term": "term63",
+            "aliases": []
+          },
+          {
+            "term": "term64",
+            "aliases": []
+          },
+          {
+            "term": "term65",
+            "aliases": []
+          },
+          {
+            "term": "term66",
+            "aliases": []
+          },
+          {
+            "term": "term67",
+            "aliases": []
+          },
+          {
+            "term": "term68",
+            "aliases": []
+          },
+          {
+            "term": "term69",
+            "aliases": []
+          },
+          {
+            "term": "term70",
+            "aliases": []
+          },
+          {
+            "term": "term71",
+            "aliases": []
+          },
+          {
+            "term": "term72",
+            "aliases": []
+          },
+          {
+            "term": "term73",
+            "aliases": []
+          },
+          {
+            "term": "term74",
+            "aliases": []
+          },
+          {
+            "term": "term75",
+            "aliases": []
+          },
+          {
+            "term": "term76",
+            "aliases": []
+          },
+          {
+            "term": "term77",
+            "aliases": []
+          },
+          {
+            "term": "term78",
+            "aliases": []
+          },
+          {
+            "term": "term79",
+            "aliases": []
+          },
+          {
+            "term": "term80",
+            "aliases": []
+          },
+          {
+            "term": "term81",
+            "aliases": []
+          },
+          {
+            "term": "term82",
+            "aliases": []
+          },
+          {
+            "term": "term83",
+            "aliases": []
+          },
+          {
+            "term": "term84",
+            "aliases": []
+          },
+          {
+            "term": "term85",
+            "aliases": []
+          },
+          {
+            "term": "term86",
+            "aliases": []
+          },
+          {
+            "term": "term87",
+            "aliases": []
+          },
+          {
+            "term": "term88",
+            "aliases": []
+          },
+          {
+            "term": "term89",
+            "aliases": []
+          },
+          {
+            "term": "term90",
+            "aliases": []
+          },
+          {
+            "term": "term91",
+            "aliases": []
+          },
+          {
+            "term": "term92",
+            "aliases": []
+          },
+          {
+            "term": "term93",
+            "aliases": []
+          },
+          {
+            "term": "term94",
+            "aliases": []
+          },
+          {
+            "term": "term95",
+            "aliases": []
+          },
+          {
+            "term": "term96",
+            "aliases": []
+          },
+          {
+            "term": "term97",
+            "aliases": []
+          },
+          {
+            "term": "term98",
+            "aliases": []
+          },
+          {
+            "term": "term99",
+            "aliases": []
+          }
+        ],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "encoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [
+          {
+            "term": "term0",
+            "aliases": []
+          },
+          {
+            "term": "term1",
+            "aliases": []
+          },
+          {
+            "term": "term2",
+            "aliases": []
+          },
+          {
+            "term": "term3",
+            "aliases": []
+          },
+          {
+            "term": "term4",
+            "aliases": []
+          },
+          {
+            "term": "term5",
+            "aliases": []
+          },
+          {
+            "term": "term6",
+            "aliases": []
+          },
+          {
+            "term": "term7",
+            "aliases": []
+          },
+          {
+            "term": "term8",
+            "aliases": []
+          },
+          {
+            "term": "term9",
+            "aliases": []
+          },
+          {
+            "term": "term10",
+            "aliases": []
+          },
+          {
+            "term": "term11",
+            "aliases": []
+          },
+          {
+            "term": "term12",
+            "aliases": []
+          },
+          {
+            "term": "term13",
+            "aliases": []
+          },
+          {
+            "term": "term14",
+            "aliases": []
+          },
+          {
+            "term": "term15",
+            "aliases": []
+          },
+          {
+            "term": "term16",
+            "aliases": []
+          },
+          {
+            "term": "term17",
+            "aliases": []
+          },
+          {
+            "term": "term18",
+            "aliases": []
+          },
+          {
+            "term": "term19",
+            "aliases": []
+          },
+          {
+            "term": "term20",
+            "aliases": []
+          },
+          {
+            "term": "term21",
+            "aliases": []
+          },
+          {
+            "term": "term22",
+            "aliases": []
+          },
+          {
+            "term": "term23",
+            "aliases": []
+          },
+          {
+            "term": "term24",
+            "aliases": []
+          },
+          {
+            "term": "term25",
+            "aliases": []
+          },
+          {
+            "term": "term26",
+            "aliases": []
+          },
+          {
+            "term": "term27",
+            "aliases": []
+          },
+          {
+            "term": "term28",
+            "aliases": []
+          },
+          {
+            "term": "term29",
+            "aliases": []
+          },
+          {
+            "term": "term30",
+            "aliases": []
+          },
+          {
+            "term": "term31",
+            "aliases": []
+          },
+          {
+            "term": "term32",
+            "aliases": []
+          },
+          {
+            "term": "term33",
+            "aliases": []
+          },
+          {
+            "term": "term34",
+            "aliases": []
+          },
+          {
+            "term": "term35",
+            "aliases": []
+          },
+          {
+            "term": "term36",
+            "aliases": []
+          },
+          {
+            "term": "term37",
+            "aliases": []
+          },
+          {
+            "term": "term38",
+            "aliases": []
+          },
+          {
+            "term": "term39",
+            "aliases": []
+          },
+          {
+            "term": "term40",
+            "aliases": []
+          },
+          {
+            "term": "term41",
+            "aliases": []
+          },
+          {
+            "term": "term42",
+            "aliases": []
+          },
+          {
+            "term": "term43",
+            "aliases": []
+          },
+          {
+            "term": "term44",
+            "aliases": []
+          },
+          {
+            "term": "term45",
+            "aliases": []
+          },
+          {
+            "term": "term46",
+            "aliases": []
+          },
+          {
+            "term": "term47",
+            "aliases": []
+          },
+          {
+            "term": "term48",
+            "aliases": []
+          },
+          {
+            "term": "term49",
+            "aliases": []
+          },
+          {
+            "term": "term50",
+            "aliases": []
+          },
+          {
+            "term": "term51",
+            "aliases": []
+          },
+          {
+            "term": "term52",
+            "aliases": []
+          },
+          {
+            "term": "term53",
+            "aliases": []
+          },
+          {
+            "term": "term54",
+            "aliases": []
+          },
+          {
+            "term": "term55",
+            "aliases": []
+          },
+          {
+            "term": "term56",
+            "aliases": []
+          },
+          {
+            "term": "term57",
+            "aliases": []
+          },
+          {
+            "term": "term58",
+            "aliases": []
+          },
+          {
+            "term": "term59",
+            "aliases": []
+          },
+          {
+            "term": "term60",
+            "aliases": []
+          },
+          {
+            "term": "term61",
+            "aliases": []
+          },
+          {
+            "term": "term62",
+            "aliases": []
+          },
+          {
+            "term": "term63",
+            "aliases": []
+          },
+          {
+            "term": "term64",
+            "aliases": []
+          },
+          {
+            "term": "term65",
+            "aliases": []
+          },
+          {
+            "term": "term66",
+            "aliases": []
+          },
+          {
+            "term": "term67",
+            "aliases": []
+          },
+          {
+            "term": "term68",
+            "aliases": []
+          },
+          {
+            "term": "term69",
+            "aliases": []
+          },
+          {
+            "term": "term70",
+            "aliases": []
+          },
+          {
+            "term": "term71",
+            "aliases": []
+          },
+          {
+            "term": "term72",
+            "aliases": []
+          },
+          {
+            "term": "term73",
+            "aliases": []
+          },
+          {
+            "term": "term74",
+            "aliases": []
+          },
+          {
+            "term": "term75",
+            "aliases": []
+          },
+          {
+            "term": "term76",
+            "aliases": []
+          },
+          {
+            "term": "term77",
+            "aliases": []
+          },
+          {
+            "term": "term78",
+            "aliases": []
+          },
+          {
+            "term": "term79",
+            "aliases": []
+          },
+          {
+            "term": "term80",
+            "aliases": []
+          },
+          {
+            "term": "term81",
+            "aliases": []
+          },
+          {
+            "term": "term82",
+            "aliases": []
+          },
+          {
+            "term": "term83",
+            "aliases": []
+          },
+          {
+            "term": "term84",
+            "aliases": []
+          },
+          {
+            "term": "term85",
+            "aliases": []
+          },
+          {
+            "term": "term86",
+            "aliases": []
+          },
+          {
+            "term": "term87",
+            "aliases": []
+          },
+          {
+            "term": "term88",
+            "aliases": []
+          },
+          {
+            "term": "term89",
+            "aliases": []
+          },
+          {
+            "term": "term90",
+            "aliases": []
+          },
+          {
+            "term": "term91",
+            "aliases": []
+          },
+          {
+            "term": "term92",
+            "aliases": []
+          },
+          {
+            "term": "term93",
+            "aliases": []
+          },
+          {
+            "term": "term94",
+            "aliases": []
+          },
+          {
+            "term": "term95",
+            "aliases": []
+          },
+          {
+            "term": "term96",
+            "aliases": []
+          },
+          {
+            "term": "term97",
+            "aliases": []
+          },
+          {
+            "term": "term98",
+            "aliases": []
+          },
+          {
+            "term": "term99",
+            "aliases": []
+          }
+        ],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      }
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [
+          {
+            "term": "term0",
+            "aliases": []
+          },
+          {
+            "term": "term1",
+            "aliases": []
+          },
+          {
+            "term": "term2",
+            "aliases": []
+          },
+          {
+            "term": "term3",
+            "aliases": []
+          },
+          {
+            "term": "term4",
+            "aliases": []
+          },
+          {
+            "term": "term5",
+            "aliases": []
+          },
+          {
+            "term": "term6",
+            "aliases": []
+          },
+          {
+            "term": "term7",
+            "aliases": []
+          },
+          {
+            "term": "term8",
+            "aliases": []
+          },
+          {
+            "term": "term9",
+            "aliases": []
+          },
+          {
+            "term": "term10",
+            "aliases": []
+          },
+          {
+            "term": "term11",
+            "aliases": []
+          },
+          {
+            "term": "term12",
+            "aliases": []
+          },
+          {
+            "term": "term13",
+            "aliases": []
+          },
+          {
+            "term": "term14",
+            "aliases": []
+          },
+          {
+            "term": "term15",
+            "aliases": []
+          },
+          {
+            "term": "term16",
+            "aliases": []
+          },
+          {
+            "term": "term17",
+            "aliases": []
+          },
+          {
+            "term": "term18",
+            "aliases": []
+          },
+          {
+            "term": "term19",
+            "aliases": []
+          },
+          {
+            "term": "term20",
+            "aliases": []
+          },
+          {
+            "term": "term21",
+            "aliases": []
+          },
+          {
+            "term": "term22",
+            "aliases": []
+          },
+          {
+            "term": "term23",
+            "aliases": []
+          },
+          {
+            "term": "term24",
+            "aliases": []
+          },
+          {
+            "term": "term25",
+            "aliases": []
+          },
+          {
+            "term": "term26",
+            "aliases": []
+          },
+          {
+            "term": "term27",
+            "aliases": []
+          },
+          {
+            "term": "term28",
+            "aliases": []
+          },
+          {
+            "term": "term29",
+            "aliases": []
+          },
+          {
+            "term": "term30",
+            "aliases": []
+          },
+          {
+            "term": "term31",
+            "aliases": []
+          },
+          {
+            "term": "term32",
+            "aliases": []
+          },
+          {
+            "term": "term33",
+            "aliases": []
+          },
+          {
+            "term": "term34",
+            "aliases": []
+          },
+          {
+            "term": "term35",
+            "aliases": []
+          },
+          {
+            "term": "term36",
+            "aliases": []
+          },
+          {
+            "term": "term37",
+            "aliases": []
+          },
+          {
+            "term": "term38",
+            "aliases": []
+          },
+          {
+            "term": "term39",
+            "aliases": []
+          },
+          {
+            "term": "term40",
+            "aliases": []
+          },
+          {
+            "term": "term41",
+            "aliases": []
+          },
+          {
+            "term": "term42",
+            "aliases": []
+          },
+          {
+            "term": "term43",
+            "aliases": []
+          },
+          {
+            "term": "term44",
+            "aliases": []
+          },
+          {
+            "term": "term45",
+            "aliases": []
+          },
+          {
+            "term": "term46",
+            "aliases": []
+          },
+          {
+            "term": "term47",
+            "aliases": []
+          },
+          {
+            "term": "term48",
+            "aliases": []
+          },
+          {
+            "term": "term49",
+            "aliases": []
+          },
+          {
+            "term": "term50",
+            "aliases": []
+          },
+          {
+            "term": "term51",
+            "aliases": []
+          },
+          {
+            "term": "term52",
+            "aliases": []
+          },
+          {
+            "term": "term53",
+            "aliases": []
+          },
+          {
+            "term": "term54",
+            "aliases": []
+          },
+          {
+            "term": "term55",
+            "aliases": []
+          },
+          {
+            "term": "term56",
+            "aliases": []
+          },
+          {
+            "term": "term57",
+            "aliases": []
+          },
+          {
+            "term": "term58",
+            "aliases": []
+          },
+          {
+            "term": "term59",
+            "aliases": []
+          },
+          {
+            "term": "term60",
+            "aliases": []
+          },
+          {
+            "term": "term61",
+            "aliases": []
+          },
+          {
+            "term": "term62",
+            "aliases": []
+          },
+          {
+            "term": "term63",
+            "aliases": []
+          },
+          {
+            "term": "term64",
+            "aliases": []
+          },
+          {
+            "term": "term65",
+            "aliases": []
+          },
+          {
+            "term": "term66",
+            "aliases": []
+          },
+          {
+            "term": "term67",
+            "aliases": []
+          },
+          {
+            "term": "term68",
+            "aliases": []
+          },
+          {
+            "term": "term69",
+            "aliases": []
+          },
+          {
+            "term": "term70",
+            "aliases": []
+          },
+          {
+            "term": "term71",
+            "aliases": []
+          },
+          {
+            "term": "term72",
+            "aliases": []
+          },
+          {
+            "term": "term73",
+            "aliases": []
+          },
+          {
+            "term": "term74",
+            "aliases": []
+          },
+          {
+            "term": "term75",
+            "aliases": []
+          },
+          {
+            "term": "term76",
+            "aliases": []
+          },
+          {
+            "term": "term77",
+            "aliases": []
+          },
+          {
+            "term": "term78",
+            "aliases": []
+          },
+          {
+            "term": "term79",
+            "aliases": []
+          },
+          {
+            "term": "term80",
+            "aliases": []
+          },
+          {
+            "term": "term81",
+            "aliases": []
+          },
+          {
+            "term": "term82",
+            "aliases": []
+          },
+          {
+            "term": "term83",
+            "aliases": []
+          },
+          {
+            "term": "term84",
+            "aliases": []
+          },
+          {
+            "term": "term85",
+            "aliases": []
+          },
+          {
+            "term": "term86",
+            "aliases": []
+          },
+          {
+            "term": "term87",
+            "aliases": []
+          },
+          {
+            "term": "term88",
+            "aliases": []
+          },
+          {
+            "term": "term89",
+            "aliases": []
+          },
+          {
+            "term": "term90",
+            "aliases": []
+          },
+          {
+            "term": "term91",
+            "aliases": []
+          },
+          {
+            "term": "term92",
+            "aliases": []
+          },
+          {
+            "term": "term93",
+            "aliases": []
+          },
+          {
+            "term": "term94",
+            "aliases": []
+          },
+          {
+            "term": "term95",
+            "aliases": []
+          },
+          {
+            "term": "term96",
+            "aliases": []
+          },
+          {
+            "term": "term97",
+            "aliases": []
+          },
+          {
+            "term": "term98",
+            "aliases": []
+          },
+          {
+            "term": "term99",
+            "aliases": []
+          },
+          {
+            "term": "term100",
+            "aliases": []
+          }
+        ],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true,
+        "speechCorrectionWord": "cccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "decoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechCorrectionWord": "cccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "speechSilenceFiltering": true
+      },
+      "encoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechCorrectionWord": "cccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "speechSilenceFiltering": true
+      }
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true,
+        "speechCorrectionWord": "ccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "invalid": true
+    },
+    {
+      "kind": "transcription",
+      "input": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true,
+        "future": "stripped"
+      },
+      "decoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      },
+      "encoded": {
+        "speechLanguage": "auto",
+        "speechTranslateToEnglish": false,
+        "speechCustomWords": [],
+        "speechRemoveFillerWords": true,
+        "speechSilenceFiltering": true
+      }
+    },
+    {
+      "kind": "postprocess",
+      "input": {
+        "options": {
+          "speechCustomWords": [],
+          "speechPostProcessingPrompt": {
+            "mode": "default",
+            "customInstructions": ""
+          }
+        },
+        "transcript": "text",
+        "draft": {
+          "text": "draft",
+          "selection": {
+            "start": 0,
+            "end": 1
+          }
+        }
+      },
+      "decoded": {
+        "options": {
+          "speechCustomWords": [],
+          "speechPostProcessingPrompt": {
+            "mode": "default",
+            "customInstructions": ""
+          }
+        },
+        "transcript": "text",
+        "draft": {
+          "text": "draft",
+          "selection": {
+            "start": 0,
+            "end": 1
+          }
+        }
+      },
+      "encoded": {
+        "options": {
+          "speechCustomWords": [],
+          "speechPostProcessingPrompt": {
+            "mode": "default",
+            "customInstructions": ""
+          }
+        },
+        "transcript": "text",
+        "draft": {
+          "text": "draft",
+          "selection": {
+            "start": 0,
+            "end": 1
+          }
+        }
+      }
+    },
+    {
+      "kind": "postprocess",
+      "input": {},
+      "invalid": true
+    },
+    {
+      "kind": "postprocess",
+      "input": {
+        "options": {
+          "speechCustomWords": [],
+          "speechPostProcessingPrompt": {
+            "mode": "default",
+            "customInstructions": ""
+          }
+        },
+        "transcript": "text",
+        "draft": {
+          "text": "draft",
+          "selection": {
+            "start": 0,
+            "end": 1
+          }
+        },
+        "future": "stripped"
+      },
+      "decoded": {
+        "options": {
+          "speechCustomWords": [],
+          "speechPostProcessingPrompt": {
+            "mode": "default",
+            "customInstructions": ""
+          }
+        },
+        "transcript": "text",
+        "draft": {
+          "text": "draft",
+          "selection": {
+            "start": 0,
+            "end": 1
+          }
+        }
+      },
+      "encoded": {
+        "options": {
+          "speechCustomWords": [],
+          "speechPostProcessingPrompt": {
+            "mode": "default",
+            "customInstructions": ""
+          }
+        },
+        "transcript": "text",
+        "draft": {
+          "text": "draft",
+          "selection": {
+            "start": 0,
+            "end": 1
+          }
+        }
+      }
+    },
+    {
+      "kind": "postprocess",
+      "input": {
+        "options": {
+          "speechCustomWords": [],
+          "speechPostProcessingPrompt": {
+            "mode": "default",
+            "customInstructions": ""
+          }
+        },
+        "transcript": 1,
+        "draft": {
+          "text": "draft",
+          "selection": {
+            "start": 0,
+            "end": 1
+          }
+        }
+      },
+      "invalid": true
+    },
+    {
+      "kind": "postprocess",
+      "input": {
+        "options": {
+          "speechCustomWords": [],
+          "speechPostProcessingPrompt": {
+            "mode": "default",
+            "customInstructions": ""
+          }
+        },
+        "transcript": "text",
+        "draft": {
+          "text": "draft",
+          "selection": {
+            "start": -0.5,
+            "end": 1.5
+          }
+        }
+      },
+      "decoded": {
+        "options": {
+          "speechCustomWords": [],
+          "speechPostProcessingPrompt": {
+            "mode": "default",
+            "customInstructions": ""
+          }
+        },
+        "transcript": "text",
+        "draft": {
+          "text": "draft",
+          "selection": {
+            "start": -0.5,
+            "end": 1.5
+          }
+        }
+      },
+      "encoded": {
+        "options": {
+          "speechCustomWords": [],
+          "speechPostProcessingPrompt": {
+            "mode": "default",
+            "customInstructions": ""
+          }
+        },
+        "transcript": "text",
+        "draft": {
+          "text": "draft",
+          "selection": {
+            "start": -0.5,
+            "end": 1.5
+          }
+        }
+      }
+    },
+    {
+      "kind": "postprocess",
+      "input": {
+        "options": null,
+        "transcript": "text",
+        "draft": {
+          "text": "draft",
+          "selection": {
+            "start": 0,
+            "end": 1
+          }
+        }
+      },
+      "invalid": true
+    },
+    {
+      "kind": "postprocess",
+      "input": {
+        "options": {},
+        "transcript": "text",
+        "draft": {
+          "text": "draft",
+          "selection": {
+            "start": 0,
+            "end": 1
+          }
+        }
+      },
+      "invalid": true
+    },
+    {
+      "kind": "postprocess",
+      "input": {
+        "options": {
+          "speechCustomWords": []
+        },
+        "transcript": "text",
+        "draft": {
+          "text": "draft",
+          "selection": {
+            "start": 0,
+            "end": 1
+          }
+        }
+      },
+      "invalid": true
+    },
+    {
+      "kind": "postprocess",
+      "input": {
+        "options": {
+          "speechCustomWords": [],
+          "speechPostProcessingPrompt": {
+            "mode": "custom",
+            "customInstructions": "instruction"
+          }
+        },
+        "transcript": "text",
+        "draft": {
+          "text": "draft",
+          "selection": {
+            "start": 0,
+            "end": 1
+          }
+        }
+      },
+      "decoded": {
+        "options": {
+          "speechCustomWords": [],
+          "speechPostProcessingPrompt": {
+            "mode": "custom",
+            "customInstructions": "instruction"
+          }
+        },
+        "transcript": "text",
+        "draft": {
+          "text": "draft",
+          "selection": {
+            "start": 0,
+            "end": 1
+          }
+        }
+      },
+      "encoded": {
+        "options": {
+          "speechCustomWords": [],
+          "speechPostProcessingPrompt": {
+            "mode": "custom",
+            "customInstructions": "instruction"
+          }
+        },
+        "transcript": "text",
+        "draft": {
+          "text": "draft",
+          "selection": {
+            "start": 0,
+            "end": 1
+          }
+        }
+      }
+    }
+  ]
+}

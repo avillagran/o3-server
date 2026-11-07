@@ -188,9 +188,9 @@ fn scheduled_tasks_are_stored_validated_and_launch_threads() {
     .contains("60000"));
     assert!(err(c.rpc(
         "scheduledTasks.upsert",
-        task("Hook", json!({"type":"webhook","signature":null}))
+        task("Hook", json!({"type":"webhook","signature":{"header":"x-signature","encoding":"hex","prefix":""}}))
     ))
-    .contains("Webhook"));
+    .contains("signing secret"));
     assert!(err(c.rpc(
         "scheduledTasks.upsert",
         task("Time", json!({"type":"fixed_time","timeOfDay":"25:00"}))

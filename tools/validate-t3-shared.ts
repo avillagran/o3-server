@@ -7,12 +7,27 @@
 // The contracts package needs `effect` at the version T3 pins, resolvable from its directory.
 import { DatabaseSync } from "node:sqlite";
 import { createRequire } from "node:module";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 const contracts = process.env.T3_CONTRACTS;
 if (!contracts) throw new Error("T3_CONTRACTS must name T3's packages/contracts directory");
+const fromContracts = createRequire(`${contracts}/package.json`);
+const actualEffect = fromContracts("effect/package.json").version;
+const workspace = resolve(contracts, "../../pnpm-workspace.yaml");
+const pinnedEffect = existsSync(workspace)
+  ? readFileSync(workspace, "utf8").match(/^ {2}effect:\s*["']?([0-9]+\.[0-9]+\.[0-9]+(?:[-+][\w.]+)?)["']?\s*$/m)?.[1]
+  : undefined;
+const expectedEffect = pinnedEffect ?? process.env.T3_EFFECT_VERSION;
+if (expectedEffect && expectedEffect !== actualEffect) {
+  throw new Error(`T3 pins effect ${expectedEffect}, but contracts resolve ${actualEffect}`);
+}
+console.log(`T3 contract runtime: effect ${actualEffect}`);
 const C: any = await import(`${contracts}/src/index.ts`);
 const Schema: any = await import(createRequire(`${contracts}/package.json`).resolve("effect/Schema"));
 
 const schemas: Record<string, { schema: any; table: string; id: string }> = {
+  scheduledTasks: { schema: C.ScheduledTask, table: "scheduled_tasks", id: "task_id" },
+  project: { schema: C.Project, table: "projection_projects", id: "project_id" },
   thread: { schema: C.OrchestrationV2AppThreadJson, table: "orchestration_v2_projection_threads", id: "thread_id" },
   runs: { schema: C.OrchestrationV2RunJson, table: "orchestration_v2_projection_runs", id: "run_id" },
   attempts: { schema: C.OrchestrationV2RunAttemptJson, table: "orchestration_v2_projection_run_attempts", id: "attempt_id" },
@@ -36,14 +51,55 @@ const db = new DatabaseSync(path, { readOnly: true });
 const isO3 = db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name='records'").get().n === 1;
 const limit = Number(limitArg ?? 0);
 const groups = new Map<string, { count: number; example: string }>();
-for (const [kind, { schema, table, id }] of Object.entries(schemas)) {
-  const decode = Schema.decodeUnknownExit(Schema.fromJsonString(schema));
+function* records(kind: string, table: string, id: string): Generator<{ id: string; body: string }> {
+  if (!isO3 && kind === "scheduledTasks") {
+    const rows = db.prepare(`SELECT * FROM scheduled_tasks${limit ? ` LIMIT ${limit}` : ""}`).iterate();
+    for (const row of rows) {
+      const task = {
+        id: row.task_id, title: row.title, prompt: row.prompt, enabled: row.enabled !== 0,
+        schedule: JSON.parse(String(row.schedule_json)), projectId: row.project_id,
+        threadId: row.thread_id,
+        threadMode: row.thread_mode ?? (row.thread_id == null ? "new_thread" : "continue"),
+        workspaceStrategy: JSON.parse(String(row.workspace_strategy_json)),
+        modelSelection: JSON.parse(String(row.model_selection_json)),
+        runtimeMode: row.runtime_mode, interactionMode: row.interaction_mode,
+        createdBy: row.created_by, creationSource: row.creation_source,
+        createdAt: row.created_at, updatedAt: row.updated_at, nextRunAt: row.next_run_at,
+        lastRunAt: row.last_run_at, lastRunStatus: row.last_run_status,
+        lastRunError: row.last_run_error, runCount: row.run_count,
+      };
+      yield { id: String(row.task_id), body: JSON.stringify(task) };
+    }
+    return;
+  }
+  if (!isO3 && kind === "project") {
+    const rows = db.prepare(`SELECT * FROM projection_projects${limit ? ` LIMIT ${limit}` : ""}`).iterate();
+    for (const row of rows) {
+      const parse = (value: unknown) => value == null ? null : JSON.parse(String(value));
+      const project = {
+        id: row.project_id, title: row.title, workspaceRoot: row.workspace_root,
+        defaultModelSelection: parse(row.default_model_selection_json),
+        defaultThreadEnvMode: row.default_thread_env_mode, autoPull: row.auto_pull !== 0,
+        faviconPath: row.favicon_path, projectIcon: parse(row.project_icon_json),
+        scripts: parse(row.scripts_json), createdAt: row.created_at,
+        updatedAt: row.updated_at, deletedAt: row.deleted_at,
+        ...(row.pinned_at === undefined ? {} : { pinnedAt: row.pinned_at }),
+        ...(row.archived_at === undefined ? {} : { archivedAt: row.archived_at }),
+      };
+      yield { id: String(row.project_id), body: JSON.stringify(project) };
+    }
+    return;
+  }
   const sql = isO3
     ? `SELECT id, body FROM records WHERE kind='${kind}'${limit ? ` LIMIT ${limit}` : ""}`
     : `SELECT ${id} AS id, payload_json AS body FROM ${table}${limit ? ` LIMIT ${limit}` : ""}`;
+  yield* db.prepare(sql).iterate() as Iterable<{ id: string; body: string }>;
+}
+for (const [kind, { schema, table, id }] of Object.entries(schemas)) {
+  const decode = Schema.decodeUnknownExit(Schema.fromJsonString(schema));
   let total = 0;
   let bad = 0;
-  for (const row of db.prepare(sql).iterate() as Iterable<{ id: string; body: string }>) {
+  for (const row of records(kind, table, id)) {
     total++;
     const exit = decode(row.body);
     if (exit._tag === "Success") continue;
@@ -86,3 +142,6 @@ if (!isO3 && after >= 0) {
 for (const [key, { count, example }] of [...groups].sort((a, b) => b[1].count - a[1].count)) {
   console.log(`${count}\t${key}\t(e.g. ${example})`);
 }
+
+// Rejected rows must fail automated acceptance instead of only printing diagnostics.
+if (groups.size > 0) process.exitCode = 1;

@@ -1,0 +1,33 @@
+{
+  "formatVersion": 1,
+  "node": "26.13.0",
+  "reference": {
+    "nightly": 4314,
+    "revision": "83a3674ffd84ffb33de768210c806cb1ac53fd80"
+  },
+  "engine": {
+    "package": "transcribe-cpp",
+    "version": "0.4.1"
+  },
+  "functionDigests": {
+    "runNativeSpeechWorker": "d8fec2e3c730868eb38c4a7e24f98022b5d7abcd7c574eb9275a4a520c5b806a",
+    "loadNativeSpeechModel": "1f9f07d52fdadf66feffc924c70e7ec41cbaf436b28a340435c4d9606c7af2f2",
+    "listNativeSpeechGpuDevices": "4632d60fc871c858fba4f45af998e20a611882bd325b25aaa5df3eedb61c484c"
+  },
+  "sources": {
+    "apps/server/src/speech/audio.ts": "26326bd9bee84629b5a7358141b7a3e565e1250537964e224653acbabc2e72d5",
+    "apps/server/src/speech/native.ts": "7c92949426e3f4ff4d54a850851d151b3233bed8b63b5c2a0cad335b656c0897",
+    "apps/server/package.json": "57653c19d043385889c2a0f47ab7ad95db23e381ebd7646c32c16d511290e406",
+    "LICENSE": "935d8f2af0c703f9c39517ee57cc4930b19d02d533be930b63f0e82f93614b43"
+  },
+  "files": {
+    "native-worker.mjs": {
+      "sha256": "f619ce3e83a134e33d7668e521f25a9fba3dd58c2adb85fabad710f092eb55db",
+      "bytes": 24646
+    },
+    "LICENSE": {
+      "sha256": "935d8f2af0c703f9c39517ee57cc4930b19d02d533be930b63f0e82f93614b43",
+      "bytes": 1070
+    }
+  }
+}

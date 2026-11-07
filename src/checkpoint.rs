@@ -344,7 +344,7 @@ mod tests {
         assert_eq!(std::fs::read(linked_index).unwrap(), before);
         assert!(!root.join(".git/index").exists());
         drop(state);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[test]
     fn captures_dirty_untracked_deleted_files_and_restores_without_changing_index() {
@@ -390,7 +390,7 @@ mod tests {
         );
         assert!(!root.join("new").exists());
         assert!(!root.join(".git/index").exists());
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }
 

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Isolated release RSS probe, using a real authenticated WebSocket and 1000 durable messages."""
-import base64,hashlib,json,os,pathlib,socket,struct,subprocess,sys,tempfile,time
+from runtime_safety import require_private_runtime, retained_directory
+require_private_runtime()
+import base64,hashlib,json,os,pathlib,socket,struct,subprocess,sys,time
 sys.dont_write_bytecode=True
 if '--profile' in sys.argv:
  from rss_profile import run
@@ -45,7 +47,7 @@ class WS:
   self.send({'_tag':'Request','id':'1','tag':tag,'payload':payload,'headers':[]});v=self.recv();assert v['exit']['_tag']=='Success',v;return v['exit']['value']
 def memory(pid):
  return {k:int(v.split()[0]) for k,v in (line.split(':',1) for line in pathlib.Path(f'/proc/{pid}/status').read_text().splitlines() if ':' in line) if k in ('VmRSS','VmHWM','RssAnon','RssFile','Threads','THP_enabled')}
-with tempfile.TemporaryDirectory(prefix='o3-rss-',dir='/var/tmp/o3-build') as temp:
+with retained_directory(prefix='o3-rss-',dir='/var/tmp/o3-build') as temp:
  env={**os.environ,'T3CODE_HOME':temp,'HOME':temp,'CODEX_HOME':str(pathlib.Path(temp)/'codex'),'CLAUDE_CONFIG_DIR':str(pathlib.Path(temp)/'claude')}
  browser_fixture=os.environ.get('O3_BENCH_BROWSER_FIXTURE')=='1'
  if browser_fixture:env['O3_BROWSER_BINARY']=str(repo/'tests/fixtures/browser-cdp.py')

@@ -18,7 +18,7 @@ fn run(path: &Path, ext: &str) -> std::process::Output {
 #[test]
 fn nightly_office_epub_fixtures_keep_order_structure_and_bounds() {
     let root = std::env::temp_dir().join(format!("o3-document-fixtures-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
+    // Fixture trees are retained for private container teardown.
     std::fs::create_dir_all(&root).unwrap();
     let mut json = String::new();
     flate2::read::GzDecoder::new(
@@ -100,7 +100,7 @@ fn nightly_office_epub_fixtures_keep_order_structure_and_bounds() {
             "case {i}"
         );
     }
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 #[test]
 fn rtf_notebook_worker_has_no_profile_effect_and_keeps_unicode() {
@@ -145,7 +145,7 @@ fn rtf_notebook_worker_has_no_profile_effect_and_keeps_unicode() {
     assert!(text.contains("ValueError: bad\nboom"));
     assert!(!text.contains("DO-NOT-PRINT") && !text.contains('\u{1b}'));
     assert!(!root.join("o3.sqlite").exists());
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 #[test]
 fn archive_count_expansion_and_raw_output_are_bounded() {
@@ -226,5 +226,5 @@ fn archive_count_expansion_and_raw_output_are_bounded() {
         String::from_utf8(result.stdout).unwrap().trim(),
         "[Extracted text truncated at document extraction limits.]"
     );
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }

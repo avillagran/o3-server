@@ -11,7 +11,7 @@ fn lines(items: &[Value]) -> String {
 #[test]
 fn scan_groups_transcripts_by_directory_and_import_creates_resumable_threads() {
     let history = std::env::temp_dir().join(format!("o3-history-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&history);
+    // Fixture trees are retained for private container teardown.
     let (claude, codex) = (history.join("claude"), history.join("codex"));
     // SAFETY: set before the test server (and its worker threads) exists; this file has one test.
     unsafe {
@@ -174,5 +174,5 @@ fn scan_groups_transcripts_by_directory_and_import_creates_resumable_threads() {
             .unwrap()
             .contains("meta noise")
     );
-    let _ = std::fs::remove_dir_all(&history);
+    // Fixture trees are retained for private container teardown.
 }

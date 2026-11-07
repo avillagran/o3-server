@@ -10,6 +10,7 @@ pub fn recover(db: &mut Connection) -> Result<(), String> {
     crate::deletion::recover(&tx)?;
     crate::run_restart::recover(&tx)?;
     crate::thread_launch::recover(&tx)?;
+    crate::limits::recover_unsent(&tx)?;
     use rusqlite::OptionalExtension;
     let mut cursor = 0i64;
     loop {
@@ -24,7 +25,9 @@ pub fn recover(db: &mut Connection) -> Result<(), String> {
             serde_json::from_str(&body).map_err(|e| e.to_string())?
         };
         if kind == "runs"
-            && (crate::run_restart::pending(&tx, &id)? || crate::thread_launch::pending(&tx, &id)?)
+            && (crate::run_restart::pending(&tx, &id)?
+                || crate::thread_launch::pending(&tx, &id)?
+                || crate::command_shared::holds_unstarted(&tx, &id)?)
         {
             continue;
         }
@@ -39,12 +42,22 @@ pub fn recover(db: &mut Connection) -> Result<(), String> {
                     Some("running" | "starting" | "waiting")
                 ) || v["status"] == "preparing" && v["executionRequested"] == true =>
             {
-                v["status"] = json!("failed");
+                let unstarted = v.get("startedAt").is_some_and(Value::is_null);
+                let usage_continuation = v.get("usageLimitContinuationOfRunId").is_some();
+                let ended = if unstarted || usage_continuation {
+                    "cancelled"
+                } else {
+                    "failed"
+                };
+                v["status"] = json!(ended);
+                v["queuePosition"] = Value::Null;
                 v["completedAt"] = json!(iso(now_ms()));
-                v["error"] = json!("server restarted during execution");
+                if !unstarted && !usage_continuation {
+                    v["error"] = json!("server restarted during execution");
+                }
                 if let Ok(t) = events::get(&tx, "thread", &tid) {
                     let at = v["completedAt"].as_str().unwrap();
-                    crate::projection::finish(&tx, &tid, &id, &t, at, "failed")?;
+                    crate::projection::finish(&tx, &tid, &id, &t, at, ended)?;
                     let mut child_cursor = 0i64;
                     loop {
                         let row=tx.query_row("SELECT rowid,kind,id,body FROM records WHERE thread_id=? AND rowid>? AND kind IN ('nodes','attempts','subagents') AND (json_extract(body,'$.runId')=? OR json_extract(body,'$.parentNodeId')=?) AND json_extract(body,'$.status') IN ('running','starting','waiting','pending') ORDER BY rowid LIMIT 1",rusqlite::params![tid,child_cursor,id,id],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?))).optional().map_err(|e|e.to_string())?;
@@ -54,7 +67,7 @@ pub fn recover(db: &mut Connection) -> Result<(), String> {
                         child_cursor = cursor;
                         let mut child_value: Value =
                             serde_json::from_str(&body).map_err(|e| e.to_string())?;
-                        child_value["status"] = json!("failed");
+                        child_value["status"] = json!(ended);
                         child_value["completedAt"] = json!(at);
                         child_value["updatedAt"] = json!(at);
                         events::put(&tx, &kind, &child, &tid, &child_value)?;
@@ -91,11 +104,14 @@ pub fn recover(db: &mut Connection) -> Result<(), String> {
                     }
                 }
                 if let Ok(t) = events::get(&tx, "thread", &tid) {
-                    if matches!(
-                        t["providerInstanceId"].as_str(),
-                        Some("codex" | "claudeAgent" | "claude" | "claude-code")
-                    ) && events::get(&tx, "turnItems", &format!("{id}-interrupt-request"))
-                        .is_err()
+                    if !unstarted
+                        && !usage_continuation
+                        && matches!(
+                            t["providerInstanceId"].as_str(),
+                            Some("codex" | "claudeAgent" | "claude" | "claude-code")
+                        )
+                        && events::get(&tx, "turnItems", &format!("{id}-interrupt-request"))
+                            .is_err()
                         && crate::projection::native_id(&tx, &t).is_some_and(|id| !id.is_empty())
                     {
                         v["status"] = json!("starting");
@@ -184,6 +200,7 @@ pub fn resume(state: &std::sync::Arc<crate::store::State>) -> Result<(), String>
         crate::provider::start(state.clone(), tid, rid,
             "The server restarted during your previous turn. Continue the interrupted task using this native session's history. Inspect current state before acting: previous tools may already have executed. Do not repeat completed work. Any old approval or question was cancelled; request fresh authorization or ask again where necessary.".into());
     }
+    crate::command_shared::resume_queues(state)?;
     Ok(())
 }
 
@@ -208,6 +225,6 @@ mod title_tests {
             assert_eq!(events::sequence(&db).unwrap(), seq);
         }
         drop(state);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

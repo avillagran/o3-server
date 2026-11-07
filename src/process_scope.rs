@@ -433,7 +433,7 @@ while True: time.sleep(1)
                 }
                 owner.0.wait().unwrap();
                 until(|| !Path::new(&format!("/proc/{daemon}")).exists()).await;
-                std::fs::remove_dir_all(dir).unwrap();
+                // Fixture trees are retained for private container teardown.
                 continue;
             }
             let env = std::env::vars().collect::<Vec<_>>();
@@ -480,7 +480,7 @@ while True: time.sleep(1)
                 }
             }
             until(|| !Path::new(&format!("/proc/{daemon}")).exists()).await;
-            std::fs::remove_dir_all(dir).unwrap();
+            // Fixture trees are retained for private container teardown.
         }
     }
     #[tokio::test]

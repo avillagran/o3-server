@@ -9,18 +9,14 @@
   "publicMethodCount": 211,
   "untrackedMethods": [],
   "sharedState": {
-    "acceptedO3Migration": 73,
-    "referenceMigration": 80,
-    "pendingMigrations": [
-      "074_ExcludeAttachmentPlaceholdersFromSearch.ts",
-      "075_SubagentDeliveryState.ts",
-      "076_ProjectionProjectsPinArchive.ts",
-      "077_RepairBooleanSettledOverride.ts",
-      "078_DropOrchestrationEventCorrelationIndex.ts",
-      "079_DelegatedRecoveryIndexes.ts",
-      "080_ScheduledTaskThreadMode.ts"
+    "acceptedO3Migration": 80,
+    "legacyAcceptedMigrations": [
+      73
     ],
-    "status": "requires isolated migration and reducer acceptance"
+    "referenceMigration": 80,
+    "pendingMigrations": [],
+    "status": "shared-history reducers and native runtime handover validated in disposable profile; task-definition synchronization remains open",
+    "evidence": "SHARED-SCHEMA-80.md"
   },
   "methods": [
     {
@@ -684,7 +680,8 @@
     {
       "name": "scheduledTasks.runNow",
       "legacyStatus": "done",
-      "nightly4262Status": "requires behavioral comparison"
+      "nightly4262Status": "conversation modes and task provenance implemented; remaining lifecycle and shared storage require comparison",
+      "evidence": "SCHEDULED-TASK-MODES.md"
     },
     {
       "name": "scheduledTasks.setEnabled",
@@ -694,12 +691,14 @@
     {
       "name": "scheduledTasks.subscribe",
       "legacyStatus": "done",
-      "nightly4262Status": "requires behavioral comparison"
+      "nightly4262Status": "conversation modes and task provenance implemented; remaining lifecycle and shared storage require comparison",
+      "evidence": "SCHEDULED-TASK-MODES.md"
     },
     {
       "name": "scheduledTasks.upsert",
       "legacyStatus": "partial",
-      "nightly4262Status": "requires behavioral comparison"
+      "nightly4262Status": "conversation modes and task provenance implemented; remaining lifecycle and shared storage require comparison",
+      "evidence": "SCHEDULED-TASK-MODES.md"
     },
     {
       "name": "secrets.answerRequest",
@@ -1099,11 +1098,11 @@
   ],
   "nextBlocks": [
     "native goal lifecycle and ownership",
-    "shared migration 74-80 acceptance",
     "new and partially implemented public RPCs",
     "idle wake and native child continuation routing",
     "all provider drivers and registry scopes",
     "MCP secrets and cross-thread delivery",
-    "HTTP/CLI/auth/stream and resource conformance"
+    "HTTP/CLI/auth/stream and resource conformance",
+    "bidirectional scheduled-task and webhook storage"
   ]
 }

@@ -1,0 +1,46 @@
+{
+  "reference": {
+    "tag": "v0.1.8-nightly.20261106.4262",
+    "commit": "c55db3e9c72fdf584f4b54192fb39beb88667b59",
+    "effect": "4.1.2"
+  },
+  "status": "candidate-conversation-modes-enabled-not-deployed",
+  "integratedDevCommit": "3102911",
+  "sourceFunctions": {
+    "sha256": "e34d2071c6686b773970cf470c782490a0a3d6bce50533a4ad71336b363d9245",
+    "saveCases": 108,
+    "storedCases": 8
+  },
+  "regressions": {
+    "minimalPassed": 60,
+    "defaultPassed": 60,
+    "nativeGoalOptInsIgnoredPerConfiguration": 3,
+    "sharedHistoryPassed": 14,
+    "clippyMinimal": "passed",
+    "clippyDefault": "passed",
+    "webhookCrashAndOwnershipCases": 2,
+    "webhookRecoveryMinimal": "passed",
+    "webhookRecoveryDefault": "passed",
+    "fullCi": "previous head failed concurrent webhook recovery; fixed, exact-head matrix pending"
+  },
+  "native": {
+    "claudeVersion": "2.1.318",
+    "model": "haiku",
+    "turnsPerCompletedScenario": 6,
+    "o3Completed": true,
+    "referenceCompleted": true,
+    "referenceInferenceConsistency": "earlier failures retained; cause unproven",
+    "o3PublicRecordsValidated": 72,
+    "referenceProjectionRecordsValidated": 54,
+    "schemaRejections": 0,
+    "invalidModeNegativeControlExit": 1,
+    "mixedProviderFreshContextAfterDevMerge": "eight real turns passed"
+  },
+  "remaining": [
+    "reference-rapid-follow-up-inference-consistency",
+    "shared-task-definition-and-webhook-state-synchronization",
+    "complete-scheduler-lifecycle-and-failure-comparison",
+    "live-desktop-composer",
+    "full-platform-parity-audit"
+  ]
+}

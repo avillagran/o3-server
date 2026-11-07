@@ -40,7 +40,7 @@ async fn public_http_churn_does_not_start_repository_identity_polling() {
         .unwrap();
     assert_eq!(count, 0, "public HTTP requests must not trigger discovery");
     drop(state);
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 
 #[tokio::test]
@@ -68,7 +68,7 @@ async fn slow_headers_are_closed_and_pairing_attempts_are_bounded() {
     }
     assert!(limited);
     drop(state);
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 
 #[tokio::test]
@@ -101,5 +101,5 @@ async fn connection_limit_releases_permits_when_clients_disconnect() {
     assert!(bytes.starts_with(b"HTTP/1.1 200"));
     task.await.unwrap().unwrap();
     drop(state);
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }

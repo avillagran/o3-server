@@ -1,0 +1,80 @@
+# Planned owned Page CDP lane
+
+This is an implementation boundary plan, not an enabled transport or parity claim. The persistent worker/control adapter is separately tested. No public toolkit or alias selects it yet.
+
+## Captured authority
+
+A binding must be retained by the actual `server_browser::Tab`, with its immutable thread/tab transport identity, owned target, current transport generation and existing Control. A new target gets a fresh binding. Ordinary controller transitions keep the binding, Page and Keyboard and invalidate refs through the private owner command. Once a tab selects the native driver, all its published legacy aliases must use that driver; a worker failure cannot fall back to the independent Rust keyboard or CSS helpers.
+
+Local Chromium is shared by profile and uses the existing inherited pipe. Desktop adoption uses the channel-owned transport. Neither grants a model access to a raw browser endpoint. The owner bridge must retain the existing bounded actor/writer and introduce an explicit owned raw-request route, rather than globally changing the handling of Target commands or their deadlines. Child-session Target.setAutoAttach requires its actual session; the legacy route currently strips Target/Browser session IDs, so reusing it unchanged is incorrect.
+
+## Exact JSON routing
+
+A raw envelope parses method, request ID and session identity independently of RawValue-backed params/result/error. The actual process-wide correlation owner assigns IDs; worker and legacy requests cannot collide. An owned raw response is dispatched by its recorded request ID before the legacy scalar decoder. Owned worker-session events are dispatched by the captured session registry. Existing unrelated scalar requests/events retain their existing decoder and policy; no global parser relaxation or lossy replacement is proposed.
+
+The Rust authority registry must admit only the captured target, its actual attached sessions and child iframe/worker targets reported through an already owned parent session. Root target/browser discovery, context creation/closure, browser closure, arbitrary download paths and unowned sessions remain unavailable. Target lifecycle authority is parsed from exact scalar identity fields separately from application titles, URLs and other raw fields. Global events cannot enumerate other targets. A worker-provided target, session or deadline is never itself an ownership receipt.
+
+The Node relay continues to enforce its independent scope and late-attachment cleanup. Its upstream is the Rust-owned lane, not a raw shared-profile endpoint. The raw lane must preserve actual CDP errors and exact application JSON rather than fabricate successful unsupported initialization commands.
+
+## Deadlines and cleanup
+
+The existing legacy command deadline remains unchanged. The new raw route needs explicit bounded startup/housekeeping permits and admitted per-operation permits; it cannot silently inherit the legacy five-second command clamp for a native evaluation whose admitted timeout is longer. The Rust broker owns each permit and its deadline. Concurrent observer calls cannot extend an unrelated mutation's permit. Native operation time and the original1000ms host-response grace remain distinct, including time spent queued for control.
+
+Close first fences new admission, drains owned in-flight attachments, and detaches every confirmed late grant. Expired attachment/detachment or browser-execution outcomes remain unknown; a reaped Node process alone does not prove browser-side effects stopped. Only the captured grant/worker may be canceled, never another target or the shared Chromium process. Cleanup receipts remain retained with the tab until actual transport/operation ownership is resolved.
+
+## Admission tests before activation
+
+The next physical acceptance must traverse a synthetic provider's real MCP HTTP connection, actual authority and broker, actual tab owner/control, distinct native worker and owned CDP lane into private Chromium. It must prove cross-thread target/session refusal before transport access, human/foreign-agent rejection, one keyboard across aliases/handoffs, stale ref rejection, queued deadline behavior, late response fencing and ambiguous attachment cleanup.
+
+Escaped isolated UTF-16 units need both directions: raw arguments into the native codec and exact results through the actual native success codec and the outer MCP JSON response. The complete Effect MCP registration oracle already proves that native output preserves both structuredContent and text. Omitting or replacing either with null is not an equivalent consumer. Recording/scratch ownership, chooser/uploads, diagnostics, status/open/dialog/resize/appearance and the full twelve-tool dispatch remain separate required consumers; a transport foundation does not close them.
+
+## Exact-envelope prerequisite now implemented
+
+`native_page_worker::cdp::Packet` is a separate, inactive raw-envelope type. It retains validated RawValue-backed object params/result/error, parses scalar control fields independently, rejects duplicate or ambiguous control fields and unsafe IDs, and serializes directly without an intermediate Value. Its read-only fields do not themselves grant target/session authority. A caller-supplied byte cap is checked before parsing; the eventual transport must enforce its admitted cap before receiving/allocating the body. No existing pipe parser or actor has been changed by this prerequisite.
+
+Private tests cover command, event, result and error payloads with isolated UTF-16 units, plus malformed/duplicate/spoofed envelope fields. A real private Chromium probe evaluates an isolated unit and an object with isolated key/value units through the actual native Page and existing Control adapter. The fixture retains only those two explicitly synthetic Runtime.evaluate response packets, returns them over the owner-authenticated private test controller, and requires Rust raw-envelope decode/serialization/decode to preserve both. This proves the exact-envelope representation against actual browser output; it does not prove the planned raw lane is connected to the production pipe or authenticated MCP dispatch. The legacy scalar decoder remains unchanged.
+
+## Actual captured-session evaluation route
+
+The next bounded step implements an owner-library `Manager::evaluate_exact` route into the actual local and desktop actors. It is fixed to Runtime.evaluate and the Page's captured existing session. Only the native evaluate wire fields expression/awaitPromise/returnByValue are accepted; context selection, arbitrary root commands and caller-selected session identities are unavailable. This is not an authenticated RPC/MCP endpoint or a worker driver selector.
+
+The exact and existing scalar requests share the actual process-wide wire-ID allocator and eight active slots. The exact admission queue has eight entries. Parameters and application replies use validated raw JSON; scalar control metadata is still matched independently. Local NUL framing retains its original4MiB cap, desktop WebSocket framing retains its original256MiB cap, and unrelated packets still enter the existing unchanged scalar decoder. The legacy five-second command clamp is unchanged. An exact request carries its own owner-provided finite budget, bounded to121seconds for this foundation; the API does not infer a native operation timeout or extend another call's budget.
+
+Expired exact results are never published as successful calls. Up to64 unresolved late correlations are retained, including their captured session. A matching late raw result is drained before the scalar decoder; a foreign session cannot reclaim that correlation. At the bound, further exact admissions fail Busy while the legacy route remains available. This is a bounded correlation safeguard, not a complete target/attachment grant registry or cleanup receipt. Application effects of an expired evaluation remain unknown to the caller and must not be replayed automatically.
+
+The real dependency proof is a separate example and `owned-pipe` fixture, not an ignored ordinary unit test. The ordinary server image does not contain Chromium. The reviewed dedicated runner supplies the already existing read-only system Chromium and private profile/HOME/network namespace, fails if that dependency is absent, and retains the owned profile and diagnostic file. The fixture's removal implementation refuses and counts every removal request; acceptance requires zero such requests. It neither deletes trees nor reports fictitious successful cleanup.
+
+That physical probe runs the actual Rust tab owner and inherited pipe into real Chromium. An isolated unit survives both the evaluation argument and result. A timed-out promise sets explicit started/settled markers; settlement is observed through the same ordered owned CDP stream before checking a normal legacy Page.reload and a second target's continued exact evaluation/session identity. Context override and closed-owner calls are refused. This proves the narrow actual actor route; native worker attachment, its additional session/event grants, provider/MCP dispatch, exact native result encoding and the full toolkit remain unselected and unproven by this step.
+
+
+Exact writes additionally carry a one-use metadata-only admission permit. At the actual write boundary it checks the caller's remaining deadline, captured process/control watches and cancellation state. Dropping that caller's future wakes the shared actor to release only its own active correlation; a write which may have started retains a late-result tombstone. Invalid unsent exact frames are purged from the bounded FIFO without dropping or reordering legacy traffic. The permit contains watch receivers and an atomic token, not a socket/sender/target lease, and an old token cannot cancel a successor's independent token. Once a partial frame may have started, cancellation does not truncate it into another session's stream: it finishes or encounters the original fatal five-second transport write deadline, with application outcome still unknown. A rejected exact enqueue returns Busy for that request instead of closing the shared actor.
+
+Real anonymous-socket tests hold the writer behind a bounded send buffer, expire/cancel queued exact frames, reclaim their capacity and verify that no exact bytes precede surviving ordinary traffic. A separate case submits stale/closed authority with no intervening producer and verifies refusal at the actual write boundary. These tests execute no filesystem cleanup or host shell.
+
+### Actual callback-bound fixed evaluation
+
+The trusted owner can capture `CapturedEvaluation` from an existing real tab.
+It stores the captured session and a weak actor sender, not another browser
+endpoint or a replacement controller. Its fixed `Runtime.evaluate` still accepts
+only expression, awaitPromise and returnByValue. The owner remains responsible
+for authenticating the thread/tab and choosing the canonical operation and
+admission path; this library interface is not MCP authorization.
+
+A frame's callback identity must belong to that captured Control and remain
+active. Frame start and EndAdmission share a mutex gate, giving them a defined
+order. Generation changes and Control close do not revoke a callback already
+entered. Callback completion prevents an unwritten frame from starting. The
+existing direct owner evaluation retains its original closed-Control gate.
+
+The actual inherited-pipe Chromium probe creates three tabs in one retained
+private profile. A foreign real tab's callback is refused; a callback entered
+on the captured tab can still send its exact UTF-16 result after takeover and
+Control close; that same receipt is refused after completion. Another target
+continues to work. This proves the fixed evaluation consumer, not the full
+native Page grant, session/event router or authenticated MCP toolkit.
+
+The bounded correlation layer also retains an optional completion observer on
+late root responses. Cancellation cannot discard the observer before a late
+attachment response, and loss of the actor explicitly marks that retained
+outcome unknown. The actual session-grant factory and its owned detach consumer
+remain unselected until their separate physical transport acceptance is done.

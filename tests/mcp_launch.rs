@@ -1,4 +1,6 @@
 mod common;
+#[path = "support/worktree_removal.rs"]
+pub mod retained_worktrees;
 mod support;
 use o3_server::provider::{Provider, ProviderControl, ProviderEvent, RunInput};
 use serde_json::{json, Value};
@@ -103,7 +105,7 @@ fn projection(s: &support::Server, tid: &Value) -> Value {
 }
 #[test]
 fn external_launch_inherits_project_defaults_falls_back_and_replays_the_saved_model() {
-    let s = support::start(|s| *s.provider.lock().unwrap() = Some(Arc::new(Catalog)));
+    let s = start_recording_cleanup(|s| *s.provider.lock().unwrap() = Some(Arc::new(Catalog)));
     project(&s);
     let c = s.connect();
     c.rpc("server.updateSettings",json!({"patch":{"defaultModelSelection":{"instanceId":"claudeAgent","model":"exhausted"},"fallbackModelSelection":{"instanceId":"codex","model":"fallback","options":[{"id":"future-option","value":"preserved"}]},"defaultRuntimeMode":"full-access"}})).unwrap();
@@ -140,7 +142,7 @@ fn external_launch_inherits_project_defaults_falls_back_and_replays_the_saved_mo
 
 #[test]
 fn model_aliases_options_and_effective_project_defaults_preserve_prompt_text() {
-    let s = support::start(|s| *s.provider.lock().unwrap() = Some(Arc::new(Catalog)));
+    let s = start_recording_cleanup(|s| *s.provider.lock().unwrap() = Some(Arc::new(Catalog)));
     project(&s);
     let c = s.connect();
     let m = Mcp::new(&s, "full-access");
@@ -167,7 +169,7 @@ fn model_aliases_options_and_effective_project_defaults_preserve_prompt_text() {
 }
 #[test]
 fn launch_rechecks_replay_modes_and_read_only_requests_have_no_scratch_effects() {
-    let s = support::start(|s| *s.provider.lock().unwrap() = Some(Arc::new(Catalog)));
+    let s = start_recording_cleanup(|s| *s.provider.lock().unwrap() = Some(Arc::new(Catalog)));
     project(&s);
     let model = json!({"instanceId":"codex","model":"test"});
     let m = Mcp::new(&s, "full-access");
@@ -214,7 +216,7 @@ fn launch_rechecks_replay_modes_and_read_only_requests_have_no_scratch_effects()
 #[test]
 fn worktree_preflight_rejects_outside_and_missing_base_before_claim_and_replays_after_base_deletion(
 ) {
-    let s = support::start(|s| *s.provider.lock().unwrap() = Some(Arc::new(Catalog)));
+    let s = start_recording_cleanup(|s| *s.provider.lock().unwrap() = Some(Arc::new(Catalog)));
     let root = project(&s);
     let m = Mcp::new(&s, "full-access");
     let base = json!({"title":"Worktree","projectId":"p","modelSelection":{"instanceId":"codex","model":"test"}});
@@ -260,7 +262,7 @@ fn worktree_preflight_rejects_outside_and_missing_base_before_claim_and_replays_
             json!(path)
         );
     }
-    std::fs::remove_dir_all(&existing).unwrap();
+    std::fs::rename(&existing, root.join("retained-existing-worktree")).unwrap();
     std::fs::create_dir_all(&existing).unwrap();
     let mut stale = base.clone();
     stale["workspaceStrategy"] = json!({"type":"existing_worktree","worktreePath":existing});
@@ -280,7 +282,7 @@ fn worktree_preflight_rejects_outside_and_missing_base_before_claim_and_replays_
 }
 #[test]
 fn scratch_bootstraps_once_preserves_icon_and_allocates_distinct_non_git_folders() {
-    let s = support::start(|s| *s.provider.lock().unwrap() = Some(Arc::new(Catalog)));
+    let s = start_recording_cleanup(|s| *s.provider.lock().unwrap() = Some(Arc::new(Catalog)));
     let m = Mcp::new(&s, "approval-required");
     let model = json!({"instanceId":"codex","model":"test"});
     m.denied(
@@ -311,7 +313,7 @@ fn scratch_bootstraps_once_preserves_icon_and_allocates_distinct_non_git_folders
     let projects = c.request_json("GET", "/api/projects", None, false).unwrap();
     assert_eq!(projects["projects"][0]["projectIcon"]["emoji"], "x");
     let repository_profile =
-        support::start(|s| *s.provider.lock().unwrap() = Some(Arc::new(Catalog)));
+        start_recording_cleanup(|s| *s.provider.lock().unwrap() = Some(Arc::new(Catalog)));
     git(&repository_profile.dir, &["init", "-b", "main"]);
     let blocked = Mcp::new(&repository_profile, "approval-required");
     blocked.denied(
@@ -333,7 +335,7 @@ fn launch_claims_pending_uploads_before_setup_and_both_native_transports_read_co
         let peer = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/input/peer.py");
         let claude = Arc::new(o3_server::claude::ClaudeProvider::new(peer.clone()));
         let codex = Arc::new(o3_server::codex::CodexProvider::new(peer, None));
-        let s = support::start(|s| {
+        let s = start_recording_cleanup(|s| {
             s.streams.terminals.set_shell("/bin/sh");
             std::fs::write(s.dir.join("settings.json"),json!({"enableAgentBrowserAccess":false,"worktreesDirectory":s.dir.join("managed"),"newWorktreesStartFromOrigin":false,"defaultProjectScripts":[{"id":"setup","name":"Setup","icon":"configure","runOnWorktreeCreate":true,"async":false,"command":"echo started > setup-started; while [ ! -f \"$T3CODE_PROJECT_ROOT/release\" ]; do sleep 0.02; done; echo ready > setup-ready"}]}).to_string()).unwrap();
             *s.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::Providers {
@@ -431,7 +433,7 @@ fn launch_claims_pending_uploads_before_setup_and_both_native_transports_read_co
 }
 #[test]
 fn failed_attachment_or_message_admission_releases_copies_and_retry_keeps_one_message() {
-    let s = support::start(|s| *s.provider.lock().unwrap() = Some(Arc::new(Catalog)));
+    let s = start_recording_cleanup(|s| *s.provider.lock().unwrap() = Some(Arc::new(Catalog)));
     project(&s);
     let owner = s.connect();
     let m = Mcp::new(&s, "full-access");
@@ -510,7 +512,7 @@ fn native_launch_inherits_caller_model_modes_and_project_but_uses_project_root()
         let peer = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mcp-launch-peer.py");
         let claude = Arc::new(o3_server::claude::ClaudeProvider::new(peer.clone()));
         let codex = Arc::new(o3_server::codex::CodexProvider::new(peer, None));
-        let s = support::start(|s| {
+        let s = start_recording_cleanup(|s| {
             std::fs::write(
                 s.dir.join("settings.json"),
                 json!({"enableAgentBrowserAccess":false}).to_string(),
@@ -583,7 +585,7 @@ fn native_launch_inherits_caller_model_modes_and_project_but_uses_project_root()
 #[test]
 fn authority_changed_by_claim_commit_refuses_message_admission_and_retry_recovers_identity() {
     for revoke in [false, true] {
-        let s = support::start(|s| *s.provider.lock().unwrap() = Some(Arc::new(Catalog)));
+        let s = start_recording_cleanup(|s| *s.provider.lock().unwrap() = Some(Arc::new(Catalog)));
         project(&s);
         let m = Mcp::new(&s, "full-access");
         let claims = s.state.mcp_session(&m.token).unwrap();
@@ -651,7 +653,7 @@ fn authority_changed_by_claim_commit_refuses_message_admission_and_retry_recover
 
 #[test]
 fn remote_only_base_and_git_commit_search_are_accepted_and_prepared() {
-    let s = support::start(|s| *s.provider.lock().unwrap() = Some(Arc::new(Catalog)));
+    let s = start_recording_cleanup(|s| *s.provider.lock().unwrap() = Some(Arc::new(Catalog)));
     let root = project(&s);
     let m = Mcp::new(&s, "full-access");
     let remote = s.dir.join("origin.git");
@@ -696,4 +698,13 @@ fn remote_only_base_and_git_commit_search_are_accepted_and_prepared() {
         .len()
             == 40
     );
+}
+
+fn start_recording_cleanup(
+    configure: impl FnOnce(&std::sync::Arc<o3_server::store::State>),
+) -> support::Server {
+    support::start(|state| {
+        retained_worktrees::RetainingExecutor::install(state);
+        configure(state);
+    })
 }

@@ -225,14 +225,26 @@ fn save_transfer(db: &Connection, thread: &Value, transfer: Value) -> Result<i64
     append(db, &tid, "context-transfer.updated", transfer, thread)
 }
 pub(crate) fn own_items(db: &Connection, tid: &str, through: i64) -> Result<Vec<Value>> {
-    let mut q=db.prepare("SELECT i.body FROM records i LEFT JOIN records r ON r.kind='runs' AND r.id=json_extract(i.body,'$.runId') WHERE i.kind='turnItems' AND i.thread_id=?1 AND (json_extract(i.body,'$.runId') IS NULL OR (json_extract(r.body,'$.ordinal')<=?2 AND coalesce(json_extract(r.body,'$.contextDiscarded'),0)=0 AND json_extract(r.body,'$.status')!='rolled_back' AND NOT(json_extract(r.body,'$.status')='cancelled' AND json_extract(i.body,'$.type')='user_message' AND coalesce(json_extract(i.body,'$.inputIntent'),'')='queued_turn'))) ORDER BY r.rowid,json_extract(i.body,'$.ordinal'),i.rowid").map_err(|e|e.to_string())?;
+    let boundary = crate::fresh_context::boundary(db, tid, through)?;
+    let mut q=db.prepare("SELECT i.body FROM records i LEFT JOIN records r ON r.kind='runs' AND r.id=json_extract(i.body,'$.runId') WHERE i.kind='turnItems' AND i.thread_id=?1 AND ((json_extract(i.body,'$.runId') IS NULL AND ?3=0) OR (json_extract(r.body,'$.ordinal')>=?3 AND json_extract(r.body,'$.ordinal')<=?2 AND coalesce(json_extract(r.body,'$.contextDiscarded'),0)=0 AND json_extract(r.body,'$.status')!='rolled_back' AND NOT(json_extract(r.body,'$.status')='cancelled' AND json_extract(i.body,'$.type')='user_message' AND coalesce(json_extract(i.body,'$.inputIntent'),'')='queued_turn'))) ORDER BY r.rowid,json_extract(i.body,'$.ordinal'),i.rowid").map_err(|e|e.to_string())?;
     let rows = q
-        .query_map(params![tid, through], |r| r.get::<_, String>(0))
+        .query_map(params![tid, through, boundary], |r| r.get::<_, String>(0))
         .map_err(|e| e.to_string())?;
     let mut out = vec![];
     for row in rows {
-        let item: Value =
+        let mut item: Value =
             serde_json::from_str(&row.map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+        if item["type"] == "user_message" && item.get("context").is_none() {
+            if let Some(message_id) = item["messageId"].as_str() {
+                if let Ok(message) = get(db, "messages", message_id) {
+                    if message["threadId"] == item["threadId"] {
+                        if let Some(context) = message.get("context") {
+                            item["context"] = context.clone();
+                        }
+                    }
+                }
+            }
+        }
         out.push(item)
     }
     let attempts = list(db, "attempts", tid)?;
@@ -254,6 +266,9 @@ pub(crate) fn own_items(db: &Connection, tid: &str, through: i64) -> Result<Vec<
 }
 pub(crate) fn fork_items(db: &Connection, tid: &str, through: i64) -> Result<Vec<Value>> {
     let mut segments = vec![own_items(db, tid, through)?];
+    if crate::fresh_context::boundary(db, tid, through)? > 0 {
+        return Ok(segments.remove(0));
+    }
     let mut thread = get(db, "thread", tid)?;
     let mut seen = std::collections::HashSet::from([tid.to_owned()]);
     while thread["forkedFrom"]["type"] == "run" && thread["lineage"]["sideChat"] != true {
@@ -274,6 +289,9 @@ pub(crate) fn fork_items(db: &Connection, tid: &str, through: i64) -> Result<Vec
             break;
         };
         segments.insert(0, own_items(db, sid, run["ordinal"].as_i64().unwrap_or(0))?);
+        if crate::fresh_context::boundary(db, sid, run["ordinal"].as_i64().unwrap_or(0))? > 0 {
+            break;
+        }
         thread = source;
     }
     Ok(segments.into_iter().flatten().collect())
@@ -342,6 +360,19 @@ fn admit_inner(
         .ok_or("thread id required")?
         .to_owned();
     let transfers = list(db, "contextTransfers", &tid)?;
+    if run["freshContext"] == true {
+        if transfers.iter().any(|t| {
+            t["targetThreadId"] == tid
+                && t["status"] == "pending"
+                && matches!(t["type"].as_str(), Some("fork" | "merge_back"))
+        }) {
+            return Err(
+                "A fresh session cannot start while a fork or merge is still being applied.".into(),
+            );
+        }
+        return Ok(());
+    }
+
     let merges = transfers
         .iter()
         .filter(|t| {
@@ -660,6 +691,18 @@ pub(crate) fn input(db: &Connection, thread: &Value, run: &Value) -> Result<Valu
     let tid = thread["id"].as_str().unwrap_or("");
     let mut all = list(db, "contextHandoffs", tid)?;
     let runs = list(db, "runs", tid)?;
+    let boundary = if run["freshContext"] == true {
+        run["ordinal"].as_i64().unwrap_or(0)
+    } else {
+        crate::fresh_context::boundary(db, tid, run["ordinal"].as_i64().unwrap_or(i64::MAX))?
+    };
+    all.retain(|h| {
+        boundary == 0
+            || runs.iter().any(|r| {
+                r["id"] == h["targetRunId"] && r["ordinal"].as_i64().is_some_and(|o| o >= boundary)
+            })
+    });
+
     let Some(ptid) = run["providerThreadId"].as_str() else {
         // Legacy active-recovery runs predate app-owned provider rows.
         return Ok(json!({"handoffs":[],"deliveredItemIds":[]}));
@@ -943,6 +986,41 @@ pub(crate) fn delivery(
 mod tests {
     use super::*;
     #[test]
+    fn portable_history_recovers_preexisting_native_context_without_rewriting_user_text() {
+        let db = Connection::open_in_memory().unwrap();
+        crate::events::initialize(&db).unwrap();
+        let fixture: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/composer-context.json")).unwrap();
+        let case = fixture["projections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| case["label"] == "kind:terminal")
+            .unwrap();
+        let original = case["input"]["text"].as_str().unwrap();
+        let context = json!({"version":1,"records":case["input"]["records"]});
+        put(
+            &db,
+            "runs",
+            "r",
+            "t",
+            &json!({"id":"r","threadId":"t","ordinal":1,"status":"completed"}),
+        )
+        .unwrap();
+        put(&db,"messages","m","t",&json!({"id":"m","threadId":"t","runId":"r","role":"user","text":original,"context":context})).unwrap();
+        let old_item = json!({"id":"i","messageId":"m","threadId":"t","runId":"r","type":"user_message","text":original,"ordinal":1,"status":"completed"});
+        put(&db, "turnItems", "i", "t", &old_item).unwrap();
+        let items = own_items(&db, "t", 1).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["context"], context);
+        let history = crate::handoff_history::message(&items[0]).unwrap();
+        assert_eq!(history["text"], case["expected"]);
+        assert_eq!(get(&db, "messages", "m").unwrap()["text"], original);
+        assert_eq!(get(&db, "turnItems", "i").unwrap(), old_item);
+        let side = crate::handoff_history::side_chat("t", &items);
+        assert!(side.contains("[Terminal: chosen; ref=terminal]"));
+    }
+    #[test]
     fn legacy_fork_sources_upgrade_idempotently_without_inventing_native_anchors() {
         let db = Connection::open_in_memory().unwrap();
         crate::events::initialize(&db).unwrap();
@@ -1011,6 +1089,6 @@ mod tests {
             "pending"
         );
         drop(s);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

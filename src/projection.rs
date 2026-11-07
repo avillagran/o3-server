@@ -62,3 +62,73 @@ pub(crate) fn native_id(db: &rusqlite::Connection, t: &serde_json::Value) -> Opt
         Err(_) => Some(id.into()), // Imported legacy threads used native IDs directly.
     }
 }
+
+/// The wire uses a currency-qualified cost; turn accounting may still keep a scalar USD total.
+pub(crate) fn normalize_context_cost(record: &mut serde_json::Value) {
+    use serde_json::{json, Value};
+    if let Some(usage) = record
+        .get_mut("contextUsage")
+        .and_then(Value::as_object_mut)
+    {
+        match usage.get("cost").cloned() {
+            Some(amount) if amount.is_number() => {
+                usage.insert("cost".into(), json!({"amount":amount,"currency":"USD"}));
+            }
+            Some(Value::Null) => {
+                usage.remove("cost");
+            }
+            _ => {}
+        }
+    }
+}
+
+#[cfg(test)]
+mod context_cost_tests {
+    use super::normalize_context_cost;
+    use serde_json::json;
+    #[test]
+    fn context_cost_preserves_currency_and_omits_unknown_cost() {
+        let mut record = json!({"contextUsage":{"usedTokens":7,"cost":0.01}});
+        normalize_context_cost(&mut record);
+        assert_eq!(
+            record["contextUsage"]["cost"],
+            json!({"amount":0.01,"currency":"USD"})
+        );
+        record["contextUsage"]["cost"] = json!({"amount":2.5,"currency":"EUR"});
+        normalize_context_cost(&mut record);
+        assert_eq!(record["contextUsage"]["cost"]["currency"], "EUR");
+        record["contextUsage"]["cost"] = serde_json::Value::Null;
+        normalize_context_cost(&mut record);
+        assert!(record["contextUsage"].get("cost").is_none());
+    }
+    #[test]
+    fn restart_repairs_legacy_snapshot_and_event_costs() {
+        let dir = std::env::temp_dir().join(format!(
+            "o3-cost-contract-{}",
+            crate::store::random_id().unwrap()
+        ));
+        let state = crate::store::State::open(&dir).unwrap();
+        {
+            let db = state.db.lock().unwrap();
+            db.execute("DROP TABLE context_cost_canonical_v1", [])
+                .unwrap();
+            let record = json!({"id":"pt","contextUsage":{"usedTokens":1,"cost":0.25}});
+            db.execute(
+                "INSERT INTO records VALUES('providerThreads','pt','t',?)",
+                [record.to_string()],
+            )
+            .unwrap();
+            db.execute(
+                "INSERT INTO events(thread_id,body) VALUES('t',?)",
+                [json!({"type":"provider-thread.updated","payload":record}).to_string()],
+            )
+            .unwrap();
+        }
+        drop(state);
+        let state = crate::store::State::open(&dir).unwrap();
+        let db = state.db.lock().unwrap();
+        for sql in ["SELECT json_extract(body,'$.contextUsage.cost') FROM records WHERE id='pt'","SELECT json_extract(body,'$.payload.contextUsage.cost') FROM events WHERE thread_id='t'"] {
+            let value:String=db.query_row(sql,[],|r|r.get(0)).unwrap();assert_eq!(serde_json::from_str::<serde_json::Value>(&value).unwrap(),json!({"amount":0.25,"currency":"USD"}));
+        }
+    }
+}

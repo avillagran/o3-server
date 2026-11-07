@@ -194,7 +194,7 @@ fn real_client_pairs_and_runs_rpc_through_embedded_bridge() {
             guest.shutdown().await;
             host.shutdown().await;
             drop(state);
-            std::fs::remove_dir_all(root).unwrap();
+            // Fixture trees are retained for private container teardown.
         })
         .await
         .unwrap();
@@ -235,7 +235,7 @@ fn no_bridge_flag_serves_without_an_embedded_node() {
     let bridge_dir = base.join("omabridge").exists();
     let _ = child.kill();
     let _ = child.wait();
-    std::fs::remove_dir_all(&base).unwrap();
+    // Fixture trees are retained for private container teardown.
     assert!(listening.is_some(), "{line}");
     assert!(
         !bridge_dir,

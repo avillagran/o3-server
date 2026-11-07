@@ -1,0 +1,135 @@
+// Private owned transport for the complete pinned native speech factory.
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import {pathToFileURL} from 'node:url';
+
+const MAX_RECORD=32*1024*1024; // Including LF; buffered PCM can occupy19,200,000 raw bytes.
+const MAX_PCM=19_200_000;
+const directory=process.argv[2];
+const expectedSpec=process.argv[3];
+if(!path.isAbsolute(directory??''))throw Error('Invalid owned runtime directory');
+function readOwned(file,maximum){
+ const fd=fs.openSync(file,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW|fs.constants.O_NONBLOCK);
+ try{
+  const before=fs.fstatSync(fd);
+  if(!before.isFile()||before.size>maximum)throw Error('Owned resource exceeds its bound');
+  const buffer=Buffer.allocUnsafe(maximum+1);let length=0;
+  while(length<=maximum){const count=fs.readSync(fd,buffer,length,maximum+1-length,null);if(!count)break;length+=count;}
+  const after=fs.fstatSync(fd);
+  if(length>maximum||['dev','ino','size','mtimeMs','ctimeMs'].some(key=>before[key]!==after[key]))throw Error('Changed owned resource');
+  return buffer.subarray(0,length);
+ }finally{fs.closeSync(fd);}
+}
+const bytes=readOwned(path.join(directory,'spec.json'),128*1024);
+if(!/^[a-f0-9]{64}$/.test(expectedSpec??'')||crypto.createHash('sha256').update(bytes).digest('hex')!==expectedSpec)throw Error('Invalid owned speech specification');
+const spec=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
+if(process.versions.node!=='26.13.0'||spec.version!==1||!/^[A-Za-z0-9_-]{16,128}$/.test(spec.owner??''))throw Error('Unsupported owned speech runtime');
+const nativeBytes=readOwned(path.join(directory,'native-worker.mjs'),1024*1024);
+const manifest=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(readOwned(path.join(directory,'native-manifest.json'),64*1024)));
+const nativeHash=crypto.createHash('sha256').update(nativeBytes).digest('hex');
+if(nativeHash!==spec.nativeSha256||nativeHash!==manifest.files['native-worker.mjs'].sha256)throw Error('Changed native speech resource');
+// Explicit engine URLs make the native ambient package fallback unreachable.
+// Import checked bytes directly, rather than reopening a mutable pathname.
+const native=await import('data:text/javascript;base64,'+nativeBytes.toString('base64'));
+const controller=new AbortController();
+let model,loading,closing;
+const leases=[];
+async function seal(file){
+ if(!file||!path.isAbsolute(file.path)||!/^[a-f0-9]{64}$/.test(file.sha256)||!/^[1-9][0-9]*$/.test(file.bytes))throw Error('Invalid sealed speech input');
+ const handle=await fs.promises.open(file.path,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW|fs.constants.O_NONBLOCK);
+ leases.push(handle);
+ const before=await handle.stat({bigint:true});
+ if(!before.isFile()||before.size.toString()!==file.bytes)throw Error('Changed sealed speech input');
+ const hash=crypto.createHash('sha256');
+ const stream=fs.createReadStream(file.path,{fd:handle.fd,autoClose:false,highWaterMark:64*1024,signal:controller.signal});
+ for await(const block of stream)hash.update(block);
+ const after=await handle.stat({bigint:true});
+ if(hash.digest('hex')!==file.sha256||['dev','ino','size','mtimeNs','ctimeNs'].some(key=>before[key]!==after[key]))throw Error('Changed sealed speech input');
+ return pathToFileURL(file.path).href;
+}
+function pcm(value){
+ if(typeof value!=='string'||value.length>MAX_PCM/3*4)throw Error('Invalid owned PCM frame');
+ const bytes=Buffer.from(value,'base64');
+ if(bytes.length===0||bytes.length>MAX_PCM||bytes.length%4!==0||bytes.toString('base64')!==value)throw Error('Invalid owned PCM frame');
+ const values=new Float32Array(Uint8Array.from(bytes).buffer);
+ for(const sample of values)if(!Number.isFinite(sample)||sample < -1||sample > 1)throw Error('Invalid owned PCM sample');
+ return values;
+}
+async function send(value){
+ const text=JSON.stringify(value)+'\n';
+ if(Buffer.byteLength(text)>MAX_RECORD)throw Error('Owned speech response exceeds32MiB');
+ await new Promise((resolve,reject)=>process.stdout.write(text,error=>error?reject(error):resolve()));
+}
+async function stop(code=0){
+ if(closing)return closing;
+ closing=(async()=>{
+  controller.abort();
+  if(loading)await loading.catch(()=>undefined);
+  if(model)await model.dispose().catch(()=>undefined);
+  for(const handle of leases)await handle.close().catch(()=>undefined);
+  process.exit(code);
+ })();
+ return closing;
+}
+const fatal=()=>{void stop(70);};
+process.on('SIGTERM',()=>{void stop();});
+process.on('SIGINT',()=>{void stop();});
+process.stdin.on('end',()=>{void stop();});
+process.stdin.on('error',fatal);
+process.stdout.on('error',fatal);
+async function dispatch(frame){
+ if(!frame||Array.isArray(frame)||frame.owner!==spec.owner||!Number.isSafeInteger(frame.id)||frame.id<1||typeof frame.kind!=='string')throw Error('Invalid owned speech command');
+ const id=frame.id;
+ try{
+  let result=null;
+  if(frame.kind==='load'){
+   if(model||loading||!spec.model)throw Error('Invalid owned model load');
+   loading=(async()=>{
+    const engine=await seal(spec.engine);
+    await seal(spec.model);
+    if(spec.vad)await seal(spec.vad);
+    return await native.loadNativeSpeechModel(spec.model.path,controller.signal,engine,spec.acceleration);
+   })();
+   model=await loading;
+   result={backend:model.backend,languages:model.languages,supportsStreaming:model.supportsStreaming,supportsLongForm:model.supportsLongForm,supportsTranslation:model.supportsTranslation,supportsVocabulary:model.supportsVocabulary};
+  }else if(frame.kind==='discover'){
+   if(model||loading)throw Error('Invalid owned device discovery');
+   const engine=await seal(spec.engine);
+   result=await native.listNativeSpeechGpuDevices(engine);
+  }else{
+   if(!model)throw Error('Owned speech model is not loaded');
+   if(frame.kind==='transcribe')result=await model.transcribe(pcm(frame.pcm),frame.options,frame.filterSilence===true,spec.vad?.path);
+   else if(frame.kind==='begin')await model.begin(frame.options,frame.filterSilence===true,spec.vad?.path);
+   else if(frame.kind==='feed')result=await model.feed(pcm(frame.pcm));
+   else if(frame.kind==='finish')result=await model.finish();
+   else if(frame.kind==='reset')await model.reset();
+   else throw Error('Unknown owned speech command');
+  }
+  if(!closing)await send({type:'reply',owner:spec.owner,id,ok:true,result});
+ }catch(error){
+  if(!closing)await send({type:'reply',owner:spec.owner,id,ok:false,error:typeof error?.message==='string'?error.message:'Native speech failed.'});
+ }
+}
+let fragments=[],length=0;
+const decoder=new TextDecoder('utf-8',{fatal:true});
+process.stdin.on('data',chunk=>{
+ if(closing)return;
+ try{
+  let start=0;
+  for(let index=0;index<chunk.length;index++)if(chunk[index]===10){
+   const part=chunk.subarray(start,index+1);
+   if(length+part.length>MAX_RECORD)throw Error('Owned speech input exceeds32MiB');
+   fragments.push(part);length+=part.length;
+   const record=Buffer.concat(fragments,length);fragments=[];length=0;start=index+1;
+   const frame=JSON.parse(decoder.decode(record.subarray(0,record.length-1)));
+   void dispatch(frame).catch(fatal);
+  }
+  if(start<chunk.length){
+   const part=chunk.subarray(start);
+   if(length+part.length>MAX_RECORD)throw Error('Owned speech input exceeds32MiB');
+   fragments.push(part);length+=part.length;
+  }
+ }catch{fatal();}
+});
+await send({type:'hello',owner:spec.owner,node:process.versions.node,pid:process.pid});

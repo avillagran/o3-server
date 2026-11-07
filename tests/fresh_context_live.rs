@@ -1,0 +1,1294 @@
+//! Opt-in native acceptance. Only the rootless container runner may execute this test.
+mod support;
+use o3_server::{claude::ClaudeProvider, codex::CodexProvider, provider::Providers, store::State};
+use serde_json::{json, Value};
+use std::{
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
+use support::signals;
+use t3_protocol::{pair_bearer, Connection, ConnectionOptions, PairingClient};
+
+fn projection(c: &Connection) -> Value {
+    c.rpc("orchestration.getThreadProjection", json!({"threadId":"t"}))
+        .unwrap()
+}
+fn run(c: &Connection, id: &str, instance: &str, model: &str, text: &str, fresh: bool) -> Value {
+    c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","createdBy":"user","creationSource":"web","commandId":id,"threadId":"t","messageId":id,"modelSelection":{"instanceId":instance,"model":model},"text":text,"attachments":[],"freshContext":fresh,"dispatchMode":{"type":"queue_after_active"}})).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(100);
+    loop {
+        let p = projection(c);
+        let run = p["runs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["userMessageId"] == id)
+            .unwrap();
+        assert_ne!(
+            run["status"], "failed",
+            "native stage {id} failed: {}",
+            run["error"]
+        );
+        if run["status"] == "completed" {
+            println!("FRESH_CONTEXT_LIVE_STAGE_PASS {id} {instance}");
+            return p;
+        }
+        assert!(Instant::now() < deadline, "native stage {id} timed out");
+        std::thread::sleep(Duration::from_millis(120));
+    }
+}
+fn answer(p: &Value, id: &str) -> String {
+    let r = p["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["userMessageId"] == id)
+        .unwrap();
+    p["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|m| m["runId"] == r["id"] && m["role"] == "assistant")
+        .filter_map(|m| m["text"].as_str())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+fn native(p: &Value, id: &str) -> String {
+    let r = p["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["userMessageId"] == id)
+        .unwrap();
+    p["providerThreads"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|pt| pt["id"] == r["providerThreadId"])
+        .unwrap()["nativeThreadRef"]["nativeId"]
+        .as_str()
+        .unwrap()
+        .into()
+}
+
+struct ReferenceProcess(std::process::Child);
+impl Drop for ReferenceProcess {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+fn start_reference(
+    binary: &str,
+    profile: &std::path::Path,
+    evidence: &std::path::Path,
+) -> (Connection, ReferenceProcess) {
+    use std::process::{Command, Stdio};
+    std::fs::create_dir_all(profile).unwrap();
+    let version = Command::new(binary).arg("--version").output().unwrap();
+    assert!(version.status.success());
+    assert!(String::from_utf8_lossy(&version.stdout).contains("20261106.4262"));
+    let issued = Command::new(binary)
+        .env("T3CODE_HOME", profile)
+        .args([
+            "auth",
+            "session",
+            "issue",
+            "--subject",
+            "fresh-context-reference",
+            "--ttl",
+            "1h",
+            "--token-only",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        issued.status.success(),
+        "Reference auth failed: {}",
+        String::from_utf8_lossy(&issued.stderr)
+    );
+    let token = String::from_utf8(issued.stdout).unwrap().trim().to_owned();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let log = std::fs::File::create(evidence.join("reference-server.log")).unwrap();
+    let child = Command::new(binary)
+        .env("T3CODE_HOME", profile)
+        .args(["serve", "--host", "127.0.0.1", "--port", &port.to_string()])
+        .stdin(Stdio::null())
+        .stdout(log.try_clone().unwrap())
+        .stderr(log)
+        .spawn()
+        .unwrap();
+    let mut process = ReferenceProcess(child);
+    let base = format!("http://127.0.0.1:{port}");
+    std::fs::write(evidence.join("reference-address.txt"), &base).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(120);
+    loop {
+        if t3_protocol::fetch_descriptor(&base).is_ok() {
+            break;
+        }
+        assert!(
+            process.0.try_wait().unwrap().is_none(),
+            "Reference exited; inspect reference-server.log"
+        );
+        assert!(Instant::now() < deadline, "Reference startup timed out");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    signals::shield_client_thread_from_sigchld();
+    let connection = Connection::new(
+        &base,
+        None,
+        t3_protocol::Credential::bearer(&token).unwrap(),
+    )
+    .unwrap();
+    (connection, process)
+}
+type NativeBackend = (
+    Connection,
+    Option<Arc<State>>,
+    Option<ReferenceProcess>,
+    PathBuf,
+    PathBuf,
+);
+fn native_backend() -> NativeBackend {
+    assert_eq!(
+        std::env::var("O3_FRESH_CONTEXT_CONTAINER").as_deref(),
+        Ok("1")
+    );
+    assert!(
+        std::path::Path::new("/run/.containerenv").is_file(),
+        "rootless container required"
+    );
+    let output = PathBuf::from(std::env::var("O3_FRESH_CONTEXT_EVIDENCE").unwrap());
+    assert_eq!(output, PathBuf::from("/evidence"));
+    let dir = PathBuf::from("/tmp/fresh-context-profile");
+    let (c, state, reference) = if let Ok(binary) = std::env::var("O3_FRESH_CONTEXT_REFERENCE") {
+        let (connection, process) = start_reference(&binary, &dir, &output);
+        (connection, None, Some(process))
+    } else {
+        let state = Arc::new(State::open(&dir).unwrap());
+        let claude = Arc::new(ClaudeProvider::discover().expect("installed Claude"));
+        let providers = Arc::new(Providers {
+            claude: Some(claude),
+            codex: Arc::new(CodexProvider::default()),
+        });
+        *state.provider.lock().unwrap() = Some(providers);
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let serving = state.clone();
+        std::thread::spawn(move || {
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(async {
+                    o3_server::serve(
+                        tokio::net::TcpListener::from_std(listener).unwrap(),
+                        serving,
+                    )
+                    .await
+                    .unwrap()
+                })
+        });
+        signals::shield_client_thread_from_sigchld();
+        let secret = state
+            .issue_pairing(Some("isolated-native-acceptance"), 60_000)
+            .unwrap()["credential"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let c = pair_bearer(
+            &base,
+            &secret,
+            None,
+            &PairingClient::default(),
+            &ConnectionOptions::default(),
+        )
+        .unwrap()
+        .connection(&ConnectionOptions::default())
+        .unwrap();
+        (c, Some(state), None)
+    };
+    (c, state, reference, dir, output)
+}
+
+#[test]
+#[ignore = "eight real Claude/Codex turns; execute with tools/live-fresh-context inside rootless podman"]
+fn native_resets_forget_prior_context_but_keep_history_and_new_continuations() {
+    let (c, state, _reference, dir, output) = native_backend();
+    let engine = if state.is_some() { "o3" } else { "t3-4262" };
+    let workspace = dir.join("workspace");
+    std::fs::create_dir_all(&workspace).unwrap();
+    c.rpc("projects.mutate",json!({"type":"project.create","commandId":"project","projectId":"p","title":"Fresh context acceptance","workspaceRoot":workspace})).unwrap();
+    c.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","createdBy":"user","creationSource":"web","branch":null,"worktreePath":null,"commandId":"create","threadId":"t","projectId":"p","title":"Fresh context acceptance","runtimeMode":"approval-required","interactionMode":"default","modelSelection":{"instanceId":"claudeAgent","model":"haiku"}})).unwrap();
+    let words = (0..3)
+        .map(|_| {
+            format!(
+                "WORD{}",
+                o3_server::store::random_id().unwrap().replace('-', "")
+            )
+        })
+        .collect::<Vec<_>>();
+    let p = run(
+        &c,
+        "seed",
+        "claudeAgent",
+        "haiku",
+        &format!(
+            "Remember codeword {}. Reply READY only. Do not use tools.",
+            words[0]
+        ),
+        false,
+    );
+    let old_claude = native(&p, "seed");
+    let p = run(
+        &c,
+        "recall-old",
+        "claudeAgent",
+        "haiku",
+        "Reply only with the codeword from the earlier user message. Do not use tools.",
+        false,
+    );
+    assert!(answer(&p, "recall-old").contains(&words[0]));
+    assert_eq!(native(&p, "recall-old"), old_claude);
+    let prompt = |word: &str| {
+        format!("For future messages, remember new codeword {word}. Did any EARLIER user message before this one name a different codeword? Reply OLD:<that earlier word> or OLD:NONE if no such earlier message is available. Do not use tools.")
+    };
+    let p = run(
+        &c,
+        "clear-claude",
+        "claudeAgent",
+        "haiku",
+        &prompt(&words[1]),
+        true,
+    );
+    assert!(
+        answer(&p, "clear-claude").contains("NONE"),
+        "fresh Claude unexpectedly recalls history"
+    );
+    assert!(!answer(&p, "clear-claude").contains(&words[0]));
+    let fresh_claude = native(&p, "clear-claude");
+    assert_ne!(fresh_claude, old_claude);
+    let p=run(&c,"recall-claude","claudeAgent","haiku","Reply only with the NEW codeword introduced in the previous user message. Do not use tools.",false);
+    assert!(answer(&p, "recall-claude").contains(&words[1]));
+    assert_eq!(native(&p, "recall-claude"), fresh_claude);
+    let p = run(
+        &c,
+        "switch-codex",
+        "codex",
+        "gpt-6.1-sol",
+        "Reply only with the newest codeword introduced in this conversation. Do not use tools.",
+        false,
+    );
+    assert!(answer(&p, "switch-codex").contains(&words[1]));
+    assert!(!answer(&p, "switch-codex").contains(&words[0]));
+    let old_codex = native(&p, "switch-codex");
+    let p = run(
+        &c,
+        "clear-codex",
+        "codex",
+        "gpt-6.1-sol",
+        &prompt(&words[2]),
+        true,
+    );
+    assert!(
+        answer(&p, "clear-codex").contains("NONE"),
+        "fresh Codex unexpectedly recalls history"
+    );
+    assert!(!answer(&p, "clear-codex").contains(&words[1]));
+    let fresh_codex = native(&p, "clear-codex");
+    assert_ne!(fresh_codex, old_codex);
+    let p=run(&c,"recall-codex","codex","gpt-6.1-sol","Reply only with the NEW codeword introduced in the previous user message. Do not use tools.",false);
+    assert!(answer(&p, "recall-codex").contains(&words[2]));
+    assert_eq!(native(&p, "recall-codex"), fresh_codex);
+    let p = run(
+        &c,
+        "return-claude",
+        "claudeAgent",
+        "haiku",
+        "Reply only with the newest codeword introduced in this conversation. Do not use tools.",
+        false,
+    );
+    let response = answer(&p, "return-claude");
+    assert!(response.contains(&words[2]));
+    assert!(!response.contains(&words[0]) && !response.contains(&words[1]));
+    assert_ne!(native(&p, "return-claude"), fresh_claude);
+    assert!(
+        p["messages"].to_string().contains(&words[0]),
+        "reset must retain visible history"
+    );
+    let marked = p["turnItems"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|i| i["type"] == "user_message" && i["freshContext"] == true)
+        .count();
+    assert_eq!(marked, 2);
+    std::fs::write(
+        output.join("projection.json"),
+        serde_json::to_vec_pretty(&p).unwrap(),
+    )
+    .unwrap();
+    if let Some(state) = state {
+        let db = state.db.lock().unwrap();
+        let mut copy = rusqlite::Connection::open(output.join("o3.sqlite")).unwrap();
+        rusqlite::backup::Backup::new(&db, &mut copy)
+            .unwrap()
+            .run_to_completion(128, Duration::from_millis(10), None)
+            .unwrap();
+    } else {
+        let db = rusqlite::Connection::open_with_flags(
+            dir.join("userdata/statev2.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap();
+        let mut copy = rusqlite::Connection::open(output.join("t3-reference.sqlite")).unwrap();
+        rusqlite::backup::Backup::new(&db, &mut copy)
+            .unwrap()
+            .run_to_completion(128, Duration::from_millis(10), None)
+            .unwrap();
+        let migration: i64 = copy
+            .query_row(
+                "SELECT max(migration_id) FROM effect_sql_migrations",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(migration, 80);
+    }
+    std::fs::write(output.join("result.json"),serde_json::to_vec_pretty(&json!({"engine":engine,"nativeTurns":8,"freshMarkers":marked,"claudeReset":true,"codexReset":true,"oldHistoryVisible":true,"postResetSwitch":true,"nativeIdentityChanges":true})).unwrap()).unwrap();
+    println!("FRESH_CONTEXT_NATIVE_ACCEPTANCE_PASS: eight real turns, fresh identities, forgetting, continuation, provider switch and visible history");
+}
+
+fn capture_native_task_text() {
+    fn visit(dir: &std::path::Path, messages: &mut Vec<Value>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            if kind.is_dir() {
+                visit(&entry.path(), messages);
+            } else if kind.is_file() && entry.path().extension().is_some_and(|v| v == "jsonl") {
+                let Ok(text) = std::fs::read_to_string(entry.path()) else {
+                    continue;
+                };
+                for line in text.lines() {
+                    let Ok(record) = serde_json::from_str::<Value>(line) else {
+                        continue;
+                    };
+                    if !matches!(record["type"].as_str(), Some("user" | "assistant")) {
+                        continue;
+                    }
+                    let content = &record["message"]["content"];
+                    let text = if let Some(text) = content.as_str() {
+                        text.to_owned()
+                    } else {
+                        content
+                            .as_array()
+                            .map(|blocks| {
+                                blocks
+                                    .iter()
+                                    .filter(|b| b["type"] == "text")
+                                    .filter_map(|b| b["text"].as_str())
+                                    .collect::<Vec<_>>()
+                                    .join("\n")
+                            })
+                            .unwrap_or_default()
+                    };
+                    if text.contains("codeword")
+                        || text.contains("WORD")
+                        || text == "READY"
+                        || text == "OLD:NONE"
+                    {
+                        messages.push(json!({"sessionId":record["sessionId"],"type":record["type"],"text":text}));
+                    }
+                }
+            }
+        }
+    }
+    let mut messages = Vec::new();
+    visit(
+        std::path::Path::new("/tmp/home/.claude/projects"),
+        &mut messages,
+    );
+    std::fs::write(
+        "/evidence/scheduled-native-text.json",
+        serde_json::to_vec_pretty(&messages).unwrap(),
+    )
+    .unwrap();
+}
+
+fn task_turn(c: &Connection, id: &str) -> (Value, Value) {
+    let shell = || {
+        c.request_json("GET", "/api/orchestration/shell", None, true)
+            .unwrap()
+    };
+    let before = shell()["threads"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["id"].clone())
+        .collect::<Vec<_>>();
+    let task = c.rpc("scheduledTasks.runNow", json!({"id":id})).unwrap()["task"].clone();
+    assert_eq!(task["lastRunStatus"], "succeeded", "{task}");
+    let thread = task["threadId"]
+        .as_str()
+        .map(str::to_owned)
+        .unwrap_or_else(|| {
+            shell()["threads"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|t| !before.contains(&t["id"]))
+                .unwrap()["id"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        });
+    let deadline = Instant::now() + Duration::from_secs(100);
+    loop {
+        let p = c
+            .rpc(
+                "orchestration.getThreadProjection",
+                json!({"threadId":thread}),
+            )
+            .unwrap();
+        let runs = p["runs"].as_array().unwrap();
+        if let Some(run) = runs.last() {
+            assert!(
+                !matches!(
+                    run["status"].as_str(),
+                    Some("failed" | "cancelled" | "interrupted")
+                ),
+                "{run}"
+            );
+            if run["status"] == "completed" {
+                std::fs::write(
+                    format!("/evidence/scheduled-{id}-{}.json", task["runCount"]),
+                    serde_json::to_vec_pretty(&p).unwrap(),
+                )
+                .unwrap();
+                capture_native_task_text();
+                println!("SCHEDULED_NATIVE_STAGE_PASS {id} {}", task["runCount"]);
+                return (task, p);
+            }
+        }
+        assert!(Instant::now() < deadline, "Scheduled native turn timed out");
+        std::thread::sleep(Duration::from_millis(120));
+    }
+}
+fn last_answer(p: &Value) -> String {
+    let runs = p["runs"].as_array().unwrap();
+    answer(p, runs.last().unwrap()["userMessageId"].as_str().unwrap())
+}
+
+#[test]
+#[ignore = "real scheduled CLI turns; use tools/live-fresh-context --scheduled-tasks"]
+fn scheduled_tasks_native_conversation_modes() {
+    let (c, state, _reference, dir, output) = native_backend();
+    let engine = if state.is_some() { "o3" } else { "t3-4262" };
+    let workspace = dir.join("workspace");
+    std::fs::create_dir_all(&workspace).unwrap();
+    c.rpc("projects.mutate",json!({"type":"project.create","commandId":"project","projectId":"p","title":"Scheduled acceptance","workspaceRoot":workspace})).unwrap();
+    let words = (0..2)
+        .map(|_| {
+            format!(
+                "WORD{}",
+                o3_server::store::random_id().unwrap().replace('-', "")
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut input = json!({"id":"bound","title":"Scheduled acceptance","prompt":format!("Remember codeword {}. Reply READY only. Do not use tools.",words[0]),"enabled":false,"schedule":{"type":"interval","everyMs":60000},"projectId":"p","threadMode":"continue","workspaceStrategy":{"type":"root"},"modelSelection":{"instanceId":"claudeAgent","model":"haiku"},"runtimeMode":"approval-required","interactionMode":"default","createdBy":"agent","creationSource":"server"});
+    let first = c.rpc("scheduledTasks.upsert", input.clone()).unwrap()["task"].clone();
+    assert_eq!(first["threadMode"], "continue");
+    assert!(first["threadId"].is_null());
+    let (first, p) = task_turn(&c, "bound");
+    assert!(last_answer(&p).contains("READY"));
+    let first_native = native(
+        &p,
+        p["runs"].as_array().unwrap().last().unwrap()["userMessageId"]
+            .as_str()
+            .unwrap(),
+    );
+    input["prompt"] =
+        json!("Reply only with the codeword from the earlier user message. Do not use tools.");
+    c.rpc("scheduledTasks.upsert", input.clone()).unwrap();
+    let (second, p) = task_turn(&c, "bound");
+    assert_eq!(second["threadId"], first["threadId"]);
+    assert!(last_answer(&p).contains(&words[0]));
+    assert_eq!(
+        native(
+            &p,
+            p["runs"].as_array().unwrap().last().unwrap()["userMessageId"]
+                .as_str()
+                .unwrap()
+        ),
+        first_native
+    );
+    input["threadMode"] = json!("fresh_session");
+    input["modelSelection"] = json!({"instanceId":"codex","model":"gpt-6.1-sol"});
+    input["prompt"]=json!(format!("For future messages, remember new codeword {}. Did any EARLIER user message before this one name a different codeword? Reply OLD:<that earlier word> or OLD:NONE if no such earlier message is available. Do not use tools.",words[1]));
+    let updated = c.rpc("scheduledTasks.upsert", input.clone()).unwrap()["task"].clone();
+    assert_eq!(updated["threadId"], first["threadId"]);
+    let (third, p) = task_turn(&c, "bound");
+    assert_eq!(third["threadId"], first["threadId"]);
+    assert!(last_answer(&p).contains("NONE"), "{}", last_answer(&p));
+    assert!(!last_answer(&p).contains(&words[0]));
+    let run = p["runs"].as_array().unwrap().last().unwrap();
+    assert_eq!(run["freshContext"], true);
+    assert_eq!(run["providerInstanceId"], "claudeAgent");
+    assert_ne!(
+        native(&p, run["userMessageId"].as_str().unwrap()),
+        first_native
+    );
+    input["threadMode"] = json!("continue");
+    input["threadId"] = Value::Null;
+    input["prompt"]=json!("Reply only with the NEW codeword introduced in the previous user message. Do not use tools.");
+    c.rpc("scheduledTasks.upsert", input.clone()).unwrap();
+    let (fourth, p) = task_turn(&c, "bound");
+    assert_eq!(fourth["threadId"], first["threadId"]);
+    assert!(last_answer(&p).contains(&words[1]));
+    assert_eq!(p["messages"].as_array().unwrap().len(), 8);
+    for message in p["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|m| m["role"] == "user")
+    {
+        assert_eq!(message["scheduledTaskId"], "bound");
+        assert_eq!(message["createdBy"], "agent");
+        assert_eq!(message["creationSource"], "server");
+    }
+    let items = p["turnItems"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|i| i["type"] == "user_message")
+        .collect::<Vec<_>>();
+    assert_eq!(items.len(), 4);
+    assert!(items.iter().all(|i| i["scheduledTaskId"] == "bound"));
+    std::fs::write(
+        output.join("scheduled-projection.json"),
+        serde_json::to_vec_pretty(&p).unwrap(),
+    )
+    .unwrap();
+    input["id"] = json!("new");
+    input["threadMode"] = json!("new_thread");
+    input["modelSelection"] = json!({"instanceId":"claudeAgent","model":"haiku"});
+    input["prompt"] = json!("Use no tools. Reply with only READY.");
+    c.rpc("scheduledTasks.upsert", input).unwrap();
+    let (new_first, p1) = task_turn(&c, "new");
+    let (new_second, p2) = task_turn(&c, "new");
+    assert!(new_first["threadId"].is_null());
+    assert!(new_second["threadId"].is_null());
+    assert_ne!(p1["thread"]["id"], p2["thread"]["id"]);
+    assert_ne!(p1["thread"]["id"], first["threadId"]);
+    assert_eq!(p1["messages"].as_array().unwrap().len(), 2);
+    assert_eq!(p2["messages"].as_array().unwrap().len(), 2);
+    let mut copy = rusqlite::Connection::open(output.join("scheduled.sqlite")).unwrap();
+    if let Some(state) = &state {
+        rusqlite::backup::Backup::new(&state.db.lock().unwrap(), &mut copy)
+            .unwrap()
+            .run_to_completion(128, Duration::ZERO, None)
+            .unwrap();
+    } else {
+        let source = rusqlite::Connection::open(dir.join("userdata/statev2.sqlite")).unwrap();
+        rusqlite::backup::Backup::new(&source, &mut copy)
+            .unwrap()
+            .run_to_completion(128, Duration::ZERO, None)
+            .unwrap();
+    }
+    std::fs::write(output.join("scheduled-result.json"),serde_json::to_vec_pretty(&json!({"engine":engine,"nativeTurns":6,"firstRunBinds":true,"continuesSameSession":true,"freshSessionForgets":true,"boundProviderPreserved":true,"newThreadRunsUnbound":true,"taskMessageProvenance":true,"oldHistoryVisible":true})).unwrap()).unwrap();
+    println!("SCHEDULED_NATIVE_ACCEPTANCE_PASS: bound continuation, fresh-session forgetting, provider selection, new-thread isolation and task provenance");
+}
+
+#[test]
+#[ignore = "official task persistence without inference; use tools/live-fresh-context --scheduled-store --reference-root <release>"]
+fn official_scheduled_store_retains_pending_coalescence_and_replay() {
+    use std::io::{Read, Write};
+    assert_eq!(
+        std::env::var("O3_FRESH_CONTEXT_CONTAINER").as_deref(),
+        Ok("1")
+    );
+    assert!(std::path::Path::new("/run/.containerenv").is_file());
+    // This scenario must never inherit provider authentication or start a native turn.
+    assert!(!PathBuf::from("/input/claude.json").exists());
+    assert!(!PathBuf::from("/input/codex.json").exists());
+    let output = PathBuf::from(std::env::var("O3_FRESH_CONTEXT_EVIDENCE").unwrap());
+    assert_eq!(output, PathBuf::from("/evidence"));
+    let profile = PathBuf::from("/tmp/scheduled-store-reference");
+    let binary = std::env::var("O3_FRESH_CONTEXT_REFERENCE").unwrap();
+    let (client, process) = start_reference(&binary, &profile, &output);
+    let base = std::fs::read_to_string(output.join("reference-address.txt")).unwrap();
+    let workspace = profile.join("workspace");
+    std::fs::create_dir_all(&workspace).unwrap();
+    client.rpc("projects.mutate", json!({"type":"project.create","commandId":"store-project","projectId":"p","title":"Synthetic scheduled store","workspaceRoot":workspace})).unwrap();
+    let native_http = webhook_http_probe(&client, &base);
+    let probe = support::start(|_| {});
+    let probe_client = probe.connect();
+    probe_client.rpc("projects.mutate",json!({"type":"project.create","commandId":"probe-project","projectId":"p","title":"Synthetic probe","workspaceRoot":workspace})).unwrap();
+    let o3_http = webhook_http_probe(&probe_client, &probe.base);
+    assert_eq!(
+        o3_http, native_http,
+        "Native HTTP/receipt behavior diverged"
+    );
+    std::fs::write(
+        output.join("native-http-comparison.json"),
+        serde_json::to_vec_pretty(&native_http).unwrap(),
+    )
+    .unwrap();
+    drop(probe_client);
+    drop(probe);
+    let mut input = json!({"id":"continue","title":"Synthetic task","prompt":"No inference in this fixture","enabled":false,"schedule":{"type":"interval","everyMs":60000},"projectId":"p","threadMode":"continue","workspaceStrategy":{"type":"root"},"modelSelection":{"instanceId":"claudeAgent","model":"haiku"},"runtimeMode":"approval-required","interactionMode":"default","createdBy":"agent","creationSource":"server"});
+    client.rpc("scheduledTasks.upsert", input.clone()).unwrap();
+    input["id"] = json!("fresh");
+    input["threadMode"] = json!("fresh_session");
+    client.rpc("scheduledTasks.upsert", input.clone()).unwrap();
+    input["id"] = json!("unsigned");
+    input["threadMode"] = json!("new_thread");
+    input["schedule"] = json!({"type":"webhook"});
+    client.rpc("scheduledTasks.upsert", input.clone()).unwrap();
+    input["id"] = json!("signed");
+    input["enabled"] = json!(true);
+    input["prompt"] = json!("Inspect {{body.action}}");
+    input["schedule"] = json!({"type":"webhook","signature":{"header":"x-hub-signature-256","encoding":"hex","prefix":"sha256=","secret":"synthetic-store-key"},"dedupe":{"replayKey":"{{body.id}}","coalesceKey":"{{body.group}}","coalesceWindowSeconds":3600},"maxDeliveryAgeMinutes":120});
+    let signed = client.rpc("scheduledTasks.upsert", input).unwrap()["task"].clone();
+    assert_eq!(signed["webhook"]["hasSecret"], true);
+    let path = signed["webhook"]["path"].as_str().unwrap();
+    let post = |body: &str| {
+        use hmac::{Hmac, Mac};
+        let mut mac = Hmac::<sha2::Sha256>::new_from_slice(b"synthetic-store-key").unwrap();
+        mac.update(body.as_bytes());
+        let signature = mac
+            .finalize()
+            .into_bytes()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let mut stream = std::net::TcpStream::connect(base.trim_start_matches("http://")).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        write!(stream,"POST {path}?fixture=store HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\nX-Hub-Signature-256: sha256={signature}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).unwrap();
+        assert!(response.starts_with("HTTP/1.1 202"), "{response}");
+        response
+    };
+    let first = r#"{"id":"one","group":"batch","action":"first"}"#;
+    let second = r#"{"id":"two","group":"batch","action":"second"}"#;
+    assert!(post(first).contains("accepted"));
+    assert!(post(second).contains("coalesced"));
+    assert!(post(first).contains("duplicate"));
+    let mut receipt_checks = vec![];
+    for input in [
+        json!({"id":"signed"}),
+        json!({"id":"signed","acceptAnyOutcome":true}),
+        json!({"id":"unsigned"}),
+        json!({"id":"absent"}),
+    ] {
+        let result = client
+            .rpc("scheduledTasks.listWebhookDeliveries", input.clone())
+            .unwrap();
+        receipt_checks.push(("scheduledTasks.listWebhookDeliveries", input, result));
+    }
+    let summaries = receipt_checks[1].2["deliveries"]
+        .as_array()
+        .unwrap()
+        .clone();
+    for row in summaries {
+        for accept in [false, true] {
+            let input = json!({"id":"signed","deliveryId":row["id"],"acceptAnyOutcome":accept});
+            let result = client.rpc("scheduledTasks.getWebhookDelivery", input.clone());
+            if accept || row["outcome"] == "accepted" {
+                receipt_checks.push(("scheduledTasks.getWebhookDelivery", input, result.unwrap()));
+            } else {
+                assert!(result.unwrap_err().contains("Webhook delivery not found."));
+            }
+        }
+    }
+    drop(client);
+    drop(process);
+    let source = rusqlite::Connection::open(profile.join("userdata/statev2.sqlite")).unwrap();
+    let mut snapshot = serde_json::Map::new();
+    for table in [
+        "scheduled_tasks",
+        "scheduled_task_webhook_deliveries",
+        "scheduled_task_webhook_pending",
+        "scheduled_task_webhook_replay_keys",
+        "scheduled_task_webhook_relay_deliveries",
+    ] {
+        let mut query = source
+            .prepare(&format!("SELECT * FROM {table} ORDER BY 1"))
+            .unwrap();
+        let names = query
+            .column_names()
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect::<Vec<_>>();
+        let rows = query
+            .query_map([], |row| {
+                let mut value = serde_json::Map::new();
+                for (index, name) in names.iter().enumerate() {
+                    let field = match row.get_ref(index)? {
+                        rusqlite::types::ValueRef::Null => Value::Null,
+                        rusqlite::types::ValueRef::Integer(n) => json!(n),
+                        rusqlite::types::ValueRef::Text(text) => {
+                            json!(std::str::from_utf8(text).unwrap())
+                        }
+                        other => panic!("Unexpected synthetic store value: {other:?}"),
+                    };
+                    value.insert(name.clone(), field);
+                }
+                Ok(Value::Object(value))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        snapshot.insert(table.to_owned(), json!(rows));
+    }
+    let snapshot = Value::Object(snapshot);
+    let tasks = snapshot["scheduled_tasks"].as_array().unwrap();
+    assert_eq!(tasks.len(), 4);
+    assert!(tasks
+        .iter()
+        .all(|task| task["run_count"] == 0 && task["last_run_at"].is_null()));
+    assert_eq!(
+        snapshot["scheduled_task_webhook_pending"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let pending = &snapshot["scheduled_task_webhook_pending"][0];
+    assert_eq!(pending["state"], "pending");
+    assert!(pending["due_at"].as_i64().unwrap() > o3_server::store::now_ms() + 3_500_000);
+    let task: Value = serde_json::from_str(pending["task_json"].as_str().unwrap()).unwrap();
+    let request: Value = serde_json::from_str(pending["request_json"].as_str().unwrap()).unwrap();
+    let deliveries: Value =
+        serde_json::from_str(pending["delivery_ids_json"].as_str().unwrap()).unwrap();
+    assert_eq!(task["id"], "signed");
+    assert_eq!(request["bodyText"], second);
+    assert_eq!(deliveries.as_array().unwrap().len(), 2);
+    assert_eq!(
+        snapshot["scheduled_task_webhook_replay_keys"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    let count: i64 = source
+        .query_row(
+            "SELECT count(*) FROM orchestration_v2_projection_runs",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 0, "Store fixture must not start inference");
+    // Restart the actual runtime without delivering the future pending window.
+    let (client, process) = start_reference(&binary, &profile, &output);
+    let restarted = rusqlite::Connection::open(profile.join("userdata/statev2.sqlite")).unwrap();
+    let retained: (String, String, String, i64, String) = restarted.query_row(
+        "SELECT task_json,request_json,delivery_ids_json,due_at,state FROM scheduled_task_webhook_pending",
+        [], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?)),
+    ).unwrap();
+    assert_eq!(retained.0, pending["task_json"].as_str().unwrap());
+    assert_eq!(retained.1, pending["request_json"].as_str().unwrap());
+    assert_eq!(retained.2, pending["delivery_ids_json"].as_str().unwrap());
+    assert_eq!(retained.3, pending["due_at"].as_i64().unwrap());
+    assert_eq!(retained.4, "pending");
+    let replay_count: i64 = restarted
+        .query_row(
+            "SELECT count(*) FROM scheduled_task_webhook_replay_keys",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(replay_count, 2);
+    let runs: i64 = restarted
+        .query_row(
+            "SELECT count(*) FROM orchestration_v2_projection_runs",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(runs, 0);
+    drop(restarted);
+    drop(client);
+    drop(process);
+    // Export only synthetic task tables into an empty, pinned schema. Authentication,
+    // pairing sessions, runtime logs and other profile data are never copied here.
+    let mut sanitized = rusqlite::Connection::open(output.join("scheduled-store.sqlite")).unwrap();
+    sanitized
+        .execute_batch(include_str!("fixtures/t3-statev2-80.sql"))
+        .unwrap();
+    let tx = sanitized.transaction().unwrap();
+    for table in [
+        "scheduled_tasks",
+        "scheduled_task_webhook_deliveries",
+        "scheduled_task_webhook_pending",
+        "scheduled_task_webhook_replay_keys",
+        "scheduled_task_webhook_relay_deliveries",
+    ] {
+        let rows = &snapshot[table];
+        for row in rows.as_array().unwrap() {
+            let row = row.as_object().unwrap();
+            let columns = row.keys().cloned().collect::<Vec<_>>().join(",");
+            let placeholders = vec!["?"; row.len()].join(",");
+            let values = row.values().map(|field| match field {
+                Value::Null => rusqlite::types::Value::Null,
+                Value::String(s) => rusqlite::types::Value::Text(s.clone()),
+                Value::Number(n) => rusqlite::types::Value::Integer(n.as_i64().unwrap()),
+                other => panic!("Unexpected store fixture field: {other:?}"),
+            });
+            tx.execute(
+                &format!("INSERT INTO {table} ({columns}) VALUES ({placeholders})"),
+                rusqlite::params_from_iter(values),
+            )
+            .unwrap();
+        }
+    }
+    tx.commit().unwrap();
+    drop(source);
+    // Hand ownership to O3, edit through its task service, and let the real reference read
+    // that edit over its public subscription. No provider is configured on the O3 side.
+    let state = Arc::new(State::open(&profile.join("userdata")).unwrap());
+    let mut shared = o3_server::t3_shared::start(&state).unwrap().unwrap();
+    for (method, input, expected) in &receipt_checks {
+        assert_eq!(
+            o3_server::scheduled::call(&state, method, input)
+                .unwrap()
+                .unwrap(),
+            *expected,
+            "{method}: {input}"
+        );
+    }
+    let mut input = o3_server::scheduled::call(&state, "scheduledTasks.list", &json!({}))
+        .unwrap()
+        .unwrap()["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|task| task["id"] == "continue")
+        .unwrap()
+        .clone();
+    input["title"] = json!("O3 task handover");
+    let mut rotated_tasks = vec![];
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            o3_server::scheduled::call(&state, "scheduledTasks.upsert", &input)
+                .unwrap()
+                .unwrap();
+            for id in ["signed", "unsigned"] {
+                let rotated = o3_server::scheduled::call(
+                    &state,
+                    "scheduledTasks.rotateWebhookToken",
+                    &json!({"id":id}),
+                )
+                .unwrap()
+                .unwrap();
+                rotated_tasks.push(rotated["task"].clone());
+            }
+        });
+    o3_server::t3_shared::export(&state, &mut shared).unwrap();
+    drop(shared);
+    drop(state);
+    let (client, process) = start_reference(&binary, &profile, &output);
+    let first_snapshot = std::cell::RefCell::new(None);
+    let received = std::cell::Cell::new(false);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    client
+        .subscribe(
+            "scheduledTasks.subscribe",
+            json!({}),
+            || received.get() || Instant::now() > deadline,
+            |item| {
+                if let Some(item) = item {
+                    first_snapshot.replace(Some(item));
+                    received.set(true);
+                }
+                Ok(())
+            },
+        )
+        .unwrap();
+    let public = first_snapshot
+        .into_inner()
+        .expect("Reference task subscription did not yield a snapshot");
+    let tasks = public["tasks"].as_array().unwrap();
+    for rotated in &rotated_tasks {
+        let observed = tasks
+            .iter()
+            .find(|task| task["id"] == rotated["id"])
+            .unwrap();
+        assert_eq!(observed["webhook"], rotated["webhook"]);
+        assert_eq!(observed["runCount"], 0);
+    }
+    for (method, input, expected) in &receipt_checks {
+        assert_eq!(
+            client.rpc(method, input.clone()).unwrap(),
+            *expected,
+            "{method}: {input}"
+        );
+    }
+    let native_rotation = client
+        .rpc(
+            "scheduledTasks.rotateWebhookToken",
+            json!({"id":"unsigned"}),
+        )
+        .unwrap()["task"]
+        .clone();
+    assert_ne!(
+        native_rotation["webhook"]["path"],
+        rotated_tasks
+            .iter()
+            .find(|task| task["id"] == "unsigned")
+            .unwrap()["webhook"]["path"]
+    );
+    assert_eq!(
+        tasks.iter().find(|task| task["id"] == "continue").unwrap()["title"],
+        "O3 task handover"
+    );
+    let mut native_edit = tasks
+        .iter()
+        .find(|task| task["id"] == "fresh")
+        .unwrap()
+        .clone();
+    native_edit["title"] = json!("T3 task handover returned");
+    client.rpc("scheduledTasks.upsert", native_edit).unwrap();
+    drop(client);
+    drop(process);
+    let state = State::open(&profile.join("userdata")).unwrap();
+    let shared = o3_server::t3_shared::start(&state).unwrap().unwrap();
+    let body: String = state
+        .db
+        .lock()
+        .unwrap()
+        .query_row(
+            "SELECT body FROM records WHERE kind='scheduledTasks' AND id='fresh'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let returned: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(returned["title"], "T3 task handover returned");
+    assert_eq!(returned["threadMode"], "fresh_session");
+    let returned_hook: String = state
+        .db
+        .lock()
+        .unwrap()
+        .query_row(
+            "SELECT body FROM records WHERE kind='scheduledTasks' AND id='unsigned'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&returned_hook).unwrap()["webhook"],
+        native_rotation["webhook"]
+    );
+    let pending_after: (String, String, String) = state
+        .db
+        .lock()
+        .unwrap()
+        .query_row(
+            "SELECT task_json,request_json,delivery_ids_json FROM scheduled_task_webhook_pending",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&pending_after.0).unwrap(),
+        task
+    );
+    assert_eq!(
+        serde_json::from_str::<Value>(&pending_after.1).unwrap(),
+        request
+    );
+    assert_eq!(
+        serde_json::from_str::<Value>(&pending_after.2).unwrap(),
+        deliveries
+    );
+    let runs: i64 = shared
+        .query_row(
+            "SELECT count(*) FROM orchestration_v2_projection_runs",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(runs, 0);
+    drop(shared);
+    drop(state);
+    // Refresh the filtered export from the final handover, still copying only task tables.
+    sanitized
+        .execute(
+            "ATTACH DATABASE ?1 AS task_source",
+            [profile.join("userdata/statev2.sqlite").to_str().unwrap()],
+        )
+        .unwrap();
+    let tx = sanitized.transaction().unwrap();
+    for table in [
+        "scheduled_task_webhook_replay_keys",
+        "scheduled_task_webhook_pending",
+        "scheduled_task_webhook_relay_deliveries",
+        "scheduled_task_webhook_deliveries",
+        "scheduled_tasks",
+    ] {
+        tx.execute(&format!("DELETE FROM {table}"), []).unwrap();
+    }
+    for table in [
+        "scheduled_tasks",
+        "scheduled_task_webhook_deliveries",
+        "scheduled_task_webhook_pending",
+        "scheduled_task_webhook_replay_keys",
+        "scheduled_task_webhook_relay_deliveries",
+    ] {
+        tx.execute(
+            &format!("INSERT INTO {table} SELECT * FROM task_source.{table}"),
+            [],
+        )
+        .unwrap();
+    }
+    tx.commit().unwrap();
+    sanitized
+        .execute_batch("DETACH DATABASE task_source")
+        .unwrap();
+    std::fs::write(
+        output.join("scheduled-store.json"),
+        serde_json::to_vec_pretty(&snapshot).unwrap(),
+    )
+    .unwrap();
+    std::fs::write(output.join("scheduled-store-result.json"), serde_json::to_vec_pretty(&json!({"reference":"v0.1.8-nightly.20261106.4262","tasks":4,"pending":1,"coalescedDeliveryIds":2,"replayKeys":2,"nativeTurns":0,"providerCredentials":false,"retainedAfterRestart":true,"exportContainsTaskTablesOnly":true,"o3TaskEditReadByT3Subscription":true,"nativeTaskEditReadByO3":true,"pendingPreservedAcrossHandover":true,"receiptReadComparisonsPerHandover":receipt_checks.len(),"o3RotatedTokensReadByT3":rotated_tasks.len(),"nativeRotationReadByO3":true})).unwrap()).unwrap();
+    println!("SCHEDULED_STORE_REFERENCE_PASS: task modes, pending snapshot, latest coalesced request and replay retained without inference");
+}
+
+/// Temporary hooks never become due and the oversized prompt never reaches a provider.
+fn webhook_http_probe(client: &Connection, base: &str) -> Value {
+    use std::io::{Read, Write};
+    let mut input = json!({"id":"http-probe","title":"HTTP probe","prompt":"{{request}}","enabled":true,"schedule":{"type":"webhook","filters":[{"path":"headers.x-event","op":"equals","value":"accept"}]},"projectId":"p","threadMode":"new_thread","workspaceStrategy":{"type":"root"},"modelSelection":{"instanceId":"claudeAgent","model":"haiku"},"runtimeMode":"approval-required","interactionMode":"default"});
+    let hook = client.rpc("scheduledTasks.upsert", input.clone()).unwrap()["task"].clone();
+    let path = hook["webhook"]["path"].as_str().unwrap().to_owned();
+    let call = |method: &str, path: &str, body: &str, event: &str| -> Value {
+        let mut stream =
+            std::net::TcpStream::connect(base.trim().trim_start_matches("http://")).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        write!(stream,"{method} {path} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\nAuthorization: synthetic-value\r\nX-Event: {event}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).unwrap();
+        let status: u16 = response.split_whitespace().nth(1).unwrap().parse().unwrap();
+        let (headers, body) = response.split_once("\r\n\r\n").unwrap();
+        let outcome = headers
+            .lines()
+            .find_map(|line| {
+                let (key, value) = line.split_once(':')?;
+                key.eq_ignore_ascii_case("x-t3-hook-outcome")
+                    .then(|| value.trim())
+            })
+            .unwrap_or("");
+        let mut body: Value = if body.is_empty() {
+            Value::Null
+        } else {
+            serde_json::from_str(body).unwrap()
+        };
+        if body["deliveryId"].is_string() {
+            body["deliveryId"] = json!("delivery:synthetic");
+        }
+        json!({"status":status,"outcome":outcome,"body":body})
+    };
+    let mut responses = vec![call(
+        "POST",
+        &path,
+        &json!({"text":"x".repeat(121000)}).to_string(),
+        "accept",
+    )];
+    assert_eq!(responses[0]["outcome"], "prompt_too_long");
+    input["schedule"]["dedupe"] = json!({"replayKey":"{{body.id}}","coalesceKey":"{{query.group}}","coalesceWindowSeconds":3600});
+    client.rpc("scheduledTasks.upsert", input).unwrap();
+    for (index, method) in ["GET", "POST", "PUT", "PATCH"].into_iter().enumerate() {
+        responses.push(call(
+            method,
+            &format!("{path}?group=batch&token=synthetic"),
+            &json!({"id":format!("method-{index}"),"text":"latest"}).to_string(),
+            "accept",
+        ));
+    }
+    responses.push(call(
+        "POST",
+        &format!("{path}?group=batch"),
+        r#"{"id":"method-0","text":"duplicate"}"#,
+        "accept",
+    ));
+    responses.push(call("POST", &path, r#"{"text":"filtered"}"#, "reject"));
+    responses.push(call("HEAD", &path, "", "accept"));
+    client
+        .rpc(
+            "scheduledTasks.setEnabled",
+            json!({"id":"http-probe","enabled":false}),
+        )
+        .unwrap();
+    responses.push(call("POST", &path, "{}", "accept"));
+    let wrong = format!("{}/wrong", path.rsplit_once('/').unwrap().0);
+    responses.push(call("POST", &wrong, "{}", "accept"));
+    let summaries = client
+        .rpc(
+            "scheduledTasks.listWebhookDeliveries",
+            json!({"id":"http-probe","acceptAnyOutcome":true}),
+        )
+        .unwrap();
+    let mut details = vec![];
+    let nonce = regex::Regex::new(r"[0-9a-f]{12}").unwrap();
+    for row in summaries["deliveries"].as_array().unwrap() {
+        let mut detail = client
+            .rpc(
+                "scheduledTasks.getWebhookDelivery",
+                json!({"id":"http-probe","deliveryId":row["id"],"acceptAnyOutcome":true}),
+            )
+            .unwrap()["delivery"]
+            .clone();
+        detail.as_object_mut().unwrap().remove("id");
+        detail.as_object_mut().unwrap().remove("receivedAt");
+        if let Some(prompt) = detail["renderedPrompt"].as_str() {
+            detail["renderedPrompt"] = json!(nonce.replace_all(prompt, "012345abcdef").as_ref());
+        }
+        details.push(detail);
+    }
+    client
+        .rpc("scheduledTasks.delete", json!({"id":"http-probe"}))
+        .unwrap();
+    json!({"responses":responses,"deliveries":details})
+}
+
+#[test]
+#[ignore = "exports a disposable native acceptance database inside rootless podman; no native turns"]
+fn shared_native_projection_export() {
+    assert_eq!(
+        std::env::var("O3_FRESH_CONTEXT_CONTAINER").as_deref(),
+        Ok("1")
+    );
+    assert!(std::path::Path::new("/run/.containerenv").is_file());
+    let dir = PathBuf::from("/tmp/shared-export-profile");
+    std::fs::create_dir(&dir).unwrap();
+    std::fs::copy("/input/native.sqlite", dir.join("o3.sqlite")).unwrap();
+    let state = State::open(&dir).unwrap();
+    let shared = rusqlite::Connection::open("/evidence/statev2.sqlite").unwrap();
+    shared
+        .execute_batch(include_str!("fixtures/t3-statev2-80.sql"))
+        .unwrap();
+    drop(shared);
+    let mut shared = o3_server::t3_shared::open(std::path::Path::new("/evidence"))
+        .unwrap()
+        .unwrap();
+    let exported = o3_server::t3_shared::export(&state, &mut shared).unwrap();
+    assert!(exported > 0);
+    let marked:i64=shared.query_row("SELECT count(*) FROM orchestration_v2_projection_runs WHERE json_extract(payload_json,'$.freshContext')=1",[],|r|r.get(0)).unwrap();
+    assert_eq!(marked, 2);
+    let messages: i64 = shared
+        .query_row(
+            "SELECT count(*) FROM orchestration_v2_projection_messages",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(messages, 16);
+    std::fs::write("/evidence/shared-result.json",serde_json::to_vec_pretty(&json!({"exportedRecords":exported,"freshRuns":marked,"messages":messages,"migrationHead":80})).unwrap()).unwrap();
+    if let Ok(binary) = std::env::var("O3_FRESH_CONTEXT_REFERENCE") {
+        drop(shared);
+        let reference_profile = PathBuf::from("/tmp/shared-handover-reference");
+        let userdata = reference_profile.join("userdata");
+        std::fs::create_dir_all(&userdata).unwrap();
+        std::fs::copy("/evidence/statev2.sqlite", userdata.join("statev2.sqlite")).unwrap();
+        // Both servers take turns owning the same profile; retain O3's private records and cursor.
+        let mut local = rusqlite::Connection::open(userdata.join("o3.sqlite")).unwrap();
+        rusqlite::backup::Backup::new(&state.db.lock().unwrap(), &mut local)
+            .unwrap()
+            .run_to_completion(128, Duration::ZERO, None)
+            .unwrap();
+        drop(local);
+        let (client, process) = start_reference(
+            &binary,
+            &reference_profile,
+            std::path::Path::new("/evidence"),
+        );
+        let before = projection(&client);
+        assert_eq!(before["messages"].as_array().unwrap().len(), 16);
+        assert_eq!(
+            before["runs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|r| r["freshContext"] == true)
+                .count(),
+            2
+        );
+        client.rpc("orchestration.dispatchCommand", json!({"type":"thread.metadata.update","commandId":"reference-title","threadId":"t","title":"Renamed by T3 nightly"})).unwrap();
+        client.rpc("projects.mutate", json!({"type":"project.update","commandId":"reference-project","projectId":"p","pinned":true,"archived":true})).unwrap();
+        assert_eq!(
+            projection(&client)["thread"]["title"],
+            "Renamed by T3 nightly"
+        );
+        drop(client);
+        drop(process);
+        let recovered = Arc::new(State::open(&userdata).unwrap());
+        let mut shared = o3_server::t3_shared::start(&recovered).unwrap().unwrap();
+        let p = o3_server::events::projection(&recovered, "t").unwrap();
+        assert_eq!(p["thread"]["title"], "Renamed by T3 nightly");
+        assert_eq!(p["messages"].as_array().unwrap().len(), 16);
+        let project: Value = serde_json::from_str(
+            &recovered
+                .db
+                .lock()
+                .unwrap()
+                .query_row(
+                    "SELECT body FROM records WHERE kind='project' AND id='p'",
+                    [],
+                    |r| r.get::<_, String>(0),
+                )
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(!project["pinnedAt"].is_null());
+        assert!(!project["archivedAt"].is_null());
+        o3_server::events::dispatch(&recovered, &json!({"type":"thread.metadata.update","commandId":"o3-title","threadId":"t","title":"Returned by O3"})).unwrap();
+        o3_server::events::mutate_project(&recovered, &json!({"type":"project.update","commandId":"o3-project","projectId":"p","pinned":false,"archived":false})).unwrap();
+        assert!(o3_server::t3_shared::export(&recovered, &mut shared).unwrap() > 0);
+        let rejected: i64 = recovered
+            .db
+            .lock()
+            .unwrap()
+            .query_row("SELECT count(*) FROM t3_rejects", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(rejected, 0);
+        drop(shared);
+        drop(recovered);
+        let (client, process) = start_reference(
+            &binary,
+            &reference_profile,
+            std::path::Path::new("/evidence"),
+        );
+        let p = projection(&client);
+        assert_eq!(p["thread"]["title"], "Returned by O3");
+        assert_eq!(p["messages"].as_array().unwrap().len(), 16);
+        drop(client);
+        drop(process);
+        let source = rusqlite::Connection::open(userdata.join("statev2.sqlite")).unwrap();
+        let mut output = rusqlite::Connection::open("/evidence/handover.sqlite").unwrap();
+        rusqlite::backup::Backup::new(&source, &mut output)
+            .unwrap()
+            .run_to_completion(128, Duration::ZERO, None)
+            .unwrap();
+        std::fs::write("/evidence/handover-result.json", serde_json::to_vec_pretty(&json!({"reference":"v0.1.8-nightly.20261106.4262","migrationHead":80,"o3ToT3":true,"t3ToO3":true,"o3ReturnToT3":true,"projectPinArchivePreserved":true,"messages":16,"rejected":0})).unwrap()).unwrap();
+        println!("FRESH_CONTEXT_SHARED_RUNTIME_HANDOVER_PASS: O3 to T3 to O3 to T3, retained history and project flags");
+    }
+    println!("FRESH_CONTEXT_SHARED_EXPORT_PASS: {exported} records, two fresh runs, sixteen preserved messages");
+}

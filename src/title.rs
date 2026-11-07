@@ -116,14 +116,21 @@ pub(crate) async fn bounded(s: &State, input: RunInput) -> Option<String> {
         .dir
         .join("text-generation")
         .join(crate::store::random_id().ok()?);
-    std::fs::create_dir_all(&directory).ok()?;
-    struct Directory(std::path::PathBuf);
+    crate::cleanup::ensure_directory(directory.parent()?).ok()?;
+    use std::os::unix::fs::DirBuilderExt;
+    std::fs::DirBuilder::new()
+        .mode(0o700)
+        .create(&directory)
+        .ok()?;
+    use crate::cleanup::Tree;
+    let identity = crate::cleanup::FileTree.identity(&directory).ok()?;
+    struct Directory(std::path::PathBuf, crate::cleanup::Identity);
     impl Drop for Directory {
         fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
+            let _ = crate::cleanup::quarantine_owned(&self.0, self.1);
         }
     }
-    let _directory = Directory(directory.clone());
+    let _directory = Directory(directory.clone(), identity);
     let mut input = input;
     input.cwd = directory;
     input.runtime_mode = "text-only".into();
@@ -245,7 +252,7 @@ mod tests {
         };
         assert_eq!(bounded(&state, input).await.as_deref(), Some("OK"));
         drop(state);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[test]
     fn consent_selection_never_chooses_an_unrequested_provider() {
@@ -269,7 +276,7 @@ mod tests {
             assert_eq!(selection(&state, &preferred, &own), expected);
         }
         drop(state);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[tokio::test]
     async fn actual_adapters_enforce_text_only_argv_and_reap() {
@@ -322,14 +329,20 @@ mod tests {
                     "text process was parked"
                 );
             }
-            assert_eq!(
-                std::fs::read_dir(dir.join("text-generation"))
-                    .unwrap()
-                    .count(),
-                0
+            let retained = std::fs::read_dir(dir.join("text-generation"))
+                .unwrap()
+                .map(|entry| entry.unwrap())
+                .collect::<Vec<_>>();
+            assert_eq!(retained.len(), 1);
+            assert!(
+                retained[0]
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".o3-retained-"),
+                "Temporary workspace must be retained rather than recursively removed"
             );
             drop(state);
-            std::fs::remove_dir_all(dir).unwrap();
+            // Fixture trees are retained for private container teardown.
         }
     }
 }

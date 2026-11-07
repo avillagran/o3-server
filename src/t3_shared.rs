@@ -16,7 +16,8 @@ use std::sync::Arc;
 type Result<T> = std::result::Result<T, String>;
 
 /// The newest T3 migration whose tables and reducers this module writes.
-pub const MIGRATION_HEAD: (i64, &str) = (73, "ActiveTurnItemIndexes");
+pub const MIGRATION_HEAD: (i64, &str) = (80, "ScheduledTaskThreadMode");
+const LEGACY_MIGRATION_HEAD: (i64, &str) = (73, "ActiveTurnItemIndexes");
 /// T3's `ORCHESTRATION_V2_PROJECTION_SCHEMA_VERSION` at that migration.
 pub const PROJECTION_SCHEMA_VERSION: i64 = 2;
 /// Cursor in `statev2.sqlite`: the last event sequence O3 has seen or written.
@@ -165,6 +166,16 @@ fn kind(name: &str) -> Option<&'static Kind> {
     KINDS.iter().find(|k| k.kind == name)
 }
 
+/// Optional columns distinguish the two explicitly supported schema heads. O3 never migrates T3.
+fn has_column(db: &Connection, table: &str, column: &str) -> Result<bool> {
+    db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info(?1) WHERE name=?2)",
+        params![table, column],
+        |row| row.get(0),
+    )
+    .map_err(|e| e.to_string())
+}
+
 /// The record kind and id a T3 thread event changes. `None` for events without a projection row.
 fn event_target(event_type: &str, payload: &Value) -> Option<(&'static str, String)> {
     let id = |field: &str| payload[field].as_str().map(str::to_owned);
@@ -247,13 +258,30 @@ pub fn open(dir: &Path) -> Result<Option<Connection>> {
         )
         .optional()
         .map_err(|e| format!("{}: {e}", path.display()))?;
-    if head.as_ref().map(|(id, name)| (*id, name.as_str())) != Some(MIGRATION_HEAD) {
+    let current = head.as_ref().map(|(id, name)| (*id, name.as_str()));
+    if ![Some(MIGRATION_HEAD), Some(LEGACY_MIGRATION_HEAD)].contains(&current) {
         return Err(format!(
-            "{} is at T3 migration {:?}; O3 writes only {:?}",
+            "{} is at T3 migration {:?}; O3 writes only migration 73 or {:?}",
             path.display(),
             head,
             MIGRATION_HEAD
         ));
+    }
+    if current == Some(MIGRATION_HEAD) {
+        for (table, column) in [
+            (
+                "orchestration_v2_projection_subagents",
+                "completion_delivery_state",
+            ),
+            ("projection_projects", "pinned_at"),
+            ("projection_projects", "archived_at"),
+            ("scheduled_tasks", "thread_mode"),
+        ] {
+            if !has_column(&db, table, column)? {
+                return Err(format!("T3 migration 80 is missing {table}.{column}"));
+            }
+        }
+        crate::task_shared::validate(&db)?;
     }
     let version: Option<i64> = db
         .query_row(
@@ -359,6 +387,7 @@ fn append_thread_event(
     event_type: &str,
     v: &Value,
     at: &str,
+    command: Option<&str>,
 ) -> Result<i64> {
     let mut metadata = Map::new();
     for field in ["runId", "nodeId", "driver", "providerInstanceId"] {
@@ -368,9 +397,9 @@ fn append_thread_event(
     }
     tx.query_row(
         "INSERT INTO orchestration_events(event_id,aggregate_kind,stream_id,stream_version,event_type,occurred_at,command_id,causation_event_id,correlation_id,actor_kind,payload_json,metadata_json,application_event_version)
-         VALUES(?1,'thread',?2,coalesce((SELECT max(stream_version)+1 FROM orchestration_events WHERE aggregate_kind='thread' AND stream_id=?2),0),?3,?4,NULL,NULL,NULL,'server',?5,?6,2)
+         VALUES(?1,'thread',?2,coalesce((SELECT max(stream_version)+1 FROM orchestration_events WHERE aggregate_kind='thread' AND stream_id=?2),0),?3,?4,?7,NULL,NULL,'server',?5,?6,2)
          RETURNING sequence",
-        params![random_id()?, tid, event_type, at, v.to_string(), Value::Object(metadata).to_string()],
+        params![random_id()?, tid, event_type, at, v.to_string(), Value::Object(metadata).to_string(),command],
         |r| r.get(0),
     )
     .map_err(|e| e.to_string())
@@ -459,13 +488,22 @@ fn project_row(
              ON CONFLICT(node_id) DO UPDATE SET thread_id=excluded.thread_id,run_id=excluded.run_id,parent_node_id=excluded.parent_node_id,root_node_id=excluded.root_node_id,kind=excluded.kind,status=excluded.status,provider_thread_id=excluded.provider_thread_id,provider_turn_id=excluded.provider_turn_id,started_at=excluded.started_at,completed_at=excluded.completed_at,payload_json=excluded.payload_json",
             &[&id, &required(v, "threadId")?, &text(v, "runId"), &text(v, "parentNodeId"), &required(v, "rootNodeId")?, &required(v, "kind")?, &required(v, "status")?, &text(v, "providerThreadId"), &text(v, "providerTurnId"), &text(v, "startedAt"), &text(v, "completedAt"), &body],
         ),
-        "subagents" => run(
+        "subagents" => {
+            run(
             "INSERT INTO orchestration_v2_projection_subagents(subagent_id,thread_id,run_id,parent_node_id,provider,driver,provider_instance_id,provider_thread_id,child_thread_id,origin,status,started_at,completed_at,updated_at,payload_json)
              VALUES(?1,?2,?3,?4,?5,?6,?5,?7,?8,?9,?10,?11,?12,?13,?14)
              ON CONFLICT(subagent_id) DO UPDATE SET thread_id=excluded.thread_id,run_id=excluded.run_id,parent_node_id=excluded.parent_node_id,provider=excluded.provider,driver=excluded.driver,provider_instance_id=excluded.provider_instance_id,provider_thread_id=excluded.provider_thread_id,child_thread_id=excluded.child_thread_id,origin=excluded.origin,status=excluded.status,started_at=excluded.started_at,completed_at=excluded.completed_at,updated_at=excluded.updated_at,
                payload_json=CASE WHEN json_type(excluded.payload_json,'$.completionDelivery') IS NULL AND json_type(orchestration_v2_projection_subagents.payload_json,'$.completionDelivery') IS NOT NULL THEN json_set(excluded.payload_json,'$.completionDelivery',json_extract(orchestration_v2_projection_subagents.payload_json,'$.completionDelivery')) ELSE excluded.payload_json END",
             &[&id, &required(v, "threadId")?, &text(v, "runId"), &required(v, "parentNodeId")?, &required(v, "providerInstanceId")?, &text(v, "driver"), &text(v, "providerThreadId"), &text(v, "childThreadId"), &required(v, "origin")?, &required(v, "status")?, &text(v, "startedAt"), &text(v, "completedAt"), &required(v, "updatedAt")?, &body],
-        ),
+            )?;
+            if has_column(tx, k.table, "completion_delivery_state")? {
+                run(
+                    "UPDATE orchestration_v2_projection_subagents SET completion_delivery_state=COALESCE(json_extract(?1,'$.completionDelivery.state'),completion_delivery_state) WHERE subagent_id=?2",
+                    &[&body, &id],
+                )?;
+            }
+            Ok(())
+        }
         "providerSessions" => {
             run(
                 "INSERT INTO orchestration_v2_projection_provider_sessions(provider_session_id,thread_id,provider,driver,provider_instance_id,status,updated_at,payload_json)
@@ -582,7 +620,13 @@ fn project_row(
 }
 
 /// Writes one O3 record to T3 when T3's row differs. Returns the event sequence it appended.
-fn export_record(tx: &Transaction, k: &Kind, tid: &str, v: &Value) -> Result<Option<i64>> {
+fn export_record(
+    tx: &Transaction,
+    k: &Kind,
+    tid: &str,
+    v: &Value,
+    admission: Option<&(String, Value)>,
+) -> Result<Option<i64>> {
     let id = required(v, "id")?;
     let existing = payload_row(tx, k, &id)?
         .map(|s| serde_json::from_str::<Value>(&s).map_err(|e| e.to_string()))
@@ -624,7 +668,25 @@ fn export_record(tx: &Transaction, k: &Kind, tid: &str, v: &Value) -> Result<Opt
         k.updated
     };
     let at = occurred_at(v);
-    let sequence = append_thread_event(tx, stream, event_type, v, &at)?;
+    let sequence = if let Some((cid, original)) =
+        admission.filter(|_| created || event_type == "thread.created")
+    {
+        let first = append_thread_event(
+            tx,
+            stream,
+            event_type,
+            original,
+            &occurred_at(original),
+            Some(cid),
+        )?;
+        if original != v {
+            append_thread_event(tx, stream, k.updated, v, &at, None)?
+        } else {
+            first
+        }
+    } else {
+        append_thread_event(tx, stream, event_type, v, &at, None)?
+    };
     project_row(tx, k, stream, v, existing.as_ref(), created)?;
     if k.kind != "thread" {
         // T3 stamps the thread with every non-thread event; never move it backwards.
@@ -639,12 +701,14 @@ fn export_record(tx: &Transaction, k: &Kind, tid: &str, v: &Value) -> Result<Opt
 
 /// T3's `projection_projects` row as the O3 project record it corresponds to.
 fn project_from_row(t3: &Connection, id: &str) -> Result<Option<Value>> {
+    let modern = has_column(t3, PROJECTS.table, "pinned_at")?;
+    let extra = if modern { ",pinned_at,archived_at" } else { "" };
     t3.query_row(
-        "SELECT title,workspace_root,default_model_selection_json,default_thread_env_mode,auto_pull,favicon_path,project_icon_json,scripts_json,created_at,updated_at,deleted_at FROM projection_projects WHERE project_id=?",
+        &format!("SELECT title,workspace_root,default_model_selection_json,default_thread_env_mode,auto_pull,favicon_path,project_icon_json,scripts_json,created_at,updated_at,deleted_at{extra} FROM projection_projects WHERE project_id=?"),
         [id],
         |r| {
             let parse = |s: Option<String>| s.and_then(|s| serde_json::from_str::<Value>(&s).ok()).unwrap_or(Value::Null);
-            Ok(json!({
+            let mut project = json!({
                 "id": id,
                 "title": r.get::<_, String>(0)?,
                 "workspaceRoot": r.get::<_, String>(1)?,
@@ -657,7 +721,12 @@ fn project_from_row(t3: &Connection, id: &str) -> Result<Option<Value>> {
                 "createdAt": r.get::<_, String>(8)?,
                 "updatedAt": r.get::<_, String>(9)?,
                 "deletedAt": r.get::<_, Option<String>>(10)?,
-            }))
+            });
+            if modern {
+                project["pinnedAt"] = json!(r.get::<_, Option<String>>(11)?);
+                project["archivedAt"] = json!(r.get::<_, Option<String>>(12)?);
+            }
+            Ok(project)
         },
     )
     .optional()
@@ -684,6 +753,11 @@ fn project_view(v: &Value) -> Value {
     for field in PROJECT_FIELDS {
         out[field] = v.get(field).cloned().unwrap_or(Value::Null);
     }
+    for field in ["pinnedAt", "archivedAt"] {
+        if let Some(value) = v.get(field) {
+            out[field] = value.clone();
+        }
+    }
     out["autoPull"] = json!(match &v["autoPull"] {
         Value::Bool(b) => *b,
         Value::Number(n) => n.as_i64() != Some(0),
@@ -697,7 +771,18 @@ fn project_view(v: &Value) -> Value {
 
 fn export_project(tx: &Transaction, v: &Value) -> Result<Option<i64>> {
     let id = required(v, "id")?;
-    let view = project_view(v);
+    let modern = has_column(tx, PROJECTS.table, "pinned_at")?;
+    let mut view = project_view(v);
+    for field in ["pinnedAt", "archivedAt"] {
+        if modern {
+            view[field] = v[field].clone();
+        } else {
+            if !v[field].is_null() {
+                return Err(format!("T3 migration 73 cannot store project {field}"));
+            }
+            view.as_object_mut().unwrap().remove(field);
+        }
+    }
     let existing = project_from_row(tx, &id)?;
     if existing.as_ref() == Some(&view) {
         return Ok(None);
@@ -716,6 +801,11 @@ fn export_project(tx: &Transaction, v: &Value) -> Result<Option<i64>> {
         "updatedAt",
     ] {
         fields.insert(field.into(), view[field].clone());
+    }
+    if modern {
+        for field in ["pinnedAt", "archivedAt"] {
+            fields.insert(field.into(), view[field].clone());
+        }
     }
     let mut sequence;
     if existing.is_none() {
@@ -761,6 +851,13 @@ fn export_project(tx: &Transaction, v: &Value) -> Result<Option<i64>> {
         params![id, required(&view, "title")?, required(&view, "workspaceRoot")?, encode("defaultModelSelection"), text(&view, "defaultThreadEnvMode"), bit(&view, "autoPull"), text(&view, "faviconPath"), encode("projectIcon"), view["scripts"].to_string(), required(&view, "createdAt")?, required(&view, "updatedAt")?, text(&view, "deletedAt")],
     )
     .map_err(|e| e.to_string())?;
+    if modern {
+        tx.execute(
+            "UPDATE projection_projects SET pinned_at=?1,archived_at=?2 WHERE project_id=?3",
+            params![text(&view, "pinnedAt"), text(&view, "archivedAt"), id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
     Ok(sequence)
 }
 
@@ -808,27 +905,12 @@ fn shape_values(kind_name: &str, v: &mut Value) {
             }
         }
     }
-    if let Some(usage) = v.get_mut("contextUsage").and_then(Value::as_object_mut) {
-        match usage.get("cost") {
-            Some(Value::Number(n)) => {
-                let amount = n.as_f64().unwrap_or(0.0);
-                usage.insert("cost".into(), json!({"amount": amount, "currency": "USD"}));
-            }
-            Some(Value::Null) => {
-                usage.remove("cost");
-            }
-            _ => {}
-        }
-    }
+    crate::projection::normalize_context_cost(v);
 }
 
-/// The reverse for fields O3 reads in its own form: a T3 cost object back to O3's USD amount.
+/// Imported context usage retains T3's currency-qualified cost contract.
 fn o3_shape(v: &mut Value) {
-    if let Some(usage) = v.get_mut("contextUsage").and_then(Value::as_object_mut) {
-        if let Some(amount) = usage.get("cost").and_then(|c| c.get("amount")).cloned() {
-            usage.insert("cost".into(), amount);
-        }
-    }
+    crate::projection::normalize_context_cost(v);
 }
 
 fn iso_ms(text: &str) -> Option<i64> {
@@ -1011,6 +1093,7 @@ struct Dirty {
     thread_id: String,
     version: i64,
     body: Option<Value>,
+    admission: Option<(String, Value)>,
 }
 
 /// O3's own checkpoints predate the shared base and lack fields T3's schema requires. Fill them from
@@ -1075,7 +1158,8 @@ fn t3_shape(db: &Connection, kind_name: &str, mut v: Value) -> Value {
 
 /// Exports every marked record. Returns how many were written to T3.
 pub fn export(s: &State, t3: &mut Connection) -> Result<usize> {
-    let mut written = 0;
+    let _serial = s.shared_export.lock().unwrap();
+    let mut written = crate::task_shared::export(s, t3)?;
     let mut after = 0i64;
     loop {
         let batch = {
@@ -1114,6 +1198,7 @@ pub fn export(s: &State, t3: &mut Connection) -> Result<usize> {
                         thread_id,
                         version,
                         body,
+                        admission: None,
                     });
                     continue;
                 }
@@ -1125,18 +1210,30 @@ pub fn export(s: &State, t3: &mut Connection) -> Result<usize> {
                     }
                     None => None,
                 };
+                let needs_admission = if let Some(mapping) = self::kind(&kind) {
+                    payload_row(t3,mapping,&id)?.is_none() || kind=="thread" && !t3.query_row("SELECT EXISTS(SELECT 1 FROM orchestration_events WHERE aggregate_kind='thread' AND stream_id=?1 AND event_type='thread.created' AND application_event_version=2)",[&id],|row|row.get::<_,bool>(0)).map_err(|e|e.to_string())?
+                } else {
+                    false
+                };
+                let admission = if needs_admission {
+                    crate::command_shared::creation(&db, &kind, &id)?
+                        .map(|(cid, payload)| (cid, t3_shape(&db, &kind, payload)))
+                } else {
+                    None
+                };
                 batch.push(Dirty {
                     kind,
                     id,
                     thread_id,
                     version,
                     body,
+                    admission,
                 });
             }
             batch
         };
         if batch.is_empty() {
-            return Ok(written);
+            return Ok(written + crate::command_shared::export(s, t3)?);
         }
         let mut rejects = Vec::new();
         let tx = t3
@@ -1156,7 +1253,8 @@ pub fn export(s: &State, t3: &mut Connection) -> Result<usize> {
                     export_session(&tx, v).map(|written| written.then_some(None))
                 } else {
                     let k = kind(&item.kind).ok_or("unknown kind")?;
-                    export_record(&tx, k, &item.thread_id, v).map(|written| written.map(Some))
+                    export_record(&tx, k, &item.thread_id, v, item.admission.as_ref())
+                        .map(|written| written.map(Some))
                 };
                 let end = if result.is_ok() {
                     "RELEASE o3_record"
@@ -1193,6 +1291,16 @@ pub fn export(s: &State, t3: &mut Connection) -> Result<usize> {
                 params![item.kind, item.id, item.version],
             )
             .map_err(|e| e.to_string())?;
+            if !rejects
+                .iter()
+                .any(|(kind, id, _)| kind == &item.kind && id == &item.id)
+            {
+                db.execute(
+                    "DELETE FROM t3_rejects WHERE kind=? AND id=?",
+                    params![item.kind, item.id],
+                )
+                .map_err(|e| e.to_string())?;
+            }
         }
         for (kind, id, error) in rejects {
             eprintln!("T3 export skipped {kind} {id}: {error}");
@@ -1267,6 +1375,11 @@ fn take_in_project(db: &Connection, v: &Value) -> Result<bool> {
     let mut merged = current.clone().unwrap_or_else(|| json!({"id": id}));
     for field in PROJECT_FIELDS {
         merged[field] = v[field].clone();
+    }
+    for field in ["pinnedAt", "archivedAt"] {
+        if let Some(value) = v.get(field) {
+            merged[field] = value.clone();
+        }
     }
     if current.as_ref().map(project_view) == Some(project_view(&merged)) {
         return Ok(false);
@@ -1576,7 +1689,7 @@ fn reshape_events(t3: &Connection) -> Result<usize> {
 /// Brings O3 up to date with T3's base and returns the open connection for the exporter, which
 /// writes the backlog in the background.
 pub fn start(s: &State) -> Result<Option<Connection>> {
-    let Some(t3) = open(&s.dir)? else {
+    let Some(mut t3) = open(&s.dir)? else {
         return Ok(None);
     };
     let latest_sequence = latest(&t3)?;
@@ -1586,6 +1699,29 @@ pub fn start(s: &State) -> Result<Option<Connection>> {
         Some(_) => json!({}),
     };
     report["sessions"] = json!(take_sessions(s, &t3)?);
+    report["commandReceipts"] = json!(crate::command_shared::import(s, &t3)?);
+    report["taskRows"] = json!(crate::task_shared::start(s, &mut t3)?);
+    // Migration 76 adds fields older exporters could not persist. Revisit local project intent
+    // once after T3 upgrades its database, even if the old exporter already recorded a rejection.
+    if has_column(&t3, PROJECTS.table, "pinned_at")? {
+        let mapped: Option<i64> = t3
+            .query_row(
+                "SELECT value FROM o3_sync WHERE name='o3ProjectFlagsVersion'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        if mapped != Some(1) {
+            let marked = s.db.lock().unwrap().execute(
+                "INSERT OR IGNORE INTO t3_dirty SELECT kind,id,thread_id,0 FROM records WHERE kind='project'", [],
+            ).map_err(|e| e.to_string())?;
+            t3.execute("INSERT INTO o3_sync VALUES('o3ProjectFlagsVersion',1) ON CONFLICT(name) DO UPDATE SET value=excluded.value", [])
+                .map_err(|e| e.to_string())?;
+            report["projectFlagsRevisited"] = json!(marked);
+        }
+    }
+
     let shaped: i64 = t3
         .query_row("SELECT value FROM o3_sync WHERE name=?", [SHAPED], |r| {
             r.get(0)
@@ -1641,10 +1777,17 @@ impl Exporter {
             .stack_size(256 * 1024)
             .spawn(move || {
                 let mut first = true;
+                let mut task_version = s.streams.ops.tasks_version();
                 loop {
                     let stopping = flag.load(Ordering::Acquire);
-                    if first || stopping || changes.has_changed().unwrap_or(true) {
+                    let tasks = s.streams.ops.tasks_version();
+                    if first
+                        || stopping
+                        || tasks != task_version
+                        || changes.has_changed().unwrap_or(true)
+                    {
                         first = false;
+                        task_version = tasks;
                         changes.borrow_and_update();
                         if let Err(e) = export(&s, &mut t3) {
                             eprintln!("T3 export failed: {e}");

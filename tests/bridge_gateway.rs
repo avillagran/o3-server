@@ -83,7 +83,7 @@ fn rust_client_over_test_ca_gateway_local_and_quic() {
             let restarted=o3_server::bridge::start(host.root(),state,NetOptions::loopback()).await.unwrap();
             assert_eq!(host.id().unwrap(), restarted.addr().id.to_string());
             restarted.shutdown().await;
-            std::fs::remove_dir_all(root).unwrap();
+            // Fixture trees are retained for private container teardown.
         }).await.unwrap();
     });
 }

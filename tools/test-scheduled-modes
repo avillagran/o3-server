@@ -1,0 +1,177 @@
+#!/usr/bin/env python3
+"""Compile scheduled-task and integrated goal regressions on the host and run them without host writes in Podman."""
+import argparse
+import fcntl
+import json
+import os
+import pathlib
+import tempfile
+import subprocess
+import shutil
+import node_admission
+import uuid
+import sys
+from test_safety import check
+from runtime_artifacts import snapshot
+
+def positive_threads(value):
+    try:
+        count = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("test thread count must be a positive integer") from None
+    if count < 1:
+        raise argparse.ArgumentTypeError("test thread count must be a positive integer")
+    return count
+
+parser=argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--default-features",action="store_true")
+parser.add_argument("--node",type=pathlib.Path,help="Explicit Node26.13.0 executable admitted before private runtime")
+parser.add_argument("--test-threads",type=positive_threads,default=1,help="Positive private test thread count (default: 1)")
+parser.add_argument("--case-filter",help="Run one exact test case with --integration")
+selection=parser.add_mutually_exclusive_group()
+selection.add_argument("--unit-filter")
+selection.add_argument("--integration")
+selection.add_argument("--all-tests",action="store_true")
+parser.add_argument("--resume-from", help="With --all-tests, resume at an exact binary filename from retained evidence")
+parser.add_argument("--resume-manifest", type=pathlib.Path, help="Retained result.json supplying the original compiled binary order")
+parser.add_argument("--compile-lock", type=pathlib.Path, help="Serialize compilation while allowing isolated test execution to run independently")
+options=parser.parse_args()
+if options.case_filter and not options.integration:
+    parser.error("--case-filter requires --integration")
+if (options.resume_from or options.resume_manifest) and not (options.all_tests and options.resume_from and options.resume_manifest):
+    parser.error("resume requires --all-tests, --resume-from and --resume-manifest")
+root = pathlib.Path(__file__).resolve().parent.parent
+check(root, full=options.all_tests or not (options.unit_filter or options.integration))
+env = dict(os.environ)
+env.setdefault('CARGO_TARGET_DIR', '/var/tmp/o3-server/fresh-context-target')
+env.setdefault('CARGO_BUILD_JOBS', '2')
+test_image=os.environ.get('O3_FRESH_CONTEXT_IMAGE', 'localhost/o3-server-tests:local')
+selected_node=options.node or pathlib.Path(os.environ.get('O3_ADMITTED_NODE') or shutil.which('node') or '')
+if not selected_node.is_absolute():
+    parser.error('Supply an absolute Node executable with --node or O3_ADMITTED_NODE')
+admission_command=[sys.executable,str(root/'tools/admit-node'),'--node',str(selected_node),'--image',test_image]
+if os.environ.get('O3_ADMITTED_NODE')==str(selected_node) and os.environ.get('O3_ADMITTED_NODE_SHA256'):
+    admission_command += ['--sha256',os.environ['O3_ADMITTED_NODE_SHA256']]
+node_receipt=json.loads(subprocess.check_output(admission_command,text=True))
+
+targets = [] if options.all_tests else ['--test', options.integration] if options.integration else ['--lib'] if options.unit_filter else ['--lib', '--test', 'scheduled_modes', '--test', 'ops', '--test', 'native_goals', '--test', 'p2_webhook', '--test', 'mcp_launch']
+evidence=pathlib.Path(tempfile.mkdtemp(prefix='o3-container-tests-',dir='/var/tmp'))
+artifact_snapshot = None
+compile_lock = None
+try:
+    if options.compile_lock:
+        options.compile_lock.parent.mkdir(parents=True, exist_ok=True)
+        compile_lock = options.compile_lock.open('a')
+        fcntl.flock(compile_lock.fileno(), fcntl.LOCK_EX)
+    build = subprocess.run(['cargo', 'test', '--locked', *([] if options.default_features else ['--no-default-features']), *targets, '--no-run', '--message-format=json'], cwd=root, env=env, capture_output=True, text=True)
+    runtime_records = []
+    if build.returncode == 0:
+        runtime_outputs = [pathlib.Path(value['executable']) for line in build.stdout.splitlines()
+                           if (value := json.loads(line)).get('executable')]
+        if not runtime_outputs:
+            raise RuntimeError('Cargo produced no runtime executables')
+        test_outputs = [pathlib.Path(value['executable']) for line in build.stdout.splitlines()
+                        if (value := json.loads(line)).get('executable')
+                        and value.get('profile', {}).get('test')
+                        and pathlib.Path(value['executable']).parent.name == 'deps']
+        if not test_outputs:
+            raise RuntimeError('Cargo produced no test executable under the debug directory')
+        debug = test_outputs[0].parent.parent
+        artifact_snapshot = debug.resolve().parent / ('test-runtime-' + uuid.uuid4().hex)
+        runtime_records = snapshot(debug, runtime_outputs, artifact_snapshot)
+        runtime_records.append(node_admission.snapshot(node_receipt,artifact_snapshot/'node-bin/node'))
+        runtime_node=debug/'node-bin/node'
+
+finally:
+    if compile_lock:
+        compile_lock.close()
+if build.returncode:
+    for line in build.stdout.splitlines():
+        diagnostic = json.loads(line).get("message", {})
+        if diagnostic.get("rendered"):
+            print(diagnostic["rendered"], flush=True)
+    print(build.stderr, flush=True)
+    raise SystemExit(build.returncode)
+binaries = [pathlib.Path(v['executable']) for line in build.stdout.splitlines() if (v := json.loads(line)).get('executable') and v.get('profile', {}).get('test') and (options.all_tests or v.get('target', {}).get('name')==options.integration or v.get('target', {}).get('name') in ('o3_server', 'scheduled_modes', 'ops', 'native_goals', 'p2_webhook', 'mcp_launch'))]
+assert len(binaries) >= 6 if options.all_tests else len(binaries) == (1 if options.unit_filter or options.integration else 6)
+assert all(binary.parent==binaries[0].parent for binary in binaries)
+if options.resume_manifest:
+    previous = json.loads(options.resume_manifest.read_text())
+    compiled = {binary.name: binary for binary in binaries}
+    names = [pathlib.Path(value).name for value in previous['binaries']]
+    if len(set(names)) != len(names) or any(name not in compiled for name in names):
+        parser.error("retained binary identities do not match this compilation")
+    binaries = [compiled[name] for name in names]
+if options.resume_from:
+    position = next((i for i, binary in enumerate(binaries) if binary.name == options.resume_from), None)
+    if position is None:
+        parser.error("--resume-from did not match a compiled test binary")
+    binaries = binaries[position:]
+test_image=os.environ.get('O3_FRESH_CONTEXT_IMAGE', 'localhost/o3-server-tests:local')
+if subprocess.run(['podman','image','exists',test_image]).returncode:
+    raise SystemExit('Test runtime missing. Run tools/build-test-image first.')
+print(f'Container test evidence: {evidence}',flush=True)
+report = {
+    'returncode': None,
+    'complete': False,
+    'defaultFeatures': options.default_features,
+    'allTests': options.all_tests,
+    'integration': options.integration,
+    'unitFilter': options.unit_filter,
+    'caseFilter': options.case_filter,
+    'testThreads': options.test_threads,
+    'resumeFrom': options.resume_from,
+    'resumeManifest': str(options.resume_manifest) if options.resume_manifest else None,
+    'image': test_image,
+    'binaries': [str(binary) for binary in binaries],
+    'binaryResults': [],
+    'privateContainerPerBinary': True,
+    'runtimeSnapshot': str(artifact_snapshot),
+    'runtimeArtifacts': runtime_records,
+    'admittedNode': dict(node_receipt,runtimePath=str(runtime_node)),
+}
+script = """set -eu
+umask 077
+mkdir -p "$HOME"
+binary="$1"
+if test "$O3_ALL_TESTS" = 1; then exec /test-bin/"$binary" --test-threads="$O3_TEST_THREADS"; fi
+case "$binary" in
+  o3_server-*)
+    if test -n "$O3_UNIT_FILTER"; then exec /test-bin/"$binary" "$O3_UNIT_FILTER" --nocapture --test-threads="$O3_TEST_THREADS"; fi
+    /test-bin/"$binary" scheduled::tests --test-threads="$O3_TEST_THREADS"
+    /test-bin/"$binary" webhook::crash_tests --test-threads="$O3_TEST_THREADS"
+    /test-bin/"$binary" fresh_context::tests --test-threads="$O3_TEST_THREADS"
+    /test-bin/"$binary" native_goal::tests --test-threads="$O3_TEST_THREADS" ;;
+  *)
+    if test -n "$O3_CASE_FILTER"; then exec /test-bin/"$binary" "$O3_CASE_FILTER" --exact --test-threads="$O3_TEST_THREADS"; fi
+    exec /test-bin/"$binary" --test-threads="$O3_TEST_THREADS" ;;
+esac
+"""
+for index, binary in enumerate(binaries):
+    name = 'o3-scheduled-tests-' + uuid.uuid4().hex
+    args = ['podman', 'run', '--rm', '--name', name, '--userns=keep-id', '--user', f'{os.getuid()}:{os.getgid()}', '--read-only', '--tmpfs', '/tmp:rw,exec,size=1g,mode=1777', '--cap-drop=ALL', '--security-opt=no-new-privileges', '--pids-limit=512', '--memory=4g', '--network=none', f'--workdir={root}', '--env', 'HOME=/tmp/home', '--env', f'O3_UNIT_FILTER={options.unit_filter or ""}', '--env', f'O3_CASE_FILTER={options.case_filter or ""}', '--env', f'O3_ALL_TESTS={int(options.all_tests)}', '--env', f'O3_TEST_THREADS={options.test_threads}', '-v', f'{root}:{root}:ro', '-v', f'{artifact_snapshot / binary.parent.name}:/test-bin:ro', '-v', f'{artifact_snapshot}:{binary.parent.parent}:ro', '--env',f'O3_ADMITTED_NODE={runtime_node}', '--env',f'O3_ADMITTED_NODE_SHA256={node_receipt["sha256"]}', '--env',f'O3_ADMITTED_NODE_VERSION={node_receipt["version"]}', test_image, 'sh', '-c', script, 'scheduled-nightly', binary.name]
+    try:
+        try:
+            result = subprocess.run(args, cwd=root, timeout=300, capture_output=True, text=True)
+            code, output = result.returncode, result.stdout+result.stderr
+            if options.case_filter and code == 0 and "\nrunning 0 tests\n" in "\n" + output:
+                code = 2
+                output += "\nExact integration case did not match a test.\n"
+        except subprocess.TimeoutExpired as error:
+            def decoded(value):
+                return value.decode(errors='replace') if isinstance(value, bytes) else value or ''
+            code, output = 124, decoded(error.stdout)+decoded(error.stderr)+'\nPrivate test binary timed out.\n'
+        (evidence/f'{index:03d}-{binary.name}.log').write_text(output)
+        with (evidence/'output.log').open('a') as log:
+            log.write(output)
+        report['binaryResults'].append({'binary':str(binary),'returncode':code})
+        report['complete'] = bool(code or index + 1 == len(binaries))
+        report['returncode'] = code if report['complete'] else None
+        (evidence/'result.json').write_text(json.dumps(report,indent=2)+'\n')
+        if code:
+            print(output,flush=True)
+            raise SystemExit(code)
+        print('\n'.join(line for line in output.splitlines() if line.startswith('test result:')),flush=True)
+    finally:
+        subprocess.run(['podman', 'stop', '--time', '3', name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+raise SystemExit(0)

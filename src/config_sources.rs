@@ -4,6 +4,23 @@ use serde_json::{json, Value};
 use std::{process::Stdio, sync::Arc};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+#[derive(Default)]
+pub(crate) struct UsageState {
+    refresh: tokio::sync::Mutex<()>,
+    snapshot: std::sync::Mutex<Vec<Value>>,
+    version: std::sync::atomic::AtomicU64,
+    private_generation: std::sync::atomic::AtomicU64,
+}
+
+pub(crate) fn private_settings_changed(state: &State) {
+    state
+        .streams
+        .ops
+        .usage_sources
+        .private_generation
+        .fetch_add(1, std::sync::atomic::Ordering::Release);
+}
+
 pub struct Sources {
     receiver: tokio::sync::mpsc::Receiver<Value>,
     task: tokio::task::JoinHandle<()>,
@@ -42,6 +59,8 @@ impl Sources {
             let mut last_themes = Value::Null;
             let mut next_usage = tokio::time::Instant::now();
             let mut last_settings = Value::Null;
+            let mut last_usage_version = 0;
+            let mut last_private_generation = 0;
             loop {
                 if themes {
                     let current = read_themes(&state);
@@ -52,10 +71,24 @@ impl Sources {
                     }
                 }
                 let settings = crate::settings::read(&state).unwrap_or(json!({}));
+                let private_generation = state
+                    .streams
+                    .ops
+                    .usage_sources
+                    .private_generation
+                    .load(std::sync::atomic::Ordering::Acquire);
                 if usage
-                    && (tokio::time::Instant::now() >= next_usage
+                    && (private_generation != last_private_generation
+                        || tokio::time::Instant::now() >= next_usage
                         || settings["usageLimitSources"] != last_settings["usageLimitSources"]
-                        || settings["providerInstances"] != last_settings["providerInstances"])
+                        || settings["providerInstances"] != last_settings["providerInstances"]
+                        || state
+                            .streams
+                            .ops
+                            .usage_sources
+                            .version
+                            .load(std::sync::atomic::Ordering::Acquire)
+                            != last_usage_version)
                 {
                     let provider = state.provider.lock().unwrap().clone();
                     if let Some(provider) = provider {
@@ -66,14 +99,44 @@ impl Sources {
                         .await;
                         state.notify();
                     }
-                    let sources = refresh(&settings).await;
-                    if crate::settings::read(&state).ok().is_some_and(|current| {
-                        ["usageLimitSources", "providerInstances"]
-                            .iter()
-                            .any(|key| current[*key] != settings[*key])
-                    }) {
+                    let version = state
+                        .streams
+                        .ops
+                        .usage_sources
+                        .version
+                        .load(std::sync::atomic::Ordering::Acquire);
+                    if version == last_usage_version
+                        || settings != last_settings
+                        || private_generation != last_private_generation
+                    {
+                        refresh(&state).await;
+                    }
+                    let sources = {
+                        let current = state.streams.ops.usage_sources.snapshot.lock().unwrap();
+                        last_usage_version = state
+                            .streams
+                            .ops
+                            .usage_sources
+                            .version
+                            .load(std::sync::atomic::Ordering::Acquire);
+                        current.clone()
+                    };
+                    if state
+                        .streams
+                        .ops
+                        .usage_sources
+                        .private_generation
+                        .load(std::sync::atomic::Ordering::Acquire)
+                        != private_generation
+                        || crate::settings::read(&state).ok().is_some_and(|current| {
+                            ["usageLimitSources", "providerInstances"]
+                                .iter()
+                                .any(|key| current[*key] != settings[*key])
+                        })
+                    {
                         continue;
                     }
+                    last_private_generation = private_generation;
                     if sender.send(json!({"version":1,"type":"usageLimitSourcesUpdated","payload":{"sources":sources}})).await.is_err() { break; }
                     wake.notify_one();
                 }
@@ -103,7 +166,7 @@ impl Sources {
                         _ = tokio::time::sleep(std::time::Duration::from_secs(1)), if themes => break,
                         r = changes.changed() => {
                             if r.is_err() { return; }
-                            if crate::settings::read(&state).ok().is_some_and(|s| ["usageLimitSources","providerInstances","backgroundActivity"].iter().any(|key| s[*key] != settings[*key])) { break; }
+                            if state.streams.ops.usage_sources.private_generation.load(std::sync::atomic::Ordering::Acquire) != last_private_generation || state.streams.ops.usage_sources.version.load(std::sync::atomic::Ordering::Acquire) != last_usage_version || crate::settings::read(&state).ok().is_some_and(|s| ["usageLimitSources","providerInstances","backgroundActivity"].iter().any(|key| s[*key] != settings[*key])) { break; }
                         }
                     }
                 }
@@ -116,17 +179,6 @@ impl Sources {
             replay: Default::default(),
         }
     }
-}
-async fn management(config: &Value, path: &str, body: Option<Value>) -> Result<Value, ()> {
-    let url = format!(
-        "{}/v0/management/{path}",
-        config["url"].as_str().ok_or(())?.trim_end_matches('/')
-    );
-    let key = config["managementKey"]
-        .as_str()
-        .filter(|s| !s.is_empty())
-        .ok_or(())?;
-    request(&url, key, &[], body).await
 }
 pub(crate) async fn request(
     url: &str,
@@ -191,104 +243,39 @@ pub(crate) async fn request(
     serde_json::from_slice(&bytes).map_err(|_| ())
 }
 async fn account(config: &Value, account: &Value) -> Value {
-    let codex = account["provider"] == "codex";
     let checked = iso(now_ms());
-    let mut out = json!({"id":account["id"],"driver":if codex {"codex"} else {"claudeAgent"},"email":account["email"],"workspaceId":account["id_token"]["chatgpt_account_id"]});
-    let header = if codex {
-        json!({"Authorization":"Bearer $TOKEN$","Content-Type":"application/json","OpenAI-Beta":"codex-1","Originator":"Codex Desktop","Chatgpt-Account-Id":account["id_token"]["chatgpt_account_id"]})
+    let base = config["url"].as_str().unwrap_or("");
+    let key = config["managementKey"].as_str().unwrap_or("");
+    let usage = crate::cliproxy::usage(base, key, account).await.ok();
+    let available = if account["provider"] == "codex" && usage.is_some() {
+        crate::cliproxy::credits(base, key, account, now_ms())
+            .await
+            .ok()
     } else {
-        json!({"Authorization":"Bearer $TOKEN$","anthropic-beta":"oauth-2025-04-20","User-Agent":"claude-code/2.1.273"})
+        None
     };
-    let response = management(config,"api-call",Some(json!({"auth_index":account["auth_index"],"method":"GET","url":if codex {"https://chatgpt.com/backend-api/wham/usage"} else {"https://api.anthropic.com/api/oauth/usage"},"header":header}))).await;
-    let usage = response
-        .ok()
-        .filter(|r| {
-            r["status_code"]
-                .as_u64()
-                .is_some_and(|s| (200..300).contains(&s))
-        })
-        .and_then(|r| serde_json::from_str::<Value>(r["body"].as_str()?).ok());
-    let Some(usage) = usage else {
-        out["usageLimits"] = json!({"checkedAt":checked,"windows":[],"unavailable":{"reason":"probeFailed","message":"The hub could not read this account's usage."}});
-        return out;
-    };
-    let mut windows = Vec::new();
-    for (key, id, label, kind) in if codex {
-        [
-            ("primary_window", "primary", "Session", "session"),
-            ("secondary_window", "secondary", "Weekly", "weekly"),
-        ]
-    } else {
-        [
-            ("five_hour", "five_hour", "Session", "session"),
-            ("seven_day", "seven_day", "Weekly", "weekly"),
-        ]
-    } {
-        let w = if codex {
-            &usage["rate_limit"][key]
-        } else {
-            &usage[key]
-        };
-        let used = w[if codex { "used_percent" } else { "utilization" }].as_f64();
-        if let Some(used) = used.filter(|v| v.is_finite()) {
-            let mut window =
-                json!({"id":id,"label":label,"kind":kind,"usedPercent":used.clamp(0.,100.)});
-            if codex {
-                if let Some(reset) = w["reset_at"].as_i64() {
-                    window["resetsAt"] = json!(iso(reset.saturating_mul(1000)));
-                }
-                if let Some(seconds) = w["limit_window_seconds"].as_u64() {
-                    window["windowDurationMins"] = json!(seconds / 60);
-                }
-            } else if w["resets_at"].is_string() {
-                window["resetsAt"] = w["resets_at"].clone();
-            }
-            windows.push(window);
-        }
-    }
-    if !codex {
-        for limit in usage["limits"].as_array().into_iter().flatten() {
-            if limit["kind"] != "weekly_scoped" {
-                continue;
-            }
-            if let (Some(name), Some(used)) = (
-                limit["scope"]["model"]["display_name"].as_str(),
-                limit["percent"].as_f64(),
-            ) {
-                let id = format!(
-                    "seven_day_{}",
-                    name.to_lowercase()
-                        .chars()
-                        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-                        .collect::<String>()
-                );
-                windows.push(json!({"id":id,"label":format!("Weekly · {name}"),"kind":"weekly","usedPercent":used.clamp(0.,100.),"resetsAt":limit["resets_at"],"windowDurationMins":10080}));
-            }
-        }
-    }
-    out["plan"] = if codex {
-        usage["plan_type"].clone()
-    } else {
-        json!("Claude Subscription")
-    };
-    out["usageLimits"] = json!({"checkedAt":checked,"windows":windows});
-    if codex {
-        if let Ok(response) = management(config,"api-call",Some(json!({"auth_index":account["auth_index"],"method":"GET","url":"https://chatgpt.com/backend-api/wham/rate-limit-reset-credits","header":{"Authorization":"Bearer $TOKEN$","Content-Type":"application/json","OpenAI-Beta":"codex-1","Originator":"Codex Desktop"}}))).await {
-            if response["status_code"] == 200 {
-                if let Some(body) = response["body"].as_str().and_then(|s| serde_json::from_str::<Value>(s).ok()) {
-                    let now = time::OffsetDateTime::now_utc();
-                    let mut credits:Vec<_> = body["credits"].as_array().into_iter().flatten().filter(|c| c["status"]=="available" && c["reset_type"]=="codex_rate_limits" && c["expires_at"].as_str().and_then(|s|time::OffsetDateTime::parse(s,&time::format_description::well_known::Rfc3339).ok()).is_some_and(|t| t>now)).collect();
-                    credits.sort_by_key(|c|c["expires_at"].as_str());
-                    out["usageLimits"]["resetCredits"] = json!({"availableCount":credits.len()});
-                    if let Some(first) = credits.first() { out["usageLimits"]["resetCredits"]["nextExpiresAt"] = first["expires_at"].clone(); }
-                }
-            }
-        }
-    }
-
-    out
+    crate::cliproxy_projection::project(account, usage.as_ref(), available.as_deref(), &checked)
 }
-async fn refresh(settings: &Value) -> Vec<Value> {
+
+pub(crate) async fn refresh(state: &State) -> Vec<Value> {
+    let service = &state.streams.ops.usage_sources;
+    let _refresh = service.refresh.lock().await;
+    let settings = crate::settings::read_materialized(state)
+        .ok()
+        .unwrap_or_else(|| json!({}));
+    let sources = read_sources(state, &settings).await;
+    let mut previous = service.snapshot.lock().unwrap();
+    if *previous != sources {
+        *previous = sources.clone();
+        service
+            .version
+            .fetch_add(1, std::sync::atomic::Ordering::Release);
+        state.notify();
+    }
+    sources
+}
+
+async fn read_sources(state: &State, settings: &Value) -> Vec<Value> {
     let mut sources = Vec::new();
     for (id, config) in settings["usageLimitSources"]
         .as_object()
@@ -296,9 +283,20 @@ async fn refresh(settings: &Value) -> Vec<Value> {
         .flatten()
         .take(512)
     {
+        let Ok(config) = crate::managed_settings_codec::decode_usage_config(config.clone()) else {
+            continue;
+        };
         if config["enabled"] == false {
             continue;
         }
+        let config = crate::settings_secrets::resolve_fields(
+            state.secret_resolver().as_ref(),
+            &settings["secretProviders"],
+            "usage",
+            None,
+            &config,
+        )
+        .await;
         let label = config["label"]
             .as_str()
             .filter(|s| !s.trim().is_empty())
@@ -315,26 +313,138 @@ async fn refresh(settings: &Value) -> Vec<Value> {
                             }
                         })
                     })
-                    .unwrap_or_else(|| id.to_owned())
+                    .unwrap_or_else(|| {
+                        let fallback = crate::native_goal::trim(id);
+                        if fallback.is_empty() {
+                            "Usage limit source".into()
+                        } else {
+                            fallback.into()
+                        }
+                    })
             });
         let mut source = json!({"id":id,"kind":"cliproxy","label":label,"checkedAt":iso(now_ms()),"accounts":[]});
-        match management(config, "auth-files", None).await {
+        if config["managementKey"]
+            .as_str()
+            .is_none_or(|key| key.is_empty())
+        {
+            source["error"] = json!(if config["managementKey"].is_object() {
+                "Could not read the management key from its secret provider."
+            } else {
+                "No management key configured."
+            });
+            sources.push(source);
+            continue;
+        }
+        match crate::cliproxy::list_accounts(
+            config["url"].as_str().unwrap_or(""),
+            config["managementKey"].as_str().unwrap_or(""),
+        )
+        .await
+        {
             Ok(files) => {
-                let mut accounts = Vec::new();
-                for a in files["files"].as_array().into_iter().flatten().take(4096) {
-                    if a["disabled"] != true
-                        && matches!(a["provider"].as_str(), Some("codex" | "claude"))
-                    {
-                        accounts.push(account(config, a).await);
-                    }
-                }
+                use futures_util::StreamExt;
+                let files = files
+                    .into_iter()
+                    .filter(|file: &Value| {
+                        file["disabled"] != true
+                            && matches!(file["provider"].as_str(), Some("codex" | "claude"))
+                    })
+                    .take(4096)
+                    .collect::<Vec<_>>();
+                let accounts = futures_util::stream::iter(files)
+                    .map(|file: Value| {
+                        let config = config.clone();
+                        async move { account(&config, &file).await }
+                    })
+                    .buffered(4)
+                    .collect::<Vec<_>>()
+                    .await;
                 source["accounts"] = json!(accounts);
             }
-            Err(()) => source["error"] = json!("Could not read usage source."),
+            Err(failure) => source["error"] = json!(failure.detail()),
         }
         sources.push(source);
     }
     sources
+}
+
+pub(crate) async fn consume_reset_credit(state: &State, input: &Value) -> Result<Value, Value> {
+    let input = crate::cliproxy::decode_reset_input(input)
+        .map_err(|_| json!({"_tag":"RpcInvalidPayload","message":"Invalid reset-credit input."}))?;
+    if let Some(instance_id) = input["instanceId"].as_str() {
+        let settings = crate::settings::read(state).unwrap_or_else(|_| json!({}));
+        let instance = settings["providerInstances"].get(instance_id);
+        let detail = match instance {
+            None => "Provider instance not found.",
+            Some(instance) if instance["enabled"] == false => "This provider is disabled.",
+            Some(_) => "This provider does not bank reset credits.",
+        };
+        return Err(
+            json!({"_tag":"ProviderSetupError","instanceId":instance_id,"operation":"consume-reset-credit","detail":detail}),
+        );
+    }
+    let error = |detail: &str| json!({"_tag":"UsageLimitSourceError","detail":detail});
+    let service = &state.streams.ops.usage_sources;
+    // A stale concurrent refresh must not resurrect credit state after redemption.
+    let _refresh = service.refresh.lock().await;
+    let settings = crate::settings::read_materialized(state)
+        .map_err(|_| error("Could not read hub settings."))?;
+    let source_id = input["sourceId"].as_str().unwrap();
+    let raw = settings["usageLimitSources"]
+        .get(source_id)
+        .ok_or_else(|| error("The usage limit source is missing or disabled."))?;
+    let config = crate::managed_settings_codec::decode_usage_config(raw.clone())
+        .map_err(|_| error("Could not read hub settings."))?;
+    if config["enabled"] == false {
+        return Err(error("The usage limit source is missing or disabled."));
+    }
+    let resolved = crate::settings_secrets::resolve_fields(
+        state.secret_resolver().as_ref(),
+        &settings["secretProviders"],
+        "usage",
+        None,
+        &config,
+    )
+    .await;
+    let key = resolved["managementKey"].as_str().unwrap_or("");
+    if key.is_empty() {
+        return Err(error(if config["managementKey"].is_string() {
+            "No management key configured."
+        } else {
+            "Could not read the management key from its secret provider."
+        }));
+    }
+    let result = crate::cliproxy::consume(
+        resolved["url"].as_str().unwrap(),
+        key,
+        input["accountId"].as_str().unwrap(),
+        input["creditId"].as_str().unwrap(),
+    )
+    .await
+    .map_err(|failure| error(&failure.detail()))?;
+    let mut selected = settings.clone();
+    selected["usageLimitSources"] = json!({source_id:raw});
+    let mut refreshed = read_sources(state, &selected).await;
+    if let Some(snapshot) = refreshed.pop() {
+        let mut previous = service.snapshot.lock().unwrap();
+        let mut changed = false;
+        for source in previous
+            .iter_mut()
+            .filter(|source| source["id"] == source_id)
+        {
+            if *source != snapshot {
+                *source = snapshot.clone();
+                changed = true;
+            }
+        }
+        if changed {
+            service
+                .version
+                .fetch_add(1, std::sync::atomic::Ordering::Release);
+            state.notify();
+        }
+    }
+    Ok(result)
 }
 
 fn read_themes(state: &State) -> Value {
@@ -411,3 +521,7 @@ fn read_themes(state: &State) -> Value {
     }
     json!(out)
 }
+
+#[cfg(test)]
+#[path = "../tests/support/config_sources_secrets.rs"]
+mod secret_tests;

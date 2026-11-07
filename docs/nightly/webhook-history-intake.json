@@ -1,0 +1,46 @@
+{
+  "reference": {
+    "tag": "v0.1.8-nightly.20261106.4262",
+    "commit": "c55db3e9c72fdf584f4b54192fb39beb88667b59",
+    "effect": "4.1.2"
+  },
+  "source": {
+    "path": "apps/server/src/scheduledTasks/ScheduledTaskService.ts",
+    "sha256": "c5f3e5c96628958a4dd758114a2fbf3fbb7001e36b0993f64645244fdfa64304"
+  },
+  "fixture": {
+    "path": "tests/fixtures/webhook-history.json",
+    "sha256": "170129b3cb30892916f1bbd7665cd734925bbb457683d0e44a41ed818792fc37",
+    "cases": 79
+  },
+  "implemented": [
+    "Native receipt list/detail reads, outcome opt-in, pending flags and JSON fallbacks.",
+    "Relative receipt/pending insertion order retained in shared handover and repaired in older copies.",
+    "Transactional local token rotation and native token entropy for initial legacy signed hooks."
+  ],
+  "validation": {
+    "rpcTestsPerMode": 4,
+    "sharedStoreTestsPerMode": 14,
+    "sourceCases": 79,
+    "officialReadComparisonsPerHandover": 8,
+    "o3RotationsReadByT3": 2,
+    "nativeRotationsImportedByO3": 1,
+    "providerTurns": 0,
+    "filteredTasksValidated": 4,
+    "filteredTasksRejected": 0
+  },
+  "limits": [
+    "New deliveries use the native admission/worker adapter; legacy accepted work still needs a safe ownership boundary.",
+    "Relay origin URL resolution, secret providers, global policy and ambiguous imported preparation remain open.",
+    "See NATIVE-WEBHOOK-ADMISSION.md for command receipts, effect barriers and their evidence; not full scheduled-task/global parity."
+  ],
+  "latestCoveredSourceCheck": {
+    "tag": "v0.1.8-nightly.20261106.4275",
+    "commit": "6577c6b6185167c0e502fa01f9e8e8f2dee6ff25",
+    "unchangedFromPinned": [
+      "apps/server/src/scheduledTasks/ScheduledTaskService.ts",
+      "packages/contracts/src/scheduledTask.ts"
+    ],
+    "scope": "Only these source files; not a global 4275 certification."
+  }
+}

@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+"""Reproduce the narrowly source-backed4314 default overlay without changing the full schema pin."""
+import argparse,json,pathlib
+p=argparse.ArgumentParser(description=__doc__)
+p.add_argument('--fixture',type=pathlib.Path,required=True)
+p.add_argument('--root',type=pathlib.Path,default=pathlib.Path(__file__).resolve().parent.parent)
+a=p.parse_args();fixture=json.loads(a.fixture.read_text());revision='83a3674ffd84ffb33de768210c806cb1ac53fd80'
+if fixture['revision']!=revision or fixture['effect']!='4.1.2':raise SystemExit('Wrong native fixture provenance')
+case=next(row for row in fixture['schemaCases'] if row['input']=={})
+value=case['value']
+if value!=7:raise SystemExit('Unexpected native default; review the source delta')
+program_path=a.root/'src/managed-settings-codec-4262.json';program=json.loads(program_path.read_text())
+field=program['fields']['sidebarAutoSettleAfterDays']
+if program['nodes'][field].get('default') not in [3,7]:raise SystemExit('Unexpected codec baseline')
+for key in ['defaults','encodedDefaults']:program[key]['sidebarAutoSettleAfterDays']=value
+program['nodes'][field]['default']=value
+program['defaultOverrides']={'revision':revision,'source':'packages/contracts/src/settings.ts','sourceSha256':fixture['sources']['packages/contracts/src/settings.ts'],'fields':{'sidebarAutoSettleAfterDays':value}}
+program_path.write_text(json.dumps(program,indent=2)+'\n')
+defaults_path=a.root/'src/settings-defaults.json';defaults=json.loads(defaults_path.read_text());defaults['sidebarAutoSettleAfterDays']=value;defaults_path.write_text(json.dumps(defaults,indent=2)+'\n')

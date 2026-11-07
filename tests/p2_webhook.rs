@@ -15,81 +15,105 @@ fn signed_webhook_definition_is_readable_without_leaking_secret() {
         .starts_with("/api/hooks/hook/"));
     assert!(!reply.to_string().contains("fixture-only-key"));
     let path = reply["task"]["webhook"]["path"].as_str().unwrap();
+    assert_eq!(path.rsplit('/').next().unwrap().len(), 43);
     let body = r#"{"id":"one","group":"batch","action":"opened"}"#;
     assert!(post(&s.base, path, body, "bad").contains("401"));
     assert!(post(&s.base, path, &" ".repeat(1024 * 1024 + 1), "bad").contains("413"));
     let signature = sign(body);
     assert!(post(&s.base, path, body, &signature).contains("accepted"));
+    assert!(post(&s.base, path, body, &signature).contains("duplicate"));
+    let filtered = r#"{"id":"two","group":"batch","action":"closed"}"#;
+    assert!(post(&s.base, path, filtered, &sign(filtered)).contains("filtered"));
+    let second = r#"{"id":"two","group":"batch","action":"opened"}"#;
+    assert!(post(&s.base, path, second, &sign(second)).contains("coalesced"));
+    {
+        let db = s.state.db.lock().unwrap();
+        assert_eq!(
+            db.query_row(
+                "SELECT count(*) FROM scheduled_task_webhook_pending",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+            1
+        );
+        assert_eq!(
+            db.query_row(
+                "SELECT count(*) FROM scheduled_task_webhook_replay_keys",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+            2
+        );
+        db.execute(
+            "UPDATE scheduled_task_webhook_replay_keys SET expires_at=0",
+            [],
+        )
+        .unwrap();
+    }
+    assert!(post(&s.base, path, body, &signature).contains("coalesced"));
+    // A pause before dispatch fences accepted work without stamping a run.
+    c.rpc(
+        "scheduledTasks.setEnabled",
+        json!({"id":"hook","enabled":false}),
+    )
+    .unwrap();
     s.state
         .db
         .lock()
         .unwrap()
-        .execute("UPDATE hook_replay SET expires=0", [])
+        .execute("UPDATE scheduled_task_webhook_pending SET due_at=0", [])
         .unwrap();
-    assert!(post(
-        &s.base,
-        &format!("{path}?text=attacker&delivery=changed"),
-        body,
-        &signature
-    )
-    .contains("duplicate"));
-    let filtered = r#"{"id":"two","group":"batch","action":"closed"}"#;
-    assert!(post(&s.base, path, filtered, &sign(filtered)).contains("filtered"));
-    let second = r#"{"id":"two","group":"batch","action":"opened"}"#;
-    assert!(post(&s.base, path, second, &sign(second)).contains("accepted"));
-    let db = s.state.db.lock().unwrap();
-    assert_eq!(
-        db.query_row("SELECT count(*) FROM hook_queue", [], |r| r
-            .get::<_, i64>(0))
-            .unwrap(),
-        1
-    );
-    assert_eq!(
-        db.query_row("SELECT count(*) FROM hook_replay", [], |r| r
-            .get::<_, i64>(0))
-            .unwrap(),
-        2
-    );
-    // Expired coalesced requests must never launch, even if the clock has passed due.
-    db.execute("UPDATE hook_queue SET due=0,expires=0", [])
-        .unwrap();
-    drop(db);
-    // An unchanged setEnabled is a no-op in T3, so wake the timer directly.
     s.state.streams.ops.wake_scheduler();
-    assert!(support::wait_for(std::time::Duration::from_secs(2), || s
+    assert!(support::wait_for(std::time::Duration::from_secs(3), || s
         .state
         .db
         .lock()
         .unwrap()
-        .query_row("SELECT count(*) FROM hook_queue", [], |r| r
-            .get::<_, i64>(0))
+        .query_row(
+            "SELECT count(*) FROM scheduled_task_webhook_pending",
+            [],
+            |r| r.get::<_, i64>(0)
+        )
         .unwrap()
         == 0));
-    let list = scheduled_tasks::list(&c).unwrap();
-    assert!(!list.to_string().contains("fixture-only-key"));
-    assert_eq!(list["tasks"][0]["runCount"], 0);
-    let mut unsigned = p.clone();
-    unsigned["schedule"]["signature"] = serde_json::Value::Null;
-    assert!(scheduled_tasks::upsert(&c, &TaskUpsert::from_json(&unsigned).unwrap()).is_err());
-    // Valid-sized queued prompts can exhaust bytes well before the 500-job cap.
-    let db = s.state.db.lock().unwrap();
-    for n in 0..130 {
-        db.execute(
-            "INSERT INTO hook_queue VALUES(?,'hook','',?,?,?)",
-            rusqlite::params![
-                format!("budget-{n}"),
-                o3_server::store::now_ms() + 3_600_000,
-                o3_server::store::now_ms() + 7_200_000,
-                "x".repeat(64 * 1024)
-            ],
+    assert_eq!(
+        scheduled_tasks::list(&c).unwrap()["tasks"][0]["runCount"],
+        0
+    );
+    let deliveries = c
+        .rpc(
+            "scheduledTasks.listWebhookDeliveries",
+            json!({"id":"hook","acceptAnyOutcome":true}),
         )
         .unwrap();
+    assert!(deliveries["deliveries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|d| d["outcome"] == "dispatch_failed"
+            && d["error"] == "The task was paused before this delivery ran."));
+    let mut unsigned = p.clone();
+    unsigned["schedule"]["signature"] = serde_json::Value::Null;
+    let unsigned = scheduled_tasks::upsert(&c, &TaskUpsert::from_json(&unsigned).unwrap()).unwrap();
+    assert_eq!(unsigned["task"]["webhook"]["hasSecret"], false);
+    assert!(!unsigned.to_string().contains("fixture-only-key"));
+    // Per-task capacity matches native admission; coalesced members cost no new slot.
+    for n in 0..20 {
+        let body = format!(r#"{{"id":"capacity-{n}","group":"group-{n}","action":"opened"}}"#);
+        let response = post(&s.base, path, &body, "");
+        assert!(response.contains("202"), "{response}");
     }
-    drop(db);
-    let overflow = r#"{"id":"overflow","action":"opened"}"#;
+    let overflow = post(
+        &s.base,
+        path,
+        r#"{"id":"overflow","group":"overflow","action":"opened"}"#,
+        "",
+    );
     assert!(
-        post(&s.base, path, overflow, &sign(overflow)).contains("429"),
-        "logical queue byte budget was ignored"
+        overflow.contains("429") && overflow.contains("queue_full"),
+        "{overflow}"
     );
 }
 
@@ -162,7 +186,7 @@ fn post(base: &str, path: &str, body: &str, signature: &str) -> String {
 }
 
 #[test]
-fn unsigned_template_and_filter_inputs_are_rejected() {
+fn header_query_and_request_expressions_are_native_supported_inputs() {
     let s = support::start(|_| {});
     let c = s.connect();
     for (prompt, filters, dedupe) in [
@@ -181,8 +205,8 @@ fn unsigned_template_and_filter_inputs_are_rejected() {
     ] {
         let p = json!({"id":"unsafe","title":"Hook","prompt":prompt,"enabled":true,"schedule":{"type":"webhook","signature":{"header":"X-Hub-Signature-256","encoding":"hex","prefix":"sha256=","secret":"fixture-only-key"},"filters":filters,"dedupe":dedupe},"projectId":"p","workspaceStrategy":{"type":"root"},"modelSelection":{"instanceId":"scripted","model":"m"},"runtimeMode":"full-access","interactionMode":"default"});
         assert!(
-            scheduled_tasks::upsert(&c, &TaskUpsert::from_json(&p).unwrap()).is_err(),
-            "unsigned input accepted: {p}"
+            scheduled_tasks::upsert(&c, &TaskUpsert::from_json(&p).unwrap()).is_ok(),
+            "native webhook input refused: {p}"
         );
     }
 }
@@ -220,75 +244,58 @@ fn unauthenticated_traffic_cannot_lock_out_or_enumerate_hooks() {
 }
 
 #[test]
-fn failed_dispatch_keeps_accepted_work_durable() {
+fn failed_native_dispatch_records_failure_and_releases_replay_for_retry() {
     let s = support::start(|_| {});
     let c = s.connect();
-    let p = json!({"id":"retry","title":"Hook","prompt":"safe {{body.action}}","enabled":true,"schedule":{"type":"webhook","signature":{"header":"x-hub-signature-256","encoding":"hex","prefix":"sha256=","secret":"fixture-only-key"}},"projectId":"missing-project","workspaceStrategy":{"type":"root"},"modelSelection":{"instanceId":"scripted","model":"m"},"runtimeMode":"full-access","interactionMode":"default"});
-    let reply = scheduled_tasks::upsert(&c, &TaskUpsert::from_json(&p).unwrap()).unwrap();
-    let body = r#"{"action":"go"}"#;
-    assert!(post(
-        &s.base,
-        reply["task"]["webhook"]["path"].as_str().unwrap(),
-        body,
-        &sign(body)
-    )
-    .contains("accepted"));
-    assert!(support::wait_for(std::time::Duration::from_secs(2), || {
-        scheduled_tasks::list(&c).unwrap()["tasks"][0]["runCount"]
-            .as_u64()
-            .unwrap_or(0)
-            > 0
-    }));
-    assert_eq!(
-        s.state
-            .db
-            .lock()
-            .unwrap()
-            .query_row("SELECT count(*) FROM hook_queue", [], |r| r
-                .get::<_, i64>(0))
+    let p = json!({"id":"retry","title":"Hook","prompt":"safe {{body.action}}","enabled":true,"schedule":{"type":"webhook","dedupe":{"replayKey":"{{body.id}}"}},"projectId":"missing-project","workspaceStrategy":{"type":"root"},"modelSelection":{"instanceId":"scripted","model":"m"},"runtimeMode":"full-access","interactionMode":"default"});
+    let task = c.rpc("scheduledTasks.upsert", p).unwrap()["task"].clone();
+    let path = task["webhook"]["path"].as_str().unwrap();
+    let body = r#"{"id":"repeatable","action":"go"}"#;
+    for count in 1..=2 {
+        let response = post(&s.base, path, body, "");
+        assert!(response.contains("202"), "{response}");
+        assert!(support::wait_for(std::time::Duration::from_secs(3), || {
+            let db = s.state.db.lock().unwrap();
+            let task: String = db
+                .query_row(
+                    "SELECT body FROM records WHERE kind='scheduledTasks' AND id='retry'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            serde_json::from_str::<serde_json::Value>(&task).unwrap()["runCount"] == count
+                && db
+                    .query_row(
+                        "SELECT count(*) FROM scheduled_task_webhook_pending",
+                        [],
+                        |r| r.get::<_, i64>(0),
+                    )
+                    .unwrap()
+                    == 0
+        }));
+        let db = s.state.db.lock().unwrap();
+        assert_eq!(
+            db.query_row(
+                "SELECT count(*) FROM scheduled_task_webhook_replay_keys",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
             .unwrap(),
-        1,
-        "failed dispatch lost accepted job"
-    );
-    // runCount commits before the failed claim is requeued. Wait for that final
-    // transition so the worker cannot overwrite our simulated restart with its backoff.
-    assert!(support::wait_for(std::time::Duration::from_secs(2), || {
-        let due: i64 = s
-            .state
-            .db
-            .lock()
-            .unwrap()
-            .query_row("SELECT due FROM hook_queue", [], |r| r.get(0))
-            .unwrap();
-        due != i64::MAX && due > o3_server::store::now_ms()
-    }));
-    // Simulate a crash after the dispatch receipt commit but before queue deletion.
-    let db = s.state.db.lock().unwrap();
-    let job: String = db
-        .query_row("SELECT id FROM hook_queue", [], |r| r.get(0))
+            0
+        );
+    }
+    let list = c
+        .rpc(
+            "scheduledTasks.listWebhookDeliveries",
+            json!({"id":"retry","acceptAnyOutcome":true}),
+        )
         .unwrap();
-    db.execute(
-        "INSERT INTO receipts VALUES(?,'{}')",
-        [format!("webhook:retry:{job}")],
-    )
-    .unwrap();
-    db.execute("UPDATE hook_queue SET due=0", []).unwrap();
-    drop(db);
-    // An unchanged setEnabled is a no-op in T3, so wake the timer directly.
-    s.state.streams.ops.wake_scheduler();
-    assert!(support::wait_for(std::time::Duration::from_secs(2), || s
-        .state
-        .db
-        .lock()
+    assert_eq!(list["deliveries"].as_array().unwrap().len(), 2);
+    assert!(list["deliveries"]
+        .as_array()
         .unwrap()
-        .query_row("SELECT count(*) FROM hook_queue", [], |r| r
-            .get::<_, i64>(0))
-        .unwrap()
-        == 0));
-    assert_eq!(
-        scheduled_tasks::list(&c).unwrap()["tasks"][0]["runCount"],
-        1
-    );
+        .iter()
+        .all(|d| d["outcome"] == "dispatch_failed"));
 }
 
 #[test]

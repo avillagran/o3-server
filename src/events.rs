@@ -43,13 +43,17 @@ fn change_selection(
 
 pub fn initialize(db: &Connection) -> Result<()> {
     db.execute_batch("CREATE TABLE IF NOT EXISTS records(kind TEXT NOT NULL,id TEXT NOT NULL,thread_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(kind,id)); CREATE INDEX IF NOT EXISTS records_thread ON records(thread_id,kind); CREATE TABLE IF NOT EXISTS events(sequence INTEGER PRIMARY KEY AUTOINCREMENT,thread_id TEXT NOT NULL,body TEXT NOT NULL,shell TEXT); CREATE TABLE IF NOT EXISTS receipts(command_id TEXT PRIMARY KEY,result TEXT NOT NULL);").map_err(|e|e.to_string())?;
+    crate::command_shared::initialize(db)?;
     // Subscription cursors: per-thread and shell event seeks (see `next`).
     db.execute_batch("CREATE INDEX IF NOT EXISTS events_thread_sequence ON events(thread_id,sequence); CREATE INDEX IF NOT EXISTS events_shell_sequence ON events(sequence) WHERE shell IS NOT NULL;").map_err(|e|e.to_string())?;
     // Visible windows follow logical positions, including updated older rows.
     db.execute_batch("CREATE INDEX IF NOT EXISTS records_visible_position ON records(thread_id,coalesce(json_extract(body,'$.position'),json_extract(body,'$.item.ordinal'),0)) WHERE kind='visibleTurnItems';").map_err(|e|e.to_string())?;
     // The partial index finds the latest user without reading assistant bodies.
     db.execute_batch("CREATE INDEX IF NOT EXISTS records_turn_ordinal ON records(thread_id,json_extract(body,'$.ordinal')) WHERE kind='turnItems'; CREATE INDEX IF NOT EXISTS records_user_message ON records(thread_id) WHERE kind='messages' AND json_extract(body,'$.role')='user';").map_err(|e|e.to_string())?;
+    // Recovery reads root failures without materializing unrelated transcript bodies.
+    db.execute_batch("CREATE INDEX IF NOT EXISTS records_root_failure ON records(thread_id,json_extract(body,'$.runId'),json_extract(body,'$.nodeId')) WHERE kind='turnItems' AND json_extract(body,'$.type')='error' AND json_extract(body,'$.status')='failed';").map_err(|error|error.to_string())?;
     repair_boolean_settled_override(db)?;
+    repair_context_costs(db)?;
     initialize_run_internal(db)?;
     crate::deletion::initialize(db)?;
     crate::run_restart::initialize(db)?;
@@ -57,12 +61,35 @@ pub fn initialize(db: &Connection) -> Result<()> {
     crate::workspace_transition::initialize(db)?;
     crate::native_recovery::initialize(db)?;
     crate::provider_switch::initialize(db)?;
+    crate::fresh_context::initialize(db)?;
     crate::context_transfer::initialize(db)?;
     crate::threadq::initialize(db)?;
+    crate::webhook::initialize(db)?;
+    crate::task_shared::initialize(db)?;
     crate::t3_shared::initialize(db)
 }
 /// Upstream 077 (1973e0a68): a boolean `settledOverride` breaks the thread schema; true means
 /// settled, false means none. Idempotent; walks only thread records through the primary key.
+/// One-time repair; replay tables can be large, so do not scan them on every startup.
+fn repair_context_costs(db: &Connection) -> Result<()> {
+    let done: bool = db
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='context_cost_canonical_v1')",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if done {
+        return Ok(());
+    }
+    db.execute_batch("BEGIN IMMEDIATE;
+        UPDATE records SET body=json_set(body,'$.contextUsage.cost',json_object('amount',json_extract(body,'$.contextUsage.cost'),'currency','USD')) WHERE kind='providerThreads' AND json_type(body,'$.contextUsage.cost') IN ('integer','real');
+        UPDATE events SET body=json_set(body,'$.payload.contextUsage.cost',json_object('amount',json_extract(body,'$.payload.contextUsage.cost'),'currency','USD')) WHERE json_extract(body,'$.type')='provider-thread.updated' AND json_type(body,'$.payload.contextUsage.cost') IN ('integer','real');
+        UPDATE records SET body=json_remove(body,'$.contextUsage.cost') WHERE kind='providerThreads' AND json_type(body,'$.contextUsage.cost')='null';
+        UPDATE events SET body=json_remove(body,'$.payload.contextUsage.cost') WHERE json_extract(body,'$.type')='provider-thread.updated' AND json_type(body,'$.payload.contextUsage.cost')='null';
+        CREATE TABLE context_cost_canonical_v1(done INTEGER); COMMIT;").map_err(|e|e.to_string())
+}
+
 fn repair_boolean_settled_override(db: &Connection) -> Result<()> {
     db.execute(
         "UPDATE records SET body=json_set(body,'$.settledOverride',IIF(json_type(body,'$.settledOverride')='true','settled',NULL)) WHERE kind='thread' AND json_valid(body) AND json_type(body,'$.settledOverride') IN ('true','false')",
@@ -184,6 +211,10 @@ pub(crate) fn put(db: &Connection, kind: &str, id: &str, tid: &str, v: &Value) -
         let mut public = v.clone();
         let internal = take_run_internal(&mut public);
         db.execute("INSERT INTO run_internal VALUES(?,?) ON CONFLICT(id) DO UPDATE SET body=json_patch(run_internal.body,excluded.body)", params![id,internal.to_string()]).map_err(|e|e.to_string())?;
+        Some(public)
+    } else if kind == "providerThreads" {
+        let mut public = v.clone();
+        crate::projection::normalize_context_cost(&mut public);
         Some(public)
     } else {
         None
@@ -485,6 +516,7 @@ pub(crate) fn append(
     mut payload: Value,
     thread: &Value,
 ) -> Result<i64> {
+    crate::projection::normalize_context_cost(&mut payload);
     // Older internal producers used an alias the real client reducer ignores.
     let kind = if kind == "attempt.updated" {
         "run-attempt.updated"
@@ -540,6 +572,20 @@ pub(crate) fn dispatch_prepared(
     s: &std::sync::Arc<State>,
     c: &Value,
     authority: Option<&crate::mcp_access::Authority>,
+) -> Result<Value> {
+    dispatch_prepared_with_auto(s, c, authority, false)
+}
+pub(crate) fn dispatch_auto_arm(s: &std::sync::Arc<State>, c: &Value) -> Result<Value> {
+    if c["type"] != "thread.metadata.update" || !c["limitRecovery"].is_object() {
+        return Err("automatic recovery requires a metadata update".into());
+    }
+    dispatch_prepared_with_auto(s, c, None, true)
+}
+fn dispatch_prepared_with_auto(
+    s: &std::sync::Arc<State>,
+    c: &Value,
+    authority: Option<&crate::mcp_access::Authority>,
+    automatic_recovery: bool,
 ) -> Result<Value> {
     if s.rollback_pending
         .load(std::sync::atomic::Ordering::Acquire)
@@ -606,6 +652,8 @@ pub(crate) fn dispatch_prepared(
     if let Some(authority) = authority {
         authority.check(&tx, c)?;
     }
+    crate::managed_policy::check_command(s, &tx, c)?;
+    crate::command_shared::check_replay(&tx, cid, c["threadId"].as_str())?;
     if let Some(r) = tx
         .query_row(
             "SELECT result FROM receipts WHERE command_id=?",
@@ -616,11 +664,15 @@ pub(crate) fn dispatch_prepared(
         .map_err(|e| e.to_string())?
     {
         let result = serde_json::from_str(&r).map_err(|e| e.to_string())?;
-        return if authority.is_some() {
+        let result = if authority.is_some() {
             crate::mcp_access::replay_reply(&tx, c, result)
         } else {
             Ok(result)
-        };
+        }?;
+        drop(tx);
+        drop(db);
+        crate::command_shared::ensure_exported(s, Some(cid))?;
+        return Ok(result);
     }
     let resolved;
     let c = if authority.is_some() && c["type"] == "run.interrupt" {
@@ -653,6 +705,20 @@ pub(crate) fn dispatch_prepared(
     }
     if kind != "thread.delete" && !t["deletedAt"].is_null() {
         return Err("The thread was deleted".into());
+    }
+    if kind == "message.dispatch" && !crate::limits::admit_continuation(&tx, &mut t, c, now_ms())? {
+        put(&tx, "thread", tid, tid, &t)?;
+        append(&tx, tid, "thread.metadata-updated", t.clone(), &t)?;
+        let result = json!({"sequence":sequence(&tx)?});
+        tx.execute(
+            "INSERT INTO receipts VALUES(?,?)",
+            params![cid, result.to_string()],
+        )
+        .map_err(|error| error.to_string())?;
+        tx.commit().map_err(|error| error.to_string())?;
+        drop(db);
+        s.notify();
+        return Ok(result);
     }
     let event = match kind {
         "thread.create" => {
@@ -717,11 +783,12 @@ pub(crate) fn dispatch_prepared(
             if c.get("title").is_some() {
                 t["titleRegeneration"] = Value::Null;
             }
-            for k in ["title", "branch", "worktreePath", "limitRecovery"] {
+            for k in ["title", "branch", "worktreePath"] {
                 if let Some(v) = c.get(k) {
                     t[k] = v.clone()
                 }
             }
+            crate::limits::update_recovery(&tx, &mut t, c, &at, automatic_recovery)?;
             "thread.metadata-updated"
         }
         "thread.title.regeneration.complete" => {
@@ -799,10 +866,22 @@ pub(crate) fn dispatch_prepared(
             }
         }
         "message.dispatch" => {
+            crate::fresh_context::validate(c)?;
+            let prepared = crate::provider_input::normalize_command_context(c)?;
+            let c = prepared.as_ref();
             let mut resolved = c.clone();
             resolved["dispatchMode"] = delivery_mode(s, &tx, &t, c, authority.is_some())?;
+            if c["freshContext"] == true
+                && matches!(
+                    resolved["dispatchMode"]["type"].as_str(),
+                    Some("steer_active" | "restart_active")
+                )
+            {
+                resolved["dispatchMode"] = json!({"type":"queue_after_active"});
+            }
             resolve_steering_restart(s, &tx, &t, &mut resolved)?;
             if authority.is_some()
+                && c["freshContext"] != true
                 && c["deliveryIntent"] == "steer"
                 && !matches!(
                     resolved["dispatchMode"]["type"].as_str(),
@@ -854,7 +933,15 @@ pub(crate) fn dispatch_prepared(
                     &t["modelSelection"],
                     selection,
                 );
-                change_selection(s, &tx, &mut t, c, selection)?;
+                if c["freshContext"] == true {
+                    if !selection["instanceId"].is_string()
+                        || !selection["model"].as_str().is_some_and(|m| !m.is_empty())
+                    {
+                        return Err("invalid model selection".into());
+                    }
+                } else {
+                    change_selection(s, &tx, &mut t, c, selection)?;
+                }
                 if changed && c["dispatchMode"]["type"] == "steer_active" {
                     t["updatedAt"] = json!(at);
                     put(&tx, "thread", tid, tid, &t)?;
@@ -946,6 +1033,12 @@ pub(crate) fn dispatch_prepared(
             };
             tx.commit().map_err(|e| e.to_string())?;
             drop(db);
+            if let Err(error) = crate::command_shared::ensure_exported(s, Some(cid)) {
+                if c["dispatchMode"]["type"] != "defer_start" && !queued {
+                    crate::command_shared::defer_provider(s, tid, &run_id, &error);
+                }
+                return Err(error);
+            }
             s.notify();
             if c["dispatchMode"]["type"] != "defer_start" && !queued {
                 crate::provider::start(
@@ -958,6 +1051,7 @@ pub(crate) fn dispatch_prepared(
             return Ok(result);
         }
         "thread.stop" => {
+            crate::limits::disarm(&tx, &mut t, c, &at)?;
             if t["deletedAt"].is_null() {
                 if let Some(run) = list(&tx, "runs", Some(tid), 10000)?
                     .into_iter()
@@ -1018,6 +1112,10 @@ pub(crate) fn dispatch_prepared(
                 ),
                 None => None,
             };
+            if c["holdQueue"] == true && crate::limits::disarm(&tx, &mut t, c, &at)? {
+                put(&tx, "thread", tid, tid, &t)?;
+                append(&tx, tid, "thread.metadata-updated", t.clone(), &t)?;
+            }
             interrupt_request(&tx, tid, &run, &t, &at, c)?;
             if !native_started || permit.is_none() {
                 crate::projection::finish(&tx, tid, rid, &t, &at, "interrupted")?;
@@ -1195,6 +1293,7 @@ pub(crate) fn dispatch_prepared(
                 crate::outbox::handed_off(s, cid)?;
             }
             s.notify();
+            s.streams.ops.scheduler_wake.notify_one();
             return Ok(result);
         }
         _ => return Err(format!("command {kind} is not implemented")),
@@ -1204,6 +1303,7 @@ pub(crate) fn dispatch_prepared(
     let seq = append(&tx, tid, event, t.clone(), &t)?;
     let result = json!({"sequence":seq});
     crate::outbox::stage(&tx, c)?;
+    crate::command_shared::admit(&tx, cid, tid, kind, &at, seq, (None, None))?;
     tx.execute(
         "INSERT INTO receipts VALUES(?,?)",
         params![cid, result.to_string()],
@@ -1211,6 +1311,9 @@ pub(crate) fn dispatch_prepared(
     .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
     drop(db);
+    if kind == "thread.create" {
+        crate::command_shared::ensure_exported(s, Some(cid))?;
+    }
     if kind == "thread.metadata.update" && c.get("worktreePath").is_some() {
         // The worker uses the durable outbox to distinguish a real change from a no-op.
         if crate::workspace_transition::pending(&s.db.lock().unwrap(), tid)? {
@@ -1221,6 +1324,9 @@ pub(crate) fn dispatch_prepared(
         crate::provider_switch::start_release(s.clone(), tid.into());
     }
     s.notify();
+    if kind.starts_with("thread.") || kind == "provider.switch" {
+        s.streams.ops.scheduler_wake.notify_one();
+    }
     if c["regenerateTitle"] == true {
         let text = {
             let db = s.db.lock().unwrap();
@@ -1450,9 +1556,21 @@ pub(crate) fn message_item(db: &Connection, tid: &str, m: &Value) -> Result<Valu
         .map_err(|e| e.to_string())?;
     let mut item = json!({"id":id,"threadId":tid,"runId":m["runId"],"nodeId":m["nodeId"],"providerThreadId":m["providerThreadId"],"providerTurnId":m["providerTurnId"],"nativeItemRef":null,"parentItemId":null,"ordinal":ordinal,"status":"completed","title":null,"startedAt":m["createdAt"],"completedAt":m["updatedAt"],"updatedAt":m["updatedAt"],"type":if m["role"]=="user"{"user_message"}else{"assistant_message"},"messageId":m["id"],"text":m["text"],"streaming":m["streaming"],"attachments":m["attachments"]});
     if m["role"] == "user" {
+        if let Some(context) = m.get("context") {
+            item["context"] = context.clone();
+        }
         item.as_object_mut().unwrap().remove("streaming");
+        if m["freshContext"] == true
+            || get(db, "runs", m["runId"].as_str().unwrap_or(""))
+                .is_ok_and(|r| r["freshContext"] == true)
+        {
+            item["freshContext"] = json!(true);
+        }
         item["createdBy"] = m.get("createdBy").cloned().unwrap_or(json!("user"));
         item["creationSource"] = m.get("creationSource").cloned().unwrap_or(json!("web"));
+        if let Some(task) = m.get("scheduledTaskId") {
+            item["scheduledTaskId"] = task.clone();
+        }
         if let Some(sender) = m.get("senderThreadId") {
             item["senderThreadId"] = sender.clone();
         }
@@ -1516,6 +1634,20 @@ fn resolve_steering_restart(s: &State, db: &Connection, t: &Value, c: &mut Value
     Ok(())
 }
 fn delivery_mode(s: &State, db: &Connection, t: &Value, c: &Value, mcp: bool) -> Result<Value> {
+    if c.get("deliveryIntent")
+        .is_some_and(|v| !matches!(v.as_str(), Some("auto" | "steer" | "restart")))
+    {
+        return Err("invalid delivery intent".into());
+    }
+    if c["freshContext"] == true
+        && (c["deliveryIntent"].is_string()
+            || matches!(
+                c["dispatchMode"]["type"].as_str(),
+                Some("steer_active" | "restart_active")
+            ))
+    {
+        return Ok(json!({"type":"queue_after_active"}));
+    }
     let Some(intent) = c.get("deliveryIntent") else {
         return Ok(c["dispatchMode"].clone());
     };
@@ -1605,6 +1737,30 @@ fn delivery_mode(s: &State, db: &Connection, t: &Value, c: &Value, mcp: bool) ->
     }
 }
 
+fn validate_creation_fields(command: &Value) -> Result<()> {
+    for (field, allowed) in [
+        ("createdBy", &["user", "agent", "system"][..]),
+        (
+            "creationSource",
+            &["web", "mobile", "mcp", "provider", "server"][..],
+        ),
+    ] {
+        if command
+            .get(field)
+            .is_some_and(|v| !v.as_str().is_some_and(|v| allowed.contains(&v)))
+        {
+            return Err(format!("Invalid {field}"));
+        }
+    }
+    if command
+        .get("scheduledTaskId")
+        .is_some_and(|v| !v.as_str().is_some_and(|v| !v.trim().is_empty()))
+    {
+        return Err("Invalid scheduledTaskId".into());
+    }
+    Ok(())
+}
+
 pub(crate) fn stage_message(
     s: &std::sync::Arc<State>,
     tx: &Connection,
@@ -1613,6 +1769,9 @@ pub(crate) fn stage_message(
     at: &str,
     mcp_origin: bool,
 ) -> Result<(Value, String, bool)> {
+    let prepared = crate::provider_input::normalize_command_context(c)?;
+    let c = prepared.as_ref();
+    crate::managed_policy::check_command(s, tx, c)?;
     let tid = c["threadId"].as_str().ok_or("threadId required")?;
     let cid = c["commandId"].as_str().ok_or("commandId required")?;
     if !matches!(
@@ -1621,6 +1780,8 @@ pub(crate) fn stage_message(
     ) {
         return Err("dispatch mode is not implemented".into());
     }
+    validate_creation_fields(c)?;
+    crate::fresh_context::validate(c)?;
     let mode = c["dispatchMode"]["type"].as_str();
     if s.active.lock().unwrap().len() >= 32 {
         return Err("active run limit reached".into());
@@ -1695,6 +1856,16 @@ pub(crate) fn stage_message(
     let run_id = random_id()?;
     let mid = c["messageId"].as_str().ok_or("messageId required")?;
     let mut m = json!({"id":mid,"threadId":tid,"runId":run_id,"nodeId":run_id,"role":"user","text":c["text"],"attachments":c["attachments"],"streaming":false,"createdBy":if mcp_origin{"agent"}else{"user"},"creationSource":if mcp_origin{"mcp"}else{"web"},"createdAt":at,"updatedAt":at});
+    if !mcp_origin {
+        for field in ["createdBy", "creationSource"] {
+            if let Some(value) = c.get(field) {
+                m[field] = value.clone();
+            }
+        }
+    }
+    if let Some(task) = c.get("scheduledTaskId") {
+        m["scheduledTaskId"] = task.clone();
+    }
     if let Some(reference) = c.get("sourcePlanRef") {
         m["sourcePlanRef"] = reference.clone();
     }
@@ -1724,7 +1895,23 @@ pub(crate) fn stage_message(
             |r| r.get(0),
         )
         .map_err(|e| e.to_string())?;
-    let mut run = json!({"id":run_id,"threadId":tid,"ordinal":ordinal,"providerInstanceId":t["providerInstanceId"],"modelSelection":t["modelSelection"],"providerThreadId":null,"userMessageId":mid,"rootNodeId":null,"activeAttemptId":null,"status":"preparing","queuePosition":null,"requestedAt":at,"startedAt":null,"completedAt":null,"checkpointId":null,"contextHandoffId":null,"executionRequested":c["dispatchMode"]["type"]!="defer_start"});
+    let selection = if c["freshContext"] == true {
+        c.get("modelSelection").unwrap_or(&t["modelSelection"])
+    } else {
+        &t["modelSelection"]
+    };
+    let instance = if c["freshContext"] == true && c.get("modelSelection").is_some() {
+        &selection["instanceId"]
+    } else {
+        &t["providerInstanceId"]
+    };
+    let mut run = json!({"id":run_id,"threadId":tid,"ordinal":ordinal,"providerInstanceId":instance,"modelSelection":selection,"providerThreadId":null,"userMessageId":mid,"rootNodeId":null,"activeAttemptId":null,"status":"preparing","queuePosition":null,"requestedAt":at,"startedAt":null,"completedAt":null,"checkpointId":null,"contextHandoffId":null,"executionRequested":c["dispatchMode"]["type"]!="defer_start"});
+    if let Some(source) = c.get("usageLimitContinuationOfRunId") {
+        run["usageLimitContinuationOfRunId"] = source.clone();
+    }
+    if c["freshContext"] == true {
+        run["freshContext"] = json!(true);
+    }
     if queued {
         run["status"] = json!("queued");
         run["executionRequested"] = json!(true);
@@ -1738,6 +1925,9 @@ pub(crate) fn stage_message(
     put(tx, "thread", tid, tid, t)?;
     let mut item_message = m.clone();
     item_message["providerThreadId"] = run["providerThreadId"].clone();
+    if run["freshContext"] == true {
+        item_message["freshContext"] = json!(true);
+    }
     if queued {
         item_message["inputIntent"] = json!("queued_turn");
     }
@@ -1749,6 +1939,7 @@ pub(crate) fn stage_message(
         let object = preparation.as_object_mut().unwrap();
         for field in [
             "messageId",
+            "scheduledTaskId",
             "text",
             "attachments",
             "inputIntent",
@@ -1786,6 +1977,15 @@ pub(crate) fn stage_message(
     let seq = append(tx, tid, "run.created", run, t)?;
     let result = json!({"sequence":seq});
     crate::outbox::stage(tx, c)?;
+    crate::command_shared::admit(
+        tx,
+        cid,
+        tid,
+        "message.dispatch",
+        at,
+        seq,
+        (Some(&run_id), Some(mid)),
+    )?;
     tx.execute(
         "INSERT INTO receipts VALUES(?,?)",
         params![cid, result.to_string()],
@@ -1827,6 +2027,7 @@ pub(crate) fn import_native(
 }
 
 pub(crate) fn new_thread(db: &Connection, c: &Value, tid: &str, at: &str) -> Result<Value> {
+    validate_creation_fields(c)?;
     Ok({
         for key in [
             "projectId",
@@ -1847,7 +2048,7 @@ pub(crate) fn new_thread(db: &Connection, c: &Value, tid: &str, at: &str) -> Res
         {
             return Err("Project was deleted".into());
         }
-        json!({"id":tid,"projectId":c["projectId"],"title":c["title"],"providerInstanceId":c["modelSelection"]["instanceId"],"modelSelection":c["modelSelection"],"runtimeMode":c["runtimeMode"],"interactionMode":c["interactionMode"],"branch":c["branch"],"worktreePath":c["worktreePath"],"createdBy":"user","creationSource":c.get("creationSource").cloned().unwrap_or(json!("web")),"lineage":{"parentThreadId":null,"relationshipToParent":null,"rootThreadId":tid},"forkedFrom":null,"activeProviderThreadId":null,"createdAt":at,"updatedAt":at,"archivedAt":null,"settledOverride":null,"settledAt":null,"lastVisitedAt":null,"snoozedAt":null,"snoozedUntil":null,"pullRequests":[],"deletedAt":null})
+        json!({"id":tid,"projectId":c["projectId"],"title":c["title"],"providerInstanceId":c["modelSelection"]["instanceId"],"modelSelection":c["modelSelection"],"runtimeMode":c["runtimeMode"],"interactionMode":c["interactionMode"],"branch":c["branch"],"worktreePath":c["worktreePath"],"createdBy":c.get("createdBy").cloned().unwrap_or(json!("user")),"creationSource":c.get("creationSource").cloned().unwrap_or(json!("web")),"lineage":{"parentThreadId":null,"relationshipToParent":null,"rootThreadId":tid},"forkedFrom":null,"activeProviderThreadId":null,"createdAt":at,"updatedAt":at,"archivedAt":null,"settledOverride":null,"settledAt":null,"lastVisitedAt":null,"snoozedAt":null,"snoozedUntil":null,"pullRequests":[],"deletedAt":null})
     })
 }
 
@@ -2086,7 +2287,7 @@ mod internal_run_tests {
             .unwrap();
         initialize_run_internal(&a).unwrap();
         drop((a, b));
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[test]
     fn legacy_run_bookkeeping_migrates_without_entering_any_public_record() {

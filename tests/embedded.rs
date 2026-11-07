@@ -92,5 +92,5 @@ fn shared_state_is_send_sync_and_duplex_uses_the_authenticated_http_ws_router() 
             task.await.unwrap();
         });
     drop(state);
-    std::fs::remove_dir_all(dir).unwrap();
+    // Fixture trees are retained for private container teardown.
 }

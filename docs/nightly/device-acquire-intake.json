@@ -1,0 +1,36 @@
+{
+  "revision": "32a0531748c44b25072d7495ce0b9bd7e9450a87",
+  "nightly": "4288",
+  "effect": "4.1.2",
+  "scope": [
+    "DeviceToolchain exact pins, install paths, npm argv/timeout, completed reuse and errors",
+    "Linux owned staging/no-replace publication/quarantine safety extension",
+    "Selected local tool updates and missing-hub local readiness consumers"
+  ],
+  "sourceHashes": {
+    "apps/server/src/device/DeviceToolchain.ts": "4bc36c0a753d65ee1d1413c23da2efedc25ee7022e7464757ce366914d65350a",
+    "apps/server/src/processRunner.ts": "54dbe11d20d510fcf49b151de83da3efa982f1dc512d4233964062dbc245f1dd",
+    "packages/shared/src/shell.ts": "7d418ba20bf10116b58fb3285be6ad5316eae32a1b82ad41212e1961c86f699b",
+    "packages/shared/src/HostProcess.ts": "eeafedd914ae4aaf81ef6f474139111e98ec40bcb5a077d43ff02382cae7c011",
+    "packages/provider-core/src/server/collectStreamText.ts": "754a726d43c8e03647f2bf97559fe0f675a7dd7f6e71f5537e09b5c4ad093216",
+    "apps/server/src/device/deviceToolVersions.json": "4fc5d7da620049c52a6216bd4cf8699afe28088220a9d0e8b07e055d50d23625"
+  },
+  "nativeScenarios": 24,
+  "nativeFilesystem": "In-memory only; recorded recursive remove operations are never executed.",
+  "physicalProof": "Private synthetic CLI and loopback HTTP two-file tar; synthetic owned Node hub; absent SDK path.",
+  "intentionalDifferences": [
+    "No recursive deletion or replacement of existing installations",
+    "Scripts/bin links disabled; empty npm user/global config; private cache",
+    "No mutable npm@11 fallback",
+    "Complete inventory seal instead of entry-plus-sentinel trust",
+    "Linux-only atomic no-replace publication",
+    "Failed staging retained; no automatic quarantine cleanup"
+  ],
+  "remaining": [
+    "Remote tool acquisition",
+    "Agent-device runtime/claims",
+    "EAS and Simlock lifecycle",
+    "Real package/SDK/emulator/SSH/hardware acceptance",
+    "Non-Linux exclusive publication"
+  ]
+}

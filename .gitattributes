@@ -1,0 +1,2 @@
+# Preserve the exact Function.toString bytes emitted by Node TypeScript erasure.
+runtime/speech/native-worker.mjs whitespace=-blank-at-eol,-blank-at-eof

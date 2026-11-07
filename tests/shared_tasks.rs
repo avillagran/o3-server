@@ -1,0 +1,685 @@
+//! Event-free task handover using a redacted capture of the official 4262 runtime.
+use o3_server::{scheduled, store::State, t3_shared};
+use rusqlite::{params, params_from_iter, Connection};
+use serde_json::{json, Value};
+use std::{path::PathBuf, sync::Arc};
+
+fn profile() -> (PathBuf, Arc<State>, Connection) {
+    assert!(
+        std::path::Path::new("/run/.containerenv").is_file()
+            || std::path::Path::new("/.dockerenv").is_file()
+    );
+    let dir = std::env::temp_dir().join(format!(
+        "o3-shared-tasks-{}",
+        o3_server::store::random_id().unwrap()
+    ));
+    std::fs::create_dir(&dir).unwrap();
+    let native = Connection::open(t3_shared::database(&dir)).unwrap();
+    native
+        .execute_batch(include_str!("fixtures/t3-statev2-80.sql"))
+        .unwrap();
+    let fixture: Value =
+        serde_json::from_str(include_str!("fixtures/t3-task-store-4262.json")).unwrap();
+    for table in [
+        "scheduled_tasks",
+        "scheduled_task_webhook_deliveries",
+        "scheduled_task_webhook_pending",
+        "scheduled_task_webhook_replay_keys",
+        "scheduled_task_webhook_relay_deliveries",
+    ] {
+        for row in fixture["tables"][table].as_array().unwrap() {
+            let fields = row.as_object().unwrap();
+            let columns = fields.keys().cloned().collect::<Vec<_>>().join(",");
+            let values = fields.values().map(|v| match v {
+                Value::Null => rusqlite::types::Value::Null,
+                Value::String(s) => rusqlite::types::Value::Text(s.clone()),
+                Value::Number(n) => rusqlite::types::Value::Integer(n.as_i64().unwrap()),
+                _ => panic!("Unexpected fixture SQL value"),
+            });
+            native
+                .execute(
+                    &format!(
+                        "INSERT INTO {table} ({columns}) VALUES ({})",
+                        vec!["?"; fields.len()].join(",")
+                    ),
+                    params_from_iter(values),
+                )
+                .unwrap();
+        }
+    }
+    let state = Arc::new(State::open(&dir).unwrap());
+    (dir, state, native)
+}
+fn text(db: &Connection, sql: &str) -> String {
+    db.query_row(sql, [], |r| r.get(0)).unwrap()
+}
+fn count(db: &Connection, table: &str) -> i64 {
+    db.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
+        .unwrap()
+}
+fn ordered_deliveries(db: &Connection, table: &str) -> Vec<String> {
+    let mut query = db
+        .prepare(&format!("SELECT delivery_id FROM {table} ORDER BY rowid"))
+        .unwrap();
+    query
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()
+}
+fn task(s: &State, id: &str) -> Value {
+    let body: String =
+        s.db.lock()
+            .unwrap()
+            .query_row(
+                "SELECT body FROM records WHERE kind='scheduledTasks' AND id=?1",
+                [id],
+                |r| r.get(0),
+            )
+            .unwrap();
+    serde_json::from_str(&body).unwrap()
+}
+fn rename(s: &State, id: &str, title: &str) {
+    let mut value = task(s, id);
+    value["title"] = json!(title);
+    s.db.lock()
+        .unwrap()
+        .execute(
+            "UPDATE records SET body=?1 WHERE kind='scheduledTasks' AND id=?2",
+            params![value.to_string(), id],
+        )
+        .unwrap();
+}
+fn start(s: &State) -> Connection {
+    t3_shared::start(s).unwrap().unwrap()
+}
+fn assert_ledger(db: &Connection) {
+    assert_eq!(count(db, "scheduled_task_webhook_deliveries"), 3);
+    assert_eq!(count(db, "scheduled_task_webhook_pending"), 1);
+    assert_eq!(count(db, "scheduled_task_webhook_replay_keys"), 2);
+    let request: Value = serde_json::from_str(&text(
+        db,
+        "SELECT request_json FROM scheduled_task_webhook_pending",
+    ))
+    .unwrap();
+    assert_eq!(
+        request["bodyText"],
+        r#"{"id":"two","group":"batch","action":"second"}"#
+    );
+    let ids: Value = serde_json::from_str(&text(
+        db,
+        "SELECT delivery_ids_json FROM scheduled_task_webhook_pending",
+    ))
+    .unwrap();
+    assert_eq!(ids.as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn official_task_rows_and_full_pending_ledger_survive_both_directions() {
+    let (_dir, s, native) = profile();
+    native.execute("INSERT INTO scheduled_task_webhook_relay_deliveries VALUES('relay:synthetic','signed','2026-11-06T00:00:00.000Z')",[]).unwrap();
+    native.execute("UPDATE scheduled_tasks SET last_run_webhook_delivery_id='delivery:old' WHERE task_id='signed'",[]).unwrap();
+    let mut shared = start(&s);
+    assert_eq!(task(&s, "fresh")["threadMode"], "fresh_session");
+    assert_eq!(task(&s, "continue")["threadMode"], "continue");
+    assert_eq!(task(&s, "unsigned")["webhook"]["hasSecret"], false);
+    assert!(!task(&s, "signed")
+        .to_string()
+        .contains("synthetic-store-key"));
+    assert_ledger(&s.db.lock().unwrap());
+    assert_eq!(
+        count(
+            &s.db.lock().unwrap(),
+            "scheduled_task_webhook_relay_deliveries"
+        ),
+        1
+    );
+    rename(&s, "signed", "Edited by O3");
+    assert_eq!(t3_shared::export(&s, &mut shared).unwrap(), 1);
+    assert_eq!(
+        text(
+            &native,
+            "SELECT title FROM scheduled_tasks WHERE task_id='signed'"
+        ),
+        "Edited by O3"
+    );
+    assert_eq!(
+        text(
+            &native,
+            "SELECT webhook_secret FROM scheduled_tasks WHERE task_id='signed'"
+        ),
+        "synthetic-store-key"
+    );
+    assert_eq!(
+        text(
+            &native,
+            "SELECT last_run_webhook_delivery_id FROM scheduled_tasks WHERE task_id='signed'"
+        ),
+        "delivery:old"
+    );
+    assert_ledger(&native);
+    assert_eq!(count(&native, "orchestration_events"), 0);
+    assert_eq!(t3_shared::export(&s, &mut shared).unwrap(), 0);
+}
+
+#[test]
+fn native_task_edits_and_deletions_import_without_any_thread_events() {
+    let (_dir, s, native) = profile();
+    drop(start(&s));
+    native.execute("UPDATE scheduled_tasks SET title='Native edit',thread_mode='fresh_session' WHERE task_id='continue'",[]).unwrap();
+    native
+        .execute(
+            "DELETE FROM scheduled_task_webhook_deliveries WHERE task_id='signed'",
+            [],
+        )
+        .unwrap();
+    native
+        .execute("DELETE FROM scheduled_tasks WHERE task_id='signed'", [])
+        .unwrap();
+    assert_eq!(count(&native, "orchestration_events"), 0);
+    drop(start(&s));
+    assert_eq!(task(&s, "continue")["title"], "Native edit");
+    assert_eq!(task(&s, "continue")["threadMode"], "fresh_session");
+    let db = s.db.lock().unwrap();
+    assert_eq!(db.query_row("SELECT count(*) FROM records WHERE kind IN ('scheduledTasks','hookCredentials') AND id='signed'",[],|r|r.get::<_,i64>(0)).unwrap(),0);
+    assert_eq!(count(&db, "scheduled_task_webhook_pending"), 0);
+    assert_eq!(count(&db, "scheduled_task_webhook_replay_keys"), 0);
+    assert_eq!(count(&db, "scheduled_task_webhook_deliveries"), 0);
+}
+
+#[test]
+fn unsent_local_edits_and_deletions_survive_unchanged_native_state() {
+    let (dir, s, native) = profile();
+    drop(start(&s));
+    rename(&s, "continue", "Unsent local title");
+    scheduled::call(&s, "scheduledTasks.delete", &json!({"id":"signed"}))
+        .unwrap()
+        .unwrap();
+    // Whitespace and property order in native JSON do not invent a competing task edit.
+    native.execute(r#"UPDATE scheduled_tasks SET schedule_json='{ "everyMs":60000, "type":"interval" }' WHERE task_id='continue'"#,[]).unwrap();
+    drop(s);
+    let s = State::open(&dir).unwrap();
+    let mut shared = start(&s);
+    assert_eq!(task(&s, "continue")["title"], "Unsent local title");
+    assert_eq!(
+        text(
+            &native,
+            "SELECT title FROM scheduled_tasks WHERE task_id='continue'"
+        ),
+        "Unsent local title"
+    );
+    assert_eq!(count(&native, "scheduled_tasks"), 3);
+    assert_eq!(count(&native, "scheduled_task_webhook_pending"), 0);
+    assert_eq!(count(&native, "scheduled_task_webhook_deliveries"), 0);
+    assert_eq!(t3_shared::export(&s, &mut shared).unwrap(), 0);
+}
+
+#[test]
+fn conflicting_edits_keep_both_copies_and_the_original_baseline() {
+    let (_dir, s, native) = profile();
+    drop(start(&s));
+    let baseline=text(&native,"SELECT row_hash FROM o3_task_baseline WHERE table_name='scheduled_tasks' AND row_key='[\"continue\"]'");
+    rename(&s, "continue", "O3 pending");
+    native
+        .execute(
+            "UPDATE scheduled_tasks SET title='T3 pending' WHERE task_id='continue'",
+            [],
+        )
+        .unwrap();
+    let error = t3_shared::start(&s).err().unwrap();
+    assert!(error.contains("Shared task conflict"), "{error}");
+    assert_eq!(task(&s, "continue")["title"], "O3 pending");
+    assert_eq!(
+        text(
+            &native,
+            "SELECT title FROM scheduled_tasks WHERE task_id='continue'"
+        ),
+        "T3 pending"
+    );
+    assert_eq!(text(&native,"SELECT row_hash FROM o3_task_baseline WHERE table_name='scheduled_tasks' AND row_key='[\"continue\"]'"),baseline);
+    assert_ledger(&native);
+    assert_ledger(&s.db.lock().unwrap());
+}
+
+#[test]
+fn task_export_is_atomic_when_another_row_changed_outside_the_owner() {
+    let (_dir, s, native) = profile();
+    let mut shared = start(&s);
+    rename(&s, "continue", "Local intent");
+    native
+        .execute(
+            "UPDATE scheduled_task_webhook_pending SET state='dispatching'",
+            [],
+        )
+        .unwrap();
+    let error = t3_shared::export(&s, &mut shared).unwrap_err();
+    assert!(error.contains("outside its profile owner"));
+    assert_ne!(
+        text(
+            &native,
+            "SELECT title FROM scheduled_tasks WHERE task_id='continue'"
+        ),
+        "Local intent"
+    );
+    assert_eq!(task(&s, "continue")["title"], "Local intent");
+    assert_eq!(
+        text(&native, "SELECT state FROM scheduled_task_webhook_pending"),
+        "dispatching"
+    );
+}
+
+#[test]
+fn pending_windows_can_exchange_unique_coalescing_keys_on_import_and_export() {
+    let (_dir, s, native) = profile();
+    native.execute("INSERT INTO scheduled_task_webhook_pending SELECT 'delivery:second-window',task_id,'other-key',due_at+1,state,task_json,request_json,'[\"delivery:second-window\"]' FROM scheduled_task_webhook_pending",[]).unwrap();
+    drop(start(&s));
+    let order = ordered_deliveries(&native, "scheduled_task_webhook_pending");
+    assert_eq!(
+        ordered_deliveries(&s.db.lock().unwrap(), "scheduled_task_webhook_pending"),
+        order
+    );
+    let swap = |db: &Connection| {
+        let first=text(db,"SELECT coalesce_key FROM scheduled_task_webhook_pending WHERE delivery_id='delivery:synthetic-accepted'");
+        let second=text(db,"SELECT coalesce_key FROM scheduled_task_webhook_pending WHERE delivery_id='delivery:second-window'");
+        db.execute("UPDATE scheduled_task_webhook_pending SET coalesce_key='temporary-fixture-key' WHERE delivery_id='delivery:synthetic-accepted'",[]).unwrap();
+        db.execute("UPDATE scheduled_task_webhook_pending SET coalesce_key=?1 WHERE delivery_id='delivery:second-window'",[first]).unwrap();
+        db.execute("UPDATE scheduled_task_webhook_pending SET coalesce_key=?1 WHERE delivery_id='delivery:synthetic-accepted'",[second]).unwrap();
+    };
+    swap(&native);
+    let mut shared = start(&s);
+    assert_eq!(
+        ordered_deliveries(&s.db.lock().unwrap(), "scheduled_task_webhook_pending"),
+        order
+    );
+    assert_eq!(text(&s.db.lock().unwrap(),"SELECT coalesce_key FROM scheduled_task_webhook_pending WHERE delivery_id='delivery:synthetic-accepted'"),"other-key");
+    swap(&s.db.lock().unwrap());
+    t3_shared::export(&s, &mut shared).unwrap();
+    assert_ne!(text(&native,"SELECT coalesce_key FROM scheduled_task_webhook_pending WHERE delivery_id='delivery:synthetic-accepted'"),"other-key");
+    assert_eq!(count(&native, "scheduled_task_webhook_pending"), 2);
+    assert_eq!(count(&native, "scheduled_task_webhook_replay_keys"), 2);
+    assert_eq!(
+        ordered_deliveries(&native, "scheduled_task_webhook_pending"),
+        order
+    );
+}
+
+#[test]
+fn equal_time_receipts_keep_native_order_repair_old_copies_and_export_local_insert_order() {
+    let (_dir, s, native) = profile();
+    let initial = ordered_deliveries(&native, "scheduled_task_webhook_deliveries");
+    drop(start(&s));
+    assert_eq!(
+        ordered_deliveries(&s.db.lock().unwrap(), "scheduled_task_webhook_deliveries"),
+        initial
+    );
+    // Simulate an older key-sorted copy without changing a row body or its baseline.
+    s.db.lock()
+        .unwrap()
+        .execute(
+            "UPDATE scheduled_task_webhook_deliveries SET rowid=-rowid",
+            [],
+        )
+        .unwrap();
+    assert_ne!(
+        ordered_deliveries(&s.db.lock().unwrap(), "scheduled_task_webhook_deliveries"),
+        initial
+    );
+    rename(&s, "continue", "Unexported task edit survives order repair");
+    let mut shared = start(&s);
+    assert_eq!(
+        ordered_deliveries(&s.db.lock().unwrap(), "scheduled_task_webhook_deliveries"),
+        initial
+    );
+    assert_eq!(
+        task(&s, "continue")["title"],
+        "Unexported task edit survives order repair"
+    );
+    {
+        let db = s.db.lock().unwrap();
+        for id in ["delivery:z-local", "delivery:a-local"] {
+            db.execute("INSERT INTO scheduled_task_webhook_deliveries SELECT ?1,task_id,received_at,method,query,headers_json,body,body_bytes,body_truncated,outcome,signature_verified,missing_fields_json,rendered_prompt,error FROM scheduled_task_webhook_deliveries WHERE delivery_id='delivery:synthetic-accepted'",[id]).unwrap();
+        }
+    }
+    t3_shared::export(&s, &mut shared).unwrap();
+    let mut expected = initial;
+    expected.extend(["delivery:z-local".into(), "delivery:a-local".into()]);
+    assert_eq!(
+        ordered_deliveries(&native, "scheduled_task_webhook_deliveries"),
+        expected
+    );
+    let before = count(&native, "scheduled_task_webhook_deliveries");
+    assert_eq!(t3_shared::export(&s, &mut shared).unwrap(), 0);
+    assert_eq!(count(&native, "scheduled_task_webhook_deliveries"), before);
+}
+
+#[test]
+fn failed_order_alignment_rolls_back_native_rows_and_retries_without_losing_local_work() {
+    let (_dir, s, native) = profile();
+    let mut shared = start(&s);
+    let initial = ordered_deliveries(&native, "scheduled_task_webhook_deliveries");
+    s.db.lock().unwrap().execute("INSERT INTO scheduled_task_webhook_deliveries SELECT 'delivery:local-before-others',task_id,received_at,method,query,headers_json,body,body_bytes,body_truncated,outcome,signature_verified,missing_fields_json,rendered_prompt,error FROM scheduled_task_webhook_deliveries WHERE delivery_id='delivery:synthetic-accepted'",[]).unwrap();
+    s.db.lock().unwrap().execute("UPDATE scheduled_task_webhook_deliveries SET rowid=-1 WHERE delivery_id='delivery:local-before-others'",[]).unwrap();
+    native.execute_batch("CREATE TRIGGER refuse_order BEFORE UPDATE OF rowid ON scheduled_task_webhook_deliveries BEGIN SELECT RAISE(ABORT,'synthetic order refusal'); END;").unwrap();
+    let error = t3_shared::export(&s, &mut shared).unwrap_err();
+    assert!(error.contains("synthetic order refusal"), "{error}");
+    assert_eq!(
+        ordered_deliveries(&native, "scheduled_task_webhook_deliveries"),
+        initial
+    );
+    assert_eq!(
+        count(&s.db.lock().unwrap(), "scheduled_task_webhook_deliveries"),
+        4
+    );
+    native.execute_batch("DROP TRIGGER refuse_order;").unwrap();
+    t3_shared::export(&s, &mut shared).unwrap();
+    assert_eq!(
+        ordered_deliveries(&native, "scheduled_task_webhook_deliveries"),
+        ordered_deliveries(&s.db.lock().unwrap(), "scheduled_task_webhook_deliveries")
+    );
+}
+
+#[test]
+fn a_recreated_local_database_recovers_unchanged_native_tasks_and_ledger() {
+    let (_dir, s, native) = profile();
+    drop(start(&s));
+    {
+        let db = s.db.lock().unwrap();
+        db.execute("DELETE FROM records WHERE kind IN ('scheduledTasks','hookCredentials','scheduledTaskNative')",[]).unwrap();
+        for table in [
+            "scheduled_task_webhook_deliveries",
+            "scheduled_task_webhook_pending",
+            "scheduled_task_webhook_replay_keys",
+        ] {
+            db.execute(&format!("DELETE FROM {table}"), []).unwrap();
+        }
+        db.execute(
+            "UPDATE o3_task_state SET identity='recreated-fixture-database',generation=0",
+            [],
+        )
+        .unwrap();
+    }
+    drop(start(&s));
+    assert_eq!(task(&s, "fresh")["threadMode"], "fresh_session");
+    assert_ledger(&s.db.lock().unwrap());
+    assert_ledger(&native);
+}
+
+#[test]
+fn a_native_commit_failure_replays_already_committed_local_imports() {
+    let (_dir, s, native) = profile();
+    drop(start(&s));
+    native
+        .execute(
+            "UPDATE scheduled_tasks SET title='Survives commit failure' WHERE task_id='continue'",
+            [],
+        )
+        .unwrap();
+    native.execute_batch("CREATE TABLE commit_parent(id TEXT PRIMARY KEY); CREATE TABLE commit_child(id TEXT REFERENCES commit_parent(id) DEFERRABLE INITIALLY DEFERRED); CREATE TRIGGER fail_task_commit AFTER UPDATE ON o3_task_sync BEGIN INSERT INTO commit_child VALUES('missing'); END;").unwrap();
+    let error = t3_shared::start(&s).err().unwrap();
+    assert!(error.contains("FOREIGN KEY"), "{error}");
+    // The local transaction committed first, while the native baseline transaction rolled back.
+    assert_eq!(task(&s, "continue")["title"], "Survives commit failure");
+    assert_eq!(count(&native, "commit_child"), 0);
+    native
+        .execute_batch("DROP TRIGGER fail_task_commit;")
+        .unwrap();
+    drop(start(&s));
+    assert_eq!(task(&s, "continue")["title"], "Survives commit failure");
+    assert_ledger(&native);
+    assert_ledger(&s.db.lock().unwrap());
+}
+
+#[test]
+fn malformed_native_task_schema_is_refused_before_sync_metadata() {
+    let (_dir, s, native) = profile();
+    native
+        .execute_batch("ALTER TABLE scheduled_task_webhook_pending DROP COLUMN request_json;")
+        .unwrap();
+    let error = t3_shared::start(&s).err().unwrap();
+    assert!(
+        error.contains("scheduled_task_webhook_pending.request_json"),
+        "{error}"
+    );
+    assert_eq!(native.query_row("SELECT count(*) FROM sqlite_master WHERE name IN ('o3_sync','o3_task_sync','o3_task_baseline')",[],|r|r.get::<_,i64>(0)).unwrap(),0);
+    assert_eq!(
+        s.db.lock()
+            .unwrap()
+            .query_row(
+                "SELECT count(*) FROM records WHERE kind='scheduledTasks'",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
+fn background_exporter_observes_task_only_notifications() {
+    let (dir, s, native) = profile();
+    let shared = start(&s);
+    o3_server::events::mutate_project(&s,&json!({"type":"project.create","commandId":"sync-project","projectId":"p","title":"Initial export completed","workspaceRoot":dir})).unwrap();
+    let exporter = t3_shared::Exporter::spawn(s.clone(), shared);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while !native
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM projection_projects WHERE project_id='p')",
+            [],
+            |r| r.get::<_, bool>(0),
+        )
+        .unwrap()
+    {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "Initial history export did not complete"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let history_version = *s.changed.borrow();
+    scheduled::call(
+        &s,
+        "scheduledTasks.setEnabled",
+        &json!({"id":"continue","enabled":true}),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        *s.changed.borrow(),
+        history_version,
+        "Fixture must wake only the task subscription"
+    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while native
+        .query_row(
+            "SELECT enabled FROM scheduled_tasks WHERE task_id='continue'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap()
+        != 1
+    {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "Task-only update was not exported"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    exporter.finish();
+}
+
+#[test]
+fn native_request_bytes_and_header_order_survive_handover_and_order_only_edits() {
+    let (_dir, s, native) = profile();
+    let first = r#"{"method":"POST","path":"/api/hooks/signed/synthetic-token-signed","query":"","headers":{"x-event":"opened","content-type":"application/json"},"bodyText":"{\"action\":\"second\"}"}"#;
+    let second = r#"{"method":"POST","path":"/api/hooks/signed/synthetic-token-signed","query":"","headers":{"content-type":"application/json","x-event":"opened"},"bodyText":"{\"action\":\"second\"}"}"#;
+    native
+        .execute(
+            "UPDATE scheduled_task_webhook_pending SET request_json=?1",
+            [first],
+        )
+        .unwrap();
+    drop(start(&s));
+    assert_eq!(
+        text(
+            &s.db.lock().unwrap(),
+            "SELECT request_json FROM scheduled_task_webhook_pending"
+        ),
+        first
+    );
+    native
+        .execute(
+            "UPDATE scheduled_task_webhook_pending SET request_json=?1",
+            [second],
+        )
+        .unwrap();
+    let mut shared = start(&s);
+    assert_eq!(
+        text(
+            &s.db.lock().unwrap(),
+            "SELECT request_json FROM scheduled_task_webhook_pending"
+        ),
+        second
+    );
+    s.db.lock()
+        .unwrap()
+        .execute(
+            "UPDATE scheduled_task_webhook_pending SET request_json=?1",
+            [first],
+        )
+        .unwrap();
+    t3_shared::export(&s, &mut shared).unwrap();
+    assert_eq!(
+        text(
+            &native,
+            "SELECT request_json FROM scheduled_task_webhook_pending"
+        ),
+        first
+    );
+    assert_eq!(count(&native, "scheduled_task_webhook_pending"), 1);
+    assert_eq!(count(&native, "scheduled_task_webhook_replay_keys"), 2);
+}
+
+#[test]
+fn old_sorted_hashes_upgrade_without_conflicts_or_losing_local_intent() {
+    use sha2::{Digest, Sha256};
+    let (_dir, s, native) = profile();
+    let original = text(
+        &native,
+        "SELECT request_json FROM scheduled_task_webhook_pending",
+    );
+    drop(start(&s));
+    let entries = {
+        let mut query = native
+            .prepare("SELECT table_name,row_key FROM o3_task_baseline")
+            .unwrap();
+        query
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap()
+    };
+    for (table, key) in entries {
+        assert!(matches!(
+            table.as_str(),
+            "scheduled_tasks"
+                | "scheduled_task_webhook_deliveries"
+                | "scheduled_task_webhook_pending"
+                | "scheduled_task_webhook_replay_keys"
+                | "scheduled_task_webhook_relay_deliveries"
+        ));
+        let values: Vec<String> = serde_json::from_str(&key).unwrap();
+        let mut query = native
+            .prepare(&format!("SELECT * FROM {table} LIMIT 0"))
+            .unwrap();
+        let columns = query
+            .column_names()
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect::<Vec<_>>();
+        drop(query);
+        let pk = if table == "scheduled_task_webhook_replay_keys" {
+            vec!["task_id", "replay_key"]
+        } else {
+            vec![columns[0].as_str()]
+        };
+        let predicate = pk
+            .iter()
+            .map(|name| format!("{name}=?"))
+            .collect::<Vec<_>>()
+            .join(" AND ");
+        query = native
+            .prepare(&format!("SELECT * FROM {table} WHERE {predicate}"))
+            .unwrap();
+        let fields = query
+            .query_row(params_from_iter(values), |row| {
+                columns
+                    .iter()
+                    .enumerate()
+                    .map(|(i, name)| {
+                        Ok(match row.get_ref(i)? {
+                            rusqlite::types::ValueRef::Null => Value::Null,
+                            rusqlite::types::ValueRef::Integer(n) => json!(n),
+                            rusqlite::types::ValueRef::Text(text) => {
+                                let text = std::str::from_utf8(text).unwrap();
+                                json!(if name.ends_with("_json") {
+                                    let mut old: Value = serde_json::from_str(text).unwrap();
+                                    // Reproduce the pre-ordered-context format explicitly.
+                                    old.sort_all_objects();
+                                    old.to_string()
+                                } else {
+                                    text.to_owned()
+                                })
+                            }
+                            _ => panic!("Unexpected fixture SQL type"),
+                        })
+                    })
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .unwrap();
+        let hash = format!("{:x}", Sha256::digest(serde_json::to_vec(&fields).unwrap()));
+        native
+            .execute(
+                "UPDATE o3_task_baseline SET row_hash=?1 WHERE table_name=?2 AND row_key=?3",
+                params![hash, table, key],
+            )
+            .unwrap();
+    }
+    native
+        .execute("DELETE FROM o3_task_hash_format", [])
+        .unwrap();
+    let sorted = serde_json::from_str::<Value>(&original)
+        .unwrap()
+        .to_string();
+    s.db.lock()
+        .unwrap()
+        .execute(
+            "UPDATE scheduled_task_webhook_pending SET request_json=?1",
+            [sorted],
+        )
+        .unwrap();
+    rename(&s, "continue", "Pending before hash upgrade");
+    let mut shared = start(&s);
+    assert_eq!(task(&s, "continue")["title"], "Pending before hash upgrade");
+    assert_eq!(
+        text(
+            &native,
+            "SELECT title FROM scheduled_tasks WHERE task_id='continue'"
+        ),
+        "Pending before hash upgrade"
+    );
+    assert_eq!(
+        text(
+            &s.db.lock().unwrap(),
+            "SELECT request_json FROM scheduled_task_webhook_pending"
+        ),
+        original
+    );
+    assert_eq!(
+        native
+            .query_row("SELECT version FROM o3_task_hash_format", [], |r| r
+                .get::<_, i64>(0))
+            .unwrap(),
+        2
+    );
+    assert_eq!(t3_shared::export(&s, &mut shared).unwrap(), 0);
+}

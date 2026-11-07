@@ -1,0 +1,48 @@
+{
+  "reference": {
+    "tag": "v0.1.8-nightly.20261106.4262",
+    "commit": "c55db3e9c72fdf584f4b54192fb39beb88667b59"
+  },
+  "sources": [
+    {
+      "path": "apps/server/src/scheduledTasks/webhookTemplate.ts",
+      "sha256": "6e5050c30a3561a6f7b39ed3f9485328016e20e6b8e9b43b4c6ae3f69e5e2f6e"
+    },
+    {
+      "path": "apps/server/src/scheduledTasks/webhookFilter.ts",
+      "sha256": "d875fe90a3099891f605f5e873e13279795519c260619e77a0afdb91a7259111"
+    },
+    {
+      "path": "apps/server/src/scheduledTasks/webhookDedupe.ts",
+      "sha256": "8266f1e4e43ab75a4dc153bce3f95827c678f03c22a18db7fbc46528900c932f"
+    }
+  ],
+  "generator": "tools/generate-webhook-payload-fixtures.mjs",
+  "fixture": {
+    "path": "tests/fixtures/webhook-payload.json",
+    "sha256": "bd1bc51a918dfb2f50959688f439870ab3fae0e677d83091232105c5c7d7d989"
+  },
+  "renderCases": 1972,
+  "filterCases": 1479,
+  "dedupeCases": 1015,
+  "deepLookupLevels": 4096,
+  "comparisonBoundary": "Expected prompts cross the UTF-8 byte boundary; object JSON retains escaped lone surrogates.",
+  "implemented": [
+    "ordered JSON body parser and JS number formatting",
+    "native expressions, filters, redaction and nonce framing",
+    "native dedupe-key hash and missing-value rule",
+    "existing signed ingress uses native payload helpers",
+    "legacy key hashing preserves accepted job identity/prompt/deadlines",
+    "native request/header JSON retained without reordering"
+  ],
+  "stillOpen": [
+    "legacy validation restrictions",
+    "native ingress response IDs and receipt history",
+    "native replay/pending policy and worker",
+    "dispatch/completion recovery",
+    "relay ingestion/verification",
+    "complete accepted-work migration",
+    "native provider transport acceptance",
+    "global nightly parity"
+  ]
+}

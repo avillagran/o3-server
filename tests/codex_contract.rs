@@ -147,7 +147,7 @@ fn codex_approval_and_steer_through_client() {
     drop(c);
     let _ = stop.send(());
     handle.join().unwrap();
-    std::fs::remove_dir_all(dir).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 fn wait(c: &Connection, status: &str) -> Value {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);

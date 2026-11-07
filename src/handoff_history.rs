@@ -4,7 +4,10 @@ use std::collections::HashSet;
 pub(crate) fn message(item: &Value) -> Option<Value> {
     let kind = item["type"].as_str()?;
     let text = match kind {
-        "user_message" | "assistant_message" => item["text"].as_str()?.to_owned(),
+        "user_message" => {
+            crate::provider_input::historical_text(item["text"].as_str()?, item.get("context"))
+        }
+        "assistant_message" => item["text"].as_str()?.to_owned(),
         "command_execution" => format!(
             "Command: {}\nExit code: {}\n{}",
             item["input"].as_str().unwrap_or(""),
@@ -150,7 +153,10 @@ fn delta_lines(items: &[Value]) -> Vec<String> {
         .iter()
         .filter_map(|i| {
             let (label, text) = match i["type"].as_str()? {
-                "user_message" => ("User", i["text"].as_str()?.to_owned()),
+                "user_message" => (
+                    "User",
+                    crate::provider_input::historical_text(i["text"].as_str()?, i.get("context")),
+                ),
                 "assistant_message" => ("Assistant", i["text"].as_str()?.to_owned()),
                 "command_execution" => ("Command", i["input"].as_str()?.to_owned()),
                 "file_change" => (

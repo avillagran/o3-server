@@ -1,0 +1,36 @@
+{
+  "nativeRevision": "83a3674ffd84ffb33de768210c806cb1ac53fd80",
+  "actualPrivateStoreError": "SpeechModelDownloadError",
+  "serviceError": {
+    "tag": "SpeechOperationError",
+    "operation": "model download",
+    "message": "Environment speech model download failed."
+  },
+  "cases": [
+    {
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 403,
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "settings:write",
+        "traceId": "<native-trace>"
+      }
+    },
+    {
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 500,
+      "body": {
+        "_tag": "EnvironmentInternalError",
+        "code": "internal_error",
+        "reason": "internal_error",
+        "traceId": "<native-trace>"
+      }
+    }
+  ]
+}

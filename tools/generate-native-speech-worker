@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+"""Bundle the complete pinned native speech worker inside an admitted private Node runtime."""
+import argparse,hashlib,json,os,pathlib,subprocess,tempfile
+import node_admission
+p=argparse.ArgumentParser(description=__doc__)
+p.add_argument('--checkout',required=True,type=pathlib.Path)
+p.add_argument('--node',required=True,type=pathlib.Path)
+p.add_argument('--evidence-root',required=True,type=pathlib.Path)
+p.add_argument('--image',default='localhost/o3-server-tests:local')
+a=p.parse_args();pin='83a3674ffd84ffb33de768210c806cb1ac53fd80'
+if subprocess.check_output(['git','-C',str(a.checkout),'rev-parse','HEAD'],text=True).strip()!=pin:raise SystemExit('Wrong source checkout')
+root=pathlib.Path(__file__).resolve().parent.parent
+out=pathlib.Path(tempfile.mkdtemp(prefix='native-worker-',dir=a.evidence_root));out.chmod(0o700)
+stage=out/'source';stage.mkdir();generated=out/'generated';generated.mkdir();hashes={}
+for name in ['apps/server/src/speech/audio.ts','apps/server/src/speech/native.ts','apps/server/package.json','LICENSE']:
+ data=subprocess.check_output(['git','-C',str(a.checkout),'show',pin+':'+name]);dest=stage/name;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes(data);hashes[name]=hashlib.sha256(data).hexdigest()
+(stage/'SOURCE.json').write_text(json.dumps({'revision':pin,'files':hashes},indent=2)+'\n')
+receipt=json.loads(subprocess.check_output(['python3',str(root/'tools/admit-node'),'--node',str(a.node),'--image',a.image],text=True))
+node_admission.snapshot(receipt,out/'node-bin/node')
+bootstrap="""import os,subprocess\nos.mkdir('/tmp/home',0o700)\nraise SystemExit(subprocess.run(['/node-bin/node','/server/tools/generate-native-speech-worker.mjs','/source','/out'],env={'HOME':'/tmp/home','TMPDIR':'/tmp','PATH':''}).returncode)\n"""
+cmd=['podman','--remote=false','run','--rm','--pull=never','--http-proxy=false','--userns=keep-id','--user',f'{os.getuid()}:{os.getgid()}','--read-only','--network=none','--cap-drop=ALL','--security-opt=no-new-privileges','--pids-limit=128','--memory=1g','--tmpfs','/tmp:rw,exec,size=128m,mode=1777','-v',f'{out}/node-bin:/node-bin:ro','-v',f'{stage}:/source:ro','-v',f'{generated}:/out:rw','-v',f'{root}:/server:ro',a.image,'python3','-c',bootstrap]
+with (out/'generate.log').open('w') as log:r=subprocess.run(cmd,stdout=log,stderr=subprocess.STDOUT)
+(out/'result.json').write_text(json.dumps({'returncode':r.returncode,'node':receipt,'revision':pin},indent=2)+'\n');print(out);print((out/'generate.log').read_text());raise SystemExit(r.returncode)

@@ -1,0 +1,42 @@
+[
+  {
+    "packagePath": "transcribe-cpp/LICENSE",
+    "copiedPath": "docs/licenses/speech-engine-4314/transcribe-cpp__LICENSE",
+    "sha256": "86a53633b56f6b029d3cb42158bcc7aac0cdff898aceb13e83b93e368bbc4ac6"
+  },
+  {
+    "packagePath": "koffi/LICENSE.txt",
+    "copiedPath": "docs/licenses/speech-engine-4314/koffi__LICENSE.txt",
+    "sha256": "22bcbbbacd739b026a8dc484f62a31484ce4c4e31f3408b60b29b4e41d62b290"
+  },
+  {
+    "packagePath": "koffi/vendor/node-api-headers/LICENSE",
+    "copiedPath": "docs/licenses/speech-engine-4314/koffi__vendor__node-api-headers__LICENSE",
+    "sha256": "a553508f516031c91f3af1148d44970cb81bbae6c4f091be6835d39cc252238c"
+  },
+  {
+    "packagePath": "koffi/vendor/node-addon-api/LICENSE.md",
+    "copiedPath": "docs/licenses/speech-engine-4314/koffi__vendor__node-addon-api__LICENSE.md",
+    "sha256": "89024017b88a9f2b763f79b941a4f2db3b4428edfcacdc0b23866b2da633ad0c"
+  },
+  {
+    "packagePath": "@transcribe-cpp/linux-x64-cpu-vulkan/licenses/LICENSE",
+    "copiedPath": "docs/licenses/speech-engine-4314/@transcribe-cpp__linux-x64-cpu-vulkan__licenses__LICENSE",
+    "sha256": "86a53633b56f6b029d3cb42158bcc7aac0cdff898aceb13e83b93e368bbc4ac6"
+  },
+  {
+    "packagePath": "@transcribe-cpp/linux-x64-cpu-vulkan/licenses/LICENSE.ggml",
+    "copiedPath": "docs/licenses/speech-engine-4314/@transcribe-cpp__linux-x64-cpu-vulkan__licenses__LICENSE.ggml",
+    "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d"
+  },
+  {
+    "packagePath": "@transcribe-cpp/linux-x64-cpu-vulkan/licenses/LICENSE.miniz",
+    "copiedPath": "docs/licenses/speech-engine-4314/@transcribe-cpp__linux-x64-cpu-vulkan__licenses__LICENSE.miniz",
+    "sha256": "6f20fa7672b00e2e975c291df737cf227addf3ad32e36fef3fe0f416e4664d3d"
+  },
+  {
+    "packagePath": "@transcribe-cpp/linux-x64-cpu-vulkan/licenses/LICENSE.silero_vad",
+    "copiedPath": "docs/licenses/speech-engine-4314/@transcribe-cpp__linux-x64-cpu-vulkan__licenses__LICENSE.silero_vad",
+    "sha256": "2e63e9a38b6e8fc0c7bc37ce174caca1862870856c6daf5697cfb785e925520b"
+  }
+]

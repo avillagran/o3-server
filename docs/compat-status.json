@@ -44,7 +44,7 @@
     "device.action": {
       "status": "partial",
       "priority": "P2",
-      "note": "Rotate now maps natural orientation through wm size, emulator accelerometer or physical cmd window rotation; real lib DeviceAction and fixture argv pass. Existing Android settings fixtures retained. 9 s overall mutation budget. No native device behavior or pinned action parity tested; other offered controls still require audit. Status unchanged."
+      "note": "2026-11-06: 95 pinned DeviceActions command/error traces plus 37 detail outputs pass through a real RPC client and private synthetic ADB. Android app launch/terminate, location, permissions, URL quoting, rotation and unsupported iOS-action errors match covered source4262 (unchanged4275). No real hardware/emulator or iOS/SSH/EAS backend acceptance; device-actions-intake.json records limits."
     },
     "device.close": {
       "status": "done",
@@ -59,7 +59,7 @@
     "device.detail": {
       "status": "done",
       "priority": "P2",
-      "note": "Connected Android settings and foreground fields; optional queries share an 8 s budget and return partial detail inside the client's 12 s timeout. Two independent audits passed it."
+      "note": "Connected Android settings/focus behavior compared with 37 pinned-source outputs through real RPC and synthetic ADB; five optional reads run concurrently. Physical/remote device lifecycle remains unproven; see device-actions-intake.json."
     },
     "device.easAccount": {
       "status": "partial",
@@ -612,9 +612,9 @@
       "note": "tests/ops.rs. 2026-11-04: idempotent like T3; a missing id still returns {id}."
     },
     "scheduledTasks.getWebhookDelivery": {
-      "status": "skip",
-      "priority": "unused",
-      "note": "No client call site in inventory."
+      "status": "done",
+      "priority": "P2",
+      "note": "2026-11-06: native ledger detail by task/delivery ID, legacy outcome opt-in, exact pending-window states and logged JSON fallbacks. Real RPC scope checks, 79 pinned-source projections and official 4262 read comparisons across handover; see docs/nightly/WEBHOOK-HISTORY.md. New native ingress/worker and effect-boundary evidence: docs/nightly/NATIVE-WEBHOOK-ADMISSION.md."
     },
     "scheduledTasks.list": {
       "status": "done",
@@ -622,14 +622,14 @@
       "note": "tests/ops.rs. 2026-11-04: absent from T3 nightly 3991/4192, which answer `Unknown request tag: scheduledTasks.list` (the 2026-11-03 Android rejection came from NODE's T3). Kept for older o3 clients; same view as subscribe, webhook hidden without orchestration:operate."
     },
     "scheduledTasks.listWebhookDeliveries": {
-      "status": "skip",
-      "priority": "unused",
-      "note": "No client call site in inventory."
+      "status": "done",
+      "priority": "P2",
+      "note": "2026-11-06: native receipt summaries, receivedAt/rowid descending order, legacy outcome opt-in, pending-window states and logged JSON fallbacks. Real RPC and official 4262 comparisons; equal-time receipt and pending-worker order survives import/export, including older-copy repair. See docs/nightly/WEBHOOK-HISTORY.md."
     },
     "scheduledTasks.rotateWebhookToken": {
-      "status": "skip",
-      "priority": "unused",
-      "note": "No client call site in inventory."
+      "status": "partial",
+      "priority": "P2",
+      "note": "2026-11-06: local endpoint rotates 32 random bytes as unpadded base64url, atomically retains signing secret and accepted work, rejects retired URLs and notifies subscriptions. Both-direction official 4262 handover and write-failure rollback pass. Relay-origin endpoint URL resolution remains unimplemented; see docs/nightly/WEBHOOK-HISTORY.md."
     },
     "scheduledTasks.runNow": {
       "status": "done",
@@ -949,7 +949,7 @@
     "terminal.close": {
       "status": "done",
       "priority": "unused",
-      "note": "tests/terminal.rs: kills the process group (HUP, TERM, KILL after 1 s), emits closed, resume attach reports closed."
+      "note": "tests/terminal.rs: kills the process group (HUP, TERM, KILL after 1 s), emits closed, resume attach reports closed. 2026-11-06: close preserves persisted history unless deleteHistory=true; reopening loads saved scrollback, explicit single/bulk deletion includes already-closed sessions. Native-source comparison and PTY regression cover this boundary."
     },
     "terminal.observe": {
       "status": "done",

@@ -39,7 +39,7 @@ def check(text):
         assert call('initialize',{'protocolVersion':'2025-06-18','capabilities':{},'clientInfo':{'name':'native-peer','version':'1'}})['serverInfo']['name']=='T3 Code'
     tools=call('tools/list')['tools']
     assert any(t['name']=='t3_thread_configure' for t in tools)
-    assert any(t['name']=='preview_open' for t in tools)==(text=='enabled')
+    assert any(t['name']=='preview_open' for t in tools)==(text in ('enabled','dialog'))
     def tool(name,args):
         return call('tools/call',{'name':name,'arguments':args})
     configured=tool('t3_thread_configure',{})
@@ -67,10 +67,88 @@ def check(text):
     opened=tool('preview_open',{'url':'http://localhost:1234'})
     assert not opened['isError'],opened
     tab=json.loads(opened['content'][0]['text'])['tabId']
+    if text=='dialog':
+        expected_tool=json.load(open(os.path.join(os.path.dirname(__file__),'native-preview-dialog-tool-4288.json')))['toolMetadata']
+        assert next(tool for tool in tools if tool['name']=='preview_dialog')==expected_tool
+        import threading,time
+        observed=[]
+        def evaluate():
+            try: observed.append(tool('preview_evaluate',{'tabId':tab,'expression':'fixtureDialog()'}))
+            except BaseException as error: observed.append(str(error))
+        worker=threading.Thread(target=evaluate);worker.start()
+        pending=None
+        for attempt in range(100):
+            status=tool('preview_status',{'tabId':tab})
+            assert not status['isError'],status
+            pending=json.loads(status['content'][0]['text'])
+            if pending.get('dialog'):break
+            time.sleep(.01)
+        assert pending['dialog']=={'type':'prompt','message':'Owned prompt','defaultValue':'default'},pending
+        trimmed=tool('preview_status',{'tabId':' '+tab+' '})
+        assert not trimmed['isError'] and json.loads(trimmed['content'][0]['text'])['tabId']==tab,trimmed
+        assert tool('preview_status',{'tabId':None})['isError']
+        assert tool('preview_dialog',{'tabId':'foreign','accept':True})['isError']
+        assert tool('preview_dialog',{'tabId':tab,'accept':None})['isError']
+        answered=tool('preview_dialog',{'tabId':tab,'accept':True,'promptText':'Owned MCP answer'})
+        assert not answered['isError'],answered
+        assert json.loads(answered['content'][0]['text'])['dialog'] is None,answered
+        assert json.loads(answered['content'][0]['text'])['title']=='Post dialog title',answered
+        worker.join(3);assert not worker.is_alive()
+        assert len(observed)==1 and isinstance(observed[0],dict) and not observed[0]['isError'],observed
+        assert tool('preview_dialog',{'tabId':tab,'accept':True})['isError']
+        utf=[]
+        def utf_evaluate():
+            try: utf.append(tool('preview_evaluate',{'tabId':tab,'expression':'fixtureDialogUtf16()'}))
+            except BaseException as error: utf.append(str(error))
+        worker=threading.Thread(target=utf_evaluate);worker.start()
+        for attempt in range(100):
+            encoded=tool('preview_status',{'tabId':tab})
+            assert not encoded['isError'],encoded
+            pending=json.loads(encoded['content'][0]['text'])
+            if pending.get('dialog'):break
+            time.sleep(.01)
+        assert pending['dialog']['message']=='a'*3999+'\ud83d'
+        assert pending['dialog']['defaultValue']=='b'*3999+'\ud83d'
+        assert encoded['structuredContent']['dialog']['message']=='a'*3999+'\ufffd', 'raw structured surrogate support remains separate'
+        assert not tool('preview_dialog',{'tabId':tab,'accept':False})['isError']
+        worker.join(3);assert not worker.is_alive()
+        assert len(utf)==1 and isinstance(utf[0],dict) and not utf[0]['isError'],utf
+        raw=[]
+        def raw_evaluate():
+            try: raw.append(tool('preview_evaluate',{'tabId':tab,'expression':'fixtureDialogRawUtf16()'}))
+            except BaseException as error: raw.append(str(error))
+        worker=threading.Thread(target=raw_evaluate);worker.start()
+        for attempt in range(100):
+            encoded=tool('preview_status',{'tabId':tab})
+            assert not encoded['isError'],encoded
+            pending=json.loads(encoded['content'][0]['text'])
+            if pending.get('dialog'):break
+            time.sleep(.01)
+        assert pending['dialog']['message']=='\ud800A\udfff🙂'
+        assert pending['dialog']['defaultValue']=='\udc00'
+        assert encoded['structuredContent']['dialog']['message']=='\ufffdA\ufffd🙂'
+        assert not tool('preview_dialog',{'tabId':tab,'accept':False})['isError']
+        worker.join(3);assert not worker.is_alive()
+        assert len(raw)==1 and isinstance(raw[0],dict) and not raw[0]['isError'],raw
+        assert not tool('preview_status',{'tabId':tab})['isError'], 'connection survives raw UTF-16 modal'
+        return
     assert tool('preview_navigate',{'tabId':'foreign','url':'http://localhost'})['isError']
     assert not tool('preview_navigate',{'tabId':tab,'url':'http://localhost:1234/next'})['isError']
     assert not tool('preview_evaluate',{'tabId':tab,'expression':'1+1'})['isError']
+    snapshot=tool('preview_snapshot',{'tabId':tab})
+    assert not snapshot['isError'],snapshot
+    value=json.loads(snapshot['content'][0]['text'])['value']
+    assert value['networkEntries']==[],value
+    assert value['title']=='Owned fixture',value
     assert not tool('preview_status',{})['isError']
+    # These are trusted input events through the real admitted actor, not a literal key name.
+    assert tool('preview_press',{})['isError']
+    assert tool('preview_press',{'key':' v '})['isError']
+    assert tool('preview_press',{'key':'v','modifiers':['ControlOrMeta']})['isError']
+    assert tool('preview_press',{'key':'Control+NoSuchKey'})['isError']
+    assert not tool('preview_press',{'key':'Control+v'})['isError']
+    assert not tool('preview_press',{'key':'c','modifiers':['Control']})['isError']
+    assert not tool('preview_press',{'key':'Shift+Digit1'})['isError']
 for line in sys.stdin:
     f=json.loads(line)
     if claude:

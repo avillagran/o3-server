@@ -186,6 +186,12 @@ pub trait Provider: Send + Sync + 'static {
     fn poll_usage<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         self.refresh()
     }
+    fn reload_secrets<'a>(
+        &'a self,
+        _instance: Option<&'a str>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
+    }
     fn refresh_defaults<'a>(
         &'a self,
         _excluded: Vec<String>,
@@ -292,6 +298,50 @@ pub(crate) fn start(
     text: String,
 ) {
     if s.shutting_down.load(std::sync::atomic::Ordering::Acquire) {
+        return;
+    }
+    let denied = if s.managed_policy.document.is_some() {
+        let db = s.db.lock().unwrap();
+        let thread = crate::events::get(&db, "thread", &tid).unwrap_or_default();
+        let run = crate::events::get(&db, "runs", &rid).unwrap_or_default();
+        let instance = run["providerInstanceId"]
+            .as_str()
+            .or_else(|| thread["providerInstanceId"].as_str())
+            .unwrap_or("");
+        let mode = run["executionPolicy"]["runtimeMode"]
+            .as_str()
+            .or_else(|| thread["runtimeMode"].as_str())
+            .unwrap_or("full-access");
+        crate::managed_policy::check_command(
+            &s,
+            &db,
+            &serde_json::json!({
+                "type":"message.dispatch","threadId":tid,"runtimeMode":mode,
+                "modelSelection":{"instanceId":instance}
+            }),
+        )
+        .err()
+        .map(|reason| (reason, run["activeAttemptId"].as_str().map(str::to_owned)))
+    } else {
+        None
+    };
+    if let Some((reason, attempt)) = denied {
+        let _ = persist_attempt(
+            &s,
+            &tid,
+            &rid,
+            attempt.as_deref(),
+            ProviderEvent::Failed(reason),
+        );
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(async move {
+                crate::thread_commands::advance(&s, &tid);
+            });
+        }
+        return;
+    }
+    if let Err(error) = crate::command_shared::provider_fence(&s, &rid) {
+        crate::command_shared::defer_provider(&s, &tid, &rid, &error);
         return;
     }
     let Some(provider) = s.provider.lock().unwrap().clone() else {
@@ -577,6 +627,7 @@ pub(crate) fn start(
         if crate::run_restart::admission(&s, &rid, attempt.as_deref()).is_err() {
             return;
         }
+        let mut preview_turn = s.streams.p2.preview.activity().begin(&tid);
         let mut task = tokio::task::spawn(async move {
             provider
                 .execute(input, output, controls, cancellation)
@@ -677,6 +728,7 @@ pub(crate) fn start(
                     | ProviderEvent::Failed(_)
                     | ProviderEvent::FailedWithDetails(_)
             ) {
+                preview_turn.end();
                 checkpoint_finished = true;
                 let cs = s.clone();
                 let ct = tid.clone();
@@ -730,6 +782,7 @@ pub(crate) fn start(
                 break;
             }
         }
+        preview_turn.end();
         if !buffered.is_empty() {
             let _ = persist_attempt(
                 &s,
@@ -741,7 +794,6 @@ pub(crate) fn start(
         }
         let _ = cancel.send(true);
         tokio::select! {r=&mut task=>{match r {Ok(Ok(()))=>finished=true,Ok(Err(e))=>failure=Some(e),Err(e)=>failure=Some(e.to_string())}},_=tokio::time::sleep(std::time::Duration::from_secs(2))=>{task.abort();let _=task.await;}}
-        s.native_mcp.finish_turn(&tid).await;
         if !checkpoint_finished
             && crate::run_restart::matches(&s.db.lock().unwrap(), &rid, attempt.as_deref())
             && !crate::workspace_transition::pending(&s.db.lock().unwrap(), &tid).unwrap_or(true)
@@ -1111,11 +1163,15 @@ pub(crate) fn persist_attempt(
             append(&tx, tid, "thread.metadata-updated", thread.clone(), &thread)?;
         }
     }
+    let usage_failure = run["errorClass"] == "usage_limit" && run["status"] == "failed";
     put(&tx, "runs", rid, tid, &run)?;
     append(&tx, tid, "run.updated", run, &thread)?;
     tx.commit().map_err(|e| e.to_string())?;
     drop(db);
     s.notify();
+    if usage_failure {
+        s.streams.ops.scheduler_wake.notify_one();
+    }
     Ok(())
 }
 
@@ -1349,7 +1405,7 @@ mod tests {
             .unwrap();
         assert_eq!(std::sync::Arc::strong_count(&s), 1);
         drop(s);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[tokio::test]
     async fn missing_interrupt_acknowledgement_fails_with_unknown_delivery() {
@@ -1400,7 +1456,7 @@ mod tests {
         assert!(crate::events::get(&db, "turnItems", "r-interrupt-result").is_err());
         drop(db);
         drop(s);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[test]
     fn native_interruption_finalizes_result_once_with_claude_root_turn() {
@@ -1441,7 +1497,7 @@ mod tests {
         persist(&s, "t", "r", ProviderEvent::Interrupted).unwrap();
         assert_eq!(crate::events::sequence(&s.db.lock().unwrap()).unwrap(), seq);
         drop(s);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[test]
     fn real_frames_reduce_to_renderable_items_and_native_identity() {
@@ -1512,7 +1568,7 @@ mod tests {
             }
             drop(db);
             drop(s);
-            std::fs::remove_dir_all(dir).unwrap();
+            // Fixture trees are retained for private container teardown.
         }
     }
 }
@@ -1567,7 +1623,7 @@ mod command_tests {
         );
         drop(db);
         drop(state);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }
 
@@ -1624,7 +1680,7 @@ mod restart_tests {
                 tokio::task::yield_now().await;
             }
             drop(state);
-            std::fs::remove_dir_all(dir).unwrap();
+            // Fixture trees are retained for private container teardown.
         }
     }
 }
@@ -1632,11 +1688,14 @@ mod restart_tests {
 /// Instance registry. Each configured identity owns its own native process/session pool.
 /// Changed/removed scopes retire before their replacements admit native work.
 pub struct ConfiguredProviders {
+    policy: crate::managed_policy::Policy,
     agent_scopes: Option<std::sync::Arc<crate::agent_scope::Registry>>,
     pub defaults: std::sync::Arc<dyn Provider>,
     pub directory: std::path::PathBuf,
     instances: std::sync::Mutex<std::collections::BTreeMap<String, Instance>>,
     last_settings: std::sync::Mutex<serde_json::Value>,
+    settings_lock: Option<std::sync::Arc<std::sync::Mutex<()>>>,
+    secrets: crate::provider_secrets::Registry,
     discovered_defaults: std::sync::Mutex<std::collections::HashSet<String>>,
     retired: std::sync::Mutex<Vec<std::sync::Arc<crate::provider_lifetime::Pool>>>,
     builtin_scopes: std::sync::Mutex<
@@ -1645,6 +1704,7 @@ pub struct ConfiguredProviders {
 }
 struct Instance {
     settings: serde_json::Value,
+    secrets: Option<crate::provider_secrets::Secrets>,
     discovered: bool,
     provider: Option<std::sync::Arc<crate::provider_lifetime::Pool>>,
     binary: std::path::PathBuf,
@@ -1652,17 +1712,43 @@ struct Instance {
     continuation_key: Option<String>,
 }
 impl ConfiguredProviders {
+    pub fn with_policy(mut self, policy: crate::managed_policy::Policy) -> Self {
+        self.policy = policy;
+        self
+    }
     pub fn new(defaults: std::sync::Arc<dyn Provider>, directory: std::path::PathBuf) -> Self {
         Self {
             agent_scopes: None,
+            policy: crate::managed_policy::Policy::unmanaged(std::path::PathBuf::new()),
             defaults,
             directory,
             instances: Default::default(),
             last_settings: std::sync::Mutex::new(serde_json::json!({})),
+            settings_lock: None,
+            secrets: crate::provider_secrets::Registry::new(std::sync::Arc::new(
+                crate::secret_resolver::SecretResolver::system(),
+            )),
             discovered_defaults: Default::default(),
             retired: Default::default(),
             builtin_scopes: Default::default(),
         }
+    }
+    /// Share the writer's lock before enabling private environment hydration.
+    pub fn with_settings_lock(mut self, lock: std::sync::Arc<std::sync::Mutex<()>>) -> Self {
+        self.settings_lock = Some(lock);
+        self.secrets = self.secrets.with_private_profile(self.directory.clone());
+        self
+    }
+    pub fn with_secret_resolver(
+        mut self,
+        resolver: std::sync::Arc<crate::secret_resolver::SecretResolver>,
+    ) -> Self {
+        self.secrets = self.secrets.with_resolver(resolver);
+        self
+    }
+    pub fn with_notifications(mut self, notify: tokio::sync::watch::Sender<u64>) -> Self {
+        self.secrets = self.secrets.with_notifications(notify);
+        self
     }
     pub fn with_agent_scopes(
         mut self,
@@ -1683,7 +1769,29 @@ impl ConfiguredProviders {
         if let Some(current) = current {
             *last = current;
         }
-        last.clone()
+        let mut settings = self.policy.effective_settings(&last).unwrap_or_else(|_| {
+            self.policy.effective_settings(&serde_json::json!({})).unwrap_or_else(|_| serde_json::json!({"providerInstances":{"codex":{"driver":"codex","enabled":false},"claudeAgent":{"driver":"claudeAgent","enabled":false}}}))
+        });
+        if self.policy.document.is_some() {
+            if !settings["providerInstances"].is_object() {
+                settings["providerInstances"] = serde_json::json!({});
+            }
+            for driver in ["codex", "claudeAgent"] {
+                settings["providerInstances"]
+                    .as_object_mut()
+                    .unwrap()
+                    .entry(driver)
+                    .or_insert_with(|| serde_json::json!({"driver":driver}));
+            }
+        }
+        settings
+    }
+    fn driver_denial(&self, instance: &str, settings: &serde_json::Value) -> Option<String> {
+        let id = crate::provider_policy::configured_id(settings, instance);
+        let driver = settings["providerInstances"][id]["driver"]
+            .as_str()
+            .unwrap_or(id);
+        self.policy.driver_denial(driver)
     }
     fn builtin_snapshot(&self) -> (Vec<String>, crate::provider_lifetime::Scopes) {
         let instances = self.instances.lock().unwrap();
@@ -1708,9 +1816,11 @@ impl ConfiguredProviders {
     }
     fn sync(&self) -> serde_json::Value {
         use serde_json::json;
+        let _settings_guard = self.settings_lock.as_ref().map(|lock| lock.lock().unwrap());
         let settings = self.settings();
-        let mut cache = self.instances.lock().unwrap();
         let hydrated = crate::provider_policy::hydrate(&settings);
+        let secret_states = self.secrets.reconcile(&hydrated, &settings, &self.policy);
+        let mut cache = self.instances.lock().unwrap();
         let available_builtins = self
             .defaults
             .config()
@@ -1729,7 +1839,20 @@ impl ConfiguredProviders {
         cache.retain(|id, instance| {
             let keep = hydrated
                 .get(id)
-                .is_some_and(|entry| instance.settings == *entry);
+                .is_some_and(|entry| instance.settings == *entry)
+                && match secret_states.get(id) {
+                    Some(crate::provider_secrets::Status::Ready { secrets, .. }) => {
+                        instance.secrets.as_ref() == Some(secrets)
+                    }
+                    Some(crate::provider_secrets::Status::Reading) => {
+                        instance.preparation_error.as_deref() == Some("Reading secrets…")
+                    }
+                    Some(crate::provider_secrets::Status::Unavailable(reason)) => {
+                        instance.provider.is_none()
+                            && instance.preparation_error.as_ref() == Some(reason)
+                    }
+                    None => false,
+                };
             if !keep {
                 if let Some(pool) = &instance.provider {
                     pool.retire();
@@ -1774,29 +1897,49 @@ impl ConfiguredProviders {
         }
         drop(builtin_scopes);
         for (id, entry) in hydrated.as_object().into_iter().flatten() {
-            if cache.get(id).is_some_and(|i| i.settings == *entry) {
+            if cache.contains_key(id) {
                 continue;
             }
+            let (resolved_entry, secrets, secret_error) = match secret_states.get(id) {
+                Some(crate::provider_secrets::Status::Ready { entry, secrets }) => {
+                    (entry.clone(), Some(secrets.clone()), None)
+                }
+                Some(crate::provider_secrets::Status::Reading) => {
+                    (entry.clone(), None, Some("Reading secrets…".to_owned()))
+                }
+                Some(crate::provider_secrets::Status::Unavailable(reason)) => {
+                    (entry.clone(), None, Some(reason.clone()))
+                }
+                None => (
+                    entry.clone(),
+                    None,
+                    Some("Invalid provider instance settings".to_owned()),
+                ),
+            };
+            let working = &resolved_entry;
             let driver = entry["driver"].as_str().unwrap_or("");
             let name = if driver == "claudeAgent" {
                 "claude"
             } else {
                 driver
             };
-            let binary = instance_binary(entry, name);
-            let resolved = crate::provider_home::resolve(entry);
+            let binary = instance_binary(working, name);
+            let resolved = match secret_error.or_else(|| self.policy.driver_denial(driver)) {
+                Some(reason) => Err(reason),
+                None => crate::provider_home::resolve(working),
+            };
             let preparation_error = resolved.as_ref().err().cloned();
             let layout = resolved.ok().flatten();
             let continuation_key = layout.as_ref().map(|home| home.continuation_key());
             let env = layout
                 .as_ref()
                 .map(|home| home.environment.clone())
-                .unwrap_or_else(|| crate::provider_home::raw_environment(entry));
+                .unwrap_or_else(|| crate::provider_home::raw_environment(working));
             let home = layout.as_ref().and_then(|home| home.runtime.clone());
             let setup = layout
                 .filter(|home| home.driver == "codex")
                 .map(crate::provider_home::Setup::new);
-            let args = launch_args(entry["config"]["launchArgs"].as_str().unwrap_or(""))
+            let args = launch_args(working["config"]["launchArgs"].as_str().unwrap_or(""))
                 .unwrap_or_default();
             let provider: Option<std::sync::Arc<dyn Provider>> = if preparation_error.is_some() {
                 None
@@ -1807,13 +1950,15 @@ impl ConfiguredProviders {
                             .with_optional_agent_scopes(self.agent_scopes.clone())
                             .with_environment(env)
                             .with_home_setup(setup)
-                            .with_launch_args(args.clone()),
+                            .with_launch_args(args.clone())
+                            .with_managed_policy(self.policy.document.is_some()),
                     )),
                     "claudeAgent" => Some(std::sync::Arc::new(
                         crate::claude::ClaudeProvider::new(binary.clone())
                             .with_optional_agent_scopes(self.agent_scopes.clone())
                             .with_environment(env)
-                            .with_launch_args(args.clone()),
+                            .with_launch_args(args.clone())
+                            .with_managed_policy(self.policy.document.is_some()),
                     )),
                     _ => None,
                 }
@@ -1822,6 +1967,7 @@ impl ConfiguredProviders {
                 id.clone(),
                 Instance {
                     settings: entry.clone(),
+                    secrets,
                     discovered: false,
                     provider: provider
                         .map(|p| crate::provider_lifetime::Pool::new(p, predecessors.clone())),
@@ -1975,6 +2121,10 @@ impl Provider for ConfiguredProviders {
             for p in providers {
                 let _ = p.discover(cwd.clone()).await;
             }
+            if self.secrets.has_pending() {
+                self.secrets.wait().await;
+                self.discover(cwd).await?;
+            }
             Ok(())
         })
     }
@@ -2096,6 +2246,18 @@ impl Provider for ConfiguredProviders {
             Ok(())
         })
     }
+    fn reload_secrets<'a>(
+        &'a self,
+        instance: Option<&'a str>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            let settings = self.sync();
+            let instance = instance.map(|id| crate::provider_policy::configured_id(&settings, id));
+            self.secrets.reload_reconciled(&settings, instance).await;
+            self.sync();
+            self.close_retired().await
+        })
+    }
     fn execute<'a>(
         &'a self,
         input: RunInput,
@@ -2103,7 +2265,10 @@ impl Provider for ConfiguredProviders {
         control: mpsc::Receiver<ProviderControl>,
         cancel: watch::Receiver<bool>,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
-        self.sync();
+        let settings = self.sync();
+        if let Some(reason) = self.driver_denial(&input.provider_instance_id, &settings) {
+            return Box::pin(async move { Err(reason) });
+        }
         let selected = {
             let instances = self.instances.lock().unwrap();
             instances
@@ -2270,7 +2435,7 @@ mod limit_policy_tests {
             assert_eq!(t["snoozedUntil"].is_string(), enabled);
             assert_eq!(t["limitRecovery"].is_object(), enabled);
             drop(s);
-            std::fs::remove_dir_all(dir).unwrap();
+            // Fixture trees are retained for private container teardown.
         }
     }
 }

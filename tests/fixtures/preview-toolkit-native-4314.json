@@ -1,0 +1,1357 @@
+{
+  "complete": true,
+  "wholeToolkit": true,
+  "injectedBoundaries": "Opaque service dependencies only; actual Tool/Toolkit/Schema/contracts",
+  "catalog": [
+    {
+      "name": "preview_dialog",
+      "description": "Accept or dismiss the dialog `preview_status` reports. Pass `promptText` to accept a prompt. Needs your own tab, or an unclaimed one. Desktop hosts may not support this.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "accept": {
+            "type": "boolean"
+          },
+          "promptText": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "accept"
+        ],
+        "additionalProperties": true
+      },
+      "readonly": false,
+      "destructive": true,
+      "idempotent": false,
+      "openWorld": true
+    },
+    {
+      "name": "preview_status",
+      "description": "Report preview tab state: owner, pending dialog, URL, title, loading, viewport, and size. `tabs` lists this thread's tabs. `profiles` lists logins for `preview_open`. Read any listed tab. Act only on your tab, or an unclaimed tab with no human in control.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "readonly": true,
+      "destructive": false,
+      "idempotent": true,
+      "openWorld": true
+    },
+    {
+      "name": "preview_open",
+      "description": "Open a preview tab in this thread and show it. For a dev server, pass `target` instead of `url`. `open=false` keeps it in the background. Reuses your current tab unless `tabId` or `reuseExistingTab=false` says otherwise. Parallel subagents in one session must each use `reuseExistingTab=false`, then their own returned `tabId`.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                "minLength": 1,
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First page URL. Absolute http(s) URL, or a bare host (https; http for loopback). Omit to open a blank tab."
+          },
+          "open": {
+            "anyOf": [
+              {
+                "type": "boolean",
+                "description": "Show the preview to the user. Default true. False for background only."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "show": {
+            "anyOf": [
+              {
+                "type": "boolean",
+                "description": "Old alias for `open`."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reuseExistingTab": {
+            "anyOf": [
+              {
+                "type": "boolean",
+                "description": "Reuse `tabId`, or your current tab. Default true. False makes a new tab."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "profileId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Profile id or name from preview_status, for a new tab. Default: the user's. A tab keeps its profile."
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "environment-port"
+                    ]
+                  },
+                  "port": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "exclusiveMaximum": 65536,
+                    "description": "Dev-server port here."
+                  },
+                  "protocol": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "http",
+                          "https"
+                        ],
+                        "description": "Default http."
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "path": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "description": "Path, query, and fragment, such as /settings?tab=account."
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "port"
+                ],
+                "additionalProperties": true
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "readonly": false,
+      "destructive": true,
+      "idempotent": false,
+      "openWorld": true
+    },
+    {
+      "name": "preview_navigate",
+      "description": "Navigate the chosen tab. Pass `url` for a website, or `target:{kind:'environment-port',port}` for a dev server. Exactly one of `url` and `target`.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                "minLength": 1,
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Website URL. Absolute http(s) URL, or a bare host (https; http for loopback). For public pages."
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "url"
+                    ]
+                  },
+                  "url": {
+                    "type": "string",
+                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "description": "Website URL. Absolute http(s) URL, or a bare host (https; http for loopback)."
+                  }
+                },
+                "required": [
+                  "kind",
+                  "url"
+                ],
+                "additionalProperties": true
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "environment-port"
+                    ]
+                  },
+                  "port": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "exclusiveMaximum": 65536,
+                    "description": "Dev-server port here."
+                  },
+                  "protocol": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "http",
+                          "https"
+                        ],
+                        "description": "Default http."
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "path": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "description": "Path, query, and fragment, such as /settings?tab=account."
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "port"
+                ],
+                "additionalProperties": true
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "readiness": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "load",
+                  "domContentLoaded",
+                  "none"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Default 'load'. 'none': return at once."
+          },
+          "timeoutMs": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 60000,
+                "exclusiveMinimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Default 15000."
+          }
+        },
+        "additionalProperties": true
+      },
+      "readonly": false,
+      "destructive": false,
+      "idempotent": false,
+      "openWorld": true
+    },
+    {
+      "name": "preview_resize",
+      "description": "Resize the chosen tab: {mode:'fill'}, {mode:'freeform',width,height}, or {mode:'preset',preset,orientation}. Changes CSS size only, not the user agent.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "fill",
+              "freeform",
+              "preset"
+            ]
+          },
+          "preset": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "iphone-se",
+                  "iphone-xr",
+                  "iphone-12-pro",
+                  "iphone-14-pro-max",
+                  "pixel-7",
+                  "samsung-galaxy-s8-plus",
+                  "samsung-galaxy-s20-ultra",
+                  "ipad-mini",
+                  "ipad-air",
+                  "ipad-pro",
+                  "surface-pro-7",
+                  "surface-duo",
+                  "galaxy-z-fold-5",
+                  "asus-zenbook-fold",
+                  "samsung-galaxy-a51-71",
+                  "nest-hub",
+                  "nest-hub-max"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 240,
+                "maximum": 3840
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 240,
+                "maximum": 3840
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "orientation": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "portrait",
+                  "landscape"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timeoutMs": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 60000,
+                "exclusiveMinimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Default 15000."
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "additionalProperties": true
+      },
+      "readonly": false,
+      "destructive": false,
+      "idempotent": true,
+      "openWorld": true
+    },
+    {
+      "name": "preview_set_appearance",
+      "description": "Set `prefers-color-scheme` for the chosen tab: 'dark', 'light', or 'system' to clear the override.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "colorScheme": {
+            "type": "string",
+            "enum": [
+              "system",
+              "light",
+              "dark"
+            ]
+          }
+        },
+        "required": [
+          "colorScheme"
+        ],
+        "additionalProperties": true
+      },
+      "readonly": false,
+      "destructive": false,
+      "idempotent": true,
+      "openWorld": true
+    },
+    {
+      "name": "preview_snapshot",
+      "description": "Use it only when the current request asks for browser work, including checking an edit in the browser. Never use it unasked to verify your own edit, or to repeat a snapshot from an earlier turn. Works on a tab the user is driving. Returns page state, elements, diagnostics, and screenshot size. Target one element with `locator='aria-ref=<ref>'` from `accessibilityTree`, even in frames. Refs die on navigation, a new snapshot, or handoff. Text caps near 20 KB; on your own or an unclaimed tab, `preview_evaluate` reads more. To show a screenshot when asked: `save=true`, then embed ![alt](screenshotPath).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "includeImage": {
+            "anyOf": [
+              {
+                "type": "boolean",
+                "description": "Default false. True only to see the page."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "save": {
+            "anyOf": [
+              {
+                "type": "boolean",
+                "description": "Write PNG, return `screenshotPath`."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "readonly": false,
+      "destructive": false,
+      "idempotent": false,
+      "openWorld": true
+    },
+    {
+      "name": "preview_act",
+      "description": "Act on the chosen tab. Target with `locator='aria-ref=<ref>'` from `preview_snapshot`; `x` and `y` go together. `timeoutMs` defaults to 15000. click: `button`, `clickCount` 1 to 3. type: literal `text`, `clear=true` replaces it. hover: shows menus or tooltips. select: `values` in one native <select>, by value or label; for a custom dropdown, click it open, then click the option. drag: `source` onto `target`. upload: absolute `paths` answer the file picker `preview_status` reports, [] cancels it, or a `locator` sets an <input type=file>. press: one `key`, such as 'Enter', with `modifiers`, to the focused element; click a field first to focus it. scroll: the tab, or one container with a locator; positive `deltaY` scrolls down, positive `deltaX` right.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "click",
+              "type",
+              "hover",
+              "select",
+              "drag",
+              "upload",
+              "press",
+              "scroll"
+            ]
+          },
+          "tabId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "locator": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "selector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "x": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "y": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "button": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "left",
+                  "right",
+                  "middle"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "clickCount": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "clear": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "values": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "paths": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "modifiers": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "Alt",
+                    "Control",
+                    "Meta",
+                    "Shift"
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deltaX": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deltaY": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timeoutMs": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": true
+      },
+      "readonly": false,
+      "destructive": true,
+      "idempotent": false,
+      "openWorld": true
+    },
+    {
+      "name": "preview_evaluate",
+      "description": "Run JavaScript in the page. It can change page state. Returns `{value}`, up to 64 KB. Needs your tab, or an unclaimed one. To read a tab the user drives, use `preview_snapshot`. Page tools reached here: read data only, never create, save, or display. Show results with `html_render`.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expression": {
+            "type": "string",
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "minLength": 1,
+            "maxLength": 64000
+          },
+          "awaitPromise": {
+            "anyOf": [
+              {
+                "type": "boolean",
+                "description": "Default true."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "returnByValue": {
+            "anyOf": [
+              {
+                "type": "boolean",
+                "description": "False returns a ref. Default true."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "expression"
+        ],
+        "additionalProperties": true
+      },
+      "readonly": false,
+      "destructive": true,
+      "idempotent": false,
+      "openWorld": true
+    },
+    {
+      "name": "preview_wait_for",
+      "description": "Wait until all given locator, selector, text, and URL conditions match in the chosen tab.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "selector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "locator": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Case counts."
+          },
+          "urlIncludes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timeoutMs": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 60000,
+                "exclusiveMinimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Default 15000."
+          }
+        },
+        "additionalProperties": true
+      },
+      "readonly": true,
+      "destructive": false,
+      "idempotent": true,
+      "openWorld": true
+    },
+    {
+      "name": "preview_recording_start",
+      "description": "Start recording the chosen tab.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "readonly": false,
+      "destructive": false,
+      "idempotent": false,
+      "openWorld": true
+    },
+    {
+      "name": "preview_recording_stop",
+      "description": "Stop recording the chosen tab. Returns a local path to the recording file (max 50 MiB).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "readonly": false,
+      "destructive": false,
+      "idempotent": false,
+      "openWorld": true
+    }
+  ],
+  "actions": [
+    {
+      "action": "click",
+      "input": {},
+      "valid": false
+    },
+    {
+      "action": "click",
+      "input": {
+        "locator": "#x",
+        "text": "a",
+        "key": "Enter",
+        "values": [
+          "x"
+        ],
+        "paths": [],
+        "source": "#a",
+        "target": "#b",
+        "deltaY": 1
+      },
+      "valid": true,
+      "decoded": {
+        "locator": "#x"
+      }
+    },
+    {
+      "action": "click",
+      "input": {
+        "x": 1
+      },
+      "valid": false
+    },
+    {
+      "action": "click",
+      "input": {
+        "x": 1,
+        "y": 2,
+        "timeoutMs": -1
+      },
+      "valid": false
+    },
+    {
+      "action": "click",
+      "input": {
+        "locator": "",
+        "timeoutMs": 0
+      },
+      "valid": false
+    },
+    {
+      "action": "type",
+      "input": {},
+      "valid": false
+    },
+    {
+      "action": "type",
+      "input": {
+        "locator": "#x",
+        "text": "a",
+        "key": "Enter",
+        "values": [
+          "x"
+        ],
+        "paths": [],
+        "source": "#a",
+        "target": "#b",
+        "deltaY": 1
+      },
+      "valid": true,
+      "decoded": {
+        "text": "a",
+        "locator": "#x"
+      }
+    },
+    {
+      "action": "type",
+      "input": {
+        "x": 1
+      },
+      "valid": false
+    },
+    {
+      "action": "type",
+      "input": {
+        "x": 1,
+        "y": 2,
+        "timeoutMs": -1
+      },
+      "valid": false
+    },
+    {
+      "action": "type",
+      "input": {
+        "locator": "",
+        "timeoutMs": 0
+      },
+      "valid": false
+    },
+    {
+      "action": "hover",
+      "input": {},
+      "valid": false
+    },
+    {
+      "action": "hover",
+      "input": {
+        "locator": "#x",
+        "text": "a",
+        "key": "Enter",
+        "values": [
+          "x"
+        ],
+        "paths": [],
+        "source": "#a",
+        "target": "#b",
+        "deltaY": 1
+      },
+      "valid": true,
+      "decoded": {
+        "locator": "#x"
+      }
+    },
+    {
+      "action": "hover",
+      "input": {
+        "x": 1
+      },
+      "valid": false
+    },
+    {
+      "action": "hover",
+      "input": {
+        "x": 1,
+        "y": 2,
+        "timeoutMs": -1
+      },
+      "valid": false
+    },
+    {
+      "action": "hover",
+      "input": {
+        "locator": "",
+        "timeoutMs": 0
+      },
+      "valid": false
+    },
+    {
+      "action": "select",
+      "input": {},
+      "valid": false
+    },
+    {
+      "action": "select",
+      "input": {
+        "locator": "#x",
+        "text": "a",
+        "key": "Enter",
+        "values": [
+          "x"
+        ],
+        "paths": [],
+        "source": "#a",
+        "target": "#b",
+        "deltaY": 1
+      },
+      "valid": true,
+      "decoded": {
+        "locator": "#x",
+        "values": [
+          "x"
+        ]
+      }
+    },
+    {
+      "action": "select",
+      "input": {
+        "x": 1
+      },
+      "valid": false
+    },
+    {
+      "action": "select",
+      "input": {
+        "x": 1,
+        "y": 2,
+        "timeoutMs": -1
+      },
+      "valid": false
+    },
+    {
+      "action": "select",
+      "input": {
+        "locator": "",
+        "timeoutMs": 0
+      },
+      "valid": false
+    },
+    {
+      "action": "drag",
+      "input": {},
+      "valid": false
+    },
+    {
+      "action": "drag",
+      "input": {
+        "locator": "#x",
+        "text": "a",
+        "key": "Enter",
+        "values": [
+          "x"
+        ],
+        "paths": [],
+        "source": "#a",
+        "target": "#b",
+        "deltaY": 1
+      },
+      "valid": true,
+      "decoded": {
+        "source": "#a",
+        "target": "#b"
+      }
+    },
+    {
+      "action": "drag",
+      "input": {
+        "x": 1
+      },
+      "valid": false
+    },
+    {
+      "action": "drag",
+      "input": {
+        "x": 1,
+        "y": 2,
+        "timeoutMs": -1
+      },
+      "valid": false
+    },
+    {
+      "action": "drag",
+      "input": {
+        "locator": "",
+        "timeoutMs": 0
+      },
+      "valid": false
+    },
+    {
+      "action": "upload",
+      "input": {},
+      "valid": false
+    },
+    {
+      "action": "upload",
+      "input": {
+        "locator": "#x",
+        "text": "a",
+        "key": "Enter",
+        "values": [
+          "x"
+        ],
+        "paths": [],
+        "source": "#a",
+        "target": "#b",
+        "deltaY": 1
+      },
+      "valid": true,
+      "decoded": {
+        "paths": [],
+        "locator": "#x"
+      }
+    },
+    {
+      "action": "upload",
+      "input": {
+        "x": 1
+      },
+      "valid": false
+    },
+    {
+      "action": "upload",
+      "input": {
+        "x": 1,
+        "y": 2,
+        "timeoutMs": -1
+      },
+      "valid": false
+    },
+    {
+      "action": "upload",
+      "input": {
+        "locator": "",
+        "timeoutMs": 0
+      },
+      "valid": false
+    },
+    {
+      "action": "press",
+      "input": {},
+      "valid": false
+    },
+    {
+      "action": "press",
+      "input": {
+        "locator": "#x",
+        "text": "a",
+        "key": "Enter",
+        "values": [
+          "x"
+        ],
+        "paths": [],
+        "source": "#a",
+        "target": "#b",
+        "deltaY": 1
+      },
+      "valid": true,
+      "decoded": {
+        "key": "Enter"
+      }
+    },
+    {
+      "action": "press",
+      "input": {
+        "x": 1
+      },
+      "valid": false
+    },
+    {
+      "action": "press",
+      "input": {
+        "x": 1,
+        "y": 2,
+        "timeoutMs": -1
+      },
+      "valid": false
+    },
+    {
+      "action": "press",
+      "input": {
+        "locator": "",
+        "timeoutMs": 0
+      },
+      "valid": false
+    },
+    {
+      "action": "scroll",
+      "input": {},
+      "valid": false
+    },
+    {
+      "action": "scroll",
+      "input": {
+        "locator": "#x",
+        "text": "a",
+        "key": "Enter",
+        "values": [
+          "x"
+        ],
+        "paths": [],
+        "source": "#a",
+        "target": "#b",
+        "deltaY": 1
+      },
+      "valid": true,
+      "decoded": {
+        "deltaY": 1,
+        "locator": "#x"
+      }
+    },
+    {
+      "action": "scroll",
+      "input": {
+        "x": 1
+      },
+      "valid": false
+    },
+    {
+      "action": "scroll",
+      "input": {
+        "x": 1,
+        "y": 2,
+        "timeoutMs": -1
+      },
+      "valid": false
+    },
+    {
+      "action": "scroll",
+      "input": {
+        "locator": "",
+        "timeoutMs": 0
+      },
+      "valid": false
+    }
+  ]
+}

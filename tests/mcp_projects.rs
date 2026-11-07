@@ -234,7 +234,7 @@ fn named_project_scaffolds_and_registers_repository() {
     }
     m.ok("t3_project_delete", json!({"projectId":named["id"]}));
     assert!(root.exists());
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 #[test]
 fn worktree_readers_list_real_checkouts_and_fall_back_after_cleanup() {
@@ -268,7 +268,8 @@ fn worktree_readers_list_real_checkouts_and_fall_back_after_cleanup() {
         "thread_credential_required",
     );
     read.denied("t3_worktree_list", json!({}), "target_required");
-    git(&root, &["worktree", "remove", wt.to_str().unwrap()]);
+    // Simulate a missing worktree while retaining its entire fixture contents.
+    std::fs::rename(&wt, root.parent().unwrap().join("retained-topic-worktree")).unwrap();
     let listed = read.ok("t3_worktree_list", json!({"threadId":"t"}));
     assert_eq!(listed["isRepo"], true);
     assert!(listed["refs"]

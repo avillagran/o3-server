@@ -1,8 +1,8 @@
 # Headless nightly parity
 
-The active target is T3 Code headless nightly **4275**, commit
-`6577c6b6185167c0e502fa01f9e8e8f2dee6ff25`, published on 2026-11-06.
-[Upstream release](https://github.com/pingdotgg/t3code/releases/tag/v0.1.8-nightly.20261106.4275).
+The active target is T3 Code headless nightly **4288**, commit
+`32a0531748c44b25072d7495ce0b9bd7e9450a87`, published on 2026-11-06.
+[Upstream release](https://github.com/pingdotgg/t3code/releases/tag/v0.1.8-nightly.20261106.4288).
 The implementation is not yet a complete 1:1 replacement.
 
 The scope includes every headless RPC, command, HTTP/CLI surface, authentication
@@ -12,7 +12,39 @@ remain in scope. Legacy aliases are tracked separately and do not count as curre
 nightly coverage. Pure web/mobile/desktop presentation is outside this headless target;
 server behavior supporting those clients remains in scope.
 
+## Context and policy checkpoint
+
+Native composer context is decoded separately from stored message text and
+projected at provider/history boundaries. Future payload key order survives
+JSON parsing while established semantic task hashes remain canonical. See
+[composer context](nightly/COMPOSER-CONTEXT.md) for source fixtures and the
+remaining isolated UTF-16 surrogate limitation.
+
+Immutable machine-policy intake enforces authentication and global webhook
+restrictions. Settings, provider and runtime overlays have native codec,
+source-oracle and private transport checks; unfinished policy families still
+refuse production startup. Client/connect and Tailscale controls remain in
+implementation, not implied by the pure decision helpers. See
+[managed policy](nightly/MANAGED-POLICY.md),
+[managed settings](nightly/MANAGED-SETTINGS.md) and
+[client limits](nightly/MANAGED-LIMITS.md).
+
+Shared-profile readiness detects retained legacy deliveries and duplicate claims
+without clearing them. The desktop lifecycle guard checks before and after
+shutdown; direct external T3 launches remain outside that control path.
+[Native webhook admission](nightly/NATIVE-WEBHOOK-ADMISSION.md) records this
+boundary. [Relay-origin URLs](nightly/RELAY-ORIGIN.md) are derived from native
+private metadata, while signed relay admission is still open. The
+[1Password resolver core](nightly/SECRET-PROVIDERS.md) has isolated native-source
+and process checks; its consumer integrations remain separate work.
+
 ## Reference and evidence
+
+[`nightly/drift-4288.json`](nightly/drift-4288.json) records the latest source
+intake. Existing checkpoint evidence remains scoped to its recorded 4262/4275
+comparisons. Background Git lanes, provider-thread query performance, Muse
+live-view refusals and Azure DevOps changes still need their implementation
+and acceptance review.
 
 [`nightly/parity-4262.json`](nightly/parity-4262.json) inventories 211 discovered
 public method names and records existing method statuses as historical evidence,
@@ -25,11 +57,12 @@ thread-read and RPC authorization source is unchanged from 4262. Device discover
 Antigravity identification and CLI/service-launch changes require their own comparison;
 existing 4262 runtime evidence does not certify those surfaces.
 
-The reference's shared database has migration head 80. Live O3 profiles are accepted
-through migration 73. Supporting migrations 74–80 requires isolated native-T3 migration,
-reducer/export/import and schema validation before widening the live-profile gate.
-The existing migration guard remains the protection against opening an incompatible
-profile. Preserving a historical status of `done` does not bypass this acceptance.
+The reference's shared database has migration head 80. This candidate accepts exactly
+80 and legacy 73 after isolated native-runtime handover, reducer/export/import and
+contract validation; see [the acceptance](nightly/SHARED-SCHEMA-80.md). Live services
+have not been upgraded by this work. Intermediate and future heads remain refused.
+This establishes shared history, not synchronization of task definitions or complete
+platform parity. Preserving a historical status of `done` does not bypass acceptance.
 
 For each implementation block:
 
@@ -106,6 +139,26 @@ systemd checks verify controlling TTY and PID/session/group identity, lazy API
 initialization and survival of owned-profile agent cleanup. This does not add
 durable PTY reconnection after an actual server restart.
 
+## Scheduled conversation modes
+
+The candidate advertises `scheduledTaskThreadModes` and implements `new_thread`,
+`continue` and `fresh_session`, including first-run binding, stale-form saves,
+project changes, queued bound sends, task provenance and guarded completion.
+[Evidence and remaining limitations](nightly/SCHEDULED-TASK-MODES.md) distinguish
+native runtime checks from source-function and peer regressions. Definition edits
+now pass O3 → T3 subscription → O3 handover with native ledger rows preserved;
+new webhook ingress/dispatch now uses the native adapter and shared admission
+barriers. Legacy accepted-work ownership, ambiguous native preparation, relay,
+managed policy and the rest of the service lifecycle remain open. This block is not certification of every
+scheduled-task method in the inventory.
+
+Native webhook receipt list/detail reads now preserve outcome opt-in, pending
+window flags and equal-time insertion order across handover. Local endpoint
+token rotation preserves signing credentials and accepted work; relay-derived
+endpoint URLs remain open. [Evidence and limits](nightly/WEBHOOK-HISTORY.md).
+
+## Structured provider failures
+
 Failed turns now publish a structured terminal error card with upstream identity,
 bounded and redacted messages/codes, class, retryability and optional usage reset.
 Confirmed OOM changes the message and code while retaining the failure class.
@@ -113,3 +166,8 @@ The real client renders the card; stale attempts and duplicate terminal events
 cannot replace it. Provider-specific classification, retries and the remaining
 session lifecycle are still open; see
 [`nightly/provider-failure-intake.json`](nightly/provider-failure-intake.json).
+
+The native webhook adapter and pre-provider process-bound claim have dedicated
+[admission evidence](nightly/NATIVE-WEBHOOK-ADMISSION.md). Real official-runtime
+replay and crash handover do not create a second run or provider turn. These
+checks do not establish full scheduler or global nightly parity.

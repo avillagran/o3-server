@@ -2,8 +2,13 @@
 """Resumable isolated Android E2E operations; see README.md. Never selects another device."""
 import os, sys, pathlib, subprocess, json, time, re, shutil
 import signal
+if not (pathlib.Path('/run/.containerenv').is_file()
+        and os.environ.get('ANDROID_SANDBOX') == '1'
+        and os.environ.get('HOME') == '/sandbox/home'
+        and os.environ.get('ANDROID_SDK_ROOT') == '/opt/android-sdk'):
+    raise SystemExit('Android E2E operations require android-sandbox --sh; host execution is forbidden.')
 W=pathlib.Path('/var/tmp/o3-build/android'); W.mkdir(parents=True,exist_ok=True)
-SDK=pathlib.Path.home()/'.android-sdk'; BIN='/var/tmp/o3-build/main/release/o3-server'
+SDK=pathlib.Path(os.environ['ANDROID_SDK_ROOT']); BIN='/var/tmp/o3-build/main/release/o3-server'
 env={**os.environ,'TMPDIR':str(W/'tmp'),'ANDROID_SDK_ROOT':str(SDK),'ANDROID_AVD_HOME':str(W/'avd'),'ANDROID_EMULATOR_HOME':str(W/'emu')}
 for d in ['tmp','avd','emu','profile','evidence','home']: (W/d).mkdir(exist_ok=True)
 def adb(*args,**kw):return subprocess.run([str(SDK/'platform-tools/adb'),'-s','emulator-5570',*args],check=True,**kw)
@@ -68,5 +73,5 @@ elif cmd=='cleanup':
         except (subprocess.CalledProcessError, OSError) as error: print(error, file=sys.stderr)
     for p in [W/'home/.claude/.credentials.json',W/'home/.codex/auth.json',W/'session',W/'pairing']:
         p.unlink(missing_ok=True)
-    shutil.rmtree(W/'profile',ignore_errors=True)
+    # Retain the profile tree for private container teardown and evidence review.
 else: raise SystemExit('Unknown operation')

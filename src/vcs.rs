@@ -848,10 +848,27 @@ pub async fn discover() -> Reply {
     )
     .await
 }
+pub async fn discover_for(state: &crate::store::State) -> Reply {
+    discover_context(
+        |name| name.to_owned(),
+        |key| std::env::var(key).ok(),
+        std::time::Duration::from_secs(5),
+        Some(state),
+    )
+    .await
+}
 async fn discover_with(
     executable: impl Fn(&str) -> String + Copy,
     environment: impl Fn(&str) -> Option<String> + Copy,
     probe_timeout: std::time::Duration,
+) -> Reply {
+    discover_context(executable, environment, probe_timeout, None).await
+}
+async fn discover_context(
+    executable: impl Fn(&str) -> String + Copy,
+    environment: impl Fn(&str) -> Option<String> + Copy,
+    probe_timeout: std::time::Duration,
+    state: Option<&crate::store::State>,
 ) -> Reply {
     let jobs = [
         (
@@ -1006,8 +1023,16 @@ async fn discover_with(
     ]
     .into_iter()
     .map(|(kind, label, token_env, endpoint)| { let cafe=executable("cafe");async move {
-        let token = environment(token_env)
-            .filter(|s| !s.trim().is_empty());
+        if let Some(state) = state.filter(|_| matches!(kind, "bitbucket" | "gitcafe")) {
+            if let Some(auth) = crate::source_credentials_runtime::auth(state, kind).await {
+                return json!({"kind":kind,"label":label,"status":"available","version":{"_tag":"None"},"installHint":format!("Configure {token_env} on the server."),"detail":option(Some("Settings credentials and native secret references supported for authentication discovery.".into())),"auth":auth});
+            }
+        }
+        let token = if state.is_some() && kind == "gitcafe" {
+            None
+        } else {
+            environment(token_env).filter(|s| !s.trim().is_empty())
+        };
         let mut auth = json!({"status":"unknown","account":{"_tag":"None"},"host":{"_tag":"None"},"detail":{"_tag":"None"}});
         if let Some(endpoint) = endpoint.as_deref() {
             auth["host"] = option(
@@ -1224,7 +1249,7 @@ mod discovery_budget_tests {
             value["sourceControlProviders"][0]["auth"]["account"]["value"],
             "fixture"
         );
-        fs::remove_dir_all(root).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[tokio::test]
     async fn timed_out_auth_is_unknown_and_its_owned_process_is_reaped() {
@@ -1249,6 +1274,6 @@ mod discovery_budget_tests {
             !Path::new("/proc").join(pid).exists(),
             "probe process was not reaped"
         );
-        fs::remove_dir_all(root).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

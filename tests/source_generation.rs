@@ -180,5 +180,5 @@ fn real_settings_and_action_readers_cover_commit_review_and_failure_paths() {
     std::fs::write(root.join("a"), "third").unwrap();
     run("fallback", "commit", false, None);
     assert_eq!(git(&root, &["log", "-1", "--format=%s"]), "Update a");
-    std::fs::remove_dir_all(bin).unwrap();
+    // Fixture trees are retained for private container teardown.
 }

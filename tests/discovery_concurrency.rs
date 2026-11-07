@@ -28,7 +28,7 @@ fn slow_host_clis_are_probed_concurrently() {
     let start = std::time::Instant::now();
     let v = runtime.block_on(o3_server::vcs::discover()).unwrap();
     let elapsed = start.elapsed();
-    std::fs::remove_dir_all(&dir).unwrap();
+    // Fixture trees are retained for private container teardown.
     let kinds: Vec<_> = v["sourceControlProviders"]
         .as_array()
         .unwrap()
