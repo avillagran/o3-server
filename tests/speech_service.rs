@@ -704,3 +704,112 @@ async fn cached_main_download_still_waits_for_optional_silero_deadline() {
     assert_eq!(models, golden["cases"][7]["observations"][0]["value"]);
     service.shutdown().await.unwrap();
 }
+
+#[path = "speech/service-process.rs"]
+mod process;
+#[test]
+fn actual_service_factory_transcription_and_cpu_memo_match_native() {
+    if process::fresh("actual_service_factory_transcription_and_cpu_memo_match_native") {
+        return;
+    }
+    process::runtime().block_on(async {
+        tokio::spawn(async {
+            process::assert_stack();
+            let (_unused, authority, memory, _) = fixture();
+            authority.snapshot.lock().unwrap().acceleration = "auto".into();
+            let engine = process::Engine::new("gpu-inference");
+            let service = candidate::Service::new(
+                Arc::new(Store::new(memory.clone(), memory)),
+                engine.clone(),
+                Arc::new(candidate::WallClock),
+                None,
+            );
+            let call = service.bind(authority.clone());
+            let golden: Value =
+                serde_json::from_str(include_str!("fixtures/speech-service-4314.json")).unwrap();
+            let case = golden["cases"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|case| case["name"] == "buffered-automatic-cpu-retry-and-setting-memo-fence")
+                .unwrap();
+            for (index, acceleration) in ["auto", "auto", "cpu", "auto"].iter().enumerate() {
+                authority.snapshot.lock().unwrap().acceleration = (*acceleration).into();
+                let options = o3_server::speech_request::TranscriptionOptions::decode(
+                    case["observations"][0]["options"].clone(),
+                )
+                .unwrap();
+                assert_eq!(
+                    json!(call
+                        .transcribe(0.25f32.to_le_bytes().to_vec(), options)
+                        .await
+                        .unwrap()),
+                    case["observations"][index + 1]["value"]
+                );
+            }
+            assert_eq!(engine.placements(), vec!["auto", "cpu", "auto", "cpu"]);
+            assert_eq!(
+                engine
+                    .events()
+                    .iter()
+                    .filter(|event| event["kind"] == "transcribe")
+                    .count(),
+                6
+            );
+            service.shutdown().await.unwrap();
+        })
+        .await
+        .unwrap();
+    });
+}
+#[test]
+fn actual_service_cancelled_inference_is_fenced_after_caller_disappears() {
+    if process::fresh("actual_service_cancelled_inference_is_fenced_after_caller_disappears") {
+        return;
+    }
+    process::runtime().block_on(async {tokio::spawn(async {
+  process::assert_stack();let (_unused,authority,memory,_)=fixture();let engine=process::Engine::new("hang");
+  let service=candidate::Service::new(Arc::new(Store::new(memory.clone(),memory)),engine.clone(),Arc::new(candidate::WallClock),None);
+  let owner=service.clone();let auth=authority.clone();
+  let caller=tokio::spawn(async move {owner.bind(auth).transcribe(0.25f32.to_le_bytes().to_vec(),o3_server::speech_request::TranscriptionOptions::decode(json!({"speechLanguage":"en","speechTranslateToEnglish":false,"speechCustomWords":[],"speechRemoveFillerWords":false,"speechSilenceFiltering":false})).unwrap()).await});
+  let pid=engine.entered().await;let exit=process::exit(pid);
+  assert_eq!(service.bind(authority).status().await.unwrap()["state"],"transcribing");
+  caller.abort();let _=caller.await;service.shutdown().await.unwrap();
+  let _event=tokio::time::timeout(std::time::Duration::from_secs(2),exit.readable()).await.unwrap().unwrap();
+  assert_eq!(engine.events().iter().filter(|event|event["kind"]=="transcribe").count(),1);
+ }).await.unwrap();});
+}
+#[tokio::test]
+async fn buffered_invalid_pcm_and_missing_model_match_whole_service_errors() {
+    let golden: Value =
+        serde_json::from_str(include_str!("fixtures/speech-service-4314.json")).unwrap();
+    let case = golden["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["name"] == "buffered-invalid-audio-and-missing-model")
+        .unwrap();
+    let (service, authority, memory, engine) = fixture();
+    let call = service.bind(authority);
+    for (index, body) in [vec![], vec![0; 3], f32::NAN.to_le_bytes().to_vec()]
+        .into_iter()
+        .enumerate()
+    {
+        let options=o3_server::speech_request::TranscriptionOptions::decode(json!({"speechLanguage":"auto","speechTranslateToEnglish":false,"speechCustomWords":[],"speechRemoveFillerWords":false,"speechSilenceFiltering":false})).unwrap();
+        match call.transcribe(body, options).await.unwrap_err() {
+            Error::InvalidAudio { message, .. } => {
+                assert_eq!(json!(message), case["observations"][index]["message"])
+            }
+            other => panic!("unexpected typed error {other:?}"),
+        }
+    }
+    memory.ready.lock().unwrap().clear();
+    let options=o3_server::speech_request::TranscriptionOptions::decode(json!({"speechLanguage":"auto","speechTranslateToEnglish":false,"speechCustomWords":[],"speechRemoveFillerWords":false,"speechSilenceFiltering":false})).unwrap();
+    assert!(matches!(
+        call.transcribe(0.25f32.to_le_bytes().to_vec(), options)
+            .await,
+        Err(Error::ModelNotFound { .. })
+    ));
+    assert_eq!(engine.discoveries.load(Ordering::SeqCst), 0);
+    service.shutdown().await.unwrap();
+}

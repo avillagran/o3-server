@@ -507,3 +507,155 @@ fn failed_startup_keeps_typed_terminal_cleanup_receipt() {
         assert!(matches!(failure.cleanup, Cleanup::Confirmed { .. }));
     });
 }
+
+#[test]
+fn late_vad_binding_is_immutable_idempotent_and_uses_existing_model() {
+    sandbox::assert_isolated();
+    if fresh("late_vad_binding_is_immutable_idempotent_and_uses_existing_model") {
+        return;
+    }
+    runtime().block_on(async {
+        tokio::spawn(async {
+            assert_worker_stack();
+            let fixture = Fixture::start("stream").await;
+            let source = fixture.base.join("owned-vad");
+            fs::write(&source, "vad:stable").unwrap();
+            assert_eq!(
+                fixture.worker.bind_vad(seal(&source)).await,
+                Err(Error::InvalidInput)
+            );
+            fixture.worker.load().await.unwrap();
+            fixture.worker.bind_vad(seal(&source)).await.unwrap();
+            let snapshots = || {
+                fs::read_dir(fixture.base.join("run"))
+                    .unwrap()
+                    .map(|entry| entry.unwrap().path())
+                    .filter(|path| {
+                        path.file_name()
+                            .unwrap()
+                            .to_string_lossy()
+                            .starts_with("vad-")
+                    })
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(snapshots().len(), 1);
+            fs::write(&source, "vad:changed").unwrap();
+            let same = fixture.base.join("same-vad");
+            fs::write(&same, "vad:stable").unwrap();
+            fixture.worker.bind_vad(seal(&same)).await.unwrap();
+            assert_eq!(snapshots().len(), 1);
+            assert_eq!(
+                fixture.worker.bind_vad(seal(&source)).await,
+                Err(Error::InvalidInput)
+            );
+            assert_eq!(snapshots().len(), 1);
+            let pcm = Pcm::decode(
+                &vec![0.25f32; 1024]
+                    .iter()
+                    .flat_map(|value| value.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap();
+            let result = fixture
+                .worker
+                .transcribe(&pcm, json!({"timestamps":"none","language":"en"}), true)
+                .await
+                .unwrap();
+            assert!(result["text"].is_string());
+            let events = fixture.events();
+            assert!(events
+                .iter()
+                .any(|event| event["kind"] == "load" && event["mode"] == "vad:stable"));
+            assert!(events.iter().any(|event| event["kind"] == "vad-feed"));
+            assert_eq!(
+                events
+                    .iter()
+                    .filter(|event| event["kind"] == "load" && event["mode"] == "stream")
+                    .count(),
+                1,
+                "sidecar binding must not reload the existing ASR model"
+            );
+            let stream = fixture
+                .worker
+                .begin(json!({"timestamps":"none","language":"en"}), false)
+                .await
+                .unwrap();
+            assert_eq!(fixture.worker.bind_vad(seal(&same)).await, Err(Error::Busy));
+            fixture.worker.finish(stream).await.unwrap();
+            assert!(matches!(
+                fixture.worker.close().await,
+                Cleanup::Confirmed { .. }
+            ));
+            assert_eq!(fs::read_to_string(&snapshots()[0]).unwrap(), "vad:stable");
+            assert_eq!(fs::read_to_string(&source).unwrap(), "vad:changed");
+        })
+        .await
+        .unwrap();
+    });
+}
+
+#[test]
+fn complete_text_helpers_match_whole_native_service_with_actual_factory() {
+    sandbox::assert_isolated();
+    if fresh("complete_text_helpers_match_whole_native_service_with_actual_factory") {
+        return;
+    }
+    runtime().block_on(async {
+        tokio::spawn(async {
+            assert_worker_stack();
+            let fixture = Fixture::start("text:um oh three").await;
+            fixture.worker.load().await.unwrap();
+            let golden: Value =
+                serde_json::from_str(include_str!("fixtures/speech-service-4314.json")).unwrap();
+            let pcm = Pcm::decode(&0.25f32.to_le_bytes()).unwrap();
+            assert_eq!(
+                golden["cases"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|case| case["name"]
+                        .as_str()
+                        .unwrap()
+                        .starts_with("buffered-native-text-translation-"))
+                    .count(),
+                2
+            );
+            for case in golden["cases"].as_array().unwrap().iter().filter(|case| {
+                case["name"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with("buffered-native-text-translation-")
+            }) {
+                let input = &case["observations"][0];
+                let options = o3_server::speech_request::TranscriptionOptions::decode(
+                    input["options"].clone(),
+                )
+                .unwrap();
+                let result = fixture
+                    .worker
+                    .transcribe_options(&pcm, input["modelId"].as_str().unwrap(), &options)
+                    .await
+                    .unwrap();
+                assert_eq!(result, case["observations"][1]["value"]);
+                let actual = fixture
+                    .events()
+                    .into_iter()
+                    .rfind(|event| event["kind"] == "transcribe")
+                    .unwrap();
+                let expected = case["events"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|event| event["kind"] == "transcribe")
+                    .unwrap();
+                assert_eq!(actual["options"], expected["options"]);
+            }
+            assert!(matches!(
+                fixture.worker.close().await,
+                Cleanup::Confirmed { .. }
+            ));
+        })
+        .await
+        .unwrap();
+    });
+}

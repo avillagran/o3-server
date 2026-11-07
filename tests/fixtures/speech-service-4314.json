@@ -19434,6 +19434,384 @@
       "ready": [
         "handy-computer/moonshine-tiny-gguf"
       ]
+    },
+    {
+      "name": "buffered-native-text-translation-false",
+      "observations": [
+        {
+          "label": "input",
+          "modelId": "handy-computer/moonshine-tiny-gguf",
+          "options": {
+            "speechLanguage": "en",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [
+              {
+                "term": "O3",
+                "aliases": [
+                  "oh three"
+                ]
+              }
+            ],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          }
+        },
+        {
+          "label": "transcript",
+          "ok": true,
+          "value": "O3"
+        }
+      ],
+      "events": [
+        {
+          "kind": "load",
+          "path": "/fixture/models/moonshine-tiny-Q8_0.gguf",
+          "acceleration": "cpu"
+        },
+        {
+          "kind": "transcribe",
+          "options": {
+            "timestamps": "none",
+            "language": "en-US",
+            "vocabulary": [
+              "O3"
+            ]
+          },
+          "filterSilence": false,
+          "vad": null
+        },
+        {
+          "kind": "dispose"
+        }
+      ],
+      "settings": {
+        "speechModelId": "handy-computer/moonshine-tiny-gguf",
+        "speechAcceleration": "cpu",
+        "speechModelUnloadTimeout": "min_2",
+        "speechLanguage": "auto",
+        "speechRemoveFillerWords": false,
+        "speechCustomWords": []
+      },
+      "ready": [
+        "handy-computer/moonshine-tiny-gguf"
+      ]
+    },
+    {
+      "name": "buffered-native-text-translation-true",
+      "observations": [
+        {
+          "label": "input",
+          "modelId": "handy-computer/canary-180m-flash-gguf",
+          "options": {
+            "speechLanguage": "fr",
+            "speechTranslateToEnglish": true,
+            "speechCustomWords": [
+              {
+                "term": "O3",
+                "aliases": [
+                  "oh three"
+                ]
+              }
+            ],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          }
+        },
+        {
+          "label": "transcript",
+          "ok": true,
+          "value": "O3"
+        }
+      ],
+      "events": [
+        {
+          "kind": "load",
+          "path": "/fixture/models/canary-180m-flash-Q8_0.gguf",
+          "acceleration": "cpu"
+        },
+        {
+          "kind": "transcribe",
+          "options": {
+            "timestamps": "none",
+            "language": "fr",
+            "task": "translate",
+            "targetLanguage": "en"
+          },
+          "filterSilence": false,
+          "vad": null
+        },
+        {
+          "kind": "dispose"
+        }
+      ],
+      "settings": {
+        "speechModelId": "handy-computer/canary-180m-flash-gguf",
+        "speechAcceleration": "cpu",
+        "speechModelUnloadTimeout": "min_2",
+        "speechLanguage": "auto",
+        "speechRemoveFillerWords": false,
+        "speechCustomWords": []
+      },
+      "ready": [
+        "handy-computer/moonshine-tiny-gguf",
+        "handy-computer/canary-180m-flash-gguf"
+      ]
+    },
+    {
+      "name": "buffered-automatic-cpu-retry-and-setting-memo-fence",
+      "observations": [
+        {
+          "label": "input",
+          "modelId": "handy-computer/moonshine-tiny-gguf",
+          "options": {
+            "speechLanguage": "auto",
+            "speechTranslateToEnglish": false,
+            "speechCustomWords": [
+              {
+                "term": "O3",
+                "aliases": [
+                  "oh three"
+                ]
+              }
+            ],
+            "speechRemoveFillerWords": true,
+            "speechSilenceFiltering": false
+          }
+        },
+        {
+          "label": "gpu-failure-recovers-once",
+          "ok": true,
+          "value": "O3"
+        },
+        {
+          "label": "next-call-uses-cpu-memo",
+          "ok": true,
+          "value": "O3"
+        },
+        {
+          "label": "explicit-cpu",
+          "ok": true,
+          "value": "O3"
+        },
+        {
+          "label": "changed-setting-cleared-memo",
+          "ok": true,
+          "value": "O3"
+        }
+      ],
+      "events": [
+        {
+          "kind": "load",
+          "path": "/fixture/models/moonshine-tiny-Q8_0.gguf",
+          "acceleration": "auto"
+        },
+        {
+          "kind": "transcribe",
+          "options": {
+            "timestamps": "none",
+            "language": "en-US",
+            "vocabulary": [
+              "O3"
+            ]
+          },
+          "filterSilence": false,
+          "vad": null,
+          "backend": "fixture-gpu"
+        },
+        {
+          "kind": "dispose"
+        },
+        {
+          "kind": "load",
+          "path": "/fixture/models/moonshine-tiny-Q8_0.gguf",
+          "acceleration": "cpu"
+        },
+        {
+          "kind": "transcribe",
+          "options": {
+            "timestamps": "none",
+            "language": "en-US",
+            "vocabulary": [
+              "O3"
+            ]
+          },
+          "filterSilence": false,
+          "vad": null,
+          "backend": "CPU"
+        },
+        {
+          "kind": "transcribe",
+          "options": {
+            "timestamps": "none",
+            "language": "en-US",
+            "vocabulary": [
+              "O3"
+            ]
+          },
+          "filterSilence": false,
+          "vad": null,
+          "backend": "CPU"
+        },
+        {
+          "kind": "transcribe",
+          "options": {
+            "timestamps": "none",
+            "language": "en-US",
+            "vocabulary": [
+              "O3"
+            ]
+          },
+          "filterSilence": false,
+          "vad": null,
+          "backend": "CPU"
+        },
+        {
+          "kind": "dispose"
+        },
+        {
+          "kind": "load",
+          "path": "/fixture/models/moonshine-tiny-Q8_0.gguf",
+          "acceleration": "auto"
+        },
+        {
+          "kind": "transcribe",
+          "options": {
+            "timestamps": "none",
+            "language": "en-US",
+            "vocabulary": [
+              "O3"
+            ]
+          },
+          "filterSilence": false,
+          "vad": null,
+          "backend": "fixture-gpu"
+        },
+        {
+          "kind": "dispose"
+        },
+        {
+          "kind": "load",
+          "path": "/fixture/models/moonshine-tiny-Q8_0.gguf",
+          "acceleration": "cpu"
+        },
+        {
+          "kind": "transcribe",
+          "options": {
+            "timestamps": "none",
+            "language": "en-US",
+            "vocabulary": [
+              "O3"
+            ]
+          },
+          "filterSilence": false,
+          "vad": null,
+          "backend": "CPU"
+        },
+        {
+          "kind": "dispose"
+        }
+      ],
+      "settings": {
+        "speechModelId": "handy-computer/moonshine-tiny-gguf",
+        "speechAcceleration": "auto",
+        "speechModelUnloadTimeout": "min_2",
+        "speechLanguage": "auto",
+        "speechRemoveFillerWords": false,
+        "speechCustomWords": []
+      },
+      "ready": [
+        "handy-computer/moonshine-tiny-gguf"
+      ]
+    },
+    {
+      "name": "buffered-explicit-cpu-failure-is-not-retried",
+      "observations": [
+        {
+          "label": "failure",
+          "ok": false,
+          "tag": "SpeechOperationError",
+          "operation": "inference",
+          "modelId": null,
+          "message": "Environment speech inference failed."
+        }
+      ],
+      "events": [
+        {
+          "kind": "load",
+          "path": "/fixture/models/moonshine-tiny-Q8_0.gguf",
+          "acceleration": "cpu"
+        },
+        {
+          "kind": "transcribe",
+          "options": {
+            "timestamps": "none",
+            "language": "en-US"
+          },
+          "filterSilence": false,
+          "vad": null
+        },
+        {
+          "kind": "dispose"
+        }
+      ],
+      "settings": {
+        "speechModelId": "handy-computer/moonshine-tiny-gguf",
+        "speechAcceleration": "cpu",
+        "speechModelUnloadTimeout": "min_2",
+        "speechLanguage": "auto",
+        "speechRemoveFillerWords": false,
+        "speechCustomWords": []
+      },
+      "ready": [
+        "handy-computer/moonshine-tiny-gguf"
+      ]
+    },
+    {
+      "name": "buffered-invalid-audio-and-missing-model",
+      "observations": [
+        {
+          "label": "empty",
+          "ok": false,
+          "tag": "SpeechInvalidAudioError",
+          "operation": null,
+          "modelId": null,
+          "message": "audio must contain at most five minutes of 16 kHz mono Float32 PCM"
+        },
+        {
+          "label": "unaligned",
+          "ok": false,
+          "tag": "SpeechInvalidAudioError",
+          "operation": null,
+          "modelId": null,
+          "message": "audio must contain at most five minutes of 16 kHz mono Float32 PCM"
+        },
+        {
+          "label": "nan",
+          "ok": false,
+          "tag": "SpeechInvalidAudioError",
+          "operation": null,
+          "modelId": null,
+          "message": "audio contains an invalid PCM sample"
+        },
+        {
+          "label": "missing",
+          "ok": false,
+          "tag": "SpeechModelNotFoundError",
+          "operation": null,
+          "modelId": "handy-computer/moonshine-tiny-gguf",
+          "message": ""
+        }
+      ],
+      "events": [],
+      "settings": {
+        "speechModelId": "handy-computer/moonshine-tiny-gguf",
+        "speechAcceleration": "cpu",
+        "speechModelUnloadTimeout": "min_2",
+        "speechLanguage": "auto",
+        "speechRemoveFillerWords": false,
+        "speechCustomWords": []
+      },
+      "ready": []
     }
   ]
 }

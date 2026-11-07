@@ -63,7 +63,10 @@ shutdown and unknown-cleanup regressions. Virtual resources and in-memory file
 operations are identified as such. The separate opt-in
 `examples/speech_service_acceptance.rs` uses the actual Local ModelStore,
 admitted complete transcribe-cpp 0.4.1 graph, tiny catalog model and real Worker
-inside a private container; it performs no microphone capture or network request.
+inside a private container. It also transcribes one second of synthetic silence
+through the buffered service and complete text pipeline. Transcript length is
+recorded, not treated as an accuracy assertion. There is no microphone or paid
+provider; the container has no network.
 
 ## Remaining consumers
 
@@ -73,14 +76,51 @@ Store. Its installation timeout is two minutes, and failure is optional. Recordi
 acquisition uses fifteen seconds and a ten-minute retry backoff; installation
 bypasses that backoff and success resets it. Cancellation interrupts both owned
 store operations. The whole native service independently confirms those rules.
-The recording policy is a standalone kernel until its audio consumer is wired.
+The buffered audio consumer uses the same recording policy.
 
-This checkpoint does not implement the entire native SpeechService. Late sealed
-VAD attachment to an already prepared worker, transcription/stream option
-resolution, automatic CPU recovery, active-transcription accounting, and their
-engine/VAD lifetimes remain to be connected and proven. No real Silero model or
-VAD inference has been acquired or claimed by these virtual deadline fixtures. The existing worker and pure options/PCM
-leaves do not by themselves close those orchestration gaps. No claim of full
+## Buffered inference and late sidecars
+
+The actor accepts an owner-only admitted VAD file under its existing reservation,
+copies it into a new private immutable snapshot, and holds that lease until the
+terminal process-group fence. A repeated digest is a no-op; a different digest is
+refused. Binding during a stream is Busy. File preparation still unsettled at the
+terminal process fence cannot produce a confirmed cleanup receipt. The native factory itself remains byte-identical.
+The physical fixture verifies the existing ASR model was loaded once and that the
+whole native audio factory consumed the original sidecar bytes after its source
+was changed. That sidecar and ASR implementation are explicitly synthetic.
+
+Buffered transcription reads effective settings again, reserves before PCM
+validation, tracks active transcription, reuses the matching loaded model and
+applies exactly one automatic CPU retry when the actual loaded backend was not
+CPU. An explicitly selected CPU/GPU failure is not silently relocated. The CPU
+memo is retained only for the same model with auto placement; settings changes
+clear it. Caller cancellation and service shutdown signal an owned job, which
+fences and reaps a hung actual native worker without publishing a late result.
+Unknown cleanup prevents a retry.
+
+Text handling executes the complete original custom-word, filler-word,
+native-language and model helpers after type erasure and dependency embedding.
+All seven exported functions have equal `Function.toString()` values to the
+original pinned modules. The complete catalog data is equal too. Every helper is
+hashed into the private specification and exact data-URL import allowlist. No
+ambient module or caller JavaScript is admitted. Native translation/vocabulary
+selection, alias correction, filler removal and final trimming therefore use the
+original code. These observations use Node 26.13.0 and its default en-US locale;
+there is no broader cross-locale or lone-surrogate transport claim.
+
+Thirteen whole-service traces now include buffered text/translation, CPU memo
+reset, explicit CPU failure, invalid PCM and missing models. The private runtime
+has nine owner tests, twelve service tests and one service-error test per feature
+mode; real Worker-backed service cases measure an actual 512 KiB worker stack.
+Seven direct whole-factory protocol regressions also pass from immutable inputs.
+
+This checkpoint still does not implement the entire native SpeechService. Stream
+orchestration, absolute preparation timeout/cancellation across startup, optional
+fallback after a failed late VAD attachment, and actual State/HTTP/current-session
+authorization remain before public capability exposure. No real Silero model or
+VAD inference has been acquired or claimed yet. Those remaining consumers are
+part of the continuing implementation, not inferred from the generic transport.
+The existing worker and pure options/PCM leaves do not by themselves close those orchestration gaps. No claim of full
 speech or HTTP parity follows from control tests or the earlier inference proof.
 The ModelStore's retained staging/foreign-file safety differences remain as
 documented in `SPEECH-MODEL-STORE-4314.md`.

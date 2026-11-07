@@ -26,6 +26,25 @@ use tokio::{
 const BRIDGE: &str = include_str!("../runtime/speech/worker.mjs");
 const NATIVE: &[u8] = include_bytes!("../runtime/speech/native-worker.mjs");
 const MANIFEST: &[u8] = include_bytes!("../runtime/speech/native-manifest.json");
+const TEXT_MANIFEST: &[u8] = include_bytes!("../runtime/speech/text/manifest.json");
+const TEXT_MODULES: &[(&str, &[u8])] = &[
+    (
+        "custom-words.mjs",
+        include_bytes!("../runtime/speech/text/custom-words.mjs"),
+    ),
+    (
+        "filler-words.mjs",
+        include_bytes!("../runtime/speech/text/filler-words.mjs"),
+    ),
+    (
+        "native-language.mjs",
+        include_bytes!("../runtime/speech/text/native-language.mjs"),
+    ),
+    (
+        "model.mjs",
+        include_bytes!("../runtime/speech/text/model.mjs"),
+    ),
+];
 
 /// A private immutable executable snapshot, shared across workers without
 /// repeatedly copying a150MB runtime. The acquisition owner retains this object.
@@ -118,6 +137,7 @@ struct Request {
     id: u64,
     frame: Value,
     reply: oneshot::Sender<Result<Value, Error>>,
+    attachment: Option<SealedFile>,
 }
 struct Reservation {
     shared: Arc<Shared>,
@@ -192,18 +212,30 @@ fn prepare(spec: WorkerSpec) -> io::Result<Prepared> {
         .transpose()?;
     let owner = crate::store::random_id().map_err(io::Error::other)?;
     let document = json!({"version":1,"owner":owner,"nativeSha256":format!("{:x}",Sha256::digest(NATIVE)),
-            "engine":engine.receipt(),"model":model.as_ref().map(SealedFile::receipt),"vad":vad.as_ref().map(SealedFile::receipt),"acceleration":spec.acceleration});
+            "textManifestSha256":format!("{:x}",Sha256::digest(TEXT_MANIFEST)),"engine":engine.receipt(),"model":model.as_ref().map(SealedFile::receipt),"vad":vad.as_ref().map(SealedFile::receipt),"acceleration":spec.acceleration});
     let bytes = serde_json::to_vec(&document)?;
     create(&spec.directory.join("spec.json"), &bytes)?;
     create(&spec.directory.join("native-worker.mjs"), NATIVE)?;
     create(&spec.directory.join("native-manifest.json"), MANIFEST)?;
+    create(&spec.directory.join("text-manifest.json"), TEXT_MANIFEST)?;
+    for (name, bytes) in TEXT_MODULES {
+        create(&spec.directory.join(format!("text-{name}")), bytes)?;
+    }
     use base64::Engine;
     let native_url = format!(
         "data:text/javascript;base64,{}",
         base64::engine::general_purpose::STANDARD.encode(NATIVE)
     );
+    let mut trusted = vec![native_url];
+    for (_, bytes) in TEXT_MODULES {
+        trusted.push(format!(
+            "data:text/javascript;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        ));
+    }
+    let trusted = serde_json::to_string(&trusted)?;
     let admitted = serde_json::to_string(&spec.engine.paths(&spec.directory.join("engine")))?;
-    let guard=format!("import {{registerHooks,isBuiltin}} from 'node:module';\nimport {{fileURLToPath}} from 'node:url';\nconst files=new Set({admitted});\nconst native={};\nregisterHooks({{resolve(specifier,context,next){{const result=next(specifier,context);if(isBuiltin(result.url)||result.url===native)return result;if(result.url.startsWith('file:')&&files.has(fileURLToPath(result.url)))return result;throw Error('Unadmitted speech package import');}}}});\n",serde_json::to_string(&native_url)?);
+    let guard=format!("import {{registerHooks,isBuiltin}} from 'node:module';\nimport {{fileURLToPath}} from 'node:url';\nconst files=new Set({admitted});\nconst trusted=new Set({trusted});\nregisterHooks({{resolve(specifier,context,next){{const result=next(specifier,context);if(isBuiltin(result.url)||trusted.has(result.url))return result;if(result.url.startsWith('file:')&&files.has(fileURLToPath(result.url)))return result;throw Error('Unadmitted speech package import');}}}});\n");
     let guard_path = spec.directory.join("import-guard.mjs");
     create(&guard_path, guard.as_bytes())?;
     let guard_url = url::Url::from_file_path(&guard_path)
@@ -282,6 +314,14 @@ impl Worker {
                 stop: stop_rx,
                 deadline: spec.operation_deadline,
                 close: spec.close_deadline,
+                directory: spec.directory.clone(),
+                vad_signature: spec.vad.as_ref().map(|file| {
+                    let value = file.receipt();
+                    (
+                        value["sha256"].as_str().unwrap().to_owned(),
+                        value["bytes"].as_str().unwrap().to_owned(),
+                    )
+                }),
             }
             .run()
             .await
@@ -299,6 +339,18 @@ impl Worker {
         begin: bool,
         finish: bool,
         terminal: bool,
+    ) -> Result<(Value, u64), Error> {
+        self.request_owned(build, stream, begin, finish, terminal, None)
+            .await
+    }
+    async fn request_owned(
+        &self,
+        build: impl FnOnce() -> Value,
+        stream: Option<Stream>,
+        begin: bool,
+        finish: bool,
+        terminal: bool,
+        attachment: Option<SealedFile>,
     ) -> Result<(Value, u64), Error> {
         let (reply, receiver) = oneshot::channel();
         let id = {
@@ -340,7 +392,12 @@ impl Worker {
         frame["id"] = json!(id);
         self.shared
             .commands
-            .send(Request { id, frame, reply })
+            .send(Request {
+                id,
+                frame,
+                reply,
+                attachment,
+            })
             .map_err(|_| Error::Closed)?;
         let result = receiver.await.map_err(|_| Error::Closed)?;
         let mut state = self.shared.state.lock().map_err(|_| Error::Closed)?;
@@ -372,6 +429,22 @@ impl Worker {
             .await
             .map(|x| x.0)
     }
+    /// Owner-only late sidecar binding. The actor snapshots admitted bytes under
+    /// its existing reservation and retains that immutable lease through fencing.
+    /// Rebinding the same digest is a no-op; a different sidecar is refused.
+    pub async fn bind_vad(&self, file: SealedFile) -> Result<(), Error> {
+        self.request_owned(
+            || json!({"kind":"vad"}),
+            None,
+            false,
+            false,
+            false,
+            Some(file),
+        )
+        .await
+        .map(|_| ())
+    }
+
     pub async fn transcribe(
         &self,
         pcm: &crate::speech_kernel::Pcm,
@@ -381,6 +454,18 @@ impl Worker {
         use base64::Engine;
         self.request(||json!({"kind":"transcribe","pcm":base64::engine::general_purpose::STANDARD.encode(pcm.samples().iter().flat_map(|value| value.to_le_bytes()).collect::<Vec<_>>()),"options":options,"filterSilence":filter_silence}),None,false,false,false).await.map(|x|x.0)
     }
+    /// Buffered service request with the complete native text/language helpers.
+    /// Options have already passed the exact native request codec.
+    pub async fn transcribe_options(
+        &self,
+        pcm: &crate::speech_kernel::Pcm,
+        model_id: &str,
+        options: &crate::speech_request::TranscriptionOptions,
+    ) -> Result<Value, Error> {
+        use base64::Engine;
+        self.request(||json!({"kind":"service-transcribe","pcm":base64::engine::general_purpose::STANDARD.encode(pcm.samples().iter().flat_map(|value|value.to_le_bytes()).collect::<Vec<_>>()),"modelId":model_id,"options":options.as_value()}),None,false,false,false).await.map(|value|value.0)
+    }
+
     pub async fn begin(&self, options: Value, filter_silence: bool) -> Result<Stream, Error> {
         self.request(
             || json!({"kind":"begin","options":options,"filterSilence":filter_silence}),
@@ -463,6 +548,8 @@ struct Actor {
     stop: watch::Receiver<bool>,
     deadline: Duration,
     close: Duration,
+    directory: PathBuf,
+    vad_signature: Option<(String, String)>,
 }
 impl Actor {
     async fn run(self) -> Outcome {
@@ -476,7 +563,12 @@ impl Actor {
             mut stop,
             deadline,
             close,
+            directory,
+            mut vad_signature,
         } = self;
+        let mut leases = Vec::new();
+        let mut preparation: Option<tokio::task::JoinHandle<io::Result<SealedFile>>> = None;
+        let mut model_loaded = false;
         let mut generation = None;
         let mut completed = None;
         loop {
@@ -495,16 +587,61 @@ impl Actor {
                 .to_owned();
             let mut frame = request.frame;
             frame["owner"] = json!(owner);
-            let mut bytes = match serde_json::to_vec(&frame) {
-                Ok(bytes) => bytes,
-                Err(_) => break,
-            };
-            bytes.push(b'\n');
-            if bytes.len() > frame::MAX_RECORD {
-                let _ = request.reply.send(Err(Error::Protocol));
-                break;
+            let mut new_signature = None;
+            if let Some(source) = request.attachment {
+                if !model_loaded {
+                    completed = Some(request.id);
+                    let _ = request.reply.send(Err(Error::InvalidInput));
+                    continue;
+                }
+                let receipt = source.receipt();
+                let signature = (
+                    receipt["sha256"].as_str().unwrap().to_owned(),
+                    receipt["bytes"].as_str().unwrap().to_owned(),
+                );
+                if let Some(existing) = &vad_signature {
+                    completed = Some(request.id);
+                    let _ = request.reply.send(if existing == &signature {
+                        Ok(Value::Null)
+                    } else {
+                        Err(Error::InvalidInput)
+                    });
+                    continue;
+                }
+                let bounded = signature
+                    .1
+                    .parse::<u64>()
+                    .is_ok_and(|size| size > 0 && size <= 2 * 1024 * 1024);
+                let id = crate::store::random_id();
+                if !bounded || id.is_err() {
+                    completed = Some(request.id);
+                    let _ = request.reply.send(Err(Error::InvalidInput));
+                    continue;
+                }
+                let destination = directory.join(format!("vad-{}", id.unwrap()));
+                preparation = Some(tokio::task::spawn_blocking(move || {
+                    source.snapshot(&destination, false)
+                }));
+                new_signature = Some(signature);
             }
             let operation = async {
+                if let Some(job) = preparation.as_mut() {
+                    let file = match job.await {
+                        Ok(Ok(file)) => file,
+                        _ => {
+                            preparation = None;
+                            return Err(Error::InvalidInput);
+                        }
+                    };
+                    preparation = None;
+                    frame["vad"] = file.receipt();
+                    leases.push(file);
+                }
+                let mut bytes = serde_json::to_vec(&frame).map_err(|_| Error::Protocol)?;
+                bytes.push(b'\n');
+                if bytes.len() > frame::MAX_RECORD {
+                    return Err(Error::Protocol);
+                }
                 input.write_all(&bytes).await.map_err(|_| Error::Closed)?;
                 let value = reader
                     .next()
@@ -546,6 +683,12 @@ impl Actor {
             };
             let fatal = matches!(result, Err(Error::Closed | Error::Protocol));
             if result.is_ok() {
+                if kind == "load" {
+                    model_loaded = true;
+                }
+                if new_signature.is_some() {
+                    vad_signature = new_signature;
+                }
                 if kind == "begin" {
                     generation = Some(request.id);
                 }
@@ -569,6 +712,15 @@ impl Actor {
                 }
             }
         };
-        Outcome(process.close(grace, close).await)
+        let cleanup = process.close(grace, close).await;
+        // A cancelled snapshot can still be completing private file I/O. Never
+        // turn an unconfirmed preparation into a confirmed terminal receipt.
+        let settled = match preparation {
+            None => true,
+            Some(job) if job.is_finished() => job.await.is_ok(),
+            Some(_) => false,
+        };
+        drop(leases);
+        Outcome(if settled { cleanup } else { Cleanup::Unknown })
     }
 }

@@ -105,9 +105,10 @@ fn main() {
   let settings=Arc::new(Authority(Mutex::new(Snapshot {model_id:tiny.id().into(),acceleration:"cpu".into(),unload:Unload::Min15})));
   let call=service.bind(settings.clone());let status=call.status().await.unwrap();assert_eq!(status["state"],"ready");
   call.prepare().await.unwrap();call.prepare().await.unwrap();
+  let transcript=call.transcribe(vec![0;16_000*4],o3_server::speech_request::TranscriptionOptions::decode(json!({"speechLanguage":"en","speechTranslateToEnglish":false,"speechCustomWords":[],"speechRemoveFillerWords":true,"speechSilenceFiltering":false})).unwrap()).await.unwrap();
   let models=call.select(speech_catalog::all()[0].id()).await.unwrap();assert!(models["models"].as_array().unwrap().iter().all(|model|model["active"]==false));
   call.select(tiny.id()).await.unwrap();call.prepare().await.unwrap();service.shutdown().await.unwrap();
   assert!(matches!(call.prepare().await,Err(Error::Busy{..})));
-  println!("{}",json!({"actualWorkerAndStore":true,"engine":"transcribe-cpp0.4.1","graphFiles":count,"model":tiny.id(),"status":status,"prepareReuse":true,"selectDisposed":true,"shutdownConfirmed":true,"closedCannotResurrect":true,"httpOrCapabilitiesEnabled":false}));
+  println!("{}",json!({"actualWorkerAndStore":true,"engine":"transcribe-cpp0.4.1","graphFiles":count,"model":tiny.id(),"status":status,"prepareReuse":true,"bufferedTranscriptBytes":transcript.len(),"pcm":"one second of synthetic silence; no microphone","selectDisposed":true,"shutdownConfirmed":true,"closedCannotResurrect":true,"httpOrCapabilitiesEnabled":false}));
  }).await.unwrap();});
 }

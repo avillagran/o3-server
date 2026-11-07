@@ -7,10 +7,22 @@ process.send?.({type:'unrelated-synthetic-control-message'});
 export const TranscribeModel={load:async(model,placement)=>{
  const mode=fs.readFileSync(model,'utf8');
  record({kind:'load',mode,backend:placement.backend,environment:Object.keys(process.env)});
+ if(mode.startsWith('vad:'))return {
+  vadInfo:{sampleRate:16000,frameSamples:512},dispose(){record({kind:'vad-dispose'});},
+  createVadSession(){let samples=0,scored=0;const score=total=>{const firstFrame=scored;const count=Math.max(0,total-scored);scored=total;return {firstFrame,probs:new Float32Array(count).fill(1)};};return {
+   async streamReset(){samples=scored=0;record({kind:'vad-reset'});},
+   async streamFeed(pcm){samples+=pcm.length;record({kind:'vad-feed',length:pcm.length});return score(Math.floor(samples/512));},
+   async streamFlush(){return score(Math.ceil(samples/512));},dispose(){}
+  };}
+ };
+
  if(mode==='fallback'&&placement.backend!=='cpu')throw Error('Synthetic automatic backend failure');
- return {backend:'cpu',capabilities:{supportsStreaming:mode==='stream',languages:['en-US',17,'de-DE'],supportsTranslate:true,maxAudioMs:0},supports:feature=>feature==='long_form'||feature==='vocabulary',
+ return {backend:mode==='gpu-inference'&&placement.backend!=='cpu'?'fixture-gpu':'cpu',capabilities:{supportsStreaming:mode==='stream',languages:['en-US',17,'de-DE'],supportsTranslate:true,maxAudioMs:0},supports:feature=>feature==='long_form'||feature==='vocabulary',
  transcribe:async(pcm,options)=>{
-  record({kind:'transcribe',mode,length:pcm.length,language:options.language});
+  record({kind:'transcribe',mode,length:pcm.length,language:options.language,options});
+  if(mode==='gpu-inference'&&placement.backend!=='cpu')throw Error('Synthetic GPU inference failed');
+  if(mode==='fail-inference')throw Error('Synthetic native inference failed');
+  if(mode.startsWith('text:')||mode==='gpu-inference')return {text:mode.startsWith('text:')?mode.slice(5):'um oh three'};
   if(mode==='hang'){fs.writeFileSync(path.join(process.env.HOME,'entered.staging'),String(process.pid));fs.renameSync(path.join(process.env.HOME,'entered.staging'),path.join(process.env.HOME,'entered'));while(true){}}
   if(mode==='exit')process.exit(47);
   if(mode==='disconnect'){process.disconnect();await new Promise(()=>{});}

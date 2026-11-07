@@ -32,8 +32,29 @@ if(nativeHash!==spec.nativeSha256||nativeHash!==manifest.files['native-worker.mj
 // Explicit engine URLs make the native ambient package fallback unreachable.
 // Import checked bytes directly, rather than reopening a mutable pathname.
 const native=await import('data:text/javascript;base64,'+nativeBytes.toString('base64'));
+const textManifestBytes=readOwned(path.join(directory,'text-manifest.json'),64*1024);
+if(crypto.createHash('sha256').update(textManifestBytes).digest('hex')!==spec.textManifestSha256)throw Error('Changed speech text manifest');
+const textManifest=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(textManifestBytes));
+async function textModule(name){
+ const bytes=readOwned(path.join(directory,'text-'+name),256*1024),expected=textManifest.files[name];
+ if(!expected||bytes.length!==expected.bytes||crypto.createHash('sha256').update(bytes).digest('hex')!==expected.sha256)throw Error('Changed speech text resource');
+ return await import('data:text/javascript;base64,'+bytes.toString('base64'));
+}
+const [dictionary,filler,language,catalog]=await Promise.all(['custom-words.mjs','filler-words.mjs','native-language.mjs','model.mjs'].map(textModule));
+function serviceContext(modelId,options){
+ const definition=catalog.getSpeechModel(modelId);if(!definition||!options||Array.isArray(options)||typeof options!=='object')throw Error('Invalid owned service options');
+ const intent=catalog.effectiveSpeechLanguage(definition,options.speechLanguage);
+ const translate=options.speechTranslateToEnglish&&definition.supportsTranslation&&intent!=='en';
+ const words=dictionary.normalizeSpeechCustomWords(options.speechCustomWords),terms=words.map(word=>word.term);
+ const vocabulary=model.supportsVocabulary&&!translate?terms:[];
+ const hint=language.nativeSpeechLanguage(model.languages,intent);
+ const prepared={timestamps:'none',...(hint?{language:hint}:{}),...(translate?{task:'translate',targetLanguage:'en'}:{}),...(vocabulary.length?{vocabulary}: {})};
+ const correct=dictionary.makeSpeechTextCorrector(vocabulary.length?[]:terms,words);
+ return {prepared,finalize(text){const corrected=correct(text);return (options.speechRemoveFillerWords?filler.removeSpeechFillerWords(corrected,translate?'en':intent==='auto'?undefined:intent,options.speechCorrectionWord):corrected).trim();}};
+}
 const controller=new AbortController();
 let model,loading,closing;
+let vad=spec.vad;
 const leases=[];
 async function seal(file){
  if(!file||!path.isAbsolute(file.path)||!/^[a-f0-9]{64}$/.test(file.sha256)||!/^[1-9][0-9]*$/.test(file.bytes))throw Error('Invalid sealed speech input');
@@ -93,14 +114,20 @@ async function dispatch(frame){
    })();
    model=await loading;
    result={backend:model.backend,languages:model.languages,supportsStreaming:model.supportsStreaming,supportsLongForm:model.supportsLongForm,supportsTranslation:model.supportsTranslation,supportsVocabulary:model.supportsVocabulary};
+  }else if(frame.kind==='vad'){
+   if(!model||vad)throw Error('Invalid owned VAD binding');
+   if(path.dirname(frame.vad?.path??'')!==directory||!/^vad-[A-Za-z0-9_-]+$/.test(path.basename(frame.vad.path)))throw Error('Invalid owned VAD path');
+   if(!/^[1-9][0-9]*$/.test(frame.vad.bytes)||BigInt(frame.vad.bytes)>2097152n)throw Error('Invalid owned VAD size');
+   await seal(frame.vad);vad=frame.vad;
   }else if(frame.kind==='discover'){
    if(model||loading)throw Error('Invalid owned device discovery');
    const engine=await seal(spec.engine);
    result=await native.listNativeSpeechGpuDevices(engine);
   }else{
    if(!model)throw Error('Owned speech model is not loaded');
-   if(frame.kind==='transcribe')result=await model.transcribe(pcm(frame.pcm),frame.options,frame.filterSilence===true,spec.vad?.path);
-   else if(frame.kind==='begin')await model.begin(frame.options,frame.filterSilence===true,spec.vad?.path);
+   if(frame.kind==='service-transcribe'){const context=serviceContext(frame.modelId,frame.options);const raw=await model.transcribe(pcm(frame.pcm),context.prepared,frame.options.speechSilenceFiltering===true,vad?.path);result=context.finalize(raw.text);}
+   else if(frame.kind==='transcribe')result=await model.transcribe(pcm(frame.pcm),frame.options,frame.filterSilence===true,vad?.path);
+   else if(frame.kind==='begin')await model.begin(frame.options,frame.filterSilence===true,vad?.path);
    else if(frame.kind==='feed')result=await model.feed(pcm(frame.pcm));
    else if(frame.kind==='finish')result=await model.finish();
    else if(frame.kind==='reset')await model.reset();

@@ -71,6 +71,11 @@ pub enum Error {
         architecture: String,
     },
     CleanupUnknown,
+    Cancelled,
+    InvalidAudio {
+        byte_length: usize,
+        message: &'static str,
+    },
 }
 /// Bind one of these to each request/session facade. Implementations must read
 /// effective settings afresh and revalidate current authority/policy at commit.
@@ -83,13 +88,68 @@ pub trait Settings: Send + Sync {
 /// Tests inject an explicit virtual lifetime, never a fabricated process handle.
 pub trait ModelRuntime: Send + Sync {
     fn close(&self) -> Task<'_, Cleanup>;
+    fn bind_vad(&self, _file: crate::speech_worker::SealedFile) -> Task<'_, Result<(), Error>> {
+        Box::pin(async {
+            Err(operation_error(
+                "VAD binding",
+                "Runtime does not implement sidecar binding",
+            ))
+        })
+    }
+    fn infer<'a>(
+        &'a self,
+        _pcm: &'a crate::speech_kernel::Pcm,
+        _model: &'a str,
+        _options: &'a crate::speech_request::TranscriptionOptions,
+    ) -> Task<'a, Result<String, Error>> {
+        Box::pin(async {
+            Err(operation_error(
+                "inference",
+                "Runtime does not implement transcription",
+            ))
+        })
+    }
 }
 pub struct Loaded {
     pub runtime: Arc<dyn ModelRuntime>,
     pub metadata: Value,
 }
+impl Loaded {
+    /// Wrap an already loaded, admitted Worker. This is an owner constructor,
+    /// never a decoder for a remote process/model identifier.
+    pub fn from_worker(worker: Worker, metadata: Value) -> Self {
+        Self {
+            runtime: Arc::new(WorkerModel(worker)),
+            metadata,
+        }
+    }
+}
 struct WorkerModel(Worker);
 impl ModelRuntime for WorkerModel {
+    fn bind_vad(&self, file: crate::speech_worker::SealedFile) -> Task<'_, Result<(), Error>> {
+        Box::pin(async move {
+            self.0
+                .bind_vad(file)
+                .await
+                .map_err(|cause| worker_error("VAD binding", cause))
+        })
+    }
+    fn infer<'a>(
+        &'a self,
+        pcm: &'a crate::speech_kernel::Pcm,
+        model: &'a str,
+        options: &'a crate::speech_request::TranscriptionOptions,
+    ) -> Task<'a, Result<String, Error>> {
+        Box::pin(async move {
+            self.0
+                .transcribe_options(pcm, model, options)
+                .await
+                .map_err(|cause| worker_error("inference", cause))?
+                .as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| operation_error("inference", "Invalid transcription result"))
+        })
+    }
     fn close(&self) -> Task<'_, Cleanup> {
         Box::pin(self.0.close())
     }
@@ -129,6 +189,7 @@ impl Clock for WallClock {
 }
 #[derive(Clone)]
 struct CachedModel {
+    metadata: Value,
     id: String,
     acceleration: String,
     runtime: Arc<dyn ModelRuntime>,
@@ -146,6 +207,8 @@ struct State {
     unknown: bool,
     next: u64,
     active: Option<u64>,
+    active_cancel: Option<watch::Sender<bool>>,
+    auto_cpu: Option<String>,
     transcribing: u64,
     loaded: Option<CachedModel>,
     downloading: Option<Transfer>,
@@ -190,6 +253,8 @@ impl Service {
                     unknown: false,
                     next: 1,
                     active: None,
+                    active_cancel: None,
+                    auto_cpu: None,
                     transcribing: 0,
                     loaded: None,
                     downloading: None,
@@ -285,6 +350,9 @@ impl Call {
             .state
             .lock()
             .map_err(|_| Error::CleanupUnknown)?;
+        if snapshot.acceleration != "auto" || state.auto_cpu.as_ref() != Some(&snapshot.model_id) {
+            state.auto_cpu = None;
+        }
         if state.unload != snapshot.unload {
             state.unload = snapshot.unload;
             self.service.inner.schedule(&mut state, 0);
@@ -377,6 +445,7 @@ struct Permit {
     inner: Arc<Inner>,
     token: u64,
     minimum: u64,
+    transcribing: bool,
 }
 impl Drop for Permit {
     fn drop(&mut self) {
@@ -386,6 +455,10 @@ impl Drop for Permit {
                     state.unknown = true;
                 }
                 state.active = None;
+                state.active_cancel = None;
+                if self.transcribing {
+                    state.transcribing = state.transcribing.saturating_sub(1);
+                }
                 self.inner.schedule(&mut state, self.minimum);
             }
         }
@@ -401,6 +474,7 @@ impl Inner {
             inner: self.clone(),
             token,
             minimum: 0,
+            transcribing: false,
         }
     }
     fn reserve(self: &Arc<Self>, operation: &'static str) -> Result<Permit, Error> {
@@ -507,72 +581,10 @@ impl Call {
         let model = speech_catalog::selected(&snapshot.model_id);
         owned(async move {
             let _permit = permit;
-            if inner
-                .state
-                .lock()
-                .map_err(|_| Error::CleanupUnknown)?
-                .loaded
-                .as_ref()
-                .is_some_and(|loaded| {
-                    loaded.id == model.id() && loaded.acceleration == snapshot.acceleration
-                })
-            {
-                return Ok(());
-            }
-            let path =
-                inner
-                    .store
-                    .installed_path(model)
-                    .await
-                    .ok_or_else(|| Error::ModelNotFound {
-                        model_id: model.id().into(),
-                    })?;
-            inner.dispose().await?;
-            let loaded = match inner
-                .engine
-                .load(model, &path, &snapshot.acceleration)
+            inner
+                .load_cached(model, &snapshot.acceleration)
                 .await
-            {
-                Ok(loaded) => loaded,
-                Err(cause) => {
-                    if cause == Error::CleanupUnknown {
-                        inner
-                            .state
-                            .lock()
-                            .map_err(|_| Error::CleanupUnknown)?
-                            .unknown = true;
-                    }
-                    return Err(cause);
-                }
-            };
-            let published = {
-                let mut state = inner.state.lock().map_err(|_| Error::CleanupUnknown)?;
-                if state.closed {
-                    false
-                } else {
-                    state.loaded = Some(CachedModel {
-                        id: model.id().into(),
-                        acceleration: snapshot.acceleration,
-                        runtime: loaded.runtime.clone(),
-                    });
-                    true
-                }
-            };
-            if published {
-                Ok(())
-            } else {
-                if loaded.runtime.close().await == Cleanup::Unknown {
-                    inner
-                        .state
-                        .lock()
-                        .map_err(|_| Error::CleanupUnknown)?
-                        .unknown = true;
-                    return Err(Error::CleanupUnknown);
-                }
-                Err(Error::Busy {
-                    operation: "model preparation",
-                })
-            }
+                .map(|_| ())
         })
         .await
     }
@@ -784,6 +796,9 @@ impl Inner {
     fn begin_shutdown(&self) {
         if let Ok(mut state) = self.state.lock() {
             state.closed = true;
+            if let Some(cancel) = &state.active_cancel {
+                cancel.send_replace(true);
+            }
             state.deadline = None;
             self.timer.send_replace(None);
             if let Some(transfer) = &state.downloading {
@@ -912,10 +927,7 @@ impl Engine for WorkerEngine {
         Box::pin(async move {
             let worker = self.start(Some((model, path)), acceleration).await?;
             match worker.load().await {
-                Ok(metadata) => Ok(Loaded {
-                    runtime: Arc::new(WorkerModel(worker)),
-                    metadata,
-                }),
+                Ok(metadata) => Ok(Loaded::from_worker(worker, metadata)),
                 Err(cause) => {
                     if worker.close().await == Cleanup::Unknown {
                         Err(Error::CleanupUnknown)
@@ -937,5 +949,230 @@ impl Engine for WorkerEngine {
                 }
             })
         })
+    }
+}
+
+fn worker_error(operation: &'static str, cause: crate::speech_worker::Error) -> Error {
+    match cause {
+        crate::speech_worker::Error::CleanupUnknown => Error::CleanupUnknown,
+        crate::speech_worker::Error::Native(message) => operation_error(operation, message),
+        other => operation_error(operation, format!("{other:?}")),
+    }
+}
+impl Inner {
+    async fn load_cached(&self, model: &Model, requested: &str) -> Result<CachedModel, Error> {
+        let acceleration = {
+            let state = self.state.lock().map_err(|_| Error::CleanupUnknown)?;
+            if requested == "auto" && state.auto_cpu.as_deref() == Some(model.id()) {
+                "cpu".to_owned()
+            } else {
+                requested.to_owned()
+            }
+        };
+        if let Some(loaded) = self
+            .state
+            .lock()
+            .map_err(|_| Error::CleanupUnknown)?
+            .loaded
+            .as_ref()
+            .filter(|loaded| loaded.id == model.id() && loaded.acceleration == acceleration)
+            .cloned()
+        {
+            return Ok(loaded);
+        }
+        let path = self
+            .store
+            .installed_path(model)
+            .await
+            .ok_or_else(|| Error::ModelNotFound {
+                model_id: model.id().into(),
+            })?;
+        self.dispose().await?;
+        let loaded = match self.engine.load(model, &path, &acceleration).await {
+            Ok(loaded) => loaded,
+            Err(cause) => {
+                if cause == Error::CleanupUnknown {
+                    self.state
+                        .lock()
+                        .map_err(|_| Error::CleanupUnknown)?
+                        .unknown = true;
+                }
+                return Err(cause);
+            }
+        };
+        let cached = CachedModel {
+            id: model.id().into(),
+            acceleration,
+            runtime: loaded.runtime.clone(),
+            metadata: loaded.metadata,
+        };
+        let published = {
+            let mut state = self.state.lock().map_err(|_| Error::CleanupUnknown)?;
+            if state.closed {
+                false
+            } else {
+                state.loaded = Some(cached.clone());
+                true
+            }
+        };
+        if published {
+            Ok(cached)
+        } else {
+            if loaded.runtime.close().await == Cleanup::Unknown {
+                self.state
+                    .lock()
+                    .map_err(|_| Error::CleanupUnknown)?
+                    .unknown = true;
+                return Err(Error::CleanupUnknown);
+            }
+            Err(Error::Busy {
+                operation: "model preparation",
+            })
+        }
+    }
+    async fn infer(
+        &self,
+        loaded: &CachedModel,
+        model: &Model,
+        pcm: &crate::speech_kernel::Pcm,
+        options: &crate::speech_request::TranscriptionOptions,
+        vad: Option<&std::path::Path>,
+        cancel: &mut watch::Receiver<bool>,
+    ) -> Result<String, Error> {
+        if *cancel.borrow() {
+            return Err(Error::Cancelled);
+        }
+        let inference = async {
+            if let Some(path) = vad {
+                let path = path.to_owned();
+                let file = tokio::task::spawn_blocking(move || {
+                    let model = speech_catalog::silero();
+                    crate::speech_worker::SealedFile::admit(&path, model.sha256(), model.size())
+                })
+                .await
+                .map_err(|cause| operation_error("VAD binding", cause))?
+                .map_err(|cause| operation_error("VAD binding", cause))?;
+                loaded.runtime.bind_vad(file).await?;
+            }
+            loaded.runtime.infer(pcm, model.id(), options).await
+        };
+        tokio::select! {biased;_=cancel.changed()=>Err(Error::Cancelled),result=inference=>result}
+    }
+}
+struct CancelCall(watch::Sender<bool>);
+impl Drop for CancelCall {
+    fn drop(&mut self) {
+        self.0.send_replace(true);
+    }
+}
+impl Call {
+    /// Buffered native transcription. Cancellation signals an owned job; cleanup
+    /// remains supervised after the waiting request has disappeared.
+    pub async fn transcribe(
+        &self,
+        bytes: Vec<u8>,
+        options: crate::speech_request::TranscriptionOptions,
+    ) -> Result<String, Error> {
+        let snapshot = self.snapshot("transcription").await?;
+        let inner = self.service.inner.clone();
+        let mut permit = inner.reserve("transcription")?;
+        self.supported()?;
+        let (cancel, mut receiver) = watch::channel(false);
+        {
+            let mut state = inner.state.lock().map_err(|_| Error::CleanupUnknown)?;
+            if state.closed {
+                return Err(Error::Busy {
+                    operation: "transcription",
+                });
+            }
+            state.active_cancel = Some(cancel.clone());
+        }
+        let _cancel = CancelCall(cancel);
+        let model = speech_catalog::selected(&snapshot.model_id);
+        owned(async move {
+            let pcm =
+                crate::speech_kernel::Pcm::decode(&bytes).map_err(|cause| Error::InvalidAudio {
+                    byte_length: cause.byte_length,
+                    message: cause.message,
+                })?;
+            inner
+                .state
+                .lock()
+                .map_err(|_| Error::CleanupUnknown)?
+                .transcribing += 1;
+            permit.transcribing = true;
+            let _permit = permit;
+            let mut loaded = inner.load_cached(model, &snapshot.acceleration).await?;
+            if *receiver.borrow() {
+                inner.dispose().await?;
+                return Err(Error::Cancelled);
+            }
+            let metadata = &loaded.metadata;
+            let needs_vad = options.as_value()["speechSilenceFiltering"] == true
+                || !(metadata["supportsStreaming"] == true || metadata["supportsLongForm"] == true);
+            let vad = if needs_vad {
+                match inner
+                    .silence
+                    .acquire(silence::Purpose::Recording, receiver.clone())
+                    .await
+                {
+                    Ok(path) => path,
+                    Err(crate::speech_model_store::Error::Cancelled) => {
+                        inner.dispose().await?;
+                        return Err(Error::Cancelled);
+                    }
+                    Err(cause) => return Err(operation_error("transcription", cause)),
+                }
+            } else {
+                None
+            };
+            let first = inner
+                .infer(
+                    &loaded,
+                    model,
+                    &pcm,
+                    &options,
+                    vad.as_deref(),
+                    &mut receiver,
+                )
+                .await;
+            match first {
+                Ok(text) => Ok(text),
+                Err(cause) => {
+                    inner.dispose().await?;
+                    if cause == Error::Cancelled || *receiver.borrow() {
+                        return Err(Error::Cancelled);
+                    }
+                    let retry = snapshot.acceleration == "auto"
+                        && loaded.metadata["backend"]
+                            .as_str()
+                            .is_some_and(|backend| !backend.eq_ignore_ascii_case("cpu"));
+                    if !retry {
+                        return Err(cause);
+                    }
+                    loaded = inner.load_cached(model, "cpu").await?;
+                    inner
+                        .state
+                        .lock()
+                        .map_err(|_| Error::CleanupUnknown)?
+                        .auto_cpu = Some(model.id().into());
+                    let result = inner
+                        .infer(
+                            &loaded,
+                            model,
+                            &pcm,
+                            &options,
+                            vad.as_deref(),
+                            &mut receiver,
+                        )
+                        .await;
+                    if result.is_err() {
+                        inner.dispose().await?;
+                    }
+                    result
+                }
+            }
+        })
+        .await
     }
 }

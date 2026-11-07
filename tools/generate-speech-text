@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+"""Generate exact native speech text helpers with a reused immutable private Node."""
+import argparse,hashlib,json,os,pathlib,subprocess,stat
+import node_admission
+from speech_runtime_admission import require_rootless
+p=argparse.ArgumentParser(description=__doc__)
+p.add_argument('--source',required=True,type=pathlib.Path)
+p.add_argument('--node',required=True,type=pathlib.Path)
+p.add_argument('--deps',required=True,type=pathlib.Path)
+p.add_argument('--out',required=True,type=pathlib.Path)
+p.add_argument('--image',default='localhost/o3-server-tests:local')
+a=p.parse_args();require_rootless();pin='83a3674ffd84ffb33de768210c806cb1ac53fd80';root=pathlib.Path(__file__).resolve().parent.parent
+assert subprocess.check_output(['git','-C',str(a.source),'rev-parse','HEAD'],text=True).strip()==pin
+subprocess.run(['git','-C',str(a.source),'diff','--quiet',pin,'--'],check=True)
+assert json.loads((a.deps/'node_modules/effect/package.json').read_text())['version']=='4.1.2'
+node,info=node_admission._open(a.node)
+with node:
+ assert stat.S_IMODE(info.st_mode)&0o222==0
+ assert hashlib.file_digest(node,'sha256').hexdigest()=='0adde40d1b7dfa57c8bc83cbc319758c3ec6ebba21363bb2fa752ea6b267ad1b'
+a.out.mkdir(mode=0o700);stage=a.out/'source';stage.mkdir(mode=0o700);generated=a.out/'generated';generated.mkdir(mode=0o700)
+files={}
+for name in ['LICENSE','packages/shared/src/speech.ts']+['apps/server/src/speech/'+name for name in ['customWords.ts','fillerWords.ts','nativeLanguage.ts','model.ts','catalog.json']]:
+ data=subprocess.check_output(['git','-C',str(a.source),'show',pin+':'+name]);destination=stage/name;destination.parent.mkdir(parents=True,exist_ok=True);destination.write_bytes(data);files[name]=hashlib.sha256(data).hexdigest()
+(stage/'SOURCE.json').write_text(json.dumps({'revision':pin,'files':files},indent=2)+'\n')
+cmd=['podman','--remote=false','run','--rm','--pull=never','--http-proxy=false','--userns=keep-id','--user',f'{os.getuid()}:{os.getgid()}','--read-only','--network=none','--cap-drop=ALL','--security-opt=no-new-privileges','--memory=512m','--tmpfs','/tmp:rw,size=64m,mode=1777','-v',f'{a.node.parent}:/node-bin:ro','-v',f'{a.source}:/native:ro','-v',f'{a.deps}:/deps:ro','-v',f'{stage}:/source:ro','-v',f'{root}:/server:ro','-v',f'{generated}:/out:rw',a.image,'/node-bin/'+a.node.name,'--import','/server/tools/reference/speech-text-4314/hook.mjs','/server/tools/generate-speech-text.mjs','/source','/out']
+with (a.out/'generate.log').open('x') as log:r=subprocess.run(cmd,stdout=log,stderr=subprocess.STDOUT)
+(a.out/'result.json').write_text(json.dumps({'returncode':r.returncode,'sourceRevision':pin,'node':'26.13.0','scope':'complete original text helpers, no inference or file deletion'},indent=2)+'\n');print(a.out);print((a.out/'generate.log').read_text());raise SystemExit(r.returncode)

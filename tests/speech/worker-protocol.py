@@ -9,11 +9,14 @@ class Peer:
   self.root=ROOT/mode;self.root.mkdir(mode=0o700);self.home=self.root/'home';self.home.mkdir(mode=0o700)
   for name in ['worker.mjs','native-worker.mjs','native-manifest.json','LICENSE']:
    shutil.copyfile('/server/runtime/speech/'+name,self.root/name);(self.root/name).chmod(0o400)
+  shutil.copyfile('/server/runtime/speech/text/manifest.json',self.root/'text-manifest.json')
+  for name in ['custom-words.mjs','filler-words.mjs','native-language.mjs','model.mjs']:
+   shutil.copyfile('/server/runtime/speech/text/'+name,self.root/('text-'+name));(self.root/('text-'+name)).chmod(0o400)
   self.engine=self.root/'synthetic-engine.mjs';shutil.copyfile('/server/tests/speech/synthetic-engine.mjs',self.engine);self.engine.chmod(0o400)
   self.model=self.root/'synthetic-model.gguf';self.model.write_text(mode);self.model.chmod(0o400)
   seal=lambda file:{'path':str(file),'sha256':hashlib.sha256(file.read_bytes()).hexdigest(),'bytes':str(file.stat().st_size)}
   self.owner='synthetic-owner-'+mode+'-00000001'
-  spec={'version':1,'owner':self.owner,'nativeSha256':hashlib.sha256((self.root/'native-worker.mjs').read_bytes()).hexdigest(),'engine':seal(self.engine),'model':seal(self.model),'acceleration':acceleration}
+  spec={'version':1,'owner':self.owner,'nativeSha256':hashlib.sha256((self.root/'native-worker.mjs').read_bytes()).hexdigest(),'textManifestSha256':hashlib.sha256((self.root/'text-manifest.json').read_bytes()).hexdigest(),'engine':seal(self.engine),'model':seal(self.model),'acceleration':acceleration}
   data=json.dumps(spec).encode();(self.root/'spec.json').write_bytes(data);(self.root/'spec.json').chmod(0o400)
   self.error=(self.root/'stderr.log').open('wb')
   self.process=subprocess.Popen([NODE,str(self.root/'worker.mjs'),str(self.root),hashlib.sha256(data).hexdigest()],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=self.error,start_new_session=True,env={'HOME':str(self.home),'TMPDIR':str(self.home),'PATH':'','ELECTRON_RUN_AS_NODE':'1'})

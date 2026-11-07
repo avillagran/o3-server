@@ -1,4 +1,6 @@
 import * as Effect from 'effect/Effect';
+import * as Schema from 'effect/Schema';
+import {SpeechTranscriptionOptions} from 'file:///native/packages/contracts/src/speech.ts';
 import * as Deferred from 'effect/Deferred';
 import * as Fiber from 'effect/Fiber';
 import * as Exit from 'effect/Exit';
@@ -15,7 +17,7 @@ if(process.versions.node!=='26.13.0')throw Error('Exact Node26.13 required');
 const tiny=SPEECH_MODELS.find(model=>model.id==='handy-computer/moonshine-tiny-gguf');
 const normalize=result=>result._tag==='Success'?{ok:true,value:result.success??null}:{ok:false,tag:result.failure._tag,operation:result.failure.operation??null,modelId:result.failure.modelId??null,message:result.failure.message};
 async function scenario(name,run){
- native.events=[];const events=native.events;
+ native.events=[];native.profile={};native.replyText='';native.autoGpu=native.failGpu=native.failAll=false;const events=native.events;
  let settings={speechModelId:tiny.id,speechAcceleration:'cpu',speechModelUnloadTimeout:'min_2',speechLanguage:'auto',speechRemoveFillerWords:false,speechCustomWords:[]};const ready=new Set([tiny.id]);const controlled=new Set(),pending=new Map();
  const serviceSettings={getSettings:Effect.sync(()=>({...settings})),updateSettings:patch=>Effect.sync(()=>{events.push({kind:'settings',patch});settings={...settings,...patch};})};
  const store={isReady:model=>Effect.sync(()=>ready.has(model.id)),installedPath:model=>Effect.sync(()=>ready.has(model.id)?'/fixture/models/'+model.filename:undefined),download:(model,progress)=>Effect.gen(function*(){
@@ -84,6 +86,34 @@ cases.push(await scenario('installation-silero-timeout-is-optional',(service,h)=
  const installation=yield* service.downloadModel(tiny.id).pipe(Effect.forkChild);
  while(!h.pending.has(SILERO_VAD.id))yield* TestClock.adjust(0);
  yield* TestClock.adjust(120_000);h.record('installation-without-silero',yield* Effect.result(Fiber.join(installation)));
+})));
+const audioOptions=partial=>Schema.decodeUnknownSync(SpeechTranscriptionOptions)({...options,...partial});
+const profile={supportsLongForm:true,supportsVocabulary:true,languages:['en-US','de-DE']};
+const utterance=new Uint8Array(new Float32Array([0.25]).buffer);
+for(const translate of [false,true])cases.push(await scenario('buffered-native-text-translation-'+translate,(service,h)=>Effect.gen(function*(){
+ native.profile=profile;native.replyText='um oh three';
+ const definition=translate?SPEECH_MODELS.find(model=>model.supportsTranslation&&model.languages.includes('fr')):tiny;
+ if(!definition)throw Error('Missing native multilingual fixture');h.settings().speechModelId=definition.id;h.ready.add(definition.id);
+ const input=audioOptions({speechLanguage:translate?'fr':'en',speechTranslateToEnglish:translate,speechRemoveFillerWords:true,speechCustomWords:[{term:'O3',aliases:['oh three']}]});
+ h.observations.push({label:'input',modelId:definition.id,options:input});
+ h.record('transcript',yield* Effect.result(service.transcribe(utterance,input)));
+})));
+cases.push(await scenario('buffered-automatic-cpu-retry-and-setting-memo-fence',(service,h)=>Effect.gen(function*(){
+ native.profile=profile;native.replyText='um oh three';native.autoGpu=native.failGpu=true;h.settings().speechAcceleration='auto';
+ const input=audioOptions({speechRemoveFillerWords:true,speechCustomWords:[{term:'O3',aliases:['oh three']}]});
+ h.observations.push({label:'input',modelId:tiny.id,options:input});
+ h.record('gpu-failure-recovers-once',yield* Effect.result(service.transcribe(utterance,input)));
+ h.record('next-call-uses-cpu-memo',yield* Effect.result(service.transcribe(utterance,input)));
+ h.settings().speechAcceleration='cpu';h.record('explicit-cpu',yield* Effect.result(service.transcribe(utterance,input)));
+ h.settings().speechAcceleration='auto';h.record('changed-setting-cleared-memo',yield* Effect.result(service.transcribe(utterance,input)));
+})));
+cases.push(await scenario('buffered-explicit-cpu-failure-is-not-retried',(service,h)=>Effect.gen(function*(){
+ native.profile=profile;native.failAll=true;
+ h.record('failure',yield* Effect.result(service.transcribe(utterance,audioOptions({}))));
+})));
+cases.push(await scenario('buffered-invalid-audio-and-missing-model',(service,h)=>Effect.gen(function*(){
+ for(const [name,bytes] of [['empty',new Uint8Array()],['unaligned',new Uint8Array(3)],['nan',new Uint8Array(new Float32Array([NaN]).buffer)]])h.record(name,yield* Effect.result(service.transcribe(bytes,audioOptions({}))));
+ h.ready.delete(tiny.id);h.record('missing',yield* Effect.result(service.transcribe(utterance,audioOptions({}))));
 })));
 fs.writeFileSync(process.argv[2],JSON.stringify({nativeRevision:'83a3674ffd84ffb33de768210c806cb1ac53fd80',silero:SILERO_VAD,cases},null,2)+'\n',{flag:'wx'});
 console.log(JSON.stringify({cases:cases.length,wholeService:true,paidOrNativeInference:false}));
