@@ -1,12 +1,15 @@
 // The owner supplies an already admitted tab-only endpoint and pinned imports.
 // This foundation has no public MCP catalog or ambient endpoint discovery.
-export async function attachPage({chromium,endpoint,nativePage,nativeContracts,Schema,admitted,artifactFs}){
+export async function attachPage({chromium,endpoint,nativePage,nativeContracts,Schema,admitted,artifactFs,targetId}){
+ if(typeof targetId!=='string'||!targetId)throw Error('Owner target identity required');
  if(!artifactFs?.installed||!artifactFs.healthy)throw Error('Owned artifact boundary unavailable');
  if(!admitted())throw Error('Browser grant revoked');
  const browser=await chromium.connectOverCDP(endpoint,{noDefaults:true,timeout:15000});
+ let cdp;try{
  const pages=browser.contexts().flatMap(context=>context.pages());
  if(!admitted()||pages.length!==1){await browser.close();throw Error('Invalid owned page grant');}
- const page=pages[0],cdp=await page.context().newCDPSession(page);
+ const page=pages[0];cdp=await page.context().newCDPSession(page);
+ const identity=await cdp.send('Target.getTargetInfo');if(identity.targetInfo?.targetId!==targetId)throw Error('Owner target identity mismatch');
  const allowed=new Set(['click','type','hover','select','drag','press','scroll','waitFor']);
  return {
   page,
@@ -31,4 +34,5 @@ export async function attachPage({chromium,endpoint,nativePage,nativeContracts,S
   invalidateRefs(){nativePage.invalidateRefs(page);},
   async close(){await cdp.detach().catch(()=>{});await browser.close();}
  };
+ }catch(error){if(cdp)await cdp.detach().catch(()=>{});await browser.close().catch(()=>{});throw error;}
 }

@@ -15,7 +15,7 @@ try{
  const root=(await upstream.send('Target.createTarget',{url:'about:blank'})).targetId;const foreign=(await upstream.send('Target.createTarget',{url:'about:blank'})).targetId;
  const foreignSession=(await upstream.send('Target.attachToTarget',{targetId:foreign,flatten:true})).sessionId;
  let admitted=true;relay=new TabCdpRelay({upstream,targetId:root,admitted:()=>admitted,WebSocketServer});const scoped=await relay.listen();
- browser=await attachPage({chromium,endpoint:scoped,nativePage,nativeContracts,Schema,admitted:()=>admitted,artifactFs:artifacts});
+ browser=await attachPage({chromium,endpoint:scoped,targetId:root,nativePage,nativeContracts,Schema,admitted:()=>admitted,artifactFs:artifacts});
  await browser.page.bringToFront();
  await browser.page.setContent(`<button id="go" onclick="this.textContent='Done'">Start</button><input id="field"><input type="password" value="private-do-not-leak"><select id="select"><option value="a">A</option><option value="b">B</option></select><button id="hover" onmouseover="this.dataset.over='yes'">Hover</button><div id="scroll" style="height:50px;overflow:auto"><div style="height:1000px">scroll</div></div><div id="drag" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','owned')">Drag</div><div id="drop" style="height:60px" ondragover="event.preventDefault()" ondrop="event.preventDefault();this.dataset.dropped=event.dataTransfer.getData('text/plain')">Drop</div><iframe srcdoc="<input id='inside'>"></iframe>`);
  const invalidBefore=upstream.calls.length;await assert.rejects(browser.invoke('click',{x:1}));assert.equal(upstream.calls.length,invalidBefore);
@@ -30,7 +30,7 @@ try{
  await browser.invoke('waitFor',{text:'Done',locator:'#field',timeoutMs:1000});
  const snapshot=await browser.invoke('snapshot',{});assert(snapshot.accessibilityTree.includes('[ref=t3-'));assert(!JSON.stringify(snapshot).includes('private-do-not-leak'));assert(snapshot.screenshot.data.length>100);
  const ref=/\[ref=([^\]]+)\]/.exec(snapshot.accessibilityTree)[1];
- otherRelay=new TabCdpRelay({upstream,targetId:foreign,admitted:()=>admitted,WebSocketServer});otherBrowser=await attachPage({chromium,endpoint:await otherRelay.listen(),nativePage,nativeContracts,Schema,admitted:()=>admitted,artifactFs:artifacts});
+ otherRelay=new TabCdpRelay({upstream,targetId:foreign,admitted:()=>admitted,WebSocketServer});otherBrowser=await attachPage({chromium,endpoint:await otherRelay.listen(),targetId:foreign,nativePage,nativeContracts,Schema,admitted:()=>admitted,artifactFs:artifacts});
  await assert.rejects(otherBrowser.invoke('click',{locator:'aria-ref='+ref,timeoutMs:100}),/stale|another tab/);await otherBrowser.close();otherBrowser=null;await otherRelay.close();otherRelay=null;
  browser.invalidateRefs();await assert.rejects(browser.invoke('click',{locator:'aria-ref='+ref,timeoutMs:100}),/stale|another tab/);
  const cdp=await browser.page.context().newCDPSession(browser.page);const before=upstream.calls.length;

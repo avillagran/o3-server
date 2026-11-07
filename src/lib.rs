@@ -19,6 +19,7 @@ mod mcp_mutations;
 mod mcp_projects;
 mod mcp_tools;
 pub mod native_mcp;
+pub mod native_page_worker;
 mod repositories;
 pub mod rpc;
 mod rpc_input;

@@ -1,0 +1,538 @@
+{
+  "version": "1.60.0",
+  "integrity": "sha512-9bW6zvX/m0lEbgTKJ6YppOKx8H3VOPBMOCFh2irXFOT4BbHgrx5hPjwJYLT40Lu+4qtD36qKc/Hn56StUW57IA==",
+  "url": "https://registry.npmjs.org/playwright-core/-/playwright-core-1.60.0.tgz",
+  "lockRevision": "4cb6945dc60ed03f567dc5daafd083e52308e82b",
+  "files": [
+    {
+      "path": "package/LICENSE",
+      "bytes": 11601,
+      "sha256": "45873d00a0dd243596deb4aa23b2493b3d1f0671921bf2538ea431d7380220eb"
+    },
+    {
+      "path": "package/NOTICE",
+      "bytes": 254,
+      "sha256": "6d602191187b35b9b01d2cffa01c8469c2c8d9de8a96f1bf868e0f264f51c81d"
+    },
+    {
+      "path": "package/lib/xdg-open",
+      "bytes": 25778,
+      "sha256": "2e79a4d5171dd384d20a75b023dfe0e9f4330cdb5d441f6c3859a11fce3db51a"
+    },
+    {
+      "path": "package/lib/vite/recorder/assets/codeMirrorModule-DYBRYzYX.css",
+      "bytes": 6421,
+      "sha256": "70bf421a13e87857ca684bfa2cc55f06d7c5a50f71253a3ff1d74769b14a957e"
+    },
+    {
+      "path": "package/lib/vite/traceViewer/codeMirrorModule.DYBRYzYX.css",
+      "bytes": 6421,
+      "sha256": "70bf421a13e87857ca684bfa2cc55f06d7c5a50f71253a3ff1d74769b14a957e"
+    },
+    {
+      "path": "package/lib/vite/traceViewer/defaultSettingsView.BDKsFU3c.css",
+      "bytes": 110856,
+      "sha256": "0a7ab260fedb13141b5635b80704878e37adba89198a16d43b83972e981ca648"
+    },
+    {
+      "path": "package/lib/vite/recorder/assets/index-4ZiSSCmn.css",
+      "bytes": 92234,
+      "sha256": "4278e600a533667369328e9eb52a212693d52e46072ec37228e0ef8621a48ead"
+    },
+    {
+      "path": "package/lib/vite/dashboard/assets/index-BY2S1tHT.css",
+      "bytes": 142433,
+      "sha256": "4e741ba6be0fb15305f6dfd907e245e68554f6dbd5282a58dcc1e9d2493eb917"
+    },
+    {
+      "path": "package/lib/vite/traceViewer/index.CzXZzn5A.css",
+      "bytes": 2111,
+      "sha256": "4ec2a3d49db259ce9025cb4fa48d73b1afd58215e567eef3b4a4cbf76c1674d9"
+    },
+    {
+      "path": "package/lib/vite/htmlReport/report.css",
+      "bytes": 108330,
+      "sha256": "3298f11062d5112516c8b3fa2368c6138b4700aa9fa215bb5fc0a1f0efe94e3f"
+    },
+    {
+      "path": "package/lib/vite/traceViewer/uiMode.Btcz36p_.css",
+      "bytes": 60239,
+      "sha256": "bfe8330cc78eeb1b1c4d8983aab7068d725526e407903ee19e515996250cb221"
+    },
+    {
+      "path": "package/lib/vite/traceViewer/xtermModule.DYP7pi_n.css",
+      "bytes": 4150,
+      "sha256": "7c5a01f382f76539fc9b4db6b18e18a7035741845fd14968c5cdc0a7e373d817"
+    },
+    {
+      "path": "package/lib/vite/dashboard/index.html",
+      "bytes": 1078,
+      "sha256": "0f3061205ab98917439bbc7a4bc06e75a201d04e6c89f4b0ff9da5961010d5ca"
+    },
+    {
+      "path": "package/lib/vite/htmlReport/index.html",
+      "bytes": 464,
+      "sha256": "ce7c098020a0eb9ce10edd416245ea6da50dfeaab18dfd0a2176979d22643be6"
+    },
+    {
+      "path": "package/lib/vite/recorder/index.html",
+      "bytes": 1078,
+      "sha256": "6e87705cd06a9347ab8f623acd675ef38dae96886b2db3f656d87c2e6cef4828"
+    },
+    {
+      "path": "package/lib/vite/traceViewer/index.html",
+      "bytes": 2363,
+      "sha256": "86a5792cff2ecf975e580491d8593e322104711946efd765edd250039a2e2f3d"
+    },
+    {
+      "path": "package/lib/vite/traceViewer/snapshot.html",
+      "bytes": 389,
+      "sha256": "11c80efe4f4424fa59004bcc71fed77a420d2da5f199790e355c30a5b965d0cd"
+    },
+    {
+      "path": "package/lib/vite/traceViewer/uiMode.html",
+      "bytes": 727,
+      "sha256": "5f17cd4e1ddcf1915c15487b7b4e6a4a812ca6fd79ecedea97ef0dd2900dd635"
+    },
+    {
+      "path": "package/lib/bootstrap.js",
+      "bytes": 3100,
+      "sha256": "0e3cc200f6e99557e953b6caace213e652750d1da0e800b92ed94f459a33ef59"
+    },
+    {
+      "path": "package/lib/tools/cli-client/channelSessions.js",
+      "bytes": 7087,
+      "sha256": "6b9c613e87340f48ad7182addd7495a8ff3fbe55feb1bbd0ce04f59f1552e126"
+    },
+    {
+      "path": "package/cli.js",
+      "bytes": 839,
+      "sha256": "f1c4075aef116c766092250d7f37b3249a7cee6465d953207fc38c8f6145becd"
+    },
+    {
+      "path": "package/lib/tools/cli-client/cli.js",
+      "bytes": 153,
+      "sha256": "dfde8e9dfde30c4b3914eb25ba1c5a8524ec64651d866171d75cd7b41a827180"
+    },
+    {
+      "path": "package/lib/entry/cliDaemon.js",
+      "bytes": 197,
+      "sha256": "062f256fb29a7bf91793a014b9c3f1f9cf2dc6b12e40a8a2ebba88a630ae16a0"
+    },
+    {
+      "path": "package/lib/vite/recorder/assets/codeMirrorModule-BHYmBp6h.js",
+      "bytes": 313009,
+      "sha256": "954a850a323b8c35d071a149aee3504ef8ed4f3989e42debc3fe93a782f55288"
+    },
+    {
+      "path": "package/lib/vite/traceViewer/assets/codeMirrorModule-Ds_H_9Yq.js",
+      "bytes": 313054,
+      "sha256": "97273402dd9c1dbe012459a05a57d5f81fcf900828c7db1e8a33d2d1b8f73e17"
+    },
+    {
+      "path": "package/lib/coreBundle.js",
+      "bytes": 3206963,
+      "sha256": "f74353fcb8e406756a70a6af0dfc4a5069acd577e35ec9d923ccf36ac009c2f5"
+    },
+    {
+      "path": "package/lib/entry/dashboardApp.js",
+      "bytes": 108,
+      "sha256": "209962c6eaeef11629f226d6a2ab33ec7a2480754242b6e19590a9e6eb71d126"
+    },
+    {
+      "path": "package/lib/vite/traceViewer/assets/defaultSettingsView-D31xz8zv.js",
+      "bytes": 649133,
+      "sha256": "89918f149a8f31f3f0931be88224ce73991c11b328aaf96f6c8553af243d36f1"
+    },
+    {
+      "path": "package/lib/tools/utils/extension.js",
+      "bytes": 3132,
+      "sha256": "c07d365ccff8c7fab3d65848bc01616c74e422f3be7b1c0e7b587b84ef866ada"
+    },
+    {
+      "path": "package/lib/vite/recorder/assets/index-DA10QRaq.js",
+      "bytes": 364880,
+      "sha256": "184fed3d752d1764bd26b9e8ccf735ce109cd69b3ed62c2f403e6865662bab10"
+    },
+    {
+      "path": "package/lib/vite/dashboard/assets/index-DpEq2p62.js",
+      "bytes": 331408,
+      "sha256": "120037d62d91187eb3a2ac4e4534742c32a04b10f15ac938e06fcf5f261a659f"
+    },
+    {
+      "path": "package/lib/vite/traceViewer/index.BCnMPevh.js",
+      "bytes": 6591,
+      "sha256": "b7b21f6a648db1af9b77717e1be7bbf0ecb09e0e23e596c815b7b84661de4b87"
+    },
+    {
+      "path": "package/index.js",
+      "bytes": 1117,
+      "sha256": "dca9d1e7d21c43390b59d79d55df309cf5d195edc668c35862bb4db67e116fc0"
+    },
+    {
+      "path": "package/lib/server/electron/loader.js",
+      "bytes": 4821,
+      "sha256": "8c99c632a9fcef9d691160954d01acdf374ba15566e153bef7fb61b0d3796e6d"
+    },
+    {
+      "path": "package/lib/entry/mcp.js",
+      "bytes": 442,
+      "sha256": "cc87dc0020cb41caebbf04f50e42bc7835b033a6d80e9c3f0a3d0b3dbdf341c7"
+    },
+    {
+      "path": "package/lib/tools/cli-client/minimist.js",
+      "bytes": 4106,
+      "sha256": "1d200627373a367e0097f1abeaaa4d67cde2c33f2e5efca5cb55222c7667adc3"
+    },
+    {
+      "path": "package/lib/entry/oopBrowserDownload.js",
+      "bytes": 120,
+      "sha256": "87567cdbd67dd2f50bb232d47d3784701ece7c81e39c0287bb7d1b466b68cf06"
+    },
+    {
+      "path": "package/lib/tools/cli-client/output.js",
+      "bytes": 11685,
+      "sha256": "b10abeea2ea7455577314dd16a71c70c9024af3df9e604094b0ae18675adf73c"
+    },
+    {
+      "path": "package/lib/package.js",
+      "bytes": 2112,
+      "sha256": "9f938e1d44a0dd231b1660ca62f7dae964859b79cbdc370b8542c5d375ca3c05"
+    },
+    {
+      "path": "package/lib/tools/cli-client/program.js",
+      "bytes": 15020,
+      "sha256": "0aa50a2f2c2a2b2b12c6b08baa2ed358aa748ac713966b9982e585dcb9e19d3f"
+    },
+    {
+      "path": "package/lib/tools/cli-client/registry.js",
+      "bytes": 6670,
+      "sha256": "2fc4761b10cb2587bf8bb8b861d083ee212833084045d4e2121955873557386a"
+    },
+    {
+      "path": "package/lib/vite/htmlReport/report.js",
+      "bytes": 415587,
+      "sha256": "d354496707a505d2d5d58f67ad4216cdf681233b47f2e028dbfdd1e197126792"
+    },
+    {
+      "path": "package/lib/serverRegistry.js",
+      "bytes": 247054,
+      "sha256": "b7173eb632bdbf34a6aa137b55e50fbdc95acda4851480423afe6caa86cc48b7"
+    },
+    {
+      "path": "package/lib/tools/cli-client/session.js",
+      "bytes": 9948,
+      "sha256": "3d132cf57ed1db9b228e6218ecebb36910147c24cf6613a86ea138cf2c682f97"
+    },
+    {
+      "path": "package/lib/vite/traceViewer/snapshot.v8KI4P3m.js",
+      "bytes": 660,
+      "sha256": "97a3cd6d67aaac66efc838d7d743ac51bbf7d272e1287981c11758fca21a0657"
+    },
+    {
+      "path": "package/lib/tools/utils/socketConnection.js",
+      "bytes": 3317,
+      "sha256": "973c2bea70a1f1445f4673f99e9fa351e50a2ec9fd93d7381b2c41bb4de764dd"
+    },
+    {
+      "path": "package/lib/vite/traceViewer/sw.bundle.js",
+      "bytes": 95469,
+      "sha256": "eb666dd23c07d2305f216af443a83ee71e06433e0d5b9da2927a9fee18aa2ab9"
+    },
+    {
+      "path": "package/lib/vite/traceViewer/uiMode.C2Efnu2P.js",
+      "bytes": 38201,
+      "sha256": "fcde5934289592310ce4db673b29df510adcdbc0c028264e0c8d3605ec253ee8"
+    },
+    {
+      "path": "package/lib/vite/traceViewer/assets/urlMatch-BYQrIQwR.js",
+      "bytes": 819,
+      "sha256": "168c4dee4815ea8d3c131a504033cd23d4b15aefa0209dd10ad3f643e8f1d8a7"
+    },
+    {
+      "path": "package/lib/utilsBundle.js",
+      "bytes": 3093405,
+      "sha256": "5c42363c10d2f2f5bc91e07feaa9fa5f417a1a55e6559448d0c20d66f73db9e0"
+    },
+    {
+      "path": "package/lib/vite/traceViewer/assets/xtermModule-CsJ4vdCR.js",
+      "bytes": 292244,
+      "sha256": "4aa82b0448cef1cf951bbe0ac80bf2d2b7c5d279dd74bcc798a9e563e98e5295"
+    },
+    {
+      "path": "package/browsers.json",
+      "bytes": 1941,
+      "sha256": "af53e32ffe35a024ddb34563700956b01ada00ac7e9270ba5df0604ec57e38e1"
+    },
+    {
+      "path": "package/lib/server/deviceDescriptorsSource.json",
+      "bytes": 54181,
+      "sha256": "933d568bfa2d50de5805ce52f55a33509c66c8b8b7aa2c07a82d5475c39fe851"
+    },
+    {
+      "path": "package/lib/tools/cli-client/help.json",
+      "bytes": 35416,
+      "sha256": "baf768247fc0cfaa6d1122c6437d957ddfa9cb05ce30effaeb9f4e8d68383b69"
+    },
+    {
+      "path": "package/package.json",
+      "bytes": 876,
+      "sha256": "6f7b58cc55449321279f11ca97d4e451c391738b77db32cdbcedf02851e3f097"
+    },
+    {
+      "path": "package/lib/serverRegistry.js.LICENSE",
+      "bytes": 18617,
+      "sha256": "5cf540fe55a2ba9bcf0eb76e739b454faa8581e2f1a0f777602ef0855534302e"
+    },
+    {
+      "path": "package/lib/utilsBundle.js.LICENSE",
+      "bytes": 107836,
+      "sha256": "8807264f1ac7f9950a93bf134d5ba28ebd52371fdfda54c75e87d10fdf13aa6e"
+    },
+    {
+      "path": "package/lib/tools/cli-client/skill/references/element-attributes.md",
+      "bytes": 665,
+      "sha256": "bf19aa4671e0a50a0fefa9c790f39124e803060eefe395042b723c29fcb7faa2"
+    },
+    {
+      "path": "package/lib/tools/cli-client/skill/references/playwright-tests.md",
+      "bytes": 1690,
+      "sha256": "c5b0719fef2cfdff50bd744051b2f9afc119775db4b48e9b2882c1cf3886797c"
+    },
+    {
+      "path": "package/README.md",
+      "bytes": 120,
+      "sha256": "d16ff7f8e38fa1fc954f695ad551cdc118d9c9bdd5f3d83203901f4c317d7d7e"
+    },
+    {
+      "path": "package/lib/tools/cli-client/skill/references/request-mocking.md",
+      "bytes": 2182,
+      "sha256": "54e801c9663fc2b6d68ceb058cb1c360724c2499f42acc7852a68e83e5b5f37c"
+    },
+    {
+      "path": "package/lib/tools/cli-client/skill/references/running-code.md",
+      "bytes": 5642,
+      "sha256": "d95c539a5990b71d02d8bdf1d9414df16191eb6cff95b0063820518b7a13dcb2"
+    },
+    {
+      "path": "package/lib/tools/cli-client/skill/references/session-management.md",
+      "bytes": 5671,
+      "sha256": "cd3e261b8763bf952f1e371b876cb78d054379afec85482f9250633e1b7e6c44"
+    },
+    {
+      "path": "package/lib/tools/cli-client/skill/SKILL.md",
+      "bytes": 11263,
+      "sha256": "75143af12b0201983322b9ddfca7aaee32d4ee8e03189f8d2a23aba1d6295c23"
+    },
+    {
+      "path": "package/lib/tools/trace/SKILL.md",
+      "bytes": 4712,
+      "sha256": "df85506bfa8a445c961efa1ac244cca733667b717711bcc99c1f93994c29d5dc"
+    },
+    {
+      "path": "package/lib/tools/cli-client/skill/references/spec-driven-testing.md",
+      "bytes": 11578,
+      "sha256": "48cfac3c178c24c75c19f0c59bab8ee05fd50c110b9916446992ffd4b17a7d1e"
+    },
+    {
+      "path": "package/lib/tools/cli-client/skill/references/storage-state.md",
+      "bytes": 5198,
+      "sha256": "1122778c9b13b44bddebb4476a7f99d918afd31757be8b4fade3cb09c3d48c99"
+    },
+    {
+      "path": "package/lib/tools/cli-client/skill/references/test-generation.md",
+      "bytes": 4585,
+      "sha256": "2a9c4d94effa31b05cf367dfa8bbace8874a3bc9799987ad2b03269af224d299"
+    },
+    {
+      "path": "package/lib/tools/cli-client/skill/references/tracing.md",
+      "bytes": 3440,
+      "sha256": "792e0ac7705e56ac48df84c0f5400221ce86107897c671590a64a4ea6a82508e"
+    },
+    {
+      "path": "package/lib/tools/cli-client/skill/references/video-recording.md",
+      "bytes": 5385,
+      "sha256": "0cea7708999aa663701917615889a84cbc05200718bb161de9a5366a826c2b4d"
+    },
+    {
+      "path": "package/index.mjs",
+      "bytes": 1063,
+      "sha256": "3d36e2132d3c8b62397d23f0bb4177336aaee503203ae2a2c90fbeb5bf3317dd"
+    },
+    {
+      "path": "package/lib/server/chromium/appIcon.png",
+      "bytes": 16565,
+      "sha256": "6ba994f05c5cf18e22d9b6bef9898fbdec6ad4d4d77f5187d0609cb42d72d01e"
+    },
+    {
+      "path": "package/lib/tools/dashboard/appIcon.png",
+      "bytes": 18945,
+      "sha256": "38037bcf18c7f9b950da2e1a2d8800d38fb27637ccda293d38368a3704b67f18"
+    },
+    {
+      "path": "package/bin/install_media_pack.ps1",
+      "bytes": 174,
+      "sha256": "bc20f049badf021e3a53bdb4156603caa5ef482c9a9a251f927605e676a44171"
+    },
+    {
+      "path": "package/bin/install_webkit_wsl.ps1",
+      "bytes": 1464,
+      "sha256": "bc61beda37a808eef27d39ce684baa792f6d17737a25a432b1a84d3b591ab815"
+    },
+    {
+      "path": "package/bin/reinstall_chrome_beta_win.ps1",
+      "bytes": 957,
+      "sha256": "b6d9e44742feafb98d5edc56fa20042949973cf30d141a1c5b4fb384096967c5"
+    },
+    {
+      "path": "package/bin/reinstall_chrome_stable_win.ps1",
+      "bytes": 923,
+      "sha256": "3d96c4e2f4ebbb3fad44cf3ba58d9cf90af1c9fb3073e3b27d45a74cf005515b"
+    },
+    {
+      "path": "package/bin/reinstall_msedge_beta_win.ps1",
+      "bytes": 874,
+      "sha256": "b173c378a59f0cc38033cee702de1f44f09276c9b2270d1a650ebe66ee312433"
+    },
+    {
+      "path": "package/bin/reinstall_msedge_dev_win.ps1",
+      "bytes": 869,
+      "sha256": "46f7f98c81cb0abe687d7f4a5afea9b897a38d2a6dd6f6662fbd847f7a22bd51"
+    },
+    {
+      "path": "package/bin/reinstall_msedge_stable_win.ps1",
+      "bytes": 856,
+      "sha256": "40bb5fcbfcebbbe2ce43c6e736e7c5deefc5be03b6e9c6914423c06ec1f591be"
+    },
+    {
+      "path": "package/bin/reinstall_chrome_beta_linux.sh",
+      "bytes": 1214,
+      "sha256": "1516fd36def44bfcf87855850322a54e3b26e863a82fbdf2a44a5f5134f7eedf"
+    },
+    {
+      "path": "package/bin/reinstall_chrome_beta_mac.sh",
+      "bytes": 560,
+      "sha256": "42d0572860dcecb094d409b879e469292c58a7645085357156453a6299315770"
+    },
+    {
+      "path": "package/bin/reinstall_chrome_stable_linux.sh",
+      "bytes": 1209,
+      "sha256": "8b578baa16f286f17d6a29cc8998a7a16f2635b7fb018f9473d5c498e0be450f"
+    },
+    {
+      "path": "package/bin/reinstall_chrome_stable_mac.sh",
+      "bytes": 516,
+      "sha256": "8532b8ff7600f208aada15584978fa91baffb0d4bb77bd30332ec827de501d72"
+    },
+    {
+      "path": "package/bin/reinstall_msedge_beta_linux.sh",
+      "bytes": 1491,
+      "sha256": "50a5fb48211ce0dc524e17e18547f40e863c1732555ca288cbc69cd6cb55ae2a"
+    },
+    {
+      "path": "package/bin/reinstall_msedge_beta_mac.sh",
+      "bytes": 374,
+      "sha256": "a280a4d02c2c908a6a523b781dd953bcf438689ceb4723133255b0d11955b124"
+    },
+    {
+      "path": "package/bin/reinstall_msedge_dev_linux.sh",
+      "bytes": 1486,
+      "sha256": "38e74c2ac8a403c512590d11d20742773d338d8b68b02022b209a9d8a6e03d7c"
+    },
+    {
+      "path": "package/bin/reinstall_msedge_dev_mac.sh",
+      "bytes": 369,
+      "sha256": "48d96b6d58b4a1a42e116545b523f4efd25edac1f3fa323a97eb596fa3bb654a"
+    },
+    {
+      "path": "package/bin/reinstall_msedge_stable_linux.sh",
+      "bytes": 1504,
+      "sha256": "db2fb3492a689ee5472ec159fef6a5efb7a62f1f513339350813c9d1334ba8d2"
+    },
+    {
+      "path": "package/bin/reinstall_msedge_stable_mac.sh",
+      "bytes": 368,
+      "sha256": "e176bc37da1a3e5b5cde36b941ed6134f7d5ee784587d034140cf40c53456b27"
+    },
+    {
+      "path": "package/lib/vite/dashboard/assets/firefox-1bWoP6pv.svg",
+      "bytes": 7488,
+      "sha256": "3f3742d1e78c0db6c2d3531250f70c30675ee5310de32fa89befaf738c54efd0"
+    },
+    {
+      "path": "package/lib/vite/dashboard/assets/firefox-beta-k3eOH_eK.svg",
+      "bytes": 9280,
+      "sha256": "7eab5ffdc25903ba33a7202f7fffa1999f119c7be45a39e9e703c118904f917a"
+    },
+    {
+      "path": "package/lib/vite/dashboard/assets/firefox-nightly-Cp5nfeDT.svg",
+      "bytes": 9143,
+      "sha256": "f311c074b0fa999fcd6b73441301fb54ee87a48ff3bf05f318647928110476da"
+    },
+    {
+      "path": "package/lib/vite/dashboard/playwright-logo.svg",
+      "bytes": 5645,
+      "sha256": "511524a1c145819303a18fb71870a4307c3e740f9e9722f7686a2b42b0995b6c"
+    },
+    {
+      "path": "package/lib/vite/recorder/playwright-logo.svg",
+      "bytes": 5033,
+      "sha256": "6b0a4367bdeab10995bc239278f04c68c10e48adbec15e799e01909a0d66dcb9"
+    },
+    {
+      "path": "package/lib/vite/traceViewer/playwright-logo.svg",
+      "bytes": 5033,
+      "sha256": "6b0a4367bdeab10995bc239278f04c68c10e48adbec15e799e01909a0d66dcb9"
+    },
+    {
+      "path": "package/lib/vite/dashboard/assets/safari-na3_-uQk.svg",
+      "bytes": 5254,
+      "sha256": "80fd72ca5eb8545f1981277b31f4f92951d469d4efebd078e4086b676fe517dc"
+    },
+    {
+      "path": "package/index.d.ts",
+      "bytes": 634,
+      "sha256": "7a8ec10b0834eb7183e4bfcd929838ac77583828e343211bb73676d1e47f6f01"
+    },
+    {
+      "path": "package/types/protocol.d.ts",
+      "bytes": 812393,
+      "sha256": "681cf9768031b874fafdd81a20e8a20ca6c92a5cbf12e86532a69182e315b065"
+    },
+    {
+      "path": "package/types/structs.d.ts",
+      "bytes": 2103,
+      "sha256": "32727845ab5bd8a9ef3e4844c567c09f6d418fcf0f90d381c00652a6f23e7f6e"
+    },
+    {
+      "path": "package/types/types.d.ts",
+      "bytes": 1013672,
+      "sha256": "e5b810845dedef5aa0d682efa61be20dcb2e28c27a64ff5cc4cfc122f3f3980f"
+    },
+    {
+      "path": "package/lib/vite/dashboard/assets/codicon-DCmgc-ay.ttf",
+      "bytes": 80340,
+      "sha256": "0f1d5219934e96e83b8db162d60b4d8c09b5de1e7d38031cbafe4a3c0f2889c9"
+    },
+    {
+      "path": "package/lib/vite/recorder/assets/codicon-DCmgc-ay.ttf",
+      "bytes": 80340,
+      "sha256": "0f1d5219934e96e83b8db162d60b4d8c09b5de1e7d38031cbafe4a3c0f2889c9"
+    },
+    {
+      "path": "package/lib/vite/traceViewer/codicon.DCmgc-ay.ttf",
+      "bytes": 80340,
+      "sha256": "0f1d5219934e96e83b8db162d60b4d8c09b5de1e7d38031cbafe4a3c0f2889c9"
+    },
+    {
+      "path": "package/ThirdPartyNotices.txt",
+      "bytes": 676,
+      "sha256": "a549d329bad8806fe279f0ecae0fc0270dec7e7c2dc8ec10f90e394f7c32b144"
+    },
+    {
+      "path": "package/lib/vite/traceViewer/manifest.webmanifest",
+      "bytes": 429,
+      "sha256": "d8540500603a32a39fe7e5a0375dc0f9ebafd11118e06a846db7efc608223ab9"
+    }
+  ]
+}

@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
 """Run reviewed whole-native page functions against a retained private Chromium owner."""
 import argparse,json,os,pathlib,subprocess,tempfile,hashlib,uuid
-p=argparse.ArgumentParser(description=__doc__);p.add_argument('--case',choices=['real-page','retention','contracts','relay'],default='real-page');p.add_argument('--native',type=pathlib.Path,required=True);p.add_argument('--playwright',type=pathlib.Path,required=True);p.add_argument('--deps',type=pathlib.Path,required=True);p.add_argument('--node',type=pathlib.Path,required=True);p.add_argument('--guard',type=pathlib.Path,required=True);p.add_argument('--evidence-root',type=pathlib.Path,required=True);a=p.parse_args()
+p=argparse.ArgumentParser(description=__doc__);p.add_argument('--supervisor-bin',type=pathlib.Path);p.add_argument('--case',choices=['real-page','retention','contracts','relay','supervised','supervised-revoke','entry-protocol','framing'],default='real-page');p.add_argument('--native',type=pathlib.Path,required=True);p.add_argument('--playwright',type=pathlib.Path,required=True);p.add_argument('--deps',type=pathlib.Path,required=True);p.add_argument('--node',type=pathlib.Path,required=True);p.add_argument('--guard',type=pathlib.Path,required=True);p.add_argument('--evidence-root',type=pathlib.Path,required=True);a=p.parse_args()
+node_binary=a.node/'bin/node';node_stat=node_binary.lstat()
+assert node_binary.is_file() and not node_binary.is_symlink() and node_stat.st_mode&0o111
+node_sha=hashlib.sha256(node_binary.read_bytes()).hexdigest()
+if os.environ.get('O3_ADMITTED_NODE'):
+ assert pathlib.Path(os.environ['O3_ADMITTED_NODE']).resolve()==node_binary.resolve()
+ assert os.environ.get('O3_ADMITTED_NODE_SHA256')==node_sha
+ assert os.environ.get('O3_ADMITTED_NODE_VERSION')=='26.13.0'
 manifest=json.loads((pathlib.Path(__file__).resolve().parent.parent/'runtime/preview/native-manifest.json').read_text())
 for name,digest in manifest['files'].items():
  item=a.native/name;assert item.is_file() and not item.is_symlink() and hashlib.sha256(item.read_bytes()).hexdigest()==digest,name
@@ -13,13 +20,19 @@ assert subprocess.check_output(['podman','--remote=false','info','--format','{{.
 a.evidence_root.mkdir(parents=True,exist_ok=True);out=pathlib.Path(tempfile.mkdtemp(prefix='page-',dir=a.evidence_root));out.chmod(0o700);source=pathlib.Path(__file__).resolve().parent.parent
 snapshot=out/'source';hashes={}
 for directory in ['runtime/preview','tests/preview']:
- for item in (source/directory).glob('*.mjs'):
+ for item in (source/directory).iterdir():
+  if item.suffix not in ('.mjs','.json'):continue
   assert item.is_file() and not item.is_symlink()
   relative=item.relative_to(source);target=snapshot/relative;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(item.read_bytes());target.chmod(0o400);hashes[str(relative)]=hashlib.sha256(target.read_bytes()).hexdigest()
 (out/'source.json').write_text(json.dumps(hashes,indent=2)+'\n')
+if a.case in ('supervised','supervised-revoke'):
+ assert a.supervisor_bin and a.supervisor_bin.is_file()
+ (out/'supervisor').write_bytes(a.supervisor_bin.read_bytes());(out/'supervisor').chmod(0o500)
 bootstrap='''
 import pathlib,subprocess
 pathlib.Path('/out/home').mkdir(mode=0o700)
+version=subprocess.check_output(['/node/bin/node','--version'],text=True).strip()
+if version!='v26.13.0':raise SystemExit('Exact Node26.13.0 is required')
 modules=pathlib.Path('/native/node_modules');(modules/'@t3tools').mkdir()
 for entry in pathlib.Path('/deps/node_modules').iterdir():
  if entry.name!='@t3tools':(modules/entry.name).symlink_to(entry)
@@ -30,6 +43,7 @@ bootstrap=bootstrap.replace('real-page.mjs',a.case+'.mjs')
 container='o3-native-page-'+uuid.uuid4().hex
 cmd=['podman','--remote=false','run','--name',container,'--label','o3.preview-proof='+container,'--rm','--pull=never','--http-proxy=false','--userns=keep-id','--user',f'{os.getuid()}:{os.getgid()}','--read-only','--network=none','--cap-drop=ALL','--security-opt=no-new-privileges','--pids-limit=512','--memory=4g','--tmpfs','/tmp:rw,size=512m,mode=1777','--tmpfs','/native/node_modules:rw,size=32m,mode=1777','--env','HOME=/out/home','--env','XDG_CONFIG_HOME=/out/home/config','--env','XDG_CACHE_HOME=/out/home/cache']
 for root,target,mode in [(pathlib.Path('/usr'),'/usr','ro'),(snapshot,'/source','ro'),(a.native,'/native','ro'),(a.playwright,'/playwright','ro'),(a.deps,'/deps','ro'),(a.node,'/node','ro'),(a.guard,'/guard.mjs','ro'),(out,'/out','rw')]:cmd+=['-v',f'{root.resolve()}:{target}:{mode}']
+if a.case in ('supervised','supervised-revoke'):cmd+=['-v',f'{out}/supervisor:/supervisor:ro']
 cmd+=['localhost/o3-rust-tests:latest','python3','-c',bootstrap]
 with (out/'runtime.log').open('w') as log:
  try:result=subprocess.run(cmd,stdout=log,stderr=subprocess.STDOUT,timeout=90);code=result.returncode
@@ -40,4 +54,4 @@ with (out/'runtime.log').open('w') as log:
   if inspected.returncode==0:
    info=json.loads(inspected.stdout)[0];assert info['Config']['Labels'].get('o3.preview-proof')==container
    subprocess.run(['podman','--remote=false','stop','--time','5',info['Id']],stdout=log,stderr=subprocess.STDOUT,timeout=15,check=True)
-(out/'result.json').write_text(json.dumps({'exit':code,'retained':str(out),'source':str(source),'network':'none','rootless':True},indent=2)+'\n');print(out);print((out/'runtime.log').read_text());raise SystemExit(code)
+(out/'result.json').write_text(json.dumps({'exit':code,'retained':str(out),'source':str(source),'network':'none','rootless':True,'nodeSha256':node_sha,'nodeVersion':'26.13.0'},indent=2)+'\n');print(out);print((out/'runtime.log').read_text());raise SystemExit(code)
