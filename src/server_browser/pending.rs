@@ -25,8 +25,12 @@ pub(super) struct Calls {
     exact_late: BTreeMap<u64, Late>,
 }
 impl Calls {
-    pub fn full(&self) -> bool {
-        self.calls.len() + self.exact.len() >= 8
+    /// The legacy request queue keeps its existing application budget. Exact
+    /// native CDP responses are correlated independently; a suspended page
+    /// evaluation must not prevent its already-produced termination command
+    /// or an unrelated borrowed-tab request from reaching the writer.
+    pub fn legacy_full(&self) -> bool {
+        self.calls.len() >= 8
     }
     pub fn insert(&mut self, request: Request) -> Option<Value> {
         let Request {
@@ -356,6 +360,33 @@ mod tests {
                 _control: control,
             },
         )
+    }
+    #[tokio::test]
+    async fn native_wire_correlations_do_not_fill_the_legacy_application_queue() {
+        crate::test_sandbox::assert_isolated();
+        let mut calls = Calls::default();
+        let mut keep = Vec::new();
+        for _ in 0..9 {
+            let (request, response, lease) =
+                exact_request(tokio::time::Instant::now() + Duration::from_secs(2));
+            calls.insert_exact(request).unwrap();
+            keep.push((response, lease));
+            assert!(!calls.legacy_full());
+        }
+        assert_eq!(calls.exact.len(), 9);
+        assert!(
+            calls.exact_late.is_empty(),
+            "outstanding native commands are not relabeled as late"
+        );
+        let mut legacy = Vec::new();
+        for _ in 0..8 {
+            let (request, response) = request("Runtime.evaluate");
+            calls.insert(request).unwrap();
+            legacy.push(response);
+        }
+        assert!(calls.legacy_full());
+        assert_eq!(calls.exact.len(), 9);
+        drop((keep, legacy));
     }
     #[tokio::test]
     async fn exact_and_scalar_responses_keep_unique_ids_and_captured_sessions() {

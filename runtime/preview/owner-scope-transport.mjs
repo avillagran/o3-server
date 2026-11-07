@@ -2,7 +2,8 @@
 // The Rust owner issues and authorizes opaque tickets; this module grants no scope.
 import {AsyncLocalStorage} from 'node:async_hooks';
 const installations=new WeakMap();
-const FIELD='__o3OwnerReceipt';
+const FIELD='__o3OwnerReceipt',OPERATION='__o3OwnerOperation';
+const TOOLS=new Set(['preview_status','preview_open','preview_dialog','preview_navigate','preview_resize','preview_set_appearance','preview_snapshot','preview_act','preview_evaluate','preview_wait_for','preview_recording_start','preview_recording_stop']);
 export class OwnerScopeTransport {
  #endpoint;#storage=new AsyncLocalStorage();#scopes=new WeakMap();#active=new Map();#installation;#fault;#closed=false;
  constructor({WebSocket,endpoint,onFault}){
@@ -23,9 +24,9 @@ export class OwnerScopeTransport {
   installation.endpoints.set(endpoint,this);this.#installation=installation;
  }
  // This is called only by the signed owner IPC consumer, never with MCP input.
- admit(ticket){
-  if(this.#closed||typeof ticket!=='string'||!/^[a-f0-9]{48}$/.test(ticket)||this.#active.has(ticket)||this.#active.size>=256)throw Error('Invalid owner receipt admission');
-  const scope=Object.freeze({});this.#scopes.set(scope,{ticket,retired:false});this.#active.set(ticket,scope);return scope;
+ admit(ticket,operation){
+  if(this.#closed||typeof ticket!=='string'||!/^[a-f0-9]{48}$/.test(ticket)||this.#active.has(ticket)||this.#active.size>=256||(operation!==undefined&&!TOOLS.has(operation)))throw Error('Invalid owner receipt admission');
+  const scope=Object.freeze({});this.#scopes.set(scope,{ticket,operation,retired:false});this.#active.set(ticket,scope);return scope;
  }
  run(scope,callback){const record=this.#scopes.get(scope);if(this.#closed||!record||record.retired||typeof callback!=='function')throw Error('Inactive owner receipt');return this.#storage.run(scope,callback);}
  finish(scope){const record=this.#scopes.get(scope);if(!record||record.retired)throw Error('Invalid owner receipt completion');record.retired=true;this.#active.delete(record.ticket);}
@@ -33,10 +34,10 @@ export class OwnerScopeTransport {
   try{
    if(this.#closed)throw Error();const record=this.#scopes.get(this.#storage.getStore());if(!record)throw Error();
    const value=JSON.parse(typeof data==='string'?data:data.toString());
-   if(!value||Array.isArray(value)||!Number.isSafeInteger(value.id)||value.id<0||typeof value.method!=='string'||Object.hasOwn(value,FIELD))throw Error();
+   if(!value||Array.isArray(value)||!Number.isSafeInteger(value.id)||value.id<0||typeof value.method!=='string'||(Object.hasOwn(value,FIELD)||Object.hasOwn(value,OPERATION)))throw Error();
    // A late continuation keeps its original ticket. It is never relabeled as
    // the currently running callback; the Rust owner decides whether cleanup is permitted.
-   return JSON.stringify({...value,[FIELD]:record.ticket});
+   return JSON.stringify({...value,[FIELD]:record.ticket,...(record.operation===undefined?{}:{[OPERATION]:record.operation})});
   }catch{
    try{this.#fault();}catch{ /* Diagnostics cannot replace the functional fence. */ }
    throw Error('Owned browser scope transport unavailable');

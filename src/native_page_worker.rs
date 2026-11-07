@@ -175,7 +175,18 @@ fn decode_packet(bytes: &[u8]) -> Result<Packet, Fault> {
 /// Native broker grace is response transport time, never page-operation time.
 pub const HOST_RESPONSE_GRACE: Duration = Duration::from_millis(1_000);
 
+struct InvocationScope {
+    receipt: NativeReceipt,
+    operation: NativeOperation,
+}
+struct Budget {
+    timeout: Duration,
+    grace: Duration,
+    retire_on_deadline: bool,
+    retain_execution: bool,
+}
 struct Call {
+    scope: Option<InvocationScope>,
     native_timeout: Duration,
     operation: String,
     input: Value,
@@ -233,6 +244,7 @@ struct OwnerCall {
     reply: oneshot::Sender<Result<(), Fault>>,
 }
 struct Pending {
+    _scope: Option<InvocationScope>,
     deadline: Instant,
     retire_on_deadline: bool,
     retain_execution: bool,
@@ -385,8 +397,18 @@ impl Worker {
         input: Value,
         timeout: Duration,
     ) -> Result<OperationResult, Fault> {
-        self.invoke_budget(operation, input, timeout, Duration::ZERO, true, false)
-            .await
+        self.invoke_budget(
+            operation,
+            input,
+            Budget {
+                timeout,
+                grace: Duration::ZERO,
+                retire_on_deadline: true,
+                retain_execution: false,
+            },
+            None,
+        )
+        .await
     }
     /// Preserve the native operation timeout while allowing its original host
     /// response grace only when the broker updates the current tab.
@@ -405,14 +427,17 @@ impl Worker {
         self.invoke_budget(
             operation,
             input,
-            native_timeout,
-            if update_current_tab {
-                HOST_RESPONSE_GRACE
-            } else {
-                Duration::ZERO
+            Budget {
+                timeout: native_timeout,
+                grace: if update_current_tab {
+                    HOST_RESPONSE_GRACE
+                } else {
+                    Duration::ZERO
+                },
+                retire_on_deadline: update_current_tab,
+                retain_execution: false,
             },
-            update_current_tab,
-            false,
+            None,
         )
         .await
     }
@@ -433,10 +458,87 @@ impl Worker {
         self.invoke_budget(
             operation,
             input,
-            native_timeout,
-            Duration::ZERO,
-            false,
-            true,
+            Budget {
+                timeout: native_timeout,
+                grace: Duration::ZERO,
+                retire_on_deadline: false,
+                retain_execution: true,
+            },
+            None,
+        )
+        .await
+    }
+    /// Owner-only scoped worker entry. The immutable tool class and receipt
+    /// come from the actual callback, never from the operation's JSON input.
+    pub async fn invoke_native_scoped(
+        &self,
+        invocation: &NativeInvocation,
+        operation: &str,
+        input: Value,
+        native_timeout: Duration,
+        update_current_tab: bool,
+    ) -> Result<OperationResult, Fault> {
+        self.invoke_scoped_budget(
+            invocation,
+            operation,
+            input,
+            Budget {
+                timeout: native_timeout,
+                grace: if update_current_tab {
+                    HOST_RESPONSE_GRACE
+                } else {
+                    Duration::ZERO
+                },
+                retire_on_deadline: update_current_tab,
+                retain_execution: false,
+            },
+        )
+        .await
+    }
+    /// Retains the real callback execution lease beyond caller observation.
+    pub async fn invoke_execution_scoped(
+        &self,
+        invocation: &NativeInvocation,
+        operation: &str,
+        input: Value,
+        native_timeout: Duration,
+    ) -> Result<OperationResult, Fault> {
+        self.invoke_scoped_budget(
+            invocation,
+            operation,
+            input,
+            Budget {
+                timeout: native_timeout,
+                grace: Duration::ZERO,
+                retire_on_deadline: false,
+                retain_execution: true,
+            },
+        )
+        .await
+    }
+    async fn invoke_scoped_budget(
+        &self,
+        invocation: &NativeInvocation,
+        operation: &str,
+        input: Value,
+        budget: Budget,
+    ) -> Result<OperationResult, Fault> {
+        if budget.timeout.as_millis() == 0
+            || !budget.timeout.subsec_nanos().is_multiple_of(1_000_000)
+        {
+            return Err(Fault::Deadline);
+        }
+        let (receipt, tool) = invocation
+            .issue_page_receipt(operation)
+            .map_err(|_| Fault::Revoked)?;
+        self.invoke_budget(
+            operation,
+            input,
+            budget,
+            Some(InvocationScope {
+                receipt,
+                operation: tool,
+            }),
         )
         .await
     }
@@ -444,11 +546,15 @@ impl Worker {
         &self,
         operation: &str,
         input: Value,
-        timeout: Duration,
-        grace: Duration,
-        retire_on_deadline: bool,
-        retain_execution: bool,
+        budget: Budget,
+        scope: Option<InvocationScope>,
     ) -> Result<OperationResult, Fault> {
+        let Budget {
+            timeout,
+            grace,
+            retire_on_deadline,
+            retain_execution,
+        } = budget;
         if timeout.is_zero() || timeout > Duration::from_secs(120) {
             return Err(Fault::Deadline);
         }
@@ -462,6 +568,7 @@ impl Worker {
         self.handle
             .calls
             .try_send(Call {
+                scope,
                 operation: operation.into(),
                 input,
                 native_timeout: timeout,
@@ -718,10 +825,11 @@ async fn run(running: Running) {
             if call.reply.is_closed(){continue;}
             if call.deadline<=Instant::now(){let _=call.reply.send(Err(Fault::Deadline));continue;}
                      next+=1;if next>9_007_199_254_740_991{break Fault::Protocol;}
-                     let packet=json!({"kind":"invoke","id":next,"nonce":nonce,"operation":call.operation,"input":call.input,"timeoutMs":call.native_timeout.as_millis().max(1)});
+                     let mut packet=json!({"kind":"invoke","id":next,"nonce":nonce,"operation":call.operation,"input":call.input,"timeoutMs":call.native_timeout.as_millis().max(1)});
+                     if let Some(scope)=&call.scope {packet["ownerScope"]=json!({"receipt":scope.receipt.worker_receipt(),"tool":scope.operation.tool_name()});}
                      if serde_json::to_vec(&packet).map_or(true,|b|b.len()>MAX_FRAME_BYTES){let _=call.reply.send(Err(Fault::TooLarge));continue;}
                      if call.admission.as_ref().is_some_and(|admission|!admission.admit(call.deadline)){let _=call.reply.send(Err(Fault::Deadline));continue;}
-                     pending.insert(next,Pending{deadline:call.deadline,retire_on_deadline:call.retire_on_deadline,retain_execution:call.retain_execution,reply:Some(call.reply)});if writes.try_send(packet).is_err(){break Fault::Busy;}
+                     pending.insert(next,Pending{_scope:call.scope,deadline:call.deadline,retire_on_deadline:call.retire_on_deadline,retain_execution:call.retain_execution,reply:Some(call.reply)});if writes.try_send(packet).is_err(){break Fault::Busy;}
                     },
                     packet=inbound.recv()=>{
                      let mut packet=match packet{Some(Ok(v))=>v,Some(Err(e))=>break e,None=>break Fault::Exited};

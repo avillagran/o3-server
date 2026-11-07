@@ -415,13 +415,13 @@ async fn launch(
         loop {
             let expires = calls.deadline();
             tokio::select! {
-                next=rx.recv(),if !calls.full()=>{
+                next=rx.recv(),if !calls.legacy_full()=>{
                     let Some(next)=next else{break;};
                     let Some(message)=calls.insert(next)else{continue;};
                     let mut packet=match serde_json::to_vec(&message){Ok(packet)=>packet,Err(_)=>break};packet.push(0);
                     if !writer.send(packet){break;}
                 },
-                next=exact_rx.recv(),if !calls.full()=>{
+                next=exact_rx.recv()=>{
                     let Some(next)=next else{break;};
                     let Some((id,mut packet,permit))=calls.insert_exact(next)else{continue;};packet.push(0);
                     if !writer.send_exact(packet,permit){calls.exact_unsent(id);}

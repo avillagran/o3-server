@@ -88,6 +88,28 @@ impl NativeGateway {
     pub fn cleanup_receipt(&self) -> &str {
         &self.cleanup_receipt
     }
+    /// Seal the owner resources into trusted initialization, outside operation
+    /// input. A caller-supplied replacement capability is refused.
+    pub fn configure_worker(
+        &self,
+        spec: &mut crate::native_page_worker::WorkerSpec,
+    ) -> Result<(), crate::native_page_worker::Fault> {
+        let configuration = spec
+            .configuration
+            .as_object_mut()
+            .ok_or(crate::native_page_worker::Fault::InvalidInstallation)?;
+        if configuration.contains_key("ownerScopes") {
+            return Err(crate::native_page_worker::Fault::InvalidInstallation);
+        }
+        configuration.insert(
+            "ownerScopes".into(),
+            json!({
+                "runtimeReceipt":self.runtime_receipt,
+                "cleanupReceipt":self.cleanup_receipt,
+            }),
+        );
+        Ok(())
+    }
     pub async fn shutdown(&self) -> Result<NativeCloseReceipt, crate::native_page_worker::Fault> {
         self.page.fence();
         self.stop.send_replace(true);
@@ -269,7 +291,16 @@ async fn command(
     mut request: Incoming,
     runtime: String,
     cleanup: String,
+    previous: Option<oneshot::Receiver<()>>,
+    dispatch: Dispatch,
 ) -> Message {
+    if let Some(previous) = previous {
+        let _ = previous.await;
+    }
+    let mut flow = Flow {
+        cleanup: None,
+        enqueued: Some(dispatch),
+    };
     let id = request.id;
     let session = request.session.clone();
     let result = if request.receipt == cleanup {
@@ -299,7 +330,10 @@ async fn command(
                                 request.params,
                                 wire_session,
                                 Duration::from_secs(15),
-                                Some(reservation),
+                                {
+                                    flow.cleanup = Some(reservation);
+                                    flow
+                                },
                             )
                             .await
                     }
@@ -316,7 +350,7 @@ async fn command(
                 request.params,
                 request.session,
                 Duration::from_secs(121),
-                None,
+                flow,
             )
             .await
     } else {
@@ -329,7 +363,7 @@ async fn command(
                         request.params,
                         request.session,
                         Duration::from_secs(121),
-                        None,
+                        flow,
                     )
                     .await
             }
@@ -411,6 +445,7 @@ async fn serve(
         let (mut output, mut input) = socket.split();
         let mut calls = tokio::task::JoinSet::new();
         let mut last_id = 0;
+        let mut predecessor = None;
         loop {
             tokio::select! {
                 _=stopping.changed()=>break,
@@ -458,7 +493,10 @@ async fn serve(
                                 // CDP has no invented eight-call rejection limit. The
                                 // actor's ordered bounded queue supplies backpressure;
                                 // all unresolved tasks remain owned through shutdown.
-                                calls.spawn(command(page.clone(),request,runtime.clone(),cleanup.clone()));
+                                let previous = predecessor.take();
+                                let (advance, next) = oneshot::channel();
+                                predecessor = Some(next);
+                                calls.spawn(command(page.clone(),request,runtime.clone(),cleanup.clone(),previous,Dispatch(Some(advance))));
                             }
                         },
                         Message::Ping(value)=>{if output.send(Message::Pong(value)).await.is_err(){break;}},

@@ -69,12 +69,12 @@ pub(super) async fn launch(
         loop {
             let expires = calls.deadline();
             tokio::select! {
-                request=rx.recv(),if !calls.full()=>{
+                request=rx.recv(),if !calls.legacy_full()=>{
                     let Some(request)=request else{break;};
                     let Some(message)=calls.insert(request)else{continue;};
                     if !writer.send(Message::Text(message.to_string().into())){break;}
                 },
-                next=exact_rx.recv(),if !calls.full()=>{
+                next=exact_rx.recv()=>{
                     let Some(next)=next else{break;};
                     let Some((id,bytes,permit))=calls.insert_exact(next)else{continue;};
                     let Ok(text)=String::from_utf8(bytes)else{break;};

@@ -182,6 +182,13 @@ pub struct NativeReceipt {
     owner: Weak<Owner>,
     value: String,
 }
+impl Drop for NativeReceipt {
+    fn drop(&mut self) {
+        if let Some(owner) = self.owner.upgrade() {
+            owner.receipts.lock().unwrap().remove(&self.value);
+        }
+    }
+}
 impl NativeReceipt {
     pub fn worker_receipt(&self) -> &str {
         &self.value
@@ -231,6 +238,27 @@ impl exact::Observer for Tracked {
         drop(grants);
         self.owner.changed.notify_waiters();
     }
+}
+/// Ordered gateway production releases its successor when this frame has
+/// actually entered the actor queue, or has been definitively refused. Remote
+/// completion and actual writer begin are separate fences.
+struct Dispatch(Option<oneshot::Sender<()>>);
+impl Dispatch {
+    fn advance(&mut self) {
+        if let Some(sender) = self.0.take() {
+            let _ = sender.send(());
+        }
+    }
+}
+impl Drop for Dispatch {
+    fn drop(&mut self) {
+        self.advance();
+    }
+}
+#[derive(Default)]
+struct Flow {
+    cleanup: Option<Reservation>,
+    enqueued: Option<Dispatch>,
 }
 struct FrameAuthority {
     tracked: Arc<Tracked>,
@@ -289,8 +317,12 @@ impl Owner {
         params: JavaScriptJson,
         session: Option<String>,
         budget: Duration,
-        cleanup: Option<Reservation>,
+        flow: Flow,
     ) -> Result<Packet, Value> {
+        let Flow {
+            cleanup,
+            mut enqueued,
+        } = flow;
         if budget.is_zero() || budget > Duration::from_secs(121) || *self.done.borrow() {
             if let Some(reservation) = cleanup {
                 self.grants.lock().unwrap().cancelled(&reservation);
@@ -342,6 +374,9 @@ impl Owner {
             .await
             .map_err(|_| fault("deadline"))?
             .map_err(|_| fault("closed"))?;
+            if let Some(dispatch) = &mut enqueued {
+                dispatch.advance();
+            }
             tokio::time::timeout_at(expires, result)
                 .await
                 .map_err(|_| fault("deadline"))?
@@ -580,7 +615,10 @@ impl NativePage {
                         params,
                         wire_session,
                         remaining,
-                        Some(reservation),
+                        Flow {
+                            cleanup: Some(reservation),
+                            ..Default::default()
+                        },
                     )
                     .await;
                 if !matches!(detached, Ok(packet) if matches!(packet.payload(), Some(crate::native_page_worker::cdp::Payload::Result(_))))
@@ -608,6 +646,16 @@ impl NativeInvocation {
         let mut invocation = self.clone();
         invocation.operation = Some(operation);
         Ok(invocation)
+    }
+    pub(crate) fn issue_page_receipt(
+        &self,
+        page_operation: &str,
+    ) -> Result<(NativeReceipt, NativeOperation), Value> {
+        let operation = self.operation.ok_or_else(|| fault("receipt_operation"))?;
+        if !operation.permits_page_operation(page_operation) {
+            return Err(fault("receipt_operation"));
+        }
+        Ok((self.issue_receipt()?, operation))
     }
     pub fn issue_receipt(&self) -> Result<NativeReceipt, Value> {
         if !self.owner.control.owns_context(&self.context)
@@ -672,7 +720,7 @@ impl NativeInvocation {
                 params,
                 session,
                 budget,
-                None,
+                Flow::default(),
             )
             .await
     }

@@ -5,7 +5,7 @@ use super::*;
 use crate::{events::put, native_page_worker::JavaScriptJson, store::State};
 use std::sync::Arc;
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn actual_provider_scope_and_callback_lifetime_fence_original_receipts() {
     crate::test_sandbox::assert_isolated();
     let root = std::env::temp_dir().join(format!(
@@ -229,6 +229,63 @@ async fn actual_provider_scope_and_callback_lifetime_fence_original_receipts() {
         .unwrap();
     assert!(answered.contains(r#""lone":"\ud800""#));
     assert!(answered.contains(r#""id":2"#));
+    let fifo = invocation.issue_receipt().unwrap();
+    for index in 0..16 {
+        socket
+            .send(Message::Text(
+                json!({
+                    "id":5+index,"method":"Browser.getVersion","params":{},
+                    "__o3OwnerReceipt":fifo.worker_receipt(),"__o3OwnerOperation":"preview_evaluate"
+                })
+                .to_string()
+                .into(),
+            ))
+            .await
+            .unwrap();
+    }
+    let mut queued = Vec::new();
+    // Draining the actor queue requires no CDP reply. A gateway that serializes
+    // responses instead of enqueue would stall on the second request here.
+    for _ in 0..16 {
+        let request = tokio::time::timeout(Duration::from_secs(2), exact_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(request.permit.begin());
+        queued.push(request);
+    }
+    for (ordinal, request) in queued.into_iter().enumerate() {
+        let answer = crate::native_page_worker::cdp::Packet::decode(
+            json!({"id":100+ordinal,"result":{"ordinal":ordinal}})
+                .to_string()
+                .as_bytes(),
+            4096,
+        )
+        .unwrap();
+        request.observer.as_ref().unwrap().completed(&answer);
+        request.reply.send(Ok(answer)).ok().unwrap();
+    }
+    let mut ordered = std::collections::BTreeMap::new();
+    for _ in 0..16 {
+        let answer = tokio::time::timeout(Duration::from_secs(2), socket.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap()
+            .into_text()
+            .unwrap();
+        let answer: Value = serde_json::from_str(&answer).unwrap();
+        ordered.insert(
+            answer["id"].as_u64().unwrap(),
+            answer["result"]["ordinal"].as_u64().unwrap(),
+        );
+    }
+    assert_eq!(
+        ordered,
+        (0..16).map(|index| (5 + index, index)).collect(),
+        "actual actor enqueue follows WebSocket production order on a multithread runtime"
+    );
+    page.finish_receipt(fifo).unwrap();
 
     {
         let db = state.db.lock().unwrap();
