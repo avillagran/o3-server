@@ -228,6 +228,9 @@ fn prepare(spec: WorkerSpec) -> io::Result<Prepared> {
 }
 impl Worker {
     pub async fn start(spec: WorkerSpec) -> io::Result<Self> {
+        // Reserve fallible local state before any process exists, so an entropy
+        // error cannot bypass the post-spawn terminal cleanup receipt.
+        let identity = random_identity()?;
         let Prepared {
             spec,
             owner,
@@ -255,7 +258,7 @@ impl Worker {
         let (stop, stop_rx) = watch::channel(false);
         let (cleanup_tx, cleanup) = watch::channel(None);
         let shared = Arc::new(Shared {
-            identity: random_identity()?,
+            identity,
             state: Mutex::new(State {
                 busy: false,
                 next: 1,
