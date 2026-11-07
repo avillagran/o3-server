@@ -41,19 +41,19 @@ async function textModule(name){
  return await import('data:text/javascript;base64,'+bytes.toString('base64'));
 }
 const [dictionary,filler,language,catalog]=await Promise.all(['custom-words.mjs','filler-words.mjs','native-language.mjs','model.mjs'].map(textModule));
-function serviceContext(modelId,options){
+function serviceContext(modelId,options,streaming=false){
  const definition=catalog.getSpeechModel(modelId);if(!definition||!options||Array.isArray(options)||typeof options!=='object')throw Error('Invalid owned service options');
  const intent=catalog.effectiveSpeechLanguage(definition,options.speechLanguage);
- const translate=options.speechTranslateToEnglish&&definition.supportsTranslation&&intent!=='en';
+ const translate=options.speechTranslateToEnglish&&(streaming?(!model.supportsStreaming&&model.supportsTranslation):definition.supportsTranslation)&&intent!=='en';
  const words=dictionary.normalizeSpeechCustomWords(options.speechCustomWords),terms=words.map(word=>word.term);
  const vocabulary=model.supportsVocabulary&&!translate?terms:[];
  const hint=language.nativeSpeechLanguage(model.languages,intent);
  const prepared={timestamps:'none',...(hint?{language:hint}:{}),...(translate?{task:'translate',targetLanguage:'en'}:{}),...(vocabulary.length?{vocabulary}: {})};
  const correct=dictionary.makeSpeechTextCorrector(vocabulary.length?[]:terms,words);
- return {prepared,finalize(text){const corrected=correct(text);return (options.speechRemoveFillerWords?filler.removeSpeechFillerWords(corrected,translate?'en':intent==='auto'?undefined:intent,options.speechCorrectionWord):corrected).trim();}};
+ return {prepared,correct,finalize(text){const corrected=correct(text);return (options.speechRemoveFillerWords?filler.removeSpeechFillerWords(corrected,translate?'en':intent==='auto'?undefined:intent,options.speechCorrectionWord):corrected).trim();}};
 }
 const controller=new AbortController();
-let model,loading,closing;
+let model,loading,closing,streamContext;
 let vad=spec.vad;
 const leases=[];
 async function seal(file){
@@ -127,10 +127,11 @@ async function dispatch(frame){
    if(!model)throw Error('Owned speech model is not loaded');
    if(frame.kind==='service-transcribe'){const context=serviceContext(frame.modelId,frame.options);const raw=await model.transcribe(pcm(frame.pcm),context.prepared,frame.options.speechSilenceFiltering===true,vad?.path);result=context.finalize(raw.text);}
    else if(frame.kind==='transcribe')result=await model.transcribe(pcm(frame.pcm),frame.options,frame.filterSilence===true,vad?.path);
-   else if(frame.kind==='begin')await model.begin(frame.options,frame.filterSilence===true,vad?.path);
-   else if(frame.kind==='feed')result=await model.feed(pcm(frame.pcm));
-   else if(frame.kind==='finish')result=await model.finish();
-   else if(frame.kind==='reset')await model.reset();
+   else if(frame.kind==='service-begin'){const context=serviceContext(frame.modelId,frame.options,true);await model.begin(context.prepared,frame.options.speechSilenceFiltering===true,vad?.path);streamContext=context;}
+   else if(frame.kind==='begin'){await model.begin(frame.options,frame.filterSilence===true,vad?.path);streamContext=undefined;}
+   else if(frame.kind==='feed'){result=await model.feed(pcm(frame.pcm));if(streamContext&&result?.text)result={...result,text:{committed:streamContext.correct(result.text.committed),tentative:streamContext.correct(result.text.tentative)}};}
+   else if(frame.kind==='finish'){const raw=await model.finish();result=streamContext?streamContext.finalize(raw):raw;streamContext=undefined;}
+   else if(frame.kind==='reset'){await model.reset();streamContext=undefined;}
    else throw Error('Unknown owned speech command');
   }
   if(!closing)await send({type:'reply',owner:spec.owner,id,ok:true,result});

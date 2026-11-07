@@ -1,5 +1,6 @@
 //! Native speech coordination. Resource ownership and request authority are separate.
 pub mod silence;
+mod stream;
 use crate::{
     speech_catalog::{self, Model},
     speech_model_store::Store,
@@ -12,6 +13,7 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+pub use stream::Stream;
 use tokio::sync::watch;
 pub type Task<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,6 +98,45 @@ pub trait ModelRuntime: Send + Sync {
             ))
         })
     }
+    fn begin_stream<'a>(
+        &'a self,
+        _model: &'a str,
+        _options: &'a crate::speech_request::TranscriptionOptions,
+    ) -> Task<'a, Result<(), Error>> {
+        Box::pin(async {
+            Err(operation_error(
+                "streaming transcription",
+                "Runtime does not implement streaming",
+            ))
+        })
+    }
+    fn feed_stream<'a>(
+        &'a self,
+        _pcm: &'a crate::speech_kernel::Pcm,
+    ) -> Task<'a, Result<Value, Error>> {
+        Box::pin(async {
+            Err(operation_error(
+                "streaming transcription",
+                "Runtime does not implement streaming",
+            ))
+        })
+    }
+    fn finish_stream(&self) -> Task<'_, Result<String, Error>> {
+        Box::pin(async {
+            Err(operation_error(
+                "streaming transcription",
+                "Runtime does not implement streaming",
+            ))
+        })
+    }
+    fn reset_stream(&self) -> Task<'_, Result<(), Error>> {
+        Box::pin(async {
+            Err(operation_error(
+                "reset stream",
+                "Runtime does not implement streaming",
+            ))
+        })
+    }
     fn infer<'a>(
         &'a self,
         _pcm: &'a crate::speech_kernel::Pcm,
@@ -119,19 +160,93 @@ impl Loaded {
     /// never a decoder for a remote process/model identifier.
     pub fn from_worker(worker: Worker, metadata: Value) -> Self {
         Self {
-            runtime: Arc::new(WorkerModel(worker)),
+            runtime: Arc::new(WorkerModel {
+                worker,
+                stream: Mutex::new(None),
+            }),
             metadata,
         }
     }
 }
-struct WorkerModel(Worker);
+struct WorkerModel {
+    worker: Worker,
+    stream: Mutex<Option<crate::speech_worker::Stream>>,
+}
 impl ModelRuntime for WorkerModel {
     fn bind_vad(&self, file: crate::speech_worker::SealedFile) -> Task<'_, Result<(), Error>> {
         Box::pin(async move {
-            self.0
+            self.worker
                 .bind_vad(file)
                 .await
                 .map_err(|cause| worker_error("VAD binding", cause))
+        })
+    }
+    fn begin_stream<'a>(
+        &'a self,
+        model: &'a str,
+        options: &'a crate::speech_request::TranscriptionOptions,
+    ) -> Task<'a, Result<(), Error>> {
+        Box::pin(async move {
+            let stream = self
+                .worker
+                .begin_options(model, options)
+                .await
+                .map_err(|cause| worker_error("streaming transcription", cause))?;
+            *self.stream.lock().map_err(|_| Error::CleanupUnknown)? = Some(stream);
+            Ok(())
+        })
+    }
+    fn feed_stream<'a>(
+        &'a self,
+        pcm: &'a crate::speech_kernel::Pcm,
+    ) -> Task<'a, Result<Value, Error>> {
+        Box::pin(async move {
+            let stream = self
+                .stream
+                .lock()
+                .map_err(|_| Error::CleanupUnknown)?
+                .ok_or_else(|| {
+                    operation_error("streaming transcription", "Speech stream is not ready.")
+                })?;
+            self.worker
+                .feed(stream, pcm)
+                .await
+                .map_err(|cause| worker_error("streaming transcription", cause))
+        })
+    }
+    fn finish_stream(&self) -> Task<'_, Result<String, Error>> {
+        Box::pin(async move {
+            let stream = self
+                .stream
+                .lock()
+                .map_err(|_| Error::CleanupUnknown)?
+                .ok_or_else(|| {
+                    operation_error("streaming transcription", "Speech stream is not ready.")
+                })?;
+            let value = self
+                .worker
+                .finish(stream)
+                .await
+                .map_err(|cause| worker_error("streaming transcription", cause))?;
+            *self.stream.lock().map_err(|_| Error::CleanupUnknown)? = None;
+            value.as_str().map(str::to_owned).ok_or_else(|| {
+                operation_error("streaming transcription", "Invalid speech stream response.")
+            })
+        })
+    }
+    fn reset_stream(&self) -> Task<'_, Result<(), Error>> {
+        Box::pin(async move {
+            let stream = self
+                .stream
+                .lock()
+                .map_err(|_| Error::CleanupUnknown)?
+                .ok_or_else(|| operation_error("reset stream", "Speech stream is not ready."))?;
+            self.worker
+                .reset(stream)
+                .await
+                .map_err(|cause| worker_error("reset stream", cause))?;
+            *self.stream.lock().map_err(|_| Error::CleanupUnknown)? = None;
+            Ok(())
         })
     }
     fn infer<'a>(
@@ -141,7 +256,7 @@ impl ModelRuntime for WorkerModel {
         options: &'a crate::speech_request::TranscriptionOptions,
     ) -> Task<'a, Result<String, Error>> {
         Box::pin(async move {
-            self.0
+            self.worker
                 .transcribe_options(pcm, model, options)
                 .await
                 .map_err(|cause| worker_error("inference", cause))?
@@ -151,7 +266,7 @@ impl ModelRuntime for WorkerModel {
         })
     }
     fn close(&self) -> Task<'_, Cleanup> {
-        Box::pin(self.0.close())
+        Box::pin(self.worker.close())
     }
 }
 /// The engine implementation owns sealed package/model inputs. No caller URL or
@@ -510,14 +625,11 @@ impl Inner {
     }
     async fn dispose(&self) -> Result<(), Error> {
         let _disposal = self.disposal.lock().await;
-        if self
+        let already_unknown = self
             .state
             .lock()
             .map_err(|_| Error::CleanupUnknown)?
-            .unknown
-        {
-            return Err(Error::CleanupUnknown);
-        }
+            .unknown;
         let model = self
             .state
             .lock()
@@ -533,7 +645,18 @@ impl Inner {
                 return Err(Error::CleanupUnknown);
             }
         }
-        Ok(())
+        if already_unknown {
+            Err(Error::CleanupUnknown)
+        } else {
+            Ok(())
+        }
+    }
+    fn retain_unknown(&self, cause: &Error) {
+        if *cause == Error::CleanupUnknown {
+            if let Ok(mut state) = self.state.lock() {
+                state.unknown = true;
+            }
+        }
     }
 }
 fn operation_error(operation: &'static str, cause: impl std::fmt::Display) -> Error {
@@ -1129,6 +1252,28 @@ impl Inner {
             }
         }
     }
+    async fn bind_optional_vad(
+        &self,
+        loaded: &CachedModel,
+        path: &std::path::Path,
+    ) -> Result<(), Error> {
+        let path = path.to_owned();
+        let file = tokio::task::spawn_blocking(move || {
+            let model = speech_catalog::silero();
+            crate::speech_worker::SealedFile::admit(&path, model.sha256(), model.size())
+        })
+        .await
+        .map_err(|cause| operation_error("VAD binding", cause))?;
+        // VAD is optional in the original native factory. A known sidecar
+        // admission/binding failure falls back to raw audio; uncertain
+        // process cleanup must still fence the resource.
+        if let Ok(file) = file {
+            if loaded.runtime.bind_vad(file).await == Err(Error::CleanupUnknown) {
+                return Err(Error::CleanupUnknown);
+            }
+        }
+        Ok(())
+    }
     async fn infer(
         &self,
         loaded: &CachedModel,
@@ -1143,21 +1288,7 @@ impl Inner {
         }
         let inference = async {
             if let Some(path) = vad {
-                let path = path.to_owned();
-                let file = tokio::task::spawn_blocking(move || {
-                    let model = speech_catalog::silero();
-                    crate::speech_worker::SealedFile::admit(&path, model.sha256(), model.size())
-                })
-                .await
-                .map_err(|cause| operation_error("VAD binding", cause))?;
-                // VAD is optional in the original native factory. A known sidecar
-                // admission/binding failure falls back to raw audio; uncertain
-                // process cleanup must still fence the resource.
-                if let Ok(file) = file {
-                    if loaded.runtime.bind_vad(file).await == Err(Error::CleanupUnknown) {
-                        return Err(Error::CleanupUnknown);
-                    }
-                }
+                self.bind_optional_vad(loaded, path).await?;
             }
             loaded.runtime.infer(pcm, model.id(), options).await
         };
@@ -1253,6 +1384,7 @@ impl Call {
             match first {
                 Ok(text) => Ok(text),
                 Err(cause) => {
+                    inner.retain_unknown(&cause);
                     inner.dispose().await?;
                     if cause == Error::Cancelled || *receiver.borrow() {
                         return Err(Error::Cancelled);
@@ -1280,7 +1412,8 @@ impl Call {
                             &mut receiver,
                         )
                         .await;
-                    if result.is_err() {
+                    if let Err(cause) = &result {
+                        inner.retain_unknown(cause);
                         inner.dispose().await?;
                     }
                     result

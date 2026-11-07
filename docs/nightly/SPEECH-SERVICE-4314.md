@@ -115,8 +115,9 @@ mode; real Worker-backed service cases measure an actual 512 KiB worker stack.
 Seven direct whole-factory protocol regressions also pass from immutable inputs.
 
 This checkpoint still does not implement the entire native SpeechService. Stream
-orchestration and actual State/HTTP/current-session authorization remain before
-public capability exposure. Known sidecar admission/binding failures now leave
+actual State/HTTP/current-session authorization remain before public capability
+exposure. Scoped stream orchestration is implemented by the subsequent checkpoint
+below. Known sidecar admission/binding failures now leave
 raw-audio inference available; unknown cleanup still refuses reuse. Real late-VAD
 failure acceptance remains distinct from the synthetic factory observations. No real Silero model or
 VAD inference has been acquired or claimed yet. Those remaining consumers are
@@ -155,3 +156,47 @@ reservation until scope release, and unfinished scope reset retains the engine.
 The third new trace defines installed-receipt validation before cache reuse.
 These stream traces are native expected behavior, not a claim that Rust stream
 orchestration is already connected.
+
+## Scoped native streams
+
+`Call::start_stream` now owns a scope reservation before reading settings, as in
+whole `SpeechService.ts` lines 680–869. The returned handle keeps that reservation
+through `finish`; explicit close or the last handle's drop releases it. Each
+request is owned by the actor even if its waiter disappears. Concurrent methods
+fail with the native streaming-operation error instead of queuing unlimited work.
+The actor can still observe scope cancellation while a feed is pending.
+
+Each accepted PCM chunk is at most 64,000 bytes. Validated PCM is retained before
+native feed, including the chunk which may fail, with a total limit of 19,200,000
+bytes. Automatic GPU inference failure can dispose the old group and replay those
+chunks once on CPU. The source-pinned revision base preserves observed updates
+1, 3 and 4 across that restart; it does not invent consecutive revisions. Explicit
+CPU placement is not retried. Known scope reset retains a cached engine; otherwise
+the exact owned engine is fenced and reaped. Reset uses the native 2,500 ms budget,
+including up to one second to settle an in-flight request, followed by the
+independent process cleanup receipt. Unknown outcomes never permit CPU retry or
+become known merely because an owned handle later closes successfully.
+
+The Worker runs the same original text helpers for live correction and final
+filler removal. Streaming translation uses the actual loaded model's streaming
+and translation capabilities, matching the native branch, rather than the
+buffered definition-only translation branch. The native factory and audio kernel
+remain unchanged. Optional VAD binding is reapplied to a replacement CPU worker.
+
+The immutable private acceptance passes nineteen service cases, ten Worker cases
+and one error case in each feature mode, plus targeted strict checks in both.
+Whole-factory physical cases prove GPU replay/revisions, finished-scope ownership,
+reset retaining the same live engine, hung-feed cancellation with pidfd exit, and
+300 real 64,000-byte transport feeds reaching the exact recording budget. GPU and
+ASR backends in those cases are explicitly synthetic. The initial two fixture
+failures were retained: a single sample cannot reach the unchanged 512-sample ASR
+frame boundary. Corrected physical inputs use an actual frame; no kernel patch or
+timeout increase was made.
+
+A separate actual transcribe-cpp 0.4.1 CPU acceptance uses the previously verified
+catalog Moonshine Tiny model, actual LocalStore and WorkerEngine, and one second
+of synthetic silent PCM in both buffered and scoped-stream modes. It records
+transcript byte lengths only (three bytes in this receipt), not accuracy. There
+is no microphone, real GPU, real Silero inference, new engine cache, live profile,
+HTTP route, or capability activation in these observations. Real-model maximum
+recording-duration performance and total peak-memory bounds remain unclaimed.

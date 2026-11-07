@@ -17,7 +17,7 @@ export const TranscribeModel={load:async(model,placement)=>{
  };
 
  if(mode==='fallback'&&placement.backend!=='cpu')throw Error('Synthetic automatic backend failure');
- return {backend:mode==='gpu-inference'&&placement.backend!=='cpu'?'fixture-gpu':'cpu',capabilities:{supportsStreaming:mode==='stream',languages:['en-US',17,'de-DE'],supportsTranslate:true,maxAudioMs:0},supports:feature=>feature==='long_form'||feature==='vocabulary',
+ return {backend:(mode==='gpu-inference'||mode==='gpu-stream')&&placement.backend!=='cpu'?'fixture-gpu':'cpu',capabilities:{supportsStreaming:mode==='stream'||mode==='gpu-stream'||mode==='stream-hang',languages:mode==='gpu-stream'?['en']:['en-US',17,'de-DE'],supportsTranslate:true,maxAudioMs:0},supports:feature=>feature==='long_form'||feature==='vocabulary',
  transcribe:async(pcm,options)=>{
   record({kind:'transcribe',mode,length:pcm.length,language:options.language,options});
   if(mode==='gpu-inference'&&placement.backend!=='cpu')throw Error('Synthetic GPU inference failed');
@@ -29,8 +29,11 @@ export const TranscribeModel={load:async(model,placement)=>{
   return {text:JSON.stringify({length:pcm.length,bytes:pcm.byteLength,first:pcm[0],last:pcm[pcm.length-1],options})};
  },
  createSession:()=>({dispose(){record({kind:'session-dispose'});},stream:async options=>{
-  const text={full:'',committed:'',tentative:''};
-  return {text,feed:async pcm=>{text.full=text.committed=options.language+':'+pcm[0];record({kind:'feed',language:options.language});return {committedChanged:true,tentativeChanged:false};},finalize:async()=>{},reset(){}};
+  let step=0;const text={full:'',committed:'',tentative:''};
+  return {text,feed:async pcm=>{
+   if(mode==='stream-hang'){fs.writeFileSync(path.join(process.env.HOME,'entered.staging'),String(process.pid));fs.renameSync(path.join(process.env.HOME,'entered.staging'),path.join(process.env.HOME,'entered'));while(true){}}
+   if(mode==='gpu-stream'){record({kind:'feed',backend:placement.backend,length:pcm.length});if(placement.backend!=='cpu'&&step===1)throw Error('Synthetic native stream feed failed');step++;text.full=text.committed='oh three '+step;text.tentative='um';return {committedChanged:true,tentativeChanged:true};}
+   text.full=text.committed=options.language+':'+pcm[0];record({kind:'feed',language:options.language});return {committedChanged:true,tentativeChanged:false};},finalize:async()=>{if(mode==='gpu-stream')text.full='um oh three';},reset(){record({kind:'stream-reset'});}};
  }})};
 }};
 

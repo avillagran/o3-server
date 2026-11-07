@@ -933,3 +933,184 @@ async fn cached_engine_requires_a_current_installed_model_receipt() {
     );
     service.shutdown().await.unwrap();
 }
+
+#[test]
+fn actual_stream_cpu_replay_revisions_and_scope_reservation_match_native() {
+    if process::fresh("actual_stream_cpu_replay_revisions_and_scope_reservation_match_native") {
+        return;
+    }
+    process::runtime().block_on(async {tokio::spawn(async {
+        process::assert_stack();
+        let golden:Value=serde_json::from_str(include_str!("fixtures/speech-service-stream-4314.json")).unwrap();
+        let trace=golden["cases"].as_array().unwrap().iter().find(|case|case["name"]=="stream-native-cpu-replay-revision-and-reservation").unwrap();
+        let (_unused,authority,memory,_)=fixture();authority.snapshot.lock().unwrap().acceleration="auto".into();
+        let engine=process::Engine::new("gpu-stream");
+        let service=candidate::Service::new(Arc::new(Store::new(memory.clone(),memory)),engine.clone(),Arc::new(candidate::WallClock),None);
+        let call=service.bind(authority);
+        let options=o3_server::speech_request::TranscriptionOptions::decode(json!({"speechLanguage":"en","speechTranslateToEnglish":false,"speechRemoveFillerWords":true,"speechCustomWords":[{"term":"O3","aliases":["oh three"]}],"speechSilenceFiltering":false})).unwrap();
+        let stream=call.start_stream(options).await.unwrap();
+        assert!(matches!(call.prepare().await,Err(Error::Busy{..})));
+        for index in 1..=3 {assert_eq!(stream.feed([0.25f32.to_le_bytes();512].concat()).await.unwrap(),trace["observations"][index]["value"]);}
+        assert_eq!(json!(stream.finish().await.unwrap()),trace["observations"][4]["value"]);
+        assert!(matches!(stream.feed([0.25f32.to_le_bytes();512].concat()).await,Err(Error::Operation{operation:"streaming transcription",..})));
+        assert!(matches!(call.prepare().await,Err(Error::Busy{..})));
+        stream.close().await.unwrap();
+        call.prepare().await.unwrap();
+        assert_eq!(engine.placements(),vec!["auto","cpu"]);
+        assert_eq!(engine.events().iter().filter(|event|event["kind"]=="feed").count(),5);
+        service.shutdown().await.unwrap();
+    }).await.unwrap();});
+}
+#[test]
+fn actual_unfinished_stream_reset_retains_engine_and_invalid_chunks_are_recoverable() {
+    if process::fresh(
+        "actual_unfinished_stream_reset_retains_engine_and_invalid_chunks_are_recoverable",
+    ) {
+        return;
+    }
+    process::runtime().block_on(async {tokio::spawn(async {
+        process::assert_stack();let (_unused,authority,memory,_)=fixture();let engine=process::Engine::new("stream");
+        let service=candidate::Service::new(Arc::new(Store::new(memory.clone(),memory)),engine.clone(),Arc::new(candidate::WallClock),None);
+        let call=service.bind(authority);
+        let options=o3_server::speech_request::TranscriptionOptions::decode(json!({"speechLanguage":"en","speechTranslateToEnglish":false,"speechRemoveFillerWords":false,"speechCustomWords":[],"speechSilenceFiltering":false})).unwrap();
+        let stream=call.start_stream(options).await.unwrap();
+        for bytes in [vec![],vec![0;3],vec![0;64_004]] {assert!(matches!(stream.feed(bytes).await,Err(Error::InvalidAudio{..})));}
+        assert_eq!(stream.feed(0.25f32.to_le_bytes().to_vec()).await.unwrap()["revision"],1);
+        let pid=engine.events().iter().find(|event|event["kind"]=="load").unwrap()["pid"].as_u64().unwrap() as u32;
+        let exit=process::exit(pid);
+        stream.close().await.unwrap();
+        call.prepare().await.unwrap();
+        assert_eq!(engine.placements(),vec!["cpu"]);
+        assert_eq!(engine.events().iter().filter(|event|event["kind"]=="stream-reset").count(),1);
+        assert!(tokio::time::timeout(std::time::Duration::from_millis(10),exit.readable()).await.is_err());
+        service.shutdown().await.unwrap();
+        let _exit=tokio::time::timeout(std::time::Duration::from_secs(2),exit.readable()).await.unwrap().unwrap();
+    }).await.unwrap();});
+}
+#[test]
+fn actual_hung_stream_scope_close_fences_the_owned_worker_and_releases_permit() {
+    if process::fresh("actual_hung_stream_scope_close_fences_the_owned_worker_and_releases_permit")
+    {
+        return;
+    }
+    process::runtime().block_on(async {tokio::spawn(async {
+        process::assert_stack();let (_unused,authority,memory,_)=fixture();let engine=process::Engine::new("stream-hang");
+        let service=candidate::Service::new(Arc::new(Store::new(memory.clone(),memory)),engine.clone(),Arc::new(candidate::WallClock),None);
+        let call=service.bind(authority);
+        let options=o3_server::speech_request::TranscriptionOptions::decode(json!({"speechLanguage":"en","speechTranslateToEnglish":false,"speechRemoveFillerWords":false,"speechCustomWords":[],"speechSilenceFiltering":false})).unwrap();
+        let stream=call.start_stream(options).await.unwrap();let feeding=stream.clone();
+        let caller=tokio::spawn(async move {feeding.feed([0.25f32.to_le_bytes();512].concat()).await});
+        let pid=engine.entered().await;let exit=process::exit(pid);
+        assert!(matches!(stream.feed(0.25f32.to_le_bytes().to_vec()).await,Err(Error::Operation{..})));
+        tokio::time::timeout(std::time::Duration::from_millis(5000),stream.close()).await.unwrap().unwrap();
+        assert!(caller.await.unwrap().is_err());
+        let _exit=tokio::time::timeout(std::time::Duration::from_secs(2),exit.readable()).await.unwrap().unwrap();
+        call.prepare().await.unwrap();assert_eq!(engine.placements().len(),2);
+        service.shutdown().await.unwrap();
+    }).await.unwrap();});
+}
+
+#[test]
+fn actual_stream_retains_at_most_native_recording_budget() {
+    if process::fresh("actual_stream_retains_at_most_native_recording_budget") {
+        return;
+    }
+    process::runtime().block_on(async {tokio::spawn(async {
+        process::assert_stack();let (_unused,authority,memory,_)=fixture();let engine=process::Engine::new("stream");
+        let service=candidate::Service::new(Arc::new(Store::new(memory.clone(),memory)),engine,Arc::new(candidate::WallClock),None);
+        let options=o3_server::speech_request::TranscriptionOptions::decode(json!({"speechLanguage":"en","speechTranslateToEnglish":false,"speechRemoveFillerWords":false,"speechCustomWords":[],"speechSilenceFiltering":false})).unwrap();
+        let stream=service.bind(authority).start_stream(options).await.unwrap();
+        for _ in 0..300 {stream.feed(vec![0;64_000]).await.unwrap();}
+        assert_eq!(stream.feed(vec![0;4]).await,Err(Error::InvalidAudio{byte_length:4,message:"Speech stream audio limit exceeded."}));
+        stream.finish().await.unwrap();stream.close().await.unwrap();service.shutdown().await.unwrap();
+    }).await.unwrap();});
+}
+
+struct UncertainInferenceRuntime(Arc<std::sync::atomic::AtomicUsize>);
+impl candidate::ModelRuntime for UncertainInferenceRuntime {
+    fn close(&self) -> Task<'_, speech_worker::Cleanup> {
+        Box::pin(async {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            speech_worker::Cleanup::Confirmed { graceful: false }
+        })
+    }
+    fn infer<'a>(
+        &'a self,
+        _: &'a o3_server::speech_kernel::Pcm,
+        _: &'a str,
+        _: &'a o3_server::speech_request::TranscriptionOptions,
+    ) -> Task<'a, Result<String, Error>> {
+        Box::pin(async { Err(Error::CleanupUnknown) })
+    }
+    fn begin_stream<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a o3_server::speech_request::TranscriptionOptions,
+    ) -> Task<'a, Result<(), Error>> {
+        Box::pin(async { Err(Error::CleanupUnknown) })
+    }
+}
+struct UncertainInferenceEngine {
+    loads: std::sync::atomic::AtomicUsize,
+    closes: Arc<std::sync::atomic::AtomicUsize>,
+}
+impl Engine for UncertainInferenceEngine {
+    fn load<'a>(
+        &'a self,
+        _: &'a speech_catalog::Model,
+        _: &'a Path,
+        _: &'a str,
+    ) -> Task<'a, Result<Loaded, Error>> {
+        Box::pin(async {
+            self.loads.fetch_add(1, Ordering::SeqCst);
+            Ok(Loaded {
+                runtime: Arc::new(UncertainInferenceRuntime(self.closes.clone())),
+                metadata: json!({"backend":"fixture-gpu","supportsStreaming":true,"supportsLongForm":true}),
+            })
+        })
+    }
+    fn devices(&self) -> Task<'_, Result<Value, Error>> {
+        Box::pin(async { Ok(json!([])) })
+    }
+}
+#[tokio::test]
+async fn uncertain_runtime_outcomes_never_retry_or_clear_ownership_claims() {
+    sandbox::assert_isolated();
+    for stream in [false, true] {
+        let (_unused, authority, memory, _) = fixture();
+        authority.snapshot.lock().unwrap().acceleration = "auto".into();
+        let closes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let engine = Arc::new(UncertainInferenceEngine {
+            loads: std::sync::atomic::AtomicUsize::new(0),
+            closes: closes.clone(),
+        });
+        let service = candidate::Service::new(
+            Arc::new(Store::new(memory.clone(), memory)),
+            engine.clone(),
+            Arc::new(candidate::WallClock),
+            None,
+        );
+        let call = service.bind(authority);
+        let options=o3_server::speech_request::TranscriptionOptions::decode(json!({"speechLanguage":"en","speechTranslateToEnglish":false,"speechRemoveFillerWords":false,"speechCustomWords":[],"speechSilenceFiltering":false})).unwrap();
+        if stream {
+            assert!(matches!(
+                call.start_stream(options).await,
+                Err(Error::CleanupUnknown)
+            ));
+        } else {
+            assert_eq!(
+                call.transcribe(0.25f32.to_le_bytes().to_vec(), options)
+                    .await,
+                Err(Error::CleanupUnknown)
+            );
+        }
+        assert_eq!(call.prepare().await, Err(Error::CleanupUnknown));
+        assert_eq!(service.shutdown().await, Err(Error::CleanupUnknown));
+        assert_eq!(engine.loads.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            closes.load(Ordering::SeqCst),
+            1,
+            "an owned handle is still closed, without erasing the earlier uncertainty"
+        );
+    }
+}

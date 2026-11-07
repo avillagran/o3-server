@@ -512,6 +512,28 @@ impl Worker {
         self.request(||json!({"kind":"service-transcribe","pcm":base64::engine::general_purpose::STANDARD.encode(pcm.samples().iter().flat_map(|value|value.to_le_bytes()).collect::<Vec<_>>()),"modelId":model_id,"options":options.as_value()}),None,false,false,false).await.map(|value|value.0)
     }
 
+    pub async fn begin_options(
+        &self,
+        model_id: &str,
+        options: &crate::speech_request::TranscriptionOptions,
+    ) -> Result<Stream, Error> {
+        if crate::speech_catalog::get(model_id).is_none() {
+            return Err(Error::InvalidInput);
+        }
+        self.request(
+            || json!({"kind":"service-begin","modelId":model_id,"options":options.as_value()}),
+            None,
+            true,
+            false,
+            false,
+        )
+        .await
+        .map(|result| Stream {
+            generation: result.1,
+            worker: self.shared.identity,
+        })
+    }
+
     pub async fn begin(&self, options: Value, filter_silence: bool) -> Result<Stream, Error> {
         self.request(
             || json!({"kind":"begin","options":options,"filterSilence":filter_silence}),
