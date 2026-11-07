@@ -8,6 +8,8 @@ mod desktop_auth;
 pub mod desktop_bootstrap;
 pub mod desktop_bootstrap_fd;
 pub mod desktop_bootstrap_grant;
+pub mod desktop_browser;
+pub mod desktop_browser_channel;
 pub mod desktop_startup;
 pub mod http;
 mod mcp;

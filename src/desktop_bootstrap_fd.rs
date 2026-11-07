@@ -45,6 +45,21 @@ fn unavailable(error: &std::io::Error) -> bool {
 }
 
 #[cfg(unix)]
+pub(crate) fn close_on_exec(fd: i32) -> std::io::Result<()> {
+    // SAFETY: these fcntl operations only query/update flags on the supplied descriptor.
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+    if flags < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    // Inherited launcher descriptors must stay in this process, including when a
+    // regular-file bootstrap is reopened without advancing the original offset.
+    if unsafe { libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC) } < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
 fn read_blocking(fd: i32, timeout: Duration) -> Result<Option<Envelope>, Error> {
     use std::os::fd::{AsRawFd, FromRawFd};
     let error = |stage| Error { fd, stage };
@@ -62,6 +77,7 @@ fn read_blocking(fd: i32, timeout: Duration) -> Result<Option<Envelope>, Error> 
             Err(error(Stage::Stat))
         };
     }
+    close_on_exec(fd).map_err(|_| error(Stage::Open))?;
     let directory = if cfg!(target_os = "linux") {
         "/proc/self/fd"
     } else {
@@ -148,6 +164,49 @@ mod tests {
     use super::*;
     use serde_json::{json, Value};
     use std::os::fd::{AsRawFd, IntoRawFd};
+
+    #[tokio::test]
+    async fn original_bootstrap_file_stays_open_but_is_not_inherited_by_subprocesses() {
+        use std::os::unix::fs::MetadataExt;
+        crate::test_sandbox::assert_isolated();
+        let mut nonce = [0u8; 16];
+        getrandom::fill(&mut nonce).unwrap();
+        let path = std::env::temp_dir().join(format!(
+            "o3-bootstrap-private-{:032x}",
+            u128::from_ne_bytes(nonce)
+        ));
+        std::fs::write(&path,serde_json::json!({"mode":"desktop","noBrowser":true,"port":3773,"host":"127.0.0.1","desktopBootstrapToken":"synthetic-private-seed","tailscaleServeEnabled":false,"tailscaleServePort":443}).to_string()).unwrap();
+        let file = std::fs::File::open(&path).unwrap();
+        let fd = file.as_raw_fd();
+        let metadata = file.metadata().unwrap();
+        // SAFETY: this is our private fixture's descriptor; simulate the inherited launcher state.
+        let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+        assert!(flags >= 0);
+        assert_eq!(
+            unsafe { libc::fcntl(fd, libc::F_SETFD, flags & !libc::FD_CLOEXEC) },
+            0
+        );
+        let probe = || {
+            std::process::Command::new("python3").args(["-c", "import os,sys\ntry:\n s=os.fstat(int(sys.argv[1]))\nexcept OSError as error:\n sys.exit(0 if error.errno==9 else 2)\nsys.exit(1 if (s.st_dev,s.st_ino)==(int(sys.argv[2]),int(sys.argv[3])) else 0)"])
+            .args([fd.to_string(),metadata.dev().to_string(),metadata.ino().to_string()]).status().unwrap().code()
+        };
+        assert_eq!(
+            probe(),
+            Some(1),
+            "fixture did not reproduce inherited input"
+        );
+        assert!(read(fd, Duration::from_secs(1)).await.unwrap().is_some());
+        assert!(
+            file.metadata().is_ok(),
+            "launcher descriptor must remain open in the server"
+        );
+        assert_eq!(
+            probe(),
+            Some(0),
+            "subprocess inherited private launcher input"
+        );
+        std::fs::remove_file(path).unwrap();
+    }
 
     #[tokio::test]
     async fn native_descriptor_reader_oracle() {
