@@ -1,3 +1,5 @@
+#[path = "support/worktree_removal.rs"]
+pub mod retained_worktrees;
 mod support;
 use serde_json::json;
 use std::{
@@ -6,7 +8,7 @@ use std::{
 };
 #[test]
 fn cleanup_does_not_hold_database_while_git_is_slow() {
-    let s = support::start(|_| {});
+    let s = start_recording_cleanup(|_| {});
     let root = s.dir.join("repo");
     let tree = s.dir.join("tree");
     let bin = s.dir.join("bin");
@@ -57,4 +59,13 @@ fn cleanup_does_not_hold_database_while_git_is_slow() {
     assert!(before.elapsed() < Duration::from_millis(500));
     worker.join().unwrap();
     assert!(tree.exists());
+}
+
+fn start_recording_cleanup(
+    configure: impl FnOnce(&std::sync::Arc<o3_server::store::State>),
+) -> support::Server {
+    support::start(|state| {
+        retained_worktrees::RetainingExecutor::install(state);
+        configure(state);
+    })
 }

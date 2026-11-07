@@ -287,20 +287,32 @@ async fn rollback(s: &State, root: &Path, path: &Path, branch: &str) -> Result<(
                 .any(|l| l == format!("branch refs/heads/{branch}"))
     });
     if owned {
-        git(
-            root,
-            &[
-                "worktree",
-                "remove",
-                "--force",
-                "--",
-                path.to_str().unwrap(),
-            ],
-            Opts::WRITE,
-        )
-        .await?;
+        if let Some(executor) = s.worktree_removal.executor() {
+            executor
+                .execute(&crate::worktree_removal::Plan::worktree(root, path, true))
+                .map_err(|error| operation(&error))?;
+        } else {
+            git(
+                root,
+                &[
+                    "worktree",
+                    "remove",
+                    "--force",
+                    "--",
+                    path.to_str().unwrap(),
+                ],
+                Opts::WRITE,
+            )
+            .await?;
+        }
     }
-    git(root, &["branch", "-D", "--", branch], Opts::WRITE).await?;
+    if let Some(executor) = s.worktree_removal.executor() {
+        executor
+            .execute(&crate::worktree_removal::Plan::branch(root, branch))
+            .map_err(|error| operation(&error))?;
+    } else {
+        git(root, &["branch", "-D", "--", branch], Opts::WRITE).await?;
+    }
     Ok(())
 }
 

@@ -893,15 +893,25 @@ async fn cleanup(s: &State, id: &str, cancellation: bool) -> Result<()> {
         return Ok(());
     }
     if Path::new(&path).exists() {
-        let out = proc::git(
-            Path::new(&root),
-            &["worktree", "remove", "--force", "--", &path],
-            Opts::WRITE,
-        )
-        .await
-        .map_err(|e| format!("Cleanup failed: {e:?}"))?;
-        if !out.ok() {
-            return Err(format!("Checkout cleanup failed: {}", out.stderr));
+        if let Some(executor) = s.worktree_removal.executor() {
+            executor
+                .execute(&crate::worktree_removal::Plan::worktree(
+                    Path::new(&root),
+                    Path::new(&path),
+                    true,
+                ))
+                .map_err(|error| format!("Cleanup failed: {error}"))?;
+        } else {
+            let out = proc::git(
+                Path::new(&root),
+                &["worktree", "remove", "--force", "--", &path],
+                Opts::WRITE,
+            )
+            .await
+            .map_err(|e| format!("Cleanup failed: {e:?}"))?;
+            if !out.ok() {
+                return Err(format!("Checkout cleanup failed: {}", out.stderr));
+            }
         }
     }
     if let Some(branch) = branch {
@@ -924,15 +934,24 @@ async fn cleanup(s: &State, id: &str, cancellation: bool) -> Result<()> {
                     exists.stderr
                 ));
             }
-            let out = proc::git(
-                Path::new(&root),
-                &["branch", "-D", "--", &branch],
-                Opts::WRITE,
-            )
-            .await
-            .map_err(|e| format!("Branch cleanup failed: {e:?}"))?;
-            if !out.ok() {
-                return Err(format!("Branch cleanup failed: {}", out.stderr));
+            if let Some(executor) = s.worktree_removal.executor() {
+                executor
+                    .execute(&crate::worktree_removal::Plan::branch(
+                        Path::new(&root),
+                        &branch,
+                    ))
+                    .map_err(|error| format!("Branch cleanup failed: {error}"))?;
+            } else {
+                let out = proc::git(
+                    Path::new(&root),
+                    &["branch", "-D", "--", &branch],
+                    Opts::WRITE,
+                )
+                .await
+                .map_err(|e| format!("Branch cleanup failed: {e:?}"))?;
+                if !out.ok() {
+                    return Err(format!("Branch cleanup failed: {}", out.stderr));
+                }
             }
         }
     }

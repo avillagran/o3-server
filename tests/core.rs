@@ -1,3 +1,5 @@
+#[path = "support/worktree_removal.rs"]
+pub mod retained_worktrees;
 mod support;
 #[path = "support/wire.rs"]
 mod wire;
@@ -229,7 +231,12 @@ fn worktree_and_reuse_launch() {
         "-qm",
         "fixture",
     ]);
-    let server = support::start(|_| {});
+    let server = support::start(|state| {
+        retained_worktrees::RetainingExecutor::install_with_roots(
+            state,
+            vec![state.dir.clone(), root.clone()],
+        );
+    });
     let s = server.state.clone();
     o3_server::events::mutate_project(&s,&json!({"type":"project.create","commandId":"p","projectId":"p","title":"Project","workspaceRoot":root})).unwrap();
     let mut p = json!({"commandId":"launch","threadId":"t","projectId":"p","title":"Thread","modelSelection":{"instanceId":"codex","model":"test"},"runtimeMode":"full-access","interactionMode":"default","workspaceStrategy":{"type":"worktree","baseRef":"HEAD","branch":"fixture-branch"}});

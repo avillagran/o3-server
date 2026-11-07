@@ -6,6 +6,7 @@ pub struct Prepared {
     pub path: Value,
     pub branch: Value,
     owned: Option<(PathBuf, PathBuf, Option<String>)>,
+    removal: crate::worktree_removal::Registry,
 }
 impl Prepared {
     pub fn is_owned(&self) -> bool {
@@ -17,16 +18,21 @@ impl Prepared {
     pub fn rollback(&mut self) -> Result<(), String> {
         if let Some((root, path, branch)) = self.owned.take() {
             if path.exists() {
-                git(
-                    &root,
-                    &[
-                        "worktree",
-                        "remove",
-                        "--force",
-                        "--",
-                        path.to_str().ok_or("invalid path")?,
-                    ],
-                )?;
+                if let Some(executor) = self.removal.executor() {
+                    executor
+                        .execute(&crate::worktree_removal::Plan::worktree(&root, &path, true))?;
+                } else {
+                    git(
+                        &root,
+                        &[
+                            "worktree",
+                            "remove",
+                            "--force",
+                            "--",
+                            path.to_str().ok_or("invalid path")?,
+                        ],
+                    )?;
+                }
             }
             if let Some(branch) = branch {
                 // Only a branch absent before this preparation can be owned here.
@@ -36,7 +42,11 @@ impl Prepared {
                 )
                 .is_ok()
                 {
-                    git(&root, &["branch", "-D", "--", &branch])?;
+                    if let Some(executor) = self.removal.executor() {
+                        executor.execute(&crate::worktree_removal::Plan::branch(&root, &branch))?;
+                    } else {
+                        git(&root, &["branch", "-D", "--", &branch])?;
+                    }
                 }
             }
         }
@@ -51,6 +61,7 @@ pub fn prepare(s: &State, p: &Value, tid: &str) -> Result<Prepared, String> {
             path: Value::Null,
             branch,
             owned: None,
+            removal: s.worktree_removal.clone(),
         }),
         Some("existing_worktree") => {
             let path = strategy["worktreePath"]
@@ -62,6 +73,7 @@ pub fn prepare(s: &State, p: &Value, tid: &str) -> Result<Prepared, String> {
                 path: serde_json::json!(path),
                 branch,
                 owned: None,
+                removal: s.worktree_removal.clone(),
             })
         }
         Some("worktree") => {
@@ -96,6 +108,7 @@ pub fn prepare(s: &State, p: &Value, tid: &str) -> Result<Prepared, String> {
                     path: serde_json::json!(path),
                     branch,
                     owned: None,
+                    removal: s.worktree_removal.clone(),
                 });
             }
             let base = if strategy["startFromOrigin"] == true {
@@ -113,6 +126,7 @@ pub fn prepare(s: &State, p: &Value, tid: &str) -> Result<Prepared, String> {
                 path: serde_json::json!(path),
                 branch: branch.clone(),
                 owned: Some((root.clone(), path.clone(), owned_branch)),
+                removal: s.worktree_removal.clone(),
             };
             let result = if let Some(branch) = branch.as_str() {
                 git(

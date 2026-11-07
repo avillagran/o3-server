@@ -161,7 +161,11 @@ pub(crate) fn worktrees(s: &State, settings: &Value) -> Result<Vec<Value>, Strin
             args.push("--force");
         }
         args.extend(["--", path.to_str().ok_or("invalid path")?]);
-        let removed = git(&root, &args).is_some();
+        let plan = crate::worktree_removal::Plan::worktree(&root, &path, keep != "any-local-files");
+        let removed = match s.worktree_removal.executor() {
+            Some(executor) => executor.execute(&plan).is_ok(),
+            None => git(&root, &args).is_some(),
+        };
         entries.push(json!({"kind":"worktree","outcome":if removed{"removed"}else{"failed"},"reason":"cleanup policy","path":path,"projectPath":root,"threadId":tid,"threadTitle":t["title"],"bytes":0,"files":0}));
         if removed {
             let mut db = s.db.lock().unwrap();

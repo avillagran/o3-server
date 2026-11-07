@@ -1,3 +1,5 @@
+#[path = "support/worktree_removal.rs"]
+mod retained_worktrees;
 mod support;
 use o3_server::provider::{Provider, ProviderControl, ProviderEvent, RunInput};
 use serde_json::{json, Value};
@@ -63,6 +65,7 @@ struct Fixture {
     s: support::Server,
     c: Connection,
     root: PathBuf,
+    removal: std::sync::Arc<retained_worktrees::RetainingExecutor>,
     claude: Arc<o3_server::claude::ClaudeProvider>,
     codex: Arc<o3_server::codex::CodexProvider>,
 }
@@ -87,7 +90,10 @@ impl Fixture {
         let peer = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/workspace-peer.py");
         let claude = Arc::new(o3_server::claude::ClaudeProvider::new(peer.clone()));
         let codex = Arc::new(o3_server::codex::CodexProvider::new(peer, None));
+        let installed = Arc::new(std::sync::Mutex::new(None));
+        let configure = installed.clone();
         let s = support::start(|s| {
+            *configure.lock().unwrap() = Some(retained_worktrees::RetainingExecutor::install(s));
             s.streams.terminals.set_shell("/bin/sh");
             std::fs::write(s.dir.join("settings.json"),json!({"enableAgentBrowserAccess":false,"newWorktreesStartFromOrigin":false,"worktreesDirectory":s.dir.join("managed"),"defaultProjectScripts":[{"id":"install","name":"Install","icon":"configure","command":script,"runOnWorktreeCreate":true,"async":!sync}]}).to_string()).unwrap();
             *s.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::Providers {
@@ -103,10 +109,12 @@ impl Fixture {
         git(&root, &["commit", "-m", "initial"]);
         let c = s.connect();
         c.rpc("projects.mutate",json!({"type":"project.create","commandId":"p","projectId":"p","title":"p","workspaceRoot":root})).unwrap();
+        let removal = installed.lock().unwrap().clone().unwrap();
         Self {
             s,
             c,
             root,
+            removal,
             claude,
             codex,
         }
@@ -254,6 +262,7 @@ fn cancelled_setup_reaps_daemon_rolls_back_owned_checkout_and_allows_retry() {
     );
     assert!(!Path::new(&format!("/proc/{daemon}")).exists());
     assert!(!work.exists());
+    f.removal.assert_retained_worktree(&work);
     assert_eq!(f.read()["runs"][0]["status"], "failed");
     assert!(f.read()["providerTurns"].as_array().unwrap().is_empty());
     assert_eq!(
@@ -445,6 +454,7 @@ fn temporary_branch_names_follow_naming_policy_and_cancel_removes_the_renamed_re
             json!({"cancelled":true})
         );
         assert!(!work.exists());
+        f.removal.assert_retained_worktree(&work);
         assert!(!std::process::Command::new("git")
             .current_dir(&f.root)
             .args([
@@ -497,6 +507,7 @@ fn rename_metadata_failure_still_cleans_the_physically_renamed_owned_branch() {
         json!({"cancelled":true})
     );
     assert!(!work.exists());
+    f.removal.assert_retained_worktree(&work);
     for branch in [original.as_str(), "feature/recover-rename"] {
         assert!(!std::process::Command::new("git")
             .current_dir(&f.root)

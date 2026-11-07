@@ -1,3 +1,5 @@
+#[path = "support/worktree_removal.rs"]
+mod retained_worktrees;
 mod support;
 use serde_json::json;
 use std::{path::Path, process::Command};
@@ -13,7 +15,12 @@ fn git(root: &Path, args: &[&str]) {
 }
 #[test]
 fn real_storage_writers_drive_collection_and_preserve_unsafe_worktrees() {
-    let s = support::start(|_| {});
+    let recorder = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let configure = recorder.clone();
+    let s = support::start(move |state| {
+        *configure.lock().unwrap() = Some(retained_worktrees::RetainingExecutor::install(state));
+    });
+    let removal = recorder.lock().unwrap().clone().unwrap();
     let c = s.connect();
     let root = s.dir.join("repo");
     std::fs::create_dir_all(&root).unwrap();
@@ -152,7 +159,11 @@ fn real_storage_writers_drive_collection_and_preserve_unsafe_worktrees() {
     );
     assert!(Path::new(&path("clean")).is_dir());
     drop(guard);
+    let clean_path = std::path::PathBuf::from(path("clean"));
+    let deleted_path = std::path::PathBuf::from(path("deleted"));
     let report = c.rpc("server.runStorageCleanup", json!({})).unwrap();
+    removal.assert_retained_worktree(&clean_path);
+    removal.assert_retained_worktree(&deleted_path);
     assert_eq!(report["counts"]["removed"], 2); // clean and deleted; log/browser files were collected in the first pass
     for id in ["clean", "deleted"] {
         let p = t3_protocol::api::orchestration::thread_projection(&c, id).unwrap();
@@ -176,6 +187,7 @@ fn real_storage_writers_drive_collection_and_preserve_unsafe_worktrees() {
     ] {
         assert!(Path::new(&path(id)).is_dir(), "{id}");
     }
+    let untracked_path = std::path::PathBuf::from(path("untracked"));
     let patch = t3_protocol::storage_settings::patch(
         &json!({"key":"storageCleanup.worktreeKeepWhen","value":"tracked-changes"}),
     )
@@ -183,6 +195,17 @@ fn real_storage_writers_drive_collection_and_preserve_unsafe_worktrees() {
     c.rpc("server.updateSettings", patch).unwrap();
     let report = c.rpc("server.runStorageCleanup", json!({})).unwrap();
     assert_eq!(report["counts"]["removed"], 1);
+    removal.assert_retained_worktree(&untracked_path);
+    let retained = removal.retained.lock().unwrap();
+    let record = retained
+        .iter()
+        .find(|record| record.original == untracked_path && record.kind == "checkout")
+        .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(record.path.join("note")).unwrap(),
+        "keep unless configured"
+    );
+    drop(retained);
     assert!(
         t3_protocol::api::orchestration::thread_projection(&c, "untracked").unwrap()["thread"]
             ["worktreePath"]

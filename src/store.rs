@@ -48,6 +48,7 @@ pub struct State {
     pub bridge_endpoints: Mutex<Vec<Value>>,
     pub db: Mutex<Connection>,
     pub(crate) worktree_gate: tokio::sync::RwLock<()>,
+    pub worktree_removal: crate::worktree_removal::Registry,
     pub(crate) reader: Mutex<Connection>,
     pub(crate) identities_started: std::sync::atomic::AtomicBool,
     pub(crate) rpc_clients: std::sync::atomic::AtomicUsize,
@@ -241,6 +242,7 @@ impl State {
             workspace_detach_started: Default::default(),
             provider_switch_gates: Default::default(),
             worktree_handoffs: Default::default(),
+            worktree_removal: Default::default(),
             #[cfg(feature = "bridge")]
             bridge_endpoints: Mutex::new(Vec::new()),
             settings_lock: std::sync::Arc::new(Mutex::new(())),

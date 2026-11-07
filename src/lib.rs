@@ -194,3 +194,5 @@ mod provider_home;
 pub mod selection_transition;
 
 pub mod cleanup;
+
+pub mod worktree_removal;
