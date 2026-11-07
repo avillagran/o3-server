@@ -851,24 +851,17 @@ fn launch_of(s: &State, p: &Value, cwd_required: bool) -> Result<Launch, Value> 
 }
 
 fn provider_env(s: &State, p: &Value) -> Result<Option<BTreeMap<String, String>>, Value> {
-    let mut env = BTreeMap::new();
-    if let Some(id) = p["providerInstanceId"].as_str() {
-        let settings = crate::settings::read(s).map_err(|e| invalid(&e))?;
-        for var in settings["providerInstances"][id]["environment"]
-            .as_array()
-            .into_iter()
-            .flatten()
-        {
-            if let (Some(name), Some(value)) = (var["name"].as_str(), var["value"].as_str()) {
-                if name.is_empty() || name.contains(['=', '\0']) || value.contains('\0') {
-                    return Err(invalid("invalid provider environment"));
-                }
-                env.insert(name.to_owned(), value.to_owned());
-            }
+    let explicit = env_of(p)?;
+    let Some(id) = p["providerInstanceId"].as_str() else {
+        return Ok(explicit);
+    };
+    let env = crate::terminal_environment::resolve(s, id, explicit.unwrap_or_default())?;
+    for (name, value) in &env {
+        if name.is_empty() || name.contains(['=', '\0']) || value.contains('\0') {
+            return Err(invalid("invalid provider environment"));
         }
     }
-    env.extend(env_of(p)?.unwrap_or_default());
-    Ok((!env.is_empty()).then_some(env))
+    Ok(Some(env))
 }
 
 fn spawn_env(runtime: &Option<BTreeMap<String, String>>) -> Vec<(String, String)> {

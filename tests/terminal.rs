@@ -542,26 +542,96 @@ fn output_flow_control_bounds_unacknowledged_chunks() {
 }
 
 #[test]
-fn provider_instance_environment_reaches_pty_and_explicit_env_wins() {
+fn provider_instance_environment_reaches_pty_and_native_instance_values_win() {
     let e = common::setup("terminal-provider-env");
     let cwd = e.dir("workspace");
     e.conn.rpc("server.updateSettings", json!({"patch":{"providerInstances":{"custom":{"driver":"codex","environment":[{"name":"O3_ENV_PROOF","value":"instance"},{"name":"O3_SECRET_PROOF","value":"private","sensitive":true}]}}}})).unwrap();
     e.conn.rpc("terminal.open", json!({"threadId":"t","terminalId":"env","cwd":cwd,"providerInstanceId":"custom","env":{"O3_ENV_PROOF":"explicit"}})).unwrap();
     e.conn.rpc("terminal.write", json!({"threadId":"t","terminalId":"env","data":"printf 'RESULT:%s:%s\\n' \"$O3_ENV_PROOF\" \"$O3_SECRET_PROOF\"\n"})).unwrap();
-    let items = common::collect(
-        &e.conn,
-        "terminal.attach",
-        json!({"threadId":"t","terminalId":"env"}),
-        |v| v.to_string().contains("RESULT:explicit:private"),
-    );
-    assert!(
-        items
-            .iter()
-            .any(|v| v.to_string().contains("RESULT:explicit:private")),
-        "{items:?}"
-    );
+    let deadline = std::time::Instant::now() + T;
+    let complete = std::cell::Cell::new(false);
+    let mut items = Vec::new();
+    let mut output = String::new();
+    e.conn
+        .subscribe(
+            "terminal.attach",
+            json!({"threadId":"t","terminalId":"env"}),
+            || complete.get() || std::time::Instant::now() >= deadline,
+            |item| {
+                if let Some(item) = item {
+                    if let Some(history) = item["snapshot"]["history"].as_str() {
+                        output = history.to_owned();
+                    }
+                    if let Some(data) = item["data"].as_str() {
+                        output.push_str(data);
+                    }
+                    complete.set(output.contains("RESULT:instance:private"));
+                    items.push(item);
+                }
+                Ok(())
+            },
+        )
+        .unwrap();
+    assert!(output.contains("RESULT:instance:private"), "{items:?}");
     e.conn
         .rpc("terminal.close", json!({"threadId":"t","terminalId":"env"}))
+        .unwrap();
+}
+
+#[test]
+fn provider_terminal_launch_rejects_missing_instances_and_refreshes_private_environment() {
+    let e = common::setup("terminal-provider-refresh");
+    let cwd = e.dir("workspace");
+    let missing = e.conn.rpc("terminal.open", json!({"threadId":"t","terminalId":"missing","cwd":cwd,"providerInstanceId":"notInstalled"})).unwrap_err();
+    assert!(
+        missing.contains("Provider instance is not available: notInstalled"),
+        "{missing}"
+    );
+    for (index, secret) in ["private-first", "private-second-longer"]
+        .iter()
+        .enumerate()
+    {
+        e.conn.rpc("server.updateSettings", json!({"patch":{"providerInstances":{"custom":{"driver":"codex","environment":[{"name":"O3_ROTATED_SECRET","value":secret,"sensitive":true}]}}}})).unwrap();
+        let operation = if index == 0 {
+            "terminal.open"
+        } else {
+            "terminal.restart"
+        };
+        let snapshot = e.conn.rpc(operation, json!({"threadId":"t","terminalId":"private","cwd":cwd,"providerInstanceId":"custom","cols":80,"rows":24})).unwrap();
+        assert!(snapshot.get("env").is_none());
+        assert!(!snapshot.to_string().contains(secret));
+        e.conn.rpc("terminal.write", json!({"threadId":"t","terminalId":"private","data":"printf 'SECRET-LENGTH:%s:end\\n' \"${#O3_ROTATED_SECRET}\"\n"})).unwrap();
+        let deadline = std::time::Instant::now() + T;
+        let complete = std::cell::Cell::new(false);
+        let expected = format!("SECRET-LENGTH:{}:end", secret.len());
+        let mut output = String::new();
+        e.conn
+            .subscribe(
+                "terminal.attach",
+                json!({"threadId":"t","terminalId":"private"}),
+                || complete.get() || std::time::Instant::now() >= deadline,
+                |item| {
+                    if let Some(item) = item {
+                        if let Some(history) = item["snapshot"]["history"].as_str() {
+                            output = history.to_owned();
+                        }
+                        if let Some(data) = item["data"].as_str() {
+                            output.push_str(data);
+                        }
+                        complete.set(output.contains(&expected));
+                        assert!(!item.to_string().contains(secret));
+                    }
+                    Ok(())
+                },
+            )
+            .unwrap();
+        assert!(output.contains(&expected), "{output:?}");
+    }
+    e.conn
+        .rpc(
+            "terminal.close",
+            json!({"threadId":"t","terminalId":"private"}),
+        )
         .unwrap();
 }
 

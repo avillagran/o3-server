@@ -102,6 +102,7 @@ pub mod streams;
 pub mod t3_shared;
 mod task_shared;
 pub mod terminal;
+mod terminal_environment;
 pub mod thread_commands;
 pub mod threadq;
 pub mod vcs;
