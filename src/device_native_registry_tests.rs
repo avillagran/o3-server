@@ -279,13 +279,36 @@ impl Drop for RpcPeer {
 }
 impl RpcPeer {
     async fn new(state: &Arc<State>) -> Self {
+        Self::with_scopes(state, &crate::store::STANDARD_SCOPES.map(str::to_owned)).await
+    }
+    async fn over_http(state: &Arc<State>, scopes: &[String]) -> Self {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
         let token = state
-            .issue_session(
-                "private-wire-peer",
-                &crate::store::STANDARD_SCOPES.map(str::to_owned),
-                60_000,
-                "Private fixture",
-            )
+            .issue_session("private-http-wire-peer", scopes, 60_000, "Private fixture")
+            .unwrap();
+        let (client, server) = tokio::io::duplex(256 * 1024);
+        let serving = state.clone();
+        let task = tokio::spawn(async move {
+            crate::http::serve_io(server, serving).await.unwrap();
+        });
+        let mut request = "ws://localhost/ws?orchestrationProtocol=2"
+            .into_client_request()
+            .unwrap();
+        request
+            .headers_mut()
+            .insert("authorization", format!("Bearer {token}").parse().unwrap());
+        let (socket, _) = tokio_tungstenite::client_async(request, client)
+            .await
+            .unwrap();
+        Self {
+            socket,
+            task,
+            next: 0,
+        }
+    }
+    async fn with_scopes(state: &Arc<State>, scopes: &[String]) -> Self {
+        let token = state
+            .issue_session("private-wire-peer", scopes, 60_000, "Private fixture")
             .unwrap();
         let session = state.session(&token).unwrap();
         let (client, server) = tokio::io::duplex(256 * 1024);
@@ -394,6 +417,14 @@ async fn manual_pinned_updates_preserve_permissions_and_do_not_start_helpers() {
     .await
     .unwrap();
     assert_eq!(installed["hosts"][0]["agentDeviceInstalled"], true);
+    assert_eq!(
+        installed["hosts"][0]["tools"]["agent"],
+        json!({"requiredVersion":"0.21.31","installedVersions":["0.21.31"],"runningVersion":null})
+    );
+    assert_eq!(
+        installed["hosts"][0]["tools"]["hub"]["runningVersion"],
+        Value::Null
+    );
     assert_eq!(crate::settings::read(&state).unwrap(), before);
     assert!(
         fixture.trace().iter().all(|entry| entry["mode"] == "probe"),
@@ -538,6 +569,20 @@ async fn enabled_local_readiness_acquires_verified_payload_before_owning_a_synth
     let origin = runtime
         .origin()
         .expect("The verified synthetic Node hub has passed readiness");
+    let inspected = call(&state, "device.list", &json!({"inspectOnly":true}))
+        .await
+        .unwrap();
+    let local = inspected["hosts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|host| host["id"] == "local")
+        .unwrap();
+    assert_eq!(
+        local["tools"]["hub"],
+        json!({"requiredVersion":"0.19.1","installedVersions":["0.19.1"],"runningVersion":"0.19.1"})
+    );
+    assert_eq!(local["tools"]["agent"]["runningVersion"], Value::Null);
     assert!(origin.starts_with("http://127.0.0.1:"));
     crate::device_native_tools::InstalledTool::inspect(
         &state
@@ -551,4 +596,194 @@ async fn enabled_local_readiness_acquires_verified_payload_before_owning_a_synth
         .await
         .unwrap();
     assert!(runtime.origin().is_none());
+    let stopped = call(&state, "device.list", &json!({"inspectOnly":true}))
+        .await
+        .unwrap();
+    assert_eq!(
+        stopped["hosts"][0]["tools"]["hub"]["runningVersion"],
+        Value::Null
+    );
+}
+
+#[tokio::test]
+async fn local_inventory_rpc_qualifies_unknown_trees_and_retains_last_verified_tools_on_failure() {
+    let fixture = Fixture::make(0).await;
+    let state = profile(&fixture, false).await;
+    let (_, npm) = crate::device_native_acquire::tests::fixture("ok");
+    *state.streams.p2.device.test_npm_executable.lock().unwrap() = Some(npm);
+    let mut peer = RpcPeer::new(&state).await;
+    let initial = rpc_call(
+        &mut peer,
+        &state,
+        "device.list",
+        &json!({"updateTool":"agent"}),
+    )
+    .await
+    .unwrap();
+    let known = initial["hosts"][0]["tools"].clone();
+    assert_eq!(known["agent"]["installedVersions"], json!(["0.21.31"]));
+    let unknown = state.dir.join("tools/expo-device-hub/9.9.9");
+    std::fs::create_dir_all(&unknown).unwrap();
+    std::fs::write(unknown.join(".install-complete"), "9.9.9\n").unwrap();
+    std::fs::write(unknown.join("kept"), "unverified data").unwrap();
+    let qualified = rpc_call(
+        &mut peer,
+        &state,
+        "device.list",
+        &json!({"inspectOnly":true}),
+    )
+    .await
+    .unwrap();
+    assert!(qualified["hosts"][0]["toolInspectionError"].is_string());
+    assert_eq!(
+        qualified["hosts"][0]["tools"]["hub"]["installedVersions"],
+        json!([])
+    );
+    assert_eq!(qualified["hosts"][0]["hubInstalled"], false);
+    assert!(!unknown.join(".o3-device-install.json").exists());
+    let tools = state.dir.join("tools");
+    let retained = state.dir.join("retained-owned-tools");
+    std::fs::rename(&tools, &retained).unwrap();
+    let target = state.dir.join("private-empty-target");
+    std::fs::create_dir(&target).unwrap();
+    std::os::unix::fs::symlink(&target, &tools).unwrap();
+    let failed = rpc_call(
+        &mut peer,
+        &state,
+        "device.list",
+        &json!({"inspectOnly":true}),
+    )
+    .await
+    .unwrap();
+    assert!(failed["hosts"][0]["toolInspectionError"].is_string());
+    assert_eq!(failed["hosts"][0]["tools"], known);
+    assert_eq!(failed["hosts"][0]["agentDeviceInstalled"], true);
+    assert_eq!(
+        failed["hosts"][0]["tools"]["agent"]["runningVersion"],
+        Value::Null
+    );
+    assert_eq!(
+        std::fs::read_to_string(retained.join("expo-device-hub/9.9.9/kept")).unwrap(),
+        "unverified data"
+    );
+    assert_eq!(std::fs::read_dir(&target).unwrap().count(), 0);
+    assert!(fixture.trace().iter().all(|entry| entry["mode"] == "probe"));
+    assert!(
+        state.streams.p2.device.native.lock().await.is_none(),
+        "Read-only tools inspection must not invent a local owner"
+    );
+    peer.task.abort();
+}
+
+#[tokio::test]
+async fn real_wire_device_list_permissions_follow_the_effective_dispatch_action() {
+    let fixture = Fixture::make(0).await;
+    let state = profile(&fixture, false).await;
+    let (_, npm) = crate::device_native_acquire::tests::fixture("ok");
+    *state.streams.p2.device.test_npm_executable.lock().unwrap() = Some(npm);
+    let mut reader = RpcPeer::over_http(&state, &["orchestration:read".into()]).await;
+    rpc_call(&mut reader, &state, "device.list", &json!({}))
+        .await
+        .unwrap();
+    let registered = state.streams.p2.device.ssh.lock().await.len();
+    rpc_call(
+        &mut reader,
+        &state,
+        "device.list",
+        &json!({"inspectOnly":true,"retryHostId":"mini"}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(state.streams.p2.device.ssh.lock().await.len(), registered);
+    assert!(state
+        .streams
+        .p2
+        .device
+        .ssh
+        .lock()
+        .await
+        .values()
+        .all(|entry| entry.runtime.origin().is_none()));
+    assert!(fixture.trace().iter().all(|entry| entry["mode"] == "probe"));
+    for payload in [
+        json!({"updateTool":"agent"}),
+        json!({"updateTool":"hub","inspectOnly":true,"retryHostId":"mini"}),
+    ] {
+        let denied = rpc_call(&mut reader, &state, "device.list", &payload)
+            .await
+            .unwrap_err();
+        assert_eq!(denied["_tag"], "EnvironmentAuthorizationError");
+        assert_eq!(denied["requiredPermission"], "orchestration:operate");
+    }
+    let denied = rpc_call(
+        &mut reader,
+        &state,
+        "device.list",
+        &json!({"retryHostId":"mini"}),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(denied["requiredPermission"], "orchestration:operate");
+    assert!(
+        !state.dir.join("tools").exists(),
+        "Denied calls must not create installation state"
+    );
+    let invalid = rpc_call(
+        &mut reader,
+        &state,
+        "device.list",
+        &json!({"updateTool":null,"inspectOnly":true}),
+    )
+    .await
+    .unwrap_err();
+    assert!(invalid.is_null() || invalid["_tag"] == "RpcInvalidPayload");
+    let invalid = rpc_call(
+        &mut reader,
+        &state,
+        "device.list",
+        &json!({"retryHostId":null}),
+    )
+    .await
+    .unwrap_err();
+    assert!(invalid.is_null() || invalid["_tag"] == "RpcInvalidPayload");
+    assert!(!state.dir.join("tools").exists());
+    let mut operate_only = RpcPeer::over_http(&state, &["orchestration:operate".into()]).await;
+    let denied = rpc_call(
+        &mut operate_only,
+        &state,
+        "device.list",
+        &json!({"updateTool":"agent"}),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(denied["requiredPermission"], "orchestration:read");
+    let mut operator = RpcPeer::over_http(
+        &state,
+        &["orchestration:read".into(), "orchestration:operate".into()],
+    )
+    .await;
+    let updated = rpc_call(
+        &mut operator,
+        &state,
+        "device.list",
+        &json!({"updateTool":"agent","inspectOnly":true}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        updated["hosts"][0]["tools"]["agent"]["installedVersions"],
+        json!(["0.21.31"])
+    );
+    assert_eq!(state.streams.p2.device.ssh.lock().await.len(), registered);
+    assert!(state
+        .streams
+        .p2
+        .device
+        .ssh
+        .lock()
+        .await
+        .values()
+        .all(|entry| entry.runtime.origin().is_none()));
+    assert!(state.streams.p2.device.native.lock().await.is_none());
+    assert!(fixture.trace().iter().all(|entry| entry["mode"] == "probe"));
 }

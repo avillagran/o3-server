@@ -117,6 +117,14 @@ pub fn authorize(session: &Value, tag: &str, p: &Value) -> Result<(), Value> {
         if p.get("scripts").is_some() {
             check("settings:write")?;
         }
+    } else if tag == "device.list" {
+        check("orchestration:read")?;
+        match crate::device::list_action(p)? {
+            crate::device::ListAction::Update(_) | crate::device::ListAction::Retry(_) => {
+                check("orchestration:operate")?
+            }
+            crate::device::ListAction::List | crate::device::ListAction::Inspect => {}
+        }
     } else if tag == "assets.createUrl" {
         check(crate::assets::required_scope(p))?;
     } else if let Some(scope) = scopes::required(tag) {

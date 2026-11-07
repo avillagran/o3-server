@@ -1,0 +1,8906 @@
+{
+  "revision": "32a0531748c44b25072d7495ce0b9bd7e9450a87",
+  "effect": "4.1.2",
+  "sources": {
+    "apps/server/src/device/DeviceToolchain.ts": "4bc36c0a753d65ee1d1413c23da2efedc25ee7022e7464757ce366914d65350a",
+    "apps/server/src/processRunner.ts": "54dbe11d20d510fcf49b151de83da3efa982f1dc512d4233964062dbc245f1dd",
+    "packages/shared/src/shell.ts": "7d418ba20bf10116b58fb3285be6ad5316eae32a1b82ad41212e1961c86f699b",
+    "packages/shared/src/HostProcess.ts": "eeafedd914ae4aaf81ef6f474139111e98ec40bcb5a077d43ff02382cae7c011",
+    "packages/provider-core/src/server/collectStreamText.ts": "754a726d43c8e03647f2bf97559fe0f675a7dd7f6e71f5537e09b5c4ad093216",
+    "apps/server/src/device/deviceToolVersions.json": "4fc5d7da620049c52a6216bd4cf8699afe28088220a9d0e8b07e055d50d23625",
+    "apps/server/src/auth/RpcAuthorization.ts": "1e46ad4c96975bbfbefef23aa6d0f9fc4f4cbc9b54ef4818518d30be4132200b",
+    "apps/server/src/ws.ts": "976ee2745245d997ee29e441c6796b4eb8415f58084454f6574719f296feffc2"
+  },
+  "cases": [
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "0.19.1"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [
+              "0.19.1"
+            ],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "0.19.1",
+              "sentinel": " \t0.19.1\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [
+              "0.19.1"
+            ],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "0.19.1",
+              "sentinel": "﻿0.19.1 "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [
+              "0.19.1"
+            ],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "0.19.1",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "0.19.1",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "0.19.1",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "0.19.1",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "0.19.1",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "0.19.1",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "0.21.31"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [
+              "0.21.31"
+            ],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "0.21.31",
+              "sentinel": " \t0.21.31\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [
+              "0.21.31"
+            ],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "0.21.31",
+              "sentinel": "﻿0.21.31 "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [
+              "0.21.31"
+            ],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "0.21.31",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "0.21.31",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "0.21.31",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "0.21.31",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "0.21.31",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "0.21.31",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.0.0"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [
+              "1.0.0"
+            ],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.0.0",
+              "sentinel": " \t1.0.0\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [
+              "1.0.0"
+            ],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.0.0",
+              "sentinel": "﻿1.0.0 "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [
+              "1.0.0"
+            ],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.0.0",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.0.0",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.0.0",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.0.0",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.0.0",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.0.0",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "01.02.03"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [
+              "01.02.03"
+            ],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "01.02.03",
+              "sentinel": " \t01.02.03\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [
+              "01.02.03"
+            ],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "01.02.03",
+              "sentinel": "﻿01.02.03 "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [
+              "01.02.03"
+            ],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "01.02.03",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "01.02.03",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "01.02.03",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "01.02.03",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "01.02.03",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "01.02.03",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-rc.1"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [
+              "1.2.3-rc.1"
+            ],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-rc.1",
+              "sentinel": " \t1.2.3-rc.1\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [
+              "1.2.3-rc.1"
+            ],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-rc.1",
+              "sentinel": "﻿1.2.3-rc.1 "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [
+              "1.2.3-rc.1"
+            ],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-rc.1",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-rc.1",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-rc.1",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-rc.1",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-rc.1",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-rc.1",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-."
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [
+              "1.2.3-."
+            ],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-.",
+              "sentinel": " \t1.2.3-.\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [
+              "1.2.3-."
+            ],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-.",
+              "sentinel": "﻿1.2.3-. "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [
+              "1.2.3-."
+            ],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-.",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-.",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-.",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-.",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-.",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-.",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-.."
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [
+              "1.2.3-.."
+            ],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-..",
+              "sentinel": " \t1.2.3-..\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [
+              "1.2.3-.."
+            ],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-..",
+              "sentinel": "﻿1.2.3-.. "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [
+              "1.2.3-.."
+            ],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-..",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-..",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-..",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-..",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-..",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-..",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-",
+              "sentinel": " \t1.2.3-\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-",
+              "sentinel": "﻿1.2.3- "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3-",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "v1.2.3"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "v1.2.3",
+              "sentinel": " \tv1.2.3\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "v1.2.3",
+              "sentinel": "﻿v1.2.3 "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "v1.2.3",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "v1.2.3",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "v1.2.3",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "v1.2.3",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "v1.2.3",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "v1.2.3",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2",
+              "sentinel": " \t1.2\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2",
+              "sentinel": "﻿1.2 "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3+meta"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3+meta",
+              "sentinel": " \t1.2.3+meta\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3+meta",
+              "sentinel": "﻿1.2.3+meta "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3+meta",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3+meta",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3+meta",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3+meta",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3+meta",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3+meta",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3\n",
+              "sentinel": " \t1.2.3\n\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3\n",
+              "sentinel": "﻿1.2.3\n "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3\n",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3\n",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3\n",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3\n",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3\n",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3\n",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "../escape"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "../escape",
+              "sentinel": " \t../escape\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "../escape",
+              "sentinel": "﻿../escape "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "../escape",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "../escape",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "../escape",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "../escape",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "../escape",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "../escape",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": ".staging-private"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": ".staging-private",
+              "sentinel": " \t.staging-private\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": ".staging-private",
+              "sentinel": "﻿.staging-private "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": ".staging-private",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": ".staging-private",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": ".staging-private",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": ".staging-private",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": ".staging-private",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": ".staging-private",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3_foo"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3_foo",
+              "sentinel": " \t1.2.3_foo\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3_foo",
+              "sentinel": "﻿1.2.3_foo "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3_foo",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3_foo",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3_foo",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3_foo",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3_foo",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "1.2.3_foo",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "",
+              "sentinel": " \t\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "",
+              "sentinel": "﻿ "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "0.19.1"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [
+              "0.19.1"
+            ],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "0.19.1",
+              "sentinel": " \t0.19.1\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [
+              "0.19.1"
+            ],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "0.19.1",
+              "sentinel": "﻿0.19.1 "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [
+              "0.19.1"
+            ],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "0.19.1",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "0.19.1",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "0.19.1",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "0.19.1",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "0.19.1",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "0.19.1",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "0.21.31"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [
+              "0.21.31"
+            ],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "0.21.31",
+              "sentinel": " \t0.21.31\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [
+              "0.21.31"
+            ],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "0.21.31",
+              "sentinel": "﻿0.21.31 "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [
+              "0.21.31"
+            ],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "0.21.31",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "0.21.31",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "0.21.31",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "0.21.31",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "0.21.31",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "0.21.31",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.0.0"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [
+              "1.0.0"
+            ],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.0.0",
+              "sentinel": " \t1.0.0\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [
+              "1.0.0"
+            ],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.0.0",
+              "sentinel": "﻿1.0.0 "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [
+              "1.0.0"
+            ],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.0.0",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.0.0",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.0.0",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.0.0",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.0.0",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.0.0",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "01.02.03"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [
+              "01.02.03"
+            ],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "01.02.03",
+              "sentinel": " \t01.02.03\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [
+              "01.02.03"
+            ],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "01.02.03",
+              "sentinel": "﻿01.02.03 "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [
+              "01.02.03"
+            ],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "01.02.03",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "01.02.03",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "01.02.03",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "01.02.03",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "01.02.03",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "01.02.03",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-rc.1"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [
+              "1.2.3-rc.1"
+            ],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-rc.1",
+              "sentinel": " \t1.2.3-rc.1\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [
+              "1.2.3-rc.1"
+            ],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-rc.1",
+              "sentinel": "﻿1.2.3-rc.1 "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [
+              "1.2.3-rc.1"
+            ],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-rc.1",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-rc.1",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-rc.1",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-rc.1",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-rc.1",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-rc.1",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-."
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [
+              "1.2.3-."
+            ],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-.",
+              "sentinel": " \t1.2.3-.\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [
+              "1.2.3-."
+            ],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-.",
+              "sentinel": "﻿1.2.3-. "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [
+              "1.2.3-."
+            ],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-.",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-.",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-.",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-.",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-.",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-.",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-.."
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [
+              "1.2.3-.."
+            ],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-..",
+              "sentinel": " \t1.2.3-..\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [
+              "1.2.3-.."
+            ],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-..",
+              "sentinel": "﻿1.2.3-.. "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [
+              "1.2.3-.."
+            ],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-..",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-..",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-..",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-..",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-..",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-..",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-",
+              "sentinel": " \t1.2.3-\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-",
+              "sentinel": "﻿1.2.3- "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3-",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "v1.2.3"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "v1.2.3",
+              "sentinel": " \tv1.2.3\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "v1.2.3",
+              "sentinel": "﻿v1.2.3 "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "v1.2.3",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "v1.2.3",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "v1.2.3",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "v1.2.3",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "v1.2.3",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "v1.2.3",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2",
+              "sentinel": " \t1.2\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2",
+              "sentinel": "﻿1.2 "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3+meta"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3+meta",
+              "sentinel": " \t1.2.3+meta\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3+meta",
+              "sentinel": "﻿1.2.3+meta "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3+meta",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3+meta",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3+meta",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3+meta",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3+meta",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3+meta",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3\n",
+              "sentinel": " \t1.2.3\n\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3\n",
+              "sentinel": "﻿1.2.3\n "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3\n",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3\n",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3\n",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3\n",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3\n",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3\n",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "../escape"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "../escape",
+              "sentinel": " \t../escape\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "../escape",
+              "sentinel": "﻿../escape "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "../escape",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "../escape",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "../escape",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "../escape",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "../escape",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "../escape",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": ".staging-private"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": ".staging-private",
+              "sentinel": " \t.staging-private\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": ".staging-private",
+              "sentinel": "﻿.staging-private "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": ".staging-private",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": ".staging-private",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": ".staging-private",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": ".staging-private",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": ".staging-private",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": ".staging-private",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3_foo"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3_foo",
+              "sentinel": " \t1.2.3_foo\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3_foo",
+              "sentinel": "﻿1.2.3_foo "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3_foo",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3_foo",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3_foo",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3_foo",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3_foo",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "1.2.3_foo",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "",
+              "sentinel": " \t\r\n"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "",
+              "sentinel": "﻿ "
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "",
+              "sentinel": "99.99.99"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "",
+              "sentinel": ""
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "",
+              "missing": true
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "",
+              "entry": false
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "",
+              "sentinelError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "agent": [
+            {
+              "version": "",
+              "entryError": "PermissionDenied"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "0.19.1"
+            }
+          ],
+          "agent": [
+            {
+              "version": "0.21.31"
+            }
+          ]
+        },
+        "directoryErrors": {
+          "hub": "NotFound"
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [],
+            "runningVersion": null
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [
+              "0.21.31"
+            ],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "0.19.1"
+            }
+          ],
+          "agent": [
+            {
+              "version": "0.21.31"
+            }
+          ]
+        },
+        "directoryErrors": {
+          "hub": "PermissionDenied"
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "0.19.1"
+            }
+          ],
+          "agent": [
+            {
+              "version": "0.21.31"
+            }
+          ]
+        },
+        "directoryErrors": {
+          "agent": "NotFound"
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [
+              "0.19.1"
+            ],
+            "runningVersion": null
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "0.19.1"
+            }
+          ],
+          "agent": [
+            {
+              "version": "0.21.31"
+            }
+          ]
+        },
+        "directoryErrors": {
+          "agent": "PermissionDenied"
+        }
+      },
+      "expected": {
+        "unavailable": true
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "2.0.0"
+            },
+            {
+              "version": "10.0.0"
+            },
+            {
+              "version": "1.0.0-rc.2"
+            },
+            {
+              "version": "1.0.0-rc.10"
+            },
+            {
+              "version": "01.0.0"
+            }
+          ],
+          "agent": [
+            {
+              "version": "0.21.31"
+            },
+            {
+              "version": "0.19.1"
+            }
+          ]
+        },
+        "running": {}
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [
+              "01.0.0",
+              "1.0.0-rc.10",
+              "1.0.0-rc.2",
+              "10.0.0",
+              "2.0.0"
+            ],
+            "runningVersion": null
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [
+              "0.19.1",
+              "0.21.31"
+            ],
+            "runningVersion": null
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "2.0.0"
+            },
+            {
+              "version": "10.0.0"
+            },
+            {
+              "version": "1.0.0-rc.2"
+            },
+            {
+              "version": "1.0.0-rc.10"
+            },
+            {
+              "version": "01.0.0"
+            }
+          ],
+          "agent": [
+            {
+              "version": "0.21.31"
+            },
+            {
+              "version": "0.19.1"
+            }
+          ]
+        },
+        "running": {
+          "hub": "0.18.0",
+          "agent": "0.20.0"
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [
+              "01.0.0",
+              "1.0.0-rc.10",
+              "1.0.0-rc.2",
+              "10.0.0",
+              "2.0.0"
+            ],
+            "runningVersion": "0.18.0"
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [
+              "0.19.1",
+              "0.21.31"
+            ],
+            "runningVersion": "0.20.0"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "entries": {
+          "hub": [
+            {
+              "version": "2.0.0"
+            },
+            {
+              "version": "10.0.0"
+            },
+            {
+              "version": "1.0.0-rc.2"
+            },
+            {
+              "version": "1.0.0-rc.10"
+            },
+            {
+              "version": "01.0.0"
+            }
+          ],
+          "agent": [
+            {
+              "version": "0.21.31"
+            },
+            {
+              "version": "0.19.1"
+            }
+          ]
+        },
+        "running": {
+          "hub": null,
+          "agent": null
+        }
+      },
+      "expected": {
+        "value": {
+          "hub": {
+            "requiredVersion": "0.19.1",
+            "installedVersions": [
+              "01.0.0",
+              "1.0.0-rc.10",
+              "1.0.0-rc.2",
+              "10.0.0",
+              "2.0.0"
+            ],
+            "runningVersion": null
+          },
+          "agent": {
+            "requiredVersion": "0.21.31",
+            "installedVersions": [
+              "0.19.1",
+              "0.21.31"
+            ],
+            "runningVersion": null
+          }
+        }
+      }
+    }
+  ],
+  "authCases": [
+    {
+      "input": {},
+      "decoded": {},
+      "baseScope": "orchestration:read",
+      "expected": {
+        "action": "list",
+        "extraScope": "orchestration:read"
+      }
+    },
+    {
+      "input": {
+        "inspectOnly": true
+      },
+      "decoded": {
+        "inspectOnly": true
+      },
+      "baseScope": "orchestration:read",
+      "expected": {
+        "action": "inspect"
+      }
+    },
+    {
+      "input": {
+        "retryHostId": "mini"
+      },
+      "decoded": {
+        "retryHostId": "mini"
+      },
+      "baseScope": "orchestration:read",
+      "expected": {
+        "action": "retry",
+        "host": "mini",
+        "extraScope": "orchestration:operate"
+      }
+    },
+    {
+      "input": {
+        "inspectOnly": true,
+        "retryHostId": "mini"
+      },
+      "decoded": {
+        "inspectOnly": true,
+        "retryHostId": "mini"
+      },
+      "baseScope": "orchestration:read",
+      "expected": {
+        "action": "inspect"
+      }
+    },
+    {
+      "input": {
+        "updateTool": "hub"
+      },
+      "decoded": {
+        "updateTool": "hub"
+      },
+      "baseScope": "orchestration:read",
+      "expected": {
+        "action": "update",
+        "tool": "hub",
+        "extraScope": "orchestration:operate"
+      }
+    },
+    {
+      "input": {
+        "updateTool": "agent",
+        "inspectOnly": true
+      },
+      "decoded": {
+        "updateTool": "agent",
+        "inspectOnly": true
+      },
+      "baseScope": "orchestration:read",
+      "expected": {
+        "action": "update",
+        "tool": "agent",
+        "extraScope": "orchestration:operate"
+      }
+    },
+    {
+      "input": {
+        "updateTool": "hub",
+        "retryHostId": "mini"
+      },
+      "decoded": {
+        "updateTool": "hub",
+        "retryHostId": "mini"
+      },
+      "baseScope": "orchestration:read",
+      "expected": {
+        "action": "update",
+        "tool": "hub",
+        "extraScope": "orchestration:operate"
+      }
+    },
+    {
+      "input": {
+        "updateTool": "agent",
+        "retryHostId": "mini",
+        "inspectOnly": true
+      },
+      "decoded": {
+        "updateTool": "agent",
+        "inspectOnly": true,
+        "retryHostId": "mini"
+      },
+      "baseScope": "orchestration:read",
+      "expected": {
+        "action": "update",
+        "tool": "agent",
+        "extraScope": "orchestration:operate"
+      }
+    },
+    {
+      "input": {
+        "updateTool": null,
+        "inspectOnly": true
+      },
+      "invalid": true
+    },
+    {
+      "input": {
+        "updateTool": false,
+        "inspectOnly": true
+      },
+      "invalid": true
+    },
+    {
+      "input": {
+        "updateTool": "invalid"
+      },
+      "invalid": true
+    },
+    {
+      "input": {
+        "retryHostId": null
+      },
+      "invalid": true
+    },
+    {
+      "input": {
+        "retryHostId": ""
+      },
+      "invalid": true
+    },
+    {
+      "input": {
+        "inspectOnly": "true"
+      },
+      "invalid": true
+    },
+    {
+      "input": {
+        "inspectOnly": true,
+        "retryHostId": null
+      },
+      "invalid": true
+    },
+    {
+      "input": {
+        "retryHostId": " mini "
+      },
+      "decoded": {
+        "retryHostId": "mini"
+      },
+      "baseScope": "orchestration:read",
+      "expected": {
+        "action": "retry",
+        "host": "mini",
+        "extraScope": "orchestration:operate"
+      }
+    },
+    {
+      "input": {
+        "retryHostId": "   "
+      },
+      "invalid": true
+    },
+    {
+      "input": {
+        "retryHostId": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      },
+      "invalid": true
+    },
+    {
+      "input": {
+        "retryHostId": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+      },
+      "decoded": {
+        "retryHostId": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+      },
+      "baseScope": "orchestration:read",
+      "expected": {
+        "action": "retry",
+        "host": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+        "extraScope": "orchestration:operate"
+      }
+    },
+    {
+      "input": {
+        "retryHostId": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+      },
+      "invalid": true
+    },
+    {
+      "input": {
+        "updateTool": "hub",
+        "retryHostId": null
+      },
+      "invalid": true
+    },
+    {
+      "input": null,
+      "invalid": true
+    },
+    {
+      "input": [],
+      "invalid": true
+    }
+  ]
+}

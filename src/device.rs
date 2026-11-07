@@ -15,6 +15,7 @@ use std::{
 pub struct Runtime {
     sessions: Mutex<Vec<Value>>,
     cached: Mutex<Option<Value>>,
+    tool_inventory: Mutex<Option<Value>>,
     native: tokio::sync::Mutex<Option<Arc<crate::device_native_runtime::NativeRuntime>>>,
     ssh: tokio::sync::Mutex<BTreeMap<String, SshRegistration>>,
     revision: std::sync::atomic::AtomicU64,
@@ -186,17 +187,53 @@ async fn ready_local_runtime(
     acquire_tool(s, crate::device_native_tools::Tool::Hub).await?;
     native_runtime(s).await
 }
-fn tool_metadata(s: &State, view: &mut Value) {
+async fn tool_metadata(s: &State, view: &mut Value) {
     view["supportsToolUpdate"] = json!(cfg!(target_os = "linux"));
-    let agent = s.asset_profile_root.join("tools/agent-device/0.21.31");
+    let base = s.asset_profile_root.clone();
+    let inspected =
+        tokio::task::spawn_blocking(move || crate::device_native_inventory::inspect(&base, None))
+            .await;
+    let local = s.streams.p2.device.native.lock().await.clone();
+    let running = local
+        .as_ref()
+        .and_then(|runtime| runtime.origin())
+        .map(|_| crate::device_native_tools::Tool::Hub.version());
+    let previous = s.streams.p2.device.tool_inventory.lock().unwrap().clone();
     if let Some(hosts) = view["hosts"].as_array_mut() {
-        for host in hosts.iter_mut().filter(|host| host["id"] == "local") {
-            host["agentDeviceInstalled"] =
-                json!(crate::device_native_tools::InstalledTool::inspect(
-                    &agent,
-                    crate::device_native_tools::Tool::Agent
-                )
-                .is_ok());
+        for host in hosts
+            .iter_mut()
+            .filter(|host| host["id"] == "local" && host["kind"] == "local")
+        {
+            match &inspected {
+                Ok(Ok(inventory)) => {
+                    let mut tools = inventory.tools.clone();
+                    tools["hub"]["runningVersion"] = json!(running);
+                    host["hubInstalled"] =
+                        json!(tools["hub"]["installedVersions"]
+                            .as_array()
+                            .is_some_and(|versions| versions.iter().any(|version| version
+                                == crate::device_native_tools::Tool::Hub.version())));
+                    host["agentDeviceInstalled"] =
+                        json!(tools["agent"]["installedVersions"]
+                            .as_array()
+                            .is_some_and(|versions| versions.iter().any(|version| version
+                                == crate::device_native_tools::Tool::Agent.version())));
+                    host["tools"] = tools.clone();
+                    if let Some(qualification)=inventory.qualification {host["toolInspectionError"]=json!(qualification);}else if host["toolInspectionError"].as_str().is_some_and(|message|message=="Cannot verify local device tool versions. Existing tools and running sessions have not been changed."||message=="Some local device tool versions could not be verified. Existing files have not been changed.") {host.as_object_mut().unwrap().remove("toolInspectionError");}
+                    *s.streams.p2.device.tool_inventory.lock().unwrap() = Some(
+                        json!({"tools":tools,"hubInstalled":host["hubInstalled"],"agentDeviceInstalled":host["agentDeviceInstalled"]}),
+                    );
+                }
+                _ => {
+                    if let Some(metadata) = &previous {
+                        host["tools"] = metadata["tools"].clone();
+                        host["tools"]["hub"]["runningVersion"] = json!(running);
+                        host["hubInstalled"] = metadata["hubInstalled"].clone();
+                        host["agentDeviceInstalled"] = metadata["agentDeviceInstalled"].clone();
+                    }
+                    host["toolInspectionError"]=json!("Cannot verify local device tool versions. Existing tools and running sessions have not been changed.");
+                }
+            }
         }
     }
 }
@@ -638,15 +675,28 @@ async fn inspect(s: &State) -> Reply {
         .unwrap()
         .clone()
         .unwrap_or_else(|| metadata_only_local(s, &settings));
-    if let Some(local) = native_runtime(s).await? {
-        let summary = local.snapshot()["hosts"][0].clone();
-        if let Some(host) = view["hosts"]
-            .as_array_mut()
-            .unwrap()
-            .iter_mut()
-            .find(|host| host["id"] == "local")
-        {
-            *host = summary;
+    match native_runtime(s).await {
+        Ok(Some(local)) => {
+            let summary = local.snapshot()["hosts"][0].clone();
+            if let Some(host) = view["hosts"]
+                .as_array_mut()
+                .unwrap()
+                .iter_mut()
+                .find(|host| host["id"] == "local" && host["kind"] == "local")
+            {
+                *host = summary;
+            }
+        }
+        Ok(None) => {}
+        Err(error) => {
+            if let Some(host) = view["hosts"]
+                .as_array_mut()
+                .unwrap()
+                .iter_mut()
+                .find(|host| host["id"] == "local" && host["kind"] == "local")
+            {
+                host["toolInspectionError"] = error["message"].clone();
+            }
         }
     }
     let mut tasks: Vec<crate::device_native_owner::HostFuture<'_, (String, Value)>> = Vec::new();
@@ -687,7 +737,7 @@ async fn inspect(s: &State) -> Reply {
             .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
             + 1
     );
-    tool_metadata(s, &mut view);
+    tool_metadata(s, &mut view).await;
     Ok(view)
 }
 async fn state_inner(s: &State) -> Reply {
@@ -730,7 +780,7 @@ async fn state_inner(s: &State) -> Reply {
             .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
             + 1
     );
-    tool_metadata(s, &mut state);
+    tool_metadata(s, &mut state).await;
     Ok(state)
 }
 async fn local_state(s: &State) -> Reply {
@@ -871,6 +921,48 @@ async fn call_budget(s: &State, tag: &str, p: &Value) -> Reply {
         Box::pin(call_inner(s, tag, p)).await
     }
 }
+/// Effective list action shared with authorization; ignored retry fields cannot gain effects.
+pub(crate) enum ListAction<'a> {
+    List,
+    Inspect,
+    Update(crate::device_native_tools::Tool),
+    Retry(&'a str),
+}
+pub(crate) fn list_action(p: &Value) -> Result<ListAction<'_>, Value> {
+    if !p.is_object() {
+        return Err(invalid("Expected device list input object"));
+    }
+    if p.get("inspectOnly")
+        .is_some_and(|value| !value.is_boolean())
+    {
+        return Err(invalid("Expected inspectOnly boolean"));
+    }
+    let retry = match p.get("retryHostId") {
+        Some(value) => {
+            let id = value
+                .as_str()
+                .map(crate::native_goal::trim)
+                .filter(|id| !id.is_empty() && id.encode_utf16().count() <= 128)
+                .ok_or_else(|| invalid("Expected a device host ID"))?;
+            Some(id)
+        }
+        None => None,
+    };
+    if let Some(update) = p.get("updateTool") {
+        return match update.as_str() {
+            Some("hub") => Ok(ListAction::Update(crate::device_native_tools::Tool::Hub)),
+            Some("agent") => Ok(ListAction::Update(crate::device_native_tools::Tool::Agent)),
+            _ => Err(invalid("Expected hub or agent device tool")),
+        };
+    }
+    if p["inspectOnly"] == true {
+        return Ok(ListAction::Inspect);
+    }
+    if let Some(id) = retry {
+        return Ok(ListAction::Retry(id));
+    }
+    Ok(ListAction::List)
+}
 async fn call_inner(s: &State, tag: &str, p: &Value) -> Reply {
     if matches!(tag, "device.open" | "device.action" | "device.detail") {
         let settings = crate::settings::read(s).map_err(invalid)?;
@@ -879,36 +971,26 @@ async fn call_inner(s: &State, tag: &str, p: &Value) -> Reply {
         }
     }
     match tag {
-        "device.list" => {
-            if let Some(update) = p.get("updateTool") {
-                let tool = match update.as_str() {
-                    Some("hub") => crate::device_native_tools::Tool::Hub,
-                    Some("agent") => crate::device_native_tools::Tool::Agent,
-                    _ => return Err(invalid("Expected hub or agent device tool")),
-                };
+        "device.list" => match list_action(p)? {
+            ListAction::Update(tool) => {
                 acquire_tool(s, tool).await?;
-                return Box::pin(inspect(s)).await;
+                Box::pin(inspect(s)).await
             }
-            if p["inspectOnly"] == true && p.get("updateTool").is_none() {
-                return Box::pin(inspect(s)).await;
-            }
-            if p.get("updateTool").is_none() && p.get("retryHostId").is_some() {
-                if let Some(runtime) =
-                    selected_runtime(s, &json!({"hostId":p["retryHostId"]})).await?
-                {
+            ListAction::Inspect => Box::pin(inspect(s)).await,
+            ListAction::Retry(host) => {
+                if let Some(runtime) = selected_runtime(s, &json!({"hostId":host})).await? {
                     let settings = crate::settings::read(s).map_err(invalid)?;
                     runtime.configure(&settings).await?;
                     let _ = runtime.list().await;
-                    return state(s).await;
+                    state(s).await
+                } else {
+                    Err(unavailable(
+                        "Host retry is unavailable for this device host",
+                    ))
                 }
             }
-            if p.get("updateTool").is_some() || p.get("retryHostId").is_some() {
-                return Err(unavailable(
-                    "tool installation and host retry are unsupported",
-                ));
-            }
-            state(s).await
-        }
+            ListAction::List => state(s).await,
+        },
         "device.configure" => {
             let mut patch = json!({});
             for (a, b) in [

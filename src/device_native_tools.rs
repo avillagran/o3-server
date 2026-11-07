@@ -142,13 +142,13 @@ fn inventory(root: &Path) -> io::Result<BTreeMap<String, String>> {
     }
     Ok(files)
 }
-fn validate_package(root: &Path, tool: Tool) -> io::Result<PathBuf> {
+fn validate_package(root: &Path, tool: Tool, version: &str) -> io::Result<PathBuf> {
     let package = root.join("node_modules").join(tool.package());
     real_directory(&package)?;
     let metadata: serde_json::Value =
         serde_json::from_slice(&read_regular(&package.join("package.json"), 1024 * 1024)?)
             .map_err(io::Error::other)?;
-    if metadata["name"] != tool.package() || metadata["version"] != tool.version() {
+    if metadata["name"] != tool.package() || metadata["version"] != version {
         return Err(invalid(
             "Device tool package does not match the pinned name and version",
         ));
@@ -162,6 +162,10 @@ fn validate_package(root: &Path, tool: Tool) -> io::Result<PathBuf> {
 impl InstalledTool {
     /// A successful npm exit or an exposed entry alone is never an installation sentinel.
     pub fn inspect(root: &Path, tool: Tool) -> io::Result<Self> {
+        Self::inspect_version(root, tool, tool.version())
+    }
+    /// Read-only inspection of a completed historical version, never an execution selection.
+    pub fn inspect_version(root: &Path, tool: Tool, version: &str) -> io::Result<Self> {
         real_directory(root)?;
         let manifest_path = root.join(MANIFEST);
         if !fs::symlink_metadata(&manifest_path)?.is_file() {
@@ -172,16 +176,14 @@ impl InstalledTool {
             return Err(invalid("Device tool manifest is too large"));
         }
         let manifest: Manifest = serde_json::from_slice(&bytes).map_err(io::Error::other)?;
-        if manifest.format != 1
-            || manifest.package != tool.package()
-            || manifest.version != tool.version()
+        if manifest.format != 1 || manifest.package != tool.package() || manifest.version != version
         {
             return Err(invalid("Device tool manifest pin mismatch"));
         }
         if inventory(root)? != manifest.files {
             return Err(invalid("Device tool installation inventory changed"));
         }
-        let entry = validate_package(root, tool)?;
+        let entry = validate_package(root, tool, version)?;
         Ok(Self {
             root: root.to_owned(),
             entry,
@@ -192,7 +194,7 @@ impl InstalledTool {
     pub fn seal_staging(root: &Path, tool: Tool) -> io::Result<Self> {
         real_directory(root)?;
         let files = inventory(root)?;
-        let entry = validate_package(root, tool)?;
+        let entry = validate_package(root, tool, tool.version())?;
         let manifest = Manifest {
             format: 1,
             package: tool.package().into(),

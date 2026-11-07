@@ -128,6 +128,7 @@ pub mod device;
 pub mod device_native_acquire;
 pub mod device_native_client;
 pub mod device_native_hub;
+pub mod device_native_inventory;
 pub mod device_native_local;
 pub mod device_native_owner;
 pub mod device_native_platform;
