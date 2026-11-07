@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Compile on the host, snapshot under lock, then execute offline in private Podman."""
 import pathlib,os,subprocess,fcntl,json,hashlib,uuid,sys,argparse,stat
+from speech_runtime_admission import require_rootless, require_target
 parser=argparse.ArgumentParser(description='Run the actual pinned engine and tiny catalog model inside private Podman.')
 parser.add_argument('--inputs',required=True,type=pathlib.Path)
 parser.add_argument('--node',required=True,type=pathlib.Path)
@@ -10,9 +11,11 @@ parser.add_argument('--default-features',action='store_true')
 args=parser.parse_args()
 root=pathlib.Path(__file__).resolve().parent.parent;out=args.evidence_root
 if not args.inputs.is_absolute() or not args.inputs.is_dir() or args.inputs.is_symlink():parser.error('--inputs must be an existing absolute acquisition directory')
+target=require_target()
+require_rootless()
 sys.path.insert(0,str(root/'tools'));import node_admission
 runtime=out/('real-engine-'+uuid.uuid4().hex);runtime.mkdir(mode=0o700)
-env=dict(os.environ,PATH='/home/node/.cargo/bin:'+os.environ['PATH'],CARGO_TARGET_DIR=os.environ.get('CARGO_TARGET_DIR','/var/tmp/o3-server/fresh-context-target'),CARGO_BUILD_JOBS='2',CARGO_NET_OFFLINE='true')
+env=dict(os.environ,PATH='/home/node/.cargo/bin:'+os.environ['PATH'],CARGO_TARGET_DIR=str(target),CARGO_BUILD_JOBS='2',CARGO_NET_OFFLINE='true')
 node=json.loads(subprocess.check_output(['python3',str(root/'tools/admit-node'),'--node',str(args.node),'--image',args.image],text=True))
 with open('/var/tmp/o3-build/o3-parity-compile.lock','a') as lock:
  fcntl.flock(lock,fcntl.LOCK_EX)

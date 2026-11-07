@@ -20,7 +20,9 @@ under `docs/licenses/speech-engine-4314/`.
 ## Acquisition and independent verification
 
 `tools/acquire-speech-engine` runs the acquisition implementation only inside
-private rootless Podman. No npm lifecycle/install/build script runs. Each archive
+private rootless Podman. Both acquisition and runtime entrypoints first inspect
+local Podman security and require `Rootless=true`; `--userns=keep-id` alone is
+not treated as proof. No npm lifecycle/install/build script runs. Each archive
 is hashed against the source pin before extraction. The extractor accepts only
 regular files inside the package prefix, with bounded aggregate size and exact
 file count; links, devices, duplicate names and traversal are refused. Every
@@ -58,7 +60,10 @@ or package-path setting and no automatic live profile installation.
 `tools/test-real-speech-engine` compiles and snapshots the acceptance executable,
 its runtime libraries and an admitted Node 26.13.0 under the shared compile lock,
 then runs with read-only installation/binaries, private writable HOME/tmp, no
-network, no host devices/display and a bounded process/memory budget.
+network, no host devices/display and a bounded process/memory budget. An explicit,
+normalized absolute `CARGO_TARGET_DIR` unique to the worktree is required; the
+runner never falls back to the shared server target. Missing targets and rootful
+engines fail before artifact creation or Node admission.
 
 The first real catalog model is **Moonshine Tiny Q8**, the smallest source entry:
 35,466,912 bytes, revision `f5c11906eba3f44cf305eed30feb9cbfb0b4b9d0`,

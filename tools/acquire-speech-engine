@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Acquire only pinned speech packages in private Podman; never run install scripts."""
 import argparse,json,os,pathlib,subprocess
+from speech_runtime_admission import require_rootless
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('--out',required=True,type=pathlib.Path,help='New retained installation directory')
 p.add_argument('--cache',type=pathlib.Path,help='Explicit read-only prior acquisition, reverified before reuse')
@@ -13,6 +14,7 @@ if a.model_id:
  catalog=json.loads((root/'runtime/speech/catalog-4314.json').read_text())
  if not any(model['id']==a.model_id for model in catalog['models']):p.error('Select an existing pinned catalog model')
 if a.offline and not a.cache:p.error('--offline requires --cache')
+require_rootless()
 a.out.mkdir(mode=0o700)
 cmd=['podman','--remote=false','run','--rm','--pull=never','--http-proxy=false','--userns=keep-id','--user',f'{os.getuid()}:{os.getgid()}','--read-only','--cap-drop=ALL','--security-opt=no-new-privileges','--pids-limit=64','--memory=512m','--tmpfs','/tmp:rw,size=128m,mode=1777','-v',f'{root}:/source:ro','-v',f'{a.out}:/out:rw']
 if a.offline:cmd+=['--network=none']
