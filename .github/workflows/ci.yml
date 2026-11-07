@@ -20,6 +20,8 @@ jobs:
       TMPDIR: /var/tmp/o3-build/tmp
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Install test runtime dependencies inside the disposable container
         timeout-minutes: 5
         run: |
