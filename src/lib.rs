@@ -59,6 +59,8 @@ pub mod service;
 pub mod settings;
 pub mod settings_secret_transaction;
 pub mod settings_secrets;
+pub mod source_credentials;
+mod source_credentials_runtime;
 
 pub mod agent_scope;
 pub mod assets;

@@ -462,6 +462,10 @@ pub async fn resolve_fields(
     }
     next
 }
+/// Decode the pinned host schema, including its native invalid-input fallback.
+pub fn read_host_config(kind: &str, value: Value) -> Option<Value> {
+    codec::read_source_host_settings(kind, value)
+}
 pub fn require_literal(value: &Value, providers: &Value) -> Result<String, String> {
     if let Some(reference) = reference(value) {
         return Err(format!("Could not read the credential from the secret provider \"{}\". Unlock or fix it in Settings, then try again.",SecretResolver::label(providers,reference.provider())));

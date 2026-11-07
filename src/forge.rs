@@ -124,6 +124,7 @@ struct Quota {
 }
 
 pub(crate) struct GitHub {
+    pub(crate) source_credentials: crate::source_credentials_runtime::Services,
     credentials: tokio::sync::Mutex<BTreeMap<String, CachedCredential>>,
     credential_gates: Mutex<BTreeMap<String, std::sync::Weak<tokio::sync::Mutex<()>>>>,
     quota: Mutex<BTreeMap<String, Quota>>,
@@ -139,6 +140,7 @@ pub(crate) struct GitHub {
 impl Default for GitHub {
     fn default() -> Self {
         Self {
+            source_credentials: Default::default(),
             credentials: Default::default(),
             credential_gates: Default::default(),
             quota: Default::default(),

@@ -1,4 +1,4 @@
-//! Argv-only subprocess runner for git: no shell, no stdin, bounded time and output.
+//! Argv-only subprocess runner: no shell, bounded optional stdin, time and output.
 //! Repository mutations are serialized per repository (git common dir).
 use std::{
     collections::HashMap,
@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    io::{AsyncRead, AsyncReadExt},
+    io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
     sync::OwnedMutexGuard,
 };
 
@@ -159,7 +159,9 @@ pub async fn run(
     opts: Opts,
     env: &[(&str, &Path)],
 ) -> Result<Out, RunError> {
-    run_inner(program, cwd, args, opts, env, false, None).await
+    run_inner(program, cwd, args, opts, env, Controls::default())
+        .await
+        .map_err(|error| error.error)
 }
 
 /// External installers get a fixed interpreter search path and no ambient runtime injection.
@@ -169,7 +171,19 @@ pub async fn run_installer(
     args: &[&str],
     opts: Opts,
 ) -> Result<Out, RunError> {
-    run_inner(program, cwd, args, opts, &[], true, None).await
+    run_inner(
+        program,
+        cwd,
+        args,
+        opts,
+        &[],
+        Controls {
+            installer: true,
+            ..Controls::default()
+        },
+    )
+    .await
+    .map_err(|error| error.error)
 }
 pub(crate) async fn git_controlled(
     cwd: &Path,
@@ -182,7 +196,60 @@ pub(crate) async fn git_controlled(
         .copied()
         .chain(args.iter().copied())
         .collect::<Vec<_>>();
-    run_inner("git", cwd, &args, opts, &[], false, Some(cancel)).await
+    run_inner(
+        "git",
+        cwd,
+        &args,
+        opts,
+        &[],
+        Controls {
+            cancel: Some(cancel),
+            ..Controls::default()
+        },
+    )
+    .await
+    .map_err(|error| error.error)
+}
+/// Typed spawn classification is exposed only by the optional-input API; old
+/// callers retain their existing RunError representation and null stdin.
+#[derive(Debug)]
+pub struct InputRunError {
+    pub error: RunError,
+    pub spawn_kind: Option<std::io::ErrorKind>,
+}
+#[derive(Default)]
+struct Controls<'a> {
+    installer: bool,
+    cancel: Option<tokio::sync::watch::Receiver<bool>>,
+    input: Option<&'a [u8]>,
+}
+/// Input is never included in errors, output or command metadata.
+pub async fn run_with_input(
+    program: &str,
+    cwd: &Path,
+    args: &[&str],
+    opts: Opts,
+    env: &[(&str, &Path)],
+    input: &[u8],
+) -> Result<Out, InputRunError> {
+    if input.len() > 65536 {
+        return Err(InputRunError {
+            error: RunError::Spawn("Command input exceeds limit".into()),
+            spawn_kind: None,
+        });
+    }
+    run_inner(
+        program,
+        cwd,
+        args,
+        opts,
+        env,
+        Controls {
+            input: Some(input),
+            ..Controls::default()
+        },
+    )
+    .await
 }
 async fn run_inner(
     program: &str,
@@ -190,11 +257,13 @@ async fn run_inner(
     args: &[&str],
     opts: Opts,
     env: &[(&str, &Path)],
-    installer: bool,
-    mut cancel: Option<tokio::sync::watch::Receiver<bool>>,
-) -> Result<Out, RunError> {
+    mut controls: Controls<'_>,
+) -> Result<Out, InputRunError> {
     let mut command = base_command(program, cwd, args);
-    if installer {
+    if controls.input.is_some() {
+        command.stdin(Stdio::piped());
+    }
+    if controls.installer {
         let home = std::env::var_os("HOME");
         command
             .env_clear()
@@ -207,23 +276,48 @@ async fn run_inner(
     for (k, v) in env {
         command.env(k, v);
     }
-    let mut child = command
-        .spawn()
-        .map_err(|e| RunError::Spawn(e.to_string()))?;
+    let mut child = command.spawn().map_err(|e| InputRunError {
+        spawn_kind: Some(e.kind()),
+        error: RunError::Spawn(e.to_string()),
+    })?;
     let _group = ProcessGroup(child.id().expect("spawned child"));
     let stdout = child.stdout.take().expect("piped");
     let stderr = child.stderr.take().expect("piped");
+    let mut stdin = child.stdin.take();
     // Boxed: debug builds give big futures big frames, and sockets run on small stacks.
     let mut work = Box::pin(async {
-        let ((out, cut), (err, _)) = tokio::join!(
-            read_capped(stdout, opts.cap),
-            read_capped(stderr, STDERR_CAP)
+        let combined = tokio::try_join!(
+            async {
+                Ok::<_, std::io::Error>(tokio::join!(
+                    read_capped(stdout, opts.cap),
+                    read_capped(stderr, STDERR_CAP)
+                ))
+            },
+            async {
+                if let (Some(mut stdin), Some(input)) = (stdin.take(), controls.input) {
+                    stdin.write_all(input).await?;
+                    stdin.shutdown().await?;
+                }
+                Ok::<(), std::io::Error>(())
+            }
         );
-        if cut {
-            let _ = child.start_kill();
+        match combined {
+            Ok((((out, cut), (err, _)), ())) => {
+                if cut {
+                    let _ = child.start_kill();
+                }
+                let status = child.wait().await.ok();
+                Ok((out, cut, err, status))
+            }
+            Err(error) => {
+                unsafe {
+                    libc::kill(-(_group.0 as i32), libc::SIGKILL);
+                }
+                let _ = child.start_kill();
+                let _ = child.wait().await;
+                Err(error)
+            }
         }
-        let status = child.wait().await.ok();
-        (out, cut, err, status)
     });
     // Checkout and submodule preparation follow upstream's cancellable, unbounded
     // lifetime. Zero opts out of a deadline while retaining process-group cleanup.
@@ -235,7 +329,7 @@ async fn run_inner(
         }
     };
     let cancelled = async {
-        if let Some(cancel) = cancel.as_mut() {
+        if let Some(cancel) = controls.cancel.as_mut() {
             while !*cancel.borrow() {
                 if cancel.changed().await.is_err() {
                     std::future::pending::<()>().await;
@@ -256,7 +350,11 @@ async fn run_inner(
         let _ = child.wait().await;
     }
     match outcome {
-        Ok((stdout, cut, err, status)) => Ok(Out {
+        Ok(Err(error)) => Err(InputRunError {
+            error: RunError::Spawn("Command input could not be written".into()),
+            spawn_kind: Some(error.kind()),
+        }),
+        Ok(Ok((stdout, cut, err, status))) => Ok(Out {
             code: if cut {
                 if opts.allow_truncate {
                     Some(0)
@@ -271,8 +369,14 @@ async fn run_inner(
             truncated: cut,
         }),
         // `kill_on_drop` stops the child when `work` is dropped.
-        Err(_) if was_cancelled => Err(RunError::Spawn("Workspace preparation cancelled".into())),
-        Err(_) => Err(RunError::Timeout(opts.timeout.as_millis() as u64)),
+        Err(_) if was_cancelled => Err(InputRunError {
+            error: RunError::Spawn("Workspace preparation cancelled".into()),
+            spawn_kind: None,
+        }),
+        Err(_) => Err(InputRunError {
+            error: RunError::Timeout(opts.timeout.as_millis() as u64),
+            spawn_kind: None,
+        }),
     }
 }
 
