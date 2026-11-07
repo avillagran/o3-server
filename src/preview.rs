@@ -30,45 +30,60 @@ pub fn handles(tag: &str) -> bool {
     )
 }
 
-#[derive(Default)]
+mod runtime;
+pub use runtime::{install_desktop, DesktopDriver};
 struct Inner {
-    epoch: String,
+    kernel: crate::preview_manager::Kernel,
     next_tab: u64,
-    revision: u64,
-    sessions: BTreeMap<(String, String), Value>,
+    next_job: u64,
+    pending: BTreeMap<(String, String), runtime::Pending>,
     ring: VecDeque<(u64, Value)>,
+    stopping: bool,
 }
-
-#[derive(Default)]
-pub struct Manager {
-    inner: Arc<Mutex<Inner>>,
-    lifecycle: tokio::sync::Mutex<()>,
-    pub(crate) browser: crate::server_browser::Browsers,
-}
-
-impl Manager {
-    /// Supply a profile-removal executor before serving requests.
-    /// Production defaults to identity-checked, no-follow removal.
-    pub fn set_profile_removal(&self, removal: Arc<dyn crate::cleanup::Removal>) {
-        self.browser.set_profile_removal(removal);
-    }
-}
-
-impl Inner {
-    fn epoch(&mut self) -> String {
-        if self.epoch.is_empty() {
-            self.epoch = random_id().unwrap_or_else(|_| "epoch".into());
+impl Default for Inner {
+    fn default() -> Self {
+        Self {
+            kernel: crate::preview_manager::Kernel::new(
+                random_id().unwrap_or_else(|_| "epoch".into()),
+            ),
+            next_tab: 0,
+            next_job: 0,
+            pending: BTreeMap::new(),
+            ring: VecDeque::new(),
+            stopping: false,
         }
-        self.epoch.clone()
     }
-    fn publish(&mut self, mut event: Value) {
-        self.revision += 1;
-        event["serverEpoch"] = json!(self.epoch());
-        event["revision"] = json!(self.revision);
-        self.ring.push_back((self.revision, event));
+}
+impl Inner {
+    fn flush(&mut self) {
+        for event in self.kernel.drain_events() {
+            self.ring
+                .push_back((event["revision"].as_u64().unwrap(), event));
+        }
         while self.ring.len() > RING {
             self.ring.pop_front();
         }
+    }
+}
+#[derive(Default)]
+pub struct Manager {
+    pub(crate) activity: crate::preview_activity::Activity,
+    inner: Arc<Mutex<Inner>>,
+    lifecycle: tokio::sync::Mutex<()>,
+    pub(crate) browser: Arc<crate::server_browser::Browsers>,
+    desktop: Arc<Mutex<Option<runtime::DesktopSlot>>>,
+    jobs: Arc<Mutex<Vec<runtime::Job>>>,
+    monitors: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
+}
+impl Manager {
+    pub fn activity(&self) -> crate::preview_activity::Activity {
+        self.activity.clone()
+    }
+    pub fn set_profile_removal(&self, removal: Arc<dyn crate::cleanup::Removal>) {
+        self.browser.set_profile_removal(removal);
+    }
+    pub fn desktop_available(&self) -> bool {
+        self.desktop.lock().unwrap().is_some()
     }
 }
 
@@ -210,11 +225,10 @@ pub async fn sync_navigation(s: &State, thread: &str, tab: &str) {
         return;
     };
     let mut inner = s.streams.p2.preview.inner.lock().unwrap();
-    let key = (thread.into(), tab.into());
-    let Some(mut snapshot) = inner.sessions.get(&key).cloned() else {
+    let Some(snapshot) = inner.kernel.get(thread, tab).cloned() else {
         return;
     };
-    let nav = json!({"_tag":if page["result"]["value"]=="loading" {"Loading"} else {"Success"},"url":entry["url"],"title":entry["title"]});
+    let nav = json!({"_tag":if page["result"]["value"]=="loading"{"Loading"}else{"Success"},"url":entry["url"],"title":entry["title"]});
     let back = index > 0;
     let forward = (index as usize) + 1 < entries.len();
     if snapshot["navStatus"] == nav
@@ -223,85 +237,88 @@ pub async fn sync_navigation(s: &State, thread: &str, tab: &str) {
     {
         return;
     }
-    snapshot["navStatus"] = nav;
-    snapshot["canGoBack"] = json!(back);
-    snapshot["canGoForward"] = json!(forward);
-    snapshot["updatedAt"] = json!(iso(now_ms()));
-    inner.sessions.insert(key, snapshot.clone());
-    inner.publish(json!({"type":"navigated","threadId":thread,"tabId":tab,"createdAt":iso(now_ms()),"snapshot":snapshot}));
+    let _=inner.kernel.report_status(&json!({"threadId":thread,"tabId":tab,"navStatus":nav,"canGoBack":back,"canGoForward":forward,"serverControlled":true}),||iso(now_ms()));
+    inner.flush();
+    drop(inner);
+    bump(&s.streams.changed);
 }
 
 pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
-    let _gate = if tag == "preview.open" {
-        Some(s.streams.p2.preview.lifecycle.lock().await)
+    let thread = if tag == "preview.clearProfile" {
+        ""
     } else {
-        None
+        str_field(p, "threadId")?
     };
-    if tag == "preview.open"
-        && crate::events::get(
-            &s.db.lock().unwrap(),
-            "thread",
-            p["threadId"].as_str().unwrap_or(""),
-        )
-        .is_ok_and(|t| !t["deletedAt"].is_null())
-    {
-        return Err(invalid("The thread was deleted."));
+    let m = &s.streams.p2.preview;
+    if tag == "preview.open" {
+        return runtime::open(s, p).await;
     }
     if tag == "preview.clearProfile" {
         let profile = str_field(p, "profileId")?;
-        s.streams.p2.preview.browser.clear(&s.dir, profile).await?;
         if profile != "incognito" {
-            let mut g = s.streams.p2.preview.inner.lock().unwrap();
-            let keys: Vec<_> = g
-                .sessions
-                .iter()
-                .filter(|(_, v)| {
+            let targets = m
+                .inner
+                .lock()
+                .unwrap()
+                .kernel
+                .all()
+                .into_iter()
+                .filter(|v| {
                     v["runtime"] == "server"
                         && v["profileId"].as_str().unwrap_or("default") == profile
                 })
-                .map(|(k, _)| k.clone())
-                .collect();
-            for key in keys {
-                g.sessions.remove(&key);
-                g.publish(json!({"type":"closed","threadId":key.0,"tabId":key.1,"createdAt":iso(now_ms())}));
+                .collect::<Vec<_>>();
+            for snapshot in targets {
+                runtime::close_settled(s, thread_of(&snapshot), tab_of(&snapshot)).await;
             }
         }
-
+        m.browser.clear(&s.dir, profile).await?;
         return Ok(Value::Null);
     }
-    let m = &s.streams.p2.preview;
-    if tag == "preview.list" {
-        let keys: Vec<_> = m
-            .inner
-            .lock()
-            .unwrap()
-            .sessions
-            .iter()
-            .filter(|((thread, _), v)| p["threadId"] == *thread && v["runtime"] == "server")
-            .map(|(key, _)| key.clone())
-            .collect();
-        for (thread, tab) in keys {
-            sync_navigation(s, &thread, &tab).await;
-        }
-    }
-
     if tag == "preview.close" {
-        m.browser
-            .close(str_field(p, "threadId")?, p["tabId"].as_str())
-            .await;
+        runtime::close(s, thread, p["tabId"].as_str()).await;
+        return Ok(Value::Null);
     }
-    let server_tab = {
-        let g = m.inner.lock().unwrap();
-        g.sessions
-            .get(&(
-                p["threadId"].as_str().unwrap_or("").into(),
-                p["tabId"].as_str().unwrap_or("").into(),
-            ))
-            .is_some_and(|v| v["runtime"] == "server")
-    };
-    if server_tab {
-        let thread = str_field(p, "threadId")?;
-        let tab = str_field(p, "tabId")?;
+    if tag == "preview.list" {
+        let sessions = m.inner.lock().unwrap().kernel.list(thread);
+        for snapshot in sessions["sessions"].as_array().unwrap() {
+            if snapshot["runtime"] == "server"
+                && m.browser
+                    .connection(thread, tab_of(snapshot))
+                    .await
+                    .is_some_and(|(_, connected)| connected)
+            {
+                sync_navigation(s, thread, tab_of(snapshot)).await;
+            }
+        }
+        return Ok(m.inner.lock().unwrap().kernel.list(thread));
+    }
+    let tab = str_field(p, "tabId")?;
+    let snapshot = m
+        .inner
+        .lock()
+        .unwrap()
+        .kernel
+        .get(thread, tab)
+        .cloned()
+        .ok_or_else(|| lookup_error(thread, tab))?;
+    let server_tab = snapshot["runtime"] == "server";
+    if tag == "preview.reportStatus" && server_tab {
+        return Err(crate::preview_manager::Error::ControlRequired { tab_id: tab.into() }.value());
+    }
+    if tag == "preview.resize" && !viewport_ok(&p["viewport"]) {
+        return Err(invalid("viewport is invalid"));
+    }
+    if tag == "preview.adjust" {
+        validate_adjust(p)?;
+    }
+    if server_tab
+        && matches!(
+            tag,
+            "preview.navigate" | "preview.refresh" | "preview.resize" | "preview.adjust"
+        )
+    {
+        runtime::ensure(s, &snapshot).await?;
         match tag {
             "preview.navigate" => {
                 let navigation = m
@@ -370,215 +387,86 @@ pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
             _ => {}
         }
     }
-    // Reserve the ID before launching without holding the synchronous registry lock.
-    let server_id = if tag == "preview.open" && p["runtime"] == "server" {
-        if p["viewport"].is_object() && !viewport_ok(&p["viewport"]) {
-            return Err(invalid("viewport is invalid"));
-        }
-        let url = p["url"].as_str().map(normalize_url).transpose()?;
-        let tab = {
-            let mut g = m.inner.lock().unwrap();
-            g.next_tab += 1;
-            format!("tab_{}", radix36(g.next_tab))
-        };
-        m.browser
-            .open(
-                s,
-                str_field(p, "threadId")?,
-                &tab,
-                p["profileId"].as_str().unwrap_or("default"),
-                url.as_deref(),
-            )
-            .await?;
-        if p["viewport"].is_object() && p["viewport"]["_tag"] != "fill" {
-            if let Err(e) = m.browser.command(str_field(p,"threadId")?, &tab,
-                "Emulation.setDeviceMetricsOverride",
-                json!({"width":p["viewport"]["width"],"height":p["viewport"]["height"],"deviceScaleFactor":1,"mobile":false})).await {
-                m.browser.close(str_field(p,"threadId")?,Some(&tab)).await;
-                return Err(e);
-            }
-        }
-        Some(tab)
-    } else {
-        None
-    };
-    let completion = if let Some(tab) = &server_id {
-        m.browser.completion(str_field(p, "threadId")?, tab).await
-    } else {
-        None
-    };
-    let mut g = m.inner.lock().unwrap();
-    let thread = str_field(p, "threadId")?.to_owned();
-    let at = iso(now_ms());
+    let mut inner = m.inner.lock().unwrap();
     let result = match tag {
-        "preview.list" => {
-            let mut sessions: Vec<Value> = g
-                .sessions
-                .iter()
-                .filter(|((t, _), _)| *t == thread)
-                .map(|(_, v)| v.clone())
-                .collect();
-            sessions.sort_by(|a, b| a["updatedAt"].as_str().cmp(&b["updatedAt"].as_str()));
-            let epoch = g.epoch();
-            return Ok(json!({"sessions":sessions,"serverEpoch":epoch,"revision":g.revision}));
+        "preview.refresh" => Ok(Value::Null),
+        "preview.navigate" => {
+            let nav = json!({"_tag":"Success","url":normalize_url(str_field(p,"url")?)?,"title":p["resolvedTitle"].as_str().unwrap_or(snapshot["navStatus"]["title"].as_str().unwrap_or(""))});
+            inner.kernel.report_status(&json!({"threadId":thread,"tabId":tab,"navStatus":nav,"canGoBack":snapshot["canGoBack"],"canGoForward":snapshot["canGoForward"],"serverControlled":server_tab}),||iso(now_ms())).map_err(|error|error.value())?;
+            Ok(inner
+                .kernel
+                .get(thread, tab)
+                .cloned()
+                .ok_or_else(|| lookup_error(thread, tab))?)
         }
-        "preview.open" => {
-            if p["viewport"].is_object() && !viewport_ok(&p["viewport"]) {
-                return Err(invalid("viewport is invalid"));
+        "preview.resize" => inner
+            .kernel
+            .resize(p, || iso(now_ms()))
+            .map_err(|error| error.value()),
+        "preview.adjust" => inner
+            .kernel
+            .adjust(p, || iso(now_ms()))
+            .map_err(|error| error.value()),
+        "preview.reportStatus" => {
+            if !matches!(
+                p["navStatus"]["_tag"].as_str(),
+                Some("Idle" | "Loading" | "Success" | "LoadFailed")
+            ) {
+                return Err(invalid("navStatus is invalid"));
             }
-            let nav = match p["url"].as_str().filter(|u| !u.trim().is_empty()) {
-                Some(u) => json!({"_tag":"Loading","url":normalize_url(u)?,"title":""}),
-                None => json!({"_tag":"Idle"}),
-            };
-            if g.sessions.len() >= MAX_SESSIONS {
-                return Err(invalid("too many open preview sessions"));
-            }
-            let tab = server_id.unwrap_or_else(|| {
-                g.next_tab += 1;
-                format!("tab_{}", radix36(g.next_tab))
-            });
-            let mut snap = json!({"threadId":thread,"tabId":tab,"navStatus":nav,"canGoBack":false,"canGoForward":false,
-                "viewport":if p["viewport"].is_object(){p["viewport"].clone()}else{json!({"_tag":"fill"})},"updatedAt":at});
-            for k in ["profileId", "runtime", "reveal"] {
-                if !p[k].is_null() {
-                    snap[k] = p[k].clone();
-                }
-            }
-            g.sessions
-                .insert((thread.clone(), tab.clone()), snap.clone());
-            g.publish(json!({"type":"opened","threadId":thread,"tabId":tab,"createdAt":at,"snapshot":snap}));
-            if let Some(mut done) = completion {
-                let inner = m.inner.clone();
-                let key = (thread.clone(), tab.clone());
-                tokio::spawn(async move {
-                    if !*done.borrow() {
-                        let _ = done.changed().await;
-                    }
-                    let mut g = inner.lock().unwrap();
-                    if g.sessions.remove(&key).is_some() {
-                        g.publish(json!({"type":"closed","threadId":key.0,"tabId":key.1,"createdAt":iso(now_ms())}));
-                    }
-                });
-            }
-            Ok(snap)
+            inner
+                .kernel
+                .report_status(p, || iso(now_ms()))
+                .map(|()| Value::Null)
+                .map_err(|error| error.value())
         }
-        "preview.close" => {
-            let targets: Vec<(String, String)> = match p["tabId"].as_str() {
-                Some(tab) => g
-                    .sessions
-                    .keys()
-                    .filter(|(t, k)| *t == thread && k == tab)
-                    .cloned()
-                    .collect(),
-                None => g
-                    .sessions
-                    .keys()
-                    .filter(|(t, _)| *t == thread)
-                    .cloned()
-                    .collect(),
-            };
-            for key in targets {
-                g.sessions.remove(&key);
-                g.publish(json!({"type":"closed","threadId":key.0,"tabId":key.1,"createdAt":at}));
-            }
-            Ok(Value::Null)
-        }
-        _ => {
-            let tab = str_field(p, "tabId")?.to_owned();
-            let key = (thread.clone(), tab.clone());
-            let Some(mut snap) = g.sessions.get(&key).cloned() else {
-                return Err(lookup_error(&thread, &tab));
-            };
-            let result = match tag {
-                "preview.refresh" => return Ok(Value::Null),
-                "preview.navigate" => {
-                    let url = normalize_url(str_field(p, "url")?)?;
-                    let previous = snap["navStatus"]["title"].as_str().unwrap_or("").to_owned();
-                    let title = p["resolvedTitle"]
-                        .as_str()
-                        .map(str::to_owned)
-                        .unwrap_or(previous);
-                    snap["navStatus"] = json!({"_tag":"Success","url":url,"title":title});
-                    snap["updatedAt"] = json!(at);
-                    g.sessions.insert(key, snap.clone());
-                    g.publish(json!({"type":"navigated","threadId":thread,"tabId":tab,"createdAt":at,"snapshot":snap}));
-                    Ok(snap)
-                }
-                "preview.resize" => {
-                    if !viewport_ok(&p["viewport"]) {
-                        return Err(invalid("viewport is invalid"));
-                    }
-                    snap["viewport"] = p["viewport"].clone();
-                    snap["updatedAt"] = json!(at);
-                    g.sessions.insert(key, snap.clone());
-                    g.publish(json!({"type":"resized","threadId":thread,"tabId":tab,"createdAt":at,"snapshot":snap}));
-                    Ok(snap)
-                }
-                "preview.adjust" => {
-                    if let Some(c) = p["colorScheme"].as_str() {
-                        if !matches!(c, "system" | "light" | "dark") {
-                            return Err(invalid("colorScheme is invalid"));
-                        }
-                        snap["colorScheme"] = json!(c);
-                    }
-                    if let Some(z) = p["zoomFactor"].as_f64() {
-                        if !ZOOMS.iter().any(|k| (*k - z).abs() < 1e-9) {
-                            return Err(invalid("zoomFactor is invalid"));
-                        }
-                        snap["zoomFactor"] = json!(z);
-                    }
-                    snap["updatedAt"] = json!(at);
-                    let mut event = json!({"type":"resized","threadId":thread,"tabId":tab,"createdAt":at,"snapshot":snap});
-                    let mut request = serde_json::Map::new();
-                    if p["hardReload"] == true {
-                        request.insert("hardReload".into(), json!(true));
-                    }
-                    if let Some(c) = p["clear"]
-                        .as_str()
-                        .filter(|c| matches!(*c, "cookies" | "cache"))
-                    {
-                        request.insert("clear".into(), json!(c));
-                    }
-                    if !request.is_empty() {
-                        event["request"] = Value::Object(request);
-                    }
-                    g.sessions.insert(key, snap.clone());
-                    g.publish(event);
-                    Ok(snap)
-                }
-                _ => {
-                    // preview.reportStatus
-                    let nav = &p["navStatus"];
-                    if !matches!(
-                        nav["_tag"].as_str(),
-                        Some("Idle" | "Loading" | "Success" | "LoadFailed")
-                    ) {
-                        return Err(invalid("navStatus is invalid"));
-                    }
-                    snap["navStatus"] = nav.clone();
-                    snap["canGoBack"] = json!(p["canGoBack"] == true);
-                    snap["canGoForward"] = json!(p["canGoForward"] == true);
-                    snap["updatedAt"] = json!(at);
-                    let event = if nav["_tag"] == "LoadFailed" {
-                        let mut e = json!({"type":"failed","threadId":thread,"tabId":tab,"createdAt":at,"url":nav["url"],"title":nav["title"],"code":nav["code"],"description":nav["description"]});
-                        if !nav["download"].is_null() {
-                            e["download"] = nav["download"].clone();
-                        }
-                        e
-                    } else {
-                        json!({"type":"navigated","threadId":thread,"tabId":tab,"createdAt":at,"snapshot":snap})
-                    };
-                    g.sessions.insert(key, snap);
-                    g.publish(event);
-                    Ok(Value::Null)
-                }
-            };
-            result
-        }
+        _ => Err(invalid("Unknown preview operation")),
     };
-    drop(g);
+    inner.flush();
+    drop(inner);
     bump(&s.streams.changed);
     result
+}
+/// Publish a native reveal request without changing sticky headless ownership.
+pub fn request_reveal(s: &State, thread: &str, tab: &str, force: bool) -> Result<(), Value> {
+    let mut inner = s.streams.p2.preview.inner.lock().unwrap();
+    if inner.kernel.get(thread, tab).is_none() {
+        return Err(lookup_error(thread, tab));
+    }
+    let uuid = random_id().map_err(invalid)?;
+    inner
+        .kernel
+        .request_reveal(
+            &json!({"threadId":thread,"tabId":tab,"force":force}),
+            || iso(now_ms()),
+            || uuid,
+        )
+        .map_err(|error| error.value())?;
+    inner.flush();
+    drop(inner);
+    bump(&s.streams.changed);
+    Ok(())
+}
+fn thread_of(snapshot: &Value) -> &str {
+    snapshot["threadId"].as_str().unwrap_or("")
+}
+fn tab_of(snapshot: &Value) -> &str {
+    snapshot["tabId"].as_str().unwrap_or("")
+}
+fn validate_adjust(p: &Value) -> Result<(), Value> {
+    if p["colorScheme"]
+        .as_str()
+        .is_some_and(|color| !matches!(color, "system" | "light" | "dark"))
+    {
+        return Err(invalid("colorScheme is invalid"));
+    }
+    if p["zoomFactor"]
+        .as_f64()
+        .is_some_and(|zoom| !ZOOMS.iter().any(|value| (*value - zoom).abs() < 1e-9))
+    {
+        return Err(invalid("zoomFactor is invalid"));
+    }
+    Ok(())
 }
 
 fn radix36(mut n: u64) -> String {
@@ -602,7 +490,7 @@ pub struct Cursor {
 
 pub fn open_events(s: &State) -> Cursor {
     Cursor {
-        seen: s.streams.p2.preview.inner.lock().unwrap().revision,
+        seen: s.streams.p2.preview.inner.lock().unwrap().kernel.revision(),
         waiting: false,
     }
 }
@@ -920,13 +808,11 @@ fn scan_servers(
 
 pub(crate) async fn cleanup(s: &State, thread: &str) -> Result<(), String> {
     let _gate = s.streams.p2.preview.lifecycle.lock().await;
-    call(s, "preview.close", &json!({"threadId":thread}))
-        .await
-        .map_err(|e| e.to_string())?;
+    runtime::cleanup_thread(s, thread).await;
     Ok(())
 }
 pub async fn shutdown(s: &State) {
-    s.streams.p2.preview.browser.shutdown().await;
+    runtime::shutdown(&s.streams.p2.preview).await;
 }
 
 #[cfg(test)]

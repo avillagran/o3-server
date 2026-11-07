@@ -1688,8 +1688,9 @@ mod tests {
         let browser = &browser_state.streams.p2.preview.browser;
         *browser.fixture_binary.lock().unwrap() = Some(peer);
         browser
-            .open(
-                &browser_state,
+            .open_owned(
+                &browser_state.dir,
+                &browser_state.agent_scopes,
                 "browser-thread",
                 "browser-tab",
                 "default",
@@ -1724,8 +1725,9 @@ mod tests {
         );
         assert!(!registry.kill("browser-thread").await);
         browser
-            .open(
-                &browser_state,
+            .open_owned(
+                &browser_state.dir,
+                &browser_state.agent_scopes,
                 "another-browser-thread",
                 "another-browser-tab",
                 "default",

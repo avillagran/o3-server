@@ -47,6 +47,7 @@ impl Default for ProfileRemoval {
 #[derive(Clone)]
 struct Tab {
     origin: Origin,
+    desktop_channel: Option<crate::desktop_browser_channel::Channel>,
     session: Option<String>,
     target: Option<String>,
     profile: String,
@@ -286,6 +287,7 @@ async fn launch(
     });
     Ok(Tab {
         origin: Origin::Local,
+        desktop_channel: None,
         session: None,
         target: None,
         profile: profile.into(),
@@ -379,9 +381,10 @@ impl Browsers {
             }
         }
     }
-    pub async fn open(
+    pub(crate) async fn open_owned(
         &self,
-        state: &crate::store::State,
+        root: &Path,
+        registry: &std::sync::Arc<crate::agent_scope::Registry>,
         thread: &str,
         tab: &str,
         profile: &str,
@@ -411,7 +414,7 @@ impl Browsers {
             let binary = executable();
             let binary=binary.ok_or_else(||error("Install a system Chromium browser, or set O3_BROWSER_BINARY to its executable; o3 does not download browsers".into()))?;
             let removal = self.removal.0.lock().unwrap().clone();
-            launch(&state.dir, profile, &state.agent_scopes, binary, removal)
+            launch(root, profile, registry, binary, removal)
                 .await
                 .map_err(error)?
         };
@@ -529,6 +532,32 @@ impl Browsers {
             .get(&(thread.into(), tab.into()))
             .cloned()
             .ok_or_else(|| error("Browser tab is closed".into()))?;
+        if method == "Input.dispatchMouseEvent" {
+            if let (Some(channel), Some(x), Some(y)) = (
+                &browser.desktop_channel,
+                params["x"].as_f64(),
+                params["y"].as_f64(),
+            ) {
+                let phase = match params["type"].as_str() {
+                    Some("mouseMoved") => Some("move"),
+                    Some("mousePressed") => Some("click"),
+                    _ => None,
+                };
+                if let Some(phase) = phase {
+                    channel
+                        .pointer(
+                            &crate::desktop_browser::TabKey {
+                                thread_id: thread.into(),
+                                tab_id: tab.into(),
+                            },
+                            phase,
+                            x,
+                            y,
+                        )
+                        .await;
+                }
+            }
+        }
         request_in(&browser.tx, method, params, browser.session)
             .await
             .map_err(error)

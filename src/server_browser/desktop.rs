@@ -129,6 +129,7 @@ pub(super) async fn launch(
         target: None,
         profile: profile.into(),
         origin: Origin::Desktop,
+        desktop_channel: Some(channel.clone()),
         tx,
         done,
         cancel,

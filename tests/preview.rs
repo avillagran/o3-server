@@ -1,5 +1,4 @@
-//! `preview.*`, `subscribePreviewEvents` and `subscribeDiscoveredLocalServers`. The server only keeps the
-//! registry of tabs a client renders; it has no browser, so `runtime: "server"` is refused.
+//! Preview state/event contracts and refusal when a server browser executable is unavailable.
 mod support;
 use serde_json::json;
 use std::{io::Write, time::Duration};
@@ -135,10 +134,21 @@ fn preview_registry_events_and_refusal_of_the_server_runtime() {
         Some(&json!(false))
     );
 
+    // Native open publishes ownership before setup; a failed launch then closes that session.
+    let failed_open = events.next(T);
+    let failed_close = events.next(T);
+    assert_eq!(failed_open["type"], "opened");
+    assert_eq!(failed_open["revision"], 6);
+    assert!(failed_open["tabId"].as_str().unwrap().ends_with(&epoch));
+    assert_eq!(failed_close["type"], "closed");
+    assert_eq!(failed_close["tabId"], failed_open["tabId"]);
+    assert_eq!(failed_close["revision"], 7);
     c.rpc("preview.close", json!({"threadId":"t1","tabId":tab}))
         .unwrap();
     let closed = events.next(T);
     assert_eq!(closed["type"], "closed");
+    assert_eq!(closed["tabId"], tab);
+    assert_eq!(closed["revision"], 8);
     assert!(
         c.rpc("preview.list", json!({"threadId":"t1"})).unwrap()["sessions"]
             .as_array()

@@ -192,6 +192,11 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
     let mut changed = s.changed.subscribe();
     let mut live_changed = s.streams.changed.subscribe();
     let mut subscriptions: BTreeMap<String, Subscription> = BTreeMap::new();
+    struct PreviewOpen {
+        cancel: tokio::sync::oneshot::Sender<()>,
+        state: Arc<std::sync::atomic::AtomicU8>,
+    }
+    let mut preview_opens = std::collections::HashMap::<String, PreviewOpen>::new();
     let mut eof = false;
     let mut expiry = tokio::time::interval(std::time::Duration::from_secs(1));
     // Results of spawned unary calls, and the wake-up for action streams. At most 16 calls are in flight.
@@ -418,7 +423,8 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
         }
         tokio::select! {
             _=live_changed.changed()=>{},_=changed.changed()=>{},_=expiry.tick()=>{},_=wake.notified()=>{},
-            Some(frame)=done_rx.recv()=>{if send(&mut ws,frame).await.is_err(){return}},
+            Some(frame)=done_rx.recv()=>{let key=frame["requestId"].to_string();if preview_opens.get(&key).is_some_and(|pending|pending.cancel.is_closed()){preview_opens.remove(&key);}
+                if send(&mut ws,frame).await.is_err(){return}},
             message=ws.next()=>{
                 let Some(Ok(message))=message else {break};
                 match message {
@@ -431,7 +437,8 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                             match frame["_tag"].as_str().unwrap_or("") {
                                 "Ping"=>if send(&mut ws,json!({"_tag":"Pong"})).await.is_err(){return},
                                 "Ack"=>{if let Some(sub)=subscriptions.get_mut(&key){match sub.live.as_mut(){Some(live)=>live.ack(),None=>sub.waiting=false}}},
-                                "Interrupt"=>{if let Some(sub)=subscriptions.remove(&key){let v=json!({"_tag":"Exit","requestId":sub.id,"exit":{"_tag":"Failure","cause":[{"_tag":"Interrupt","fiberId":frame["interruptors"]}]}});if send(&mut ws,v).await.is_err(){return}}},
+                                "Interrupt"=>{if let Some(pending)=preview_opens.remove(&key){if pending.state.compare_exchange(0,2,std::sync::atomic::Ordering::AcqRel,std::sync::atomic::Ordering::Acquire).is_ok(){let _=pending.cancel.send(());if send(&mut ws,json!({"_tag":"Exit","requestId":frame["requestId"],"exit":{"_tag":"Failure","cause":[{"_tag":"Interrupt","fiberId":frame["interruptors"]}]}})).await.is_err(){return}}}
+                                    if let Some(sub)=subscriptions.remove(&key){let v=json!({"_tag":"Exit","requestId":sub.id,"exit":{"_tag":"Failure","cause":[{"_tag":"Interrupt","fiberId":frame["interruptors"]}]}});if send(&mut ws,v).await.is_err(){return}}},
                                 "Eof"=>eof=true,
                                 "Request" if !eof=>{
                                     let tag=frame["tag"].as_str().unwrap_or("");let p=&frame["payload"];
@@ -465,7 +472,11 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                                         inflight.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
                                         let (s2,tag2,mut p2,tx2,count)=(s.clone(),tag.to_owned(),p.clone(),done_tx.clone(),inflight.clone());
                                         if matches!(tag,"assets.createUrl"|"attachments.createUploadUrl") { p2["_assetSession"] = session["sid"].clone(); }
-                                        tokio::spawn(async move{let r=crate::ext::call(&s2,&tag2,p2).await;count.fetch_sub(1,std::sync::atomic::Ordering::Relaxed);let _=tx2.send(exit(&id,r));});
+                                        if tag=="preview.open" {
+                                            if preview_opens.contains_key(&id.to_string()){count.fetch_sub(1,std::sync::atomic::Ordering::Relaxed);if send(&mut ws,exit(&id,Err(error("duplicate preview request id".into())))).await.is_err(){return}continue;}
+                                            let(cancel,cancelled)=tokio::sync::oneshot::channel();let status=Arc::new(std::sync::atomic::AtomicU8::new(0));preview_opens.insert(id.to_string(),PreviewOpen{cancel,state:status.clone()});
+                                            tokio::spawn(async move{let result=tokio::select!{_=cancelled=>None,_=tx2.closed()=>None,result=crate::ext::call(&s2,&tag2,p2)=>Some(result)};if let Some(result)=result{if status.compare_exchange(0,1,std::sync::atomic::Ordering::AcqRel,std::sync::atomic::Ordering::Acquire).is_ok(){let _=tx2.send(exit(&id,result));}else if let Ok(snapshot)=result{let _=crate::preview::call(&s2,"preview.close",&json!({"threadId":snapshot["threadId"],"tabId":snapshot["tabId"]})).await;}}count.fetch_sub(1,std::sync::atomic::Ordering::Relaxed);});
+                                        }else{tokio::spawn(async move{let r=crate::ext::call(&s2,&tag2,p2).await;count.fetch_sub(1,std::sync::atomic::Ordering::Relaxed);let _=tx2.send(exit(&id,r));});}
                                     }else if matches!(tag,"orchestration.subscribeShell"|"orchestration.subscribeThread"|"server.subscribeServerConfig"|"subscribeServerConfig") {
                                         if subscriptions.len()>=64||subscriptions.contains_key(&id.to_string()) {if send(&mut ws,exit(&id,Err(error("subscription limit or duplicate id".into())))).await.is_err(){return}continue;}
                                         // Register notification receiver before any snapshot; no await until cursor is installed.
