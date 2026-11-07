@@ -11,12 +11,23 @@ export async function createNativePreviewToolkit({sourceRoot,nativeRoot,effectRo
   const file=path.join(sourceRoot,name),identity=fs.lstatSync(file);
   if(!identity.isFile()||identity.isSymbolicLink()||createHash('sha256').update(fs.readFileSync(file)).digest('hex')!==digest)throw Error('Toolkit source integrity unavailable');
  }
- if(!platform||typeof platform.captureCaller!=='function'||typeof platform.invoke!=='function'||typeof platform.environmentId!=='string'||!Array.isArray(platform.supportedOperations))throw Error('Owned toolkit platform required');
+ if(!platform||typeof platform.captureCaller!=='function'||typeof platform.invoke!=='function'||typeof platform.markUsed!=='function'||typeof platform.environmentId!=='string'||!Array.isArray(platform.supportedOperations))throw Error('Owned toolkit platform required');
  const require=createRequire(path.join(effectRoot,'package.json'));
  const load=async name=>name.startsWith('node:')?import(name):import(pathToFileURL(require.resolve(name)).href);
  const Effect=await load('effect/Effect'),Context=await load('effect/Context'),Layer=await load('effect/Layer'),Schema=await load('effect/Schema'),Fiber=await load('effect/Fiber'),Queue=await load('effect/Queue'),Stream=await load('effect/Stream'),Deferred=await load('effect/Deferred'),ManagedRuntime=await load('effect/ManagedRuntime'),SecureRandom=await load('effect/crypto/SecureRandom'),FileSystem=await load('effect/FileSystem');
  const {McpServer}=await load('effect/ai');
  const contracts=await import(pathToFileURL(path.join(nativeRoot,'packages/contracts/src/index.ts')).href);
+ const NativePage=await import(pathToFileURL(path.join(nativeRoot,'apps/server/src/preview/ServerBrowserPage.ts')).href);
+ // Reuse the complete original host callback, including error classification,
+ // finally(markUsed), broker response, and ignored late response semantics.
+ // The full browser service is not imported: it owns profile cleanup and launch.
+ const browserSource=fs.readFileSync(path.join(sourceRoot,'apps/server/src/preview/ServerBrowser.ts'),'utf8');
+ const start='  const handleRequest = ',end='  const mirrorManagerEvent = ';
+ if(browserSource.split(start).length!==2)throw Error('Native host callback unavailable');
+ const at=browserSource.indexOf(start),until=browserSource.indexOf(end,at);
+ if(until<=at)throw Error('Native host callback unavailable');
+ const hostMethod=browserSource.slice(at,until);
+ if(createHash('sha256').update(hostMethod).digest('hex')!==manifest.methods?.['ServerBrowser.handleRequest'])throw Error('Native host callback integrity unavailable');
  const Threads=Context.Service('o3/NativePreviewThreadManagement'),Config=Context.Service('o3/NativePreviewServerConfig'),Invocation=Context.Service('o3/NativePreviewInvocation');
  const offered=new WeakMap(),issued=new WeakMap(),modules=new Map(),synthetics=new Map();let disposed=false;
  const unavailable=()=>new contracts.OrchestratorMcpFailure({code:'capability_denied',message:'This native preview capability is not owned.'});
@@ -87,17 +98,19 @@ export async function createNativePreviewToolkit({sourceRoot,nativeRoot,effectRo
   if(event.type!=='request')return Effect.void;
   const owner=offered.get(event.request);
   if(!owner)return Effect.fail(unavailable());
-  const work=Effect.tryPromise({try:()=>platform.invoke(owner.caller,owner.tool,event.request,{updateCurrentTab:owner.input.updateCurrentTab!==false}),catch:()=>unavailable()}).pipe(
-   Effect.flatMap(outcome=>broker.respond({clientId:host.clientId,connectionId:event.connectionId,requestId:event.request.requestId,...(outcome?.ok===true?{ok:true,result:outcome.result}:{ok:false,error:outcome?.error??{_tag:'PreviewAutomationUnavailableError',message:'Owned preview operation unavailable'}})})),
-   Effect.ignore,
-  );
+  const dependencies=vm.createContext({Effect,ServerBrowserPage:NativePage,broker,SERVER_HOST_CLIENT_ID:host.clientId,performance,
+   runOperation:request=>platform.invoke(owner.caller,owner.tool,request,{updateCurrentTab:owner.input.updateCurrentTab!==false}),
+   markUsed:request=>platform.markUsed(owner.caller,request),
+  });
+  vm.runInContext(stripTypeScriptTypes(hostMethod+'\nglobalThis.nativeHandleRequest=handleRequest;',{mode:'strip'}),dependencies);
+  const work=dependencies.nativeHandleRequest(event.connectionId,event.request);
   // Original server requests run independently; a pending page script cannot
   // prevent a later dialog answer or timeout-termination producer from running.
-  return Effect.forkChild(work).pipe(Effect.asVoid);
+  return work.pipe(Effect.forkScoped,Effect.asVoid);
  })));
  await runtime.runPromise(Deferred.await(connected));
  return {
-  async invoke(tool,input){
+  async invoke(tool,input,{signal}={}){
    if(disposed||!Object.hasOwn(toolkit.tools,tool))throw Error('Unadmitted private toolkit operation');
    const caller=await platform.captureCaller(),descriptor=caller?.scope;
    if(!descriptor||descriptor.environmentId!==platform.environmentId||!Array.isArray(descriptor.capabilities)||typeof caller.getThreadProjection!=='function')throw Error('Owned invocation scope unavailable');
@@ -115,10 +128,12 @@ export async function createNativePreviewToolkit({sourceRoot,nativeRoot,effectRo
     const registration=registrations.find(value=>value.tool.name===tool);if(!registration)throw Error('Native toolkit registration unavailable');
     // The actual Effect MCP registration performs native parameter decoding and
     // both content/structuredContent formatting; no Rust Value roundtrip here.
-    return await runtime.runPromise(registration.handle(input).pipe(Effect.provide(registration.services)));
+    return await runtime.runPromise(registration.handle(input).pipe(Effect.provide(registration.services)),{signal});
    }finally{issued.delete(scope);}
   },
-  async close(){if(disposed)return;disposed=true;await runtime.runPromise(Fiber.interrupt(hostFiber));await runtime.dispose();},
+  // This disposes logical broker/host fibers only. The Rust owner must fence
+  // and drain entered execution before retiring the worker or claiming cleanup.
+  async disposeBroker(){if(disposed)return;disposed=true;await runtime.runPromise(Fiber.interrupt(hostFiber));await runtime.dispose();},
   sourceRevision:manifest.revision,
  };
 }

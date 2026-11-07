@@ -65,3 +65,36 @@ All twelve real toolkit consumers, recording/file capabilities, legacy alias
 keyboard unification, and actual outer MCP transport still gate activation.
 The existing CDP 4 MiB, application-worker eight-call/16 MiB, and grant/session
 bounds remain separately documented foundation gaps, not native parity.
+
+## Original host callback and execution lifetime
+
+The next private bridge executes the complete original
+`ServerBrowser.handleRequest` method with explicit operation, `markUsed`, and
+broker dependencies. Its source and selected method hash are checked before
+evaluation. The browser service itself is not imported, so its profile-launch
+and cleanup capabilities cannot be acquired through this adapter.
+
+The original callback awaits `runOperation(...).finally(markUsed)`, classifies
+failures with the complete original `ServerBrowserPage.toOperationError`, and
+responds through the original broker. A thrown operation is not silently turned
+into a broker timeout. Original scoped host fibers remain independent of the
+calling MCP fiber: cancellation removes the caller's pending response, while
+an already entered operation still completes its own original `finally`.
+Late responses are ignored by the original broker and never replayed.
+
+The source-only synthetic-host proof covers thrown failures, first-line native
+error classification, caller interruption during an entered callback, late
+`markUsed`, a surviving host, and exact text/structured output. It is not a
+physical CDP or cleanup receipt. `disposeBroker` only disposes logical fibers;
+it is deliberately not an owner-close API. Rust must fence new admissions,
+drain entered RunContext callbacks and their finalizers, and obtain independent
+worker/session cleanup receipts. Ambiguous closure remains unknown. Rebinding
+must invalidate the old caller without retagging its pending callbacks or
+assigning their cleanup to a successor.
+
+Original handler-generated status enrichment is a separate metadata operation
+with `updateCurrentTab=false`. It must receive an owner-constructed status
+capability; expanding an evaluate receipt to arbitrary status calls would
+weaken the existing fixed operation gate. Human handoff, source control queue
+drain, dialog bypass, callback deadline, and ordinary owner close continue to
+use the original source distinctions. No new grace period is introduced.
