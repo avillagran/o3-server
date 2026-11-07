@@ -13,6 +13,9 @@ use tokio::{
     task::JoinHandle,
 };
 
+#[cfg(unix)]
+mod descriptor;
+
 pub struct Change {
     pub key: TabKey,
     pub attached: bool,

@@ -13602,5 +13602,25 @@
         ]
       }
     }
+  ],
+  "endpointCases": [
+    {
+      "scenario": "first-client-roundtrip",
+      "expected": {
+        "received": "native opaque 😀",
+        "secretBytes": 24,
+        "writes": [
+          {
+            "fd": 42,
+            "line": "{\"type\":\"cdp\",\"threadId\":\"thread\",\"tabId\":\"tab\",\"message\":\"client opaque 😀\"}\n"
+          },
+          {
+            "fd": 42,
+            "line": "{\"type\":\"release\",\"threadId\":\"thread\",\"tabId\":\"tab\"}\n"
+          }
+        ],
+        "destroyed": 1
+      }
+    }
   ]
 }

@@ -69,5 +69,31 @@ const bom=[239,187,191],transportInputs=[[],[encode('\n \t\r\n')],[bom],[[...bom
 const bytes=encode(cdp+'\n');for(let index=0;index<=bytes.length;index++)transportInputs.push([bytes.slice(0,index),bytes.slice(index)]);
 const transportCases=[];
 for(const chunks of transportInputs){const values=[];const result=await Effect.runPromise(Stream.fromIterable(chunks.map(chunk=>Uint8Array.from(chunk))).pipe(Stream.pipeThroughChannel(Ndjson.decode({ignoreEmptyLines:true})),Stream.runForEach(value=>Effect.sync(()=>{values.push(value);})),Effect.result));transportCases.push({chunks,expected:{values,...(result._tag==='Failure'?{error:result.failure.reason,unterminated:result.failure.unterminated}:{})}});}
-fs.writeFileSync(output,JSON.stringify({revision,effect:'4.1.2',sources,schemaCases,stateCases,transportCases},null,2)+'\n');
+const endpointCases=[];
+if(process.argv.includes('--endpoints')){
+ const deadline=(promise,phase)=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Native endpoint timed out: '+phase)),2000);promise.then(value=>{clearTimeout(timer);resolve(value);},error=>{clearTimeout(timer);reject(error);});});
+ const closed=socket=>socket.readyState===WebSocket.CLOSED?Promise.resolve():deadline(new Promise(resolve=>socket.addEventListener('close',resolve,{once:true})),'close');
+ const connect=async url=>{const socket=new WebSocket(url);await new Promise((resolve,reject)=>{socket.addEventListener('open',resolve,{once:true});socket.addEventListener('error',reject,{once:true});});return socket;};
+ const wait=async predicate=>{for(let n=0;n<500;n++){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,2));}throw Error('Native endpoint observation timed out');};
+ globalThis.browserProbeWrites=[];globalThis.browserProbeDestroyed=0;
+ const expected=await Effect.runPromise(Effect.scoped(Effect.gen(function*(){
+  const input=yield*Queue.unbounded();globalThis.browserProbeInput=input;
+  const channel=yield*native.make.pipe(Effect.provideService(configuration.ServerConfig,{desktopBrowserFd:41,desktopBrowserControlFd:42}));
+  yield*Queue.offer(input,new TextEncoder().encode(JSON.stringify({type:'attached',...key})+'\n'));
+  if(!(yield*channel.awaitAttached(key,'1 second')))throw Error('Native endpoint attach timed out');
+  const url=yield*channel.endpoint(key);
+  return yield*Effect.promise(async()=>{
+   const first=await connect(url);
+   const incoming=new Promise(resolve=>first.addEventListener('message',event=>resolve(event.data),{once:true}));
+   await Effect.runPromise(Queue.offer(input,new TextEncoder().encode(JSON.stringify({type:'cdp',...key,message:'native opaque 😀'})+'\n')));
+   const received=await deadline(incoming,'incoming frame');
+   first.send('client opaque 😀');
+   await wait(()=>globalThis.browserProbeWrites.some(write=>JSON.parse(write.line).message==='client opaque 😀'));
+   first.close();await closed(first);
+   return {received,secretBytes:Buffer.from(new URL(url).pathname.slice(1),'base64url').length};
+  });
+ })));
+ endpointCases.push({scenario:'first-client-roundtrip',expected:{...expected,writes:globalThis.browserProbeWrites,destroyed:globalThis.browserProbeDestroyed}});
+}
+fs.writeFileSync(output,JSON.stringify({revision,effect:'4.1.2',sources,schemaCases,stateCases,transportCases,...(endpointCases.length?{endpointCases}:{})},null,2)+'\n');
 console.log(`${schemaCases.length} native browser schema cases, ${stateCases.length} full-channel lifecycle traces, ${transportCases.length} NDJSON byte-stream cases`);
