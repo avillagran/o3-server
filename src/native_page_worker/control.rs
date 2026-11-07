@@ -130,7 +130,9 @@ impl ControlledPage {
             Err(_) => {
                 // The call can already have mutated the page. Fence and close
                 // only its captured grant; never replay or certify its outcome.
-                self.0.worker.close().await;
+                if update_current_tab {
+                    self.0.worker.close().await;
+                }
                 return Err(Error::Transport(Fault::Deadline));
             }
         }

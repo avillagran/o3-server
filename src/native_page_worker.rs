@@ -175,14 +175,22 @@ struct Call {
     operation: String,
     input: Value,
     deadline: Instant,
+    retire_on_deadline: bool,
     reply: oneshot::Sender<Result<OperationResult, Fault>>,
+}
+struct OwnerCall {
+    deadline: Instant,
+    reply: oneshot::Sender<Result<(), Fault>>,
 }
 struct Pending {
     deadline: Instant,
-    reply: oneshot::Sender<Result<OperationResult, Fault>>,
+    retire_on_deadline: bool,
+    reply: Option<oneshot::Sender<Result<OperationResult, Fault>>>,
 }
 struct Handle {
     calls: mpsc::Sender<Call>,
+    controls: mpsc::Sender<OwnerCall>,
+    retire: mpsc::Sender<Fault>,
     stop: watch::Sender<bool>,
     closed: watch::Receiver<Option<CloseReceipt>>,
 }
@@ -242,6 +250,8 @@ impl Worker {
             return Err(close_without_child(&spec, &owner, Fault::SpawnFailed).await);
         };
         let (calls, rx) = mpsc::channel(MAX_PENDING);
+        let (controls, control_rx) = mpsc::channel(1);
+        let (retire, retiring) = mpsc::channel(1);
         let (stop, stop_rx) = watch::channel(false);
         let (closed_tx, closed) = watch::channel(None);
         let (ready_tx, ready) = oneshot::channel();
@@ -258,6 +268,8 @@ impl Worker {
             stdout,
             stderr,
             calls: rx,
+            controls: control_rx,
+            retire: retiring,
             stop: stop_rx,
             closed: closed_tx,
             ready: ready_tx,
@@ -270,6 +282,8 @@ impl Worker {
             Ok(Ok(())) => Ok(Self {
                 handle: Arc::new(Handle {
                     calls,
+                    controls,
+                    retire,
                     stop,
                     closed,
                 }),
@@ -297,21 +311,30 @@ impl Worker {
     /// Owner-only reference invalidation. It preserves this process, Page and
     /// keyboard; an MCP caller must not choose private protocol operations.
     pub async fn invalidate_refs(&self) -> Result<(), Fault> {
-        match self
-            .invoke("$owner.invalidateRefs", Value::Null, Duration::from_secs(5))
-            .await?
-        {
-            OperationResult::Value(Value::Bool(true)) => Ok(()),
-            _ => Err(Fault::Protocol),
+        if *self.handle.stop.borrow() || self.handle.closed.borrow().is_some() {
+            return Err(Fault::Closed);
         }
+        let (reply, result) = oneshot::channel();
+        self.handle
+            .controls
+            .try_send(OwnerCall {
+                deadline: Instant::now() + Duration::from_secs(5),
+                reply,
+            })
+            .map_err(|error| match error {
+                mpsc::error::TrySendError::Full(_) => Fault::Busy,
+                mpsc::error::TrySendError::Closed(_) => Fault::Closed,
+            })?;
+        result.await.unwrap_or(Err(Fault::Exited))
     }
+
     pub async fn invoke(
         &self,
         operation: &str,
         input: Value,
         timeout: Duration,
     ) -> Result<OperationResult, Fault> {
-        self.invoke_budget(operation, input, timeout, Duration::ZERO)
+        self.invoke_budget(operation, input, timeout, Duration::ZERO, true)
             .await
     }
     /// Preserve the native operation timeout while allowing its original host
@@ -337,6 +360,7 @@ impl Worker {
             } else {
                 Duration::ZERO
             },
+            update_current_tab,
         )
         .await
     }
@@ -346,6 +370,7 @@ impl Worker {
         input: Value,
         timeout: Duration,
         grace: Duration,
+        retire_on_deadline: bool,
     ) -> Result<OperationResult, Fault> {
         if timeout.is_zero() || timeout > Duration::from_secs(120) {
             return Err(Fault::Deadline);
@@ -353,21 +378,33 @@ impl Worker {
         if *self.handle.stop.borrow() || self.handle.closed.borrow().is_some() {
             return Err(Fault::Closed);
         }
-        let (reply, result) = oneshot::channel();
+        let (reply, mut result) = oneshot::channel();
+        let deadline = Instant::now() + timeout + grace;
         self.handle
             .calls
             .try_send(Call {
                 operation: operation.into(),
                 input,
                 native_timeout: timeout,
-                deadline: Instant::now() + timeout + grace,
+                deadline,
+                retire_on_deadline,
                 reply,
             })
             .map_err(|e| match e {
                 mpsc::error::TrySendError::Full(_) => Fault::Busy,
                 mpsc::error::TrySendError::Closed(_) => Fault::Closed,
             })?;
-        result.await.unwrap_or(Err(Fault::Exited))
+        match tokio::time::timeout_at(deadline, &mut result).await {
+            Ok(value) => value.unwrap_or(Err(Fault::Exited)),
+            Err(_) if !retire_on_deadline => Err(Fault::Deadline),
+            Err(_) => {
+                // Also fences a call still in the bounded ingress queue behind
+                // eight late metadata operations. The actor revokes its owned
+                // grant before resolving the original queued caller receipt.
+                let _ = self.handle.retire.try_send(Fault::Deadline);
+                result.await.unwrap_or(Err(Fault::Deadline))
+            }
+        }
     }
     /// The receipt confirms both the Node reap and independent owner grant close.
     /// An owner timeout/refusal remains false even if the child has exited.
@@ -454,6 +491,8 @@ struct Running {
     stdout: tokio::process::ChildStdout,
     stderr: tokio::process::ChildStderr,
     calls: mpsc::Receiver<Call>,
+    controls: mpsc::Receiver<OwnerCall>,
+    retire: mpsc::Receiver<Fault>,
     stop: watch::Receiver<bool>,
     closed: watch::Sender<Option<CloseReceipt>>,
     ready: oneshot::Sender<Result<(), Fault>>,
@@ -469,6 +508,8 @@ async fn run(running: Running) {
         mut stdout,
         mut stderr,
         mut calls,
+        mut controls,
+        mut retire,
         mut stop,
         closed,
         ready,
@@ -480,6 +521,7 @@ async fn run(running: Running) {
     let mut revoked = owner.revocation();
     let (frames, mut inbound) = mpsc::channel(8);
     let (writes, mut outbound) = mpsc::channel::<Value>(8);
+    let (control_writes, mut control_outbound) = mpsc::channel::<Value>(1);
     let (fault_tx, mut faults) = mpsc::channel(2);
     let reader = tokio::spawn(async move {
         loop {
@@ -491,7 +533,16 @@ async fn run(running: Running) {
         }
     });
     let writer = tokio::spawn(async move {
-        while let Some(packet) = outbound.recv().await {
+        loop {
+            // Priority is between complete frames, never in the middle of one.
+            let packet = tokio::select! {
+                biased;
+                packet = control_outbound.recv() => packet,
+                packet = outbound.recv() => packet,
+            };
+            let Some(packet) = packet else {
+                break;
+            };
             if let Err(error) = write_frame(&mut stdin, &packet).await {
                 let _ = fault_tx.send(error).await;
                 break;
@@ -526,6 +577,8 @@ async fn run(running: Running) {
     };
     let mut pending = BTreeMap::<u64, Pending>::new();
     let mut next = 0u64;
+    let mut next_owner = 0u64;
+    let mut owner_pending: Option<(u64, OwnerCall)> = None;
     let cause = if let Err(error) = handshake {
         let _ = ready.send(Err(error));
         error
@@ -534,16 +587,35 @@ async fn run(running: Running) {
         loop {
             let deadline = pending
                 .values()
+                .filter(|p| p.reply.is_some())
                 .map(|p| p.deadline)
+                .chain(owner_pending.iter().map(|(_, call)| call.deadline))
                 .min()
                 .unwrap_or(Instant::now() + Duration::from_secs(86400));
             tokio::select! {
                     _=stop.changed()=>break Fault::Closed,
+                    Some(reason)=retire.recv()=>break reason,
                     _=revoked.changed()=>break Fault::Revoked,
                     status=child.wait()=>{let _=status;break Fault::Exited;},
                     Some(fault)=faults.recv()=>break fault,
                     Some(fault)=stderr_fail.recv()=>break fault,
-                    _=tokio::time::sleep_until(deadline),if !pending.is_empty()=>break Fault::Deadline,
+                    _=tokio::time::sleep_until(deadline),if pending.values().any(|p|p.reply.is_some()) || owner_pending.is_some()=>{
+                        let now=Instant::now();
+                        if owner_pending.as_ref().is_some_and(|(_,call)|call.deadline<=now) || pending.values().any(|call|call.reply.is_some() && call.deadline<=now && call.retire_on_deadline){break Fault::Deadline;}
+                        // A metadata timeout removes only its caller receipt. Keep
+                        // a bounded wire tombstone and the active slot until the
+                        // actual native response arrives; never replay it.
+                        for call in pending.values_mut().filter(|call|call.deadline<=now){if let Some(reply)=call.reply.take(){let _=reply.send(Err(Fault::Deadline));}}
+                    },
+                    call=controls.recv(),if owner_pending.is_none()=>{
+                        let Some(call)=call else {break Fault::Closed;};
+                        if call.reply.is_closed(){continue;}
+                        if call.deadline<=Instant::now(){let _=call.reply.send(Err(Fault::Deadline));continue;}
+                        next_owner+=1;if next_owner>9_007_199_254_740_991{break Fault::Protocol;}
+                        let packet=json!({"kind":"owner-control","nonce":nonce,"id":next_owner,"action":"invalidateRefs"});
+                        owner_pending=Some((next_owner,call));
+                        if control_writes.try_send(packet).is_err(){break Fault::Busy;}
+                    },
                     call=calls.recv(),if pending.len()<MAX_PENDING=>{
                      let Some(call)=call else{break Fault::Closed;};if *revoked.borrow()||*stop.borrow(){let _=call.reply.send(Err(Fault::Revoked));break Fault::Revoked;}
             if call.reply.is_closed(){continue;}
@@ -551,14 +623,22 @@ async fn run(running: Running) {
                      next+=1;if next>9_007_199_254_740_991{break Fault::Protocol;}
                      let packet=json!({"kind":"invoke","id":next,"nonce":nonce,"operation":call.operation,"input":call.input,"timeoutMs":call.native_timeout.as_millis().max(1)});
                      if serde_json::to_vec(&packet).map_or(true,|b|b.len()>MAX_FRAME_BYTES){let _=call.reply.send(Err(Fault::TooLarge));continue;}
-                     pending.insert(next,Pending{deadline:call.deadline,reply:call.reply});if writes.try_send(packet).is_err(){break Fault::Busy;}
+                     pending.insert(next,Pending{deadline:call.deadline,retire_on_deadline:call.retire_on_deadline,reply:Some(call.reply)});if writes.try_send(packet).is_err(){break Fault::Busy;}
                     },
                     packet=inbound.recv()=>{
                      let mut packet=match packet{Some(Ok(v))=>v,Some(Err(e))=>break e,None=>break Fault::Exited};
+                     if packet["kind"]=="owner-result" {
+                         if packet.envelope!=json!({"kind":"owner-result","nonce":nonce,"id":packet["id"],"ok":true}) {break Fault::Protocol;}
+                         let Some((id,call))=owner_pending.take() else {break Fault::Protocol;};
+                         if packet["id"].as_u64()!=Some(id){let _=call.reply.send(Err(Fault::Protocol));break Fault::Protocol;}
+                         if *revoked.borrow()||*stop.borrow(){let _=call.reply.send(Err(Fault::Revoked));break Fault::Revoked;}
+                         if call.deadline<=Instant::now(){let _=call.reply.send(Err(Fault::Deadline));break Fault::Deadline;}
+                         let _=call.reply.send(Ok(()));continue;
+                     }
                      if !packet.as_object().is_some_and(|m|m.keys().all(|k|matches!(k.as_str(),"kind"|"nonce"|"id"|"ok"|"value"|"error")))||packet["kind"]!="result"||packet["nonce"]!=nonce{break Fault::Protocol;}
                      let Some(id)=packet["id"].as_u64()else{break Fault::Protocol;};let Some(call)=pending.remove(&id)else{break Fault::Protocol;};
-                     if *revoked.borrow()||*stop.borrow(){let _=call.reply.send(Err(Fault::Revoked));break Fault::Revoked;}
-                     let exact=packet.exact.take();let result=match packet["ok"].as_bool(){Some(true)if packet.get("error").is_none()&&packet.get("value").is_some()=>Ok(OperationResult::Value(packet["value"].clone())),Some(false)if packet.get("value").is_none()&&packet["error"].is_object()=>Ok(OperationResult::NativeError(packet["error"].clone())),_=>{let _=call.reply.send(Err(Fault::Protocol));break Fault::Protocol;}};let result=result.map(|value|exact.unwrap_or(value));let _=call.reply.send(result);
+                     if *revoked.borrow()||*stop.borrow(){if let Some(reply)=call.reply{let _=reply.send(Err(Fault::Revoked));}break Fault::Revoked;}
+                     let exact=packet.exact.take();let result=match packet["ok"].as_bool(){Some(true)if packet.get("error").is_none()&&packet.get("value").is_some()=>Ok(OperationResult::Value(packet["value"].clone())),Some(false)if packet.get("value").is_none()&&packet["error"].is_object()=>Ok(OperationResult::NativeError(packet["error"].clone())),_=>{if let Some(reply)=call.reply{let _=reply.send(Err(Fault::Protocol));}break Fault::Protocol;}};let result=result.map(|value|exact.unwrap_or(value));if let Some(reply)=call.reply{if call.deadline<=Instant::now(){let _=reply.send(Err(Fault::Deadline));if call.retire_on_deadline{break Fault::Deadline;}}else{let _=reply.send(result);}}
                     }
                    }
         }
@@ -589,6 +669,15 @@ async fn run(running: Running) {
     }
     owner.revoke();
     for (_, call) in pending {
+        if let Some(reply) = call.reply {
+            let _ = reply.send(Err(cause));
+        }
+    }
+    if let Some((_, call)) = owner_pending {
+        let _ = call.reply.send(Err(cause));
+    }
+    controls.close();
+    while let Ok(call) = controls.try_recv() {
         let _ = call.reply.send(Err(cause));
     }
     calls.close();
@@ -846,7 +935,88 @@ mod tests {
                 .unwrap_err(),
             Fault::Deadline
         );
-        assert!(worker.close().await.worker_reaped);
+        // The late result for the expired metadata request is drained without
+        // completing the successor or replacing the retained Page/Keyboard.
+        assert_eq!(
+            worker
+                .invoke_native("evaluate", json!({}), Duration::from_millis(100), true)
+                .await
+                .unwrap(),
+            OperationResult::Value(json!({"nativeTimeoutMs":100}))
+        );
+        let receipt = worker.close().await;
+        assert!(receipt.worker_reaped);
+        assert_eq!(receipt.cause, Fault::Closed);
+    }
+    #[tokio::test]
+    async fn queued_deadlines_expire_behind_eight_late_metadata_calls() {
+        let spec = spec("hang");
+        let trace = spec.private_home.join("peer-invocations.json");
+        let worker = Worker::spawn(spec, Owner::new(false)).await.unwrap();
+        let mut metadata = Vec::new();
+        for _ in 0..8 {
+            let call = worker.clone();
+            metadata.push(tokio::spawn(async move {
+                call.invoke_native("waitFor", json!({}), Duration::from_secs(1), false)
+                    .await
+            }));
+        }
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let count = std::fs::read(&trace)
+                    .ok()
+                    .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+                    .and_then(|value| value["count"].as_u64());
+                if count == Some(8) {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .unwrap();
+        for call in metadata {
+            assert_eq!(call.await.unwrap().unwrap_err(), Fault::Deadline);
+        }
+        assert_eq!(
+            tokio::time::timeout(
+                Duration::from_secs(1),
+                worker.invoke_native("evaluate", json!({}), Duration::from_millis(20), false)
+            )
+            .await
+            .unwrap()
+            .unwrap_err(),
+            Fault::Deadline
+        );
+        worker.invalidate_refs().await.unwrap();
+        assert_eq!(
+            tokio::time::timeout(
+                Duration::from_secs(2),
+                worker.invoke_native("evaluate", json!({}), Duration::from_millis(20), true)
+            )
+            .await
+            .unwrap()
+            .unwrap_err(),
+            Fault::Deadline
+        );
+        let receipt = worker.close().await;
+        assert!(receipt.worker_reaped && receipt.owner_grant_closed);
+        assert_eq!(receipt.cause, Fault::Deadline);
+        let count: Value = serde_json::from_slice(&std::fs::read(trace).unwrap()).unwrap();
+        assert_eq!(
+            count["count"], 8,
+            "Expired ingress calls must never reach the native worker"
+        );
+    }
+    #[tokio::test]
+    async fn owner_control_acknowledgments_require_the_exact_private_envelope() {
+        for mode in ["owner-wrong-id", "owner-extra"] {
+            let worker = Worker::spawn(spec(mode), Owner::new(false)).await.unwrap();
+            assert_eq!(worker.invalidate_refs().await.unwrap_err(), Fault::Protocol);
+            let receipt = worker.close().await;
+            assert_eq!(receipt.cause, Fault::Protocol);
+            assert!(receipt.worker_reaped && receipt.owner_grant_closed);
+        }
     }
     #[tokio::test]
     async fn real_owned_node_protocol_and_native_errors() {

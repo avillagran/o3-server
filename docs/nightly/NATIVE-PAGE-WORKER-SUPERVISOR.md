@@ -105,3 +105,38 @@ removals; no recursive removal executes.
 The full public toolkit remains inactive. In particular, nonretiring metadata
 broker timeouts, a reserved owner-invalidation control lane, complete operation
 consumers and authenticated provider-to-MCP selection still require acceptance.
+
+### Metadata deadlines and the owner lane
+
+The complete pinned `PreviewAutomationBroker` source oracle distinguishes
+background metadata requests (`updateCurrentTab: false`) from foreground
+requests. Metadata expiration removes its caller receipt without evicting the
+host or changing the assigned tab. The native foreground response budget adds
+exactly 1,000 ms, then evicts the host on expiration. The oracle uses actual
+Effect scheduling and host streams, with only UUID generation and the host
+response transport injected; it does not prove authentication.
+
+The Rust supervisor now preserves its retained worker on metadata expiration.
+It keeps a bounded wire tombstone and its application slot until the real
+response arrives. An ingress request still has its own deadline while all eight
+wire slots are occupied: an expired metadata request is never dispatched.
+Foreground expiration also reaches the actor through a separate retirement
+signal, so an ingress backlog cannot suppress the owned-grant fence. Late
+results cannot complete another request. Persistent unresolved native requests
+still consume the explicit eight-slot worker capacity; this is a resource bound,
+not a claim of native unlimited concurrency.
+
+Reference invalidation uses a separate bounded owner-control channel and reply
+identifier sequence, independent of application capacity and native Keyboard
+state. Its writer gives owner frames priority between complete frames; it never
+interrupts an in-progress frame. The fixed action, nonce, identifier and exact
+acknowledgment envelope are checked. Application arguments cannot become owner
+frames. A missing or malformed owner acknowledgment retires the captured grant
+rather than certifying reference invalidation.
+
+The actual Chromium probe admits eight original native waits, expires their
+metadata callers, expires a ninth request still in ingress without executing
+its expression, invalidates references through the owner lane, then releases
+and drains the eight actual late responses. The same Page and Keyboard remain
+usable. These owner-library transport receipts do not activate the public
+catalog or establish authenticated MCP admission.

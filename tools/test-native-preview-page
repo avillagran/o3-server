@@ -2,7 +2,7 @@
 """Run reviewed whole-native page functions against a retained private Chromium owner."""
 import argparse,json,os,pathlib,subprocess,tempfile,hashlib,uuid
 from node_admission import snapshot as snapshot_node, environment as node_environment
-p=argparse.ArgumentParser(description=__doc__);p.add_argument('--supervisor-bin',type=pathlib.Path);p.add_argument('--consumer-source',type=pathlib.Path,help='Pinned whole native ServerBrowser source for selected consumer oracle');p.add_argument('--reuse-node-artifact',type=pathlib.Path,help='Reuse an existing immutable admitted Node with the same exact hash');p.add_argument('--case',choices=['real-page','retention','contracts','relay','supervised','supervised-revoke','entry-protocol','framing','mcp-output','owned-pipe','control-queue','control-consumer'],default='real-page');p.add_argument('--native',type=pathlib.Path,required=True);p.add_argument('--playwright',type=pathlib.Path,required=True);p.add_argument('--deps',type=pathlib.Path,required=True);p.add_argument('--node',type=pathlib.Path,required=True);p.add_argument('--guard',type=pathlib.Path,required=True);p.add_argument('--evidence-root',type=pathlib.Path,required=True);a=p.parse_args()
+p=argparse.ArgumentParser(description=__doc__);p.add_argument('--supervisor-bin',type=pathlib.Path);p.add_argument('--broker-source',type=pathlib.Path,help='Pinned complete native PreviewAutomationBroker source');p.add_argument('--consumer-source',type=pathlib.Path,help='Pinned whole native ServerBrowser source for selected consumer oracle');p.add_argument('--reuse-node-artifact',type=pathlib.Path,help='Reuse an existing immutable admitted Node with the same exact hash');p.add_argument('--case',choices=['real-page','retention','contracts','relay','supervised','supervised-revoke','entry-protocol','framing','mcp-output','owned-pipe','control-queue','control-consumer','broker-timeout'],default='real-page');p.add_argument('--native',type=pathlib.Path,required=True);p.add_argument('--playwright',type=pathlib.Path,required=True);p.add_argument('--deps',type=pathlib.Path,required=True);p.add_argument('--node',type=pathlib.Path,required=True);p.add_argument('--guard',type=pathlib.Path,required=True);p.add_argument('--evidence-root',type=pathlib.Path,required=True);a=p.parse_args()
 node_binary=a.node/'bin/node';node_stat=node_binary.lstat()
 assert node_binary.is_file() and not node_binary.is_symlink() and node_stat.st_mode&0o111
 node_sha=hashlib.sha256(node_binary.read_bytes()).hexdigest()
@@ -46,6 +46,12 @@ for directory in ['runtime/preview','tests/preview']:
   assert item.is_file() and not item.is_symlink()
   relative=item.relative_to(source);target=snapshot/relative;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(item.read_bytes());target.chmod(0o400);hashes[str(relative)]=hashlib.sha256(target.read_bytes()).hexdigest()
 (out/'source.json').write_text(json.dumps(hashes,indent=2)+'\n')
+if a.case=='broker-timeout':
+ assert a.broker_source and a.broker_source.is_file() and not a.broker_source.is_symlink()
+ provenance=json.loads((source/'tests/fixtures/native-broker-timeout-4314-source.json').read_text())
+ payload=a.broker_source.read_bytes();assert hashlib.sha256(payload).hexdigest()==provenance['sha256']
+ (out/'native-broker.ts').write_bytes(payload);(out/'native-broker.ts').chmod(0o400)
+ (out/'native-broker-source.json').write_text(json.dumps(provenance,indent=2)+'\n')
 if a.case=='control-consumer':
  assert a.consumer_source and a.consumer_source.is_file() and not a.consumer_source.is_symlink()
  provenance=json.loads((source/'tests/fixtures/native-control-consumer-4314-source.json').read_text())

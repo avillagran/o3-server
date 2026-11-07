@@ -3,7 +3,7 @@ import fs from 'node:fs';import path from 'node:path';import {createRequire} fro
 import {FrameDecoder,MAGIC,MAX_FRAME_BYTES as MAX} from './framed-ipc.mjs';
 import {RetainingArtifactFs} from './retaining-artifact-fs.mjs';import {attachPage} from './page-worker.mjs';
 if(process.versions.node!=='26.13.0'){process.stderr.write('NATIVE_PAGE_NODE_VERSION_UNAVAILABLE\n');process.exit(2);}
-let initializing=false,ready=false,closing=false,nonce,page,artifacts;let lastId=0,finishTask,nativePageModule;let active=0,tail=Promise.resolve();
+let initializing=false,ready=false,closing=false,nonce,page,artifacts;let lastId=0,finishTask,nativePageModule;let ownerId=0,ownerActive=false;let active=0,tail=Promise.resolve();
 function keys(value,allowed){return value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).every(k=>allowed.includes(k));}
 async function send(value){const body=Buffer.from(JSON.stringify(value));if(body.length>MAX)throw Error('frame_limit');const header=Buffer.alloc(12);MAGIC.copy(header);header.writeUInt32LE(body.length,8);await new Promise((resolve,reject)=>process.stdout.write(Buffer.concat([header,body]),error=>error?reject(error):resolve()));}
 function fatal(){if(closing)return;closing=true;process.stderr.write('NATIVE_PAGE_WORKER_PROTOCOL_FAILURE\n');process.exitCode=2;process.stdin.destroy();void finish(false);}
@@ -37,14 +37,20 @@ async function invoke(packet){
  active++;
  const run=async()=>{
   if(closing)return;
-  try{const value=operation==='$owner.invalidateRefs'?(page.invalidateRefs(),true):await page.invoke(operation,input,packet.timeoutMs);if(!closing)await send({kind:'result',id:packet.id,nonce,ok:true,value:value??null});}
+  try{const value=await page.invoke(operation,input,packet.timeoutMs);if(!closing)await send({kind:'result',id:packet.id,nonce,ok:true,value:value??null});}
   catch(error){if(!closing){const failure=nativePageModule.toOperationError(error,packet.timeoutMs);await send({kind:'result',id:packet.id,nonce,ok:false,error:{tag:failure.tag,message:failure.message,...(failure.detail===undefined?{}:{detail:failure.detail})}});}}
   finally{active--;}
  };
  // The owner still supplies control receipts. One canonical Page keyboard is
  // shared by legacy aliases and preview_act, never a second Rust key state.
- if(operation==='snapshot'||operation==='waitFor'||operation==='$owner.invalidateRefs')void run().catch(fatal);
+ if(operation==='snapshot'||operation==='waitFor')void run().catch(fatal);
  else{const result=tail.then(run);tail=result.catch(()=>{});void result.catch(fatal);}
+}
+async function ownerControl(packet){
+ if(!ready||closing||!keys(packet,['kind','id','nonce','action'])||packet.nonce!==nonce||!Number.isSafeInteger(packet.id)||packet.id<=ownerId||packet.action!=='invalidateRefs'||ownerActive)throw Error('owner_control');
+ ownerId=packet.id;ownerActive=true;
+ try{page.invalidateRefs();await send({kind:'owner-result',nonce,id:packet.id,ok:true});}
+ finally{ownerActive=false;}
 }
 function finish(success=true){
  if(finishTask)return finishTask;closing=true;ready=false;finishTask=(async()=>{
@@ -56,6 +62,7 @@ function finish(success=true){
 const decoder=new FrameDecoder(packet=>{
  if(packet.kind==='init')void initialize(packet).catch(fatal);
  else if(packet.kind==='invoke')void invoke(packet).catch(fatal);
+ else if(packet.kind==='owner-control')void ownerControl(packet).catch(fatal);
  else if(packet.kind==='close'&&packet.nonce===nonce&&keys(packet,['kind','nonce']))void finish();
  else throw Error('frame_kind');
 });

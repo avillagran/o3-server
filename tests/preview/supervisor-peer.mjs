@@ -1,7 +1,7 @@
 // Synthetic process boundary fixture, not a production fallback.
 import fs from 'node:fs';
 fs.writeFileSync(process.env.HOME+'/peer-started.json',JSON.stringify({pid:process.pid,stage:'module'}));
-const MAGIC=Buffer.from('O3PG0001');let pending=Buffer.alloc(0),init,mode,latePacket;let invalidations=0;
+const MAGIC=Buffer.from('O3PG0001');let pending=Buffer.alloc(0),init,mode,latePacket;let invalidations=0,invocations=0;
 function send(value){const body=Buffer.from(JSON.stringify(value));const head=Buffer.alloc(12);MAGIC.copy(head);head.writeUInt32LE(body.length,8);process.stdout.write(Buffer.concat([head,body]));}
 process.stdin.on('data',chunk=>{pending=Buffer.concat([pending,chunk]);while(pending.length>=12){if(!pending.subarray(0,8).equals(MAGIC))process.exit(2);const n=pending.readUInt32LE(8);if(n>16777216)process.exit(2);if(pending.length<n+12)return;const packet=JSON.parse(pending.subarray(12,12+n));pending=pending.subarray(12+n);handle(packet);}});
 function handle(packet){
@@ -13,8 +13,9 @@ function handle(packet){
   send({kind:'ready',protocol:1,nonce:mode==='wrong-nonce'?'wrong':init.nonce});return;
  }
  if(packet.kind==='close'){if(mode==='late'&&latePacket){fs.writeFileSync(process.env.HOME+'/late-sent.json',JSON.stringify({afterOwnerClose:true}));send({kind:'result',nonce:init.nonce,id:latePacket.id,ok:true,value:'late'});}if(mode==='hang'||mode==='startup-hang')return;send({kind:'closed',nonce:init.nonce,artifactHealthy:true,nativeRecursiveRequests:0,executedRecursiveRemovals:0});process.stdout.write('',()=>process.exit(0));}
+ if(packet.kind==='owner-control'){invalidations++;send({kind:'owner-result',nonce:init.nonce,id:mode==='owner-wrong-id'?packet.id+1:packet.id,ok:true,...(mode==='owner-extra'?{value:true}:{})});return;}
  if(packet.kind==='invoke'){
-  if(packet.operation==='$owner.invalidateRefs'){invalidations++;send({kind:'result',nonce:init.nonce,id:packet.id,ok:true,value:true});return;}
+  fs.writeFileSync(process.env.HOME+'/peer-invocations.json',JSON.stringify({count:++invocations}));
   if(mode==='surrogate'){send({kind:'result',nonce:init.nonce,id:packet.id,ok:true,value:{'\ud800':'\udfff',pair:'😀'}});return;}
   if(mode==='grace'){setTimeout(()=>send({kind:'result',nonce:init.nonce,id:packet.id,ok:true,value:{nativeTimeoutMs:packet.timeoutMs}}),packet.timeoutMs+60);return;}
   if(mode==='crash'){process.exit(17);}

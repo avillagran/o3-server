@@ -371,6 +371,71 @@ async fn main() {
             o3_server::native_page_worker::cdp::Packet::decode(&encoded, 4096).unwrap()
         );
     }
+    // All eight real native waits remain active after their metadata callers
+    // expire. Owner invalidation has its own bounded lane and cannot be starved
+    // by those application slots. The actual late results are then drained.
+    let mut metadata = Vec::new();
+    for index in 0..8 {
+        let call = worker.clone();
+        metadata.push(tokio::spawn(async move {
+            call.invoke_native(
+                "waitFor",
+                json!({"text":format!("metadata-slot-{index}"),"timeoutMs":5000}),
+                Duration::from_millis(200),
+                false,
+            )
+            .await
+        }));
+    }
+    let barrier = owner.clone();
+    tokio::task::spawn_blocking(move || barrier.exchange("await-metadata"))
+        .await
+        .unwrap()
+        .unwrap();
+    // The ninth request cannot acquire a wire slot yet. Its own metadata
+    // deadline must still resolve without retiring the host or sending a frame.
+    assert_eq!(
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            worker.invoke_native(
+                "evaluate",
+                json!({"expression":"globalThis.__queuedMetadataMustNotRun = true"}),
+                Duration::from_millis(30),
+                false
+            )
+        )
+        .await
+        .unwrap()
+        .unwrap_err(),
+        Fault::Deadline
+    );
+    worker.invalidate_refs().await.unwrap();
+    for call in metadata {
+        assert_eq!(call.await.unwrap().unwrap_err(), Fault::Deadline);
+    }
+    owner.exchange("release-metadata").unwrap();
+    assert_eq!(
+        worker
+            .invoke(
+                "evaluate",
+                json!({"expression":"document.querySelector('#field').value"}),
+                Duration::from_secs(3)
+            )
+            .await
+            .unwrap(),
+        OperationResult::Value(json!("after-handoff"))
+    );
+    assert_eq!(
+        worker
+            .invoke(
+                "evaluate",
+                json!({"expression":"typeof globalThis.__queuedMetadataMustNotRun"}),
+                Duration::from_secs(3)
+            )
+            .await
+            .unwrap(),
+        OperationResult::Value(json!("undefined"))
+    );
     // Entered native callbacks drain through handoff and close. The fixture
     // signals only a synthetic promise on this exact owned target/session.
     let entered = controlled.clone();
@@ -462,6 +527,6 @@ async fn main() {
     assert_eq!(receipt.executed_recursive_removals, Some(0));
     println!(
         "{}",
-        json!({"complete":true,"rustSupervisor":true,"nativePageChildProcess":true,"sameKeyboardAliases":true,"failedChordStateCrossesAliases":true,"ownerRefInvalidationPreservesPage":true,"nativeRawCdpRoundtrip":true,"controlRetainsExactJavaScript":true,"enteredHandoffFinallyInvalidates":true,"enteredCloseDrainsBeforeReap":true,"workerReaped":receipt.worker_reaped,"ownerClosed":receipt.owner_grant_closed,"nativeRecursiveCleanupRequests":receipt.native_cleanup_requests,"executedRecursiveRemovals":receipt.executed_recursive_removals})
+        json!({"complete":true,"rustSupervisor":true,"nativePageChildProcess":true,"sameKeyboardAliases":true,"failedChordStateCrossesAliases":true,"ownerRefInvalidationPreservesPage":true,"nativeRawCdpRoundtrip":true,"controlRetainsExactJavaScript":true,"metadataTimeoutPreservesWorker":true,"queuedNinthMetadataExpiresWithoutDispatch":true,"ownerLaneSurvivesEightActiveOperations":true,"enteredHandoffFinallyInvalidates":true,"enteredCloseDrainsBeforeReap":true,"workerReaped":receipt.worker_reaped,"ownerClosed":receipt.owner_grant_closed,"nativeRecursiveCleanupRequests":receipt.native_cleanup_requests,"executedRecursiveRemovals":receipt.executed_recursive_removals})
     );
 }
