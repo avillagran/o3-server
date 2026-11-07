@@ -41,7 +41,8 @@ struct Scope {
     thread: String,
     project: String,
     profile: String,
-    tabs: Mutex<Vec<String>>,
+    ordinary: Mutex<()>,
+    tabs: std::sync::Mutex<Vec<String>>,
     revoked: AtomicBool,
 }
 impl Drop for Broker {
@@ -82,7 +83,8 @@ impl Broker {
             project,
             profile: format!("agent:{}", crate::store::random_id().ok()?),
             revoked: AtomicBool::new(false),
-            tabs: Mutex::new(Vec::new()),
+            ordinary: Mutex::new(()),
+            tabs: std::sync::Mutex::new(Vec::new()),
         });
         Some(Self {
             scope,
@@ -110,8 +112,9 @@ impl Scope {
         let Some(state) = self.state.upgrade() else {
             return;
         };
-        let mut tabs = self.tabs.lock().await;
-        for tab in tabs.drain(..) {
+        let _ordinary = self.ordinary.lock().await;
+        let tabs = std::mem::take(&mut *self.tabs.lock().unwrap());
+        for tab in tabs {
             let _ = preview::call(
                 &state,
                 "preview.close",
@@ -130,8 +133,13 @@ impl Scope {
             .state
             .upgrade()
             .ok_or_else(|| json!({"message":"Browser owner closed"}))?;
-        let mut tabs = self.tabs.lock().await;
-        // Check after waiting for tab ownership, so terminal-turn cleanup cannot be
+        let _ordinary = if matches!(name, "preview_status" | "preview_dialog") {
+            None
+        } else {
+            Some(self.ordinary.lock().await)
+        };
+        let tabs = self.tabs.lock().unwrap().clone();
+        // Check after waiting for ordinary work, so terminal-turn cleanup cannot be
         // followed by a queued operation admitted while the parent was still active.
         authority.browser_admission(
             &state,
@@ -152,7 +160,10 @@ impl Scope {
                 return Err(json!({"message":"Close a tab before opening another (limit 4)"}));
             }
             let result=preview::call(&state,"preview.open",&json!({"threadId":self.thread,"runtime":"server","profileId":format!("{}:{}",self.profile,crate::store::random_id().map_err(|_|json!({"message":"Cannot allocate context"}))?),"url":p["url"]})).await?;
-            tabs.push(result["tabId"].as_str().unwrap().into());
+            self.tabs
+                .lock()
+                .unwrap()
+                .push(result["tabId"].as_str().unwrap().into());
             return Ok(result);
         }
         let tab = p["tabId"]
@@ -182,7 +193,7 @@ impl Scope {
         match name {
             "preview_close" => {
                 let result = preview::call(&state, "preview.close", &args).await?;
-                tabs.retain(|t| t != &tab);
+                self.tabs.lock().unwrap().retain(|t| t != &tab);
                 Ok(result)
             }
             "preview_navigate" => preview::call(&state, "preview.navigate", &args).await,

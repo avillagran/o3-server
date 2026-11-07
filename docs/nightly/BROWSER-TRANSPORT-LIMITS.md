@@ -51,3 +51,25 @@ Held-evaluation tests cover both an inherited pipe and a desktop WebSocket.
 Dialog state, native automation status/tool results and viewer broadcasts remain
 the next consumer increment. No browser capability is enabled by this transport
 foundation alone.
+
+## Cleanup ownership and concurrent calls
+
+Browser lookup snapshots use a short synchronous mutex; setup and resource cleanup
+remain serialized by a separate asynchronous gate. A pending evaluation therefore
+does not hold the ownership map while an independent dialog-answer command runs.
+Agent ordinary operations retain their existing serialization and four-tab limit;
+status and dialog resolution may inspect the owned-tab snapshot independently.
+
+Closing and failed-setup receipts remain in the authoritative map until process
+cleanup acknowledges completion. Cancellation of a clear, close, or shutdown wait
+cannot discard that receipt. A closing receipt rejects commands and blocks profile
+reuse. Profile removal only runs after every matching local owner acknowledges
+cleanup. The existing seven-second stop budget is unchanged; a timeout retains
+retryable ownership rather than asserting cleanup succeeded. An acknowledged
+closed target may release its receipt while a live sibling still owns the shared
+process. Failed target closure fences the entire process instead.
+
+The ownership regression injects an unconfirmed cleanup acknowledgement and an
+explicit recording removal executor. It tests retries and caller cancellation
+while retaining the complete private fixture tree. It does not physically remove a
+profile or claim that a timed-out process has exited.

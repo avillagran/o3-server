@@ -96,6 +96,7 @@ pub(super) async fn launch(
         let _ = done_tx.send(true);
     });
     let mut browser = Tab {
+        closing: false,
         session: None,
         target: None,
         profile: profile.into(),

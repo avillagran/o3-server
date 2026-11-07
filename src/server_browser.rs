@@ -12,6 +12,8 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 
 mod desktop;
 mod events;
+#[cfg(test)]
+mod ownership_tests;
 mod pending;
 mod pipe;
 mod write;
@@ -36,7 +38,8 @@ pub struct Browsers {
     #[cfg(test)]
     pub(crate) fixture_binary: std::sync::Mutex<Option<PathBuf>>,
     removal: ProfileRemoval,
-    tabs: Mutex<BTreeMap<(String, String), Tab>>,
+    setup: Mutex<()>,
+    tabs: std::sync::Mutex<BTreeMap<(String, String), Tab>>,
     viewers: std::sync::Mutex<std::collections::BTreeSet<(String, String)>>,
 }
 struct ProfileRemoval(std::sync::Mutex<std::sync::Arc<dyn crate::cleanup::Removal>>);
@@ -62,6 +65,7 @@ pub(crate) struct Navigation {
 }
 #[derive(Clone)]
 struct Tab {
+    closing: bool,
     origin: Origin,
     desktop_channel: Option<crate::desktop_browser_channel::Channel>,
     navigation: Option<tokio::sync::watch::Receiver<Navigation>>,
@@ -290,6 +294,7 @@ async fn launch(
         let _ = done_tx.send(true);
     });
     Ok(Tab {
+        closing: false,
         origin: Origin::Local,
         desktop_channel: None,
         navigation: None,
@@ -302,29 +307,6 @@ async fn launch(
         done,
         cancel,
     })
-}
-
-async fn rollback_setup(tabs: &BTreeMap<(String, String), Tab>, browser: Tab, fence: bool) {
-    if let (Some(pages), Some(session)) = (&browser.events, &browser.session) {
-        events::remove(pages, session);
-    }
-    let closed = if let Some(target) = &browser.target {
-        request(
-            &browser.tx,
-            "Target.closeTarget",
-            json!({"targetId":target}),
-        )
-        .await
-        .is_ok()
-    } else {
-        true
-    };
-    let shared = tabs
-        .values()
-        .any(|other| !*other.done.borrow() && other.tx.same_channel(&browser.tx));
-    if fence || !closed || !shared {
-        stop(browser).await;
-    }
 }
 
 struct Viewer<'a> {
@@ -356,27 +338,73 @@ impl Browsers {
         }
     }
 
+    // Keep cleanup receipts in the authoritative map across cancellation and failed stops.
+    fn closing_tabs(&self, mut matches: impl FnMut(&(String, String), &Tab) -> bool) -> Vec<Tab> {
+        let mut tabs = self.tabs.lock().unwrap();
+        tabs.iter_mut()
+            .filter_map(|(key, tab)| {
+                if !matches(key, tab) {
+                    return None;
+                }
+                tab.closing = true;
+                Some(tab.clone())
+            })
+            .collect()
+    }
+    fn forget_stopped(&self) {
+        self.tabs
+            .lock()
+            .unwrap()
+            .retain(|_, tab| !(tab.closing && *tab.process_done.borrow()));
+    }
+    async fn rollback_setup(&self, browser: Tab, fence: bool) {
+        if let (Some(pages), Some(session)) = (&browser.events, &browser.session) {
+            events::remove(pages, session);
+        }
+        let closed = if let Some(target) = &browser.target {
+            request(
+                &browser.tx,
+                "Target.closeTarget",
+                json!({"targetId":target}),
+            )
+            .await
+            .is_ok()
+        } else {
+            true
+        };
+        let shared = self.tabs.lock().unwrap().values().any(|other| {
+            !other.closing && !*other.done.borrow() && other.tx.same_channel(&browser.tx)
+        });
+        if !fence && closed && shared {
+            self.tabs.lock().unwrap().retain(|_, other| {
+                !(other.closing
+                    && other.tx.same_channel(&browser.tx)
+                    && other.target == browser.target)
+            });
+        } else {
+            if fence || !closed {
+                self.closing_tabs(|_, other| other.tx.same_channel(&browser.tx));
+            }
+            stop(browser).await;
+            self.forget_stopped();
+        }
+    }
     pub async fn clear(&self, root: &Path, profile: &str) -> Result<(), Value> {
         if profile == "incognito" {
             return Ok(());
         }
-        let mut tabs = self.tabs.lock().await;
-        let keys: Vec<_> = tabs
-            .iter()
-            .filter(|(_, t)| t.origin == Origin::Local && t.profile == profile)
-            .map(|(k, _)| k.clone())
-            .collect();
-        for key in keys {
-            if let Some(tab) = tabs.remove(&key) {
-                if !stop(tab).await {
-                    return Err(error(
-                        "Browser has not stopped; profile was not removed".into(),
-                    ));
-                }
+        let _setup = self.setup.lock().await;
+        let tabs =
+            self.closing_tabs(|_, tab| tab.origin == Origin::Local && tab.profile == profile);
+        for tab in tabs {
+            if !stop(tab).await {
+                return Err(error(
+                    "Browser has not stopped; profile was not removed".into(),
+                ));
             }
         }
+        self.forget_stopped();
         let path = directory(root, profile).map_err(error)?;
-        // Processes must have acknowledged exit before removal: refuse active profiles.
         if path.exists() {
             let plan = crate::cleanup::RemovalPlan::prepare(&path, &crate::cleanup::FileTree)
                 .map_err(|_| error("Cannot safely inspect browser profile for removal".into()))?;
@@ -387,38 +415,53 @@ impl Browsers {
         Ok(())
     }
     pub async fn shutdown(&self) {
-        let tabs = std::mem::take(&mut *self.tabs.lock().await);
-        for (_, tab) in tabs {
+        let _setup = self.setup.lock().await;
+        let tabs = self.closing_tabs(|_, _| true);
+        for tab in tabs {
             stop(tab).await;
         }
+        self.forget_stopped();
     }
     pub async fn close(&self, thread: &str, tab: Option<&str>) {
-        let mut tabs = self.tabs.lock().await;
-        let keys: Vec<_> = tabs
-            .keys()
-            .filter(|(t, k)| t == thread && tab.is_none_or(|tab| k == tab))
-            .cloned()
-            .collect();
-        for key in keys {
-            if let Some(tab) = tabs.remove(&key) {
-                let was_live = !*tab.done.borrow();
+        let _setup = self.setup.lock().await;
+        let tabs =
+            self.closing_tabs(|(tid, id), _| tid == thread && tab.is_none_or(|tab| tab == id));
+        let mut outcomes = Vec::new();
+        for tab in tabs {
+            let was_live = !*tab.done.borrow();
+            let closed = if let Some(target) = tab
+                .target
+                .as_ref()
+                .filter(|_| tab.origin == Origin::Local && was_live)
+            {
+                request(&tab.tx, "Target.closeTarget", json!({"targetId":target}))
+                    .await
+                    .is_ok()
+            } else {
+                true
+            };
+            // A canceled close must not turn an unacknowledged target into a stale-page no-op.
+            if closed {
                 if let (Some(pages), Some(session)) = (&tab.events, &tab.session) {
                     events::remove(pages, session);
                 }
-                if let Some(target) = tab
-                    .target
-                    .as_ref()
-                    .filter(|_| tab.origin == Origin::Local && was_live)
-                {
-                    let _ =
-                        request(&tab.tx, "Target.closeTarget", json!({"targetId":target})).await;
+            }
+            outcomes.push((tab, closed));
+        }
+        for (tab, closed) in outcomes {
+            let shared = self.tabs.lock().unwrap().values().any(|other| {
+                !other.closing && !*other.done.borrow() && other.tx.same_channel(&tab.tx)
+            });
+            if shared && closed {
+                self.tabs.lock().unwrap().retain(|_, other| {
+                    !(other.closing && other.tx.same_channel(&tab.tx) && other.target == tab.target)
+                });
+            } else {
+                if !closed {
+                    self.closing_tabs(|_, other| other.tx.same_channel(&tab.tx));
                 }
-                if !tabs
-                    .values()
-                    .any(|other| !*other.done.borrow() && other.tx.same_channel(&tab.tx))
-                {
-                    stop(tab).await;
-                }
+                stop(tab).await;
+                self.forget_stopped();
             }
         }
     }
@@ -431,17 +474,41 @@ impl Browsers {
         profile: &str,
         url: Option<&str>,
     ) -> Result<(), Value> {
-        let mut tabs = self.tabs.lock().await;
-        tabs.retain(|_, t| t.origin == Origin::Desktop || !*t.done.borrow());
-        if tabs.values().filter(|tab| !*tab.done.borrow()).count() >= 8 {
+        let _setup = self.setup.lock().await;
+        let tabs = {
+            let mut tabs = self.tabs.lock().unwrap();
+            tabs.retain(|_, t| t.origin == Origin::Desktop || !*t.process_done.borrow());
+            tabs.clone()
+        };
+        if tabs
+            .values()
+            .filter(|tab| !*tab.process_done.borrow())
+            .count()
+            >= 8
+        {
             return Err(error(
                 "Close a server browser session before opening another".into(),
             ));
         }
-        let mut browser = if let Some(existing) = tabs
-            .values()
-            .find(|t| t.origin == Origin::Local && t.profile == profile && !*t.done.borrow())
-        {
+        if tabs.values().any(|t| {
+            t.origin == Origin::Local
+                && t.profile == profile
+                && !*t.process_done.borrow()
+                && (t.closing
+                    || (*t.done.borrow()
+                        && !tabs.values().any(|other| {
+                            !other.closing && !*other.done.borrow() && other.tx.same_channel(&t.tx)
+                        })))
+        }) {
+            return Err(error("Browser profile is still closing".into()));
+        }
+        let key = (thread.into(), tab.into());
+        if tabs.contains_key(&key) {
+            return Err(error("Browser tab is already owned".into()));
+        }
+        let mut browser = if let Some(existing) = tabs.values().find(|t| {
+            t.origin == Origin::Local && t.profile == profile && !t.closing && !*t.done.borrow()
+        }) {
             existing.clone()
         } else {
             #[cfg(test)]
@@ -463,6 +530,12 @@ impl Browsers {
         browser.target = None;
         browser.session = None;
         browser.navigation = None;
+        browser.closing = true;
+        // A canceled setup retains a non-usable cleanup receipt, including before target discovery.
+        self.tabs
+            .lock()
+            .unwrap()
+            .insert(key.clone(), browser.clone());
         let target = match request(
             &browser.tx,
             "Target.createTarget",
@@ -473,7 +546,7 @@ impl Browsers {
             Ok(target) => target,
             Err(cause) => {
                 let fence = cause == "Browser command timed out";
-                rollback_setup(&tabs, browser, fence).await;
+                self.rollback_setup(browser, fence).await;
                 return Err(error(cause));
             }
         };
@@ -481,10 +554,14 @@ impl Browsers {
             .as_str()
             .filter(|value| !value.is_empty())
         else {
-            rollback_setup(&tabs, browser, true).await;
+            self.rollback_setup(browser, true).await;
             return Err(error("Browser target creation failed".into()));
         };
         browser.target = Some(target_id.to_owned());
+        self.tabs
+            .lock()
+            .unwrap()
+            .insert(key.clone(), browser.clone());
         let initialized: Result<(), String> = async {
             let attached = request(
                 &browser.tx,
@@ -559,10 +636,11 @@ impl Browsers {
         }
         .await;
         if let Err(cause) = initialized {
-            rollback_setup(&tabs, browser, false).await;
+            self.rollback_setup(browser, false).await;
             return Err(error(cause));
         }
-        tabs.insert((thread.into(), tab.into()), browser);
+        browser.closing = false;
+        self.tabs.lock().unwrap().insert(key, browser);
         Ok(())
     }
     /// Adopt a frontend-owned page without navigating or creating another target.
@@ -573,11 +651,15 @@ impl Browsers {
         tab: &str,
         profile: &str,
     ) -> Result<(), Value> {
-        let mut tabs = self.tabs.lock().await;
+        let _setup = self.setup.lock().await;
+        let tabs = self.tabs.lock().unwrap().clone();
         let key = (thread.into(), tab.into());
         if let Some(existing) = tabs.get(&key) {
             if existing.origin != Origin::Desktop {
                 return Err(error("Browser tab is already locally owned".into()));
+            }
+            if existing.closing && !*existing.process_done.borrow() {
+                return Err(error("Desktop browser connection is still closing".into()));
             }
             if !*existing.done.borrow() {
                 return Ok(());
@@ -586,7 +668,12 @@ impl Browsers {
                 return Err(error("Desktop browser connection is still closing".into()));
             }
         }
-        if tabs.values().filter(|tab| !*tab.done.borrow()).count() >= 8 {
+        if tabs
+            .values()
+            .filter(|tab| !*tab.process_done.borrow())
+            .count()
+            >= 8
+        {
             return Err(error(
                 "Close a server browser session before opening another".into(),
             ));
@@ -594,16 +681,16 @@ impl Browsers {
         let browser = desktop::launch(channel, thread, tab, profile)
             .await
             .map_err(error)?;
-        tabs.insert(key, browser);
+        self.tabs.lock().unwrap().insert(key, browser);
         Ok(())
     }
     /// A disconnected desktop page remains frontend-owned and may be reattached.
     pub async fn connection(&self, thread: &str, tab: &str) -> Option<(Origin, bool)> {
         self.tabs
             .lock()
-            .await
+            .unwrap()
             .get(&(thread.into(), tab.into()))
-            .map(|tab| (tab.origin, !*tab.done.borrow()))
+            .map(|tab| (tab.origin, !tab.closing && !*tab.done.borrow()))
     }
     pub(crate) async fn navigation(
         &self,
@@ -612,7 +699,7 @@ impl Browsers {
     ) -> Option<tokio::sync::watch::Receiver<Navigation>> {
         self.tabs
             .lock()
-            .await
+            .unwrap()
             .get(&(thread.into(), tab.into()))
             .and_then(|tab| tab.navigation.clone())
     }
@@ -621,7 +708,7 @@ impl Browsers {
         thread: &str,
         tab: &str,
     ) -> Result<Vec<Value>, Value> {
-        let tabs = self.tabs.lock().await;
+        let tabs = self.tabs.lock().unwrap();
         let tab = tabs
             .get(&(thread.into(), tab.into()))
             .ok_or_else(|| error("Browser tab is closed".into()))?;
@@ -640,7 +727,7 @@ impl Browsers {
         watch: &tokio::sync::watch::Receiver<Navigation>,
         url: &str,
     ) {
-        let tabs = self.tabs.lock().await;
+        let tabs = self.tabs.lock().unwrap();
         if let Some(tab) = tabs.get(&(thread.into(), tab.into())).filter(|tab| {
             tab.navigation
                 .as_ref()
@@ -658,7 +745,7 @@ impl Browsers {
         watch: &tokio::sync::watch::Receiver<Navigation>,
         token: u64,
     ) {
-        let tabs = self.tabs.lock().await;
+        let tabs = self.tabs.lock().unwrap();
         if let Some(tab) = tabs.get(&(thread.into(), tab.into())).filter(|tab| {
             tab.navigation
                 .as_ref()
@@ -676,7 +763,7 @@ impl Browsers {
     ) -> Option<tokio::sync::watch::Receiver<bool>> {
         self.tabs
             .lock()
-            .await
+            .unwrap()
             .get(&(thread.into(), tab.into()))
             .map(|t| t.done.clone())
     }
@@ -690,8 +777,9 @@ impl Browsers {
         let browser = self
             .tabs
             .lock()
-            .await
+            .unwrap()
             .get(&(thread.into(), tab.into()))
+            .filter(|tab| !tab.closing)
             .cloned()
             .ok_or_else(|| error("Browser tab is closed".into()))?;
         if method == "Input.dispatchMouseEvent" {
