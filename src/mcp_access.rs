@@ -42,6 +42,9 @@ impl Authority {
     pub(crate) fn native_revoked(&self) -> bool {
         self.native.as_ref().is_some_and(|s| s.revoked())
     }
+    pub(crate) fn native_revocation(&self) -> Option<tokio::sync::watch::Receiver<bool>> {
+        self.native.as_ref().map(|scope| scope.revocation())
+    }
     pub(crate) fn native_thread(&self) -> Option<&str> {
         self.native.as_ref().map(|s| s.thread.as_str())
     }

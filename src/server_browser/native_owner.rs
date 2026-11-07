@@ -5,6 +5,9 @@ use crate::native_page_worker::{cdp::Packet, JavaScriptJson};
 use crate::preview_control::runtime::{Control, RunContext};
 use native_grant::{Reservation, State as Grants};
 use std::sync::{Arc, Mutex as SyncMutex, Weak};
+mod gateway;
+mod scope_frames;
+pub use gateway::NativeGateway;
 
 #[derive(Clone)]
 pub struct NativePage {
@@ -17,6 +20,8 @@ pub(super) struct Owner {
     tab: String,
     registry: Weak<SyncMutex<events::Registry>>,
     receipts: SyncMutex<BTreeMap<String, Ticket>>,
+    revoked: tokio::sync::watch::Sender<bool>,
+    gateway_bound: std::sync::atomic::AtomicBool,
     actor: mpsc::WeakSender<exact::Request>,
     done: tokio::sync::watch::Receiver<bool>,
     control: Control,
@@ -66,6 +71,48 @@ impl NativeOperation {
             Self::RecordingStop => "preview_recording_stop",
         }
     }
+    pub fn from_tool(tool: &str) -> Option<Self> {
+        [
+            Self::Status,
+            Self::Open,
+            Self::Dialog,
+            Self::Navigate,
+            Self::Resize,
+            Self::SetAppearance,
+            Self::Snapshot,
+            Self::Act,
+            Self::Evaluate,
+            Self::WaitFor,
+            Self::RecordingStart,
+            Self::RecordingStop,
+        ]
+        .into_iter()
+        .find(|operation| operation.tool_name() == tool)
+    }
+    /// Foreground Page calls emitted by the pinned toolkit handler. This is not
+    /// a schema decoder or an admission flag. In particular, the handler's
+    /// optional status enrichment uses a separately constructed owner call;
+    /// accepting `status` here for every tool would let a wire caller choose
+    /// that privileged metadata path.
+    pub fn permits_page_operation(self, operation: &str) -> bool {
+        match self {
+            Self::Status => operation == "status",
+            Self::Open => matches!(operation, "open" | "navigate"),
+            Self::Dialog => operation == "dialog",
+            Self::Navigate => operation == "navigate",
+            Self::Resize => operation == "resize",
+            Self::SetAppearance => operation == "setColorScheme",
+            Self::Snapshot => operation == "snapshot",
+            Self::Act => matches!(
+                operation,
+                "click" | "type" | "hover" | "select" | "drag" | "upload" | "press" | "scroll"
+            ),
+            Self::Evaluate => operation == "evaluate",
+            Self::WaitFor => operation == "waitFor",
+            Self::RecordingStart => operation == "recordingStart",
+            Self::RecordingStop => operation == "recordingStop",
+        }
+    }
     fn writes(self) -> bool {
         !matches!(self, Self::Status | Self::Snapshot | Self::WaitFor)
     }
@@ -102,9 +149,29 @@ impl Caller {
             .is_some_and(|actual| Arc::ptr_eq(actual, &registry));
         same_owner && self.authority.browser_admission(&state, self.write).is_ok()
     }
+    async fn invalidated(&self, owner: &Owner) {
+        let Some(state) = self.state.upgrade() else {
+            return;
+        };
+        let Some(mut revoked) = self.authority.native_revocation() else {
+            return;
+        };
+        let mut changed = state.streams.changed.subscribe();
+        loop {
+            if *revoked.borrow_and_update() || !self.valid(owner) {
+                return;
+            }
+            tokio::select! {
+                _ = revoked.changed() => {},
+                _ = changed.changed() => {},
+            }
+        }
+    }
 }
 #[derive(Clone)]
 struct Ticket {
+    frames: Option<Arc<scope_frames::Frames>>,
+    frame: Option<Arc<scope_frames::Frame>>,
     context: RunContext,
     caller: Option<Caller>,
     operation: Option<NativeOperation>,
@@ -130,6 +197,7 @@ pub struct NativeCloseReceipt {
     pub receipt_totals: [u64; 5],
 }
 struct Tracked {
+    frame: Option<Arc<scope_frames::Frame>>,
     owner: Arc<Owner>,
     reservation: Reservation,
 }
@@ -203,6 +271,10 @@ impl write::Authority for FrameAuthority {
             return false;
         }
         grants.started(&self.tracked.reservation);
+        drop(grants);
+        if let Some(frame) = &self.tracked.frame {
+            frame.settled();
+        }
         true
     }
 }
@@ -235,9 +307,11 @@ impl Owner {
                 .map_err(|_| fault("scope"))?,
         };
         let tracked = Arc::new(Tracked {
+            frame: admission.as_ref().and_then(|ticket| ticket.frame.clone()),
             owner: self.clone(),
             reservation,
         });
+        let caller_lifetime = admission.as_ref().and_then(|ticket| ticket.caller.clone());
         let completion = admission.as_ref().map(|ticket| ticket.context.completion());
         let authority = Arc::new(FrameAuthority {
             tracked: tracked.clone(),
@@ -288,8 +362,16 @@ impl Owner {
                 std::future::pending::<()>().await;
             }
         };
+        let caller_invalidated = async {
+            if let Some(caller) = caller_lifetime {
+                caller.invalidated(self).await;
+            } else {
+                std::future::pending::<()>().await;
+            }
+        };
         tokio::select! {
             biased;
+            _ = caller_invalidated => Err(fault("provider_revoked")),
             _ = callback_ended => Err(fault("callback_ended")),
             result = exchange => result,
         }
@@ -398,6 +480,48 @@ impl NativePage {
         }
         Ok(())
     }
+    fn prepare_receipt(&self, receipt: &str, operation: NativeOperation) -> Result<Ticket, Value> {
+        self.validate_receipt_operation(receipt, operation)?;
+        let mut ticket = self
+            .inner
+            .receipts
+            .lock()
+            .unwrap()
+            .get(receipt)
+            .cloned()
+            .ok_or_else(|| fault("receipt"))?;
+        ticket.frame = Some(
+            ticket
+                .frames
+                .as_ref()
+                .ok_or_else(|| fault("receipt"))?
+                .reserve()
+                .ok_or_else(|| fault("scope_ended"))?,
+        );
+        Ok(ticket)
+    }
+    fn seal_receipt(
+        &self,
+        receipt: &str,
+        operation: NativeOperation,
+    ) -> Result<tokio::sync::watch::Receiver<bool>, Value> {
+        let ticket = self
+            .inner
+            .receipts
+            .lock()
+            .unwrap()
+            .get(receipt)
+            .cloned()
+            .ok_or_else(|| fault("receipt"))?;
+        if ticket.operation != Some(operation) {
+            return Err(fault("receipt_operation"));
+        }
+        Ok(ticket
+            .frames
+            .as_ref()
+            .ok_or_else(|| fault("receipt"))?
+            .seal())
+    }
     pub fn finish_receipt(&self, receipt: NativeReceipt) -> Result<(), Value> {
         if !receipt
             .owner
@@ -427,8 +551,7 @@ impl NativePage {
         let Ok(_close) = tokio::time::timeout_at(expires, self.inner.close.lock()).await else {
             return self.inner.receipt();
         };
-        self.inner.grants.lock().unwrap().close();
-        self.inner.wake.notify_one();
+        self.fence();
         loop {
             let changed = self.inner.changed.notified();
             tokio::pin!(changed);
@@ -509,6 +632,8 @@ impl NativeInvocation {
         receipts.insert(
             value.clone(),
             Ticket {
+                frames: Some(scope_frames::Frames::new()),
+                frame: None,
                 context: self.context.clone(),
                 caller: self.caller.clone(),
                 operation: self.operation,
@@ -537,6 +662,8 @@ impl NativeInvocation {
         self.owner
             .send(
                 Some(Ticket {
+                    frames: None,
+                    frame: None,
                     context: self.context.clone(),
                     caller: self.caller.clone(),
                     operation: self.operation,
@@ -585,6 +712,8 @@ impl crate::preview::Manager {
             tab: tab.into(),
             registry: registry_weak,
             receipts: Default::default(),
+            revoked: tokio::sync::watch::channel(false).0,
+            gateway_bound: std::sync::atomic::AtomicBool::new(false),
             actor: page.tab.exact_tx.downgrade(),
             done: page.tab.done.clone(),
             control: page.control(),
@@ -625,6 +754,11 @@ pub(super) fn route(registry: &events::Shared, bytes: &[u8]) -> bool {
                 .unwrap_or(false);
         if owned || root_related {
             let forwarded = owner.grants.lock().unwrap().event(&packet);
+            if forwarded.is_err() {
+                owner.grants.lock().unwrap().close();
+                owner.revoked.send_replace(true);
+                owner.wake.notify_one();
+            }
             owner.changed.notify_waiters();
             if forwarded == Ok(true) && owner.events.receiver_count() > 0 {
                 let _ = owner.events.send(packet.clone());
@@ -644,6 +778,7 @@ pub(super) fn stopped(registry: &events::Shared) {
     for owner in owners {
         let mut grants = owner.grants.lock().unwrap();
         grants.close();
+        owner.revoked.send_replace(true);
         if grants.requests_pending() != 0 || !grants.detach_sessions().is_empty() {
             grants.mark_unknown();
         }

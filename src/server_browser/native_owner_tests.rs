@@ -108,6 +108,128 @@ async fn actual_provider_scope_and_callback_lifetime_fence_original_receipts() {
     assert!(read.for_operation(NativeOperation::Evaluate).is_err());
     assert!(read.for_operation(NativeOperation::Act).is_err());
 
+    // Real private WebSocket admission, actual caller receipt and exact actor
+    // queue. The actor result below is synthetic, not a Chromium acceptance.
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::Message;
+    let gateway = page.gateway().await.unwrap();
+    assert!(page.gateway().await.is_err(), "one worker binding per Page");
+    let endpoint = url::Url::parse(gateway.endpoint()).unwrap();
+    let stream = tokio::net::TcpStream::connect(("127.0.0.1", endpoint.port().unwrap()))
+        .await
+        .unwrap();
+    let (mut socket, _) = tokio_tungstenite::client_async(gateway.endpoint(), stream)
+        .await
+        .unwrap();
+    socket
+        .send(Message::Text(
+            json!({
+                "id":1,"method":"Browser.getVersion","params":{},
+                "__o3OwnerReceipt":original,"__o3OwnerOperation":"preview_snapshot"
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .unwrap();
+    let rejected = tokio::time::timeout(Duration::from_secs(1), socket.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap()
+        .into_text()
+        .unwrap();
+    let rejected: Value = serde_json::from_str(&rejected).unwrap();
+    assert!(rejected["error"].is_object());
+    assert!(
+        exact_rx.try_recv().is_err(),
+        "wrong class never enters actor"
+    );
+    socket
+        .send(Message::Text(
+            json!({
+                "id":2,"method":"Browser.getVersion","params":{},
+                "__o3OwnerReceipt":original,"__o3OwnerOperation":"preview_evaluate"
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .unwrap();
+    let admitted = tokio::time::timeout(Duration::from_secs(1), exact_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(admitted.method, "Browser.getVersion");
+    socket
+        .send(Message::Text(
+            json!({
+                "id":3,"method":"O3Owner.endScope","params":{},
+                "__o3OwnerReceipt":original,"__o3OwnerOperation":"preview_evaluate"
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), socket.next())
+            .await
+            .is_err(),
+        "marker cannot acknowledge a merely queued frame"
+    );
+    assert!(admitted.permit.begin());
+    let marker = tokio::time::timeout(Duration::from_secs(1), socket.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap()
+        .into_text()
+        .unwrap();
+    let marker: Value = serde_json::from_str(&marker).unwrap();
+    assert_eq!(marker["id"], 3);
+    assert_eq!(marker["result"]["scopeEnded"], true);
+    // No actor result exists yet: marker completion is actual begin, not the
+    // response or an invented extension of the original callback tail.
+    socket
+        .send(Message::Text(
+            json!({
+                "id":4,"method":"Browser.getVersion","params":{},
+                "__o3OwnerReceipt":original,"__o3OwnerOperation":"preview_evaluate"
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .unwrap();
+    let sealed = tokio::time::timeout(Duration::from_secs(1), socket.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap()
+        .into_text()
+        .unwrap();
+    let sealed: Value = serde_json::from_str(&sealed).unwrap();
+    assert_eq!(sealed["id"], 4);
+    assert!(sealed["error"].is_object());
+    assert!(exact_rx.try_recv().is_err());
+    let answer = crate::native_page_worker::cdp::Packet::decode(
+        br#"{"id":99,"result":{"product":"private-fixture","lone":"\ud800"}}"#,
+        4096,
+    )
+    .unwrap();
+    admitted.observer.as_ref().unwrap().completed(&answer);
+    admitted.reply.send(Ok(answer)).ok().unwrap();
+    let answered = tokio::time::timeout(Duration::from_secs(1), socket.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap()
+        .into_text()
+        .unwrap();
+    assert!(answered.contains(r#""lone":"\ud800""#));
+    assert!(answered.contains(r#""id":2"#));
+
     {
         let db = state.db.lock().unwrap();
         let mut thread = crate::events::get(&db, "thread", "thread").unwrap();
@@ -192,6 +314,23 @@ async fn actual_provider_scope_and_callback_lifetime_fence_original_receipts() {
         put(&db, "thread", "thread", "thread", &thread).unwrap();
     }
     assert!(invocation.issue_receipt().is_ok());
+    let waiting_page = page.clone();
+    let waiting_receipt = original.clone();
+    let waiting = tokio::spawn(async move {
+        waiting_page
+            .command_receipt(
+                &waiting_receipt,
+                "Browser.getVersion",
+                JavaScriptJson::parse("{}".into()).unwrap(),
+                None,
+                Duration::from_secs(5),
+            )
+            .await
+    });
+    let unwritten = tokio::time::timeout(Duration::from_secs(1), exact_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
     drop(provider);
     assert!(
         invocation.issue_receipt().is_err(),
@@ -208,10 +347,76 @@ async fn actual_provider_scope_and_callback_lifetime_fence_original_receipts() {
         .await
         .is_err());
     assert!(exact_rx.try_recv().is_err());
+    let stopped = tokio::time::timeout(Duration::from_secs(1), waiting)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap_err();
+    assert_eq!(stopped["reason"], "provider_revoked");
+    assert!(
+        context.is_active(),
+        "credential revocation is distinct from callback completion"
+    );
+    assert!(
+        !unwritten.permit.begin(),
+        "the original queued frame cannot start after revocation"
+    );
+    drop(unwritten);
     page.finish_receipt(receipt).unwrap();
     end_tx.send(()).unwrap();
     running.wait().await.unwrap();
     assert!(read.issue_receipt().is_err());
     assert!(page.close(Duration::from_secs(1)).await.clean);
+    assert!(gateway.shutdown().await.unwrap().clean);
+    drop(socket);
     drop(driver);
+}
+
+#[test]
+fn toolkit_class_cannot_select_another_handlers_page_operation() {
+    let cases = [
+        (NativeOperation::Status, vec!["status"]),
+        (NativeOperation::Open, vec!["open", "navigate"]),
+        (NativeOperation::Dialog, vec!["dialog"]),
+        (NativeOperation::Navigate, vec!["navigate"]),
+        (NativeOperation::Resize, vec!["resize"]),
+        (NativeOperation::SetAppearance, vec!["setColorScheme"]),
+        (NativeOperation::Snapshot, vec!["snapshot"]),
+        (
+            NativeOperation::Act,
+            vec![
+                "click", "type", "hover", "select", "drag", "upload", "press", "scroll",
+            ],
+        ),
+        (NativeOperation::Evaluate, vec!["evaluate"]),
+        (NativeOperation::WaitFor, vec!["waitFor"]),
+        (NativeOperation::RecordingStart, vec!["recordingStart"]),
+        (NativeOperation::RecordingStop, vec!["recordingStop"]),
+    ];
+    let operations: Vec<_> = cases
+        .iter()
+        .flat_map(|(_, operations)| operations.iter().copied())
+        .collect();
+    for (class, allowed) in cases {
+        assert_eq!(NativeOperation::from_tool(class.tool_name()), Some(class));
+        for operation in &operations {
+            assert_eq!(
+                class.permits_page_operation(operation),
+                allowed.contains(operation),
+                "{}: {operation}",
+                class.tool_name()
+            );
+        }
+        for forbidden in [
+            "preview_act",
+            "setAppearance",
+            "diagnostics",
+            "close",
+            "Runtime.evaluate",
+            "",
+            "status\0",
+        ] {
+            assert!(!class.permits_page_operation(forbidden));
+        }
+    }
 }

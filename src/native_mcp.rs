@@ -44,6 +44,7 @@ pub(crate) struct Scope {
     generation: String,
     state: Weak<State>,
     revoked: AtomicBool,
+    revocation: tokio::sync::watch::Sender<bool>,
     touched: AtomicI64,
     pub browser: Option<agent_browser::Access>,
     process_check: Mutex<Option<Arc<dyn Fn() -> bool + Send + Sync>>>,
@@ -252,6 +253,7 @@ impl Registry {
             generation,
             state: Arc::downgrade(state),
             revoked: AtomicBool::new(false),
+            revocation: tokio::sync::watch::channel(false).0,
             touched: AtomicI64::new(now_ms()),
             browser: browser.as_ref().map(agent_browser::Broker::access),
             process_check: Mutex::new(None),
@@ -279,8 +281,12 @@ impl Scope {
     pub(crate) fn revoked(&self) -> bool {
         self.revoked.load(Ordering::SeqCst)
     }
+    pub(crate) fn revocation(&self) -> tokio::sync::watch::Receiver<bool> {
+        self.revocation.subscribe()
+    }
     fn revoke(&self) {
         self.revoked.store(true, Ordering::SeqCst);
+        self.revocation.send_replace(true);
         if let Some(state) = self.state.upgrade() {
             state.mcp.close_owner(&self.id);
         }
