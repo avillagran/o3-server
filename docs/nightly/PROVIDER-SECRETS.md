@@ -13,3 +13,13 @@ Each State owns one Arc of the resolver, shared with its production provider reg
 The native source intake is recorded in `provider-secrets-intake.json`. Independent generation from nightly 4262/4275 and nightly 4288 produces the same settings/provider codec program and fixture results. The new binary-path fallback and native diagnostic expectations are exported from the actual Effect AST. Tests compare all schema nodes, complete registered-provider configuration errors, the native secret mapper, and registry cache transitions. Private synthetic op processes and both actual native provider transports verify credential delivery, failure parking, rotation, shared cache lifetime, and absence of resolved values in persisted/public settings. Fixture executables are copied into private directories; no fixture symlinks or host authentication mounts are used.
 
 Run focused checks through `tools/test-scheduled-modes --unit-filter provider_secrets::tests` and `--integration provider_secrets`, adding `--default-features` for the default build. Serialize compilation with the repository's build flock. Local test bodies always run in rootless Podman. Verified disposable GitHub Docker job containers use the shared test sandbox guard; direct host execution of test binaries is not supported.
+
+Physical private-environment receipts correlate the exact Codex `turn/start` or
+Claude `user` request by driver, independent fixture instance, process ID and
+unique message marker. Completion barriers match `run.userMessageId`. A genuine
+neighbor request deliberately becomes the latest receipt before the target is
+asserted, so cross-instance discovery order cannot select the wrong process.
+Launch receipts remain separate for neighbor restart-count assertions. Claude
+may send an empty native session ID before its first init event; its app-thread
+environment identifies that initial request. Public settings, private-slot
+rollback and server identity assertions remain unchanged.

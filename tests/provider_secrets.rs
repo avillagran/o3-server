@@ -41,8 +41,37 @@ fn setup(root: &Path, driver: &str, secret: Option<&str>) -> (Arc<SecretResolver
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/provider-home-peer.py"),
     )
     .unwrap();
-    let header=format!("#!/usr/bin/python3\nimport os,sys,json\nfrom pathlib import Path\nwith Path({:?}).open('a') as trace: trace.write(json.dumps({{'pid':os.getpid(),'argv':sys.argv,'key':os.environ.get('KEY')}})+'\\n')\n",root.join("launches.jsonl").to_str().unwrap());
-    std::fs::write(&peer, header + &program).unwrap();
+    let header = r#"#!/usr/bin/python3
+import os,sys,json,re
+from pathlib import Path
+_capture_root=Path(__file__).parent
+_capture_driver='claudeAgent' if '-p' in sys.argv else 'codex'
+def _capture(path,value):
+ with (_capture_root/path).open('a') as trace:trace.write(json.dumps(value)+'\n')
+def _identity():
+ return {'pid':os.getpid(),'driver':_capture_driver,'instance':os.environ.get('O3_FIXTURE_INSTANCE'),'key':os.environ.get('KEY'),'appThread':os.environ.get('T3CODE_THREAD_ID')}
+_capture('launches.jsonl',dict(_identity(),argv=sys.argv))
+_capture_stdin=sys.stdin
+class _CapturedInput:
+ def __iter__(self):
+  for line in _capture_stdin:
+   frame=json.loads(line)
+   if frame.get('method')=='turn/start':
+    content=frame.get('params',{}).get('input',[])
+    native=frame.get('params',{}).get('threadId')
+   elif frame.get('type')=='user':
+    content=frame.get('message',{}).get('content',[])
+    native=frame.get('session_id')
+   else:
+    yield line
+    continue
+   text=content if isinstance(content,str) else '\n'.join(block.get('text','') for block in content if isinstance(block,dict))
+   markers=re.findall(r'\[o3-secret-turn:([A-Za-z0-9_-]+)\]',text)
+   if markers:_capture('turns.jsonl',dict(_identity(),marker=markers[-1],native=native))
+   yield line
+sys.stdin=_CapturedInput()
+"#;
+    std::fs::write(&peer, header.to_owned() + &program).unwrap();
     std::fs::set_permissions(&peer, std::fs::Permissions::from_mode(0o700)).unwrap();
     let resolver = Arc::new(SecretResolver::new(vec![Arc::new(
         OnePassword::with_binary(op),
@@ -51,7 +80,7 @@ fn setup(root: &Path, driver: &str, secret: Option<&str>) -> (Arc<SecretResolver
     if driver == "codex" {
         config["setupMode"] = json!("existing")
     }
-    let entry = json!({"driver":driver,"enabled":true,"config":config,"environment":[{"name":"KEY","value":"","secret":{"provider":"vault","reference":REFERENCE},"sensitive":true}]});
+    let entry = json!({"driver":driver,"enabled":true,"config":config,"environment":[{"name":"KEY","value":"","secret":{"provider":"vault","reference":REFERENCE},"sensitive":true},{"name":"O3_FIXTURE_INSTANCE","value":"vaulted","sensitive":false}]});
     (
         resolver,
         json!({"secretProviders":{"vault":{"kind":"one_password","label":"Fixture vault","config":{"account":"fixture"}}},"providerInstances":{"vaulted":entry}}),
@@ -70,11 +99,55 @@ fn launches(root: &Path) -> Vec<Value> {
         .map(|v| serde_json::from_str(v).unwrap())
         .collect()
 }
+fn turns(root: &Path) -> Vec<Value> {
+    std::fs::read_to_string(root.join("turns.jsonl"))
+        .unwrap_or_default()
+        .lines()
+        .map(|row| serde_json::from_str(row).unwrap())
+        .collect()
+}
+fn assert_turn_key(
+    root: &Path,
+    driver: &str,
+    instance: &str,
+    thread: &str,
+    message: &str,
+    key: &str,
+) {
+    let matching: Vec<_> = turns(root)
+        .into_iter()
+        .filter(|row| {
+            row["driver"] == driver && row["instance"] == instance && row["marker"] == message
+        })
+        .collect();
+    assert_eq!(
+        matching.len(),
+        1,
+        "{driver}/{instance}/{message}: expected one actual transport request"
+    );
+    assert!(matching[0]["pid"].as_u64().is_some_and(|pid| pid > 0));
+    if driver == "codex" {
+        assert!(matching[0]["native"]
+            .as_str()
+            .is_some_and(|id| !id.is_empty()));
+    } else {
+        // Claude permits an empty native session before its first init event.
+        assert!(matching[0]["native"].is_string());
+        assert_eq!(
+            matching[0]["appThread"], thread,
+            "Claude app-thread identity"
+        );
+    }
+    assert_eq!(
+        matching[0]["key"], key,
+        "{driver}/{instance}/{message}: executing worker environment"
+    );
+}
 fn dispatch(client: &t3_protocol::Connection, message: &str) {
     dispatch_to(client, "thread", "vaulted", message)
 }
 fn dispatch_to(client: &t3_protocol::Connection, thread: &str, instance: &str, message: &str) {
-    client.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":message,"messageId":message,"threadId":thread,"modelSelection":{"instanceId":instance,"model":"test"},"text":"Private synthetic native transport","attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
+    client.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":message,"messageId":message,"threadId":thread,"modelSelection":{"instanceId":instance,"model":"test"},"text":format!("Private synthetic native transport [o3-secret-turn:{message}]"),"attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
     assert!(support::wait_for(Duration::from_secs(20), || {
         let projection = client
             .rpc(
@@ -90,8 +163,8 @@ fn dispatch_to(client: &t3_protocol::Connection, thread: &str, instance: &str, m
             && projection["runs"]
                 .as_array()
                 .unwrap()
-                .last()
-                .is_some_and(|run| run["status"] == "completed")
+                .iter()
+                .any(|run| run["userMessageId"] == message && run["status"] == "completed")
     }));
 }
 #[test]
@@ -127,6 +200,14 @@ fn vault_references_feed_both_native_transports_without_persisting_resolved_valu
         client.rpc("projects.mutate",json!({"type":"project.create","commandId":"project","projectId":"project","title":"Private","workspaceRoot":workspace})).unwrap();
         client.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"thread","threadId":"thread","projectId":"project","title":"Private","modelSelection":{"instanceId":"vaulted","model":"test"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
         dispatch(&client, "first");
+        assert_turn_key(
+            &server.dir,
+            driver,
+            "vaulted",
+            "thread",
+            "first",
+            "resolved-one",
+        );
         assert_eq!(calls(&server.dir), 1);
         assert!(launches(&server.dir)
             .iter()
@@ -154,7 +235,14 @@ fn vault_references_feed_both_native_transports_without_persisting_resolved_valu
             .unwrap();
         dispatch(&client, "retained");
         assert_eq!(calls(&server.dir), 2);
-        assert_eq!(launches(&server.dir).last().unwrap()["key"], "resolved-one");
+        assert_turn_key(
+            &server.dir,
+            driver,
+            "vaulted",
+            "thread",
+            "retained",
+            "resolved-one",
+        );
         answers(&server.dir, Some("resolved-two"));
         client
             .rpc(
@@ -164,7 +252,14 @@ fn vault_references_feed_both_native_transports_without_persisting_resolved_valu
             .unwrap();
         dispatch(&client, "rotated");
         assert_eq!(calls(&server.dir), 3);
-        assert_eq!(launches(&server.dir).last().unwrap()["key"], "resolved-two");
+        assert_turn_key(
+            &server.dir,
+            driver,
+            "vaulted",
+            "thread",
+            "rotated",
+            "resolved-two",
+        );
         assert!(!std::fs::read_to_string(server.dir.join("settings.json"))
             .unwrap()
             .contains("resolved-two"));
@@ -229,6 +324,7 @@ fn private_literals_reach_both_transports_and_failed_publication_keeps_old_ident
             let mut neighbor = settings["providerInstances"]["vaulted"].clone();
             neighbor["config"]["homePath"] = json!(neighbor_home);
             neighbor["environment"][0]["value"] = json!("private-neighbor-stable");
+            neighbor["environment"][1]["value"] = json!("neighbor");
             settings["providerInstances"]["neighbor"] = neighbor;
             o3_server::settings::update(state, &json!({"patch":settings})).unwrap();
             *state.provider.lock().unwrap() = Some(Arc::new(
@@ -247,12 +343,28 @@ fn private_literals_reach_both_transports_and_failed_publication_keeps_old_ident
         client.rpc("projects.mutate",json!({"type":"project.create","commandId":"project","projectId":"project","title":"Private literal","workspaceRoot":workspace})).unwrap();
         client.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"thread","threadId":"thread","projectId":"project","title":"Private literal","modelSelection":{"instanceId":"vaulted","model":"test"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
         dispatch(&client, "initial-private");
+        assert_turn_key(
+            &server.dir,
+            driver,
+            "vaulted",
+            "thread",
+            "initial-private",
+            "private-literal-one",
+        );
         assert!(launches(&server.dir)
             .iter()
             .any(|v| v["key"] == "private-literal-one"));
         assert_eq!(calls(&server.dir), 0);
         client.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"neighbor-thread","threadId":"neighbor-thread","projectId":"project","title":"Neighbor","modelSelection":{"instanceId":"neighbor","model":"test"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
         dispatch_to(&client, "neighbor-thread", "neighbor", "neighbor-initial");
+        assert_turn_key(
+            &server.dir,
+            driver,
+            "neighbor",
+            "neighbor-thread",
+            "neighbor-initial",
+            "private-neighbor-stable",
+        );
         assert!(launches(&server.dir)
             .iter()
             .any(|v| v["key"] == "private-neighbor-stable"));
@@ -277,9 +389,32 @@ fn private_literals_reach_both_transports_and_failed_publication_keeps_old_ident
             )
             .unwrap();
         dispatch(&client, "echoed-private");
-        assert_eq!(
-            launches(&server.dir).last().unwrap()["key"],
-            "private-literal-one"
+        // A genuine unrelated request is now deterministically the latest capture.
+        // Its receipt must never stand in for the selected instance's execution.
+        dispatch_to(
+            &client,
+            "neighbor-thread",
+            "neighbor",
+            "neighbor-after-echo",
+        );
+        let latest = turns(&server.dir).pop().unwrap();
+        assert_eq!(latest["marker"], "neighbor-after-echo");
+        assert_eq!(latest["instance"], "neighbor");
+        assert_turn_key(
+            &server.dir,
+            driver,
+            "neighbor",
+            "neighbor-thread",
+            "neighbor-after-echo",
+            "private-neighbor-stable",
+        );
+        assert_turn_key(
+            &server.dir,
+            driver,
+            "vaulted",
+            "thread",
+            "echoed-private",
+            "private-literal-one",
         );
         let mut replacement = before["providerInstances"].clone();
         let value = &mut replacement["vaulted"]["environment"][0];
@@ -304,9 +439,13 @@ fn private_literals_reach_both_transports_and_failed_publication_keeps_old_ident
             before
         );
         dispatch(&client, "rolled-back-private");
-        assert_eq!(
-            launches(&server.dir).last().unwrap()["key"],
-            "private-literal-one"
+        assert_turn_key(
+            &server.dir,
+            driver,
+            "vaulted",
+            "thread",
+            "rolled-back-private",
+            "private-literal-one",
         );
         std::fs::rename(&blocked, server.dir.join("retained-publication-blocker")).unwrap();
         // Prime the neighbor after the first lazy metadata discovery. Measure
@@ -335,9 +474,13 @@ fn private_literals_reach_both_transports_and_failed_publication_keeps_old_ident
             before
         );
         dispatch(&client, "rotated-private");
-        assert_eq!(
-            launches(&server.dir).last().unwrap()["key"],
-            "private-literal-two"
+        assert_turn_key(
+            &server.dir,
+            driver,
+            "vaulted",
+            "thread",
+            "rotated-private",
+            "private-literal-two",
         );
         assert_eq!(calls(&server.dir), 0);
         assert_eq!(
