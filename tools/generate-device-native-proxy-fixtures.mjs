@@ -6,9 +6,11 @@ import crypto from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {createRequire,stripTypeScriptTypes} from 'node:module';
 import {pathToFileURL} from 'node:url';
-const [checkout,contracts,output,dependencies]=process.argv.slice(2);
+if(!fs.existsSync('/run/.containerenv'))throw Error('Run native proxy fixtures inside private rootless Podman');
+const [checkout,contracts,output,dependencies,pinnedRevision]=process.argv.slice(2);
 if(!checkout||!contracts||!output)throw Error('usage: generate-device-native-proxy-fixtures.mjs CHECKOUT CONTRACTS OUTPUT');
-const revision='32a0531748c44b25072d7495ce0b9bd7e9450a87';
+const revision=pinnedRevision??'32a0531748c44b25072d7495ce0b9bd7e9450a87';
+if(!['32a0531748c44b25072d7495ce0b9bd7e9450a87','4cb6945dc60ed03f567dc5daafd083e52308e82b'].includes(revision))throw Error('An audited native proxy revision is required');
 const require=createRequire(contracts+'/package.json');
 if(require('effect/package.json').version!=='4.1.2')throw Error('Effect4.1.2 required');
 const directory=path.dirname(output);fs.mkdirSync(directory,{recursive:true});
@@ -60,4 +62,14 @@ for(const scopes of [[],[read],[operate],[read,operate]]){
  }
  await dispose();
 }
-fs.writeFileSync(output,JSON.stringify({revision,effect:'4.1.2',sources,cases},null,2)+'\n');console.log(cases.length+' native complete proxy route outcomes');
+const websocketCases=[];
+for(const scopes of [[],[read],[operate],[read,operate]]){
+ const {handler,dispose}=HttpRouter.toWebHandler(native.layer.pipe(Layer.provideMerge(Layer.succeed(Auth.EnvironmentAuth,{authenticateWebSocketUpgrade:()=>Effect.succeed({sessionId:'test',subject:'test',method:'bearer-access-token',scopes})})),Layer.provideMerge(Layer.succeed(DeviceService.DeviceService,{currentReadiness:()=>Effect.succeed(null)})),Layer.provideMerge(Layer.succeed(HttpClient.HttpClient,HttpClient.make(()=>Effect.die('No unavailable hub transport may open'))))),{disableLogger:true});
+ for(const socketPath of ['/api/devices/ws','/vendor/serve-sim/helper/ws','/vendor/serve-emu/ws']){
+  const uri='/api/device-hub'+socketPath;
+  const response=await handler(new Request('http://t3.test'+uri,{headers:{upgrade:'websocket',connection:'Upgrade'}}));
+  websocketCases.push({input:{uri,method:'GET',scopes},expected:{status:response.status,text:await response.text()}});
+ }
+ await dispose();
+}
+fs.writeFileSync(output,JSON.stringify({revision,effect:'4.1.2',sources,cases,websocketCases},null,2)+'\n');console.log(cases.length+' native complete proxy route outcomes; '+websocketCases.length+' native WebSocket scope outcomes');

@@ -147,7 +147,7 @@ fn valid(state: &State, session: &Value) -> bool {
     let Ok(settings) = crate::settings::read(state) else {
         return false;
     };
-    if settings["enableDeviceSupport"] == false || settings["enableAgentDeviceAccess"] == false {
+    if settings["enableDeviceSupport"] == false {
         return false;
     }
     session["sid"].as_str().is_some_and(|sid|state.db.lock().unwrap().query_row("SELECT EXISTS(SELECT 1 FROM auth_sessions WHERE session_id=? AND revoked_at IS NULL AND expires_at>?)",rusqlite::params![sid,crate::store::now_ms()],|row|row.get::<_,bool>(0)).unwrap_or(false))
@@ -441,6 +441,17 @@ mod tests {
     }
     #[tokio::test]
     async fn upgraded_media_retains_and_releases_the_existing_connection_lease() {
+        exercise_viewer_socket(None).await;
+    }
+    #[tokio::test]
+    async fn human_viewer_socket_closes_when_device_support_is_disabled() {
+        exercise_viewer_socket(Some(false)).await;
+    }
+    #[tokio::test]
+    async fn human_viewer_socket_closes_when_its_session_is_revoked() {
+        exercise_viewer_socket(Some(true)).await;
+    }
+    async fn exercise_viewer_socket(close: Option<bool>) {
         use futures_util::{SinkExt, StreamExt};
         crate::test_sandbox::assert_isolated();
         let directory = std::env::temp_dir().join(format!(
@@ -448,7 +459,7 @@ mod tests {
             crate::store::random_id().unwrap()
         ));
         let state = Arc::new(crate::store::State::open(&directory).unwrap());
-        crate::settings::update(&state,&serde_json::json!({"patch":{"enableDeviceSupport":true,"enableAgentDeviceAccess":true}})).unwrap();
+        crate::settings::update(&state,&serde_json::json!({"patch":{"enableDeviceSupport":true,"enableAgentDeviceAccess":false}})).unwrap();
         let token = state
             .issue_session(
                 "private-lease",
@@ -458,6 +469,8 @@ mod tests {
             )
             .unwrap();
         let session = state.session(&token).unwrap();
+        let lifecycle_state = state.clone();
+        let session_id = session["sid"].as_str().unwrap().to_owned();
         let upstream = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let origin = format!("http://{}", upstream.local_addr().unwrap());
         let echo = tokio::spawn(async move {
@@ -516,7 +529,36 @@ mod tests {
             socket.next().await.unwrap().unwrap().to_text().unwrap(),
             "private-lease"
         );
-        socket.close(None).await.unwrap();
+        if let Some(revoke) = close {
+            if revoke {
+                lifecycle_state
+                    .db
+                    .lock()
+                    .unwrap()
+                    .execute(
+                        "UPDATE auth_sessions SET revoked_at=? WHERE session_id=?",
+                        rusqlite::params![crate::store::now_ms(), session_id],
+                    )
+                    .unwrap();
+            } else {
+                crate::settings::update(
+                    &lifecycle_state,
+                    &serde_json::json!({"patch":{"enableDeviceSupport":false}}),
+                )
+                .unwrap();
+            }
+            let closed = tokio::time::timeout(Duration::from_secs(4), socket.next())
+                .await
+                .expect("A revoked or disabled viewer must close");
+            assert!(
+                closed.is_none()
+                    || closed.as_ref().is_some_and(|value| value
+                        .as_ref()
+                        .map_or(true, |message| message.is_close()))
+            );
+        } else {
+            socket.close(None).await.unwrap();
+        }
         drop(socket);
         tokio::time::timeout(Duration::from_secs(3), async {
             while permits.available_permits() != 1 {

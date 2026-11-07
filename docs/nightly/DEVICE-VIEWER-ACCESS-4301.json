@@ -1,0 +1,18 @@
+{
+  "revision": "4cb6945dc60ed03f567dc5daafd083e52308e82b",
+  "sources": {
+    "apps/server/src/device/DeviceHubProxy.ts": "1ddc4ec7bdbe867beaf978f704a8f21ca340c64db514648f2386231a8706520e",
+    "apps/server/src/device/DeviceService.ts": "47443e3725c37880da6a3c55395cd78e950b83e3d133fb08224004afc1d8d44d",
+    "packages/client-runtime/src/state/deviceHubAccess.ts": "069e809471250207cee740dcc0867f58ebfa4457b6b604af5f78d8321f893285"
+  },
+  "httpOutcomes": 816,
+  "websocketOutcomes": 12,
+  "httpOutcomesIdenticalTo4288": true,
+  "oracleSha256": "96f9612f8334a03269675650741b3383a55192f1edde028c4c387e1b9814a894",
+  "boundaries": [
+    "Real native DeviceHubProxy module and dependency graph; injected session/readiness/HTTP boundary",
+    "WebSocket permission decisions stop at unavailable readiness, not synthetic native upgrades",
+    "Agent device tools are not implemented in current O3 MCP catalog",
+    "Mounted Android live frames/input remain separate acceptance"
+  ]
+}

@@ -333,13 +333,36 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
                 return Ok(unauthorized());
             };
             let socket = path == "/api/device-hub/vendor/serve-emu/ws";
-            if let Some(r) = scope_reply(&session, "orchestration:operate") {
+            let upgraded = request
+                .headers()
+                .get("upgrade")
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| value.eq_ignore_ascii_case("websocket"));
+            let plan = match crate::device_native_proxy::plan(
+                &request.uri().to_string(),
+                request.method().as_str(),
+                upgraded,
+            ) {
+                Ok(plan) => plan,
+                Err(status) => {
+                    return Ok(json_reply(
+                        StatusCode::from_u16(status).expect("proxy status"),
+                        "{}".into(),
+                    ))
+                }
+            };
+            if let Some(r) = scope_reply(
+                &session,
+                if plan.controls {
+                    "orchestration:operate"
+                } else {
+                    "orchestration:read"
+                },
+            ) {
                 return Ok(r);
             }
             let settings = crate::settings::read(&state).unwrap_or_default();
-            if settings["enableDeviceSupport"] == false
-                || settings["enableAgentDeviceAccess"] == false
-            {
+            if settings["enableDeviceSupport"] == false {
                 return Ok(json_reply(StatusCode::FORBIDDEN, "{}".into()));
             }
             let native_host = query(&request, "hostId").unwrap_or_else(|| "local".into());
@@ -403,7 +426,7 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
                         let mut timer = tokio::time::interval(std::time::Duration::from_secs(2));
                         loop {
                             let settings = crate::settings::read(&device_state).unwrap_or_default();
-                            if settings["enableDeviceSupport"]==false || settings["enableAgentDeviceAccess"]==false || device_session["sid"].as_str().is_none_or(|sid|!device_state.db.lock().unwrap().query_row("SELECT EXISTS(SELECT 1 FROM auth_sessions WHERE session_id=? AND revoked_at IS NULL AND expires_at>?)",rusqlite::params![sid,now_ms()],|r|r.get::<_,bool>(0)).unwrap_or(false)){break;}
+                            if settings["enableDeviceSupport"]==false || device_session["sid"].as_str().is_none_or(|sid|!device_state.db.lock().unwrap().query_row("SELECT EXISTS(SELECT 1 FROM auth_sessions WHERE session_id=? AND revoked_at IS NULL AND expires_at>?)",rusqlite::params![sid,now_ms()],|r|r.get::<_,bool>(0)).unwrap_or(false)){break;}
                             tokio::select! {
                                 _=timer.tick()=>{},
                                 read=async {

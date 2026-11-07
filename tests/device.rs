@@ -62,7 +62,7 @@ esac
     // The pinned lib's hub URL builder rejects spaces; exercise hub transport with its supported serial.
     let mut stream = support::subscribe(server.connect(), "subscribeDeviceState", json!({}));
     assert_eq!(stream.next(Duration::from_secs(15))["hostStatus"], "ready");
-    t3_protocol::api::device::configure(&c, None, Some(true), Some(true)).unwrap();
+    t3_protocol::api::device::configure(&c, None, Some(false), Some(true)).unwrap();
     let session =
         t3_protocol::api::device::open(&c, "thread", "phone", "android", None, Some(false))
             .unwrap();
@@ -104,7 +104,7 @@ esac
             t3_protocol::device_hub::Platform::Android,
             "phone"
         )
-        .is_err());
+        .is_ok());
     t3_protocol::api::device::configure(&c, Some(false), Some(false), None).unwrap();
     assert!(c
         .device_screenshot(&access, t3_protocol::device_hub::Platform::Android, "phone")

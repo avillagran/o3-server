@@ -73,7 +73,7 @@ async fn exercise_ssh_flow(fixture: Fixture, state: Arc<State>) {
     let token = state
         .issue_session(
             "private-peer",
-            &["orchestration:operate".into()],
+            &["orchestration:read".into(), "orchestration:operate".into()],
             60_000,
             "Private fixture",
         )
@@ -840,3 +840,6 @@ async fn real_wire_device_list_permissions_follow_the_effective_dispatch_action(
     assert!(state.streams.p2.device.native.lock().await.is_none());
     assert!(fixture.trace().iter().all(|entry| entry["mode"] == "probe"));
 }
+
+#[path = "device_viewer_access_tests.rs"]
+mod device_viewer_access_tests;
