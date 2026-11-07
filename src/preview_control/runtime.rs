@@ -44,6 +44,7 @@ fn ended() -> Value {
 struct State {
     kernel: Kernel,
     callbacks: BTreeMap<CallbackId, Work>,
+    discarded: Vec<Work>,
     action_callbacks: BTreeMap<ActionId, CallbackId>,
     results: BTreeMap<ActionId, watch::Sender<Option<ResultValue>>>,
     sequence: u64,
@@ -81,7 +82,9 @@ impl State {
     fn call(&mut self, action: ActionId, callback: Option<CallbackId>) -> Call {
         if let Some(callback) = callback {
             if let Some(previous) = self.action_callbacks.insert(action, callback) {
-                self.callbacks.remove(&previous);
+                if let Some(work) = self.callbacks.remove(&previous) {
+                    self.discarded.push(work);
+                }
             }
         }
         let sender = self
@@ -138,6 +141,7 @@ impl Control {
             state: Mutex::new(State {
                 kernel: Kernel::new(agent_id),
                 callbacks: BTreeMap::new(),
+                discarded: Vec::new(),
                 action_callbacks: BTreeMap::new(),
                 results: BTreeMap::new(),
                 sequence: 0,
@@ -154,6 +158,9 @@ impl Control {
         let (done_tx, done) = watch::channel(false);
         tokio::spawn(run(shared.clone(), done_tx));
         Self(Arc::new(Owner { shared, done }))
+    }
+    pub fn is_finished(&self) -> bool {
+        self.0.shared.state.lock().unwrap().finished
     }
     pub fn snapshot(&self) -> Snapshot {
         self.0.shared.state.lock().unwrap().snapshot()
@@ -322,26 +329,34 @@ impl Control {
             state.kernel.close()
         })
     }
-    fn tracked(&self, work: Tracked, handoff: bool) {
+    fn tracked(&self, work: Tracked, handoff: Option<bool>) {
         let mut state = self.0.shared.state.lock().unwrap();
         if state.finished {
+            // The discarded future may own the final Control and re-enter this mutex.
+            drop(state);
+            drop(work);
             return;
         }
         let dependency = state.sequence();
-        if handoff {
-            state.kernel.track_until_handoff(dependency);
-        } else {
-            state.kernel.track(dependency);
+        if let Some(handoff) = handoff {
+            if handoff {
+                state.kernel.track_until_handoff(dependency);
+            } else {
+                state.kernel.track(dependency);
+            }
         }
         state.dependencies.push((dependency, work));
         drop(state);
         self.0.shared.wake.notify_one();
     }
     pub fn track(&self, work: impl Future<Output = ()> + Send + 'static) {
-        self.tracked(Box::pin(work), false);
+        self.tracked(Box::pin(work), Some(false));
     }
     pub fn track_until_handoff(&self, work: impl Future<Output = ()> + Send + 'static) {
-        self.tracked(Box::pin(work), true);
+        self.tracked(Box::pin(work), Some(true));
+    }
+    pub(crate) fn own_finalizer(&self, work: impl Future<Output = ()> + Send + 'static) {
+        self.tracked(Box::pin(work), None);
     }
     /// Stop admission and drain all owned work; the page owner must settle its I/O first.
     pub async fn shutdown(&self) -> Result<(), Value> {
@@ -369,7 +384,7 @@ async fn run(shared: Arc<Shared>, done: watch::Sender<bool>) {
     let mut jobs = tokio::task::JoinSet::new();
     let mut receipts = BTreeMap::new();
     loop {
-        let (work, dependencies, shutdown_complete) = {
+        let (work, dependencies, discarded, shutdown_complete) = {
             let mut state = shared.state.lock().unwrap();
             let events = state
                 .kernel
@@ -392,7 +407,9 @@ async fn run(shared: Arc<Shared>, done: watch::Sender<bool>) {
                     }
                     Event::Complete { action, result } => {
                         if let Some(callback) = state.action_callbacks.remove(&action) {
-                            state.callbacks.remove(&callback);
+                            if let Some(work) = state.callbacks.remove(&callback) {
+                                state.discarded.push(work);
+                            }
                         }
                         if let Some(sender) = state.results.remove(&action) {
                             sender.send_replace(Some(result));
@@ -407,9 +424,12 @@ async fn run(shared: Arc<Shared>, done: watch::Sender<bool>) {
             (
                 work,
                 std::mem::take(&mut state.dependencies),
+                std::mem::take(&mut state.discarded),
                 state.shutdown_complete,
             )
         };
+        // Destructors may release the final owner and re-enter this driver's state.
+        drop(discarded);
         for (action, callback, input) in work {
             let handle = jobs.spawn(async move { Finished::Action(action, callback(input).await) });
             receipts.insert(handle.id(), Receipt::Action(action));

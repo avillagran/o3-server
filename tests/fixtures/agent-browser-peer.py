@@ -96,6 +96,23 @@ def check(text):
         worker.join(3);assert not worker.is_alive()
         assert len(observed)==1 and isinstance(observed[0],dict) and not observed[0]['isError'],observed
         assert tool('preview_dialog',{'tabId':tab,'accept':True})['isError']
+        utf=[]
+        def utf_evaluate():
+            try: utf.append(tool('preview_evaluate',{'tabId':tab,'expression':'fixtureDialogUtf16()'}))
+            except BaseException as error: utf.append(str(error))
+        worker=threading.Thread(target=utf_evaluate);worker.start()
+        for attempt in range(100):
+            encoded=tool('preview_status',{'tabId':tab})
+            assert not encoded['isError'],encoded
+            pending=json.loads(encoded['content'][0]['text'])
+            if pending.get('dialog'):break
+            time.sleep(.01)
+        assert pending['dialog']['message']=='a'*3999+'\ud83d'
+        assert pending['dialog']['defaultValue']=='b'*3999+'\ud83d'
+        assert encoded['structuredContent']['dialog']['message']=='a'*3999+'\ufffd', 'raw structured surrogate support remains separate'
+        assert not tool('preview_dialog',{'tabId':tab,'accept':False})['isError']
+        worker.join(3);assert not worker.is_alive()
+        assert len(utf)==1 and isinstance(utf[0],dict) and not utf[0]['isError'],utf
         return
     assert tool('preview_navigate',{'tabId':'foreign','url':'http://localhost'})['isError']
     assert not tool('preview_navigate',{'tabId':tab,'url':'http://localhost:1234/next'})['isError']

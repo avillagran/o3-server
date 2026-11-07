@@ -261,7 +261,72 @@ pub async fn sync_navigation(s: &State, thread: &str, tab: &str) {
     bump(&s.streams.changed);
 }
 
+pub(crate) async fn open_agent(s: &State, input: &Value, owner: &str) -> Reply {
+    str_field(input, "threadId")?;
+    let mut trusted = input.clone();
+    trusted["automationOwner"] = json!(owner);
+    runtime::open(s, &trusted).await
+}
+pub(crate) async fn agent_page(
+    s: &State,
+    thread: &str,
+    tab: &str,
+) -> Result<crate::server_browser::Page, Value> {
+    let manager = &s.streams.p2.preview;
+    if let Ok(page) = manager.browser.page(thread, tab) {
+        return Ok(page);
+    }
+    let snapshot = manager
+        .inner
+        .lock()
+        .unwrap()
+        .kernel
+        .get(thread, tab)
+        .cloned()
+        .ok_or_else(|| lookup_error(thread, tab))?;
+    runtime::ensure(s, &snapshot).await?;
+    manager.browser.page(thread, tab)
+}
+pub(crate) async fn call_page(
+    s: &State,
+    tag: &str,
+    input: &Value,
+    page: &crate::server_browser::Page,
+) -> Reply {
+    if !matches!(
+        tag,
+        "preview.navigate" | "preview.refresh" | "preview.resize" | "preview.adjust"
+    ) {
+        return Err(invalid("Unsupported controlled page operation"));
+    }
+    call_inner(s, tag, input, Some(page)).await
+}
+async fn page_command(
+    manager: &Manager,
+    page: Option<&crate::server_browser::Page>,
+    thread: &str,
+    tab: &str,
+    method: &str,
+    params: Value,
+) -> Reply {
+    if let Some(page) = page {
+        if page.key() != (thread, tab) || !manager.browser.current(page) {
+            return Err(lookup_error(thread, tab));
+        }
+        page.command(method, params).await
+    } else {
+        manager.browser.command(thread, tab, method, params).await
+    }
+}
 pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
+    call_inner(s, tag, p, None).await
+}
+async fn call_inner(
+    s: &State,
+    tag: &str,
+    p: &Value,
+    page: Option<&crate::server_browser::Page>,
+) -> Reply {
     let thread = if tag == "preview.clearProfile" {
         ""
     } else {
@@ -269,7 +334,10 @@ pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
     };
     let m = &s.streams.p2.preview;
     if tag == "preview.open" {
-        return runtime::open(s, p).await;
+        // PreviewOpenInput strips the internal Manager.open ownership extension.
+        let mut public = p.clone();
+        public.as_object_mut().unwrap().remove("automationOwner");
+        return runtime::open(s, &public).await;
     }
     if tag == "preview.clearProfile" {
         let profile = str_field(p, "profileId")?;
@@ -336,76 +404,95 @@ pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
             "preview.navigate" | "preview.refresh" | "preview.resize" | "preview.adjust"
         )
     {
-        runtime::ensure(s, &snapshot).await?;
+        if let Some(page) = page {
+            if !m.browser.current(page) {
+                return Err(lookup_error(thread, tab));
+            }
+        } else {
+            runtime::ensure(s, &snapshot).await?;
+        }
         match tag {
             "preview.navigate" => {
-                let navigation = m
-                    .browser
-                    .command(
-                        thread,
-                        tab,
-                        "Page.navigate",
-                        json!({"url":normalize_url(str_field(p,"url")?)?}),
-                    )
-                    .await?;
+                let navigation = page_command(
+                    m,
+                    page,
+                    thread,
+                    tab,
+                    "Page.navigate",
+                    json!({"url":normalize_url(str_field(p,"url")?)?}),
+                )
+                .await?;
                 if let Some(message) = navigation["errorText"].as_str().filter(|s| !s.is_empty()) {
                     return Err(json!({"_tag":"ServerBrowserLaunchError","message":message}));
                 }
             }
             "preview.refresh" => {
-                m.browser
-                    .command(thread, tab, "Page.reload", json!({}))
-                    .await?;
+                page_command(m, page, thread, tab, "Page.reload", json!({})).await?;
             }
             "preview.resize" => {
                 if !viewport_ok(&p["viewport"]) {
                     return Err(invalid("viewport is invalid"));
                 }
-                m.browser.command(thread,tab,"Emulation.setDeviceMetricsOverride",json!({"width":p["viewport"]["width"].as_u64().unwrap_or(1280),"height":p["viewport"]["height"].as_u64().unwrap_or(800),"deviceScaleFactor":1,"mobile":false})).await?;
+                page_command(m,page,thread,tab,"Emulation.setDeviceMetricsOverride",json!({"width":p["viewport"]["width"].as_u64().unwrap_or(1280),"height":p["viewport"]["height"].as_u64().unwrap_or(800),"deviceScaleFactor":1,"mobile":false})).await?;
             }
             "preview.adjust" => {
                 if let Some(color) = p["colorScheme"].as_str() {
                     if !matches!(color, "system" | "light" | "dark") {
                         return Err(invalid("colorScheme is invalid"));
                     }
-                    m.browser.command(thread,tab,"Emulation.setEmulatedMedia",json!({"features":if color=="system" {json!([])} else {json!([{"name":"prefers-color-scheme","value":color}])}})).await?;
+                    page_command(m,page,thread,tab,"Emulation.setEmulatedMedia",json!({"features":if color=="system" {json!([])} else {json!([{"name":"prefers-color-scheme","value":color}])}})).await?;
                 }
                 if let Some(zoom) = p["zoomFactor"].as_f64() {
                     if !ZOOMS.iter().any(|z| (*z - zoom).abs() < 1e-9) {
                         return Err(invalid("zoomFactor is invalid"));
                     }
-                    m.browser
-                        .command(
-                            thread,
-                            tab,
-                            "Emulation.setPageScaleFactor",
-                            json!({"pageScaleFactor":zoom}),
-                        )
-                        .await?;
+                    page_command(
+                        m,
+                        page,
+                        thread,
+                        tab,
+                        "Emulation.setPageScaleFactor",
+                        json!({"pageScaleFactor":zoom}),
+                    )
+                    .await?;
                 }
                 match p["clear"].as_str() {
                     Some("cookies") => {
-                        m.browser
-                            .command(thread, tab, "Network.clearBrowserCookies", json!({}))
-                            .await?;
+                        page_command(
+                            m,
+                            page,
+                            thread,
+                            tab,
+                            "Network.clearBrowserCookies",
+                            json!({}),
+                        )
+                        .await?;
                     }
                     Some("cache") => {
-                        m.browser
-                            .command(thread, tab, "Network.clearBrowserCache", json!({}))
+                        page_command(m, page, thread, tab, "Network.clearBrowserCache", json!({}))
                             .await?;
                     }
                     _ => {}
                 }
                 if p["hardReload"] == true {
-                    m.browser
-                        .command(thread, tab, "Page.reload", json!({"ignoreCache":true}))
-                        .await?;
+                    page_command(
+                        m,
+                        page,
+                        thread,
+                        tab,
+                        "Page.reload",
+                        json!({"ignoreCache":true}),
+                    )
+                    .await?;
                 }
             }
             _ => {}
         }
     }
     let mut inner = m.inner.lock().unwrap();
+    if page.is_some_and(|page| page.key() != (thread, tab) || !m.browser.current(page)) {
+        return Err(lookup_error(thread, tab));
+    }
     let result = match tag {
         "preview.refresh" => Ok(Value::Null),
         "preview.navigate" if server_tab => inner

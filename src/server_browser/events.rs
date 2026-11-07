@@ -230,6 +230,7 @@ impl Observer {
 }
 #[derive(Default)]
 pub(super) struct Registry {
+    controls: Vec<crate::preview_control::runtime::Control>,
     pages: BTreeMap<String, Observer>,
     registered: bool,
 }
@@ -261,6 +262,17 @@ pub(super) fn register(
         old.done.send_replace(true);
     }
     (done, navigation)
+}
+pub(super) fn register_control(
+    registry: &Shared,
+    control: crate::preview_control::runtime::Control,
+) {
+    let mut registry = registry.lock().unwrap();
+    registry.controls.retain(|control| !control.is_finished());
+    registry.controls.push(control);
+}
+pub(super) fn control_receipts(registry: &Shared) -> Vec<crate::preview_control::runtime::Control> {
+    registry.lock().unwrap().controls.clone()
 }
 pub(super) fn register_desktop(
     registry: &Shared,

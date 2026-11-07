@@ -303,3 +303,37 @@ async fn final_owner_drop_closes_waiting_admission_and_keeps_the_running_callbac
     assert_eq!(finished.load(Ordering::SeqCst), 1);
     assert_eq!(invoked.load(Ordering::SeqCst), 0);
 }
+
+#[tokio::test]
+async fn rejected_self_capturing_callback_disposes_its_final_owner_outside_the_state_lock() {
+    sandbox::assert_isolated();
+    let control = Control::new(Some("A".into()));
+    let captured = control.clone();
+    let rejected = control.agent("B", None, move || async move {
+        drop(captured);
+        Ok(Value::Null)
+    });
+    drop(control);
+    assert_eq!(
+        bounded(rejected.wait()).await.unwrap_err()["reason"],
+        "agentMismatch"
+    );
+}
+
+#[tokio::test]
+async fn tracking_after_shutdown_disposes_reentrant_future_outside_the_state_lock() {
+    sandbox::assert_isolated();
+    struct Probe(Control, Arc<AtomicUsize>);
+    impl Drop for Probe {
+        fn drop(&mut self) {
+            assert!(self.0.snapshot().closed);
+            self.1.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let control = Control::new(None);
+    bounded(control.shutdown()).await.unwrap();
+    let dropped = Arc::new(AtomicUsize::new(0));
+    let probe = Probe(control.clone(), dropped.clone());
+    control.track(async move { drop(probe) });
+    assert_eq!(dropped.load(Ordering::SeqCst), 1);
+}

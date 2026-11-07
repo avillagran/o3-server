@@ -39,6 +39,21 @@ impl State {
             })
         })
     }
+    pub(crate) fn json_text(&self) -> crate::utf16_json::JsonText {
+        use crate::utf16_json::JsonText;
+        self.pending
+            .as_ref()
+            .map_or(JsonText::Value(Value::Null), |pending| {
+                JsonText::Object(vec![
+                    ("type".into(), JsonText::Value(json!(pending.kind))),
+                    ("message".into(), JsonText::Utf16(pending.message.clone())),
+                    (
+                        "defaultValue".into(),
+                        JsonText::Utf16(pending.default_value.clone()),
+                    ),
+                ])
+            })
+    }
     pub fn begin(
         &mut self,
         accept: bool,

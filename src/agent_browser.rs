@@ -7,6 +7,18 @@ use std::sync::{
 };
 use tokio::sync::Mutex;
 
+pub(crate) struct BrowserOutput {
+    pub value: Value,
+    pub text_override: Option<String>,
+}
+impl From<Value> for BrowserOutput {
+    fn from(value: Value) -> Self {
+        Self {
+            value,
+            text_override: None,
+        }
+    }
+}
 #[derive(Clone)]
 pub(crate) struct Access(std::sync::Weak<Scope>);
 impl Access {
@@ -24,7 +36,7 @@ impl Access {
         name: &str,
         p: &Value,
         authority: &crate::mcp_access::Authority,
-    ) -> Result<Value, Value> {
+    ) -> Result<BrowserOutput, Value> {
         let scope = self
             .0
             .upgrade()
@@ -41,6 +53,7 @@ struct Scope {
     thread: String,
     project: String,
     profile: String,
+    owner: std::sync::OnceLock<String>,
     ordinary: Mutex<()>,
     tabs: std::sync::Mutex<Vec<String>>,
     revoked: AtomicBool,
@@ -82,6 +95,7 @@ impl Broker {
             thread: thread.into(),
             project,
             profile: format!("agent:{}", crate::store::random_id().ok()?),
+            owner: std::sync::OnceLock::new(),
             revoked: AtomicBool::new(false),
             ordinary: Mutex::new(()),
             tabs: std::sync::Mutex::new(Vec::new()),
@@ -119,7 +133,7 @@ impl Scope {
         state: &State,
         owned: &[String],
         tab: Option<&str>,
-    ) -> Result<Value, Value> {
+    ) -> Result<BrowserOutput, Value> {
         let list = state.streams.p2.preview.snapshot_list(&self.thread);
         let sessions = list["sessions"]
             .as_array()
@@ -132,14 +146,17 @@ impl Scope {
             })
             .collect::<Vec<_>>();
         let selected = tab.and_then(|tab| sessions.iter().find(|session| session["tabId"] == tab));
+        let mut exact_dialog = None;
         let mut status = if let Some(selected) = selected {
             let dialog = state
                 .streams
                 .p2
                 .preview
                 .browser
-                .dialog_status(&self.thread, selected["tabId"].as_str().unwrap())?;
-            json!({"available":true,"visible":state.streams.p2.preview.browser.human_controls(&self.thread,tab.unwrap()),"tabId":selected["tabId"],"url":if selected["navStatus"]["url"]=="about:blank"{Value::Null}else{selected["navStatus"]["url"].clone()},"title":if dialog.is_null(){selected["navStatus"]["title"].as_str().filter(|title|!title.is_empty()).map_or(Value::Null,|title|json!(title))}else{Value::Null},"loading":selected["navStatus"]["_tag"]=="Loading","dialog":dialog})
+                .dialog_state(&self.thread, selected["tabId"].as_str().unwrap())?;
+            exact_dialog = Some(dialog.clone());
+            let dialog = dialog.status();
+            json!({"available":true,"visible":state.streams.p2.preview.browser.visible(&self.thread,tab.unwrap()),"tabId":selected["tabId"],"url":if selected["navStatus"]["url"]=="about:blank"{Value::Null}else{selected["navStatus"]["url"].clone()},"title":if dialog.is_null(){selected["navStatus"]["title"].as_str().filter(|title|!title.is_empty()).map_or(Value::Null,|title|json!(title))}else{Value::Null},"loading":selected["navStatus"]["_tag"]=="Loading","dialog":dialog})
         } else {
             json!({"available":false,"visible":false,"tabId":null,"url":null,"title":null,"loading":false})
         };
@@ -149,13 +166,38 @@ impl Scope {
                 .p2
                 .preview
                 .browser
-                .title_status(&self.thread, status["tabId"].as_str().unwrap())
+                .title_status_exact(&self.thread, status["tabId"].as_str().unwrap())
                 .await?;
-            status["dialog"] = dialog;
+            status["dialog"] = dialog.status();
+            exact_dialog = Some(dialog);
             status["title"] = title;
         }
-        status["tabs"]=json!(sessions.iter().map(|session|json!({"tabId":session["tabId"],"url":if session["navStatus"]["url"]=="about:blank"{Value::Null}else{session["navStatus"]["url"].clone()},"visible":session["tabId"].as_str().is_some_and(|tab|state.streams.p2.preview.browser.human_controls(&self.thread,tab))})).collect::<Vec<_>>());
-        Ok(status)
+        status["tabs"]=json!(sessions.iter().map(|session|json!({"tabId":session["tabId"],"url":if session["navStatus"]["url"]=="about:blank"{Value::Null}else{session["navStatus"]["url"].clone()},"visible":session["tabId"].as_str().is_some_and(|tab|state.streams.p2.preview.browser.visible(&self.thread,tab))})).collect::<Vec<_>>());
+        use crate::utf16_json::JsonText;
+        let text = JsonText::Object(
+            status
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(key, value)| {
+                    let encoded = if key == "dialog" {
+                        exact_dialog
+                            .as_ref()
+                            .map_or(JsonText::Value(Value::Null), |dialog| dialog.json_text())
+                    } else if let Some(array) = value.as_array() {
+                        JsonText::Array(array.iter().cloned().map(JsonText::Value).collect())
+                    } else {
+                        JsonText::Value(value.clone())
+                    };
+                    (key.clone(), encoded)
+                })
+                .collect(),
+        )
+        .stringify();
+        Ok(BrowserOutput {
+            value: status,
+            text_override: Some(text),
+        })
     }
     async fn cleanup(&self) {
         let Some(state) = self.state.upgrade() else {
@@ -173,19 +215,19 @@ impl Scope {
         }
     }
     async fn call(
-        &self,
+        self: &Arc<Self>,
         name: &str,
         p: &Value,
         authority: &crate::mcp_access::Authority,
-    ) -> Result<Value, Value> {
+    ) -> Result<BrowserOutput, Value> {
         let state = self
             .state
             .upgrade()
             .ok_or_else(|| json!({"message":"Browser owner closed"}))?;
-        let _ordinary = if matches!(name, "preview_status" | "preview_dialog" | "preview_close") {
-            None
-        } else {
+        let _ordinary = if name == "preview_open" {
             Some(self.ordinary.lock().await)
+        } else {
+            None
         };
         let tabs = self.tabs.lock().unwrap().clone();
         // Check after waiting for ordinary work, so terminal-turn cleanup cannot be
@@ -196,6 +238,15 @@ impl Scope {
         )?;
         if self.revoked.load(Ordering::SeqCst) || !enabled(&state, &self.project) {
             return Err(json!({"message":"Agent browser access disabled"}));
+        }
+        let owner = self
+            .owner
+            .get_or_init(|| authority.session_id.clone())
+            .clone();
+        if owner != authority.session_id {
+            return Err(
+                json!({"_tag":"BrowserControlInterrupted","reason":"agentMismatch","message":"This tab belongs to another agent."}),
+            );
         }
         if name == "preview_status" {
             if !p.is_object() {
@@ -230,12 +281,12 @@ impl Scope {
             if tabs.len() >= 4 {
                 return Err(json!({"message":"Close a tab before opening another (limit 4)"}));
             }
-            let result=preview::call(&state,"preview.open",&json!({"threadId":self.thread,"runtime":"server","profileId":format!("{}:{}",self.profile,crate::store::random_id().map_err(|_|json!({"message":"Cannot allocate context"}))?),"url":p["url"]})).await?;
+            let result=preview::open_agent(&state,&json!({"threadId":self.thread,"runtime":"server","profileId":format!("{}:{}",self.profile,crate::store::random_id().map_err(|_|json!({"message":"Cannot allocate context"}))?),"url":p["url"]}),&owner).await?;
             self.tabs
                 .lock()
                 .unwrap()
                 .push(result["tabId"].as_str().unwrap().into());
-            return Ok(result);
+            return Ok(result.into());
         }
         let tab = dialog_input
             .as_ref()
@@ -282,6 +333,40 @@ impl Scope {
                 json!({"_tag":"BrowserControlInterrupted","reason":"dialogPending","message":"A browser dialog is pending. Read preview_status and use preview_dialog first."}),
             );
         }
+        if name == "preview_close" {
+            let result = preview::call(
+                &state,
+                "preview.close",
+                &json!({"threadId":self.thread,"tabId":tab}),
+            )
+            .await?;
+            self.tabs.lock().unwrap().retain(|owned| owned != &tab);
+            return Ok(result.into());
+        }
+        let page = preview::agent_page(&state, &self.thread, &tab).await?;
+        let control = page.control();
+        let scope = self.clone();
+        let state = state.clone();
+        let name = name.to_owned();
+        let input = p.clone();
+        let authority = authority.clone();
+        let owner = owner.clone();
+        control.agent(&owner,None,move||async move {
+            authority.browser_admission(&state,name!="preview_snapshot")?;
+            if scope.revoked.load(Ordering::SeqCst)||!enabled(&state,&scope.project){return Err(json!({"message":"Agent browser access disabled"}));}
+            if !state.streams.p2.preview.browser.current(&page){return Err(json!({"_tag":"BrowserControlInterrupted","reason":"closed","message":"This browser tab is closed."}));}
+            if !page.dialog_status()?.is_null(){return Err(json!({"_tag":"BrowserControlInterrupted","reason":"dialogPending","message":"A browser dialog is pending. Read preview_status and use preview_dialog first."}));}
+            scope.execute(&state,&name,&input,&tab,&page).await
+        }).wait().await.map(BrowserOutput::from)
+    }
+    async fn execute(
+        &self,
+        state: &State,
+        name: &str,
+        p: &Value,
+        tab: &str,
+        page: &crate::server_browser::Page,
+    ) -> Result<Value, Value> {
         let mut args = p.clone();
         if !args.is_object() {
             args = json!({});
@@ -289,30 +374,15 @@ impl Scope {
         args["threadId"] = json!(self.thread);
         args["tabId"] = json!(tab);
         match name {
-            "preview_close" => {
-                let result = preview::call(&state, "preview.close", &args).await?;
-                self.tabs.lock().unwrap().retain(|t| t != &tab);
-                Ok(result)
-            }
-            "preview_navigate" => preview::call(&state, "preview.navigate", &args).await,
+            "preview_navigate" => preview::call_page(state, "preview.navigate", &args, page).await,
             "preview_resize" => {
                 args["viewport"] = json!({"_tag":"freeform","width":p["width"].as_u64().unwrap_or(1280).clamp(240,3840),"height":p["height"].as_u64().unwrap_or(800).clamp(240,2160)});
-                preview::call(&state, "preview.resize", &args).await
+                preview::call_page(state, "preview.resize", &args, page).await
             }
             "preview_press" => {
                 let key = p["key"].as_str().unwrap_or("Enter");
                 for event in ["keyDown", "keyUp"] {
-                    state
-                        .streams
-                        .p2
-                        .preview
-                        .browser
-                        .command(
-                            &self.thread,
-                            &tab,
-                            "Input.dispatchKeyEvent",
-                            json!({"type":event,"key":key}),
-                        )
+                    page.command("Input.dispatchKeyEvent", json!({"type":event,"key":key}))
                         .await?;
                 }
                 Ok(json!({"success":true}))
@@ -326,14 +396,8 @@ impl Scope {
                     "preview_type"=>format!("(()=>{{const e=document.querySelector({locator});if(!e)throw Error('No matching element');e.focus();e.value={text};e.dispatchEvent(new Event('input',{{bubbles:true}}));e.dispatchEvent(new Event('change',{{bubbles:true}}));return true}})()"),
                     _=>p["expression"].as_str().unwrap_or("").into(),
                 };
-                let result = state
-                    .streams
-                    .p2
-                    .preview
-                    .browser
+                let result = page
                     .command(
-                        &self.thread,
-                        &tab,
                         "Runtime.evaluate",
                         json!({"expression":expression,"returnByValue":true,"timeout":3000}),
                     )
@@ -344,18 +408,7 @@ impl Scope {
                 let mut value = result["result"]["value"].clone();
                 if name == "preview_snapshot" {
                     if let Some(snapshot) = value.as_object_mut() {
-                        snapshot.insert(
-                            "networkEntries".into(),
-                            json!(
-                                state
-                                    .streams
-                                    .p2
-                                    .preview
-                                    .browser
-                                    .network_entries(&self.thread, &tab)
-                                    .await?
-                            ),
-                        );
+                        snapshot.insert("networkEntries".into(), json!(page.network_entries()?));
                     }
                 }
                 if value.to_string().len() > 65536 {

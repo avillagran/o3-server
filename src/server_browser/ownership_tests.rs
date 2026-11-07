@@ -28,6 +28,7 @@ async fn unconfirmed_profile_owner_survives_retry_and_caller_cancellation() {
         ("thread".into(), "tab".into()),
         Tab {
             closing: false,
+            control: None,
             origin: Origin::Local,
             desktop_channel: None,
             navigation: None,
@@ -80,5 +81,77 @@ async fn unconfirmed_profile_owner_survives_retry_and_caller_cancellation() {
     assert!(
         path.join("retained").exists(),
         "recording executor retains the entire fixture tree"
+    );
+}
+
+#[tokio::test]
+async fn process_acknowledgement_cannot_clear_a_profile_before_owned_observation_work_drains() {
+    crate::test_sandbox::assert_isolated();
+    let root = std::env::temp_dir().join(format!(
+        "browser-work-receipt-{}",
+        crate::store::random_id().unwrap()
+    ));
+    let path = directory(&root, "default").unwrap();
+    std::fs::create_dir(&path).unwrap();
+    std::fs::write(path.join("retained"), b"owned fixture").unwrap();
+    let browser = Browsers::default();
+    let recorder = std::sync::Arc::new(Recording::default());
+    *browser.removal.0.lock().unwrap() = recorder.clone();
+    let control = crate::preview_control::runtime::Control::new(Some("provider:owned".into()));
+    let (started, start) = oneshot::channel();
+    let (release, gate) = oneshot::channel();
+    let observed = control.observe(move || async move {
+        started.send(()).unwrap();
+        gate.await.unwrap();
+        Ok(Value::Null)
+    });
+    tokio::time::timeout(Duration::from_secs(2), start)
+        .await
+        .unwrap()
+        .unwrap();
+    let (_process, process_done) = tokio::sync::watch::channel(true);
+    let (_page, done) = tokio::sync::watch::channel(false);
+    let (tx, _requests) = mpsc::channel(8);
+    browser.tabs.lock().unwrap().insert(
+        ("thread".into(), "tab".into()),
+        Tab {
+            closing: false,
+            control: Some(control.clone()),
+            origin: Origin::Local,
+            desktop_channel: None,
+            navigation: None,
+            events: None,
+            process_done,
+            session: None,
+            target: None,
+            profile: "default".into(),
+            tx,
+            done,
+            cancel: std::sync::Arc::new(tokio::sync::Notify::new()),
+        },
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_millis(30), browser.clear(&root, "default"))
+            .await
+            .is_err()
+    );
+    assert_eq!(recorder.0.load(Ordering::SeqCst), 0);
+    assert_eq!(browser.tabs.lock().unwrap().len(), 1);
+    assert!(
+        !control.is_finished(),
+        "process-only acknowledgement cannot discard an owned callback"
+    );
+    release.send(()).unwrap();
+    observed.wait().await.unwrap();
+    tokio::time::timeout(Duration::from_secs(2), browser.clear(&root, "default"))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(control.is_finished());
+    assert!(browser.tabs.lock().unwrap().is_empty());
+    assert_eq!(recorder.0.load(Ordering::SeqCst), 1);
+    assert!(
+        path.join("retained").exists(),
+        "explicit recording removal never deletes the fixture tree"
     );
 }

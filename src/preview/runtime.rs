@@ -273,10 +273,10 @@ fn spawn(
             let channel=owned.desktop.lock().unwrap().as_ref().map(|slot|slot.channel.clone());
             let attached=if snapshot["headless"]!=true{if let Some(channel)=&channel{let tab=crate::desktop_browser::TabKey{thread_id:key.0.clone(),tab_id:key.1.clone()};tokio::select!{_=cancelled.changed()=>false,attached=channel.await_attached(&tab,Duration::from_secs(10))=>attached}}else{false}}else{false};
             if !alive(&owned.inner.lock().unwrap(),&key,generation)||*cancelled.borrow(){return Err(lookup_error(&key.0,&key.1));}
-            if attached{owned.browser.open_desktop(channel.as_ref().unwrap(),&key.0,&key.1,snapshot["profileId"].as_str().unwrap_or("default")).await?;}else{
+            if attached{owned.browser.open_desktop_owned(channel.as_ref().unwrap(),&key.0,&key.1,snapshot["profileId"].as_str().unwrap_or("default"),snapshot["automationOwner"].as_str()).await?;}else{
                 if channel.is_some(){let mut inner=owned.inner.lock().unwrap();if alive(&inner,&key,generation){let _=inner.kernel.mark_headless(&json!({"threadId":key.0,"tabId":key.1}),||iso(now_ms()));inner.flush();drop(inner);bump(&owned.changed);}}
                 let isolated=if snapshot["automationOwner"].is_string()&&snapshot.get("profileId").is_none(){format!("agent:{}:{}",key.0,key.1)}else{snapshot["profileId"].as_str().unwrap_or("default").to_string()};
-                owned.browser.open_owned(&owned.root,&owned.registry,&key.0,&key.1,&isolated,snapshot["navStatus"]["url"].as_str()).await?;
+                owned.browser.open_owned(&owned.root,&owned.registry,&key.0,&key.1,&isolated,crate::server_browser::OpenPage{url:snapshot["navStatus"]["url"].as_str(),owner:snapshot["automationOwner"].as_str()}).await?;
             }
             if snapshot["viewport"].is_object()&&snapshot["viewport"]["_tag"]!="fill"{owned.browser.command(&key.0,&key.1,"Emulation.setDeviceMetricsOverride",json!({"width":snapshot["viewport"]["width"],"height":snapshot["viewport"]["height"],"deviceScaleFactor":1,"mobile":false})).await?;}
             Ok(())
@@ -376,6 +376,7 @@ fn spawn(
     });
 }
 pub(super) async fn close(s: &State, thread: &str, tab: Option<&str>) {
+    s.streams.p2.preview.browser.reserve_close(thread, tab);
     let m = &s.streams.p2.preview;
     let (ready, pending) = {
         let mut inner = m.inner.lock().unwrap();
@@ -1855,6 +1856,26 @@ mod tests {
             serde_json::from_str::<Value>(hello.to_text().unwrap()).unwrap()["dialog"],
             Value::Null
         );
+        let hello = serde_json::from_str::<Value>(hello.to_text().unwrap()).unwrap();
+        assert_eq!(hello["controller"], "you");
+        let initial_generation = hello["generation"].as_u64().unwrap();
+        for (command, expected, generation) in [
+            ("releaseControl", "unclaimed", initial_generation + 1),
+            ("takeControl", "you", initial_generation + 2),
+        ] {
+            viewer
+                .send(Message::Text(json!({"type":command}).to_string().into()))
+                .await
+                .unwrap();
+            let update = tokio::time::timeout(Duration::from_secs(2), viewer.next())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            let update: Value = serde_json::from_str(update.to_text().unwrap()).unwrap();
+            assert_eq!(update["controller"], expected);
+            assert_eq!(update["generation"], generation);
+        }
         let browser = state.streams.p2.preview.browser.clone();
         let eval_tab = tab.clone();
         let eval = tokio::spawn(async move {

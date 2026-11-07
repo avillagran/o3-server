@@ -10,6 +10,7 @@ pub(super) async fn launch(
     thread: &str,
     tab: &str,
     profile: &str,
+    owner: Option<&str>,
 ) -> Result<Tab, String> {
     let mut changes = channel.subscribe();
     let endpoint = channel
@@ -88,15 +89,31 @@ pub(super) async fn launch(
                 }
             }
         }
+        drop(rx);
         drop(calls);
+        let controls = events::control_receipts(&actor_pages);
+        for control in &controls {
+            drop(control.close());
+        }
         writer.stop().await;
         drop(input);
         endpoint.close().await;
         events::stopped(&actor_pages);
-        let _ = done_tx.send(true);
+        let mut cleanup_ready = true;
+        for control in &controls {
+            if control.shutdown().await.is_err() {
+                cleanup_ready = false;
+            }
+        }
+        if cleanup_ready {
+            let _ = done_tx.send(true);
+        }
     });
     let mut browser = Tab {
         closing: false,
+        control: Some(crate::preview_control::runtime::Control::new(
+            owner.map(str::to_owned),
+        )),
         session: None,
         target: None,
         profile: profile.into(),
@@ -130,6 +147,9 @@ pub(super) async fn launch(
         let (page_done, navigation) = events::register_desktop(&pages, &session, &target);
         browser.done = page_done;
         browser.navigation = Some(navigation);
+        if let Some(control) = &browser.control {
+            events::register_control(&pages, control.clone());
+        }
         request_in(&browser.tx, "Page.enable", json!({}), Some(session.clone())).await?;
         request(
             &browser.tx,
@@ -331,9 +351,18 @@ mod tests {
         let peer = setup(true).await;
         let browser = Browsers::default();
         browser
-            .open_desktop(&peer.channel, "thread", "tab", "default")
+            .open_desktop_owned(
+                &peer.channel,
+                "thread",
+                "tab",
+                "default",
+                Some("provider:owned"),
+            )
             .await
             .unwrap();
+        let old = browser.page("thread", "tab").unwrap();
+        old.control().take("viewer").wait().await.unwrap();
+        assert_eq!(old.control().snapshot().generation, 1);
         peer.events
             .send(json!({"type":"detached","threadId":"thread","tabId":"tab"}))
             .unwrap();
@@ -355,13 +384,27 @@ mod tests {
                 .await
         );
         browser
-            .open_desktop(&peer.channel, "thread", "tab", "default")
+            .open_desktop_owned(
+                &peer.channel,
+                "thread",
+                "tab",
+                "default",
+                Some("provider:owned"),
+            )
             .await
             .unwrap();
         assert_eq!(
             browser.connection("thread", "tab").await,
             Some((Origin::Desktop, true))
         );
+        let current = browser.page("thread", "tab").unwrap();
+        assert_eq!(
+            current.control().snapshot().agent_id.as_deref(),
+            Some("provider:owned")
+        );
+        assert_eq!(current.control().snapshot().generation, 0);
+        assert!(!browser.current(&old));
+        assert!(old.command("Runtime.evaluate", json!({})).await.is_err());
         assert_eq!(
             packets(&peer)
                 .iter()

@@ -1694,7 +1694,10 @@ mod tests {
                 "browser-thread",
                 "browser-tab",
                 "default",
-                None,
+                crate::server_browser::OpenPage {
+                    url: None,
+                    owner: None,
+                },
             )
             .await
             .unwrap();
@@ -1731,7 +1734,10 @@ mod tests {
                 "another-browser-thread",
                 "another-browser-tab",
                 "default",
-                None,
+                crate::server_browser::OpenPage {
+                    url: None,
+                    owner: None,
+                },
             )
             .await
             .unwrap();

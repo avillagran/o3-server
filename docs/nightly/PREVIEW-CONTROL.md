@@ -24,12 +24,13 @@ Adjacent latest-input submissions share the same waiting action ID; a running
 callback and intervening queued work retain their order. The driver, rather than
 an RPC future, must own callbacks and drain cleanup.
 
-This source foundation does not yet replace production viewer control or agent
-admission. It does not enable popup adoption or advertise additional capabilities.
-Trusted `Authority.session_id` is the intended automation-owner input; profile
-names are not authority. Production integration must preserve that identity through
-open reservations, pending targets, popup receipts and cleanup before expanding
-agent admission beyond its current owned-tab scope.
+The production integration supplies trusted `Authority.session_id` as the
+immutable automation owner; profile names are not authority. Local and desktop
+pages hold separate controls and immutable transport receipts. Viewer takeover,
+release, disconnect, ordinary input and adjacent latest-input work use the native
+queue. Agent callbacks recheck authority, current page identity and modal state
+when they actually start. Agent admission remains restricted to its existing
+owned-tab scope; popup adoption and broader native read scopes are not enabled.
 
 Regenerate with `tools/generate-preview-control-fixtures --checkout ... --staged
 ... --deps ... --node ... --evidence-root ...`. The wrapper requires rootless
@@ -52,10 +53,25 @@ for shutdown. Dropping the final runtime owner closes admission while retaining
 already-running work until it settles. This is an internal ownership guarantee,
 not a new wire operation or permission grant.
 
-Seven private Tokio tests cover immediate takeover and stale-queue rejection,
+Nine private Tokio tests cover immediate takeover and stale-queue rejection,
 dropped result receivers, independent observations, pending-navigation versus
 handoff barriers, adjacent latest-input aliasing, close/shutdown cancellation,
 expired queued work and final-owner disposal. The tests also compile and execute
-result/shutdown futures as owned `Send` tasks. Production actor/Scope integration
-and filesystem cleanup acknowledgements remain a separate consumer step; this
-adapter alone does not establish those lifecycle boundaries or enable adoption.
+result/shutdown futures as owned `Send` tasks. A rejected callback that owns its
+last control is disposed outside the driver's mutex, preventing destructor
+re-entry from deadlocking shutdown.
+
+Actor cleanup stops admission, fails pending transport requests, closes page
+watches, and drains owned callbacks before publishing cleanup acknowledgement.
+An acknowledged process with unfinished callbacks still retains its closing
+receipt and profile. Reconnection creates a fresh native control with generation
+zero and the same immutable automation owner; captured old pages cannot address
+the replacement even if the frontend reuses an opaque session identifier.
+
+Status renders exact UTF-16 dialog units into inner MCP `content.text`, including
+a surrogate pair split at the native 4,000-unit boundary. Raw structured content
+remains a compatibility projection, and initially unpaired incoming CDP strings
+remain a separate decoder gap. Existing foreground-turn cleanup is unchanged;
+the native 30-minute idle retention and one-minute sweep require a separate
+lifetime consumer. Navigation commit/handoff tracking, complete viewer input
+mapping, popup adoption and full toolkit admission remain explicit gaps.
