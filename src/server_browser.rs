@@ -111,6 +111,7 @@ async fn launch(
     profile: &str,
     registry: &std::sync::Arc<crate::agent_scope::Registry>,
     binary: PathBuf,
+    removal: std::sync::Arc<dyn crate::cleanup::Removal>,
 ) -> Result<Tab, String> {
     use std::os::fd::{AsRawFd, FromRawFd};
     let ephemeral = profile == "incognito" || profile.starts_with("agent:");
@@ -263,7 +264,14 @@ async fn launch(
             scope.stop().await;
         }
         if let Some(identity) = ephemeral_identity {
-            let _ = crate::cleanup::quarantine_owned(&dir, identity);
+            if let Ok(plan) = crate::cleanup::RemovalPlan::prepare(&dir, &crate::cleanup::FileTree)
+            {
+                if plan.operations().last().is_some_and(|operation| {
+                    operation.path == dir && operation.identity == identity
+                }) {
+                    let _ = removal.execute(&plan);
+                }
+            }
         }
         let _ = done_tx.send(true);
     });
@@ -392,7 +400,8 @@ impl Browsers {
             #[cfg(not(test))]
             let binary = executable();
             let binary=binary.ok_or_else(||error("Install a system Chromium browser, or set O3_BROWSER_BINARY to its executable; o3 does not download browsers".into()))?;
-            launch(&state.dir, profile, &state.agent_scopes, binary)
+            let removal = self.removal.0.lock().unwrap().clone();
+            launch(&state.dir, profile, &state.agent_scopes, binary, removal)
                 .await
                 .map_err(error)?
         };

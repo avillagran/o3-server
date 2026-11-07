@@ -263,7 +263,14 @@ fn fixture_incognito_exit_retains_the_owned_profile_without_tree_deletion() {
         "O3_BROWSER_BINARY",
         concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/browser-cdp.py"),
     );
-    let server = support::start(|_| {});
+    let removed = std::sync::Arc::new(support::profile_removal::Recording::default());
+    let server = support::start(|state| {
+        state
+            .streams
+            .p2
+            .preview
+            .set_profile_removal(removed.clone())
+    });
     let client = server.connect();
     let opened = preview::open(
         &client,
@@ -299,10 +306,7 @@ fn fixture_incognito_exit_retains_the_owned_profile_without_tree_deletion() {
         "Ephemeral browser must exit before retention"
     );
     let retained = std::fs::read_dir(base).unwrap().next().unwrap().unwrap();
-    assert!(retained
-        .file_name()
-        .to_string_lossy()
-        .starts_with(".o3-retained-"));
+    assert_eq!(retained.path(), original);
     assert!(retained.path().join("fixture.pid").is_file());
-    assert!(!original.exists());
+    assert_eq!(removed.0.lock().unwrap().len(), 1);
 }

@@ -38,7 +38,9 @@ fn native_sessions_reuse_mcp_credentials_enforce_modes_and_revoke_on_exit() {
             .join("tests/fixtures/agent-browser-peer.py");
         let claude = Arc::new(o3_server::claude::ClaudeProvider::new(peer.clone()));
         let codex = Arc::new(o3_server::codex::CodexProvider::new(peer, None));
+        let removals = Arc::new(support::profile_removal::Recording::default());
         let s = support::start(|s| {
+            s.streams.p2.preview.set_profile_removal(removals.clone());
             *s.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::Providers {
                 claude: Some(claude.clone()),
                 codex: codex.clone(),
@@ -172,9 +174,20 @@ fn native_sessions_reuse_mcp_credentials_enforce_modes_and_revoke_on_exit() {
                 std::fs::read_dir(s.dir.join("browser-profiles"))
                     .unwrap()
                     .count(),
-                0,
-                "ephemeral profiles removed"
+                2,
+                "Recording executor retains both isolated profile fixtures"
             );
+            let plans = removals.0.lock().unwrap();
+            assert_eq!(
+                plans.len(),
+                2,
+                "Both completed browser profiles have removal plans"
+            );
+            for plan in plans.iter() {
+                let root = &plan.operations().last().unwrap().path;
+                assert!(root.starts_with(s.dir.join("browser-profiles")));
+                assert!(root.join("fixture.pid").is_file());
+            }
         }
     }
 }
