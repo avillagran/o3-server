@@ -3959,7 +3959,7 @@ dependencies = [
 [[package]]
 name = "t3-protocol"
 version = "0.3.7"
-source = "git+https://github.com/avillagran/lib-t3-rust?o3-reader-pin?rev=7cbad5d8198d37e9ded767d33ac03f2cf15875f4#7cbad5d8198d37e9ded767d33ac03f2cf15875f4"
+source = "git+https://github.com/avillagran/lib-t3-rust?o3-reader-pin?rev=394b4343a28cc8f62f856a7a4c3cb4c8527de4f6#394b4343a28cc8f62f856a7a4c3cb4c8527de4f6"
 dependencies = [
  "base64 0.22.1",
  "chrono",

@@ -361,6 +361,10 @@ fn hub_account_windows_and_failures_reach_the_real_quota_reducer() {
     let account = &state["usageLimitSources"][0]["accounts"][0];
     assert_eq!(account["usageLimits"]["windows"][0]["usedPercent"], 38.0);
     assert_eq!(account["usageLimits"]["resetCredits"]["availableCount"], 1);
+    assert_eq!(
+        account["usageLimits"]["resetCredits"]["nextCreditId"],
+        "private-credit"
+    );
     assert!(!state.to_string().contains("test-management"));
     assert_eq!(
         events.last().unwrap()["payload"]["sources"][0]["accounts"][0]["usageLimits"]

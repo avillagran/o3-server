@@ -17,7 +17,7 @@ ignore = "0.4"
 regex = "1"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 chrono-tz = "0.10"
-t3-protocol = { git = "https://github.com/avillagran/lib-t3-rust?o3-reader-pin", rev = "7cbad5d8198d37e9ded767d33ac03f2cf15875f4", optional = true }
+t3-protocol = { git = "https://github.com/avillagran/lib-t3-rust?o3-reader-pin", rev = "394b4343a28cc8f62f856a7a4c3cb4c8527de4f6", optional = true }
 omabridge = { git = "https://github.com/avillagran/omabridge", rev = "0fc1610ec6c96a76a293108f6b8c6737266c7ebc", default-features = false, features = ["embed"], optional = true }
 anyhow = { version = "1", optional = true }
 libc = "0.2"
@@ -52,7 +52,7 @@ ryu-js = "1.0.3"
 rcgen = "0.14"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
-t3-protocol = { git = "https://github.com/avillagran/lib-t3-rust?o3-reader-pin", rev = "7cbad5d8198d37e9ded767d33ac03f2cf15875f4" }
+t3-protocol = { git = "https://github.com/avillagran/lib-t3-rust?o3-reader-pin", rev = "394b4343a28cc8f62f856a7a4c3cb4c8527de4f6" }
 
 [profile.release]
 opt-level = "s"
