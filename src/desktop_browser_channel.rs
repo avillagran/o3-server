@@ -15,6 +15,8 @@ use tokio::{
 
 #[cfg(unix)]
 mod descriptor;
+mod endpoint;
+pub use endpoint::Endpoint;
 
 pub struct Change {
     pub key: TabKey,
@@ -24,6 +26,7 @@ struct State {
     kernel: Kernel,
     next_subscription: u64,
     changes: HashMap<u64, mpsc::UnboundedSender<Change>>,
+    inbound: HashMap<String, Arc<endpoint::Inbound>>,
 }
 type Shared = Arc<Mutex<State>>;
 struct Command {
@@ -42,6 +45,10 @@ impl Drop for Scope {
         let mut state = self.state.lock().unwrap();
         state.kernel.stream_closed();
         state.changes.clear();
+        for inbound in state.inbound.values() {
+            inbound.shutdown();
+        }
+        state.inbound.clear();
     }
 }
 struct ReaderGuard(Shared);
@@ -85,6 +92,7 @@ impl Channel {
             kernel: Kernel::new(true, true),
             next_subscription: 0,
             changes: HashMap::new(),
+            inbound: HashMap::new(),
         }));
         let (commands, mut receiver) = mpsc::unbounded_channel::<Command>();
         let writer = tokio::spawn(async move {
@@ -136,9 +144,22 @@ impl Channel {
             let Some(event) = decode_event(&value) else {
                 continue;
             };
-            state.kernel.accept(&event);
+            if let Some(frame) = state.kernel.accept(&event) {
+                if let Some(inbound) = state.inbound.get(&frame.key.id()) {
+                    inbound.offer(frame.message);
+                }
+            }
             let kind = event["type"].as_str().unwrap();
             if matches!(kind, "attached" | "detached") {
+                if kind == "detached" {
+                    let key = TabKey {
+                        thread_id: event["threadId"].as_str().unwrap().into(),
+                        tab_id: event["tabId"].as_str().unwrap().into(),
+                    };
+                    if let Some(inbound) = state.inbound.get(&key.id()) {
+                        inbound.shutdown();
+                    }
+                }
                 state.changes.retain(|_, sender| {
                     sender
                         .send(Change {

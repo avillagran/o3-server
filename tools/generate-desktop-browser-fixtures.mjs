@@ -73,7 +73,7 @@ const endpointCases=[];
 if(process.argv.includes('--endpoints')){
  const deadline=(promise,phase)=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Native endpoint timed out: '+phase)),2000);promise.then(value=>{clearTimeout(timer);resolve(value);},error=>{clearTimeout(timer);reject(error);});});
  const closed=socket=>socket.readyState===WebSocket.CLOSED?Promise.resolve():deadline(new Promise(resolve=>socket.addEventListener('close',resolve,{once:true})),'close');
- const connect=async url=>{const socket=new WebSocket(url);await new Promise((resolve,reject)=>{socket.addEventListener('open',resolve,{once:true});socket.addEventListener('error',reject,{once:true});});return socket;};
+ const connect=async url=>{const socket=new WebSocket(url);try{await deadline(new Promise((resolve,reject)=>{socket.addEventListener('open',resolve,{once:true});socket.addEventListener('error',reject,{once:true});}),'connect');return socket;}catch(error){socket.close();throw error;}};
  const wait=async predicate=>{for(let n=0;n<500;n++){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,2));}throw Error('Native endpoint observation timed out');};
  globalThis.browserProbeWrites=[];globalThis.browserProbeDestroyed=0;
  const expected=await Effect.runPromise(Effect.scoped(Effect.gen(function*(){
@@ -84,6 +84,7 @@ if(process.argv.includes('--endpoints')){
   const url=yield*channel.endpoint(key);
   return yield*Effect.promise(async()=>{
    const first=await connect(url);
+   try{
    const incoming=new Promise(resolve=>first.addEventListener('message',event=>resolve(event.data),{once:true}));
    await Effect.runPromise(Queue.offer(input,new TextEncoder().encode(JSON.stringify({type:'cdp',...key,message:'native opaque 😀'})+'\n')));
    const received=await deadline(incoming,'incoming frame');
@@ -91,6 +92,7 @@ if(process.argv.includes('--endpoints')){
    await wait(()=>globalThis.browserProbeWrites.some(write=>JSON.parse(write.line).message==='client opaque 😀'));
    first.close();await closed(first);
    return {received,secretBytes:Buffer.from(new URL(url).pathname.slice(1),'base64url').length};
+   }finally{first.close();}
   });
  })));
  endpointCases.push({scenario:'first-client-roundtrip',expected:{...expected,writes:globalThis.browserProbeWrites,destroyed:globalThis.browserProbeDestroyed}});

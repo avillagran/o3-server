@@ -9,7 +9,7 @@ pub struct TabKey {
     pub tab_id: String,
 }
 impl TabKey {
-    fn id(&self) -> String {
+    pub(crate) fn id(&self) -> String {
         format!("{}\0{}", self.thread_id, self.tab_id)
     }
 }

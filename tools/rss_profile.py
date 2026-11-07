@@ -3,6 +3,8 @@ import shutil
 import argparse, hashlib, json, os, pathlib, queue, signal, sqlite3, subprocess, threading, time, urllib.request
 
 def run(memory):
+    if not pathlib.Path('/run/.containerenv').is_file():
+        raise SystemExit('RSS runtime measurement requires a private rootless container.')
     parser = argparse.ArgumentParser()
     parser.add_argument('binary', nargs='?', default='/var/tmp/o3-build/main/release/o3-server')
     parser.add_argument('--profile', required=True)
