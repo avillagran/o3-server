@@ -24,6 +24,9 @@ struct Owner {
 }
 impl Owner {
     fn exchange(&self, kind: &str) -> Result<(), Fault> {
+        self.exchange_reply(kind).map(|_| ())
+    }
+    fn exchange_reply(&self, kind: &str) -> Result<Value, Fault> {
         let mut socket = self.control.lock().map_err(|_| Fault::CleanupUnknown)?;
         let line = json!({"kind":kind,"nonce":self.nonce}).to_string() + "\n";
         socket
@@ -31,7 +34,7 @@ impl Owner {
             .map_err(|_| Fault::CleanupUnknown)?;
         let mut body = Vec::new();
         let mut byte = [0];
-        while body.len() < 1024 {
+        while body.len() < 8192 {
             socket
                 .read_exact(&mut byte)
                 .map_err(|_| Fault::CleanupUnknown)?;
@@ -44,7 +47,7 @@ impl Owner {
         if reply["kind"] != format!("{kind}-ack") {
             return Err(Fault::CleanupUnknown);
         }
-        Ok(())
+        Ok(reply)
     }
 }
 impl GrantOwner for Owner {
@@ -332,6 +335,42 @@ async fn main() {
             .unwrap(),
         OperationResult::Value(json!("after-handoff"))
     );
+    for (expression, expected) in [
+        ("String.fromCharCode(0xd800)", r#""\ud800""#),
+        (
+            "({[String.fromCharCode(0xd800)]:String.fromCharCode(0xdfff)})",
+            r#"{"\ud800":"\udfff"}"#,
+        ),
+    ] {
+        let OperationResult::JavaScriptValue(value) = controlled
+            .agent(
+                "agent",
+                "evaluate",
+                json!({"expression":expression}),
+                Duration::from_secs(3),
+                true,
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("Actual native Unicode value lost")
+        };
+        assert_eq!(value.json(), expected);
+    }
+    let captured = owner.exchange_reply("unicode").unwrap();
+    let packets = captured["packets"].as_array().unwrap();
+    assert_eq!(packets.len(), 2);
+    for raw in packets {
+        let raw = raw.as_str().unwrap().as_bytes();
+        assert!(serde_json::from_slice::<Value>(raw).is_err());
+        let decoded = o3_server::native_page_worker::cdp::Packet::decode(raw, 4096).unwrap();
+        assert!(decoded.id().is_some() && decoded.method().is_none());
+        let encoded = serde_json::to_vec(&decoded).unwrap();
+        assert_eq!(
+            decoded,
+            o3_server::native_page_worker::cdp::Packet::decode(&encoded, 4096).unwrap()
+        );
+    }
     let receipt = controlled.close().await;
     control.close().wait().await.unwrap();
     control.shutdown().await.unwrap();
@@ -342,6 +381,6 @@ async fn main() {
     assert_eq!(receipt.executed_recursive_removals, Some(0));
     println!(
         "{}",
-        json!({"complete":true,"rustSupervisor":true,"nativePageChildProcess":true,"sameKeyboardAliases":true,"failedChordStateCrossesAliases":true,"ownerRefInvalidationPreservesPage":true,"workerReaped":receipt.worker_reaped,"ownerClosed":receipt.owner_grant_closed,"nativeRecursiveCleanupRequests":receipt.native_cleanup_requests,"executedRecursiveRemovals":receipt.executed_recursive_removals})
+        json!({"complete":true,"rustSupervisor":true,"nativePageChildProcess":true,"sameKeyboardAliases":true,"failedChordStateCrossesAliases":true,"ownerRefInvalidationPreservesPage":true,"nativeRawCdpRoundtrip":true,"controlRetainsExactJavaScript":true,"workerReaped":receipt.worker_reaped,"ownerClosed":receipt.owner_grant_closed,"nativeRecursiveCleanupRequests":receipt.native_cleanup_requests,"executedRecursiveRemovals":receipt.executed_recursive_removals})
     );
 }
