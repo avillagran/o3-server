@@ -813,3 +813,123 @@ async fn buffered_invalid_pcm_and_missing_model_match_whole_service_errors() {
     assert_eq!(engine.discoveries.load(Ordering::SeqCst), 0);
     service.shutdown().await.unwrap();
 }
+
+struct CancellableAdmission {
+    entered: tokio::sync::Notify,
+    cancelled: std::sync::atomic::AtomicUsize,
+}
+impl Engine for CancellableAdmission {
+    fn load<'a>(
+        &'a self,
+        _: &'a speech_catalog::Model,
+        _: &'a Path,
+        _: &'a str,
+    ) -> Task<'a, Result<Loaded, Error>> {
+        Box::pin(async { panic!("Preparation must pass its owned cancellation authority") })
+    }
+    fn load_cancellable<'a>(
+        &'a self,
+        _: &'a speech_catalog::Model,
+        _: &'a Path,
+        _: &'a str,
+        mut cancel: tokio::sync::watch::Receiver<bool>,
+    ) -> Task<'a, Result<Loaded, Error>> {
+        Box::pin(async move {
+            self.entered.notify_waiters();
+            while !*cancel.borrow() {
+                if cancel.changed().await.is_err() {
+                    break;
+                }
+            }
+            self.cancelled.fetch_add(1, Ordering::SeqCst);
+            Err(Error::Cancelled)
+        })
+    }
+    fn devices(&self) -> Task<'_, Result<Value, Error>> {
+        Box::pin(async { Ok(json!([])) })
+    }
+}
+#[tokio::test]
+async fn preparation_deadline_and_dropped_caller_signal_the_owned_loader() {
+    sandbox::assert_isolated();
+    let (_unused, authority, memory, _) = fixture();
+    let engine = Arc::new(CancellableAdmission {
+        entered: tokio::sync::Notify::new(),
+        cancelled: std::sync::atomic::AtomicUsize::new(0),
+    });
+    let clock = Arc::new(VirtualClock::new());
+    let service = candidate::Service::new(
+        Arc::new(Store::new(memory.clone(), memory)),
+        engine.clone(),
+        clock.clone(),
+        None,
+    );
+    for deadline in [true, false] {
+        let entered = engine.entered.notified();
+        tokio::pin!(entered);
+        entered.as_mut().enable();
+        let owner = service.clone();
+        let auth = authority.clone();
+        let caller = tokio::spawn(async move { owner.bind(auth).prepare().await });
+        entered.await;
+        if deadline {
+            clock.advance(120_000);
+            assert!(matches!(
+                caller.await.unwrap(),
+                Err(Error::Operation {
+                    operation: "model preparation",
+                    ..
+                })
+            ));
+        } else {
+            caller.abort();
+            let _ = caller.await;
+        }
+    }
+    // Shutdown is a completion barrier for the still-owned cancelled job.
+    service.shutdown().await.unwrap();
+    assert_eq!(engine.cancelled.load(Ordering::SeqCst), 2);
+    assert!(!authority
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|event| event["kind"] == "load"));
+}
+
+#[tokio::test]
+async fn cached_engine_requires_a_current_installed_model_receipt() {
+    sandbox::assert_isolated();
+    let (service, authority, memory, _) = virtual_fixture(false);
+    let call = service.bind(authority.clone());
+    call.prepare().await.unwrap();
+    let model_id = authority.snapshot.lock().unwrap().model_id.clone();
+    memory.ready.lock().unwrap().remove(&model_id);
+    assert_eq!(
+        call.prepare().await,
+        Err(Error::ModelNotFound {
+            model_id: model_id.clone()
+        })
+    );
+    let options = o3_server::speech_request::TranscriptionOptions::decode(json!({"speechLanguage":"auto","speechTranslateToEnglish":false,"speechCustomWords":[],"speechRemoveFillerWords":false,"speechSilenceFiltering":false})).unwrap();
+    assert_eq!(
+        call.transcribe(0.25f32.to_le_bytes().to_vec(), options)
+            .await,
+        Err(Error::ModelNotFound {
+            model_id: model_id.clone()
+        })
+    );
+    memory.ready.lock().unwrap().insert(model_id);
+    call.prepare().await.unwrap();
+    assert_eq!(
+        authority
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|event| event["kind"] == "load")
+            .count(),
+        1
+    );
+    service.shutdown().await.unwrap();
+}

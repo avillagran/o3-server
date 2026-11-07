@@ -17,7 +17,7 @@ if(process.versions.node!=='26.13.0')throw Error('Exact Node26.13 required');
 const tiny=SPEECH_MODELS.find(model=>model.id==='handy-computer/moonshine-tiny-gguf');
 const normalize=result=>result._tag==='Success'?{ok:true,value:result.success??null}:{ok:false,tag:result.failure._tag,operation:result.failure.operation??null,modelId:result.failure.modelId??null,message:result.failure.message};
 async function scenario(name,run){
- native.events=[];native.profile={};native.replyText='';native.autoGpu=native.failGpu=native.failAll=false;const events=native.events;
+ native.events=[];native.profile={};native.replyText='';native.streamMode=false;native.autoGpu=native.failGpu=native.failAll=false;const events=native.events;
  let settings={speechModelId:tiny.id,speechAcceleration:'cpu',speechModelUnloadTimeout:'min_2',speechLanguage:'auto',speechRemoveFillerWords:false,speechCustomWords:[]};const ready=new Set([tiny.id]);const controlled=new Set(),pending=new Map();
  const serviceSettings={getSettings:Effect.sync(()=>({...settings})),updateSettings:patch=>Effect.sync(()=>{events.push({kind:'settings',patch});settings={...settings,...patch};})};
  const store={isReady:model=>Effect.sync(()=>ready.has(model.id)),installedPath:model=>Effect.sync(()=>ready.has(model.id)?'/fixture/models/'+model.filename:undefined),download:(model,progress)=>Effect.gen(function*(){
@@ -114,6 +114,39 @@ cases.push(await scenario('buffered-explicit-cpu-failure-is-not-retried',(servic
 cases.push(await scenario('buffered-invalid-audio-and-missing-model',(service,h)=>Effect.gen(function*(){
  for(const [name,bytes] of [['empty',new Uint8Array()],['unaligned',new Uint8Array(3)],['nan',new Uint8Array(new Float32Array([NaN]).buffer)]])h.record(name,yield* Effect.result(service.transcribe(bytes,audioOptions({}))));
  h.ready.delete(tiny.id);h.record('missing',yield* Effect.result(service.transcribe(utterance,audioOptions({}))));
+})));
+cases.push(await scenario('stream-native-cpu-replay-revision-and-reservation',(service,h)=>Effect.gen(function*(){
+ native.streamMode=true;native.autoGpu=native.failGpu=true;native.profile={supportsStreaming:true,supportsLongForm:true,supportsVocabulary:true,languages:['en']};h.settings().speechAcceleration='auto';
+ const input=audioOptions({speechLanguage:'en',speechRemoveFillerWords:true,speechCustomWords:[{term:'O3',aliases:['oh three']}]});
+ yield* Effect.scoped(Effect.gen(function*(){
+  const stream=yield* service.startStream(input);
+  h.record('prepare-busy',yield* Effect.result(service.prepareModel));
+  h.record('first',yield* Effect.result(stream.feed(utterance)));
+  h.record('recovered',yield* Effect.result(stream.feed(utterance)));
+  h.record('after-recovery',yield* Effect.result(stream.feed(utterance)));
+  h.record('finished',yield* Effect.result(stream.finish));
+  h.record('feed-after-finish',yield* Effect.result(stream.feed(utterance)));
+  h.record('finished-but-still-reserved',yield* Effect.result(service.prepareModel));
+ }));
+ h.record('released',yield* Effect.result(service.prepareModel));
+})));
+cases.push(await scenario('stream-unfinished-reset-retains-model',(service,h)=>Effect.gen(function*(){
+ native.streamMode=true;native.profile={supportsStreaming:true,supportsLongForm:true,languages:['en']};
+ yield* Effect.scoped(Effect.gen(function*(){
+  const stream=yield* service.startStream(audioOptions({}));
+  for(const [name,bytes] of [['empty',new Uint8Array()],['unaligned',new Uint8Array(3)],['chunk-limit',new Uint8Array(64004)]])h.record(name,yield* Effect.result(stream.feed(bytes)));
+  h.record('valid-after-invalid',yield* Effect.result(stream.feed(utterance)));
+ }));
+ h.record('cached-after-reset',yield* Effect.result(service.prepareModel));
+})));
+cases.push(await scenario('cached-model-still-requires-current-installed-receipt',(service,h)=>Effect.gen(function*(){
+ native.profile={supportsStreaming:true,supportsLongForm:true};
+ h.record('loaded',yield* Effect.result(service.prepareModel));
+ h.ready.delete(tiny.id);
+ h.record('missing-even-when-cached',yield* Effect.result(service.prepareModel));
+ h.record('buffered-missing-even-when-cached',yield* Effect.result(service.transcribe(utterance,audioOptions({}))));
+ h.ready.add(tiny.id);
+ h.record('restored-reuses-cache',yield* Effect.result(service.prepareModel));
 })));
 fs.writeFileSync(process.argv[2],JSON.stringify({nativeRevision:'83a3674ffd84ffb33de768210c806cb1ac53fd80',silero:SILERO_VAD,cases},null,2)+'\n',{flag:'wx'});
 console.log(JSON.stringify({cases:cases.length,wholeService:true,paidOrNativeInference:false}));

@@ -115,9 +115,10 @@ mode; real Worker-backed service cases measure an actual 512 KiB worker stack.
 Seven direct whole-factory protocol regressions also pass from immutable inputs.
 
 This checkpoint still does not implement the entire native SpeechService. Stream
-orchestration, absolute preparation timeout/cancellation across startup, optional
-fallback after a failed late VAD attachment, and actual State/HTTP/current-session
-authorization remain before public capability exposure. No real Silero model or
+orchestration and actual State/HTTP/current-session authorization remain before
+public capability exposure. Known sidecar admission/binding failures now leave
+raw-audio inference available; unknown cleanup still refuses reuse. Real late-VAD
+failure acceptance remains distinct from the synthetic factory observations. No real Silero model or
 VAD inference has been acquired or claimed yet. Those remaining consumers are
 part of the continuing implementation, not inferred from the generic transport.
 The existing worker and pure options/PCM leaves do not by themselves close those orchestration gaps. No claim of full
@@ -127,6 +128,30 @@ documented in `SPEECH-MODEL-STORE-4314.md`.
 
 ### Startup cancellation receipt
 
-The admitted Worker also accepts an owner cancellation receiver during startup. A cancellation already present before admission creates no private runtime or process. Cancellation while waiting for the owned hello fences the group and reaps its leader before returning the same typed startup cleanup receipt used for protocol failure. Private graph preparation is awaited and retained; it is never detached by dropping its future. This receiver covers startup, not the subsequent engine lifetime. Wiring it into the Service preparation deadline remains a separate consumer step.
+The admitted Worker also accepts an owner cancellation receiver during startup. A cancellation already present before admission creates no private runtime or process. Cancellation while waiting for the owned hello fences the group and reaps its leader before returning the same typed startup cleanup receipt used for protocol failure. Private graph preparation is awaited and retained; it is never detached by dropping its future. This receiver covers startup, not the subsequent engine lifetime. The Service now forwards cancellation through actual engine startup and loading and awaits the owned job after a deadline or disappearing caller.
 
 The private held-before-hello regression captures a pidfd before signalling cancellation and requires both confirmed cleanup and actual process exit. It passes in both feature modes, alongside targeted strict checks. This is a synthetic startup peer, not a native inference claim.
+
+### Preparation deadline and current model receipt
+
+Preparation validates the current installed model receipt before beginning its
+120-second load deadline, matching the original `installedModelPath`/`attempt`
+ordering. A matching cached engine does not bypass that validation. Missing model
+bytes reject preparation and buffered inference without disposing the existing
+cache; a restored verified receipt allows reuse. Expensive private preparation
+and terminal cleanup are awaited after cancellation, so the deadline does not
+claim a hard bound on those independent ownership receipts.
+
+The private final checkpoint passes fourteen service cases and the service-error
+case in each feature mode, with targeted strict checks in both. The immediately
+preceding immutable runtime also passes all ten owner cases per mode and real
+WorkerEngine/LocalStore CPU buffered inference using the retained catalog tiny
+model. No microphone, new engine cache, or public route is involved.
+
+`speech-service-stream-4314.json` preserves sixteen whole-original-Service traces;
+the original thirteen are unchanged. Two new stream traces define the next
+consumer boundary: CPU replay yields revisions 1, 3 and 4, finishing retains the
+reservation until scope release, and unfinished scope reset retains the engine.
+The third new trace defines installed-receipt validation before cache reuse.
+These stream traces are native expected behavior, not a claim that Rust stream
+orchestration is already connected.

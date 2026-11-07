@@ -163,6 +163,27 @@ pub trait Engine: Send + Sync {
         path: &'a std::path::Path,
         acceleration: &'a str,
     ) -> Task<'a, Result<Loaded, Error>>;
+    fn load_cancellable<'a>(
+        &'a self,
+        model: &'a Model,
+        path: &'a std::path::Path,
+        acceleration: &'a str,
+        cancel: watch::Receiver<bool>,
+    ) -> Task<'a, Result<Loaded, Error>> {
+        Box::pin(async move {
+            if *cancel.borrow() {
+                return Err(Error::Cancelled);
+            }
+            let loaded = self.load(model, path, acceleration).await?;
+            if *cancel.borrow() {
+                if loaded.runtime.close().await == Cleanup::Unknown {
+                    return Err(Error::CleanupUnknown);
+                }
+                return Err(Error::Cancelled);
+            }
+            Ok(loaded)
+        })
+    }
     fn devices(&self) -> Task<'_, Result<Value, Error>>;
 }
 pub trait Clock: Send + Sync {
@@ -579,12 +600,28 @@ impl Call {
         self.supported()?;
         permit.minimum = 300_000;
         let model = speech_catalog::selected(&snapshot.model_id);
+        let (cancel, receiver) = watch::channel(false);
+        inner
+            .state
+            .lock()
+            .map_err(|_| Error::CleanupUnknown)?
+            .active_cancel = Some(cancel.clone());
+        let _cancel = CancelCall(cancel.clone());
         owned(async move {
             let _permit = permit;
-            inner
-                .load_cached(model, &snapshot.acceleration)
-                .await
-                .map(|_| ())
+            let path = inner.installed_model_path(model).await?;
+            let deadline=inner.clock.now().saturating_add(120_000);
+            let loading=inner.load_cached_at(model, &snapshot.acceleration, receiver, &path);
+            tokio::pin!(loading);
+            tokio::select! {biased;
+                result=&mut loading=>result.map(|_|()),
+                _=inner.clock.sleep_until(deadline)=>{
+                    cancel.send_replace(true);
+                    let result=loading.await;
+                    if result.as_ref().err()==Some(&Error::CleanupUnknown) {return Err(Error::CleanupUnknown);}
+                    Err(operation_error("model preparation","Speech model preparation timed out"))
+                }
+            }
         })
         .await
     }
@@ -867,6 +904,7 @@ impl WorkerEngine {
         &self,
         model: Option<(&Model, &std::path::Path)>,
         acceleration: &str,
+        cancel: Option<watch::Receiver<bool>>,
     ) -> Result<Worker, Error> {
         let files = self.files.clone();
         let entry = self.entry.clone();
@@ -892,7 +930,7 @@ impl WorkerEngine {
         let directory = self.directory.join(
             crate::store::random_id().map_err(|cause| operation_error("engine startup", cause))?,
         );
-        Worker::start(crate::speech_worker::WorkerSpec {
+        let spec = crate::speech_worker::WorkerSpec {
             node: self.node.clone(),
             engine,
             model,
@@ -902,9 +940,13 @@ impl WorkerEngine {
             startup_deadline: self.startup_deadline,
             operation_deadline: self.operation_deadline,
             close_deadline: self.close_deadline,
-        })
-        .await
-        .map_err(|cause| {
+        };
+        let result = if let Some(cancel) = cancel {
+            Worker::start_cancellable(spec, cancel).await
+        } else {
+            Worker::start(spec).await
+        };
+        result.map_err(|cause| {
             if cause
                 .get_ref()
                 .and_then(|cause| cause.downcast_ref::<crate::speech_worker::StartupFailure>())
@@ -925,7 +967,7 @@ impl Engine for WorkerEngine {
         acceleration: &'a str,
     ) -> Task<'a, Result<Loaded, Error>> {
         Box::pin(async move {
-            let worker = self.start(Some((model, path)), acceleration).await?;
+            let worker = self.start(Some((model, path)), acceleration, None).await?;
             match worker.load().await {
                 Ok(metadata) => Ok(Loaded::from_worker(worker, metadata)),
                 Err(cause) => {
@@ -938,9 +980,39 @@ impl Engine for WorkerEngine {
             }
         })
     }
+    fn load_cancellable<'a>(
+        &'a self,
+        model: &'a Model,
+        path: &'a std::path::Path,
+        acceleration: &'a str,
+        mut cancel: watch::Receiver<bool>,
+    ) -> Task<'a, Result<Loaded, Error>> {
+        Box::pin(async move {
+            if *cancel.borrow() {
+                return Err(Error::Cancelled);
+            }
+            let worker = self
+                .start(Some((model, path)), acceleration, Some(cancel.clone()))
+                .await?;
+            let result = tokio::select! { biased;
+                _=wait_cancelled(&mut cancel)=>Err(Error::Cancelled),
+                result=worker.load()=>result.map_err(|cause|worker_error("engine loading",cause)),
+            };
+            match result {
+                Ok(metadata) if !*cancel.borrow() => Ok(Loaded::from_worker(worker, metadata)),
+                result => {
+                    if worker.close().await == Cleanup::Unknown {
+                        Err(Error::CleanupUnknown)
+                    } else {
+                        Err(result.err().unwrap_or(Error::Cancelled))
+                    }
+                }
+            }
+        })
+    }
     fn devices(&self) -> Task<'_, Result<Value, Error>> {
         Box::pin(async move {
-            let worker = self.start(None, "auto").await?;
+            let worker = self.start(None, "auto", None).await?;
             worker.discover().await.map_err(|cause| {
                 if cause == crate::speech_worker::Error::CleanupUnknown {
                     Error::CleanupUnknown
@@ -960,7 +1032,33 @@ fn worker_error(operation: &'static str, cause: crate::speech_worker::Error) -> 
     }
 }
 impl Inner {
-    async fn load_cached(&self, model: &Model, requested: &str) -> Result<CachedModel, Error> {
+    async fn installed_model_path(&self, model: &Model) -> Result<std::path::PathBuf, Error> {
+        self.store
+            .installed_path(model)
+            .await
+            .ok_or_else(|| Error::ModelNotFound {
+                model_id: model.id().into(),
+            })
+    }
+    async fn load_cached(
+        &self,
+        model: &Model,
+        requested: &str,
+        cancel: watch::Receiver<bool>,
+    ) -> Result<CachedModel, Error> {
+        let path = self.installed_model_path(model).await?;
+        self.load_cached_at(model, requested, cancel, &path).await
+    }
+    async fn load_cached_at(
+        &self,
+        model: &Model,
+        requested: &str,
+        cancel: watch::Receiver<bool>,
+        path: &std::path::Path,
+    ) -> Result<CachedModel, Error> {
+        if *cancel.borrow() {
+            return Err(Error::Cancelled);
+        }
         let acceleration = {
             let state = self.state.lock().map_err(|_| Error::CleanupUnknown)?;
             if requested == "auto" && state.auto_cpu.as_deref() == Some(model.id()) {
@@ -980,15 +1078,12 @@ impl Inner {
         {
             return Ok(loaded);
         }
-        let path = self
-            .store
-            .installed_path(model)
-            .await
-            .ok_or_else(|| Error::ModelNotFound {
-                model_id: model.id().into(),
-            })?;
         self.dispose().await?;
-        let loaded = match self.engine.load(model, &path, &acceleration).await {
+        let loaded = match self
+            .engine
+            .load_cancellable(model, path, &acceleration, cancel.clone())
+            .await
+        {
             Ok(loaded) => loaded,
             Err(cause) => {
                 if cause == Error::CleanupUnknown {
@@ -1008,7 +1103,7 @@ impl Inner {
         };
         let published = {
             let mut state = self.state.lock().map_err(|_| Error::CleanupUnknown)?;
-            if state.closed {
+            if state.closed || *cancel.borrow() {
                 false
             } else {
                 state.loaded = Some(cached.clone());
@@ -1025,9 +1120,13 @@ impl Inner {
                     .unknown = true;
                 return Err(Error::CleanupUnknown);
             }
-            Err(Error::Busy {
-                operation: "model preparation",
-            })
+            if *cancel.borrow() {
+                Err(Error::Cancelled)
+            } else {
+                Err(Error::Busy {
+                    operation: "model preparation",
+                })
+            }
         }
     }
     async fn infer(
@@ -1050,13 +1149,26 @@ impl Inner {
                     crate::speech_worker::SealedFile::admit(&path, model.sha256(), model.size())
                 })
                 .await
-                .map_err(|cause| operation_error("VAD binding", cause))?
                 .map_err(|cause| operation_error("VAD binding", cause))?;
-                loaded.runtime.bind_vad(file).await?;
+                // VAD is optional in the original native factory. A known sidecar
+                // admission/binding failure falls back to raw audio; uncertain
+                // process cleanup must still fence the resource.
+                if let Ok(file) = file {
+                    if loaded.runtime.bind_vad(file).await == Err(Error::CleanupUnknown) {
+                        return Err(Error::CleanupUnknown);
+                    }
+                }
             }
             loaded.runtime.infer(pcm, model.id(), options).await
         };
         tokio::select! {biased;_=cancel.changed()=>Err(Error::Cancelled),result=inference=>result}
+    }
+}
+async fn wait_cancelled(cancel: &mut watch::Receiver<bool>) {
+    loop {
+        if *cancel.borrow() || cancel.changed().await.is_err() {
+            return;
+        }
     }
 }
 struct CancelCall(watch::Sender<bool>);
@@ -1102,7 +1214,9 @@ impl Call {
                 .transcribing += 1;
             permit.transcribing = true;
             let _permit = permit;
-            let mut loaded = inner.load_cached(model, &snapshot.acceleration).await?;
+            let mut loaded = inner
+                .load_cached(model, &snapshot.acceleration, receiver.clone())
+                .await?;
             if *receiver.borrow() {
                 inner.dispose().await?;
                 return Err(Error::Cancelled);
@@ -1150,7 +1264,7 @@ impl Call {
                     if !retry {
                         return Err(cause);
                     }
-                    loaded = inner.load_cached(model, "cpu").await?;
+                    loaded = inner.load_cached(model, "cpu", receiver.clone()).await?;
                     inner
                         .state
                         .lock()
