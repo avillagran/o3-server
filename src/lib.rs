@@ -83,6 +83,7 @@ mod native_goal;
 pub mod p2;
 pub mod paths;
 pub mod preview;
+pub mod preview_manager;
 pub mod proc;
 pub mod projects;
 mod provider_frames;
