@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+"""Execute pinned native speech protocol fixtures without host models or network."""
+import argparse,json,os,pathlib,subprocess,tempfile
+import node_admission
+p=argparse.ArgumentParser(description=__doc__)
+p.add_argument('--node',required=True,type=pathlib.Path)
+p.add_argument('--evidence-root',required=True,type=pathlib.Path)
+p.add_argument('--image',default='localhost/o3-server-tests:local')
+a=p.parse_args();root=pathlib.Path(__file__).resolve().parent.parent
+out=pathlib.Path(tempfile.mkdtemp(prefix='protocol-',dir=a.evidence_root));out.chmod(0o700)
+receipt=json.loads(subprocess.check_output(['python3',str(root/'tools/admit-node'),'--node',str(a.node),'--image',a.image],text=True));node_admission.snapshot(receipt,out/'node-bin/node')
+results=out/'results';results.mkdir()
+cmd=['podman','--remote=false','run','--rm','--pull=never','--http-proxy=false','--timeout=120','--userns=keep-id','--user',f'{os.getuid()}:{os.getgid()}','--read-only','--network=none','--cap-drop=ALL','--security-opt=no-new-privileges','--pids-limit=128','--memory=2g','--tmpfs','/tmp:rw,exec,size=512m,mode=1777','-v',f'{out}/node-bin:/node-bin:ro','-v',f'{root}:/server:ro','-v',f'{results}:/out:rw',a.image,'python3','/server/tests/speech/worker-protocol.py']
+with (out/'test.log').open('w')as log:r=subprocess.run(cmd,stdout=log,stderr=subprocess.STDOUT)
+(out/'result.json').write_text(json.dumps({'returncode':r.returncode,'node':receipt,'scope':'actual complete native factory with an explicitly synthetic engine; Rust owner not yet integrated'},indent=2)+'\n');print(out);print((out/'test.log').read_text());raise SystemExit(r.returncode)
