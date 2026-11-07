@@ -47,8 +47,13 @@ try:
                            if (value := json.loads(line)).get('executable')]
         if not runtime_outputs:
             raise RuntimeError('Cargo produced no runtime executables')
-        debug = next(path.parent.parent if path.parent.name == 'deps' else path.parent
-                     for path in runtime_outputs if path.parent.name != 'examples')
+        test_outputs = [pathlib.Path(value['executable']) for line in build.stdout.splitlines()
+                        if (value := json.loads(line)).get('executable')
+                        and value.get('profile', {}).get('test')
+                        and pathlib.Path(value['executable']).parent.name == 'deps']
+        if not test_outputs:
+            raise RuntimeError('Cargo produced no test executable under the debug directory')
+        debug = test_outputs[0].parent.parent
         artifact_snapshot = debug.resolve().parent / ('test-runtime-' + uuid.uuid4().hex)
         runtime_records = snapshot(debug, runtime_outputs, artifact_snapshot)
 finally:
