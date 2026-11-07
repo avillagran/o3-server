@@ -146,14 +146,16 @@ fn redirect(method: Method, origin: &str, from: &str, response: &Response) -> Op
         && target.path().starts_with("/api/"))
     .then(|| target.to_string())
 }
-pub async fn request(context: &impl Context, input: &Request) -> Result<String, ApiError> {
-    let fail = |status, reason, detail: Vec<u16>, credential| ApiError {
-        host: input.host.clone(),
-        operation: input.operation.clone(),
-        status,
-        reason,
-        detail,
-        credential,
+pub async fn request(context: &impl Context, input: &Request) -> Result<String, Box<ApiError>> {
+    let fail = |status, reason, detail: Vec<u16>, credential| {
+        Box::new(ApiError {
+            host: input.host.clone(),
+            operation: input.operation.clone(),
+            status,
+            reason,
+            detail,
+            credential,
+        })
     };
     let Some(host) = host(&input.host) else {
         return Err(fail(
