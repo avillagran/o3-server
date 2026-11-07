@@ -844,10 +844,13 @@ mod tests {
             .unwrap();
         let requests = std::sync::Arc::new(Mutex::new(Vec::<String>::new()));
         let observed = requests.clone();
-        let (base,task)=runtime.block_on(async {
+        let (base,task,arm)=runtime.block_on(async {
             let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let base=format!("http://{}",listener.local_addr().unwrap());
+            let (arm,armed)=tokio::sync::oneshot::channel();
             let task=tokio::spawn(async move {
+                // Start the existing listener budget after server/SDK/settings readiness.
+                armed.await.unwrap();
                 let mut starred=false;
                 loop {
                     let (mut socket,head)=star_request(&listener).await;
@@ -857,17 +860,29 @@ mod tests {
                     socket.write_all(format!("HTTP/1.1 {status} Fixture\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").as_bytes()).await.unwrap();
                 }
             });
-            (base,task)
+            (base,task,arm)
         });
         let server =
             test_support::start(|state| *state.forge.fixture_api_root.lock().unwrap() = Some(base));
         let client = server.connect();
         client.rpc("server.updateSettings",json!({"patch":{"sourceControlHosts":{"github":{"tokens":{"github.com":"fixture-token"}}}}})).unwrap();
+        arm.send(()).unwrap();
         let input = json!({"provider":"github","host":"GitHub.com","repository":"owner/café ?#"});
         assert_eq!(
             client.rpc("sourceControl.starred", input.clone()).unwrap(),
             false
         );
+        {
+            let observed = requests.lock().unwrap();
+            assert_eq!(
+                observed.len(),
+                1,
+                "The initial false result must come from the fixture GET"
+            );
+            assert!(
+                observed[0].starts_with("GET /user/starred/owner/caf%C3%A9%20%3F%23 HTTP/1.1\r\n")
+            );
+        }
         assert_eq!(
             client.rpc("sourceControl.star", input.clone()).unwrap(),
             true
