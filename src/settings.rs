@@ -57,19 +57,11 @@ pub(crate) fn read_stored(s: &State) -> Result<Value, String> {
                 None => stored.clone(),
             };
             merge(&mut v, &filled);
-            // T3 keeps keyed forge literals in private secret slots. Retain their public marker
-            // when loading a profile; patch merging still treats that marker as "keep existing".
-            if let Some(hosts) = stored["sourceControlHosts"].as_object() {
-                for (kind, settings) in hosts {
-                    for field in ["tokens", "signIns"] {
-                        if let Some(entries) = settings[field].as_object() {
-                            for (host, value) in entries {
-                                if value == SENTINEL {
-                                    v["sourceControlHosts"][kind][field][host] = json!(SENTINEL);
-                                }
-                            }
-                        }
-                    }
+            // These complete source records contain public saved-secret markers.
+            // Generic legacy merge skips markers, which would erase their slots.
+            for key in ["sourceControlHosts", "usageLimitSources"] {
+                if let Some(value) = filled.get(key) {
+                    v[key] = value.clone();
                 }
             }
         }
@@ -185,9 +177,40 @@ pub fn redact(v: &mut Value) {
         _ => {}
     }
 }
+/// Capture settings and private slots under the same lock as write/rollback.
+pub(crate) fn read_materialized(s: &State) -> Result<Value, String> {
+    let _guard = s.settings_lock.lock().unwrap();
+    crate::settings_secrets::materialize_profile(&s.dir, &read(s)?)
+}
+fn private_projection(value: &Value) -> Value {
+    json!({"providerInstances":{},"sourceControlHosts":value["sourceControlHosts"],"usageLimitSources":value["usageLimitSources"],"easDeviceHosts":[],"simlockDeviceHosts":[],"secretProviders":{}})
+}
+fn redact_client(value: &mut Value) {
+    // Reference capability negotiation remains gated. Existing clients receive
+    // native legacy markers for these two activated credential families.
+    let projected = crate::settings_secret_transaction::redact(&private_projection(value), false);
+    redact(value);
+    for key in ["sourceControlHosts", "usageLimitSources"] {
+        value[key] = projected[key].clone();
+    }
+}
+fn private_error(s: &State, error: &crate::settings_secret_transaction::TransactionError) -> Value {
+    for failure in &error.rollback_errors {
+        eprintln!(
+            "Failed to roll back settings secret: {} ({})",
+            failure.resource, failure.tag
+        );
+    }
+    let message = format!(
+        "Server settings {} failed at {}.",
+        error.operation,
+        s.dir.join("settings.json").display()
+    );
+    json!({"operation":error.operation,"message":message,"cause":{"_tag":error.cause.tag,"resource":error.cause.resource}})
+}
 pub fn get(s: &State) -> Result<Value, String> {
     let mut v = read(s)?;
-    redact(&mut v);
+    redact_client(&mut v);
     Ok(v)
 }
 pub fn update(s: &State, p: &Value) -> Result<Value, String> {
@@ -329,6 +352,27 @@ fn update_inner(s: &State, p: &Value, policy_error: &mut Option<Value>) -> Resul
             *policy_error = Some(error);
             message
         })?;
+    let native_private = crate::managed_settings_codec::decode_patch(json!({
+        "sourceControlHosts": v["sourceControlHosts"], "usageLimitSources": v["usageLimitSources"]
+    }))
+    .map_err(|_| {
+        let message = format!(
+            "Server settings normalize failed at {}.",
+            s.dir.join("settings.json").display()
+        );
+        *policy_error = Some(json!({"operation":"normalize","message":message}));
+        message
+    })?;
+    for key in ["sourceControlHosts", "usageLimitSources"] {
+        v[key] = native_private[key].clone();
+    }
+    let (private_settings, private_changes) = crate::settings_secret_transaction::plan(
+        &private_projection(&previous),
+        &private_projection(&v),
+    );
+    for key in ["sourceControlHosts", "usageLimitSources"] {
+        v[key] = private_settings[key].clone();
+    }
     let persisted = if let Some(controls) = s.managed_policy.settings_controls()? {
         let decoded = crate::managed_settings_codec::decode(v.clone())
             .map_err(|_| "Invalid managed settings persistence")?;
@@ -368,8 +412,58 @@ fn update_inner(s: &State, p: &Value, policy_error: &mut Option<Value>) -> Resul
     } else {
         v.clone()
     };
-    crate::profile::atomic_json(&s.dir.join("settings.json"), &persisted)
-        .map_err(|e| e.to_string())?;
+    use crate::server_secret_store::FileSecretStore;
+    let private_store = if private_changes.is_empty() {
+        None
+    } else {
+        Some(FileSecretStore::open(&s.dir.join("secrets")).map_err(|cause| {
+            let error=json!({"operation":"write-secret","message":format!("Failed to secure private settings storage ({}).",cause.tag),"cause":{"_tag":cause.tag,"resource":cause.resource}});
+            let message=error["message"].as_str().unwrap().to_owned();*policy_error=Some(error);message
+        })?)
+    };
+    let applied = if let Some(store) = &private_store {
+        let applied = crate::settings_secret_transaction::apply(store, &private_changes).map_err(
+            |cause| {
+                let error = private_error(s, &cause);
+                let message = error["message"].as_str().unwrap().to_owned();
+                *policy_error = Some(error);
+                message
+            },
+        )?;
+        // Verify the exact selected snapshot before publishing its public markers.
+        if let Err(cause) =
+            crate::settings_secret_transaction::materialize(store, &private_settings)
+        {
+            let failures = crate::settings_secret_transaction::rollback(store, &applied);
+            let mut cause = cause;
+            cause.rollback_errors.extend(failures);
+            let error = private_error(s, &cause);
+            let message = error["message"].as_str().unwrap().to_owned();
+            *policy_error = Some(error);
+            return Err(message);
+        }
+        applied
+    } else {
+        Vec::new()
+    };
+    if let Err(error) = crate::profile::atomic_json(&s.dir.join("settings.json"), &persisted) {
+        if let Some(store) = &private_store {
+            for failure in crate::settings_secret_transaction::rollback(store, &applied) {
+                eprintln!(
+                    "Failed to roll back settings secret: {} ({})",
+                    failure.resource, failure.tag
+                );
+            }
+        }
+        return Err(error.to_string());
+    }
+    *s.settings_cache.lock().unwrap() = None;
+    if private_changes
+        .iter()
+        .any(|change| change.secret_name.starts_with("usage-limit-source-"))
+    {
+        crate::config_sources::private_settings_changed(s);
+    }
     s.notify();
     if patch.get("providerInstances").is_some()
         || patch.get("projectSettingsOverrides").is_some()
@@ -388,7 +482,7 @@ fn update_inner(s: &State, p: &Value, policy_error: &mut Option<Value>) -> Resul
         }
     }
     v = s.managed_policy.effective_settings(&v)?;
-    redact(&mut v);
+    redact_client(&mut v);
     Ok(v)
 }
 fn preserve_environment(old: &Value, patch: &mut Value) {

@@ -209,9 +209,8 @@ impl GitHub {
 
     async fn credential(&self, s: &State, host: &str) -> Option<String> {
         // Native settings read/materialization failures behave like absent saved credentials.
-        let settings = crate::settings::read(s)
+        let settings = crate::settings::read_materialized(s)
             .ok()
-            .and_then(|raw| crate::settings_secrets::materialize_profile(&s.dir, &raw).ok())
             .unwrap_or_else(|| json!({}));
         let providers = &settings["secretProviders"];
         let resolved = crate::settings_secrets::resolve_fields(

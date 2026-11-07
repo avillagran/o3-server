@@ -9,6 +9,16 @@ pub(crate) struct UsageState {
     refresh: tokio::sync::Mutex<()>,
     snapshot: std::sync::Mutex<Vec<Value>>,
     version: std::sync::atomic::AtomicU64,
+    private_generation: std::sync::atomic::AtomicU64,
+}
+
+pub(crate) fn private_settings_changed(state: &State) {
+    state
+        .streams
+        .ops
+        .usage_sources
+        .private_generation
+        .fetch_add(1, std::sync::atomic::Ordering::Release);
 }
 
 pub struct Sources {
@@ -50,6 +60,7 @@ impl Sources {
             let mut next_usage = tokio::time::Instant::now();
             let mut last_settings = Value::Null;
             let mut last_usage_version = 0;
+            let mut last_private_generation = 0;
             loop {
                 if themes {
                     let current = read_themes(&state);
@@ -60,8 +71,15 @@ impl Sources {
                     }
                 }
                 let settings = crate::settings::read(&state).unwrap_or(json!({}));
+                let private_generation = state
+                    .streams
+                    .ops
+                    .usage_sources
+                    .private_generation
+                    .load(std::sync::atomic::Ordering::Acquire);
                 if usage
-                    && (tokio::time::Instant::now() >= next_usage
+                    && (private_generation != last_private_generation
+                        || tokio::time::Instant::now() >= next_usage
                         || settings["usageLimitSources"] != last_settings["usageLimitSources"]
                         || settings["providerInstances"] != last_settings["providerInstances"]
                         || state
@@ -87,7 +105,10 @@ impl Sources {
                         .usage_sources
                         .version
                         .load(std::sync::atomic::Ordering::Acquire);
-                    if version == last_usage_version || settings != last_settings {
+                    if version == last_usage_version
+                        || settings != last_settings
+                        || private_generation != last_private_generation
+                    {
                         refresh(&state).await;
                     }
                     let sources = {
@@ -100,13 +121,22 @@ impl Sources {
                             .load(std::sync::atomic::Ordering::Acquire);
                         current.clone()
                     };
-                    if crate::settings::read(&state).ok().is_some_and(|current| {
-                        ["usageLimitSources", "providerInstances"]
-                            .iter()
-                            .any(|key| current[*key] != settings[*key])
-                    }) {
+                    if state
+                        .streams
+                        .ops
+                        .usage_sources
+                        .private_generation
+                        .load(std::sync::atomic::Ordering::Acquire)
+                        != private_generation
+                        || crate::settings::read(&state).ok().is_some_and(|current| {
+                            ["usageLimitSources", "providerInstances"]
+                                .iter()
+                                .any(|key| current[*key] != settings[*key])
+                        })
+                    {
                         continue;
                     }
+                    last_private_generation = private_generation;
                     if sender.send(json!({"version":1,"type":"usageLimitSourcesUpdated","payload":{"sources":sources}})).await.is_err() { break; }
                     wake.notify_one();
                 }
@@ -136,7 +166,7 @@ impl Sources {
                         _ = tokio::time::sleep(std::time::Duration::from_secs(1)), if themes => break,
                         r = changes.changed() => {
                             if r.is_err() { return; }
-                            if state.streams.ops.usage_sources.version.load(std::sync::atomic::Ordering::Acquire) != last_usage_version || crate::settings::read(&state).ok().is_some_and(|s| ["usageLimitSources","providerInstances","backgroundActivity"].iter().any(|key| s[*key] != settings[*key])) { break; }
+                            if state.streams.ops.usage_sources.private_generation.load(std::sync::atomic::Ordering::Acquire) != last_private_generation || state.streams.ops.usage_sources.version.load(std::sync::atomic::Ordering::Acquire) != last_usage_version || crate::settings::read(&state).ok().is_some_and(|s| ["usageLimitSources","providerInstances","backgroundActivity"].iter().any(|key| s[*key] != settings[*key])) { break; }
                         }
                     }
                 }
@@ -230,9 +260,8 @@ async fn account(config: &Value, account: &Value) -> Value {
 pub(crate) async fn refresh(state: &State) -> Vec<Value> {
     let service = &state.streams.ops.usage_sources;
     let _refresh = service.refresh.lock().await;
-    let settings = crate::settings::read(state)
+    let settings = crate::settings::read_materialized(state)
         .ok()
-        .and_then(|raw| crate::settings_secrets::materialize_profile(&state.dir, &raw).ok())
         .unwrap_or_else(|| json!({}));
     let sources = read_sources(state, &settings).await;
     let mut previous = service.snapshot.lock().unwrap();
@@ -358,8 +387,7 @@ pub(crate) async fn consume_reset_credit(state: &State, input: &Value) -> Result
     let service = &state.streams.ops.usage_sources;
     // A stale concurrent refresh must not resurrect credit state after redemption.
     let _refresh = service.refresh.lock().await;
-    let settings = crate::settings::read(state)
-        .and_then(|raw| crate::settings_secrets::materialize_profile(&state.dir, &raw))
+    let settings = crate::settings::read_materialized(state)
         .map_err(|_| error("Could not read hub settings."))?;
     let source_id = input["sourceId"].as_str().unwrap();
     let raw = settings["usageLimitSources"]

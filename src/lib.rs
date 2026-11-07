@@ -54,8 +54,10 @@ pub mod routes;
 pub mod scheduled;
 pub mod scopes;
 pub mod secret_resolver;
+pub mod server_secret_store;
 pub mod service;
 pub mod settings;
+pub mod settings_secret_transaction;
 pub mod settings_secrets;
 
 pub mod agent_scope;

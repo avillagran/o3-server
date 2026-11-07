@@ -209,11 +209,7 @@ impl FileSecretStore {
         result.map_err(|e| StoreError::io("SecretStorePersistError", secret, e))
     }
     #[cfg(test)]
-    pub(crate) fn create_with_fixture_nonce(
-        &self,
-        secret: &str,
-        value: &[u8],
-    ) -> Result<(), StoreError> {
+    pub fn create_with_fixture_nonce(&self, secret: &str, value: &[u8]) -> Result<(), StoreError> {
         let target =
             slot(secret).map_err(|e| StoreError::io("SecretStorePersistError", secret, e))?;
         self.persist_named(secret, value, true, &target, "fixed-fixture")

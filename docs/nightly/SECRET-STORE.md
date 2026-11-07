@@ -1,6 +1,6 @@
 # Private secret-store and settings transaction leaf
 
-The source boundary is T3 Code nightly `32a0531748c44b25072d7495ce0b9bd7e9450a87` with Effect 4.1.2. This is an isolated implementation leaf. It does not activate a settings writer, migrate authentication material, change signing or session identities, or advertise complete private-secret support.
+The source boundary is T3 Code nightly `32a0531748c44b25072d7495ce0b9bd7e9450a87` with Effect 4.1.2. The core is independently tested. The first consumer activates private writes only for `sourceControlHosts` and `usageLimitSources`; provider/environment/device private writes remain gated. This does not migrate authentication material, change signing or session identities, or advertise complete private-secret support.
 
 ## Native observations
 
@@ -21,7 +21,7 @@ The Rust differential tests compare all 670 plans, both client projections, 402 
 
 `settings_secret_transaction.rs` exposes planning, reference echo, client redaction, materialization, apply, and explicit reverse rollback. A transaction snapshots each previous slot before mutation and records the attempted write before executing it. Failures roll back all recorded slots in reverse order. Rollback errors are retained separately from the primary error for a future consumer to log. A successful apply returns a rollback token so the settings-file writer can restore slots if its own later stage fails.
 
-The caller must hold the settings write serialization boundary across plan, apply, materialization, settings-file publication, cache update, and rollback. This leaf has no independent settings-file writer, materialization cache, invalidation generation, publication event, or management-policy admission. Those existing consumer boundaries must be preserved when activation is proposed.
+The caller must hold the settings write serialization boundary across plan, apply, materialization, settings-file publication, cache update, and rollback. The selected consumer uses the existing settings lock, policy admission, atomic JSON publication and notification. It rolls back attempted slot changes if verification or settings-file publication fails, and invalidates the raw settings cache only after publication. Forge and quota readers take a settings-plus-slots snapshot under the same lock. A quota credential generation forces opted-in subscriptions to refresh when private bytes change while the public JSON stays identical. There is no new materialization cache. Other credential families and full client reference capability negotiation remain outside this activation. The `Settings` managed-policy startup family remains gated; this change does not enable it. Its existing internal admission/sparse-persistence unit regression is checked independently.
 
 ## Safety differences and limits
 
@@ -31,11 +31,13 @@ No recursive deletion, recursive cleanup, physical mount, real profile, host cre
 
 The native atomic settings writer is intentionally outside this oracle: its scoped temporary-directory cleanup uses recursive removal. Any future writer proof must use an in-memory filesystem or exact owned-file cleanup and must not execute that native cleanup physically.
 
-Standalone integration tests include the new files directly, so no server module declaration or consumer activation is needed. Run only this audited target in rootless Podman:
+The standalone core integration includes the new files directly. A separate real-RPC integration covers save, echo, replace, clear, reopen, reference-only legacy projections, identity preservation, validation before mutation and preservation of the managed-settings startup gate, rollback on publication/materialization failure, and actual synthetic HTTP refresh with identical public settings. Run only these audited targets in rootless Podman:
 
 ```sh
 tools/test-scheduled-modes --integration secret_store --compile-lock /var/tmp/o3-build/o3-parity-compile.lock
 tools/test-scheduled-modes --integration secret_store --default-features --compile-lock /var/tmp/o3-build/o3-parity-compile.lock
+tools/test-scheduled-modes --integration settings_private --compile-lock /var/tmp/o3-build/o3-parity-compile.lock
+tools/test-scheduled-modes --integration settings_private --default-features --compile-lock /var/tmp/o3-build/o3-parity-compile.lock
 ```
 
 Broader test execution remains subject to the repository's independent fixture-cleanup safety audit. JavaScript UTF-16 isolated surrogate inputs remain outside the Rust JSON/string boundary. Filesystem error representations are projected to typed store/settings operations rather than reproducing platform exception objects.
