@@ -6,14 +6,22 @@ struct Call {
     expires: tokio::time::Instant,
     reply: oneshot::Sender<Result<Value, String>>,
 }
+struct ExactCall {
+    permit: write::Permit,
+    session: String,
+    expires: tokio::time::Instant,
+    reply: oneshot::Sender<Result<crate::native_page_worker::cdp::Packet, exact::Fault>>,
+}
 #[derive(Default)]
 pub(super) struct Calls {
     next: u64,
     calls: BTreeMap<u64, Call>,
+    exact: BTreeMap<u64, ExactCall>,
+    exact_late: BTreeMap<u64, String>,
 }
 impl Calls {
     pub fn full(&self) -> bool {
-        self.calls.len() >= 8
+        self.calls.len() + self.exact.len() >= 8
     }
     pub fn insert(&mut self, request: Request) -> Option<Value> {
         let Request {
@@ -45,6 +53,123 @@ impl Calls {
         );
         Some(message)
     }
+    pub fn insert_exact(
+        &mut self,
+        request: exact::Request,
+    ) -> Option<(u64, Vec<u8>, write::Permit)> {
+        let exact::Request {
+            params,
+            session,
+            expires,
+            reply,
+            permit,
+        } = request;
+        if reply.is_closed() || expires <= tokio::time::Instant::now() {
+            let _ = reply.send(Err(exact::Fault::Deadline));
+            return None;
+        }
+        if self.exact_late.len() + self.exact.len() >= 64 {
+            let _ = reply.send(Err(exact::Fault::Busy));
+            return None;
+        }
+        if self.next >= 9_007_199_254_740_991 {
+            let _ = reply.send(Err(exact::Fault::Protocol));
+            return None;
+        }
+        self.next += 1;
+        let bytes = match serde_json::to_vec(&exact::Command {
+            id: self.next,
+            method: "Runtime.evaluate",
+            params: &params,
+            session: &session,
+        }) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                let _ = reply.send(Err(exact::Fault::Protocol));
+                return None;
+            }
+        };
+        self.exact.insert(
+            self.next,
+            ExactCall {
+                permit: permit.clone(),
+                session,
+                expires,
+                reply,
+            },
+        );
+        Some((self.next, bytes, permit))
+    }
+    pub fn exact_unsent(&mut self, id: u64) {
+        if let Some(call) = self.exact.remove(&id) {
+            call.permit.cancel();
+            let _ = call.reply.send(Err(exact::Fault::Busy));
+        }
+    }
+    pub fn cancel_exact(&mut self) {
+        let ids = self
+            .exact
+            .iter()
+            .filter(|(_, call)| call.permit.cancelled() || call.reply.is_closed())
+            .map(|(id, _)| *id)
+            .collect::<Vec<_>>();
+        for id in ids {
+            if let Some(call) = self.exact.remove(&id) {
+                if call.permit.cancel() {
+                    self.exact_late.insert(id, call.session);
+                }
+                let fault = if call.expires <= tokio::time::Instant::now() {
+                    exact::Fault::Deadline
+                } else {
+                    exact::Fault::Closed
+                };
+                let _ = call.reply.send(Err(fault));
+            }
+        }
+    }
+    pub fn complete_exact(&mut self, bytes: &[u8]) -> bool {
+        if self.exact.is_empty() && self.exact_late.is_empty() {
+            return false;
+        }
+        let Ok(packet) = crate::native_page_worker::cdp::Packet::decode(bytes, 256 * 1024 * 1024)
+        else {
+            return false;
+        };
+        let Some(id) = packet.id() else {
+            return false;
+        };
+        if let Some(session) = self.exact_late.get(&id) {
+            if packet.session() == Some(session.as_str()) {
+                self.exact_late.remove(&id);
+            }
+            return true;
+        }
+        let Some(call) = self.exact.get(&id) else {
+            return false;
+        };
+        if packet.session() != Some(call.session.as_str()) {
+            return true;
+        }
+        let call = self.exact.remove(&id).unwrap();
+        if call.expires <= tokio::time::Instant::now() {
+            let _ = call.reply.send(Err(exact::Fault::Deadline));
+            return true;
+        }
+        let valid = packet.method().is_none()
+            && matches!(
+                packet.payload(),
+                Some(
+                    crate::native_page_worker::cdp::Payload::Result(_)
+                        | crate::native_page_worker::cdp::Payload::Error(_)
+                )
+            );
+        let _ = call.reply.send(if valid {
+            Ok(packet)
+        } else {
+            Err(exact::Fault::Protocol)
+        });
+        true
+    }
     pub fn complete(&mut self, value: &Value, pages: &events::Shared) {
         let Some(id) = value["id"].as_u64() else {
             return;
@@ -71,7 +196,11 @@ impl Calls {
         let _ = call.reply.send(result);
     }
     pub fn deadline(&self) -> Option<tokio::time::Instant> {
-        self.calls.values().map(|call| call.expires).min()
+        self.calls
+            .values()
+            .map(|call| call.expires)
+            .chain(self.exact.values().map(|call| call.expires))
+            .min()
     }
     pub fn expire(&mut self, now: tokio::time::Instant) -> bool {
         let mut fence = false;
@@ -87,11 +216,29 @@ impl Calls {
                 let _ = call.reply.send(Err("Browser command timed out".into()));
             }
         }
+        let expired = self
+            .exact
+            .iter()
+            .filter(|(_, call)| call.expires <= now)
+            .map(|(id, _)| *id)
+            .collect::<Vec<_>>();
+        for id in expired {
+            if let Some(call) = self.exact.remove(&id) {
+                if call.permit.cancel() {
+                    self.exact_late.insert(id, call.session);
+                }
+                let _ = call.reply.send(Err(exact::Fault::Deadline));
+            }
+        }
         fence
     }
 }
 impl Drop for Calls {
     fn drop(&mut self) {
+        for (_, call) in std::mem::take(&mut self.exact) {
+            call.permit.cancel();
+            let _ = call.reply.send(Err(exact::Fault::Closed));
+        }
         for (_, call) in std::mem::take(&mut self.calls) {
             let _ = call.reply.send(Err("Browser session ended".into()));
         }
@@ -119,6 +266,109 @@ mod tests {
             },
             receive,
         )
+    }
+    struct ExactLease {
+        _done: tokio::sync::watch::Sender<bool>,
+        _control: crate::preview_control::runtime::Control,
+    }
+    fn exact_request(
+        expires: tokio::time::Instant,
+    ) -> (
+        exact::Request,
+        oneshot::Receiver<Result<crate::native_page_worker::cdp::Packet, exact::Fault>>,
+        ExactLease,
+    ) {
+        let (reply, received) = oneshot::channel();
+        let (done_owner, done) = tokio::sync::watch::channel(false);
+        let control = crate::preview_control::runtime::Control::new(None);
+        let permit = write::Permit::new(expires, done, control.subscribe(), Default::default());
+        (
+            exact::Request {
+                permit,
+                params: exact::parameters(br#"{"expression":"'\ud800'","returnByValue":true}"#)
+                    .unwrap(),
+                session: "exact-session".into(),
+                expires,
+                reply,
+            },
+            received,
+            ExactLease {
+                _done: done_owner,
+                _control: control,
+            },
+        )
+    }
+    #[tokio::test]
+    async fn exact_and_scalar_responses_keep_unique_ids_and_captured_sessions() {
+        crate::test_sandbox::assert_isolated();
+        let pages = events::Shared::default();
+        let mut calls = Calls::default();
+        let (raw_request, mut exact_reply, _lease) =
+            exact_request(tokio::time::Instant::now() + Duration::from_secs(2));
+        let (_, raw, _) = calls.insert_exact(raw_request).unwrap();
+        assert!(serde_json::from_slice::<Value>(&raw).is_err());
+        let raw_id = crate::native_page_worker::cdp::Packet::decode(&raw, 4096)
+            .unwrap()
+            .id()
+            .unwrap();
+        let (scalar, scalar_reply) = request("Runtime.evaluate");
+        let scalar_id = calls.insert(scalar).unwrap()["id"].as_u64().unwrap();
+        assert_ne!(raw_id, scalar_id);
+        assert!(calls.complete_exact(
+            format!(r#"{{"id":{raw_id},"sessionId":"foreign","result":{{"value":"\udfff"}}}}"#)
+                .as_bytes()
+        ));
+        assert!(matches!(
+            exact_reply.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+        calls.complete(
+            &json!({"id":scalar_id,"sessionId":"opaque","result":{"value":"scalar survives"}}),
+            &pages,
+        );
+        assert_eq!(
+            scalar_reply.await.unwrap().unwrap()["value"],
+            "scalar survives"
+        );
+        assert!(calls.complete_exact(
+            format!(
+                r#"{{"id":{raw_id},"sessionId":"exact-session","result":{{"value":"\udfff"}}}}"#
+            )
+            .as_bytes()
+        ));
+        let packet = exact_reply.await.unwrap().unwrap();
+        let Some(crate::native_page_worker::cdp::Payload::Result(value)) = packet.payload() else {
+            panic!("Expected exact result")
+        };
+        assert_eq!(value.json(), r#"{"value":"\udfff"}"#);
+    }
+    #[tokio::test]
+    async fn expired_exact_results_are_drained_and_capacity_is_not_reclaimed_by_foreign_sessions() {
+        crate::test_sandbox::assert_isolated();
+        let mut calls = Calls::default();
+        let now = tokio::time::Instant::now();
+        for _ in 0..64 {
+            let (request, received, _lease) = exact_request(now + Duration::from_secs(60));
+            let (_, _, permit) = calls.insert_exact(request).unwrap();
+            assert!(permit.begin());
+            assert!(!calls.expire(now + Duration::from_secs(61)));
+            assert_eq!(received.await.unwrap().unwrap_err(), exact::Fault::Deadline);
+        }
+        let (request, received, _lease) = exact_request(now + Duration::from_secs(60));
+        assert!(calls.insert_exact(request).is_none());
+        assert_eq!(received.await.unwrap().unwrap_err(), exact::Fault::Busy);
+        assert!(
+            calls.complete_exact(br#"{"id":1,"sessionId":"foreign","result":{"value":"\ud800"}}"#)
+        );
+        assert_eq!(calls.exact_late.len(), 64);
+        assert!(calls.complete_exact(
+            br#"{"id":1,"sessionId":"exact-session","result":{"value":"\ud800"}}"#
+        ));
+        assert_eq!(calls.exact_late.len(), 63);
+        let (request, received, _lease) = exact_request(now + Duration::from_secs(60));
+        assert!(calls.insert_exact(request).is_some());
+        drop(calls);
+        assert_eq!(received.await.unwrap().unwrap_err(), exact::Fault::Closed);
     }
     #[tokio::test]
     async fn out_of_order_dialog_answer_and_error_preserve_other_pending_calls() {

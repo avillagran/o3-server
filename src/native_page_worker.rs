@@ -101,6 +101,11 @@ impl JavaScriptJson {
     pub fn json(&self) -> &str {
         self.0.get()
     }
+    /// Validate one JSON value without a Unicode-scalar application conversion.
+    /// The owner/transport must enforce its byte cap before creating this value.
+    pub fn parse(raw: String) -> Result<Self, serde_json::Error> {
+        serde_json::value::RawValue::from_string(raw).map(Self)
+    }
 }
 impl PartialEq for JavaScriptJson {
     fn eq(&self, other: &Self) -> bool {

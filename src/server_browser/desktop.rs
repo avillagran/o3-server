@@ -53,6 +53,9 @@ pub(super) async fn launch(
     let (output, mut input) = socket.split();
     let mut writer = write::websocket(output);
     let (tx, mut rx) = mpsc::channel::<Request>(8);
+    let (exact_tx, mut exact_rx) = mpsc::channel::<exact::Request>(8);
+    let exact_wake = std::sync::Arc::new(tokio::sync::Notify::new());
+    let write_wake = exact_wake.clone();
     let (done_tx, done) = tokio::sync::watch::channel(false);
     let pages: events::Shared = Default::default();
     let actor_pages = pages.clone();
@@ -71,6 +74,13 @@ pub(super) async fn launch(
                     let Some(message)=calls.insert(request)else{continue;};
                     if !writer.send(Message::Text(message.to_string().into())){break;}
                 },
+                next=exact_rx.recv(),if !calls.full()=>{
+                    let Some(next)=next else{break;};
+                    let Some((id,bytes,permit))=calls.insert_exact(next)else{continue;};
+                    let Ok(text)=String::from_utf8(bytes)else{break;};
+                    if !writer.send_exact(Message::Text(text.into()),permit){calls.exact_unsent(id);}
+                },
+                _=write_wake.notified()=>calls.cancel_exact(),
                 _=pending::deadline(expires)=>{if calls.expire(tokio::time::Instant::now()){break;}},
                 _=writing_done.changed()=>break,
                 change=changes.next()=>{match change{Some(change)if change.key.thread_id==thread_owned&&change.key.tab_id==tab_owned&&!change.attached=>break,Some(_)=>{},None=>break}},
@@ -78,6 +88,7 @@ pub(super) async fn launch(
                 incoming=input.next()=>{
                     match incoming{
                         Some(Ok(Message::Text(text)))=>{
+                            if calls.complete_exact(text.as_bytes()){continue;}
                             let Ok(packet)=crate::cdp_dialog_json::decode(text.as_bytes())else{break;};
                             if events::notify_packet(&actor_pages,&packet){break;}
                             calls.complete(&packet.value,&actor_pages);
@@ -90,6 +101,7 @@ pub(super) async fn launch(
             }
         }
         drop(rx);
+        drop(exact_rx);
         drop(calls);
         let controls = events::control_receipts(&actor_pages);
         for control in &controls {
@@ -110,6 +122,8 @@ pub(super) async fn launch(
         }
     });
     let mut browser = Tab {
+        exact_tx,
+        exact_wake,
         keyboard: Default::default(),
         closing: false,
         activity: Default::default(),

@@ -13,6 +13,7 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 mod desktop;
 pub(crate) mod dialog;
 mod events;
+mod exact;
 #[cfg(test)]
 mod lifetime_tests;
 #[cfg(test)]
@@ -68,6 +69,8 @@ pub(crate) struct Navigation {
 }
 #[derive(Clone)]
 struct Tab {
+    exact_tx: mpsc::Sender<exact::Request>,
+    exact_wake: std::sync::Arc<tokio::sync::Notify>,
     closing: bool,
     keyboard: std::sync::Arc<std::sync::Mutex<crate::browser_keyboard::Keyboard>>,
     activity: std::sync::Arc<TabActivity>,
@@ -389,11 +392,14 @@ async fn launch(
     let socket = tokio::net::UnixStream::from_std(parent).map_err(|_| "Cannot open CDP pipe")?;
     let (input, output) = socket.into_split();
     let mut writer = write::pipe(output);
-    let (mut incoming, reader_task) = pipe::start(input);
+    let (mut incoming, reader_task) = pipe::start_raw(input);
     let reader_abort = pipe::Abort(reader_task.abort_handle());
     let pages: events::Shared = Default::default();
     let actor_pages = pages.clone();
     let (tx, mut rx) = mpsc::channel::<Request>(8);
+    let (exact_tx, mut exact_rx) = mpsc::channel::<exact::Request>(8);
+    let exact_wake = std::sync::Arc::new(tokio::sync::Notify::new());
+    let write_wake = exact_wake.clone();
     let (done_tx, done) = tokio::sync::watch::channel(false);
     let cancel = std::sync::Arc::new(tokio::sync::Notify::new());
     let stop_signal = cancel.clone();
@@ -411,18 +417,27 @@ async fn launch(
                     let mut packet=match serde_json::to_vec(&message){Ok(packet)=>packet,Err(_)=>break};packet.push(0);
                     if !writer.send(packet){break;}
                 },
+                next=exact_rx.recv(),if !calls.full()=>{
+                    let Some(next)=next else{break;};
+                    let Some((id,mut packet,permit))=calls.insert_exact(next)else{continue;};packet.push(0);
+                    if !writer.send_exact(packet,permit){calls.exact_unsent(id);}
+                },
+                _=write_wake.notified()=>calls.cancel_exact(),
                 _=pending::deadline(expires)=>{if calls.expire(tokio::time::Instant::now()){break;}},
                 _=writing_done.changed()=>break,
                 _=stop_signal.notified()=>break,
                 _=child.wait()=>break,
                 packet=incoming.recv()=>{
-                    let Some(Ok(packet))=packet else{break;};
+                    let Some(Ok(bytes))=packet else{break;};
+                    if calls.complete_exact(&bytes){continue;}
+                    let Ok(packet)=crate::cdp_dialog_json::decode(&bytes)else{break;};
                     if events::notify_packet(&actor_pages,&packet){break;}
                     calls.complete(&packet.value,&actor_pages);
                 }
             }
         }
         drop(rx);
+        drop(exact_rx);
         drop(calls);
         let controls = events::control_receipts(&actor_pages);
         for control in &controls {
@@ -459,6 +474,8 @@ async fn launch(
         }
     });
     Ok(Tab {
+        exact_tx,
+        exact_wake,
         keyboard: Default::default(),
         closing: false,
         activity: Default::default(),

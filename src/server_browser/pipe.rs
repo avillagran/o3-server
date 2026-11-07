@@ -5,10 +5,26 @@ use tokio::{
     task::JoinHandle,
 };
 const LIMIT: u64 = 4 * 1024 * 1024;
+#[cfg(test)]
 type Packet = Result<crate::cdp_dialog_json::Packet, String>;
+#[cfg(test)]
 type Inbox = mpsc::Receiver<Packet>;
+#[cfg(test)]
 pub(super) fn start<R: AsyncRead + Unpin + Send + 'static>(input: R) -> (Inbox, JoinHandle<()>) {
-    let (tx, rx) = mpsc::channel::<Packet>(8);
+    start_with(input, |packet| {
+        crate::cdp_dialog_json::decode(&packet).map_err(|_| "Invalid CDP output".into())
+    })
+}
+pub(super) fn start_raw<R: AsyncRead + Unpin + Send + 'static>(
+    input: R,
+) -> (mpsc::Receiver<Result<Vec<u8>, String>>, JoinHandle<()>) {
+    start_with(input, Ok)
+}
+fn start_with<R: AsyncRead + Unpin + Send + 'static, T: Send + 'static>(
+    input: R,
+    decode: fn(Vec<u8>) -> Result<T, String>,
+) -> (mpsc::Receiver<Result<T, String>>, JoinHandle<()>) {
+    let (tx, rx) = mpsc::channel(8);
     let task = tokio::spawn(async move {
         let mut input = BufReader::new(input);
         loop {
@@ -20,7 +36,7 @@ pub(super) fn start<R: AsyncRead + Unpin + Send + 'static>(input: R) -> (Inbox, 
                 }
                 Ok(_) => {
                     packet.pop();
-                    crate::cdp_dialog_json::decode(&packet).map_err(|_| "Invalid CDP output".into())
+                    decode(packet)
                 }
                 Err(_) => Err("CDP read failed".into()),
             };
