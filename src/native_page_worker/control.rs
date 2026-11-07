@@ -42,6 +42,7 @@ impl ControlledPage {
             let initially_closed = changes.borrow().closed;
             if initially_closed {
                 if let Some(state) = weak.upgrade() {
+                    state.control.close().wait().await.ok();
                     state.worker.close().await;
                 }
                 return;
@@ -53,6 +54,8 @@ impl ControlledPage {
                         let Some(state) = weak.upgrade() else { break; };
                         let closed = changed.is_err() || changes.borrow().closed;
                         if closed {
+                            // Native close fences arrivals and drains the entered tail.
+                            let _ = state.control.close().wait().await;
                             state.worker.close().await;
                             break;
                         }
@@ -91,11 +94,12 @@ impl ControlledPage {
         let output = result.clone();
         let state = self.0.clone();
         let operation = operation.to_owned();
-        let action = self.0.control.agent(
+        let action = self.0.control.agent_admitted(
             caller,
             Some(tokio::time::Instant::now() + native_timeout),
-            move || async move {
-                let value = match synchronize(&state).await {
+            move |admission| async move {
+                let generation = admission.generation();
+                let mut value = match synchronize(&state).await {
                     Ok(()) => {
                         state
                             .worker
@@ -104,6 +108,15 @@ impl ControlledPage {
                     }
                     Err(error) => Err(error),
                 };
+                // A takeover invalidates immediately and again after the old
+                // callback drains, as in the native runOperation finally block.
+                if generation != state.control.snapshot().generation {
+                    if let Err(error) = state.worker.invalidate_refs().await {
+                        if value.is_ok() {
+                            value = Err(error);
+                        }
+                    }
+                }
                 *output.lock().unwrap() = Some(value);
                 // The scheduler receives no scalar approximation of JavaScript
                 // output. This per-action sidecar is read only after its receipt.
@@ -126,6 +139,11 @@ impl ControlledPage {
         })?;
         completed.map_err(Error::Transport)
     }
+    /// Owner-side acknowledgment of generation reference invalidation. This
+    /// grants no right to act and never replaces the scheduler's admission.
+    pub async fn synchronize_references(&self) -> Result<(), Fault> {
+        synchronize(&self.0).await
+    }
     pub async fn close(&self) -> CloseReceipt {
         let _ = self.0.stop.send(true);
         self.0.worker.close().await
@@ -135,9 +153,6 @@ async fn synchronize(state: &State) -> Result<(), Fault> {
     let mut previous = state.generation.lock().await;
     loop {
         let snapshot = state.control.snapshot();
-        if snapshot.closed {
-            return Err(Fault::Closed);
-        }
         if *previous == Some(snapshot.generation) {
             return Ok(());
         }

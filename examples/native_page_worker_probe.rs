@@ -371,6 +371,77 @@ async fn main() {
             o3_server::native_page_worker::cdp::Packet::decode(&encoded, 4096).unwrap()
         );
     }
+    // Entered native callbacks drain through handoff and close. The fixture
+    // signals only a synthetic promise on this exact owned target/session.
+    let entered = controlled.clone();
+    let running = tokio::spawn(async move {
+        entered.agent("agent", "evaluate", json!({"expression":"new Promise(resolve => { globalThis.__drainOne = () => resolve('drained-handoff'); })"}), Duration::from_secs(5), true).await
+    });
+    let barrier = owner.clone();
+    tokio::task::spawn_blocking(move || barrier.exchange("await-drain-one"))
+        .await
+        .unwrap()
+        .unwrap();
+    let taking = control.take("viewer");
+    // Establish fresh references after the immediate invalidation, while the
+    // old operation still owns the draining tail. Its finally must clear these.
+    controlled.synchronize_references().await.unwrap();
+    let OperationResult::Value(during) = worker
+        .invoke("snapshot", json!({}), Duration::from_secs(3))
+        .await
+        .unwrap()
+    else {
+        panic!("snapshot during handoff")
+    };
+    let during_ref = during["accessibilityTree"]
+        .as_str()
+        .unwrap()
+        .split("ref=")
+        .nth(1)
+        .unwrap()
+        .split(']')
+        .next()
+        .unwrap()
+        .to_owned();
+    owner.exchange("release-drain-one").unwrap();
+    assert_eq!(
+        running.await.unwrap().unwrap(),
+        OperationResult::Value(json!("drained-handoff"))
+    );
+    taking.wait().await.unwrap();
+    let OperationResult::NativeError(stale) = worker
+        .invoke(
+            "click",
+            json!({"locator":format!("aria-ref={during_ref}"),"timeoutMs":100}),
+            Duration::from_secs(3),
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("finally did not invalidate references")
+    };
+    assert_eq!(stale["detail"]["staleRef"], true);
+    control
+        .release("viewer", || async { Ok(Value::Null) })
+        .wait()
+        .await
+        .unwrap();
+    let entered = controlled.clone();
+    let running = tokio::spawn(async move {
+        entered.agent("agent", "evaluate", json!({"expression":"new Promise(resolve => { globalThis.__drainTwo = () => resolve('drained-close'); })"}), Duration::from_secs(5), true).await
+    });
+    let barrier = owner.clone();
+    tokio::task::spawn_blocking(move || barrier.exchange("await-drain-two"))
+        .await
+        .unwrap()
+        .unwrap();
+    let closing = control.close();
+    owner.exchange("release-drain-two").unwrap();
+    assert_eq!(
+        running.await.unwrap().unwrap(),
+        OperationResult::Value(json!("drained-close"))
+    );
+    closing.wait().await.unwrap();
     let receipt = controlled.close().await;
     control.close().wait().await.unwrap();
     control.shutdown().await.unwrap();
@@ -381,6 +452,6 @@ async fn main() {
     assert_eq!(receipt.executed_recursive_removals, Some(0));
     println!(
         "{}",
-        json!({"complete":true,"rustSupervisor":true,"nativePageChildProcess":true,"sameKeyboardAliases":true,"failedChordStateCrossesAliases":true,"ownerRefInvalidationPreservesPage":true,"nativeRawCdpRoundtrip":true,"controlRetainsExactJavaScript":true,"workerReaped":receipt.worker_reaped,"ownerClosed":receipt.owner_grant_closed,"nativeRecursiveCleanupRequests":receipt.native_cleanup_requests,"executedRecursiveRemovals":receipt.executed_recursive_removals})
+        json!({"complete":true,"rustSupervisor":true,"nativePageChildProcess":true,"sameKeyboardAliases":true,"failedChordStateCrossesAliases":true,"ownerRefInvalidationPreservesPage":true,"nativeRawCdpRoundtrip":true,"controlRetainsExactJavaScript":true,"enteredHandoffFinallyInvalidates":true,"enteredCloseDrainsBeforeReap":true,"workerReaped":receipt.worker_reaped,"ownerClosed":receipt.owner_grant_closed,"nativeRecursiveCleanupRequests":receipt.native_cleanup_requests,"executedRecursiveRemovals":receipt.executed_recursive_removals})
     );
 }

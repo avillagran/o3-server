@@ -78,3 +78,28 @@ Both fixtures run under the recursive-removal guard with the admitted Node
 26.13.0 binary reused by hash and receipt. The runner's optional
 `--reuse-node-artifact` avoids another persistent binary copy while preserving
 shared admission, source identity, hash and isolated version verification.
+
+### Entered callback drainage in an attached Page
+
+`ControlledPage` now retains the admitted callback generation and repeats native
+reference invalidation after an entered operation finishes across a handoff.
+The Control-close watcher waits for that entered tail before closing the
+worker. Target revocation remains a separate authority boundary. The owner-only
+`synchronize_references` acknowledgment grants no action rights; it lets the
+owner establish that the generation invalidation completed before observing
+new references.
+
+The private actual Chromium probe holds an original native evaluate Promise
+open, takes human control, waits for this acknowledgment, creates references
+through the original snapshot operation, and then releases the Promise through
+the fixture's captured target/session. The completed operation must invalidate
+those new references. A second entered Promise resolves successfully after
+Control close, before the worker is reaped. This is an attached owner-library
+consumer proof, not public MCP admission. Existing cross-alias Keyboard and raw
+JavaScript/CDP assertions remain in the same probe. Cleanup requests retained
+by the artifact adapter are reported separately from physical recursive
+removals; no recursive removal executes.
+
+The full public toolkit remains inactive. In particular, nonretiring metadata
+broker timeouts, a reserved owner-invalidation control lane, complete operation
+consumers and authenticated provider-to-MCP selection still require acceptance.
