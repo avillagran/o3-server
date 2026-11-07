@@ -26,6 +26,7 @@ impl Backend for Memory {
     fn info(&self, path: &Path) -> Option<FileInfo> {
         speech_catalog::all()
             .iter()
+            .chain(std::iter::once(speech_catalog::silero()))
             .find(|model| {
                 path.file_name() == Some(std::ffi::OsStr::new(model.filename()))
                     && self.ready.lock().unwrap().contains(model.id())
@@ -48,6 +49,7 @@ impl Backend for Memory {
         Box::pin(async move {
             speech_catalog::all()
                 .iter()
+                .chain(std::iter::once(speech_catalog::silero()))
                 .find(|model| {
                     path.file_name() == Some(std::ffi::OsStr::new(model.filename()))
                         && self.ready.lock().unwrap().contains(model.id())
@@ -268,7 +270,7 @@ async fn owned_download_deduplicates_and_cancellation_releases_slot() {
     let auth = authority.clone();
     let first = tokio::spawn(async move { owner.bind(auth).download(id).await });
     changed.await;
-    assert_eq!(memory.requests.load(Ordering::SeqCst), 1);
+    assert_eq!(memory.requests.load(Ordering::SeqCst), 2);
     assert!(matches!(call.select(id).await, Err(Error::Busy { .. })));
     let mut second = Box::pin(call.download(id));
     std::future::poll_fn(|context| {
@@ -281,7 +283,7 @@ async fn owned_download_deduplicates_and_cancellation_releases_slot() {
     let _ = first.await;
     let listed = call.models(false).await.unwrap();
     assert_eq!(listed["models"][0]["state"], "downloading");
-    assert_eq!(memory.requests.load(Ordering::SeqCst), 1);
+    assert_eq!(memory.requests.load(Ordering::SeqCst), 2);
     let golden: Value =
         serde_json::from_str(include_str!("fixtures/speech-service-4314.json")).unwrap();
     assert_eq!(
@@ -631,4 +633,74 @@ async fn shutdown_fences_a_cancelled_callers_pending_load() {
         service.bind(authority).prepare().await,
         Err(Error::Busy { .. })
     ));
+}
+
+#[tokio::test]
+async fn silero_recording_timeout_backoff_and_installation_reset() {
+    use candidate::silence::{Purpose, Silence};
+    let (_service, _authority, memory, clock) = virtual_fixture(false);
+    let silence = Silence::new(
+        Arc::new(Store::new(memory.clone(), memory.clone())),
+        clock.clone(),
+    );
+    let (cancel, receiver) = tokio::sync::watch::channel(false);
+    let mut recording = silence.acquire(Purpose::Recording, receiver.clone());
+    std::future::poll_fn(|context| {
+        assert!(recording.as_mut().poll(context).is_pending());
+        std::task::Poll::Ready(())
+    })
+    .await;
+    assert_eq!(memory.requests.load(Ordering::SeqCst), 1);
+    clock.advance(15_000);
+    assert_eq!(recording.await.unwrap(), None);
+    assert_eq!(
+        silence
+            .acquire(Purpose::Recording, receiver.clone())
+            .await
+            .unwrap(),
+        None
+    );
+    assert_eq!(memory.requests.load(Ordering::SeqCst), 1);
+    let vad = speech_catalog::silero();
+    memory.ready.lock().unwrap().insert(vad.id().into());
+    assert!(silence
+        .acquire(Purpose::Installation, receiver.clone())
+        .await
+        .unwrap()
+        .is_some());
+    memory.ready.lock().unwrap().remove(vad.id());
+    let mut next = silence.acquire(Purpose::Recording, receiver);
+    std::future::poll_fn(|context| {
+        assert!(next.as_mut().poll(context).is_pending());
+        std::task::Poll::Ready(())
+    })
+    .await;
+    assert_eq!(memory.requests.load(Ordering::SeqCst), 2);
+    cancel.send_replace(true);
+    assert_eq!(next.await, Err(speech_model_store::Error::Cancelled));
+}
+#[tokio::test]
+async fn cached_main_download_still_waits_for_optional_silero_deadline() {
+    let golden: Value =
+        serde_json::from_str(include_str!("fixtures/speech-service-4314.json")).unwrap();
+    assert_eq!(speech_catalog::silero().as_value(), &golden["silero"]);
+    assert!(speech_catalog::get(speech_catalog::silero().id()).is_none());
+    let (service, authority, memory, clock) = virtual_fixture(false);
+    let call = service.bind(authority);
+    let entered = memory.started.notified();
+    tokio::pin!(entered);
+    entered.as_mut().enable();
+    let mut download = Box::pin(call.download("handy-computer/moonshine-tiny-gguf"));
+    std::future::poll_fn(|context| {
+        assert!(std::future::Future::poll(download.as_mut(), context).is_pending());
+        std::task::Poll::Ready(())
+    })
+    .await;
+    entered.await;
+    // Main model was verified from the explicit virtual backend; only VAD uses HTTP.
+    assert_eq!(memory.requests.load(Ordering::SeqCst), 1);
+    clock.advance(120_000);
+    let models = download.await.unwrap();
+    assert_eq!(models, golden["cases"][7]["observations"][0]["value"]);
+    service.shutdown().await.unwrap();
 }

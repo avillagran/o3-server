@@ -1,4 +1,5 @@
 //! Native speech coordination. Resource ownership and request authority are separate.
+pub mod silence;
 use crate::{
     speech_catalog::{self, Model},
     speech_model_store::Store,
@@ -163,6 +164,7 @@ struct Inner {
     clock: Arc<dyn Clock>,
     timer: watch::Sender<Option<i64>>,
     changed: tokio::sync::Notify,
+    silence: Arc<silence::Silence>,
     discovery: tokio::sync::Mutex<()>,
     disposal: tokio::sync::Mutex<()>,
 }
@@ -199,6 +201,7 @@ impl Service {
                     deadline: None,
                     devices: None,
                 }),
+                silence: Arc::new(silence::Silence::new(store.clone(), clock.clone())),
                 store,
                 engine,
                 clock,
@@ -704,7 +707,13 @@ impl Call {
                             }
                         }
                     };
-                    let result = owner.store.download(model, &progress, cancel_rx).await;
+                    let result = tokio::try_join!(
+                        owner.store.download(model, &progress, cancel_rx.clone()),
+                        owner
+                            .silence
+                            .acquire(silence::Purpose::Installation, cancel_rx),
+                    )
+                    .map(|(path, _)| path);
                     let result = match result {
                         Ok(_) | Err(crate::speech_model_store::Error::Cancelled) => Ok(()),
                         Err(crate::speech_model_store::Error::Download { model_id, failure }) => {

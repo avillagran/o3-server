@@ -52,8 +52,9 @@ on success or one minute on failure, matching the native cache policy.
 `tools/generate-speech-service-fixtures` imports the entire untouched native
 service under Node 26.13.0 and one canonical Effect 4.1.2 installation. Only its
 settings, store/config, and engine dependency bindings are explicit virtual
-fixtures. Six complete traces cover selection, missing IDs, prepare/unload,
-download deduplication/cancellation, selected-model removal and never-unload.
+fixtures. Eight complete traces cover selection, missing IDs, prepare/unload,
+download deduplication/cancellation, selected-model removal, never-unload and
+Silero recording/installation deadlines and backoff.
 The internal loaded-model return object is not a fabricated HTTP response.
 
 `tests/speech_service.rs` compares public values and lifecycle observations from
@@ -66,10 +67,19 @@ inside a private container; it performs no microphone capture or network request
 
 ## Remaining consumers
 
-This checkpoint does not implement the entire native SpeechService. Parallel
-Silero VAD acquisition/backoff, transcription/stream option resolution, automatic
-CPU recovery, active-transcription accounting, and their engine/VAD lifetimes
-remain to be connected and proven. The existing worker and pure options/PCM
+The Silero descriptor is the exact native internal helper, excluded from the
+selectable catalog. A model download concurrently acquires it through the actual
+Store. Its installation timeout is two minutes, and failure is optional. Recording
+acquisition uses fifteen seconds and a ten-minute retry backoff; installation
+bypasses that backoff and success resets it. Cancellation interrupts both owned
+store operations. The whole native service independently confirms those rules.
+The recording policy is a standalone kernel until its audio consumer is wired.
+
+This checkpoint does not implement the entire native SpeechService. Late sealed
+VAD attachment to an already prepared worker, transcription/stream option
+resolution, automatic CPU recovery, active-transcription accounting, and their
+engine/VAD lifetimes remain to be connected and proven. No real Silero model or
+VAD inference has been acquired or claimed by these virtual deadline fixtures. The existing worker and pure options/PCM
 leaves do not by themselves close those orchestration gaps. No claim of full
 speech or HTTP parity follows from control tests or the earlier inference proof.
 The ModelStore's retained staging/foreign-file safety differences remain as

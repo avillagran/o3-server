@@ -125,3 +125,14 @@ pub fn get(id: &str) -> Option<&'static Model> {
 pub fn selected(id: &str) -> &'static Model {
     get(id).unwrap_or_else(|| get(DEFAULT_MODEL_ID).expect("Pinned default speech model"))
 }
+
+/// The pinned internal VAD helper is not a selectable catalog model.
+pub fn silero() -> &'static Model {
+    static MODEL: OnceLock<Model> = OnceLock::new();
+    MODEL.get_or_init(|| {
+        let resource: Value =
+            serde_json::from_str(include_str!("../runtime/speech/silero-4314.json"))
+                .expect("pinned Silero manifest");
+        Model::from_manifest(resource["model"].clone()).expect("pinned Silero model")
+    })
+}

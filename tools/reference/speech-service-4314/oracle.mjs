@@ -7,6 +7,7 @@ import * as HostProcess from 'file:///native/packages/shared/src/HostProcess.ts'
 import * as Source from 'file:///native/apps/server/src/speech/SpeechService.ts';
 import * as Store from 'file:///native/apps/server/src/speech/SpeechModelStore.ts';
 import {SPEECH_MODELS,DEFAULT_SPEECH_MODEL_ID} from 'file:///native/apps/server/src/speech/model.ts';
+import {SILERO_VAD} from 'file:///native/apps/server/src/speech/silero.ts';
 import {ServerSettingsService} from './settings.mjs';
 import {state as native} from './native.mjs';
 import fs from 'node:fs';
@@ -19,7 +20,7 @@ async function scenario(name,run){
  const serviceSettings={getSettings:Effect.sync(()=>({...settings})),updateSettings:patch=>Effect.sync(()=>{events.push({kind:'settings',patch});settings={...settings,...patch};})};
  const store={isReady:model=>Effect.sync(()=>ready.has(model.id)),installedPath:model=>Effect.sync(()=>ready.has(model.id)?'/fixture/models/'+model.filename:undefined),download:(model,progress)=>Effect.gen(function*(){
  events.push({kind:'download',id:model.id});progress?.onProgress?.(0);
- if(controlled.has(model.id)){const gate=Deferred.makeUnsafe();pending.set(model.id,{gate,progress});yield* Deferred.await(gate);pending.delete(model.id);}
+ if(controlled.has(model.id)){const gate=Deferred.makeUnsafe();pending.set(model.id,{gate,progress});yield* Deferred.await(gate).pipe(Effect.ensuring(Effect.sync(()=>{if(pending.get(model.id)?.gate===gate)pending.delete(model.id);})));}
  progress?.onProgress?.(model.size);progress?.onVerificationStart?.();ready.add(model.id);return '/fixture/models/'+model.filename;
 }).pipe(Effect.onExit(exit=>Effect.sync(()=>{if(!Exit.isSuccess(exit))events.push({kind:'download-interrupted',id:model.id});}))),remove:model=>Effect.sync(()=>{events.push({kind:'remove',id:model.id});ready.delete(model.id);})};
  const observations=[];
@@ -67,5 +68,22 @@ cases.push(await scenario('never-timeout-keeps-model-until-scope-close',(service
  h.record('never',yield* Effect.result(service.updateModelUnloadTimeout('never')));
  yield* TestClock.adjust('2 hours');h.observations.push({label:'two-hours',events:[...h.events]});
 })));
-fs.writeFileSync(process.argv[2],JSON.stringify({nativeRevision:'83a3674ffd84ffb33de768210c806cb1ac53fd80',cases},null,2)+'\n',{flag:'wx'});
+const options={speechLanguage:'auto',speechTranslateToEnglish:false,speechRemoveFillerWords:false,speechCustomWords:[],speechSilenceFiltering:false};
+cases.push(await scenario('recording-silero-timeout-backoff-and-installation-reset',(service,h)=>Effect.gen(function*(){
+ yield* service.updateModelUnloadTimeout('never');h.controlled.add(SILERO_VAD.id);
+ const first=yield* service.transcribe(new Uint8Array(new Float32Array([0]).buffer),options).pipe(Effect.forkChild);
+ while(!h.pending.has(SILERO_VAD.id))yield* TestClock.adjust(0);
+ yield* TestClock.adjust(15_000);h.record('first-recording',yield* Effect.result(Fiber.join(first)));
+ h.record('backoff-recording',yield* Effect.result(service.transcribe(new Uint8Array(new Float32Array([0]).buffer),options)));
+ h.controlled.delete(SILERO_VAD.id);
+ h.record('installation-bypasses-backoff',yield* Effect.result(service.downloadModel(DEFAULT_SPEECH_MODEL_ID)));
+ h.record('recording-after-installation',yield* Effect.result(service.transcribe(new Uint8Array(new Float32Array([0]).buffer),options)));
+})));
+cases.push(await scenario('installation-silero-timeout-is-optional',(service,h)=>Effect.gen(function*(){
+ h.controlled.add(SILERO_VAD.id);
+ const installation=yield* service.downloadModel(tiny.id).pipe(Effect.forkChild);
+ while(!h.pending.has(SILERO_VAD.id))yield* TestClock.adjust(0);
+ yield* TestClock.adjust(120_000);h.record('installation-without-silero',yield* Effect.result(Fiber.join(installation)));
+})));
+fs.writeFileSync(process.argv[2],JSON.stringify({nativeRevision:'83a3674ffd84ffb33de768210c806cb1ac53fd80',silero:SILERO_VAD,cases},null,2)+'\n',{flag:'wx'});
 console.log(JSON.stringify({cases:cases.length,wholeService:true,paidOrNativeInference:false}));
