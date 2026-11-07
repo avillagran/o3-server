@@ -5,7 +5,8 @@ use crate::{
 };
 use serde_json::{json, Value};
 use std::{
-    path::Path,
+    collections::BTreeMap,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -13,7 +14,119 @@ use std::{
 #[derive(Default)]
 pub struct Runtime {
     sessions: Mutex<Vec<Value>>,
+    cached: Mutex<Option<Value>>,
     native: tokio::sync::Mutex<Option<Arc<crate::device_native_runtime::NativeRuntime>>>,
+    ssh: tokio::sync::Mutex<BTreeMap<String, SshRegistration>>,
+    revision: std::sync::atomic::AtomicU64,
+    #[cfg(test)]
+    test_ssh_executable: Mutex<Option<PathBuf>>,
+}
+struct SshRegistration {
+    config: crate::device_native_ssh::Config,
+    runtime: Arc<crate::device_native_runtime::NativeRuntime>,
+}
+fn ssh_configs(settings: &Value) -> Result<Vec<crate::device_native_ssh::Config>, Value> {
+    let mut configs = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for value in settings["deviceHosts"].as_array().into_iter().flatten() {
+        let config = crate::device_native_ssh::Config::decode(value)
+            .map_err(|error| invalid(error.to_string()))?;
+        if !seen.insert(config.id.clone()) {
+            return Err(invalid("Duplicate SSH device host ID"));
+        }
+        configs.push(config);
+    }
+    Ok(configs)
+}
+fn ssh_cli(
+    s: &State,
+    config: &crate::device_native_ssh::Config,
+) -> Result<Arc<crate::device_native_ssh_transport::Cli>, Value> {
+    let program = if cfg!(windows) { "ssh.exe" } else { "ssh" };
+    #[cfg(test)]
+    let override_executable = s
+        .streams
+        .p2
+        .device
+        .test_ssh_executable
+        .lock()
+        .unwrap()
+        .clone();
+    #[cfg(not(test))]
+    let override_executable: Option<PathBuf> = None;
+    let executable = override_executable
+        .or_else(|| crate::executable::resolve(Path::new(program)))
+        .ok_or_else(|| {
+            crate::device_native_owner::host_error(&config.id, "probe", "SSH is not installed")
+        })?;
+    let environment_id = std::fs::read_to_string(s.dir.join("environment-id")).ok();
+    let owner = crate::device_native_ssh::owner(
+        environment_id.as_deref(),
+        &s.dir.to_string_lossy(),
+        &config.id,
+    );
+    let cli = Arc::new(
+        crate::device_native_ssh_transport::Cli::new(
+            executable,
+            s.dir.clone(),
+            config.clone(),
+            owner,
+        )
+        .map_err(|error| crate::device_native_owner::host_error(&config.id, "probe", error))?,
+    );
+    Ok(cli)
+}
+async fn ssh_runtimes(
+    s: &State,
+    settings: &Value,
+) -> Result<Vec<Arc<crate::device_native_runtime::NativeRuntime>>, Value> {
+    let configs = ssh_configs(settings)?;
+    let mut registry = s.streams.p2.device.ssh.lock().await;
+    let removed = registry
+        .iter()
+        .filter(|(_, entry)| !configs.iter().any(|config| config == &entry.config))
+        .map(|(id, _)| id.clone())
+        .collect::<Vec<_>>();
+    for id in removed {
+        let entry = registry.get(&id).expect("retained registered owner");
+        entry.runtime.shutdown().await?;
+        registry.remove(&id);
+    }
+    for config in &configs {
+        if registry.contains_key(&config.id) {
+            continue;
+        }
+        let cli = ssh_cli(s, config)?;
+        let summary = json!({"id":config.id,"kind":"ssh","label":config.label,"platforms":[],"hubInstalled":false,"agentDeviceInstalled":false});
+        let runtime = crate::device_native_runtime::NativeRuntime::ssh(
+            cli,
+            summary,
+            s.streams.changed.clone(),
+        );
+        registry.insert(
+            config.id.clone(),
+            SshRegistration {
+                config: config.clone(),
+                runtime,
+            },
+        );
+    }
+    Ok(configs
+        .iter()
+        .filter_map(|config| registry.get(&config.id).map(|entry| entry.runtime.clone()))
+        .collect())
+}
+async fn selected_runtime(
+    s: &State,
+    p: &Value,
+) -> Result<Option<Arc<crate::device_native_runtime::NativeRuntime>>, Value> {
+    let host = p["hostId"].as_str().unwrap_or("local");
+    if host == "local" {
+        return native_runtime(s).await;
+    }
+    let settings = crate::settings::read(s).map_err(invalid)?;
+    ssh_runtimes(s, &settings).await?;
+    s.streams.p2.device.ssh.lock().await.get(host).map(|entry|Some(entry.runtime.clone())).ok_or_else(||json!({"_tag":"DeviceHostUnavailableError","hostId":host,"reason":"SSH device host is not configured","message":format!("Device host {host} is unavailable: SSH device host is not configured")}))
 }
 /// An invalid or incomplete installation is reported, never executed or silently replaced.
 async fn native_runtime(
@@ -75,17 +188,37 @@ async fn native_runtime(
 }
 /// Media routes use only the origin of a currently owned, verified hub.
 pub async fn hub_origin(s: &State, host_id: &str) -> Result<Option<String>, Value> {
-    if host_id != "local" {
-        return Ok(None);
-    }
-    let Some(runtime) = native_runtime(s).await? else {
-        return Ok(None);
-    };
     let settings = crate::settings::read(s).map_err(invalid)?;
-    runtime.configure(&settings).await;
+    let runtime = if host_id == "local" {
+        let Some(runtime) = native_runtime(s).await? else {
+            return Ok(None);
+        };
+        runtime
+    } else {
+        let registry = s.streams.p2.device.ssh.lock().await;
+        let entry = registry.get(host_id).ok_or_else(|| {
+            crate::device_native_owner::host_error(
+                host_id,
+                "accessing device support",
+                "Device hub is not running",
+            )
+        })?;
+        if !ssh_configs(&settings)?
+            .iter()
+            .any(|config| config == &entry.config)
+        {
+            return Err(crate::device_native_owner::host_error(
+                host_id,
+                "accessing device support",
+                "Host configuration changed; retained owner has not stopped yet",
+            ));
+        }
+        entry.runtime.clone()
+    };
+    runtime.configure(&settings).await?;
     runtime.origin().map(Some).ok_or_else(|| {
         crate::device_native_owner::host_error(
-            "local",
+            host_id,
             "accessing device support",
             "Device hub is not running",
         )
@@ -93,6 +226,9 @@ pub async fn hub_origin(s: &State, host_id: &str) -> Result<Option<String>, Valu
 }
 #[cfg(test)]
 impl Runtime {
+    pub(crate) fn register_ssh_executable_test(&self, executable: PathBuf) {
+        *self.test_ssh_executable.lock().unwrap() = Some(executable);
+    }
     pub(crate) async fn register_native_test(
         &self,
         runtime: Arc<crate::device_native_runtime::NativeRuntime>,
@@ -109,13 +245,31 @@ pub fn available_for(s: &State) -> bool {
     }
     if let Ok(slot) = s.streams.p2.device.native.try_lock() {
         if let Some(runtime) = &*slot {
-            return runtime.snapshot()["hosts"][0]["platforms"]
+            if runtime.snapshot()["hosts"][0]["platforms"]
                 .as_array()
                 .is_some_and(|platforms| {
                     platforms
                         .iter()
                         .any(|platform| platform["available"] == true)
-                });
+                })
+            {
+                return true;
+            }
+        }
+    }
+    if let Ok(registry) = s.streams.p2.device.ssh.try_lock() {
+        if registry.values().any(|entry| {
+            let view = entry.runtime.snapshot();
+            view["hosts"][0]["hubInstalled"] == true
+                && view["hosts"][0]["platforms"]
+                    .as_array()
+                    .is_some_and(|platforms| {
+                        platforms
+                            .iter()
+                            .any(|platform| platform["available"] == true)
+                    })
+        }) {
+            return true;
         }
     }
     let root = s.asset_profile_root.join("tools/expo-device-hub/0.19.1");
@@ -322,10 +476,183 @@ pub fn id(p: &Value) -> Result<&str, Value> {
     }
     Ok(s)
 }
-pub async fn state(s: &State) -> Reply {
+pub fn state(s: &State) -> crate::device_native_owner::HostFuture<'_, Reply> {
+    Box::pin(async move {
+        let view = Box::pin(state_inner(s)).await?;
+        *s.streams.p2.device.cached.lock().unwrap() = Some(view.clone());
+        Ok(view)
+    })
+}
+fn append_view(state: &mut Value, view: &Value) {
+    for field in ["hosts", "devices", "sessions", "bootingDevices"] {
+        if let Some(values) = view[field].as_array() {
+            if !state[field].is_array() {
+                state[field] = json!([]);
+            }
+            state[field]
+                .as_array_mut()
+                .unwrap()
+                .extend(values.iter().cloned());
+        }
+    }
+    if let Some(statuses) = view["hostStatuses"].as_object() {
+        for (id, status) in statuses {
+            state["hostStatuses"][id] = status.clone();
+        }
+    }
+}
+async fn retained_state(s: &State) -> Option<Value> {
+    let mut view = s.streams.p2.device.cached.lock().unwrap().clone()?;
+    for field in ["hosts", "devices", "sessions", "bootingDevices"] {
+        if let Some(values) = view[field].as_array_mut() {
+            values.retain(|value| {
+                if field == "hosts" {
+                    value["id"] == "local"
+                } else {
+                    value["hostId"] == "local"
+                }
+            });
+        }
+    }
+    if let Some(statuses) = view["hostStatuses"].as_object_mut() {
+        statuses.retain(|id, _| id == "local");
+    }
+    for entry in s.streams.p2.device.ssh.lock().await.values() {
+        append_view(&mut view, &entry.runtime.snapshot());
+    }
+    view["revision"] = json!(
+        s.streams
+            .p2
+            .device
+            .revision
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
+            + 1
+    );
+    Some(view)
+}
+fn metadata_only_local(s: &State, settings: &Value) -> Value {
+    json!({"hosts":[{"id":"local","kind":"local","label":"Local ADB","platforms":[{"platform":"android","available":available()},{"platform":"ios","available":false,"reason":"iOS requires native device tools"}],"hubInstalled":false,"agentDeviceInstalled":false}],"devices":[],"sessions":s.streams.p2.device.sessions.lock().unwrap().clone(),"hostStatus":if settings["enableDeviceSupport"]==false{"disabled"}else{"idle"},"hostStatuses":{},"onboardingCompleted":settings["deviceOnboardingCompleted"],"agentAccessEnabled":settings["enableAgentDeviceAccess"]==true,"hubBasePath":"/api/device-hub","supportsHostRetry":false,"supportsToolUpdate":false,"supportsEasHosts":false,"supportsSimlockHosts":false,"revision":0})
+}
+async fn inspect(s: &State) -> Reply {
+    use futures_util::StreamExt;
+    let settings = crate::settings::read(s).map_err(invalid)?;
+    let configs = ssh_configs(&settings)?;
+    let registered = s
+        .streams
+        .p2
+        .device
+        .ssh
+        .lock()
+        .await
+        .values()
+        .map(|entry| (entry.config.clone(), entry.runtime.clone()))
+        .collect::<Vec<_>>();
+    let mut view = s
+        .streams
+        .p2
+        .device
+        .cached
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap_or_else(|| metadata_only_local(s, &settings));
+    if let Some(local) = native_runtime(s).await? {
+        let summary = local.snapshot()["hosts"][0].clone();
+        if let Some(host) = view["hosts"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|host| host["id"] == "local")
+        {
+            *host = summary;
+        }
+    }
+    let mut tasks: Vec<crate::device_native_owner::HostFuture<'_, (String, Value)>> = Vec::new();
+    for config in &configs {
+        let existing = registered
+            .iter()
+            .find(|(stored, _)| stored.id == config.id)
+            .cloned();
+        tasks.push(Box::pin(async move{
+            let mut summary=json!({"id":config.id,"kind":"ssh","label":config.label,"platforms":[],"hubInstalled":false,"agentDeviceInstalled":false});
+            let probe=if let Some((stored,runtime))=existing{
+                if stored!=*config{summary=runtime.snapshot()["hosts"][0].clone();summary["toolInspectionError"]=json!("Could not confirm stopping the previous connection. Retry before changing this host.");return (config.id.clone(),summary);}
+                let result=if let crate::device_native_runtime::OwnedHost::Ssh(owner)=&runtime.owner{owner.probe().await}else{Err(invalid("Expected SSH owner"))};runtime.update_owner_summary();summary=runtime.snapshot()["hosts"][0].clone();result
+            }else{match ssh_cli(s,config){Ok(cli)=>cli.request(crate::device_native_ssh::RemoteMode::Probe,None).await,Err(error)=>Err(error)}};
+            match probe{Ok(probe)=>{summary["platforms"]=probe["platforms"].clone();summary["hubInstalled"]=json!(probe["verifiedInstalled"]==true);summary.as_object_mut().unwrap().remove("toolInspectionError");if let Some(detail)=probe["detail"].as_str(){summary["toolInspectionError"]=json!(detail);}},Err(_)=>{summary["toolInspectionError"]=json!("Cannot check versions. Reconnect the host and check again. Installed tools have not been changed.");}}
+            (config.id.clone(),summary)
+        }));
+    }
+    for (id, summary) in futures_util::stream::iter(tasks)
+        .buffered(4)
+        .collect::<Vec<_>>()
+        .await
+    {
+        let hosts = view["hosts"].as_array_mut().unwrap();
+        if let Some(host) = hosts.iter_mut().find(|host| host["id"] == id) {
+            *host = summary;
+        } else {
+            hosts.push(summary);
+        }
+    }
+    view["onboardingCompleted"] = settings["deviceOnboardingCompleted"].clone();
+    view["agentAccessEnabled"] = json!(settings["enableAgentDeviceAccess"] == true);
+    view["revision"] = json!(
+        s.streams
+            .p2
+            .device
+            .revision
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
+            + 1
+    );
+    Ok(view)
+}
+async fn state_inner(s: &State) -> Reply {
+    let settings = crate::settings::read(s).map_err(invalid)?;
+    let remote = ssh_runtimes(s, &settings).await?;
+    use futures_util::StreamExt;
+    let mut tasks: Vec<crate::device_native_owner::HostFuture<'_, Reply>> =
+        vec![Box::pin(local_state(s))];
+    let settings_ref = &settings;
+    for runtime in remote {
+        tasks.push(Box::pin(async move {
+            runtime.configure(settings_ref).await?;
+            Ok(match runtime.list().await {
+                Ok(view) => view,
+                Err(_) => runtime.snapshot(),
+            })
+        }));
+    }
+    let mut views = futures_util::stream::iter(tasks)
+        .buffered(4)
+        .collect::<Vec<_>>()
+        .await
+        .into_iter();
+    let mut state = match views.next().expect("local host task") {
+        Ok(state) => state,
+        Err(error) => {
+            json!({"hosts":[{"id":"local","kind":"local","label":"This machine","platforms":[],"hubInstalled":false,"agentDeviceInstalled":false}],"devices":[],"sessions":s.streams.p2.device.sessions.lock().unwrap().clone(),"hostStatus":"failed","hostStatusDetail":error["message"],"hostStatuses":{"local":{"status":"failed","detail":error["message"]}},"onboardingCompleted":settings["deviceOnboardingCompleted"],"agentAccessEnabled":settings["enableAgentDeviceAccess"]==true,"hubBasePath":"/api/device-hub","supportsHostRetry":false,"supportsToolUpdate":false,"supportsEasHosts":false,"supportsSimlockHosts":false})
+        }
+    };
+    for view in views {
+        let view = view?;
+        append_view(&mut state, &view);
+        state["supportsHostRetry"] = json!(true);
+    }
+    state["revision"] = json!(
+        s.streams
+            .p2
+            .device
+            .revision
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
+            + 1
+    );
+    Ok(state)
+}
+async fn local_state(s: &State) -> Reply {
     let settings = crate::settings::read(s).map_err(invalid)?;
     if let Some(runtime) = native_runtime(s).await? {
-        runtime.configure(&settings).await;
+        runtime.configure(&settings).await?;
         return match runtime.list().await {
             Ok(state) => Ok(state),
             Err(_) => Ok(runtime.snapshot()),
@@ -429,12 +756,19 @@ async fn detail(p: &Value) -> Reply {
         json!({"hostId":"local","deviceId":serial,"settings":settings,"foregroundApp":foreground,"readAt":crate::store::iso(crate::store::now_ms())}),
     )
 }
-pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
+pub fn call<'a>(
+    s: &'a State,
+    tag: &'a str,
+    p: &'a Value,
+) -> crate::device_native_owner::HostFuture<'a, Reply> {
+    Box::pin(call_budget(s, tag, p))
+}
+async fn call_budget(s: &State, tag: &str, p: &Value) -> Reply {
     // Native boot has a three-minute hub deadline; do not apply the ADB nine-second budget.
     if matches!(tag, "device.open" | "device.close") {
-        if let Some(runtime) = native_runtime(s).await? {
+        if let Some(runtime) = selected_runtime(s, p).await? {
             let settings = crate::settings::read(s).map_err(invalid)?;
-            runtime.configure(&settings).await;
+            runtime.configure(&settings).await?;
             if tag == "device.open" && settings["enableDeviceSupport"] == false {
                 return Err(unavailable("devices are disabled"));
             }
@@ -446,11 +780,11 @@ pub async fn call(s: &State, tag: &str, p: &Value) -> Reply {
         }
     }
     if matches!(tag, "device.action" | "device.open" | "device.close") {
-        tokio::time::timeout(Duration::from_secs(9), call_inner(s, tag, p))
+        tokio::time::timeout(Duration::from_secs(9), Box::pin(call_inner(s, tag, p)))
             .await
             .unwrap_or_else(|_| Err(unavailable("device operation exceeded its time budget")))
     } else {
-        call_inner(s, tag, p).await
+        Box::pin(call_inner(s, tag, p)).await
     }
 }
 async fn call_inner(s: &State, tag: &str, p: &Value) -> Reply {
@@ -462,19 +796,17 @@ async fn call_inner(s: &State, tag: &str, p: &Value) -> Reply {
     }
     match tag {
         "device.list" => {
+            if p["inspectOnly"] == true && p.get("updateTool").is_none() {
+                return Box::pin(inspect(s)).await;
+            }
             if p.get("updateTool").is_none() && p.get("retryHostId").is_some() {
-                if let Some(runtime) = native_runtime(s).await? {
-                    if p["retryHostId"] != "local" {
-                        return Err(unavailable(
-                            "Requested native device host is not configured",
-                        ));
-                    }
+                if let Some(runtime) =
+                    selected_runtime(s, &json!({"hostId":p["retryHostId"]})).await?
+                {
                     let settings = crate::settings::read(s).map_err(invalid)?;
-                    runtime.configure(&settings).await;
-                    return match runtime.list().await {
-                        Ok(state) => Ok(state),
-                        Err(_) => Ok(runtime.snapshot()),
-                    };
+                    runtime.configure(&settings).await?;
+                    let _ = runtime.list().await;
+                    return state(s).await;
                 }
             }
             if p.get("updateTool").is_some() || p.get("retryHostId").is_some() {
@@ -501,9 +833,38 @@ async fn call_inner(s: &State, tag: &str, p: &Value) -> Reply {
             crate::settings::update(s, &json!({"patch":patch})).map_err(invalid)?;
             state(s).await
         }
-        "device.testHost" => Err(
-            json!({"_tag":"DeviceHostUnavailableError","hostId":p["id"],"reason":"SSH device hosts are unsupported; no SSH process was started"}),
-        ),
+        "device.testHost" => {
+            let config = crate::device_native_ssh::Config::decode(p)
+                .map_err(|error| invalid(error.to_string()))?;
+            let registered = s
+                .streams
+                .p2
+                .device
+                .ssh
+                .lock()
+                .await
+                .get(&config.id)
+                .filter(|entry| entry.config == config)
+                .map(|entry| entry.runtime.clone());
+            let probe = if let Some(runtime) = registered {
+                if let crate::device_native_runtime::OwnedHost::Ssh(owner) = &runtime.owner {
+                    let probe = owner.probe().await?;
+                    runtime.update_owner_summary();
+                    probe
+                } else {
+                    return Err(invalid("Expected registered SSH owner"));
+                }
+            } else {
+                ssh_cli(s, &config)?
+                    .request(crate::device_native_ssh::RemoteMode::Probe, None)
+                    .await?
+            };
+            let mut summary = json!({"id":config.id,"kind":"ssh","label":config.label,"platforms":probe["platforms"],"hubInstalled":probe["verifiedInstalled"]==true,"agentDeviceInstalled":false});
+            if let Some(detail) = probe["detail"].as_str() {
+                summary["toolInspectionError"] = json!(detail);
+            }
+            Ok(summary)
+        }
         "device.simlockIdentity" => Err(
             json!({"_tag":"DeviceSimlockIdentityError","reason":"Simlock device gateways are unsupported by o3-server; no token was sent"}),
         ),
@@ -803,9 +1164,13 @@ pub fn subscribe(s: &Arc<State>) -> Cursor {
     let s = s.clone();
     let task = tokio::spawn(async move {
         loop {
-            if let Ok(v) = state(&s).await {
-                tx.send_replace(Some(v));
-                s.streams.changed.send_modify(|v| *v += 1);
+            let view = match state(&s).await {
+                Ok(view) => Some(view),
+                Err(_) => retained_state(&s).await,
+            };
+            if let Some(view) = view {
+                tx.send_replace(Some(view));
+                s.streams.changed.send_modify(|version| *version += 1);
             }
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
@@ -946,3 +1311,7 @@ mod native_action_tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "device_native_registry_tests.rs"]
+mod device_native_registry_tests;

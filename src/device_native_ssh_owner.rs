@@ -22,6 +22,7 @@ struct State {
     generation: u64,
     stopped: bool,
     failure: Option<Value>,
+    probe: Option<Value>,
 }
 struct Inner {
     cli: Arc<Cli>,
@@ -81,7 +82,12 @@ impl SshOwner {
         self.inner.state.lock().unwrap().failure.clone()
     }
     pub async fn probe(&self) -> Result<Value, Value> {
-        self.inner.cli.request(RemoteMode::Probe, None).await
+        let probe = self.inner.cli.request(RemoteMode::Probe, None).await?;
+        self.inner.state.lock().unwrap().probe = Some(probe.clone());
+        Ok(probe)
+    }
+    pub fn summary(&self) -> Option<Value> {
+        self.inner.state.lock().unwrap().probe.clone()
     }
     pub async fn ensure_ready(&self) -> Result<ReadyHost, Value> {
         let _lock = self.inner.operation.lock().await;
@@ -183,7 +189,14 @@ impl SshOwner {
 async fn connect(inner: &Arc<Inner>) -> Result<ReadyHost, Value> {
     for attempt in 0..3 {
         let remote = inner.cli.start().await?;
-        inner.state.lock().unwrap().remote = Some(remote.clone());
+        {
+            let mut state = inner.state.lock().unwrap();
+            state.remote = Some(remote.clone());
+            if let Some(probe) = &mut state.probe {
+                probe["platforms"] = remote.platforms.clone();
+                probe["verifiedInstalled"] = serde_json::json!(true);
+            }
+        }
         let forward = match inner.cli.forward(&remote, inner.options).await {
             Ok(forward) => forward,
             Err(error) => {
@@ -197,6 +210,7 @@ async fn connect(inner: &Arc<Inner>) -> Result<ReadyHost, Value> {
             cli: inner.cli.clone(),
             node_path: remote.node_path.clone(),
             platforms: Mutex::new(remote.platforms.clone()),
+            owner: Arc::downgrade(inner),
         });
         let client = HubClient::new(inner.cli.config.id.clone(), &forward.origin, tools)
             .map_err(|error| host_error(&inner.cli.config.id, "forwarding ports", error))?;
@@ -225,6 +239,7 @@ struct RemoteTools {
     cli: Arc<Cli>,
     node_path: String,
     platforms: Mutex<Value>,
+    owner: Weak<Inner>,
 }
 impl HostTools for RemoteTools {
     fn platform_available(&self, platform: Platform) -> HostFuture<'_, bool> {
@@ -242,6 +257,9 @@ impl HostTools for RemoteTools {
             let Ok(probe) = self.cli.request(RemoteMode::Probe, None).await else {
                 return false;
             };
+            if let Some(owner) = self.owner.upgrade() {
+                owner.state.lock().unwrap().probe = Some(probe.clone());
+            }
             let result = available(&probe["platforms"]);
             *self.platforms.lock().unwrap() = probe["platforms"].clone();
             result
@@ -277,175 +295,5 @@ impl HostTools for RemoteTools {
             }
             error.map_or(Ok(()), Err)
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::device_native_ssh::Config;
-    use std::{
-        path::PathBuf,
-        sync::atomic::{AtomicBool, Ordering},
-    };
-    struct Fixture {
-        cli: Arc<Cli>,
-        healthy: Arc<AtomicBool>,
-        server: tokio::task::JoinHandle<()>,
-        trace: PathBuf,
-    }
-    impl Drop for Fixture {
-        fn drop(&mut self) {
-            self.server.abort();
-        }
-    }
-    impl Fixture {
-        async fn make(fail_forwards: u8) -> Self {
-            crate::test_sandbox::assert_isolated();
-            use http_body_util::Full;
-            use hyper::{service::service_fn, Response};
-            use hyper_util::rt::TokioIo;
-            let base = std::env::temp_dir().join(format!(
-                "private-ssh-{}",
-                o3_server::store::random_id().unwrap()
-            ));
-            std::fs::create_dir(&base).unwrap();
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let port = listener.local_addr().unwrap().port();
-            let healthy = Arc::new(AtomicBool::new(true));
-            let ready = healthy.clone();
-            let server = tokio::spawn(async move {
-                loop {
-                    let (socket, _) = listener.accept().await.unwrap();
-                    let healthy = ready.clone();
-                    tokio::spawn(async move {
-                        let service =
-                            service_fn(move |request: hyper::Request<hyper::body::Incoming>| {
-                                let healthy = healthy.clone();
-                                async move {
-                                    let status = if request.uri().path() == "/readyz"
-                                        && !healthy.load(Ordering::Acquire)
-                                    {
-                                        503
-                                    } else {
-                                        200
-                                    };
-                                    let body = if request.uri().path() == "/api/devices" {
-                                        r#"{"simulators":[],"emulators":[]}"#
-                                    } else {
-                                        "ready"
-                                    };
-                                    Ok::<_, std::convert::Infallible>(
-                                        Response::builder()
-                                            .status(status)
-                                            .body(Full::new(hyper::body::Bytes::from(body)))
-                                            .unwrap(),
-                                    )
-                                }
-                            });
-                        let _ = hyper::server::conn::http1::Builder::new()
-                            .serve_connection(TokioIo::new(socket), service)
-                            .await;
-                    });
-                }
-            });
-            let executable = base.join("ssh-private-cli.py");
-            std::fs::copy(
-                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("tests/fixtures/device/ssh-private-cli.py"),
-                &executable,
-            )
-            .unwrap();
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
-            let trace = base.join("trace.jsonl");
-            std::fs::write(executable.with_extension("json"),serde_json::to_vec(&serde_json::json!({"remotePort":port,"receipt":"c".repeat(48),"trace":trace,"counter":base.join("counter"),"failForwards":fail_forwards})).unwrap()).unwrap();
-            let config=Config::decode(&serde_json::json!({"id":"mini","label":"Private SSH","target":"user@private.invalid","port":2222,"identityFile":"/private/key with ' quote"})).unwrap();
-            let owner = plan::owner(Some("private-environment"), "/private/state", &config.id);
-            let cli = Arc::new(Cli::new(executable, base, config, owner).unwrap());
-            Self {
-                cli,
-                healthy,
-                server,
-                trace,
-            }
-        }
-        fn owner(&self) -> SshOwner {
-            SshOwner::new(self.cli.clone()).with_forward_options(ForwardOptions {
-                ready_timeout: Duration::from_millis(400),
-                probe_interval: Duration::from_millis(30),
-                probe_timeout: Duration::from_millis(50),
-            })
-        }
-        fn trace(&self) -> Vec<Value> {
-            std::fs::read_to_string(&self.trace)
-                .unwrap()
-                .lines()
-                .map(|line| serde_json::from_str(line).unwrap())
-                .collect()
-        }
-    }
-    #[tokio::test]
-    async fn actual_private_cli_forward_retry_hub_and_receipt_stop() {
-        let fixture = Fixture::make(2).await;
-        let owner = fixture.owner();
-        let (first, second) = tokio::join!(owner.ensure_ready(), owner.ensure_ready());
-        let first = first.unwrap();
-        assert_eq!(first.generation, second.unwrap().generation);
-        assert!(first.hub.client.list().await.unwrap().devices.is_empty());
-        let trace = fixture.trace();
-        assert_eq!(
-            trace
-                .iter()
-                .filter(|entry| entry["mode"] == "forward")
-                .count(),
-            3
-        );
-        assert_eq!(
-            trace
-                .iter()
-                .filter(|entry| entry["mode"] == "start")
-                .count(),
-            3
-        );
-        owner.stop().await.unwrap();
-        assert!(owner.current().is_none());
-        assert!(!first.hub.process.alive());
-        let trace = fixture.trace();
-        let stopped = trace.iter().find(|entry| entry["mode"] == "stop").unwrap();
-        assert_eq!(stopped["receipt"], "c".repeat(48));
-        assert_eq!(stopped["owner"], fixture.cli.owner);
-    }
-    #[tokio::test]
-    async fn three_unhealthy_probes_reconnect_and_drop_closes_forward_with_live_ready_handle() {
-        let fixture = Fixture::make(0).await;
-        let owner = fixture.owner();
-        let first = owner.ensure_ready().await.unwrap();
-        fixture.healthy.store(false, Ordering::Release);
-        tokio::time::timeout(Duration::from_secs(3), first.hub.process.wait())
-            .await
-            .unwrap();
-        fixture.healthy.store(true, Ordering::Release);
-        tokio::time::timeout(Duration::from_secs(5), async {
-            loop {
-                if owner
-                    .current()
-                    .is_some_and(|ready| ready.generation > first.generation)
-                {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(20)).await;
-            }
-        })
-        .await
-        .unwrap();
-        let current = owner.current().unwrap();
-        drop(owner);
-        tokio::time::timeout(Duration::from_secs(3), current.hub.process.wait())
-            .await
-            .unwrap();
-        assert!(!current.hub.process.alive());
-        // Explicit teardown remains available with the retained receipt after local owner release.
-        fixture.cli.stop(&"c".repeat(48)).await.unwrap();
     }
 }

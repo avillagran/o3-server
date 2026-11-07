@@ -1,6 +1,4 @@
 //! New SSH leaf tests remain isolated while runtime wiring is held for the parent checkpoint.
-#[path = "../src/device_native_ssh.rs"]
-pub mod device_native_ssh;
 #[path = "support/sandbox.rs"]
 pub mod test_sandbox;
 
@@ -27,9 +25,10 @@ fn verified_installed_remote_lifecycle_is_private_and_non_destructive() {
     assert_eq!(proof["count"], 12);
 }
 
-pub use o3_server::{device_native_client, device_native_hub, device_native_owner};
-#[path = "../src/device_native_ssh_transport.rs"]
-pub mod device_native_ssh_transport;
+#[path = "support/device_native_ssh_owner.rs"]
+mod owner_tests;
+#[path = "support/device_native_ssh.rs"]
+mod plan_tests;
 
-#[path = "../src/device_native_ssh_owner.rs"]
-pub mod device_native_ssh_owner;
+#[path = "support/device_native_ssh_fixture.rs"]
+pub mod ssh_fixture;

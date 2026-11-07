@@ -158,6 +158,7 @@ pub async fn serve(
     state: Arc<State>,
     session: Value,
 ) -> Response<Body> {
+    let connection_lease = request.extensions().get::<crate::http::Lease>().cloned();
     let socket = request
         .headers()
         .get("upgrade")
@@ -242,6 +243,7 @@ pub async fn serve(
         };
         let upgrade = hyper::upgrade::on(&mut request);
         tokio::spawn(async move {
+            let _connection_lease = connection_lease;
             let Ok(io) = upgrade.await else {
                 return;
             };
@@ -436,5 +438,93 @@ mod tests {
                 assert_eq!(actual, expected_headers, "case {index}");
             }
         }
+    }
+    #[tokio::test]
+    async fn upgraded_media_retains_and_releases_the_existing_connection_lease() {
+        use futures_util::{SinkExt, StreamExt};
+        crate::test_sandbox::assert_isolated();
+        let directory = std::env::temp_dir().join(format!(
+            "private-media-lease-{}",
+            crate::store::random_id().unwrap()
+        ));
+        let state = Arc::new(crate::store::State::open(&directory).unwrap());
+        crate::settings::update(&state,&serde_json::json!({"patch":{"enableDeviceSupport":true,"enableAgentDeviceAccess":true}})).unwrap();
+        let token = state
+            .issue_session(
+                "private-lease",
+                &["orchestration:operate".into()],
+                60_000,
+                "Private fixture",
+            )
+            .unwrap();
+        let session = state.session(&token).unwrap();
+        let upstream = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", upstream.local_addr().unwrap());
+        let echo = tokio::spawn(async move {
+            let (socket, _) = upstream.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            while let Some(Ok(message)) = socket.next().await {
+                if message.is_close() {
+                    break;
+                }
+                if socket.send(message).await.is_err() {
+                    break;
+                }
+            }
+        });
+        let permits = Arc::new(tokio::sync::Semaphore::new(1));
+        let lease: crate::http::Lease = Arc::new((
+            permits.clone().acquire_owned().await.unwrap(),
+            None::<tokio::sync::OwnedSemaphorePermit>,
+        ));
+        let (client, server) = tokio::io::duplex(64 * 1024);
+        let connection = tokio::spawn(async move {
+            let service = hyper::service::service_fn(move |mut request: Request<Incoming>| {
+                request.extensions_mut().insert(lease.clone());
+                let state = state.clone();
+                let session = session.clone();
+                let origin = origin.clone();
+                async move {
+                    Ok::<_, std::convert::Infallible>(serve(request, origin, state, session).await)
+                }
+            });
+            hyper::server::conn::http1::Builder::new()
+                .serve_connection(hyper_util::rt::TokioIo::new(server), service)
+                .with_upgrades()
+                .await
+                .unwrap();
+        });
+        let (mut socket, _) = tokio_tungstenite::client_async(
+            "ws://localhost/api/device-hub/vendor/serve-sim/helper/ws",
+            client,
+        )
+        .await
+        .unwrap();
+        connection.await.unwrap();
+        assert_eq!(
+            permits.available_permits(),
+            0,
+            "An upgraded media connection must retain its admission lease"
+        );
+        socket
+            .send(tokio_tungstenite::tungstenite::Message::Text(
+                "private-lease".into(),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            socket.next().await.unwrap().unwrap().to_text().unwrap(),
+            "private-lease"
+        );
+        socket.close(None).await.unwrap();
+        drop(socket);
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while permits.available_permits() != 1 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        echo.await.unwrap();
     }
 }

@@ -38,7 +38,7 @@ impl Default for Limits {
         }
     }
 }
-type Lease = Arc<(
+pub(crate) type Lease = Arc<(
     tokio::sync::OwnedSemaphorePermit,
     Option<tokio::sync::OwnedSemaphorePermit>,
 )>;

@@ -48,7 +48,8 @@ fn remote_error(config: &Config, step: &str, cause: impl ToString) -> Value {
 }
 async fn read_capped<R: AsyncRead + Unpin>(mut source: R, limit: usize) -> Result<Vec<u8>, String> {
     let mut output = Vec::new();
-    let mut buffer = [0_u8; 16 * 1024];
+    // Fixed I/O buffers belong on the heap: two inline arrays inflate every awaiting dispatcher.
+    let mut buffer = vec![0_u8; 16 * 1024];
     loop {
         let size = source
             .read(&mut buffer)

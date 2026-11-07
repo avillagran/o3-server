@@ -1,7 +1,7 @@
 {
   "revision": "32a0531748c44b25072d7495ce0b9bd7e9450a87",
   "effect": "4.1.2",
-  "scope": "Complete native SshDeviceHost factory intercepted with fake child handles; argv/config/quote/owner/error projections plus a separate O3 verified-installed lifecycle. No native installer, SSH host, auth, SDK or hardware execution; no runtime registration.",
+  "scope": "Complete native SSH factory projections plus real verified-installed SSH registration, protocol2 RPC/session/media consumers, read-only inspection, confirmed teardown retention and production512KiB worker acceptance. No actual SSH/auth/SDK/hardware or installer execution.",
   "coverage": {
     "nativeFactoryCases": 297,
     "nativeConfigCases": 138,
@@ -44,8 +44,24 @@
     "packages/shared/src/shell.ts": "7d418ba20bf10116b58fb3285be6ad5316eae32a1b82ad41212e1961c86f699b",
     "packages/provider-core/src/server/collectStreamText.ts": "754a726d43c8e03647f2bf97559fe0f675a7dd7f6e71f5537e09b5c4ad093216",
     "apps/server/src/device/DeviceToolchain.ts": "4bc36c0a753d65ee1d1413c23da2efedc25ee7022e7464757ce366914d65350a",
-    "apps/server/src/device/deviceToolVersions.json": "4fc5d7da620049c52a6216bd4cf8699afe28088220a9d0e8b07e055d50d23625"
+    "apps/server/src/device/deviceToolVersions.json": "4fc5d7da620049c52a6216bd4cf8699afe28088220a9d0e8b07e055d50d23625",
+    "apps/server/src/ws.ts": "976ee2745245d997ee29e441c6796b4eb8415f58084454f6574719f296feffc2"
   },
   "newRemoteCoreSha256": "fa0d2fdc8167becd065d5add8a3b468b9d21537b03fadcc3a8f44f1f438f8db8",
-  "runtime": "Rootless Podman, read-only source, private HOME/tmp, network none; real TCP only between synthetic CLI/hub peers on private loopback."
+  "runtime": "Rootless Podman, read-only source, private HOME/tmp, network none; real TCP only between synthetic CLI/hub peers on private loopback.",
+  "consumers": [
+    "device.list",
+    "device.list inspectOnly",
+    "device.testHost",
+    "device.configure",
+    "device.open",
+    "device.close",
+    "owned hostId media routing",
+    "confirmed host replacement/removal",
+    "HTTP upgrade admission-lease retention"
+  ],
+  "productionWorkerStackBytes": 524288,
+  "partialSourceScopes": {
+    "apps/server/src/ws.ts": "device.list inspectOnly/updateTool/retryHostId dispatch precedence only"
+  }
 }

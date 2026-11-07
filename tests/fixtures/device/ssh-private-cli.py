@@ -24,10 +24,13 @@ if '-L' not in args:
         sys.exit(0)
     request = json.loads(text[len(prefix):text.index(';')])
     record({'mode': request['mode'], 'owner': request['owner'], 'receipt': request.get('receipt'), 'args': args})
-    result = {'protocol': 1, 'owner': request['owner'], 'nodePath': '/private/node', 'platforms': [{'platform': 'ios', 'available': True}, {'platform': 'android', 'available': False, 'reason': 'Private fixture'}], 'verifiedInstalled': True}
+    result = {'protocol': 1, 'owner': request['owner'], 'nodePath': '/private/node', 'platforms': [{'platform': 'ios', 'available': True}, {'platform': 'android', 'available': False, 'reason': 'Private fixture'}], 'verifiedInstalled': settings.get('verifiedInstalled', True)}
     if request['mode'] == 'start':
         result.update({'hubPort': settings['remotePort'], 'receipt': settings['receipt'], 'helpers': {'serveSimAxSettings': None, 'serveSimCli': None}})
     elif request['mode'] == 'stop':
+        if settings.get('failStop', False):
+            print(json.dumps({'error': 'VerifiedRemoteDeviceError', 'message': 'Private fixture could not confirm stopping'}), file=sys.stderr)
+            sys.exit(7)
         if request['receipt'] != settings['receipt']:
             sys.exit(7)
         result['stopped'] = True

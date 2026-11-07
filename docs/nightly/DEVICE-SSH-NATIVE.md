@@ -2,8 +2,10 @@
 
 Source pin: T3 Code nightly 4288,
 `32a0531748c44b25072d7495ce0b9bd7e9450a87`, with Effect 4.1.2.
-This checkpoint adds isolated modules and an integration wrapper. It does not
-register SSH hosts with the device runtime or enable a capability.
+The verified-installed SSH owner is registered by the real device runtime.
+Readiness and media routing require its current owned loopback forward; missing
+or invalid installations cannot start a hub or create a session. Tool
+installation, agent-device, EAS and Simlock remain unavailable.
 
 ## Source-backed command and lifecycle decisions
 
@@ -74,8 +76,10 @@ remote process record for explicit receipt-based teardown or recovery.
 
 ## Validation
 
-Six focused tests pass in both minimal and default feature modes; strict Clippy
-passes in both modes. The tests cover the complete native corpus plus twelve
+The six focused owner tests pass in both minimal and default feature modes.
+The registered consumers add private unit coverage, including the production
+worker-stack flow and admission-lease lifetime. Strict Clippy is checked in both
+modes. The tests cover the complete native corpus plus twelve
 injected remote-filesystem/process scenarios and real private CLI forwarding:
 
 - Read-only verified probing, healthy reuse, stale receipts, changed packages,
@@ -97,6 +101,37 @@ tools/test-scheduled-modes --compile-lock /var/tmp/o3-build/o3-parity-compile.lo
 tools/test-scheduled-modes --compile-lock /var/tmp/o3-build/o3-parity-compile.lock --default-features --integration device_native_ssh
 ```
 
-Runtime host registration, HTTP routing by SSH host ID, safe tool acquisition and
-quarantine, agent lifecycle and credentials, and real hardware acceptance remain
-separate consumers. EAS, Simlock and all managed-policy families remain unchanged.
+## Runtime registration and protocol consumers
+
+The device runtime decodes configured `deviceHosts` and constructs SSH owners
+without network actions while support is disabled. Enabled listing uses the
+source's four-host concurrency limit, merges local and SSH inventories/sessions,
+and preserves per-platform incomplete-discovery behavior. A read-only
+`inspectOnly` request takes precedence when no tool update is requested; it probes
+metadata without starting, reconciling, replacing or stopping a connection.
+
+An existing host must confirm receipt-based remote stop before its registration
+can be replaced or removed. Failures retain its registration and receipt, close
+its local forward, remain retryable, and surface failed metadata to subscribers.
+A changed configuration cannot route media to that retained connection. No
+cleanup error is converted into successful teardown. Unverified remote tools
+produce failed metadata and cannot forward traffic or create sessions. A verified
+SSH host remains available when the local host has no supported SDK.
+
+The real protocol2 WebSocket dispatcher exercises list, read-only host testing,
+configure, open and close. Authenticated HTTP screenshots route by `hostId` to the
+current owner; caller URLs are never accepted as an upstream. The proxy retains
+the HTTP connection/peer admission lease after WebSocket upgrade and releases it
+when the media connection ends. The admission-lifetime test uses an actual private
+upgrade, echo stream and semaphore.
+
+The complete wire RPC/session/media flow passes on a measured 524,288-byte Tokio
+worker stack, matching the production worker budget. Profile fixture preparation
+runs before spawning the consumer task, matching production startup. No stack
+limit is raised. See `DEVICE-STACK-BOUNDS.md` for evidence, the bounded-buffer fix,
+and the limits of the diagnosis.
+
+Safe tool acquisition/quarantine, stale-lock recovery, agent lifecycle and
+credentials, native iOS/SSH settings and automation actions, and real hardware
+acceptance remain separate consumers. EAS, Simlock and managed-policy family
+readiness are unchanged. No actual SSH host, SDK or device was used.
