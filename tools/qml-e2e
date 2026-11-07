@@ -15,16 +15,18 @@ a second is sent from the real composer; both use a credential copy removed afte
   O3_BIN=...            o3-server binary   (default /var/tmp/o3-build/main/release/o3-server)
   O3_DESKTOP=...        desktop worktree   (default /var/tmp/o3-build/qml/desktop, branch feat/o3-server)
   O3_DESKTOP_BIN=...    omarchy-t3-client  (default /var/tmp/o3-build/e2e/desktop-target/debug/omarchy-t3-client)
-  --keep                keep the run directory (it holds screenshots and logs)
+  Fixture directories are retained until private container teardown.
 """
 import json, os, pathlib, shutil, signal, subprocess, sys, tempfile, time, uuid
+
+if not pathlib.Path('/run/.containerenv').is_file():
+    raise SystemExit('QML E2E requires a private rootless container; host execution is forbidden.')
 
 here = pathlib.Path(__file__).resolve().parent
 base = pathlib.Path('/var/tmp/o3-build/qml')
 server = os.environ.get('O3_BIN', '/var/tmp/o3-build/main/release/o3-server')
 desktop = pathlib.Path(os.environ.get('O3_DESKTOP', str(base / 'desktop')))
 client = os.environ.get('O3_DESKTOP_BIN', '/var/tmp/o3-build/e2e/desktop-target/debug/omarchy-t3-client')
-keep = '--keep' in sys.argv
 omarchy = pathlib.Path('/usr/share/omarchy/shell')
 real_home = pathlib.Path.home()
 claude = subprocess.run(['mise', 'which', 'claude'], capture_output=True, text=True).stdout.strip()
@@ -33,10 +35,11 @@ assert claude and pathlib.Path(claude).is_file(), 'claude CLI not found'
 run = pathlib.Path(tempfile.mkdtemp(prefix='run-', dir=base))
 for d in ('home', 'config', 'state', 'data', 'cache', 'rt', 'bin', 'shots', 'project', 'tmp', 't3', 'qs'):
     (run / d).mkdir(mode=0o700)
-(run / 'bin/t3').symlink_to(server)
-(run / 'bin/claude').symlink_to(claude)
+shutil.copy2(server, run / 'bin/t3')
+shutil.copy2(claude, run / 'bin/claude')
 # Only the Claude credential file is copied, into the isolated config dir; removed at exit.
 (run / 'claude').mkdir(mode=0o700)
+credential_directory = os.open(run / 'claude', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
 shutil.copyfile(real_home / '.claude/.credentials.json', run / 'claude/.credentials.json')
 (run / 'claude/.credentials.json').chmod(0o600)
 subprocess.run(['git', 'init', '-q', '-b', 'main', str(run / 'project')], check=True)
@@ -74,11 +77,16 @@ def cleanup():
             p.wait(10)
         except subprocess.TimeoutExpired:
             p.kill()
-    shutil.rmtree(run / 'claude', ignore_errors=True)  # credential copy
+    # Remove only the exact copied credential, without traversing the workspace.
+    try:
+        os.unlink('.credentials.json', dir_fd=credential_directory)
+    except FileNotFoundError:
+        pass
+    finally:
+        os.close(credential_directory)
     if rtlink.is_symlink():
         rtlink.unlink()
-    if not keep:
-        shutil.rmtree(run, ignore_errors=True)
+    # Retain fixture trees until the private container is discarded.
 
 
 try:
