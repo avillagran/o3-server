@@ -111,9 +111,11 @@ rejects links, special files, extra or changed files, and oversized inventories;
 file reads use `O_NOFOLLOW`. Sealing uses create-new manifest semantics within an
 exclusively owned staging directory. The npm acquisition plan pins exact package
 versions, disables lifecycle scripts and bin links, and records a package lock.
-No installation tree is recursively removed. Actual acquisition, atomic publication
-and incomplete-install quarantine still require their consumer and proofs before
-tool-update capability is enabled; no npm installation ran in these runtime tests.
+No installation tree is recursively removed. The Linux acquisition/update consumer now publishes through owned staging and
+atomic no-replace rename, retaining failed artifacts in quarantine. See
+[Safe pinned device tool acquisition](DEVICE-TOOL-ACQUISITION.md) for its separate
+synthetic download/process proof and upstream-provenance limits. These original
+runtime tests did not invoke a real npm installation.
 
 SSH bootstrap/forward ownership, agent-device daemon ownership, persistent crash
 recovery, EAS, Simlock and physical hardware acceptance remain incomplete. There is

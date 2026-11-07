@@ -4,8 +4,10 @@ Source pin: T3 Code nightly 4288,
 `32a0531748c44b25072d7495ce0b9bd7e9450a87`, with Effect 4.1.2.
 The verified-installed SSH owner is registered by the real device runtime.
 Readiness and media routing require its current owned loopback forward; missing
-or invalid installations cannot start a hub or create a session. Tool
-installation, agent-device, EAS and Simlock remain unavailable.
+or invalid installations cannot start a hub or create a session. Remote tool
+installation, agent-device runtime, EAS and Simlock remain unavailable. Local
+selected-tool acquisition is documented separately in
+[Safe pinned device tool acquisition](DEVICE-TOOL-ACQUISITION.md).
 
 ## Source-backed command and lifecycle decisions
 
@@ -131,7 +133,7 @@ runs before spawning the consumer task, matching production startup. No stack
 limit is raised. See `DEVICE-STACK-BOUNDS.md` for evidence, the bounded-buffer fix,
 and the limits of the diagnosis.
 
-Safe tool acquisition/quarantine, stale-lock recovery, agent lifecycle and
+Remote tool acquisition/quarantine, stale-lock recovery, agent lifecycle and
 credentials, native iOS/SSH settings and automation actions, and real hardware
 acceptance remain separate consumers. EAS, Simlock and managed-policy family
 readiness are unchanged. No actual SSH host, SDK or device was used.

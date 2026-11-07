@@ -50,7 +50,7 @@ fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
 /// Reject symlink components before reading an owned installation tree.
-fn real_directory(path: &Path) -> io::Result<()> {
+pub(crate) fn real_directory(path: &Path) -> io::Result<()> {
     if !path.is_absolute() {
         return Err(invalid("Device tool directories must be absolute"));
     }
@@ -73,7 +73,7 @@ fn read_regular(path: &Path, cap: u64) -> io::Result<Vec<u8>> {
     use std::{io::Read, os::unix::fs::OpenOptionsExt};
     let file = fs::OpenOptions::new()
         .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC)
         .open(path)?;
     let metadata = file.metadata()?;
     if !metadata.is_file() || metadata.len() > cap {
@@ -127,7 +127,7 @@ fn inventory(root: &Path) -> io::Result<BTreeMap<String, String>> {
             use std::{io::Read, os::unix::fs::OpenOptionsExt};
             let file = fs::OpenOptions::new()
                 .read(true)
-                .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+                .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC)
                 .open(&path)?;
             if !file.metadata()?.is_file() {
                 return Err(invalid("Device tool inventory file changed type"));

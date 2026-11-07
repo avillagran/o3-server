@@ -1,0 +1,970 @@
+{
+  "revision": "32a0531748c44b25072d7495ce0b9bd7e9450a87",
+  "effect": "4.1.2",
+  "sources": {
+    "apps/server/src/device/DeviceToolchain.ts": "4bc36c0a753d65ee1d1413c23da2efedc25ee7022e7464757ce366914d65350a",
+    "apps/server/src/processRunner.ts": "54dbe11d20d510fcf49b151de83da3efa982f1dc512d4233964062dbc245f1dd",
+    "packages/shared/src/shell.ts": "7d418ba20bf10116b58fb3285be6ad5316eae32a1b82ad41212e1961c86f699b",
+    "packages/shared/src/HostProcess.ts": "eeafedd914ae4aaf81ef6f474139111e98ec40bcb5a077d43ff02382cae7c011",
+    "packages/provider-core/src/server/collectStreamText.ts": "754a726d43c8e03647f2bf97559fe0f675a7dd7f6e71f5537e09b5c4ad093216",
+    "apps/server/src/device/deviceToolVersions.json": "4fc5d7da620049c52a6216bd4cf8699afe28088220a9d0e8b07e055d50d23625"
+  },
+  "cases": [
+    {
+      "input": {
+        "tool": "hub",
+        "installed": false,
+        "code": 0,
+        "entry": false
+      },
+      "expected": {
+        "commands": [
+          {
+            "command": "npm",
+            "args": [
+              "install",
+              "--prefix",
+              "/fixture/profile/tools/expo-device-hub/0.19.1/../.staging-private",
+              "--no-fund",
+              "--no-audit",
+              "expo-device-hub@0.19.1"
+            ],
+            "timeoutMilliseconds": 600000
+          }
+        ],
+        "operations": [
+          {
+            "method": "remove",
+            "file": "/fixture/profile/tools/expo-device-hub/0.19.1",
+            "options": {
+              "recursive": true,
+              "force": true
+            }
+          },
+          {
+            "method": "mkdir",
+            "file": "/fixture/profile/tools/expo-device-hub",
+            "options": {
+              "recursive": true
+            }
+          },
+          {
+            "method": "temp",
+            "options": {
+              "directory": "/fixture/profile/tools/expo-device-hub",
+              "prefix": ".staging-"
+            }
+          },
+          {
+            "method": "remove",
+            "file": "/fixture/profile/tools/expo-device-hub/0.19.1/../.staging-private",
+            "options": {
+              "recursive": true,
+              "force": true
+            }
+          }
+        ],
+        "error": {
+          "_tag": "DeviceToolchainInstallError",
+          "tool": "expo-device-hub",
+          "step": "verifying the installed entry point",
+          "message": "Installing expo-device-hub failed while verifying the installed entry point."
+        }
+      }
+    },
+    {
+      "input": {
+        "tool": "hub",
+        "installed": false,
+        "code": 0,
+        "entry": true
+      },
+      "expected": {
+        "commands": [
+          {
+            "command": "npm",
+            "args": [
+              "install",
+              "--prefix",
+              "/fixture/profile/tools/expo-device-hub/0.19.1/../.staging-private",
+              "--no-fund",
+              "--no-audit",
+              "expo-device-hub@0.19.1"
+            ],
+            "timeoutMilliseconds": 600000
+          }
+        ],
+        "operations": [
+          {
+            "method": "remove",
+            "file": "/fixture/profile/tools/expo-device-hub/0.19.1",
+            "options": {
+              "recursive": true,
+              "force": true
+            }
+          },
+          {
+            "method": "mkdir",
+            "file": "/fixture/profile/tools/expo-device-hub",
+            "options": {
+              "recursive": true
+            }
+          },
+          {
+            "method": "temp",
+            "options": {
+              "directory": "/fixture/profile/tools/expo-device-hub",
+              "prefix": ".staging-"
+            }
+          },
+          {
+            "method": "remove",
+            "file": "/fixture/profile/tools/expo-device-hub/0.19.1/../.staging-private",
+            "options": {
+              "recursive": true,
+              "force": true
+            }
+          }
+        ],
+        "error": {
+          "_tag": "DeviceToolchainInstallError",
+          "tool": "expo-device-hub",
+          "step": "verifying the installed entry point",
+          "message": "Installing expo-device-hub failed while verifying the installed entry point."
+        }
+      }
+    },
+    {
+      "input": {
+        "tool": "hub",
+        "installed": false,
+        "code": 1,
+        "entry": false
+      },
+      "expected": {
+        "commands": [
+          {
+            "command": "npm",
+            "args": [
+              "install",
+              "--prefix",
+              "/fixture/profile/tools/expo-device-hub/0.19.1/../.staging-private",
+              "--no-fund",
+              "--no-audit",
+              "expo-device-hub@0.19.1"
+            ],
+            "timeoutMilliseconds": 600000
+          }
+        ],
+        "operations": [
+          {
+            "method": "remove",
+            "file": "/fixture/profile/tools/expo-device-hub/0.19.1",
+            "options": {
+              "recursive": true,
+              "force": true
+            }
+          },
+          {
+            "method": "mkdir",
+            "file": "/fixture/profile/tools/expo-device-hub",
+            "options": {
+              "recursive": true
+            }
+          },
+          {
+            "method": "temp",
+            "options": {
+              "directory": "/fixture/profile/tools/expo-device-hub",
+              "prefix": ".staging-"
+            }
+          },
+          {
+            "method": "remove",
+            "file": "/fixture/profile/tools/expo-device-hub/0.19.1/../.staging-private",
+            "options": {
+              "recursive": true,
+              "force": true
+            }
+          }
+        ],
+        "error": {
+          "_tag": "DeviceToolchainInstallError",
+          "tool": "expo-device-hub",
+          "step": "running npm install",
+          "message": "Installing expo-device-hub failed while running npm install (exit code 1).",
+          "exitCode": 1
+        }
+      }
+    },
+    {
+      "input": {
+        "tool": "hub",
+        "installed": false,
+        "code": 1,
+        "entry": true
+      },
+      "expected": {
+        "commands": [
+          {
+            "command": "npm",
+            "args": [
+              "install",
+              "--prefix",
+              "/fixture/profile/tools/expo-device-hub/0.19.1/../.staging-private",
+              "--no-fund",
+              "--no-audit",
+              "expo-device-hub@0.19.1"
+            ],
+            "timeoutMilliseconds": 600000
+          }
+        ],
+        "operations": [
+          {
+            "method": "remove",
+            "file": "/fixture/profile/tools/expo-device-hub/0.19.1",
+            "options": {
+              "recursive": true,
+              "force": true
+            }
+          },
+          {
+            "method": "mkdir",
+            "file": "/fixture/profile/tools/expo-device-hub",
+            "options": {
+              "recursive": true
+            }
+          },
+          {
+            "method": "temp",
+            "options": {
+              "directory": "/fixture/profile/tools/expo-device-hub",
+              "prefix": ".staging-"
+            }
+          },
+          {
+            "method": "remove",
+            "file": "/fixture/profile/tools/expo-device-hub/0.19.1/../.staging-private",
+            "options": {
+              "recursive": true,
+              "force": true
+            }
+          }
+        ],
+        "error": {
+          "_tag": "DeviceToolchainInstallError",
+          "tool": "expo-device-hub",
+          "step": "running npm install",
+          "message": "Installing expo-device-hub failed while running npm install (exit code 1).",
+          "exitCode": 1
+        }
+      }
+    },
+    {
+      "input": {
+        "tool": "hub",
+        "installed": false,
+        "code": 7,
+        "entry": false
+      },
+      "expected": {
+        "commands": [
+          {
+            "command": "npm",
+            "args": [
+              "install",
+              "--prefix",
+              "/fixture/profile/tools/expo-device-hub/0.19.1/../.staging-private",
+              "--no-fund",
+              "--no-audit",
+              "expo-device-hub@0.19.1"
+            ],
+            "timeoutMilliseconds": 600000
+          }
+        ],
+        "operations": [
+          {
+            "method": "remove",
+            "file": "/fixture/profile/tools/expo-device-hub/0.19.1",
+            "options": {
+              "recursive": true,
+              "force": true
+            }
+          },
+          {
+            "method": "mkdir",
+            "file": "/fixture/profile/tools/expo-device-hub",
+            "options": {
+              "recursive": true
+            }
+          },
+          {
+            "method": "temp",
+            "options": {
+              "directory": "/fixture/profile/tools/expo-device-hub",
+              "prefix": ".staging-"
+            }
+          },
+          {
+            "method": "remove",
+            "file": "/fixture/profile/tools/expo-device-hub/0.19.1/../.staging-private",
+            "options": {
+              "recursive": true,
+              "force": true
+            }
+          }
+        ],
+        "error": {
+          "_tag": "DeviceToolchainInstallError",
+          "tool": "expo-device-hub",
+          "step": "running npm install",
+          "message": "Installing expo-device-hub failed while running npm install (exit code 7).",
+          "exitCode": 7
+        }
+      }
+    },
+    {
+      "input": {
+        "tool": "hub",
+        "installed": false,
+        "code": 7,
+        "entry": true
+      },
+      "expected": {
+        "commands": [
+          {
+            "command": "npm",
+            "args": [
+              "install",
+              "--prefix",
+              "/fixture/profile/tools/expo-device-hub/0.19.1/../.staging-private",
+              "--no-fund",
+              "--no-audit",
+              "expo-device-hub@0.19.1"
+            ],
+            "timeoutMilliseconds": 600000
+          }
+        ],
+        "operations": [
+          {
+            "method": "remove",
+            "file": "/fixture/profile/tools/expo-device-hub/0.19.1",
+            "options": {
+              "recursive": true,
+              "force": true
+            }
+          },
+          {
+            "method": "mkdir",
+            "file": "/fixture/profile/tools/expo-device-hub",
+            "options": {
+              "recursive": true
+            }
+          },
+          {
+            "method": "temp",
+            "options": {
+              "directory": "/fixture/profile/tools/expo-device-hub",
+              "prefix": ".staging-"
+            }
+          },
+          {
+            "method": "remove",
+            "file": "/fixture/profile/tools/expo-device-hub/0.19.1/../.staging-private",
+            "options": {
+              "recursive": true,
+              "force": true
+            }
+          }
+        ],
+        "error": {
+          "_tag": "DeviceToolchainInstallError",
+          "tool": "expo-device-hub",
+          "step": "running npm install",
+          "message": "Installing expo-device-hub failed while running npm install (exit code 7).",
+          "exitCode": 7
+        }
+      }
+    },
+    {
+      "input": {
+        "tool": "hub",
+        "installed": true,
+        "code": 0,
+        "entry": false
+      },
+      "expected": {
+        "commands": [],
+        "operations": [],
+        "paths": {
+          "installDir": "/fixture/profile/tools/expo-device-hub/0.19.1",
+          "entryPath": "/fixture/profile/tools/expo-device-hub/0.19.1/node_modules/expo-device-hub/dist/server/cli.mjs",
+          "sentinelPath": "/fixture/profile/tools/expo-device-hub/0.19.1/.install-complete"
+        }
+      }
+    },
+    {
+      "input": {
+        "tool": "hub",
+        "installed": true,
+        "code": 0,
+        "entry": true
+      },
+      "expected": {
+        "commands": [],
+        "operations": [],
+        "paths": {
+          "installDir": "/fixture/profile/tools/expo-device-hub/0.19.1",
+          "entryPath": "/fixture/profile/tools/expo-device-hub/0.19.1/node_modules/expo-device-hub/dist/server/cli.mjs",
+          "sentinelPath": "/fixture/profile/tools/expo-device-hub/0.19.1/.install-complete"
+        }
+      }
+    },
+    {
+      "input": {
+        "tool": "hub",
+        "installed": true,
+        "code": 1,
+        "entry": false
+      },
+      "expected": {
+        "commands": [],
+        "operations": [],
+        "paths": {
+          "installDir": "/fixture/profile/tools/expo-device-hub/0.19.1",
+          "entryPath": "/fixture/profile/tools/expo-device-hub/0.19.1/node_modules/expo-device-hub/dist/server/cli.mjs",
+          "sentinelPath": "/fixture/profile/tools/expo-device-hub/0.19.1/.install-complete"
+        }
+      }
+    },
+    {
+      "input": {
+        "tool": "hub",
+        "installed": true,
+        "code": 1,
+        "entry": true
+      },
+      "expected": {
+        "commands": [],
+        "operations": [],
+        "paths": {
+          "installDir": "/fixture/profile/tools/expo-device-hub/0.19.1",
+          "entryPath": "/fixture/profile/tools/expo-device-hub/0.19.1/node_modules/expo-device-hub/dist/server/cli.mjs",
+          "sentinelPath": "/fixture/profile/tools/expo-device-hub/0.19.1/.install-complete"
+        }
+      }
+    },
+    {
+      "input": {
+        "tool": "hub",
+        "installed": true,
+        "code": 7,
+        "entry": false
+      },
+      "expected": {
+        "commands": [],
+        "operations": [],
+        "paths": {
+          "installDir": "/fixture/profile/tools/expo-device-hub/0.19.1",
+          "entryPath": "/fixture/profile/tools/expo-device-hub/0.19.1/node_modules/expo-device-hub/dist/server/cli.mjs",
+          "sentinelPath": "/fixture/profile/tools/expo-device-hub/0.19.1/.install-complete"
+        }
+      }
+    },
+    {
+      "input": {
+        "tool": "hub",
+        "installed": true,
+        "code": 7,
+        "entry": true
+      },
+      "expected": {
+        "commands": [],
+        "operations": [],
+        "paths": {
+          "installDir": "/fixture/profile/tools/expo-device-hub/0.19.1",
+          "entryPath": "/fixture/profile/tools/expo-device-hub/0.19.1/node_modules/expo-device-hub/dist/server/cli.mjs",
+          "sentinelPath": "/fixture/profile/tools/expo-device-hub/0.19.1/.install-complete"
+        }
+      }
+    },
+    {
+      "input": {
+        "tool": "agent",
+        "installed": false,
+        "code": 0,
+        "entry": false
+      },
+      "expected": {
+        "commands": [
+          {
+            "command": "npm",
+            "args": [
+              "install",
+              "--prefix",
+              "/fixture/profile/tools/agent-device/0.21.31/../.staging-private",
+              "--no-fund",
+              "--no-audit",
+              "agent-device@0.21.31"
+            ],
+            "timeoutMilliseconds": 600000
+          }
+        ],
+        "operations": [
+          {
+            "method": "remove",
+            "file": "/fixture/profile/tools/agent-device/0.21.31",
+            "options": {
+              "recursive": true,
+              "force": true
+            }
+          },
+          {
+            "method": "mkdir",
+            "file": "/fixture/profile/tools/agent-device",
+            "options": {
+              "recursive": true
+            }
+          },
+          {
+            "method": "temp",
+            "options": {
+              "directory": "/fixture/profile/tools/agent-device",
+              "prefix": ".staging-"
+            }
+          },
+          {
+            "method": "remove",
+            "file": "/fixture/profile/tools/agent-device/0.21.31/../.staging-private",
+            "options": {
+              "recursive": true,
+              "force": true
+            }
+          }
+        ],
+        "error": {
+          "_tag": "DeviceToolchainInstallError",
+          "tool": "agent-device",
+          "step": "verifying the installed entry point",
+          "message": "Installing agent-device failed while verifying the installed entry point."
+        }
+      }
+    },
+    {
+      "input": {
+        "tool": "agent",
+        "installed": false,
+        "code": 0,
+        "entry": true
+      },
+      "expected": {
+        "commands": [
+          {
+            "command": "npm",
+            "args": [
+              "install",
+              "--prefix",
+              "/fixture/profile/tools/agent-device/0.21.31/../.staging-private",
+              "--no-fund",
+              "--no-audit",
+              "agent-device@0.21.31"
+            ],
+            "timeoutMilliseconds": 600000
+          }
+        ],
+        "operations": [
+          {
+            "method": "remove",
+            "file": "/fixture/profile/tools/agent-device/0.21.31",
+            "options": {
+              "recursive": true,
+              "force": true
+            }
+          },
+          {
+            "method": "mkdir",
+            "file": "/fixture/profile/tools/agent-device",
+            "options": {
+              "recursive": true
+            }
+          },
+          {
+            "method": "temp",
+            "options": {
+              "directory": "/fixture/profile/tools/agent-device",
+              "prefix": ".staging-"
+            }
+          },
+          {
+            "method": "remove",
+            "file": "/fixture/profile/tools/agent-device/0.21.31/../.staging-private",
+            "options": {
+              "recursive": true,
+              "force": true
+            }
+          }
+        ],
+        "error": {
+          "_tag": "DeviceToolchainInstallError",
+          "tool": "agent-device",
+          "step": "verifying the installed entry point",
+          "message": "Installing agent-device failed while verifying the installed entry point."
+        }
+      }
+    },
+    {
+      "input": {
+        "tool": "agent",
+        "installed": false,
+        "code": 1,
+        "entry": false
+      },
+      "expected": {
+        "commands": [
+          {
+            "command": "npm",
+            "args": [
+              "install",
+              "--prefix",
+              "/fixture/profile/tools/agent-device/0.21.31/../.staging-private",
+              "--no-fund",
+              "--no-audit",
+              "agent-device@0.21.31"
+            ],
+            "timeoutMilliseconds": 600000
+          }
+        ],
+        "operations": [
+          {
+            "method": "remove",
+            "file": "/fixture/profile/tools/agent-device/0.21.31",
+            "options": {
+              "recursive": true,
+              "force": true
+            }
+          },
+          {
+            "method": "mkdir",
+            "file": "/fixture/profile/tools/agent-device",
+            "options": {
+              "recursive": true
+            }
+          },
+          {
+            "method": "temp",
+            "options": {
+              "directory": "/fixture/profile/tools/agent-device",
+              "prefix": ".staging-"
+            }
+          },
+          {
+            "method": "remove",
+            "file": "/fixture/profile/tools/agent-device/0.21.31/../.staging-private",
+            "options": {
+              "recursive": true,
+              "force": true
+            }
+          }
+        ],
+        "error": {
+          "_tag": "DeviceToolchainInstallError",
+          "tool": "agent-device",
+          "step": "running npm install",
+          "message": "Installing agent-device failed while running npm install (exit code 1).",
+          "exitCode": 1
+        }
+      }
+    },
+    {
+      "input": {
+        "tool": "agent",
+        "installed": false,
+        "code": 1,
+        "entry": true
+      },
+      "expected": {
+        "commands": [
+          {
+            "command": "npm",
+            "args": [
+              "install",
+              "--prefix",
+              "/fixture/profile/tools/agent-device/0.21.31/../.staging-private",
+              "--no-fund",
+              "--no-audit",
+              "agent-device@0.21.31"
+            ],
+            "timeoutMilliseconds": 600000
+          }
+        ],
+        "operations": [
+          {
+            "method": "remove",
+            "file": "/fixture/profile/tools/agent-device/0.21.31",
+            "options": {
+              "recursive": true,
+              "force": true
+            }
+          },
+          {
+            "method": "mkdir",
+            "file": "/fixture/profile/tools/agent-device",
+            "options": {
+              "recursive": true
+            }
+          },
+          {
+            "method": "temp",
+            "options": {
+              "directory": "/fixture/profile/tools/agent-device",
+              "prefix": ".staging-"
+            }
+          },
+          {
+            "method": "remove",
+            "file": "/fixture/profile/tools/agent-device/0.21.31/../.staging-private",
+            "options": {
+              "recursive": true,
+              "force": true
+            }
+          }
+        ],
+        "error": {
+          "_tag": "DeviceToolchainInstallError",
+          "tool": "agent-device",
+          "step": "running npm install",
+          "message": "Installing agent-device failed while running npm install (exit code 1).",
+          "exitCode": 1
+        }
+      }
+    },
+    {
+      "input": {
+        "tool": "agent",
+        "installed": false,
+        "code": 7,
+        "entry": false
+      },
+      "expected": {
+        "commands": [
+          {
+            "command": "npm",
+            "args": [
+              "install",
+              "--prefix",
+              "/fixture/profile/tools/agent-device/0.21.31/../.staging-private",
+              "--no-fund",
+              "--no-audit",
+              "agent-device@0.21.31"
+            ],
+            "timeoutMilliseconds": 600000
+          }
+        ],
+        "operations": [
+          {
+            "method": "remove",
+            "file": "/fixture/profile/tools/agent-device/0.21.31",
+            "options": {
+              "recursive": true,
+              "force": true
+            }
+          },
+          {
+            "method": "mkdir",
+            "file": "/fixture/profile/tools/agent-device",
+            "options": {
+              "recursive": true
+            }
+          },
+          {
+            "method": "temp",
+            "options": {
+              "directory": "/fixture/profile/tools/agent-device",
+              "prefix": ".staging-"
+            }
+          },
+          {
+            "method": "remove",
+            "file": "/fixture/profile/tools/agent-device/0.21.31/../.staging-private",
+            "options": {
+              "recursive": true,
+              "force": true
+            }
+          }
+        ],
+        "error": {
+          "_tag": "DeviceToolchainInstallError",
+          "tool": "agent-device",
+          "step": "running npm install",
+          "message": "Installing agent-device failed while running npm install (exit code 7).",
+          "exitCode": 7
+        }
+      }
+    },
+    {
+      "input": {
+        "tool": "agent",
+        "installed": false,
+        "code": 7,
+        "entry": true
+      },
+      "expected": {
+        "commands": [
+          {
+            "command": "npm",
+            "args": [
+              "install",
+              "--prefix",
+              "/fixture/profile/tools/agent-device/0.21.31/../.staging-private",
+              "--no-fund",
+              "--no-audit",
+              "agent-device@0.21.31"
+            ],
+            "timeoutMilliseconds": 600000
+          }
+        ],
+        "operations": [
+          {
+            "method": "remove",
+            "file": "/fixture/profile/tools/agent-device/0.21.31",
+            "options": {
+              "recursive": true,
+              "force": true
+            }
+          },
+          {
+            "method": "mkdir",
+            "file": "/fixture/profile/tools/agent-device",
+            "options": {
+              "recursive": true
+            }
+          },
+          {
+            "method": "temp",
+            "options": {
+              "directory": "/fixture/profile/tools/agent-device",
+              "prefix": ".staging-"
+            }
+          },
+          {
+            "method": "remove",
+            "file": "/fixture/profile/tools/agent-device/0.21.31/../.staging-private",
+            "options": {
+              "recursive": true,
+              "force": true
+            }
+          }
+        ],
+        "error": {
+          "_tag": "DeviceToolchainInstallError",
+          "tool": "agent-device",
+          "step": "running npm install",
+          "message": "Installing agent-device failed while running npm install (exit code 7).",
+          "exitCode": 7
+        }
+      }
+    },
+    {
+      "input": {
+        "tool": "agent",
+        "installed": true,
+        "code": 0,
+        "entry": false
+      },
+      "expected": {
+        "commands": [],
+        "operations": [],
+        "paths": {
+          "installDir": "/fixture/profile/tools/agent-device/0.21.31",
+          "entryPath": "/fixture/profile/tools/agent-device/0.21.31/node_modules/agent-device/bin/agent-device.mjs",
+          "sentinelPath": "/fixture/profile/tools/agent-device/0.21.31/.install-complete"
+        }
+      }
+    },
+    {
+      "input": {
+        "tool": "agent",
+        "installed": true,
+        "code": 0,
+        "entry": true
+      },
+      "expected": {
+        "commands": [],
+        "operations": [],
+        "paths": {
+          "installDir": "/fixture/profile/tools/agent-device/0.21.31",
+          "entryPath": "/fixture/profile/tools/agent-device/0.21.31/node_modules/agent-device/bin/agent-device.mjs",
+          "sentinelPath": "/fixture/profile/tools/agent-device/0.21.31/.install-complete"
+        }
+      }
+    },
+    {
+      "input": {
+        "tool": "agent",
+        "installed": true,
+        "code": 1,
+        "entry": false
+      },
+      "expected": {
+        "commands": [],
+        "operations": [],
+        "paths": {
+          "installDir": "/fixture/profile/tools/agent-device/0.21.31",
+          "entryPath": "/fixture/profile/tools/agent-device/0.21.31/node_modules/agent-device/bin/agent-device.mjs",
+          "sentinelPath": "/fixture/profile/tools/agent-device/0.21.31/.install-complete"
+        }
+      }
+    },
+    {
+      "input": {
+        "tool": "agent",
+        "installed": true,
+        "code": 1,
+        "entry": true
+      },
+      "expected": {
+        "commands": [],
+        "operations": [],
+        "paths": {
+          "installDir": "/fixture/profile/tools/agent-device/0.21.31",
+          "entryPath": "/fixture/profile/tools/agent-device/0.21.31/node_modules/agent-device/bin/agent-device.mjs",
+          "sentinelPath": "/fixture/profile/tools/agent-device/0.21.31/.install-complete"
+        }
+      }
+    },
+    {
+      "input": {
+        "tool": "agent",
+        "installed": true,
+        "code": 7,
+        "entry": false
+      },
+      "expected": {
+        "commands": [],
+        "operations": [],
+        "paths": {
+          "installDir": "/fixture/profile/tools/agent-device/0.21.31",
+          "entryPath": "/fixture/profile/tools/agent-device/0.21.31/node_modules/agent-device/bin/agent-device.mjs",
+          "sentinelPath": "/fixture/profile/tools/agent-device/0.21.31/.install-complete"
+        }
+      }
+    },
+    {
+      "input": {
+        "tool": "agent",
+        "installed": true,
+        "code": 7,
+        "entry": true
+      },
+      "expected": {
+        "commands": [],
+        "operations": [],
+        "paths": {
+          "installDir": "/fixture/profile/tools/agent-device/0.21.31",
+          "entryPath": "/fixture/profile/tools/agent-device/0.21.31/node_modules/agent-device/bin/agent-device.mjs",
+          "sentinelPath": "/fixture/profile/tools/agent-device/0.21.31/.install-complete"
+        }
+      }
+    }
+  ]
+}

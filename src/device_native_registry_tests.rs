@@ -377,3 +377,178 @@ async fn verified_ssh_capability_survives_an_unavailable_local_toolchain() {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn manual_pinned_updates_preserve_permissions_and_do_not_start_helpers() {
+    let (fixture, state) = prepare_ssh_flow().await;
+    let (_, npm) = crate::device_native_acquire::tests::fixture("ok");
+    *state.streams.p2.device.test_npm_executable.lock().unwrap() = Some(npm);
+    let mut peer = RpcPeer::new(&state).await;
+    let before = crate::settings::read(&state).unwrap();
+    let installed = rpc_call(
+        &mut peer,
+        &state,
+        "device.list",
+        &json!({"updateTool":"agent","inspectOnly":true}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(installed["hosts"][0]["agentDeviceInstalled"], true);
+    assert_eq!(crate::settings::read(&state).unwrap(), before);
+    assert!(
+        fixture.trace().iter().all(|entry| entry["mode"] == "probe"),
+        "Read-only post-update inspection cannot start configured SSH helpers"
+    );
+    // The independent agent tree is reused; failure to fetch the hub leaves it untouched.
+    let installed = state.asset_profile_root.join("tools/agent-device/0.21.31");
+    let (_, failed_npm) = crate::device_native_acquire::tests::fixture("failure");
+    *state.streams.p2.device.test_npm_executable.lock().unwrap() = Some(failed_npm);
+    let failed = rpc_call(
+        &mut peer,
+        &state,
+        "device.list",
+        &json!({"updateTool":"hub"}),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(failed["_tag"], "DeviceToolchainInstallError");
+    crate::device_native_tools::InstalledTool::inspect(
+        &installed,
+        crate::device_native_tools::Tool::Agent,
+    )
+    .unwrap();
+    assert_eq!(crate::settings::read(&state).unwrap(), before);
+    assert!(fixture.trace().iter().all(|entry| entry["mode"] == "probe"));
+    let (_, retry_npm) = crate::device_native_acquire::tests::fixture("ok");
+    *state.streams.p2.device.test_npm_executable.lock().unwrap() = Some(retry_npm);
+    rpc_call(
+        &mut peer,
+        &state,
+        "device.list",
+        &json!({"updateTool":"hub"}),
+    )
+    .await
+    .unwrap();
+    let root = state
+        .asset_profile_root
+        .join("tools/expo-device-hub/0.19.1");
+    crate::device_native_tools::InstalledTool::inspect(
+        &root,
+        crate::device_native_tools::Tool::Hub,
+    )
+    .unwrap();
+    assert_eq!(crate::settings::read(&state).unwrap(), before);
+    assert!(
+        state
+            .streams
+            .p2
+            .device
+            .native
+            .lock()
+            .await
+            .as_ref()
+            .unwrap()
+            .origin()
+            .is_none(),
+        "Read-only update inspection cannot start the newly acquired hub"
+    );
+    assert!(!fixture.trace().iter().any(|entry| entry["mode"] == "start"));
+    peer.task.abort();
+}
+
+#[tokio::test]
+async fn failed_manual_update_preserves_working_remote_forward_inventory_and_sessions() {
+    let fixture = Fixture::make(0).await;
+    *fixture.devices.lock().unwrap() = json!({"simulators":[{"id":"sim-1","name":"Private simulator","platform":"ios","version":"26","booted":true,"physical":false}],"emulators":[]});
+    let state = profile(&fixture, true).await;
+    call(&state, "device.list", &json!({})).await.unwrap();
+    call(
+        &state,
+        "device.open",
+        &json!({"hostId":"mini","deviceId":"sim-1","platform":"ios","threadId":"private-update-thread"}),
+    )
+    .await
+    .unwrap();
+    let runtime = state
+        .streams
+        .p2
+        .device
+        .ssh
+        .lock()
+        .await
+        .get("mini")
+        .unwrap()
+        .runtime
+        .clone();
+    let origin = runtime.origin().unwrap();
+    let before = runtime.snapshot();
+    let (_, npm) = crate::device_native_acquire::tests::fixture("failure");
+    *state.streams.p2.device.test_npm_executable.lock().unwrap() = Some(npm);
+    assert!(call(&state, "device.list", &json!({"updateTool":"hub"}))
+        .await
+        .is_err());
+    assert_eq!(runtime.origin(), Some(origin));
+    assert_eq!(runtime.snapshot(), before);
+    call(&state, "device.configure", &json!({"enabled":false}))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn enabled_local_readiness_acquires_verified_payload_before_owning_a_synthetic_hub() {
+    let fixture = Fixture::make(0).await;
+    let state = profile(&fixture, false).await;
+    let (_, npm) = crate::device_native_acquire::tests::fixture("hub-server");
+    *state.streams.p2.device.test_npm_executable.lock().unwrap() = Some(npm);
+    let sdk_root = state.dir.join("private-absent-sdk");
+    *state.streams.p2.device.test_local_tools.lock().unwrap() =
+        Some(Arc::new(crate::device_native_platform::LocalTools {
+            sdk: crate::device_native_platform::AndroidSdk {
+                root: Some(sdk_root),
+                adb: true,
+                emulator: true,
+                avdmanager: true,
+                legacy_avdmanager: false,
+            },
+            platform: "linux".into(),
+            environment: BTreeMap::new(),
+            cwd: state.dir.clone(),
+        }));
+    // The SDK is a discovery-only test value; no executable exists or is run there.
+    assert!(!state.dir.join("private-absent-sdk").exists());
+    let before = call(&state, "device.list", &json!({})).await.unwrap();
+    assert_eq!(before["hostStatus"], "disabled");
+    assert!(!state
+        .asset_profile_root
+        .join("tools/expo-device-hub/0.19.1")
+        .exists());
+    call(&state, "device.configure", &json!({"enabled":true}))
+        .await
+        .unwrap();
+    let runtime = state
+        .streams
+        .p2
+        .device
+        .native
+        .lock()
+        .await
+        .as_ref()
+        .unwrap()
+        .clone();
+    let origin = runtime
+        .origin()
+        .expect("The verified synthetic Node hub has passed readiness");
+    assert!(origin.starts_with("http://127.0.0.1:"));
+    crate::device_native_tools::InstalledTool::inspect(
+        &state
+            .asset_profile_root
+            .join("tools/expo-device-hub/0.19.1"),
+        crate::device_native_tools::Tool::Hub,
+    )
+    .unwrap();
+    assert!(!state.dir.join("private-absent-sdk").exists());
+    call(&state, "device.configure", &json!({"enabled":false}))
+        .await
+        .unwrap();
+    assert!(runtime.origin().is_none());
+}

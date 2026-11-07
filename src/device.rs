@@ -18,6 +18,11 @@ pub struct Runtime {
     native: tokio::sync::Mutex<Option<Arc<crate::device_native_runtime::NativeRuntime>>>,
     ssh: tokio::sync::Mutex<BTreeMap<String, SshRegistration>>,
     revision: std::sync::atomic::AtomicU64,
+    acquisition: tokio::sync::Mutex<()>,
+    #[cfg(test)]
+    test_npm_executable: Mutex<Option<PathBuf>>,
+    #[cfg(test)]
+    test_local_tools: Mutex<Option<Arc<crate::device_native_platform::LocalTools>>>,
     #[cfg(test)]
     test_ssh_executable: Mutex<Option<PathBuf>>,
 }
@@ -116,13 +121,93 @@ async fn ssh_runtimes(
         .filter_map(|config| registry.get(&config.id).map(|entry| entry.runtime.clone()))
         .collect())
 }
+fn npm_executable(s: &State) -> Option<PathBuf> {
+    #[cfg(test)]
+    if let Some(path) = s
+        .streams
+        .p2
+        .device
+        .test_npm_executable
+        .lock()
+        .unwrap()
+        .clone()
+    {
+        return Some(path);
+    }
+    #[cfg(not(test))]
+    let _ = s;
+    crate::executable::resolve(Path::new("npm"))
+}
+async fn acquire_tool(s: &State, tool: crate::device_native_tools::Tool) -> Result<(), Value> {
+    let _guard = s.streams.p2.device.acquisition.lock().await;
+    let root = s
+        .asset_profile_root
+        .join("tools")
+        .join(tool.package())
+        .join(tool.version());
+    if crate::device_native_tools::InstalledTool::inspect(&root, tool).is_ok() {
+        return Ok(());
+    }
+    let npm = npm_executable(s)
+        .ok_or_else(|| unavailable("Pinned device tool acquisition requires npm"))?;
+    crate::device_native_acquire::ensure(&s.asset_profile_root, tool, &npm).await?;
+    Ok(())
+}
+fn local_tools(s: &State) -> Arc<crate::device_native_platform::LocalTools> {
+    #[cfg(test)]
+    if let Some(tools) = s.streams.p2.device.test_local_tools.lock().unwrap().clone() {
+        return tools;
+    }
+    Arc::new(crate::device_native_platform::LocalTools::discover(
+        std::env::vars().collect(),
+        s.dir.clone(),
+    ))
+}
+async fn ready_local_runtime(
+    s: &State,
+    settings: &Value,
+) -> Result<Option<Arc<crate::device_native_runtime::NativeRuntime>>, Value> {
+    if let Some(runtime) = native_runtime(s).await? {
+        return Ok(Some(runtime));
+    }
+    if settings["enableDeviceSupport"] == false {
+        return Ok(None);
+    }
+    let tools = local_tools(s);
+    let available = [
+        crate::device_native_hub::Platform::Ios,
+        crate::device_native_hub::Platform::Android,
+    ]
+    .into_iter()
+    .any(|platform| tools.availability_reason(platform).is_none());
+    if !available {
+        return Ok(None);
+    }
+    acquire_tool(s, crate::device_native_tools::Tool::Hub).await?;
+    native_runtime(s).await
+}
+fn tool_metadata(s: &State, view: &mut Value) {
+    view["supportsToolUpdate"] = json!(cfg!(target_os = "linux"));
+    let agent = s.asset_profile_root.join("tools/agent-device/0.21.31");
+    if let Some(hosts) = view["hosts"].as_array_mut() {
+        for host in hosts.iter_mut().filter(|host| host["id"] == "local") {
+            host["agentDeviceInstalled"] =
+                json!(crate::device_native_tools::InstalledTool::inspect(
+                    &agent,
+                    crate::device_native_tools::Tool::Agent
+                )
+                .is_ok());
+        }
+    }
+}
 async fn selected_runtime(
     s: &State,
     p: &Value,
 ) -> Result<Option<Arc<crate::device_native_runtime::NativeRuntime>>, Value> {
     let host = p["hostId"].as_str().unwrap_or("local");
     if host == "local" {
-        return native_runtime(s).await;
+        let settings = crate::settings::read(s).map_err(invalid)?;
+        return ready_local_runtime(s, &settings).await;
     }
     let settings = crate::settings::read(s).map_err(invalid)?;
     ssh_runtimes(s, &settings).await?;
@@ -149,10 +234,7 @@ async fn native_runtime(
         Ok(_) => {}
     }
     let node=crate::executable::resolve(Path::new("node")).ok_or_else(||json!({"_tag":"NodeRuntimeUnavailableError","feature":"Local device support","message":"Local device support requires Node.js. Install Node.js and make sure node is on PATH, then retry."}))?;
-    let tools = Arc::new(crate::device_native_platform::LocalTools::discover(
-        std::env::vars().collect(),
-        s.dir.clone(),
-    ));
+    let tools = local_tools(s);
     let platforms = [
         crate::device_native_hub::Platform::Ios,
         crate::device_native_hub::Platform::Android,
@@ -605,6 +687,7 @@ async fn inspect(s: &State) -> Reply {
             .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
             + 1
     );
+    tool_metadata(s, &mut view);
     Ok(view)
 }
 async fn state_inner(s: &State) -> Reply {
@@ -647,11 +730,12 @@ async fn state_inner(s: &State) -> Reply {
             .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
             + 1
     );
+    tool_metadata(s, &mut state);
     Ok(state)
 }
 async fn local_state(s: &State) -> Reply {
     let settings = crate::settings::read(s).map_err(invalid)?;
-    if let Some(runtime) = native_runtime(s).await? {
+    if let Some(runtime) = ready_local_runtime(s, &settings).await? {
         runtime.configure(&settings).await?;
         return match runtime.list().await {
             Ok(state) => Ok(state),
@@ -796,6 +880,15 @@ async fn call_inner(s: &State, tag: &str, p: &Value) -> Reply {
     }
     match tag {
         "device.list" => {
+            if let Some(update) = p.get("updateTool") {
+                let tool = match update.as_str() {
+                    Some("hub") => crate::device_native_tools::Tool::Hub,
+                    Some("agent") => crate::device_native_tools::Tool::Agent,
+                    _ => return Err(invalid("Expected hub or agent device tool")),
+                };
+                acquire_tool(s, tool).await?;
+                return Box::pin(inspect(s)).await;
+            }
             if p["inspectOnly"] == true && p.get("updateTool").is_none() {
                 return Box::pin(inspect(s)).await;
             }
