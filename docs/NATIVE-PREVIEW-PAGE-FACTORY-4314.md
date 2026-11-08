@@ -177,3 +177,11 @@ Required physical acceptance remains:
 Run only a coordinated focused build/runtime batch in the existing target and a
 private rootless container. No live profile, host display, credential, microphone
 or paid provider call is part of this source checkpoint.
+
+The clean integrated candidate subsequently passes both strict all-target
+modes and the three exact credential/cancellation/physical-factory cases in
+private rootless containers. See `page-toolkit-integrated-clean-2` and
+`page-toolkit-all-targets-clean-1`. The two external-asset process fixtures are
+explicit opt-in tests, each selected by exact name plus `--ignored`; ordinary
+repository CI does not include their external pinned source/runtime mounts.
+No fixture silently succeeds when those dependencies are unavailable.

@@ -83,3 +83,20 @@ inside the coordinated private container. They have real passing receipts above;
 ordinary unit-test execution must not silently pretend those assets exist or
 return success without exercising the case. The credential/projection case
 remains an ordinary unit test. Public MCP selection stays closed.
+
+Clean integration follow-up: `page-toolkit-integrated-clean-2` compiles both
+strict library modes and runs all three exact cases on candidate `0c71342`,
+with the two process fixtures explicitly selected using `--ignored`.
+`page-toolkit-all-targets-clean-1` also passes strict all-target checks in both
+modes and the full static filesystem-safety preflight. The unrelated worktree
+`events.rs` patch is absent from this integrated source and remains preserved
+in its original worktree. These replace the earlier worktree-contaminated
+integration qualification, while preserving those earlier receipts unchanged.
+
+The actual O3 authority continues to require the current provider instance and
+owner generation, including readonly capture. The whole-original registry
+oracle's foreign-provider readonly behavior is reference evidence; it does not
+prove that stricter O3 authority has foreign-read parity. A source-specific
+readonly credential path, actual provider-manager capability replacement and
+inherited/related thread projection semantics remain separate work. Generic
+mutation authority has not been relaxed.
