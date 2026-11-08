@@ -223,3 +223,5 @@ mod browser_keyboard;
 mod browser_lifetime;
 #[cfg(test)]
 mod terminal_environment_oracle_tests;
+
+pub mod thread_open;

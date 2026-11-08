@@ -23,6 +23,9 @@ fn spawn_server() -> (String, String) {
 }
 
 fn spawn_with_provider(fake: bool) -> (String, String) {
+    spawn_with_runtime(fake, false)
+}
+fn spawn_with_runtime(fake: bool, native_visit: bool) -> (String, String) {
     let dir = std::env::temp_dir().join(format!(
         "o3-conformance-{}-{}",
         std::process::id(),
@@ -45,6 +48,11 @@ fn spawn_with_provider(fake: bool) -> (String, String) {
     let base = format!("http://{}", listener.local_addr().unwrap());
     std::thread::spawn(move || {
         let state = o3_server::store::State::open(&dir).unwrap();
+        if native_visit {
+            let node = std::env::var("O3_ADMITTED_NODE").expect("Admitted native runtime required");
+            o3_server::thread_open::install(&state, &["--native-search-node".into(), node])
+                .unwrap();
+        }
         if fake {
             *state.provider.lock().unwrap() =
                 Some(std::sync::Arc::new(o3_server::provider::ScriptedProvider));
@@ -196,7 +204,8 @@ fn config_and_settings_round_trip_unknown_fields_and_secret_sentinel() {
 }
 #[test]
 fn thread_commands_are_durable_and_idempotent() {
-    let (_, c) = connected(false);
+    let (base, secret) = spawn_with_runtime(false, true);
+    let c = pair(&base, &secret).unwrap();
     create(&c, "t1");
     let before = snap(&c, "t1");
     create(&c, "t1");
@@ -213,15 +222,22 @@ fn thread_commands_are_durable_and_idempotent() {
         ("thread.unsettle", "settledAt", false),
         ("thread.visit", "lastVisitedAt", true),
     ] {
-        c.rpc(
-            "orchestration.dispatchCommand",
-            json!({"type":command,"commandId":command,"threadId":"t1","reason":"user"}),
-        )
-        .unwrap();
+        let mut payload =
+            json!({"type":command,"commandId":command,"threadId":"t1","reason":"user"});
+        if command == "thread.visit" {
+            payload["visitedAt"] = json!("2999-01-01T00:00:00.000Z");
+        }
+        c.rpc("orchestration.dispatchCommand", payload).unwrap();
         assert_eq!(
             !snap(&c, "t1")["projection"]["thread"][field].is_null(),
             set
         );
+        if command == "thread.visit" {
+            assert_eq!(
+                snap(&c, "t1")["projection"]["thread"][field],
+                "2999-01-01T00:00:00.000Z"
+            );
+        }
     }
     c.rpc("orchestration.dispatchCommand",json!({"type":"thread.metadata.update","commandId":"rename","threadId":"t1","title":"Renamed"})).unwrap();
     assert_eq!(snap(&c, "t1")["projection"]["thread"]["title"], "Renamed");

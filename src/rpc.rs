@@ -191,6 +191,28 @@ fn dispatch_command_error(s: &Arc<State>, p: &Value, message: String) -> Value {
             cause = json!({"name":"OrchestratorDispatchError","message":format!("Failed to dispatch orchestration command run.interrupt ({}).",p["commandId"].as_str().unwrap_or("")),"cause":message});
         }
     }
+    if p["type"] == "thread.visit" {
+        if message == "Thread visit projection timestamp is invalid"
+            || message.starts_with("Thread visit projection unavailable: ")
+        {
+            detail = format!(
+                "Failed to load orchestration projection for thread {}.",
+                p["threadId"].as_str().unwrap_or("")
+            );
+            cause = json!({"name":"OrchestratorProjectionError","message":detail});
+        } else if message.ends_with(" is not a valid timestamp.") || message == "Thread is deleted"
+        {
+            let native_message = if message == "Thread is deleted" {
+                format!(
+                    "Thread {} is deleted.",
+                    p["threadId"].as_str().unwrap_or("")
+                )
+            } else {
+                message.clone()
+            };
+            cause = json!({"name":"OrchestratorDispatchError","message":format!("Failed to dispatch orchestration command thread.visit ({}).",p["commandId"].as_str().unwrap_or("")),"cause":native_message});
+        }
+    }
     json!({"_tag":"OrchestrationV2DispatchCommandError","commandId":p["commandId"],"commandType":p["type"],"message":detail,"detail":detail,"cause":cause})
 }
 

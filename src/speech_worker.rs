@@ -2,6 +2,7 @@
 mod frame;
 mod process;
 mod seal;
+mod thread_open;
 pub use process::Cleanup;
 pub use seal::{EnginePackage, SealedFile};
 

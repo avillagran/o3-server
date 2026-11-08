@@ -15,8 +15,10 @@ p.add_argument("--sha256")
 p.add_argument("--github-env", type=pathlib.Path)
 p.add_argument("--image", default="localhost/o3-server-tests:local")
 a=p.parse_args()
+capsules=[]
 if node_admission.isolated():
-    receipt=node_admission.admit(a.node, a.sha256)
+    probe=(lambda path,digest: node_admission.probe_version(path,digest,retained_capsule=capsules.append)) if a.github_env else node_admission.probe_version
+    receipt=node_admission.admit(a.node, a.sha256,probe=probe)
 else:
     if subprocess.check_output(["podman","--remote=false","info","--format","{{.Host.Security.Rootless}}"],text=True).strip()!="true":
         raise SystemExit("Rootless Podman is required for Node admission")
@@ -41,10 +43,20 @@ else:
 if a.github_env:
     if not (os.environ.get("GITHUB_ACTIONS")=="true" and os.environ.get("CI")=="true" and pathlib.Path("/.dockerenv").is_file()):
         raise SystemExit("GitHub environment export requires the disposable CI job")
+    if len(capsules)!=1:
+        raise SystemExit("A successful owned Node capsule is required for CI export")
+    capsule=pathlib.Path(capsules[0])
+    file,info=node_admission._open(capsule)
+    with file:
+        if (info.st_uid!=os.geteuid() or info.st_nlink!=1 or info.st_mode & 0o222
+                or not info.st_mode & 0o111 or node_admission._hash(file)!=receipt["sha256"]
+                or info.st_size!=receipt["bytes"]):
+            raise SystemExit("Retained Node capsule changed before CI export")
+    receipt["runtimeCapsule"]={"path":str(capsule),"sha256":receipt["sha256"],"bytes":receipt["bytes"]}
     fd=os.open(a.github_env,os.O_WRONLY|os.O_APPEND|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_CLOEXEC)
     if not stat.S_ISREG(os.fstat(fd).st_mode):
         os.close(fd)
         raise SystemExit("GitHub environment must be a regular file")
     with os.fdopen(fd,"w") as file:
-        for key,value in node_admission.environment(receipt).items():file.write(f"{key}={value}\n")
+        for key,value in node_admission.environment(receipt,capsule).items():file.write(f"{key}={value}\n")
 print(json.dumps(receipt,sort_keys=True))
