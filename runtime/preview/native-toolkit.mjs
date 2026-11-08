@@ -2,6 +2,7 @@
 // this module. All State, caller and file capabilities are explicit dependencies.
 import fs from 'node:fs';import path from 'node:path';import vm from 'node:vm';
 import {createRequire,stripTypeScriptTypes} from 'node:module';import {pathToFileURL} from 'node:url';import {createHash} from 'node:crypto';
+import {reserveProducer} from './producer-reservation.mjs';
 export async function createNativePreviewToolkit({sourceRoot,nativeRoot,effectRoot,platform}){
  if(typeof vm.SourceTextModule!=='function')throw Error('Exact admitted VM-module runtime required');
  const manifest=JSON.parse(fs.readFileSync(new URL('./toolkit-native-manifest.json',import.meta.url),'utf8'));
@@ -14,7 +15,7 @@ export async function createNativePreviewToolkit({sourceRoot,nativeRoot,effectRo
  if(!platform||typeof platform.captureCaller!=='function'||typeof platform.invoke!=='function'||typeof platform.markUsed!=='function'||typeof platform.environmentId!=='string'||!Array.isArray(platform.supportedOperations))throw Error('Owned toolkit platform required');
  const require=createRequire(path.join(effectRoot,'package.json'));
  const load=async name=>name.startsWith('node:')?import(name):import(pathToFileURL(require.resolve(name)).href);
- const Effect=await load('effect/Effect'),Context=await load('effect/Context'),Layer=await load('effect/Layer'),Schema=await load('effect/Schema'),Fiber=await load('effect/Fiber'),Queue=await load('effect/Queue'),Stream=await load('effect/Stream'),Deferred=await load('effect/Deferred'),ManagedRuntime=await load('effect/ManagedRuntime'),SecureRandom=await load('effect/crypto/SecureRandom'),FileSystem=await load('effect/FileSystem');
+ const Exit=await load('effect/Exit'),Effect=await load('effect/Effect'),Context=await load('effect/Context'),Layer=await load('effect/Layer'),Schema=await load('effect/Schema'),Fiber=await load('effect/Fiber'),Queue=await load('effect/Queue'),Stream=await load('effect/Stream'),Deferred=await load('effect/Deferred'),ManagedRuntime=await load('effect/ManagedRuntime'),SecureRandom=await load('effect/crypto/SecureRandom'),FileSystem=await load('effect/FileSystem');
  const {McpServer}=await load('effect/ai');
  const contracts=await import(pathToFileURL(path.join(nativeRoot,'packages/contracts/src/index.ts')).href);
  const NativePage=await import(pathToFileURL(path.join(nativeRoot,'apps/server/src/preview/ServerBrowserPage.ts')).href);
@@ -65,6 +66,15 @@ export async function createNativePreviewToolkit({sourceRoot,nativeRoot,effectRo
      const fiber=Fiber.getCurrent(),owner=fiber&&Context.getOrUndefined(fiber.context,Invocation);
      if(!owner||!value.request||typeof value.request!=='object')return Effect.fail(unavailable());
      offered.set(value.request,owner);
+     // Reserve the original producer before Queue.offer can publish it. Source
+     // completion fences producers, not callbacks already owned by this queue.
+     if(platform.reserveCallback){
+      return reserveProducer(Effect,Exit,{
+       reserve:()=>platform.reserveCallback(owner.caller,owner.tool,value.request,{updateCurrentTab:owner.input.updateCurrentTab!==false}),
+       offer:Queue.offer(queue,value),
+       abandon:()=>platform.abandonCallback(owner.caller,value.request),
+      }).pipe(Effect.mapError(()=>unavailable()));
+     }
     }
     return Queue.offer(queue,value);
    })});
@@ -99,7 +109,7 @@ export async function createNativePreviewToolkit({sourceRoot,nativeRoot,effectRo
   const owner=offered.get(event.request);
   if(!owner)return Effect.fail(unavailable());
   const dependencies=vm.createContext({Effect,ServerBrowserPage:NativePage,broker,SERVER_HOST_CLIENT_ID:host.clientId,performance,
-   runOperation:request=>platform.invoke(owner.caller,owner.tool,request,{updateCurrentTab:owner.input.updateCurrentTab!==false}),
+   runOperation:(request,deadlineMs)=>platform.invoke(owner.caller,owner.tool,request,{updateCurrentTab:owner.input.updateCurrentTab!==false,deadlineMs}),
    markUsed:request=>platform.markUsed(owner.caller,request),
   });
   vm.runInContext(stripTypeScriptTypes(hostMethod+'\nglobalThis.nativeHandleRequest=handleRequest;',{mode:'strip'}),dependencies);
@@ -110,9 +120,9 @@ export async function createNativePreviewToolkit({sourceRoot,nativeRoot,effectRo
  })));
  await runtime.runPromise(Deferred.await(connected));
  return {
-  async invoke(tool,input,{signal}={}){
+  async invoke(tool,input,{signal,caller:capturedCaller}={}){
    if(disposed||!Object.hasOwn(toolkit.tools,tool))throw Error('Unadmitted private toolkit operation');
-   const caller=await platform.captureCaller(),descriptor=caller?.scope;
+   const caller=capturedCaller??await platform.captureCaller(),descriptor=caller?.scope;
    if(!descriptor||descriptor.environmentId!==platform.environmentId||!Array.isArray(descriptor.capabilities)||typeof caller.getThreadProjection!=='function')throw Error('Owned invocation scope unavailable');
    const scope=Object.freeze({...descriptor,capabilities:new Set(descriptor.capabilities)});issued.set(scope,caller);
    const registrations=[];
@@ -129,7 +139,7 @@ export async function createNativePreviewToolkit({sourceRoot,nativeRoot,effectRo
     // The actual Effect MCP registration performs native parameter decoding and
     // both content/structuredContent formatting; no Rust Value roundtrip here.
     return await runtime.runPromise(registration.handle(input).pipe(Effect.provide(registration.services)),{signal});
-   }finally{issued.delete(scope);}
+   }finally{issued.delete(scope);if(platform.endInvocation)await platform.endInvocation(caller);}
   },
   // This disposes logical broker/host fibers only. The Rust owner must fence
   // and drain entered execution before retiring the worker or claiming cleanup.

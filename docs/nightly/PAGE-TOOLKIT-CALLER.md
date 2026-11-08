@@ -98,3 +98,33 @@ capability; expanding an evaluate receipt to arbitrary status calls would
 weaken the existing fixed operation gate. Human handoff, source control queue
 drain, dialog bypass, callback deadline, and ordinary owner close continue to
 use the original source distinctions. No new grace period is introduced.
+
+## Producer reservations and source completion
+
+The optional private owner adapter reserves each original broker producer
+before `Queue.offer`. Reservation completion is uninterruptible; the actual
+offer remains interruptible. A failed or interrupted offer abandons its
+unstarted reservation. Native Effect also returns `false` when a queue is
+closed, so successful `false` must abandon the reservation as well. It must not
+be mistaken for a callback that can still reach the host.
+
+Source completion follows the original invocation's real `finally`. It fences
+new producers, while an already reserved and entered callback retains its own
+execution and `markUsed` finalizer after the MCP observer returns. A private
+receipt can never change the original tool class or transfer cleanup to a
+later invocation.
+
+The focused private Node proof uses pinned Effect 4.1.2 queues and the whole
+original toolkit/broker/host callback. Direct queue cases cover accepted,
+closed, and interrupted offers. Whole-source cases cover normal completion,
+interruption while reservation is pending, and interruption after callback
+entry. The last case observes source end before the actual late `markUsed`.
+Receipt: `/var/tmp/o3-server/page-toolkit-producers-node-1/page-blnepgmq/result.json`.
+The earlier protocol and clock receipts remain separately qualified in
+`tests/fixtures/native-preview-toolkit-producers-4314.json`.
+
+This verifies source producer accounting with a synthetic host. The concrete
+Rust continuation owner, physical per-tab dispatch, absolute callback deadline
+conversion, reconnect/live-tab reporting, and outer MCP transport remain
+unaccepted. In-progress Rust raw-input and callback-ledger changes are not
+covered by this Node result and remain outside this checkpoint.

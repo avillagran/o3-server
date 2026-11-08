@@ -4,15 +4,21 @@ import './projection-caller-oracle.mjs';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import {createNativePreviewToolkit} from '../../runtime/preview/native-toolkit.mjs';
+import {SessionControl} from '/native/apps/server/src/preview/SessionControl.ts';
 const projection=JSON.parse(fs.readFileSync('/out/proof.json','utf8'));
 let rawProjection=projection.cases.find(entry=>entry.status==='running'&&!entry.background).input;
 const calls=[],used=[];
-let throwNext=false,held=null;
+let throwNext=false,held=null,queueLane=null;
 const caller={scope:{environmentId:'environment',capabilities:['preview'],issuedAt:1,requestNamespace:'private',thread:{threadId:'thread',providerSessionId:'actual-provider-session',providerInstanceId:'codex'}},getThreadProjection:async id=>{assert.equal(id,'thread');return rawProjection;}};
-const toolkit=await createNativePreviewToolkit({sourceRoot:'/toolkit-native',nativeRoot:'/native',effectRoot:'/deps',platform:{environmentId:'environment',attachmentsDir:'/out/attachments',supportedOperations:['status','evaluate'],captureCaller:async()=>caller,markUsed:async(owner,request)=>{assert.equal(owner,caller);used.push(request.requestId);},invoke:async(owner,tool,request)=>{
+const toolkit=await createNativePreviewToolkit({sourceRoot:'/toolkit-native',nativeRoot:'/native',effectRoot:'/deps',platform:{environmentId:'environment',attachmentsDir:'/out/attachments',supportedOperations:['status','evaluate'],captureCaller:async()=>caller,markUsed:async(owner,request)=>{assert.equal(owner,caller);used.push(request.requestId);},invoke:async(owner,tool,request,metadata)=>{
+ assert(Number.isFinite(metadata.deadlineMs));assert(metadata.deadlineMs<=performance.now()+request.timeoutMs);
  assert.equal(owner,caller);assert(['preview_status','preview_evaluate'].includes(tool));assert.equal(request.agentSessionId,'environment\0actual-provider-session\0thread');assert(['status','evaluate'].includes(request.operation));calls.push({tool,operation:request.operation,agentSessionId:request.agentSessionId});
  if(throwNext){throwNext=false;throw Error('synthetic owner failure\nprivate diagnostic omitted');}
  if(held&&request.operation==='evaluate'){held.entered.resolve(request);return await held.result.promise;}
+ if(queueLane&&request.operation==='evaluate'){
+  const lane=queueLane;lane.requested.resolve(request);
+  return await lane.control.agent(request.agentSessionId,async()=>{lane.started++;return 'queued native callback';},metadata.deadlineMs);
+ }
  return request.operation==='evaluate'?'\ud800':{available:true,visible:false,tabId:null,url:null,title:null,loading:false};
 }}});
 try{
@@ -51,6 +57,26 @@ try{
  assert(used.includes(entered.requestId),'Entered callback must finish its original finally after caller interruption');
  held=null;
  const survivor=await toolkit.invoke('preview_status',{});assert.equal(survivor.isError,false);
- fs.writeFileSync('/out/toolkit-proof.json',JSON.stringify({complete:true,wholeNativeHandlers:true,wholeNativeBroker:true,wholeNativeThreadAccess:true,wholeNativeHostCallback:true,calls,used,result,verdicts,failure,callerInterruptedEnteredCallbackDrained:true,hostSurvivedCallerInterruption:true,qualification:'Complete native source composition with a contract-valid synthetic host; actual State and CDP consumers remain unproven.'},null,2)+'\n');
+ const queueCases=[];
+ for(const disposition of ['caller-interrupt','human-handoff','owner-close']){
+  const key='environment\0actual-provider-session\0thread',control=new SessionControl(key);
+  const blocking=Promise.withResolvers(),blockerEntered=Promise.withResolvers();
+  // Explicit fixture predecessor; it is not another MCP operation.
+  const predecessor=control.agent(key,async()=>{blockerEntered.resolve();await blocking.promise;});await blockerEntered.promise;
+  queueLane={control,requested:Promise.withResolvers(),started:0};
+  const abort=new AbortController(),pending=toolkit.invoke('preview_evaluate',{expression:'queuedHostCallback'},{signal:abort.signal});
+  const observation=pending.then(value=>({value}),()=>({interrupted:true}));
+  const request=await queueLane.requested.promise;assert.equal(queueLane.started,0);
+  let ownership;
+  if(disposition==='caller-interrupt'){abort.abort();assert.equal((await observation).interrupted,true);}
+  else ownership=disposition==='human-handoff'?control.take('human'):control.close();
+  blocking.resolve();await predecessor;if(ownership)await ownership;
+  if(disposition!=='caller-interrupt')assert.equal((await observation).value.isError,true);
+  const until=performance.now()+2000;while(!used.includes(request.requestId)&&performance.now()<until)await new Promise(resolve=>setTimeout(resolve,1));
+  assert(used.includes(request.requestId));assert.equal(queueLane.started,disposition==='caller-interrupt'?1:0);
+  queueCases.push({disposition,callbackStarted:queueLane.started,finallyObserved:true,fixturePredecessor:true});
+  await control.close();queueLane=null;
+ }
+ fs.writeFileSync('/out/toolkit-proof.json',JSON.stringify({complete:true,wholeNativeHandlers:true,wholeNativeBroker:true,wholeNativeThreadAccess:true,wholeNativeHostCallback:true,wholeNativeSessionControl:true,calls,used,result,verdicts,failure,queueCases,callerInterruptedEnteredCallbackDrained:true,hostSurvivedCallerInterruption:true,qualification:'Complete native source composition with a contract-valid synthetic host and explicit fixture Control predecessor; actual State and CDP consumers remain unproven.'},null,2)+'\n');
 }finally{await toolkit.disposeBroker();}
 console.log('WHOLE_NATIVE_TOOLKIT_SOURCE_PASS');
