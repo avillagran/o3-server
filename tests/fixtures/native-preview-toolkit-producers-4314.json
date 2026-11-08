@@ -1,0 +1,36 @@
+{
+  "revision": "83a3674ffd84ffb33de768210c806cb1ac53fd80",
+  "qualification": "Private pinned Node/Effect and whole-source toolkit composition with a synthetic host; no Rust continuation owner, actual CDP, Rust Instant conversion or public MCP acceptance.",
+  "sourceSha256": {
+    "runtime/preview/native-toolkit.mjs": "852e9a4979a317f9f3eb0080bb17df4443ca297f5a7d7d5ba9718f18716ff327",
+    "runtime/preview/producer-reservation.mjs": "81ebcb0cfb0acdd9ca36467307d4f39b81963fcfc50e0e6420c99d655b95f9bd",
+    "runtime/preview/toolkit-pipe-client.mjs": "1c83a4e404c5a52e65f3863b911f2a04a3d76ff77f9f41f48bced4a2a4f7c51d",
+    "tests/preview/toolkit-producers.mjs": "7bee22b94e5794e3307c7668d92daa28e8b9e191754ac642dcdebaf0cbc5ff78",
+    "tests/preview/toolkit-pipe.mjs": "156835f09e0c100b66776fdaa0601149dbdb560e43d76c5111202f09bd4fdb99",
+    "tests/preview/toolkit-clock.mjs": "414a786a52e52625249570a9e37c5cf3c9cf03c0a90ed56abf86d6d9099360a1",
+    "tests/preview/toolkit-source-oracle.mjs": "15e4528307240f7e93ac4658e836d3594de611611d67007bdd6725f7a65f5959"
+  },
+  "producerReceipt": "/var/tmp/o3-server/page-toolkit-producers-node-1/page-blnepgmq/result.json",
+  "producerProofSha256": "c984b6e22ce436cfea7087bfd4571bd789d4fc06727d02a0543aeec3ee8a5e76",
+  "directQueueCases": [
+    "accepted",
+    "closed",
+    "interrupted"
+  ],
+  "wholeSourceCases": [
+    "normal",
+    "interrupt-before-offer",
+    "interrupt-after-entry-with-late-finalizer"
+  ],
+  "previousProtocolReceipt": "/var/tmp/o3-server/page-toolkit-pipe-node-1/page-2z1g2nnn/proof.json",
+  "previousClockReceipt": "/var/tmp/o3-server/page-toolkit-clock-node-1/page-ga2gtchc/proof.json",
+  "clockQualification": "Node hrtime versus Linux CLOCK_MONOTONIC only; no production cross-process conversion or Rust Instant equivalence claim.",
+  "pending": [
+    "Concrete Rust caller and callback continuation owner",
+    "Frozen original callback request and raw input physical acceptance",
+    "Original absolute Control deadline conversion",
+    "Real per-tab workers, all twelve consumers, files and recording",
+    "Reconnect and reportLiveTabs lifecycle",
+    "Outer MCP transport, original bounds and default catalog selection"
+  ]
+}

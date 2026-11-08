@@ -1,0 +1,13 @@
+# Human device viewer access
+
+Nightly 4301 (`4cb6945dc60ed03f567dc5daafd083e52308e82b`) keeps human viewer readiness separate from agent device readiness. `DeviceHubProxy` authenticates media and reads `DeviceService.currentReadiness`; `agentReadinessIfSupported` separately requires `enableAgentDeviceAccess`. The native proxy module is unchanged from the pinned 4288 source.
+
+The human proxy and fallback ADB viewer now require device support, their existing live session and the native route-specific scope. They do not require agent device access. This change does not add device MCP tools, enable an agent capability, change roles, or alter ticket audiences/session revocation.
+
+The existing native route planner supplies the admission scope: read-only HTTP and the inventory WebSocket require `orchestration:read`; device-control WebSockets and mutating stream-mode/settings/fold calls require `orchestration:operate`. Native screenshot POST remains a read operation. An operate scope does not implicitly grant read access. Invalid paths/methods remain refused before opening an upstream transport.
+
+The complete native proxy generator runs only inside Podman and accepts only the audited 4288 or 4301 revisions (optional fifth argument after checkout, contracts, output, and dependency roots). It executes the whole native module and dependency graph with real Effect 4.1.2, injecting authenticated session, readiness, and HTTP transport boundaries. The 4301 run covers 816 HTTP outcomes and 12 WebSocket scope outcomes. The latter stop at an unavailable-hub boundary, avoiding any invented native socket transport. The retained scope fixture records all source hashes.
+
+Focused physical tests use real server HTTP admission, the registered synthetic SSH owner and loopback hub, plus the existing private ADB CLI. They cover agent-disabled screenshots/inventory/control, read versus operate scopes, RPC-ticket rejection, media-ticket admission, revocation, and disabling support. Separate actual proxied WebSocket tests exchange messages with agent access disabled and verify closure and admission-permit release after revocation or disablement. No VM, real account, host SDK, or host device is used. Profiles and exact fixture files are retained; tests never recursively delete a tree.
+
+Device MCP tools remain absent from the current catalog; that is a preserved unsupported consumer, not proof of a fully implemented native agent-device toolchain. Live Android video, actual Home input, and mounted sidepanel closure still require the separate emulator acceptance phase with immutable SDK/server/client artifacts.

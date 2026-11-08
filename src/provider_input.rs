@@ -3,14 +3,87 @@ use crate::provider::RunInput;
 use base64::Engine;
 use serde_json::{json, Value};
 
+/// Version-one records are native context; older arbitrary context values stay compatible.
+fn native_context(value: &Value) -> bool {
+    value.is_object() && value.get("version").is_some()
+}
+
+pub(crate) fn normalize_command_context(
+    command: &Value,
+) -> Result<std::borrow::Cow<'_, Value>, String> {
+    let Some(context) = command.get("context").filter(|value| native_context(value)) else {
+        return Ok(std::borrow::Cow::Borrowed(command));
+    };
+    let context = crate::composer_context::decode_context(context).map_err(str::to_owned)?;
+    let mut command = command.clone();
+    command["context"] = context;
+    Ok(std::borrow::Cow::Owned(command))
+}
+
+/// Project native records before provider commands or user-message materialization.
+pub(crate) fn project_text(text: &str, context: Option<&Value>) -> Result<String, String> {
+    if let Some(context) = context.filter(|value| native_context(value)) {
+        let context = crate::composer_context::decode_context(context).map_err(str::to_owned)?;
+        return Ok(crate::composer_context::project(
+            text,
+            context["records"].as_array().unwrap(),
+        ));
+    }
+    Ok(crate::composer_context::project(text, &[]))
+}
+
+/// Native context is reference-addressed; arbitrary legacy context remains appended.
+pub(crate) fn context_text(text: &str, context: Option<&Value>) -> Result<String, String> {
+    append_legacy_context(project_text(text, context)?, context)
+}
+
+fn append_legacy_context(mut result: String, context: Option<&Value>) -> Result<String, String> {
+    if let Some(context) = context.filter(|value| !value.is_null() && !native_context(value)) {
+        result.push_str("\n\nAdditional context supplied by the user:\n");
+        result.push_str(&serde_json::to_string(context).map_err(|error| error.to_string())?);
+    }
+    Ok(result)
+}
+
+/// Corrupt legacy native records cannot fabricate entries in a portable handoff.
+pub(crate) fn historical_text(text: &str, context: Option<&Value>) -> String {
+    project_text(text, context).unwrap_or_else(|_| crate::composer_context::project(text, &[]))
+}
+
 pub(crate) fn content(input: &RunInput, claude: bool) -> Result<Vec<Value>, String> {
-    let mut blocks = materialize(
+    let blocks = materialize(
         &input.attachment_root,
         &input.text,
         &input.attachments,
         input.context.as_ref(),
         claude,
     )?;
+    finish_content(input, claude, blocks)
+}
+
+/// Goal commands already contain one native context envelope; do not project their payload again.
+pub(crate) fn projected_content(
+    input: &RunInput,
+    text: &str,
+    claude: bool,
+) -> Result<Vec<Value>, String> {
+    let text = append_legacy_context(text.to_owned(), input.context.as_ref())?;
+    let blocks = materialize_impl(
+        &input.attachment_root,
+        &text,
+        &input.attachments,
+        None,
+        claude,
+        false,
+    )?;
+    finish_content(input, claude, blocks)
+}
+
+fn finish_content(
+    input: &RunInput,
+    claude: bool,
+    mut blocks: Vec<Value>,
+) -> Result<Vec<Value>, String> {
     let history = input.model_selection["o3HistoricalContext"].as_str();
     if claude {
         if let Some(history) = history {
@@ -104,6 +177,17 @@ pub(crate) fn materialize(
     context: Option<&Value>,
     claude: bool,
 ) -> Result<Vec<Value>, String> {
+    materialize_impl(root, text, attachments, context, claude, true)
+}
+
+fn materialize_impl(
+    root: &std::path::Path,
+    text: &str,
+    attachments: &Value,
+    context: Option<&Value>,
+    claude: bool,
+    project: bool,
+) -> Result<Vec<Value>, String> {
     const BOOTSTRAP:&str="[User attached one or more files without additional text. Respond using the conversation context and the attached files.]";
     let only_think = regex::Regex::new(r"(?i)^Ultrathink:\s*$")
         .unwrap()
@@ -119,9 +203,8 @@ pub(crate) fn materialize(
     } else {
         text.to_owned()
     };
-    if let Some(context) = context.filter(|c| !c.is_null()) {
-        text.push_str("\n\nAdditional context supplied by the user:\n");
-        text.push_str(&serde_json::to_string(context).map_err(|e| e.to_string())?);
+    if project {
+        text = context_text(&text, context)?;
     }
     let mut budget = text.len().saturating_add(1024);
     let mut out = vec![json!({"type":"text","text":text})];
@@ -205,7 +288,7 @@ mod tests {
         let attachments = json!([{"id":id,"name":"big.png","mimeType":"image/png"}]);
         let codex = materialize(&root, "look", &attachments, None, false);
         let claude = materialize(&root, "look", &attachments, None, true);
-        std::fs::remove_dir_all(&root).unwrap();
+        // Fixture trees are retained for private container teardown.
         assert!(codex.unwrap().iter().any(|v| v["type"] == "localImage"));
         assert!(claude.is_err());
     }
@@ -248,7 +331,7 @@ mod history_tests {
                 .iter()
                 .any(|v| v["type"] == "image")
         );
-        std::fs::remove_dir_all(root).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }
 
@@ -288,6 +371,98 @@ mod final_budget_tests {
         assert_eq!(files.len(), 1);
         assert_eq!(std::fs::read_to_string(files[0].path()).unwrap(), history);
         assert_eq!(content(&input, false).unwrap(), blocks);
-        std::fs::remove_dir_all(root).unwrap();
+        // Fixture trees are retained for private container teardown.
+    }
+}
+
+#[cfg(test)]
+mod composer_context_tests {
+    use super::*;
+    #[test]
+    fn both_provider_blocks_and_goal_text_use_the_native_projection_without_raw_context() {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/composer-context.json")).unwrap();
+        let root = std::path::Path::new("/unused-attachment-root");
+        for case in fixture["projections"].as_array().unwrap() {
+            let context = json!({"version":1,"records":case["input"]["records"]});
+            if crate::composer_context::decode_context(&context).is_err() {
+                continue;
+            }
+            let text = case["input"]["text"].as_str().unwrap();
+            for claude in [false, true] {
+                let blocks = materialize(root, text, &json!([]), Some(&context), claude).unwrap();
+                assert_eq!(blocks[0]["text"], case["expected"], "{}", case["label"]);
+            }
+            assert_eq!(
+                project_text(text, Some(&context)).unwrap(),
+                case["expected"].as_str().unwrap()
+            );
+            assert_eq!(
+                historical_text(text, Some(&context)),
+                case["expected"].as_str().unwrap()
+            );
+        }
+    }
+    #[test]
+    fn codex_goal_projection_does_not_recursively_materialize_references_inside_payloads() {
+        let input_text = "/goal [selected](t3-context://v1/terminal/term)";
+        let literal = "literal [nested](t3-context://v1/skill/not-attached)";
+        let context = json!({"version":1,"records":[{"version":1,"kind":"terminal","contextId":"term","label":"Terminal","terminalId":"term","terminalLabel":"Terminal","lineStart":0,"lineEnd":0,"text":literal}]});
+        let projected = project_text(input_text, Some(&context)).unwrap();
+        let Some(crate::native_goal::Command::Set(objective)) =
+            crate::native_goal::parse(&projected, &json!([]))
+        else {
+            panic!("goal was not parsed");
+        };
+        let root = std::path::PathBuf::from("/unused-attachment-root");
+        let mut input = RunInput {
+            native_mcp: None,
+            provider_instance_id: "codex".into(),
+            native_session_id: None,
+            thread_id: "t".into(),
+            run_id: "r".into(),
+            cwd: root.clone(),
+            text: input_text.into(),
+            model_selection: json!({}),
+            runtime_mode: "full-access".into(),
+            interaction_mode: "default".into(),
+            attachment_root: root,
+            attachments: json!([]),
+            context: Some(context),
+        };
+        let body = format!("Start working toward this goal: {objective}");
+        let blocks = projected_content(&input, &body, false).unwrap();
+        assert_eq!(blocks[0]["text"], body);
+        assert!(body.contains(literal));
+        assert_eq!(body.matches("<t3_context version=").count(), 1);
+        assert!(!body.contains("unavailable="));
+        input.context = Some(json!({"proof":"legacy-goal-context"}));
+        let blocks = projected_content(&input, &body, false).unwrap();
+        assert_eq!(
+            blocks[0]["text"],
+            format!(
+                "{body}\n\nAdditional context supplied by the user:\n{}",
+                input.context.as_ref().unwrap()
+            )
+        );
+    }
+    #[test]
+    fn missing_records_become_unavailable_and_unversioned_legacy_context_stays_compatible() {
+        let text = "[gone](t3-context://v1/terminal/none)";
+        assert!(context_text(text, None)
+            .unwrap()
+            .contains("unavailable=\"true\""));
+        let legacy = json!({"records":[{"kind":"terminal","text":"legacy-proof"}]});
+        let command = json!({"text":"original","context":legacy});
+        assert_eq!(
+            normalize_command_context(&command).unwrap().as_ref(),
+            &command
+        );
+        assert_eq!(
+            context_text("original", Some(&legacy)).unwrap(),
+            format!("original\n\nAdditional context supplied by the user:\n{legacy}")
+        );
+        assert_eq!(historical_text("original", Some(&legacy)), "original");
+        assert!(context_text("original", Some(&json!({"version":2,"records":[]}))).is_err());
     }
 }

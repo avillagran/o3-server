@@ -1,0 +1,20 @@
+{
+  "reference": "v0.1.8-nightly.20261107.4340",
+  "revision": "a9e709f15f825cacac1b6d665fa1920c328d68b7",
+  "unchangedFrom": "83a3674ffd84ffb33de768210c806cb1ac53fd80",
+  "source": "apps/server/src/preview/ServerBrowser.ts",
+  "sha256": "e8b025a1c7de82ba8089c5fa7d4439ee69e1d19a74af7657a26a419a51cdfab6",
+  "methods": {
+    "profileStatus": {
+      "start": "  const profileStatus = ",
+      "end": "\n\n  const resolveOpenProfile = ",
+      "sha256": "9bf8e5ec8db4d4402f29268a674c2f3790a0645b59f4ada6430f21ab145c521d"
+    },
+    "statusWithTitle": {
+      "start": "  const statusWithTitle = ",
+      "end": "\n\n  const resolveNavigationUrl = ",
+      "sha256": "5b5fdacb363d8c40fd8a82881cf519927e0e018f9f5d1d6be3cecfb3c54f6d78"
+    }
+  },
+  "qualification": "Complete original no-tab formatter closures only. Source preparation is not executed validation."
+}

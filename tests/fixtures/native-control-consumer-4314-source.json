@@ -1,0 +1,11 @@
+{
+  "sourceRevision": "83a3674ffd84ffb33de768210c806cb1ac53fd80",
+  "sourcePath": "apps/server/src/preview/ServerBrowser.ts",
+  "sha256": "e8b025a1c7de82ba8089c5fa7d4439ee69e1d19a74af7657a26a419a51cdfab6",
+  "methods": {
+    "requireTab": "a59a03ce0a8052bc79fcf878a172838e741f0bb1309b650727ba4010f60f42fb",
+    "runOperation": "99ba1af76215f215867fd860c529f0de635a33c2166c90c5586089608c506832",
+    "READ_OPERATIONS": "98de053b90fb33654060d2ab821129a93a2c22b6f28a06b68df38c8cdeca9d03",
+    "tabKey": "7bfdcfd24edca9b2ba17454534e9a047624dd135626ff726e45cb5c37dae4602"
+  }
+}

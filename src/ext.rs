@@ -77,7 +77,7 @@ pub async fn call(s: &Arc<State>, tag: &str, p: Value) -> Result<Value, Value> {
         "orchestration.getFullThreadDiff" => Box::pin(threadq::full_thread_diff(s, p)).await,
         "orchestration.searchThreads" => threadq::search_threads(s, &p),
         "orchestration.searchThread" => threadq::search_thread(s, &p),
-        "server.discoverSourceControl" => crate::vcs::discover().await,
+        "server.discoverSourceControl" => crate::vcs::discover_for(s).await,
         "orchestration.getArchivedShellSnapshot" => threadq::archived_shell(s),
         "orchestration.getTurnItem" => threadq::turn_item(s, &p),
         "orchestration.getThreadProjection" => threadq::thread_projection(s, &p),

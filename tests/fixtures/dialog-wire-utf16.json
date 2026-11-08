@@ -1,0 +1,1955 @@
+{
+  "reference": "T3 nightly4301 CDP JSON wire; native JavaScript string semantics",
+  "cases": [
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\",\"defaultPrompt\":\"\\ud800\",\"url\":\"https://example.test/\"}}",
+      "message": [],
+      "defaultPrompt": [
+        55296
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\",\"defaultPrompt\":\"�\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"plain\",\"defaultPrompt\":\"𿑆*\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        112,
+        108,
+        97,
+        105,
+        110
+      ],
+      "defaultPrompt": [
+        55485,
+        56390,
+        42
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"plain\",\"defaultPrompt\":\"𿑆*\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"😀\",\"defaultPrompt\":\"򐂽;\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55357,
+        56832
+      ],
+      "defaultPrompt": [
+        55808,
+        56509,
+        59
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"😀\",\"defaultPrompt\":\"򐂽;\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\ud800\",\"defaultPrompt\":\"󠴴L\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55296
+      ],
+      "defaultPrompt": [
+        56131,
+        56628,
+        76
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"�\",\"defaultPrompt\":\"󠴴L\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udc00\",\"defaultPrompt\":\"\\udc86\\uddab]\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56320
+      ],
+      "defaultPrompt": [
+        56454,
+        56747,
+        93
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"�\",\"defaultPrompt\":\"��]\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"a\\ud800b\",\"defaultPrompt\":\"\\uddc9\\ude22n\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        97,
+        55296,
+        98
+      ],
+      "defaultPrompt": [
+        56777,
+        56866,
+        110
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"a�b\",\"defaultPrompt\":\"��n\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\ud800𐀀\\udc00\",\"defaultPrompt\":\"\\udf0c\\ude99\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55296,
+        55296,
+        56320,
+        56320
+      ],
+      "defaultPrompt": [
+        57100,
+        56985,
+        127
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"�𐀀�\",\"defaultPrompt\":\"��\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\u0000\\b\\f\\n\\r\\t\",\"defaultPrompt\":\"\\udf10\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        0,
+        8,
+        12,
+        10,
+        13,
+        9
+      ],
+      "defaultPrompt": [
+        57423,
+        57104,
+        144
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\u0000\\b\\f\\n\\r\\t\",\"defaultPrompt\":\"�\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\\\\\\"/🧪\",\"defaultPrompt\":\"plain\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        92,
+        34,
+        47,
+        55358,
+        56810
+      ],
+      "defaultPrompt": [
+        112,
+        108,
+        97,
+        105,
+        110
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\\\\\\"/🧪\",\"defaultPrompt\":\"plain\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\\\ud800\",\"defaultPrompt\":\"𵰸(\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        92,
+        117,
+        100,
+        56,
+        48,
+        48
+      ],
+      "defaultPrompt": [
+        55447,
+        56376,
+        40
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\\\ud800\",\"defaultPrompt\":\"𵰸(\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"퟿\\udc00 \",\"defaultPrompt\":\"򆢯9\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55295,
+        56320,
+        32
+      ],
+      "defaultPrompt": [
+        55770,
+        56495,
+        57
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"퟿� \",\"defaultPrompt\":\"򆢯9\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"𔠇!\",\"defaultPrompt\":\"󗔦J\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55314,
+        56327,
+        33
+      ],
+      "defaultPrompt": [
+        56093,
+        56614,
+        74
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"𔠇!\",\"defaultPrompt\":\"󗔦J\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"𙐎\\\"\",\"defaultPrompt\":\"\\udc60\\udd9d[\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55333,
+        56334,
+        34
+      ],
+      "defaultPrompt": [
+        56416,
+        56733,
+        91
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"𙐎\\\"\",\"defaultPrompt\":\"��[\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"𞀕#\",\"defaultPrompt\":\"\\udda3\\ude14l\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55352,
+        56341,
+        35
+      ],
+      "defaultPrompt": [
+        56739,
+        56852,
+        108
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"𞀕#\",\"defaultPrompt\":\"��l\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"𢰜$\",\"defaultPrompt\":\"\\udee6\\ude8b}\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55371,
+        56348,
+        36
+      ],
+      "defaultPrompt": [
+        57062,
+        56971,
+        125
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"𢰜$\",\"defaultPrompt\":\"��}\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"𧠣%\",\"defaultPrompt\":\"\\udf02\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55390,
+        56355,
+        37
+      ],
+      "defaultPrompt": [
+        57385,
+        57090,
+        142
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"𧠣%\",\"defaultPrompt\":\"�\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"𬐪&\",\"defaultPrompt\":\"\\udf79\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55409,
+        56362,
+        38
+      ],
+      "defaultPrompt": [
+        57708,
+        57209,
+        159
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"𬐪&\",\"defaultPrompt\":\"�\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"𱀱'\",\"defaultPrompt\":\"𬐪&\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55428,
+        56369,
+        39
+      ],
+      "defaultPrompt": [
+        55409,
+        56362,
+        38
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"𱀱'\",\"defaultPrompt\":\"𬐪&\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"𵰸(\",\"defaultPrompt\":\"񽂡7\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55447,
+        56376,
+        40
+      ],
+      "defaultPrompt": [
+        55732,
+        56481,
+        55
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"𵰸(\",\"defaultPrompt\":\"񽂡7\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"𺠿)\",\"defaultPrompt\":\"󍴘H\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55466,
+        56383,
+        41
+      ],
+      "defaultPrompt": [
+        56055,
+        56600,
+        72
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"𺠿)\",\"defaultPrompt\":\"󍴘H\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"𿑆*\",\"defaultPrompt\":\"\\udc3a\\udd8fY\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55485,
+        56390,
+        42
+      ],
+      "defaultPrompt": [
+        56378,
+        56719,
+        89
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"𿑆*\",\"defaultPrompt\":\"��Y\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"񄁍+\",\"defaultPrompt\":\"\\udd7d\\ude06j\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55504,
+        56397,
+        43
+      ],
+      "defaultPrompt": [
+        56701,
+        56838,
+        106
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"񄁍+\",\"defaultPrompt\":\"��j\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"񈱔,\",\"defaultPrompt\":\"\\udec0\\ude7d{\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55523,
+        56404,
+        44
+      ],
+      "defaultPrompt": [
+        57024,
+        56957,
+        123
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"񈱔,\",\"defaultPrompt\":\"��{\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"񍡛-\",\"defaultPrompt\":\"\\udef4\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55542,
+        56411,
+        45
+      ],
+      "defaultPrompt": [
+        57347,
+        57076,
+        140
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"񍡛-\",\"defaultPrompt\":\"�\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"񒑢.\",\"defaultPrompt\":\"\\udf6b\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55561,
+        56418,
+        46
+      ],
+      "defaultPrompt": [
+        57670,
+        57195,
+        157
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"񒑢.\",\"defaultPrompt\":\"�\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"񗁩/\",\"defaultPrompt\":\"𢰜$\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55580,
+        56425,
+        47
+      ],
+      "defaultPrompt": [
+        55371,
+        56348,
+        36
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"񗁩/\",\"defaultPrompt\":\"𢰜$\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"񛱰0\",\"defaultPrompt\":\"񳢓5\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55599,
+        56432,
+        48
+      ],
+      "defaultPrompt": [
+        55694,
+        56467,
+        53
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"񛱰0\",\"defaultPrompt\":\"񳢓5\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"񠡷1\",\"defaultPrompt\":\"󄔊F\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55618,
+        56439,
+        49
+      ],
+      "defaultPrompt": [
+        56017,
+        56586,
+        70
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"񠡷1\",\"defaultPrompt\":\"󄔊F\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"񥑾2\",\"defaultPrompt\":\"\\udc14\\udd81W\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55637,
+        56446,
+        50
+      ],
+      "defaultPrompt": [
+        56340,
+        56705,
+        87
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"񥑾2\",\"defaultPrompt\":\"��W\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"񪂅3\",\"defaultPrompt\":\"\\udd57\\uddf8h\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55656,
+        56453,
+        51
+      ],
+      "defaultPrompt": [
+        56663,
+        56824,
+        104
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"񪂅3\",\"defaultPrompt\":\"��h\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"񮲌4\",\"defaultPrompt\":\"\\ude9a\\ude6fy\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55675,
+        56460,
+        52
+      ],
+      "defaultPrompt": [
+        56986,
+        56943,
+        121
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"񮲌4\",\"defaultPrompt\":\"��y\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"񳢓5\",\"defaultPrompt\":\"\\udfdd\\udee6\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55694,
+        56467,
+        53
+      ],
+      "defaultPrompt": [
+        57309,
+        57062,
+        138
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"񳢓5\",\"defaultPrompt\":\"��\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"񸒚6\",\"defaultPrompt\":\"\\udf5d\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55713,
+        56474,
+        54
+      ],
+      "defaultPrompt": [
+        57632,
+        57181,
+        155
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"񸒚6\",\"defaultPrompt\":\"�\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"񽂡7\",\"defaultPrompt\":\"𙐎\\\"\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55732,
+        56481,
+        55
+      ],
+      "defaultPrompt": [
+        55333,
+        56334,
+        34
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"񽂡7\",\"defaultPrompt\":\"𙐎\\\"\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򁲨8\",\"defaultPrompt\":\"񪂅3\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55751,
+        56488,
+        56
+      ],
+      "defaultPrompt": [
+        55656,
+        56453,
+        51
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򁲨8\",\"defaultPrompt\":\"񪂅3\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򆢯9\",\"defaultPrompt\":\"򺳼D\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55770,
+        56495,
+        57
+      ],
+      "defaultPrompt": [
+        55979,
+        56572,
+        68
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򆢯9\",\"defaultPrompt\":\"򺳼D\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򋒶:\",\"defaultPrompt\":\"􋥳U\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55789,
+        56502,
+        58
+      ],
+      "defaultPrompt": [
+        56302,
+        56691,
+        85
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򋒶:\",\"defaultPrompt\":\"􋥳U\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򐂽;\",\"defaultPrompt\":\"\\udd31\\uddeaf\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55808,
+        56509,
+        59
+      ],
+      "defaultPrompt": [
+        56625,
+        56810,
+        102
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򐂽;\",\"defaultPrompt\":\"��f\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򔳄<\",\"defaultPrompt\":\"\\ude74\\ude61w\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55827,
+        56516,
+        60
+      ],
+      "defaultPrompt": [
+        56948,
+        56929,
+        119
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򔳄<\",\"defaultPrompt\":\"��w\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򙣋=\",\"defaultPrompt\":\"\\udfb7\\uded8\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55846,
+        56523,
+        61
+      ],
+      "defaultPrompt": [
+        57271,
+        57048,
+        136
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򙣋=\",\"defaultPrompt\":\"��\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򞓒>\",\"defaultPrompt\":\"\\udf4f\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55865,
+        56530,
+        62
+      ],
+      "defaultPrompt": [
+        57594,
+        57167,
+        153
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򞓒>\",\"defaultPrompt\":\"�\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򣃙?\",\"defaultPrompt\":\"퟿\\udc00 \",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55884,
+        56537,
+        63
+      ],
+      "defaultPrompt": [
+        55295,
+        56320,
+        32
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򣃙?\",\"defaultPrompt\":\"퟿� \",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򧳠@\",\"defaultPrompt\":\"񠡷1\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55903,
+        56544,
+        64
+      ],
+      "defaultPrompt": [
+        55618,
+        56439,
+        49
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򧳠@\",\"defaultPrompt\":\"񠡷1\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򬣧A\",\"defaultPrompt\":\"򱓮B\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55922,
+        56551,
+        65
+      ],
+      "defaultPrompt": [
+        55941,
+        56558,
+        66
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򬣧A\",\"defaultPrompt\":\"򱓮B\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򱓮B\",\"defaultPrompt\":\"􂅥S\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55941,
+        56558,
+        66
+      ],
+      "defaultPrompt": [
+        56264,
+        56677,
+        83
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򱓮B\",\"defaultPrompt\":\"􂅥S\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򶃵C\",\"defaultPrompt\":\"\\udd0b\\udddcd\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55960,
+        56565,
+        67
+      ],
+      "defaultPrompt": [
+        56587,
+        56796,
+        100
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򶃵C\",\"defaultPrompt\":\"��d\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򺳼D\",\"defaultPrompt\":\"\\ude4e\\ude53u\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55979,
+        56572,
+        68
+      ],
+      "defaultPrompt": [
+        56910,
+        56915,
+        117
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򺳼D\",\"defaultPrompt\":\"��u\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򿤃E\",\"defaultPrompt\":\"\\udf91\\udeca\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        55998,
+        56579,
+        69
+      ],
+      "defaultPrompt": [
+        57233,
+        57034,
+        134
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"򿤃E\",\"defaultPrompt\":\"��\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"󄔊F\",\"defaultPrompt\":\"\\udf41\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56017,
+        56586,
+        70
+      ],
+      "defaultPrompt": [
+        57556,
+        57153,
+        151
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"󄔊F\",\"defaultPrompt\":\"�\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"󉄑G\",\"defaultPrompt\":\"\\\\\\\"/🧪\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56036,
+        56593,
+        71
+      ],
+      "defaultPrompt": [
+        92,
+        34,
+        47,
+        55358,
+        56810
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"󉄑G\",\"defaultPrompt\":\"\\\\\\\"/🧪\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"󍴘H\",\"defaultPrompt\":\"񗁩/\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56055,
+        56600,
+        72
+      ],
+      "defaultPrompt": [
+        55580,
+        56425,
+        47
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"󍴘H\",\"defaultPrompt\":\"񗁩/\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"󒤟I\",\"defaultPrompt\":\"򧳠@\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56074,
+        56607,
+        73
+      ],
+      "defaultPrompt": [
+        55903,
+        56544,
+        64
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"󒤟I\",\"defaultPrompt\":\"򧳠@\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"󗔦J\",\"defaultPrompt\":\"󸥗Q\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56093,
+        56614,
+        74
+      ],
+      "defaultPrompt": [
+        56226,
+        56663,
+        81
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"󗔦J\",\"defaultPrompt\":\"󸥗Q\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"󜄭K\",\"defaultPrompt\":\"\\udce5\\uddceb\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56112,
+        56621,
+        75
+      ],
+      "defaultPrompt": [
+        56549,
+        56782,
+        98
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"󜄭K\",\"defaultPrompt\":\"��b\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"󠴴L\",\"defaultPrompt\":\"\\ude28\\ude45s\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56131,
+        56628,
+        76
+      ],
+      "defaultPrompt": [
+        56872,
+        56901,
+        115
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"󠴴L\",\"defaultPrompt\":\"��s\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"󥤻M\",\"defaultPrompt\":\"\\udf6b\\udebc\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56150,
+        56635,
+        77
+      ],
+      "defaultPrompt": [
+        57195,
+        57020,
+        132
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"󥤻M\",\"defaultPrompt\":\"��\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"󪕂N\",\"defaultPrompt\":\"\\udf33\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56169,
+        56642,
+        78
+      ],
+      "defaultPrompt": [
+        57518,
+        57139,
+        149
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"󪕂N\",\"defaultPrompt\":\"�\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"󯅉O\",\"defaultPrompt\":\"\\ud800𐀀\\udc00\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56188,
+        56649,
+        79
+      ],
+      "defaultPrompt": [
+        55296,
+        55296,
+        56320,
+        56320
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"󯅉O\",\"defaultPrompt\":\"�𐀀�\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"󳵐P\",\"defaultPrompt\":\"񍡛-\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56207,
+        56656,
+        80
+      ],
+      "defaultPrompt": [
+        55542,
+        56411,
+        45
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"󳵐P\",\"defaultPrompt\":\"񍡛-\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"󸥗Q\",\"defaultPrompt\":\"򞓒>\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56226,
+        56663,
+        81
+      ],
+      "defaultPrompt": [
+        55865,
+        56530,
+        62
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"󸥗Q\",\"defaultPrompt\":\"򞓒>\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"󽕞R\",\"defaultPrompt\":\"󯅉O\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56245,
+        56670,
+        82
+      ],
+      "defaultPrompt": [
+        56188,
+        56649,
+        79
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"󽕞R\",\"defaultPrompt\":\"󯅉O\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"􂅥S\",\"defaultPrompt\":\"\\udcbf\\uddc0`\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56264,
+        56677,
+        83
+      ],
+      "defaultPrompt": [
+        56511,
+        56768,
+        96
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"􂅥S\",\"defaultPrompt\":\"��`\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"􆵬T\",\"defaultPrompt\":\"\\ude02\\ude37q\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56283,
+        56684,
+        84
+      ],
+      "defaultPrompt": [
+        56834,
+        56887,
+        113
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"􆵬T\",\"defaultPrompt\":\"��q\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"􋥳U\",\"defaultPrompt\":\"\\udf45\\udeae\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56302,
+        56691,
+        85
+      ],
+      "defaultPrompt": [
+        57157,
+        57006,
+        130
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"􋥳U\",\"defaultPrompt\":\"��\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udc01\\udd7aV\",\"defaultPrompt\":\"\\udf25\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56321,
+        56698,
+        86
+      ],
+      "defaultPrompt": [
+        57480,
+        57125,
+        147
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��V\",\"defaultPrompt\":\"�\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udc14\\udd81W\",\"defaultPrompt\":\"\\udc00\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56340,
+        56705,
+        87
+      ],
+      "defaultPrompt": [
+        56320
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��W\",\"defaultPrompt\":\"�\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udc27\\udd88X\",\"defaultPrompt\":\"񄁍+\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56359,
+        56712,
+        88
+      ],
+      "defaultPrompt": [
+        55504,
+        56397,
+        43
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��X\",\"defaultPrompt\":\"񄁍+\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udc3a\\udd8fY\",\"defaultPrompt\":\"򔳄<\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56378,
+        56719,
+        89
+      ],
+      "defaultPrompt": [
+        55827,
+        56516,
+        60
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��Y\",\"defaultPrompt\":\"򔳄<\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udc4d\\udd96Z\",\"defaultPrompt\":\"󥤻M\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56397,
+        56726,
+        90
+      ],
+      "defaultPrompt": [
+        56150,
+        56635,
+        77
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��Z\",\"defaultPrompt\":\"󥤻M\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udc60\\udd9d[\",\"defaultPrompt\":\"\\udc99\\uddb2^\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56416,
+        56733,
+        91
+      ],
+      "defaultPrompt": [
+        56473,
+        56754,
+        94
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��[\",\"defaultPrompt\":\"��^\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udc73\\udda4\\\\\",\"defaultPrompt\":\"\\udddc\\ude29o\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56435,
+        56740,
+        92
+      ],
+      "defaultPrompt": [
+        56796,
+        56873,
+        111
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��\\\\\",\"defaultPrompt\":\"��o\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udc86\\uddab]\",\"defaultPrompt\":\"\\udf1f\\udea0\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56454,
+        56747,
+        93
+      ],
+      "defaultPrompt": [
+        57119,
+        56992,
+        128
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��]\",\"defaultPrompt\":\"��\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udc99\\uddb2^\",\"defaultPrompt\":\"\\udf17\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56473,
+        56754,
+        94
+      ],
+      "defaultPrompt": [
+        57442,
+        57111,
+        145
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��^\",\"defaultPrompt\":\"�\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udcac\\uddb9_\",\"defaultPrompt\":\"😀\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56492,
+        56761,
+        95
+      ],
+      "defaultPrompt": [
+        55357,
+        56832
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��_\",\"defaultPrompt\":\"😀\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udcbf\\uddc0`\",\"defaultPrompt\":\"𺠿)\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56511,
+        56768,
+        96
+      ],
+      "defaultPrompt": [
+        55466,
+        56383,
+        41
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��`\",\"defaultPrompt\":\"𺠿)\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udcd2\\uddc7a\",\"defaultPrompt\":\"򋒶:\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56530,
+        56775,
+        97
+      ],
+      "defaultPrompt": [
+        55789,
+        56502,
+        58
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��a\",\"defaultPrompt\":\"򋒶:\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udce5\\uddceb\",\"defaultPrompt\":\"󜄭K\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56549,
+        56782,
+        98
+      ],
+      "defaultPrompt": [
+        56112,
+        56621,
+        75
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��b\",\"defaultPrompt\":\"󜄭K\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udcf8\\uddd5c\",\"defaultPrompt\":\"\\udc73\\udda4\\\\\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56568,
+        56789,
+        99
+      ],
+      "defaultPrompt": [
+        56435,
+        56740,
+        92
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��c\",\"defaultPrompt\":\"��\\\\\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udd0b\\udddcd\",\"defaultPrompt\":\"\\uddb6\\ude1bm\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56587,
+        56796,
+        100
+      ],
+      "defaultPrompt": [
+        56758,
+        56859,
+        109
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��d\",\"defaultPrompt\":\"��m\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udd1e\\udde3e\",\"defaultPrompt\":\"\\udef9\\ude92~\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56606,
+        56803,
+        101
+      ],
+      "defaultPrompt": [
+        57081,
+        56978,
+        126
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��e\",\"defaultPrompt\":\"��~\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udd31\\uddeaf\",\"defaultPrompt\":\"\\udf09\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56625,
+        56810,
+        102
+      ],
+      "defaultPrompt": [
+        57404,
+        57097,
+        143
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��f\",\"defaultPrompt\":\"�\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udd44\\uddf1g\",\"defaultPrompt\":\"\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56644,
+        56817,
+        103
+      ],
+      "defaultPrompt": [],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��g\",\"defaultPrompt\":\"\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udd57\\uddf8h\",\"defaultPrompt\":\"𱀱'\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56663,
+        56824,
+        104
+      ],
+      "defaultPrompt": [
+        55428,
+        56369,
+        39
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��h\",\"defaultPrompt\":\"𱀱'\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udd6a\\uddffi\",\"defaultPrompt\":\"򁲨8\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56682,
+        56831,
+        105
+      ],
+      "defaultPrompt": [
+        55751,
+        56488,
+        56
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��i\",\"defaultPrompt\":\"򁲨8\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udd7d\\ude06j\",\"defaultPrompt\":\"󒤟I\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56701,
+        56838,
+        106
+      ],
+      "defaultPrompt": [
+        56074,
+        56607,
+        73
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��j\",\"defaultPrompt\":\"󒤟I\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udd90\\ude0dk\",\"defaultPrompt\":\"\\udc4d\\udd96Z\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56720,
+        56845,
+        107
+      ],
+      "defaultPrompt": [
+        56397,
+        56726,
+        90
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��k\",\"defaultPrompt\":\"��Z\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udda3\\ude14l\",\"defaultPrompt\":\"\\udd90\\ude0dk\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56739,
+        56852,
+        108
+      ],
+      "defaultPrompt": [
+        56720,
+        56845,
+        107
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��l\",\"defaultPrompt\":\"��k\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\uddb6\\ude1bm\",\"defaultPrompt\":\"\\uded3\\ude84|\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56758,
+        56859,
+        109
+      ],
+      "defaultPrompt": [
+        57043,
+        56964,
+        124
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��m\",\"defaultPrompt\":\"��|\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\uddc9\\ude22n\",\"defaultPrompt\":\"\\udefb\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56777,
+        56866,
+        110
+      ],
+      "defaultPrompt": [
+        57366,
+        57083,
+        141
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��n\",\"defaultPrompt\":\"�\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udddc\\ude29o\",\"defaultPrompt\":\"\\udf72\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56796,
+        56873,
+        111
+      ],
+      "defaultPrompt": [
+        57689,
+        57202,
+        158
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��o\",\"defaultPrompt\":\"�\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\uddef\\ude30p\",\"defaultPrompt\":\"𧠣%\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56815,
+        56880,
+        112
+      ],
+      "defaultPrompt": [
+        55390,
+        56355,
+        37
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��p\",\"defaultPrompt\":\"𧠣%\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\ude02\\ude37q\",\"defaultPrompt\":\"񸒚6\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56834,
+        56887,
+        113
+      ],
+      "defaultPrompt": [
+        55713,
+        56474,
+        54
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��q\",\"defaultPrompt\":\"񸒚6\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\ude15\\ude3er\",\"defaultPrompt\":\"󉄑G\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56853,
+        56894,
+        114
+      ],
+      "defaultPrompt": [
+        56036,
+        56593,
+        71
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��r\",\"defaultPrompt\":\"󉄑G\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\ude28\\ude45s\",\"defaultPrompt\":\"\\udc27\\udd88X\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56872,
+        56901,
+        115
+      ],
+      "defaultPrompt": [
+        56359,
+        56712,
+        88
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��s\",\"defaultPrompt\":\"��X\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\ude3b\\ude4ct\",\"defaultPrompt\":\"\\udd6a\\uddffi\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56891,
+        56908,
+        116
+      ],
+      "defaultPrompt": [
+        56682,
+        56831,
+        105
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��t\",\"defaultPrompt\":\"��i\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\ude4e\\ude53u\",\"defaultPrompt\":\"\\udead\\ude76z\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56910,
+        56915,
+        117
+      ],
+      "defaultPrompt": [
+        57005,
+        56950,
+        122
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��u\",\"defaultPrompt\":\"��z\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\ude61\\ude5av\",\"defaultPrompt\":\"\\udff0\\udeed\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56929,
+        56922,
+        118
+      ],
+      "defaultPrompt": [
+        57328,
+        57069,
+        139
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��v\",\"defaultPrompt\":\"��\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\ude74\\ude61w\",\"defaultPrompt\":\"\\udf64\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56948,
+        56929,
+        119
+      ],
+      "defaultPrompt": [
+        57651,
+        57188,
+        156
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��w\",\"defaultPrompt\":\"�\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\ude87\\ude68x\",\"defaultPrompt\":\"𞀕#\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56967,
+        56936,
+        120
+      ],
+      "defaultPrompt": [
+        55352,
+        56341,
+        35
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��x\",\"defaultPrompt\":\"𞀕#\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\ude9a\\ude6fy\",\"defaultPrompt\":\"񮲌4\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        56986,
+        56943,
+        121
+      ],
+      "defaultPrompt": [
+        55675,
+        56460,
+        52
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��y\",\"defaultPrompt\":\"񮲌4\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udead\\ude76z\",\"defaultPrompt\":\"򿤃E\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57005,
+        56950,
+        122
+      ],
+      "defaultPrompt": [
+        55998,
+        56579,
+        69
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��z\",\"defaultPrompt\":\"򿤃E\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udec0\\ude7d{\",\"defaultPrompt\":\"\\udc01\\udd7aV\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57024,
+        56957,
+        123
+      ],
+      "defaultPrompt": [
+        56321,
+        56698,
+        86
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��{\",\"defaultPrompt\":\"��V\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\uded3\\ude84|\",\"defaultPrompt\":\"\\udd44\\uddf1g\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57043,
+        56964,
+        124
+      ],
+      "defaultPrompt": [
+        56644,
+        56817,
+        103
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��|\",\"defaultPrompt\":\"��g\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udee6\\ude8b}\",\"defaultPrompt\":\"\\ude87\\ude68x\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57062,
+        56971,
+        125
+      ],
+      "defaultPrompt": [
+        56967,
+        56936,
+        120
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��}\",\"defaultPrompt\":\"��x\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udef9\\ude92~\",\"defaultPrompt\":\"\\udfca\\udedf\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57081,
+        56978,
+        126
+      ],
+      "defaultPrompt": [
+        57290,
+        57055,
+        137
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��~\",\"defaultPrompt\":\"��\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udf0c\\ude99\",\"defaultPrompt\":\"\\udf56\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57100,
+        56985,
+        127
+      ],
+      "defaultPrompt": [
+        57613,
+        57174,
+        154
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��\",\"defaultPrompt\":\"�\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udf1f\\udea0\",\"defaultPrompt\":\"𔠇!\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57119,
+        56992,
+        128
+      ],
+      "defaultPrompt": [
+        55314,
+        56327,
+        33
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��\",\"defaultPrompt\":\"𔠇!\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udf32\\udea7\",\"defaultPrompt\":\"񥑾2\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57138,
+        56999,
+        129
+      ],
+      "defaultPrompt": [
+        55637,
+        56446,
+        50
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��\",\"defaultPrompt\":\"񥑾2\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udf45\\udeae\",\"defaultPrompt\":\"򶃵C\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57157,
+        57006,
+        130
+      ],
+      "defaultPrompt": [
+        55960,
+        56565,
+        67
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��\",\"defaultPrompt\":\"򶃵C\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udf58\\udeb5\",\"defaultPrompt\":\"􆵬T\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57176,
+        57013,
+        131
+      ],
+      "defaultPrompt": [
+        56283,
+        56684,
+        84
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��\",\"defaultPrompt\":\"􆵬T\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udf6b\\udebc\",\"defaultPrompt\":\"\\udd1e\\udde3e\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57195,
+        57020,
+        132
+      ],
+      "defaultPrompt": [
+        56606,
+        56803,
+        101
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��\",\"defaultPrompt\":\"��e\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udf7e\\udec3\",\"defaultPrompt\":\"\\ude61\\ude5av\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57214,
+        57027,
+        133
+      ],
+      "defaultPrompt": [
+        56929,
+        56922,
+        118
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��\",\"defaultPrompt\":\"��v\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udf91\\udeca\",\"defaultPrompt\":\"\\udfa4\\uded1\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57233,
+        57034,
+        134
+      ],
+      "defaultPrompt": [
+        57252,
+        57041,
+        135
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��\",\"defaultPrompt\":\"��\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udfa4\\uded1\",\"defaultPrompt\":\"\\udf48\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57252,
+        57041,
+        135
+      ],
+      "defaultPrompt": [
+        57575,
+        57160,
+        152
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��\",\"defaultPrompt\":\"�\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udfb7\\uded8\",\"defaultPrompt\":\"\\\\ud800\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57271,
+        57048,
+        136
+      ],
+      "defaultPrompt": [
+        92,
+        117,
+        100,
+        56,
+        48,
+        48
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��\",\"defaultPrompt\":\"\\\\ud800\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udfca\\udedf\",\"defaultPrompt\":\"񛱰0\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57290,
+        57055,
+        137
+      ],
+      "defaultPrompt": [
+        55599,
+        56432,
+        48
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��\",\"defaultPrompt\":\"񛱰0\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udfdd\\udee6\",\"defaultPrompt\":\"򬣧A\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57309,
+        57062,
+        138
+      ],
+      "defaultPrompt": [
+        55922,
+        56551,
+        65
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��\",\"defaultPrompt\":\"򬣧A\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udff0\\udeed\",\"defaultPrompt\":\"󽕞R\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57328,
+        57069,
+        139
+      ],
+      "defaultPrompt": [
+        56245,
+        56670,
+        82
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"��\",\"defaultPrompt\":\"󽕞R\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udef4\",\"defaultPrompt\":\"\\udcf8\\uddd5c\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57347,
+        57076,
+        140
+      ],
+      "defaultPrompt": [
+        56568,
+        56789,
+        99
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"�\",\"defaultPrompt\":\"��c\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udefb\",\"defaultPrompt\":\"\\ude3b\\ude4ct\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57366,
+        57083,
+        141
+      ],
+      "defaultPrompt": [
+        56891,
+        56908,
+        116
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"�\",\"defaultPrompt\":\"��t\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udf02\",\"defaultPrompt\":\"\\udf7e\\udec3\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57385,
+        57090,
+        142
+      ],
+      "defaultPrompt": [
+        57214,
+        57027,
+        133
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"�\",\"defaultPrompt\":\"��\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udf09\",\"defaultPrompt\":\"\\udf3a\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57404,
+        57097,
+        143
+      ],
+      "defaultPrompt": [
+        57537,
+        57146,
+        150
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"�\",\"defaultPrompt\":\"�\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udf10\",\"defaultPrompt\":\"\\u0000\\b\\f\\n\\r\\t\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57423,
+        57104,
+        144
+      ],
+      "defaultPrompt": [
+        0,
+        8,
+        12,
+        10,
+        13,
+        9
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"�\",\"defaultPrompt\":\"\\u0000\\b\\f\\n\\r\\t\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udf17\",\"defaultPrompt\":\"񒑢.\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57442,
+        57111,
+        145
+      ],
+      "defaultPrompt": [
+        55561,
+        56418,
+        46
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"�\",\"defaultPrompt\":\"񒑢.\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udf1e\",\"defaultPrompt\":\"򣃙?\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57461,
+        57118,
+        146
+      ],
+      "defaultPrompt": [
+        55884,
+        56537,
+        63
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"�\",\"defaultPrompt\":\"򣃙?\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udf25\",\"defaultPrompt\":\"󳵐P\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57480,
+        57125,
+        147
+      ],
+      "defaultPrompt": [
+        56207,
+        56656,
+        80
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"�\",\"defaultPrompt\":\"󳵐P\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udf2c\",\"defaultPrompt\":\"\\udcd2\\uddc7a\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57499,
+        57132,
+        148
+      ],
+      "defaultPrompt": [
+        56530,
+        56775,
+        97
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"�\",\"defaultPrompt\":\"��a\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udf33\",\"defaultPrompt\":\"\\ude15\\ude3er\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57518,
+        57139,
+        149
+      ],
+      "defaultPrompt": [
+        56853,
+        56894,
+        114
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"�\",\"defaultPrompt\":\"��r\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udf3a\",\"defaultPrompt\":\"\\udf58\\udeb5\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57537,
+        57146,
+        150
+      ],
+      "defaultPrompt": [
+        57176,
+        57013,
+        131
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"�\",\"defaultPrompt\":\"��\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udf41\",\"defaultPrompt\":\"\\udf2c\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57556,
+        57153,
+        151
+      ],
+      "defaultPrompt": [
+        57499,
+        57132,
+        148
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"�\",\"defaultPrompt\":\"�\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udf48\",\"defaultPrompt\":\"a\\ud800b\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57575,
+        57160,
+        152
+      ],
+      "defaultPrompt": [
+        97,
+        55296,
+        98
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"�\",\"defaultPrompt\":\"a�b\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udf4f\",\"defaultPrompt\":\"񈱔,\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57594,
+        57167,
+        153
+      ],
+      "defaultPrompt": [
+        55523,
+        56404,
+        44
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"�\",\"defaultPrompt\":\"񈱔,\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udf56\",\"defaultPrompt\":\"򙣋=\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57613,
+        57174,
+        154
+      ],
+      "defaultPrompt": [
+        55846,
+        56523,
+        61
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"�\",\"defaultPrompt\":\"򙣋=\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udf5d\",\"defaultPrompt\":\"󪕂N\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57632,
+        57181,
+        155
+      ],
+      "defaultPrompt": [
+        56169,
+        56642,
+        78
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"�\",\"defaultPrompt\":\"󪕂N\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udf64\",\"defaultPrompt\":\"\\udcac\\uddb9_\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57651,
+        57188,
+        156
+      ],
+      "defaultPrompt": [
+        56492,
+        56761,
+        95
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"�\",\"defaultPrompt\":\"��_\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udf6b\",\"defaultPrompt\":\"\\uddef\\ude30p\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57670,
+        57195,
+        157
+      ],
+      "defaultPrompt": [
+        56815,
+        56880,
+        112
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"�\",\"defaultPrompt\":\"��p\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udf72\",\"defaultPrompt\":\"\\udf32\\udea7\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57689,
+        57202,
+        158
+      ],
+      "defaultPrompt": [
+        57138,
+        56999,
+        129
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"�\",\"defaultPrompt\":\"��\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"\\udf79\",\"defaultPrompt\":\"\\udf1e\",\"url\":\"https://example.test/\"}}",
+      "message": [
+        57708,
+        57209,
+        159
+      ],
+      "defaultPrompt": [
+        57461,
+        57118,
+        146
+      ],
+      "compat": "{\"sessionId\":\"owned\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"type\":\"prompt\",\"message\":\"�\",\"defaultPrompt\":\"�\",\"url\":\"https://example.test/\"}}"
+    },
+    {
+      "raw": "{\"method\":\"ignored\",\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"message\":\"discarded\"},\"params\":{\"message\":\"\\ud800\",\"message\":\"\\udc00\",\"type\":\"alert\"},\"sessionId\":\"owned\"}",
+      "message": [
+        56320
+      ],
+      "defaultPrompt": null,
+      "compat": "{\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"message\":\"�\",\"type\":\"alert\"},\"sessionId\":\"owned\"}"
+    },
+    {
+      "raw": "{\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"message\":\"\\ud800\",\"message\":false,\"defaultPrompt\":\"\\udc00\",\"defaultPrompt\":null,\"type\":\"prompt\"}}",
+      "message": null,
+      "defaultPrompt": null,
+      "compat": "{\"method\":\"Page.javascriptDialogOpening\",\"params\":{\"message\":false,\"defaultPrompt\":null,\"type\":\"prompt\"}}"
+    }
+  ]
+}

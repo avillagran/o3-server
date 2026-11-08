@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+"""Regenerate complete pinned settings and voice-secret oracles in private rootless Podman."""
+import argparse,hashlib,json,os,pathlib,subprocess,tempfile
+p=argparse.ArgumentParser(description=__doc__)
+p.add_argument('--checkout',required=True,type=pathlib.Path)
+p.add_argument('--deps',required=True,type=pathlib.Path)
+p.add_argument('--phase',choices=['all','schema','secrets'],default='all')
+p.add_argument('--staged',type=pathlib.Path,help='Reuse an exact retained native source snapshot')
+p.add_argument('--node',required=True,type=pathlib.Path)
+p.add_argument('--evidence-root',required=True,type=pathlib.Path)
+a=p.parse_args();revision='83a3674ffd84ffb33de768210c806cb1ac53fd80'
+if subprocess.check_output(['podman','--remote=false','info','--format','{{.Host.Security.Rootless}}'],text=True).strip()!='true':raise SystemExit('Rootless Podman required')
+if subprocess.check_output(['git','-C',str(a.checkout),'rev-parse','HEAD'],text=True).strip()!=revision:raise SystemExit('Wrong native checkout revision')
+root=pathlib.Path(__file__).resolve().parent.parent
+out=pathlib.Path(tempfile.mkdtemp(prefix='native-codec-',dir=a.evidence_root));out.chmod(0o700)
+if a.staged:
+ stage=a.staged.resolve();manifest=json.loads((stage/'SOURCE.json').read_text())
+ if manifest['revision']!=revision:raise SystemExit('Wrong retained source revision')
+ for name,expected in manifest['files'].items():
+  if hashlib.sha256((stage/name).read_bytes()).hexdigest()!=expected:raise SystemExit('Changed retained source '+name)
+else:
+ stage=out/'native';stage.mkdir()
+ files=subprocess.check_output(['git','-C',str(a.checkout),'ls-tree','-r','--name-only',revision],text=True).splitlines()
+ files=[name for name in files if name=='package.json' or (name.startswith(('packages/','apps/server/src/')) and name.endswith(('.ts','.json')))]
+ hashes={}
+ for name in files:
+  if pathlib.PurePosixPath(name).is_absolute() or '..' in pathlib.PurePosixPath(name).parts:raise SystemExit('Invalid source path')
+  data=subprocess.check_output(['git','-C',str(a.checkout),'show',revision+':'+name]);destination=stage/name;destination.parent.mkdir(parents=True,exist_ok=True);destination.write_bytes(data);hashes[name]=hashlib.sha256(data).hexdigest()
+ (stage/'SOURCE.json').write_text(json.dumps({'revision':revision,'files':hashes},indent=2)+'\n')
+ (stage/'node_modules').symlink_to('/tmp/native-node_modules')
+bootstrap=r'''
+import pathlib,subprocess
+modules=pathlib.Path('/tmp/native-node_modules');modules.mkdir(mode=0o700)
+for entry in pathlib.Path('/deps/node_modules').iterdir():
+ if entry.name!='@t3tools':(modules/entry.name).symlink_to(entry)
+(modules/'@t3tools').mkdir(mode=0o700)
+for package in pathlib.Path('/native/packages').iterdir():
+ if (package/'package.json').is_file():(modules/'@t3tools'/package.name).symlink_to(package)
+import sys
+phase=sys.argv[1]
+scripts=[]
+if phase in ['all','schema']:scripts.append('generate-managed-settings-codec.mjs')
+if phase in ['all','secrets']:scripts.extend(['generate-settings-secret-fixtures.mjs','generate-secret-store-fixtures.mjs'])
+for script in scripts:
+ result=subprocess.run(['/node/bin/node','/server/tools/'+script,'/native','/native/packages/contracts','/out/generated','83a3674ffd84ffb33de768210c806cb1ac53fd80']+(['/out/generated/settings-secrets.json'] if script=='generate-secret-store-fixtures.mjs' else []))
+ if result.returncode:raise SystemExit(result.returncode)
+'''
+command=['podman','--remote=false','run','--rm','--pull=never','--userns=keep-id','--user',f'{os.getuid()}:{os.getgid()}','--read-only','--network=none','--cap-drop=ALL','--security-opt=no-new-privileges','--pids-limit=128','--memory=2g','--tmpfs','/tmp:rw,size=512m,mode=1777','--env','HOME=/tmp/home','-v','/usr:/usr:ro','-v',str(a.node.resolve())+':/node:ro','-v',str(a.deps.resolve())+':/deps:ro','-v',str(stage)+':/native:ro','-v',str(root)+':/server:ro','-v',str(out)+':/out:rw','docker.io/library/archlinux:latest','python3','-c',bootstrap,a.phase]
+with (out/'oracle.log').open('w') as log:result=subprocess.run(command,stdout=log,stderr=subprocess.STDOUT)
+(out/'result.json').write_text(json.dumps({'returncode':result.returncode,'revision':revision})+'\n');print(out);print((out/'oracle.log').read_text());raise SystemExit(result.returncode)

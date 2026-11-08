@@ -1,0 +1,74 @@
+{
+  "reference": {
+    "tag": "v0.1.8-nightly.20261106.4262",
+    "commit": "c55db3e9c72fdf584f4b54192fb39beb88667b59",
+    "releaseSha256": "5df94ca15c4f68f749fa5540fbb9d5ca879ca8750ac43dd2704f6a18899ed6d5",
+    "effect": "4.1.2"
+  },
+  "sources": [
+    {
+      "path": "apps/server/src/scheduledTasks/ScheduledTaskService.ts",
+      "sha256": "c5f3e5c96628958a4dd758114a2fbf3fbb7001e36b0993f64645244fdfa64304"
+    },
+    {
+      "path": "apps/server/src/scheduledTasks/webhookDedupe.ts",
+      "sha256": "8266f1e4e43ab75a4dc153bce3f95827c678f03c22a18db7fbc46528900c932f"
+    },
+    {
+      "path": "apps/server/src/scheduledTasks/webhookRoute.ts",
+      "sha256": "2505787a1983467ff57fa5a7bc9852c3cd86fb1e36cef8c9a183e54884dca079"
+    },
+    {
+      "path": "packages/contracts/src/scheduledTask.ts",
+      "sha256": "9da228d2dd53572ef38ed6ce864b9b939db41fc5edf33a662f78c072ee5a14cf"
+    }
+  ],
+  "status": "Definitions and native ledger handover implemented; new admission/dispatch uses the native adapter; legacy work, policy, relay and ambiguous preparation remain open",
+  "scenario": {
+    "providerCredentials": false,
+    "network": "none",
+    "nativeTurns": 0,
+    "tasks": [
+      "disabled interval continue",
+      "disabled interval fresh_session",
+      "disabled unsigned webhook new_thread",
+      "enabled signed webhook new_thread with future coalescing"
+    ],
+    "coalesceWindowSeconds": 3600,
+    "requests": 3,
+    "pendingWindows": 1,
+    "coalescedDeliveryIds": 2,
+    "replayKeys": 2,
+    "deliveryOutcomes": [
+      "accepted",
+      "coalesced",
+      "duplicate"
+    ],
+    "httpStatus": 202,
+    "latestRequestRetained": true,
+    "pendingRetainedAfterRestart": true,
+    "filteredExport": "empty schema 80 plus synthetic task tables only",
+    "o3TaskEditReadByT3Subscription": true,
+    "nativeTaskEditReadByO3": true,
+    "pendingPreservedAcrossHandover": true
+  },
+  "tables": [
+    "scheduled_tasks",
+    "scheduled_task_webhook_deliveries",
+    "scheduled_task_webhook_pending",
+    "scheduled_task_webhook_replay_keys",
+    "scheduled_task_webhook_relay_deliveries"
+  ],
+  "notProven": [
+    "relay ingestion and verification",
+    "lossless migration of legacy accepted O3 work",
+    "cross-process crash recovery",
+    "global nightly parity"
+  ],
+  "fixture": {
+    "path": "tests/fixtures/t3-task-store-4262.json",
+    "sha256": "eb858f608179522114c249f31406d64dea45603bea01f742ae4d87b8da3b91b2",
+    "redaction": "Explicit placeholder endpoint tokens and delivery IDs; fixed timestamps; future deadlines moved to 2100"
+  },
+  "executionEvidence": "NATIVE-WEBHOOK-ADMISSION.md"
+}

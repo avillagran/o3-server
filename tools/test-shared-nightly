@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+"""Compile shared-state regressions on the host and run them without host writes in Podman."""
+import json
+import os
+import pathlib
+import subprocess
+import uuid
+
+root = pathlib.Path(__file__).resolve().parent.parent
+env = dict(os.environ)
+env.setdefault('CARGO_TARGET_DIR', '/var/tmp/o3-server/fresh-context-target')
+build = subprocess.run(['cargo', 'test', '--locked', '--no-default-features', '--test', 't3_shared', '--test', 't3_shared_nightly', '--no-run', '--message-format=json'], cwd=root, env=env, capture_output=True, text=True)
+if build.returncode:
+    for line in build.stdout.splitlines():
+        diagnostic = json.loads(line).get("message", {})
+        if diagnostic.get("rendered"):
+            print(diagnostic["rendered"], flush=True)
+    print(build.stderr, flush=True)
+    raise SystemExit(build.returncode)
+binaries = [pathlib.Path(v['executable']) for line in build.stdout.splitlines() if (v := json.loads(line)).get('executable') and v.get('target', {}).get('name') in ('t3_shared', 't3_shared_nightly')]
+assert len(binaries) == 2
+name = 'o3-shared-tests-' + uuid.uuid4().hex
+args = ['podman', 'run', '--rm', '--name', name, '--userns=keep-id', '--user', f'{os.getuid()}:{os.getgid()}', '--read-only', '--tmpfs', '/tmp:rw,exec,size=1g,mode=1777', '--cap-drop=ALL', '--security-opt=no-new-privileges', '--pids-limit=512', '--memory=2g', '--network=none', '--workdir=/tmp', '--env', 'HOME=/tmp/home', '-v', f'{root}:{root}:ro', '-v', f'{binaries[0].parent}:/test-bin:ro', os.environ.get('O3_FRESH_CONTEXT_IMAGE', 'localhost/android-sandbox:latest'), 'sh', '-c', 'set -eu; umask 077; mkdir -p "$HOME"; for binary in "$@"; do /test-bin/"$binary" --test-threads=1; done', 'shared-nightly', *[b.name for b in binaries]]
+try:
+    result = subprocess.run(args, cwd=root, timeout=180)
+finally:
+    subprocess.run(['podman', 'stop', '--time', '3', name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+raise SystemExit(result.returncode)

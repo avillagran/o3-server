@@ -27,11 +27,6 @@ pub(crate) struct Limits {
     peers: std::sync::Mutex<
         std::collections::HashMap<std::net::IpAddr, std::sync::Weak<tokio::sync::Semaphore>>,
     >,
-    hook_window: std::sync::Mutex<(
-        std::time::Instant,
-        usize,
-        std::collections::HashMap<std::net::IpAddr, usize>,
-    )>,
     token_window: std::sync::Mutex<(std::time::Instant, usize)>,
 }
 impl Default for Limits {
@@ -39,12 +34,11 @@ impl Default for Limits {
         Self {
             connections: Arc::new(tokio::sync::Semaphore::new(128)),
             peers: Default::default(),
-            hook_window: std::sync::Mutex::new((std::time::Instant::now(), 0, Default::default())),
             token_window: std::sync::Mutex::new((std::time::Instant::now(), 0)),
         }
     }
 }
-type Lease = Arc<(
+pub(crate) type Lease = Arc<(
     tokio::sync::OwnedSemaphorePermit,
     Option<tokio::sync::OwnedSemaphorePermit>,
 )>;
@@ -63,7 +57,7 @@ fn unauthorized() -> Reply {
     json_reply(StatusCode::UNAUTHORIZED, json!({ "_tag":"EnvironmentAuthInvalidError", "code": "auth_invalid", "reason": "invalid_credential", "traceId":crate::store::random_id().unwrap_or_default() }).to_string())
 }
 
-fn bearer(request: &Request<Incoming>) -> Option<&str> {
+pub(crate) fn bearer(request: &Request<Incoming>) -> Option<&str> {
     request
         .headers()
         .get(header::AUTHORIZATION)?
@@ -91,6 +85,8 @@ async fn body(request: Request<Incoming>) -> Option<Bytes> {
 
 /// `POST /oauth/token`: RFC 8693 exchange of a pairing secret for a bearer session.
 async fn token(state: &State, request: Request<Incoming>) -> Reply {
+    let peer = request.extensions().get::<std::net::IpAddr>().copied();
+    let proof_requested = request.headers().contains_key("dpop");
     {
         let mut window = state.http.token_window.lock().unwrap();
         if window.0.elapsed() >= std::time::Duration::from_secs(1) {
@@ -108,10 +104,12 @@ async fn token(state: &State, request: Request<Incoming>) -> Reply {
         );
     };
     let mut credential = None;
+    let mut requested_scope = None;
     let mut client = json!({});
     for (name, value) in url::form_urlencoded::parse(&form) {
         match name.as_ref() {
             "subject_token" => credential = Some(value.into_owned()),
+            "scope" => requested_scope = Some(value.into_owned()),
             "client_label" | "client_device_type" | "client_os" => {
                 client[name.as_ref()] = value.as_ref().into()
             }
@@ -124,9 +122,30 @@ async fn token(state: &State, request: Request<Incoming>) -> Reply {
             r#"{"code":"invalid_request"}"#.into(),
         );
     };
-    match state.exchange_pairing(&credential, &client) {
+    let requested = match requested_scope
+        .as_deref()
+        .map(crate::desktop_auth::parse_requested_scopes)
+    {
+        Some(None) => {
+            return json_reply(
+                StatusCode::BAD_REQUEST,
+                json!({"code":"invalid_scope"}).to_string(),
+            )
+        }
+        Some(Some(scopes)) => Some(scopes),
+        None => None,
+    };
+    // Only bearer sessions are advertised. Never silently downgrade a proof-bound exchange.
+    if proof_requested {
+        return unauthorized();
+    }
+    match state.exchange_pairing_from_scoped(&credential, &client, peer, requested.as_deref()) {
         Ok(Some(result)) => json_reply(StatusCode::OK, result.to_string()),
         Ok(None) => unauthorized(),
+        Err(crate::desktop_auth::ExchangeError::ScopeNotGranted) => json_reply(
+            StatusCode::BAD_REQUEST,
+            json!({"code":"scope_not_granted"}).to_string(),
+        ),
         Err(_) => json_reply(
             StatusCode::INTERNAL_SERVER_ERROR,
             r#"{"code":"internal_error"}"#.into(),
@@ -208,70 +227,83 @@ fn upgrade(state: Arc<State>, session: Value, mut request: Request<Incoming>) ->
 
 async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Reply, Infallible> {
     let path = request.uri().path().to_owned();
+    if crate::speech_http::matches(&path) {
+        return Ok(Box::pin(crate::speech_http::handle(state, request)).await);
+    }
     Ok(match (request.method().clone(), path.as_str()) {
         (_, "/mcp") => crate::mcp::handle(state, request).await,
         (Method::GET, "/.well-known/t3/environment") => json_reply(
             StatusCode::OK,
             crate::settings::descriptor(&state).to_string(),
         ),
-        (Method::POST, p) if p.starts_with("/api/hooks/") => {
+        (Method::GET | Method::POST | Method::PUT | Method::PATCH | Method::HEAD, p)
+            if p.starts_with("/api/hooks/") =>
+        {
             let parts: Vec<_> = p.trim_start_matches("/api/hooks/").split('/').collect();
-            if parts.len() != 2 {
-                return Ok(json_reply(StatusCode::NOT_FOUND, "{}".into()));
-            }
-            let Some(id) = crate::assets::percent_decode(parts[0]) else {
+            let Some(id) = parts
+                .first()
+                .filter(|_| parts.len() == 2)
+                .and_then(|id| crate::assets::percent_decode(id))
+            else {
                 return Ok(json_reply(StatusCode::NOT_FOUND, "{}".into()));
             };
             let token = parts[1].to_owned();
-            // Every rejection looks the same and costs one keyed lookup: no body is read
-            // without the hook's token, so unauthenticated traffic cannot crowd out its sender.
-            let check_state = state.clone();
-            let (check_id, check_token) = (id.clone(), token.clone());
-            if !tokio::task::spawn_blocking(move || {
-                crate::webhook::admits(&check_state, &check_id, &check_token)
-            })
-            .await
-            .unwrap_or(false)
+            let method = request.method().as_str().to_owned();
+            let response = if method == "HEAD" {
+                crate::webhook_native::Response::error(
+                    405,
+                    "method_not_allowed",
+                    "method_not_allowed",
+                )
+            } else if request
+                .headers()
+                .get("content-length")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.parse::<u64>().ok())
+                .is_some_and(|size| size > 1024 * 1024)
             {
-                return Ok(json_reply(StatusCode::NOT_FOUND, "{}".into()));
-            }
-            {
-                let mut window = state.http.hook_window.lock().unwrap();
-                if window.0.elapsed() >= std::time::Duration::from_secs(1) {
-                    *window = (std::time::Instant::now(), 0, Default::default());
+                crate::webhook_native::Response::error(413, "body_too_large", "body_too_large")
+            } else {
+                let headers = request.headers().clone();
+                let query = request.uri().query().unwrap_or("").to_owned();
+                match tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    Limited::new(request.into_body(), 1024 * 1024).collect(),
+                )
+                .await
+                {
+                    Ok(Ok(bytes)) => {
+                        let bytes = bytes.to_bytes();
+                        tokio::task::spawn_blocking(move || {
+                            crate::webhook_native::accept(
+                                &state, &id, &token, &method, &headers, &query, &bytes,
+                            )
+                        })
+                        .await
+                        .unwrap_or_else(|_| {
+                            crate::webhook_native::Response::error(500, "error", "internal_error")
+                        })
+                    }
+                    _ => crate::webhook_native::Response::error(
+                        413,
+                        "body_too_large",
+                        "body_too_large_or_unreadable",
+                    ),
                 }
-                if window.1 >= 60 {
-                    return Ok(json_reply(StatusCode::TOO_MANY_REQUESTS, "{}".into()));
-                }
-                window.1 += 1;
-            }
-            let headers = request.headers().clone();
-            let query = request.uri().query().unwrap_or("").to_owned();
-            let bytes = tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                Limited::new(request.into_body(), 1024 * 1024).collect(),
-            )
-            .await;
-            let Ok(Ok(bytes)) = bytes else {
-                return Ok(json_reply(StatusCode::PAYLOAD_TOO_LARGE, "{}".into()));
             };
-            let bytes = bytes.to_bytes();
-            let result = tokio::task::spawn_blocking(move || {
-                crate::webhook::accept(&state, &id, &token, &headers, &query, &bytes)
-            })
-            .await
-            .unwrap_or((503, "error"));
-            if result.0 == 404 {
-                return Ok(json_reply(StatusCode::NOT_FOUND, "{}".into()));
-            }
-            let mut response = json_reply(
-                StatusCode::from_u16(result.0).unwrap(),
-                json!({"outcome":result.1}).to_string(),
+            let mut reply = json_reply(
+                StatusCode::from_u16(response.status).unwrap(),
+                response.body.to_string(),
             );
-            response
+            reply
                 .headers_mut()
-                .insert("x-t3-hook-outcome", result.1.parse().unwrap());
-            response
+                .insert("x-t3-hook-outcome", response.outcome.parse().unwrap());
+            if response.status == 405 {
+                reply
+                    .headers_mut()
+                    .insert("allow", "GET, POST, PUT, PATCH".parse().unwrap());
+            }
+            reply
         }
         (Method::POST, "/oauth/token") => token(&state, request).await,
         (Method::POST, p) if p.starts_with(crate::assets::UPLOAD_PREFIX) => {
@@ -304,14 +336,56 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
                 return Ok(unauthorized());
             };
             let socket = path == "/api/device-hub/vendor/serve-emu/ws";
-            if let Some(r) = scope_reply(&session, "orchestration:operate") {
+            let upgraded = request
+                .headers()
+                .get("upgrade")
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| value.eq_ignore_ascii_case("websocket"));
+            let plan = match crate::device_native_proxy::plan(
+                &request.uri().to_string(),
+                request.method().as_str(),
+                upgraded,
+            ) {
+                Ok(plan) => plan,
+                Err(status) => {
+                    return Ok(json_reply(
+                        StatusCode::from_u16(status).expect("proxy status"),
+                        "{}".into(),
+                    ))
+                }
+            };
+            if let Some(r) = scope_reply(
+                &session,
+                if plan.controls {
+                    "orchestration:operate"
+                } else {
+                    "orchestration:read"
+                },
+            ) {
                 return Ok(r);
             }
             let settings = crate::settings::read(&state).unwrap_or_default();
-            if settings["enableDeviceSupport"] == false
-                || settings["enableAgentDeviceAccess"] == false
-            {
+            if settings["enableDeviceSupport"] == false {
                 return Ok(json_reply(StatusCode::FORBIDDEN, "{}".into()));
+            }
+            let native_host = query(&request, "hostId").unwrap_or_else(|| "local".into());
+            match crate::device::hub_origin(&state, &native_host).await {
+                Ok(Some(origin)) => {
+                    return Ok(crate::device_native_proxy::serve(
+                        request,
+                        origin,
+                        state.clone(),
+                        session,
+                    )
+                    .await)
+                }
+                Err(error) => {
+                    return Ok(json_reply(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        error.to_string(),
+                    ))
+                }
+                Ok(None) => {}
             }
             let target = json!({"deviceId":query(&request,"device").unwrap_or_default(),"hostId":query(&request,"hostId").unwrap_or_else(||"local".into())});
             let serial = match crate::device::id(&target) {
@@ -355,7 +429,7 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
                         let mut timer = tokio::time::interval(std::time::Duration::from_secs(2));
                         loop {
                             let settings = crate::settings::read(&device_state).unwrap_or_default();
-                            if settings["enableDeviceSupport"]==false || settings["enableAgentDeviceAccess"]==false || device_session["sid"].as_str().is_none_or(|sid|!device_state.db.lock().unwrap().query_row("SELECT EXISTS(SELECT 1 FROM auth_sessions WHERE session_id=? AND revoked_at IS NULL AND expires_at>?)",rusqlite::params![sid,now_ms()],|r|r.get::<_,bool>(0)).unwrap_or(false)){break;}
+                            if settings["enableDeviceSupport"]==false || device_session["sid"].as_str().is_none_or(|sid|!device_state.db.lock().unwrap().query_row("SELECT EXISTS(SELECT 1 FROM auth_sessions WHERE session_id=? AND revoked_at IS NULL AND expires_at>?)",rusqlite::params![sid,now_ms()],|r|r.get::<_,bool>(0)).unwrap_or(false)){break;}
                             tokio::select! {
                                 _=timer.tick()=>{},
                                 read=async {
@@ -446,7 +520,7 @@ async fn route(state: Arc<State>, mut request: Request<Incoming>) -> Result<Repl
         }
         (Method::GET, "/api/auth/session") => {
             let mut result =
-                json!({"authenticated":false,"auth":crate::settings::auth_descriptor()});
+                json!({"authenticated":false,"auth":crate::settings::auth_descriptor_for(&state)});
             if let Some(session) = bearer(&request).and_then(|t| state.session(t)) {
                 result["authenticated"] = json!(true);
                 result["scopes"] = session["scopes"].clone();
@@ -571,6 +645,15 @@ async fn serve_connection<I>(
 where
     I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
+    if !state.managed_policy.allows_remote()
+        && !address.is_some_and(crate::managed_clients::local_peer)
+    {
+        return Err(std::io::Error::other(crate::managed_clients::refusal(
+            &state.managed_policy,
+            "remote clients",
+            None,
+        )));
+    }
     let permit = state
         .http
         .connections
@@ -598,6 +681,21 @@ where
         .map_err(std::io::Error::other)
 }
 pub async fn serve(listener: TcpListener, state: Arc<State>) -> std::io::Result<()> {
+    if state.listener_auth.get().is_none() {
+        state
+            .configure_web_auth(Some(&listener.local_addr()?.ip().to_string()))
+            .map_err(std::io::Error::other)?;
+    }
+    crate::managed_limits::check_reachability(
+        state.managed_policy.document.as_ref(),
+        &crate::managed_limits::Reachability {
+            auth_policy: state.auth_policy(),
+            host: Some(listener.local_addr()?.ip().to_string()),
+            tailscale_serve_enabled: false,
+            private_network_only: None,
+        },
+    )
+    .map_err(std::io::Error::other)?;
     state.native_mcp.listen(listener.local_addr()?);
     crate::checkpoint::recover_rollbacks(&state).map_err(std::io::Error::other)?;
     crate::recovery::recover(&mut state.db.lock().unwrap()).map_err(std::io::Error::other)?;
@@ -714,11 +812,14 @@ async fn auth_route(s: &State, session: &Value, request: Request<Incoming>) -> R
                         .join(" ")
                 })
                 .unwrap_or_default();
+            if !s.managed_policy.allows_remote() {
+                return json_reply(StatusCode::FORBIDDEN, json!({"_tag":"EnvironmentHttpForbiddenError","message":crate::managed_clients::remote_pairing_refusal(&s.managed_policy)}).to_string());
+            }
             match s.issue_pairing_scoped(
                 p["label"].as_str(),
                 300000,
                 &scopes,
-                session["sub"].as_str().unwrap_or("client"),
+                crate::managed_clients::LINK_SUBJECT,
             ) {
                 Ok(v) => json_reply(StatusCode::OK, v.to_string()),
                 Err(_) => json_reply(StatusCode::INTERNAL_SERVER_ERROR, "{}".into()),

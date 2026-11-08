@@ -1,0 +1,3927 @@
+{
+  "nativeRevision": "83a3674ffd84ffb33de768210c806cb1ac53fd80",
+  "model": {
+    "id": "fixture/speech-model",
+    "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "filename": "model.gguf",
+    "size": 64,
+    "sha256": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0"
+  },
+  "cases": [
+    {
+      "input": {
+        "name": "fresh",
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "64"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": true,
+          "path": "/fixture/speech/models/model.gguf"
+        },
+        "after": [
+          true,
+          "/fixture/speech/models/model.gguf",
+          true
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 64
+          },
+          {
+            "kind": "verify"
+          },
+          {
+            "kind": "hash",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part"
+          },
+          {
+            "kind": "rename",
+            "from": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "to": "/fixture/speech/models/model.gguf"
+          },
+          {
+            "kind": "marker",
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1002:7:101"
+          }
+        ],
+        "hashes": 1,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf",
+            "bytes": 64,
+            "sha256": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "bytes": 78,
+            "sha256": "a5fd18b38ed0f54b8e043d5ed8e973ff2dd25ecca79e7e9e40bdeda4c846fee7",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1002:7:101"
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "valid-first-use",
+        "initial": "valid",
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "64"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          true,
+          "/fixture/speech/models/model.gguf",
+          true
+        ],
+        "outcome": {
+          "ok": true,
+          "path": "/fixture/speech/models/model.gguf"
+        },
+        "after": [
+          true,
+          "/fixture/speech/models/model.gguf",
+          true
+        ],
+        "requests": [],
+        "events": [
+          {
+            "kind": "hash",
+            "path": "/fixture/speech/models/model.gguf"
+          },
+          {
+            "kind": "marker",
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1000:7:100"
+          }
+        ],
+        "hashes": 1,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf",
+            "bytes": 64,
+            "sha256": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "bytes": 78,
+            "sha256": "5eace8edf7c69c2f629448433fba3062f1f57a87392033ea488713a7dc60e9da",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1000:7:100"
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "valid-marker-no-hash",
+        "initial": "valid",
+        "marker": "valid",
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "64"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          true,
+          "/fixture/speech/models/model.gguf",
+          true
+        ],
+        "outcome": {
+          "ok": true,
+          "path": "/fixture/speech/models/model.gguf"
+        },
+        "after": [
+          true,
+          "/fixture/speech/models/model.gguf",
+          true
+        ],
+        "requests": [],
+        "events": [],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf",
+            "bytes": 64,
+            "sha256": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "bytes": 78,
+            "sha256": "5eace8edf7c69c2f629448433fba3062f1f57a87392033ea488713a7dc60e9da",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1000:7:100"
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "invalid-marker-rehash",
+        "initial": "valid",
+        "marker": "invalid",
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "64"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          true,
+          "/fixture/speech/models/model.gguf",
+          true
+        ],
+        "outcome": {
+          "ok": true,
+          "path": "/fixture/speech/models/model.gguf"
+        },
+        "after": [
+          true,
+          "/fixture/speech/models/model.gguf",
+          true
+        ],
+        "requests": [],
+        "events": [
+          {
+            "kind": "hash",
+            "path": "/fixture/speech/models/model.gguf"
+          },
+          {
+            "kind": "marker",
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1000:7:100"
+          }
+        ],
+        "hashes": 1,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf",
+            "bytes": 64,
+            "sha256": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "bytes": 78,
+            "sha256": "5eace8edf7c69c2f629448433fba3062f1f57a87392033ea488713a7dc60e9da",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1000:7:100"
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "corrupt-same-size",
+        "initial": "corrupt",
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "64"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          true,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": true,
+          "path": "/fixture/speech/models/model.gguf"
+        },
+        "after": [
+          true,
+          "/fixture/speech/models/model.gguf",
+          true
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "hash",
+            "path": "/fixture/speech/models/model.gguf"
+          },
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 64
+          },
+          {
+            "kind": "verify"
+          },
+          {
+            "kind": "hash",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part"
+          },
+          {
+            "kind": "rename",
+            "from": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "to": "/fixture/speech/models/model.gguf"
+          },
+          {
+            "kind": "marker",
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1003:7:102"
+          }
+        ],
+        "hashes": 2,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf",
+            "bytes": 64,
+            "sha256": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "bytes": 78,
+            "sha256": "7c71c0197782692bc5a9ab84709a05a5800e063bed07986b7b57da5a8020c181",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1003:7:102"
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "wrong-size",
+        "initial": "short",
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "64"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": true,
+          "path": "/fixture/speech/models/model.gguf"
+        },
+        "after": [
+          true,
+          "/fixture/speech/models/model.gguf",
+          true
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 64
+          },
+          {
+            "kind": "verify"
+          },
+          {
+            "kind": "hash",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part"
+          },
+          {
+            "kind": "rename",
+            "from": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "to": "/fixture/speech/models/model.gguf"
+          },
+          {
+            "kind": "marker",
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1003:7:102"
+          }
+        ],
+        "hashes": 1,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf",
+            "bytes": 64,
+            "sha256": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "bytes": 78,
+            "sha256": "7c71c0197782692bc5a9ab84709a05a5800e063bed07986b7b57da5a8020c181",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1003:7:102"
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "marker-write-ignored",
+        "markerWriteFails": true,
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "64"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": true,
+          "path": "/fixture/speech/models/model.gguf"
+        },
+        "after": [
+          true,
+          "/fixture/speech/models/model.gguf",
+          true
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 64
+          },
+          {
+            "kind": "verify"
+          },
+          {
+            "kind": "hash",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part"
+          },
+          {
+            "kind": "rename",
+            "from": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "to": "/fixture/speech/models/model.gguf"
+          },
+          {
+            "kind": "hash",
+            "path": "/fixture/speech/models/model.gguf"
+          }
+        ],
+        "hashes": 2,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf",
+            "bytes": 64,
+            "sha256": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "identity-changes-while-hashing",
+        "initial": "valid",
+        "changeDuringHash": true,
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "64"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          true,
+          null,
+          true
+        ],
+        "outcome": {
+          "ok": true,
+          "path": "/fixture/speech/models/model.gguf"
+        },
+        "after": [
+          true,
+          "/fixture/speech/models/model.gguf",
+          true
+        ],
+        "requests": [],
+        "events": [
+          {
+            "kind": "hash",
+            "path": "/fixture/speech/models/model.gguf"
+          },
+          {
+            "kind": "verify"
+          },
+          {
+            "kind": "hash",
+            "path": "/fixture/speech/models/model.gguf"
+          },
+          {
+            "kind": "marker",
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1100:7:100"
+          }
+        ],
+        "hashes": 2,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf",
+            "bytes": 64,
+            "sha256": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "bytes": 78,
+            "sha256": "d0a88df89746186e79228e246abb7000de81eb5411cdd9e6774596b3e3ffccea",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1100:7:100"
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "native-orphan-removal-plan",
+        "orphan": true,
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "64"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": true,
+          "path": "/fixture/speech/models/model.gguf"
+        },
+        "after": [
+          true,
+          "/fixture/speech/models/model.gguf",
+          true
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.f660de6c-e172-4146-8ffe-d3c32eb48cd4.part",
+            "options": {
+              "force": true
+            }
+          },
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 64
+          },
+          {
+            "kind": "verify"
+          },
+          {
+            "kind": "hash",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part"
+          },
+          {
+            "kind": "rename",
+            "from": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "to": "/fixture/speech/models/model.gguf"
+          },
+          {
+            "kind": "marker",
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1003:7:102"
+          }
+        ],
+        "hashes": 1,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf",
+            "bytes": 64,
+            "sha256": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "bytes": 78,
+            "sha256": "7c71c0197782692bc5a9ab84709a05a5800e063bed07986b7b57da5a8020c181",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1003:7:102"
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "transport-resume",
+        "responses": [
+          {
+            "chunks": [
+              "first"
+            ],
+            "fail": true
+          },
+          {
+            "status": 206,
+            "chunks": [
+              "rest"
+            ],
+            "headers": {
+              "content-range": "bytes 20-63/64",
+              "content-length": "44"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": true,
+          "path": "/fixture/speech/models/model.gguf"
+        },
+        "after": [
+          true,
+          "/fixture/speech/models/model.gguf",
+          true
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          },
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": "bytes=20-"
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 20
+          },
+          {
+            "kind": "progress",
+            "bytes": 20
+          },
+          {
+            "kind": "progress",
+            "bytes": 64
+          },
+          {
+            "kind": "verify"
+          },
+          {
+            "kind": "hash",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part"
+          },
+          {
+            "kind": "rename",
+            "from": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "to": "/fixture/speech/models/model.gguf"
+          },
+          {
+            "kind": "marker",
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1003:7:101"
+          }
+        ],
+        "hashes": 1,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf",
+            "bytes": 64,
+            "sha256": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "bytes": 78,
+            "sha256": "39b3f41fb843191619fb4fbaf68fc48c184e97b615fd3478dace25a13debdcc6",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1003:7:101"
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "range-ignored-restart",
+        "responses": [
+          {
+            "chunks": [
+              "first"
+            ],
+            "fail": true
+          },
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "64"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": true,
+          "path": "/fixture/speech/models/model.gguf"
+        },
+        "after": [
+          true,
+          "/fixture/speech/models/model.gguf",
+          true
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          },
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": "bytes=20-"
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 20
+          },
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 64
+          },
+          {
+            "kind": "verify"
+          },
+          {
+            "kind": "hash",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part"
+          },
+          {
+            "kind": "rename",
+            "from": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "to": "/fixture/speech/models/model.gguf"
+          },
+          {
+            "kind": "marker",
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1004:7:102"
+          }
+        ],
+        "hashes": 1,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf",
+            "bytes": 64,
+            "sha256": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "bytes": 78,
+            "sha256": "52ae1cb7016397c500b79467e18d74c3e843788f54dfa503140580c71917a25c",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1004:7:102"
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "three-short-attempts",
+        "responses": [
+          {
+            "chunks": [
+              "first"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "verification",
+          "status": null,
+          "message": "Speech model download failed: verification."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          },
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": "bytes=20-"
+          },
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": "bytes=20-"
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 20
+          },
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 20
+          },
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 20
+          },
+          {
+            "kind": "verify"
+          },
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "bad-sha256",
+        "responses": [
+          {
+            "chunks": [
+              [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "headers": {
+              "content-length": "64"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "verification",
+          "status": null,
+          "message": "Speech model download failed: verification."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 64
+          },
+          {
+            "kind": "verify"
+          },
+          {
+            "kind": "hash",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part"
+          },
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 1,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "status-201",
+        "responses": [
+          {
+            "status": 201,
+            "chunks": [
+              "all"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "status",
+          "status": 201,
+          "message": "Speech model download failed: status 201."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "status-206",
+        "responses": [
+          {
+            "status": 206,
+            "chunks": [
+              "all"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "status",
+          "status": 206,
+          "message": "Speech model download failed: status 206."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "status-400",
+        "responses": [
+          {
+            "status": 400,
+            "chunks": [
+              "all"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "status",
+          "status": 400,
+          "message": "Speech model download failed: status 400."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "status-416",
+        "responses": [
+          {
+            "status": 416,
+            "chunks": [
+              "all"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "status",
+          "status": 416,
+          "message": "Speech model download failed: status 416."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "status-500",
+        "responses": [
+          {
+            "status": 500,
+            "chunks": [
+              "all"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "status",
+          "status": 500,
+          "message": "Speech model download failed: status 500."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "content-length-\"0\"",
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "0"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "size",
+          "status": null,
+          "message": "Speech model download failed: size."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "content-length-\"63\"",
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "63"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "size",
+          "status": null,
+          "message": "Speech model download failed: size."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "content-length-\"65\"",
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "65"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "size",
+          "status": null,
+          "message": "Speech model download failed: size."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "content-length-\"\"",
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": ""
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "size",
+          "status": null,
+          "message": "Speech model download failed: size."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "content-length-\" 64 \"",
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": " 64 "
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": true,
+          "path": "/fixture/speech/models/model.gguf"
+        },
+        "after": [
+          true,
+          "/fixture/speech/models/model.gguf",
+          true
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 64
+          },
+          {
+            "kind": "verify"
+          },
+          {
+            "kind": "hash",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part"
+          },
+          {
+            "kind": "rename",
+            "from": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "to": "/fixture/speech/models/model.gguf"
+          },
+          {
+            "kind": "marker",
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1002:7:101"
+          }
+        ],
+        "hashes": 1,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf",
+            "bytes": 64,
+            "sha256": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "bytes": 78,
+            "sha256": "a5fd18b38ed0f54b8e043d5ed8e973ff2dd25ecca79e7e9e40bdeda4c846fee7",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1002:7:101"
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "content-length-\"0x40\"",
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "0x40"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": true,
+          "path": "/fixture/speech/models/model.gguf"
+        },
+        "after": [
+          true,
+          "/fixture/speech/models/model.gguf",
+          true
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 64
+          },
+          {
+            "kind": "verify"
+          },
+          {
+            "kind": "hash",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part"
+          },
+          {
+            "kind": "rename",
+            "from": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "to": "/fixture/speech/models/model.gguf"
+          },
+          {
+            "kind": "marker",
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1002:7:101"
+          }
+        ],
+        "hashes": 1,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf",
+            "bytes": 64,
+            "sha256": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "bytes": 78,
+            "sha256": "a5fd18b38ed0f54b8e043d5ed8e973ff2dd25ecca79e7e9e40bdeda4c846fee7",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1002:7:101"
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "content-length-\"Infinity\"",
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "Infinity"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": true,
+          "path": "/fixture/speech/models/model.gguf"
+        },
+        "after": [
+          true,
+          "/fixture/speech/models/model.gguf",
+          true
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 64
+          },
+          {
+            "kind": "verify"
+          },
+          {
+            "kind": "hash",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part"
+          },
+          {
+            "kind": "rename",
+            "from": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "to": "/fixture/speech/models/model.gguf"
+          },
+          {
+            "kind": "marker",
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1002:7:101"
+          }
+        ],
+        "hashes": 1,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf",
+            "bytes": 64,
+            "sha256": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "bytes": 78,
+            "sha256": "a5fd18b38ed0f54b8e043d5ed8e973ff2dd25ecca79e7e9e40bdeda4c846fee7",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1002:7:101"
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "content-length-\"NaN\"",
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "NaN"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": true,
+          "path": "/fixture/speech/models/model.gguf"
+        },
+        "after": [
+          true,
+          "/fixture/speech/models/model.gguf",
+          true
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 64
+          },
+          {
+            "kind": "verify"
+          },
+          {
+            "kind": "hash",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part"
+          },
+          {
+            "kind": "rename",
+            "from": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "to": "/fixture/speech/models/model.gguf"
+          },
+          {
+            "kind": "marker",
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1002:7:101"
+          }
+        ],
+        "hashes": 1,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf",
+            "bytes": 64,
+            "sha256": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "bytes": 78,
+            "sha256": "a5fd18b38ed0f54b8e043d5ed8e973ff2dd25ecca79e7e9e40bdeda4c846fee7",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1002:7:101"
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "content-range-\"bytes 20-63/64\"",
+        "responses": [
+          {
+            "chunks": [
+              "first"
+            ],
+            "fail": true
+          },
+          {
+            "status": 206,
+            "chunks": [
+              "rest"
+            ],
+            "headers": {
+              "content-range": "bytes 20-63/64"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": true,
+          "path": "/fixture/speech/models/model.gguf"
+        },
+        "after": [
+          true,
+          "/fixture/speech/models/model.gguf",
+          true
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          },
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": "bytes=20-"
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 20
+          },
+          {
+            "kind": "progress",
+            "bytes": 20
+          },
+          {
+            "kind": "progress",
+            "bytes": 64
+          },
+          {
+            "kind": "verify"
+          },
+          {
+            "kind": "hash",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part"
+          },
+          {
+            "kind": "rename",
+            "from": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "to": "/fixture/speech/models/model.gguf"
+          },
+          {
+            "kind": "marker",
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1003:7:101"
+          }
+        ],
+        "hashes": 1,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf",
+            "bytes": 64,
+            "sha256": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "bytes": 78,
+            "sha256": "39b3f41fb843191619fb4fbaf68fc48c184e97b615fd3478dace25a13debdcc6",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1003:7:101"
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "content-range-\"bytes 19-63/64\"",
+        "responses": [
+          {
+            "chunks": [
+              "first"
+            ],
+            "fail": true
+          },
+          {
+            "status": 206,
+            "chunks": [
+              "rest"
+            ],
+            "headers": {
+              "content-range": "bytes 19-63/64"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "range",
+          "status": null,
+          "message": "Speech model download failed: range."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          },
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": "bytes=20-"
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 20
+          },
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "content-range-\"bytes 20-62/64\"",
+        "responses": [
+          {
+            "chunks": [
+              "first"
+            ],
+            "fail": true
+          },
+          {
+            "status": 206,
+            "chunks": [
+              "rest"
+            ],
+            "headers": {
+              "content-range": "bytes 20-62/64"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "range",
+          "status": null,
+          "message": "Speech model download failed: range."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          },
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": "bytes=20-"
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 20
+          },
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "content-range-\"bytes 20-63/65\"",
+        "responses": [
+          {
+            "chunks": [
+              "first"
+            ],
+            "fail": true
+          },
+          {
+            "status": 206,
+            "chunks": [
+              "rest"
+            ],
+            "headers": {
+              "content-range": "bytes 20-63/65"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "range",
+          "status": null,
+          "message": "Speech model download failed: range."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          },
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": "bytes=20-"
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 20
+          },
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "content-range-\"bytes 20-63/*\"",
+        "responses": [
+          {
+            "chunks": [
+              "first"
+            ],
+            "fail": true
+          },
+          {
+            "status": 206,
+            "chunks": [
+              "rest"
+            ],
+            "headers": {
+              "content-range": "bytes 20-63/*"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "range",
+          "status": null,
+          "message": "Speech model download failed: range."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          },
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": "bytes=20-"
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 20
+          },
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "content-range-\"bytes 20-63/64\\n\"",
+        "responses": [
+          {
+            "chunks": [
+              "first"
+            ],
+            "fail": true
+          },
+          {
+            "status": 206,
+            "chunks": [
+              "rest"
+            ],
+            "headers": {
+              "content-range": "bytes 20-63/64\n"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "range",
+          "status": null,
+          "message": "Speech model download failed: range."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          },
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": "bytes=20-"
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 20
+          },
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "content-range-\"bytes 020-063/064\"",
+        "responses": [
+          {
+            "chunks": [
+              "first"
+            ],
+            "fail": true
+          },
+          {
+            "status": 206,
+            "chunks": [
+              "rest"
+            ],
+            "headers": {
+              "content-range": "bytes 020-063/064"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": true,
+          "path": "/fixture/speech/models/model.gguf"
+        },
+        "after": [
+          true,
+          "/fixture/speech/models/model.gguf",
+          true
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          },
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": "bytes=20-"
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 20
+          },
+          {
+            "kind": "progress",
+            "bytes": 20
+          },
+          {
+            "kind": "progress",
+            "bytes": 64
+          },
+          {
+            "kind": "verify"
+          },
+          {
+            "kind": "hash",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part"
+          },
+          {
+            "kind": "rename",
+            "from": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "to": "/fixture/speech/models/model.gguf"
+          },
+          {
+            "kind": "marker",
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1003:7:101"
+          }
+        ],
+        "hashes": 1,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf",
+            "bytes": 64,
+            "sha256": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "bytes": 78,
+            "sha256": "39b3f41fb843191619fb4fbaf68fc48c184e97b615fd3478dace25a13debdcc6",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1003:7:101"
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "range-real-terminators-10",
+        "rawCodepoints": [
+          98,
+          121,
+          116,
+          101,
+          115,
+          32,
+          50,
+          48,
+          45,
+          54,
+          51,
+          47,
+          54,
+          52,
+          10
+        ],
+        "responses": [
+          {
+            "chunks": [
+              "first"
+            ],
+            "fail": true
+          },
+          {
+            "status": 206,
+            "chunks": [
+              "rest"
+            ],
+            "headers": {
+              "content-range": "bytes 20-63/64\n"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "range",
+          "status": null,
+          "message": "Speech model download failed: range."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          },
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": "bytes=20-"
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 20
+          },
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "range-real-terminators-13",
+        "rawCodepoints": [
+          98,
+          121,
+          116,
+          101,
+          115,
+          32,
+          50,
+          48,
+          45,
+          54,
+          51,
+          47,
+          54,
+          52,
+          13
+        ],
+        "responses": [
+          {
+            "chunks": [
+              "first"
+            ],
+            "fail": true
+          },
+          {
+            "status": 206,
+            "chunks": [
+              "rest"
+            ],
+            "headers": {
+              "content-range": "bytes 20-63/64\r"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "range",
+          "status": null,
+          "message": "Speech model download failed: range."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          },
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": "bytes=20-"
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 20
+          },
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "range-real-terminators-13-10",
+        "rawCodepoints": [
+          98,
+          121,
+          116,
+          101,
+          115,
+          32,
+          50,
+          48,
+          45,
+          54,
+          51,
+          47,
+          54,
+          52,
+          13,
+          10
+        ],
+        "responses": [
+          {
+            "chunks": [
+              "first"
+            ],
+            "fail": true
+          },
+          {
+            "status": 206,
+            "chunks": [
+              "rest"
+            ],
+            "headers": {
+              "content-range": "bytes 20-63/64\r\n"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "range",
+          "status": null,
+          "message": "Speech model download failed: range."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          },
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": "bytes=20-"
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 20
+          },
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "range-real-terminators-8232",
+        "rawCodepoints": [
+          98,
+          121,
+          116,
+          101,
+          115,
+          32,
+          50,
+          48,
+          45,
+          54,
+          51,
+          47,
+          54,
+          52,
+          8232
+        ],
+        "responses": [
+          {
+            "chunks": [
+              "first"
+            ],
+            "fail": true
+          },
+          {
+            "status": 206,
+            "chunks": [
+              "rest"
+            ],
+            "headers": {
+              "content-range": "bytes 20-63/64 "
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "range",
+          "status": null,
+          "message": "Speech model download failed: range."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          },
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": "bytes=20-"
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 20
+          },
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "range-real-terminators-8233",
+        "rawCodepoints": [
+          98,
+          121,
+          116,
+          101,
+          115,
+          32,
+          50,
+          48,
+          45,
+          54,
+          51,
+          47,
+          54,
+          52,
+          8233
+        ],
+        "responses": [
+          {
+            "chunks": [
+              "first"
+            ],
+            "fail": true
+          },
+          {
+            "status": 206,
+            "chunks": [
+              "rest"
+            ],
+            "headers": {
+              "content-range": "bytes 20-63/64 "
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "range",
+          "status": null,
+          "message": "Speech model download failed: range."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          },
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": "bytes=20-"
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 20
+          },
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "length-max-finite-radix16",
+        "numberFinite": true,
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "0xfffffffffffff800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "size",
+          "status": null,
+          "message": "Speech model download failed: size."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "length-max-finite-radix8",
+        "numberFinite": true,
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "0o177777777777777777400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "size",
+          "status": null,
+          "message": "Speech model download failed: size."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "length-max-finite-radix2",
+        "numberFinite": true,
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "0b1111111111111111111111111111111111111111111111111111100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "size",
+          "status": null,
+          "message": "Speech model download failed: size."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "length-below-overflow-radix16",
+        "numberFinite": true,
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "0xfffffffffffffbffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "size",
+          "status": null,
+          "message": "Speech model download failed: size."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "length-below-overflow-radix8",
+        "numberFinite": true,
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "0o177777777777777777577777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "size",
+          "status": null,
+          "message": "Speech model download failed: size."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "length-below-overflow-radix2",
+        "numberFinite": true,
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "0b1111111111111111111111111111111111111111111111111111101111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": false,
+          "tag": "SpeechModelDownloadError",
+          "reason": "size",
+          "status": null,
+          "message": "Speech model download failed: size."
+        },
+        "after": [
+          false,
+          null,
+          false
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "remove",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "options": {
+              "force": true
+            }
+          }
+        ],
+        "hashes": 0,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "length-overflow-tie-radix16",
+        "numberFinite": false,
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "0xfffffffffffffc00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": true,
+          "path": "/fixture/speech/models/model.gguf"
+        },
+        "after": [
+          true,
+          "/fixture/speech/models/model.gguf",
+          true
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 64
+          },
+          {
+            "kind": "verify"
+          },
+          {
+            "kind": "hash",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part"
+          },
+          {
+            "kind": "rename",
+            "from": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "to": "/fixture/speech/models/model.gguf"
+          },
+          {
+            "kind": "marker",
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1002:7:101"
+          }
+        ],
+        "hashes": 1,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf",
+            "bytes": 64,
+            "sha256": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "bytes": 78,
+            "sha256": "a5fd18b38ed0f54b8e043d5ed8e973ff2dd25ecca79e7e9e40bdeda4c846fee7",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1002:7:101"
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "length-overflow-tie-radix8",
+        "numberFinite": false,
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "0o177777777777777777600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": true,
+          "path": "/fixture/speech/models/model.gguf"
+        },
+        "after": [
+          true,
+          "/fixture/speech/models/model.gguf",
+          true
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 64
+          },
+          {
+            "kind": "verify"
+          },
+          {
+            "kind": "hash",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part"
+          },
+          {
+            "kind": "rename",
+            "from": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "to": "/fixture/speech/models/model.gguf"
+          },
+          {
+            "kind": "marker",
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1002:7:101"
+          }
+        ],
+        "hashes": 1,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf",
+            "bytes": 64,
+            "sha256": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "bytes": 78,
+            "sha256": "a5fd18b38ed0f54b8e043d5ed8e973ff2dd25ecca79e7e9e40bdeda4c846fee7",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1002:7:101"
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "length-overflow-tie-radix2",
+        "numberFinite": false,
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "0b1111111111111111111111111111111111111111111111111111110000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": true,
+          "path": "/fixture/speech/models/model.gguf"
+        },
+        "after": [
+          true,
+          "/fixture/speech/models/model.gguf",
+          true
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 64
+          },
+          {
+            "kind": "verify"
+          },
+          {
+            "kind": "hash",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part"
+          },
+          {
+            "kind": "rename",
+            "from": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "to": "/fixture/speech/models/model.gguf"
+          },
+          {
+            "kind": "marker",
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1002:7:101"
+          }
+        ],
+        "hashes": 1,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf",
+            "bytes": 64,
+            "sha256": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "bytes": 78,
+            "sha256": "a5fd18b38ed0f54b8e043d5ed8e973ff2dd25ecca79e7e9e40bdeda4c846fee7",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1002:7:101"
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "length-above-overflow-radix16",
+        "numberFinite": false,
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": true,
+          "path": "/fixture/speech/models/model.gguf"
+        },
+        "after": [
+          true,
+          "/fixture/speech/models/model.gguf",
+          true
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 64
+          },
+          {
+            "kind": "verify"
+          },
+          {
+            "kind": "hash",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part"
+          },
+          {
+            "kind": "rename",
+            "from": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "to": "/fixture/speech/models/model.gguf"
+          },
+          {
+            "kind": "marker",
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1002:7:101"
+          }
+        ],
+        "hashes": 1,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf",
+            "bytes": 64,
+            "sha256": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "bytes": 78,
+            "sha256": "a5fd18b38ed0f54b8e043d5ed8e973ff2dd25ecca79e7e9e40bdeda4c846fee7",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1002:7:101"
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "length-above-overflow-radix8",
+        "numberFinite": false,
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "0o177777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": true,
+          "path": "/fixture/speech/models/model.gguf"
+        },
+        "after": [
+          true,
+          "/fixture/speech/models/model.gguf",
+          true
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 64
+          },
+          {
+            "kind": "verify"
+          },
+          {
+            "kind": "hash",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part"
+          },
+          {
+            "kind": "rename",
+            "from": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "to": "/fixture/speech/models/model.gguf"
+          },
+          {
+            "kind": "marker",
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1002:7:101"
+          }
+        ],
+        "hashes": 1,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf",
+            "bytes": 64,
+            "sha256": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "bytes": 78,
+            "sha256": "a5fd18b38ed0f54b8e043d5ed8e973ff2dd25ecca79e7e9e40bdeda4c846fee7",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1002:7:101"
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "length-above-overflow-radix2",
+        "numberFinite": false,
+        "responses": [
+          {
+            "chunks": [
+              "all"
+            ],
+            "headers": {
+              "content-length": "0b1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "before": [
+          false,
+          null,
+          false
+        ],
+        "outcome": {
+          "ok": true,
+          "path": "/fixture/speech/models/model.gguf"
+        },
+        "after": [
+          true,
+          "/fixture/speech/models/model.gguf",
+          true
+        ],
+        "requests": [
+          {
+            "url": "https://huggingface.co/fixture/speech-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf",
+            "range": null
+          }
+        ],
+        "events": [
+          {
+            "kind": "progress",
+            "bytes": 0
+          },
+          {
+            "kind": "progress",
+            "bytes": 64
+          },
+          {
+            "kind": "verify"
+          },
+          {
+            "kind": "hash",
+            "path": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part"
+          },
+          {
+            "kind": "rename",
+            "from": "/fixture/speech/models/model.gguf.00000000-0000-4000-8000-000000000001.part",
+            "to": "/fixture/speech/models/model.gguf"
+          },
+          {
+            "kind": "marker",
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1002:7:101"
+          }
+        ],
+        "hashes": 1,
+        "files": [
+          {
+            "path": "/fixture/speech/models/model.gguf",
+            "bytes": 64,
+            "sha256": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.notes.part",
+            "bytes": 9,
+            "sha256": "c2703a7ddf6c74b39505339af20dd6dd4f0794720e038b78ba395600c72417d4",
+            "text": null
+          },
+          {
+            "path": "/fixture/speech/models/model.gguf.verified",
+            "bytes": 78,
+            "sha256": "a5fd18b38ed0f54b8e043d5ed8e973ff2dd25ecca79e7e9e40bdeda4c846fee7",
+            "text": "d8bc63b4fc1156e5e7d95a418b9bf54cd3174bedbc2db40f74895349b229b3c0:64:1002:7:101"
+          }
+        ]
+      }
+    }
+  ]
+}

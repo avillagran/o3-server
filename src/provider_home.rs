@@ -377,7 +377,16 @@ impl Home {
                 let metadata = fs::symlink_metadata(&link)
                     .map_err(|e| self.fs_error("remove", &link, Some(entry), None, e))?;
                 if metadata.is_dir() {
-                    fs::remove_dir_all(&link)
+                    use std::os::unix::fs::MetadataExt;
+                    crate::cleanup::quarantine_owned(
+                        &link,
+                        crate::cleanup::Identity {
+                            device: metadata.dev(),
+                            inode: metadata.ino(),
+                            kind: crate::cleanup::Kind::Directory,
+                        },
+                    )
+                    .map(|_| ())
                 } else {
                     fs::remove_file(&link)
                 }
@@ -486,13 +495,36 @@ mod tests {
     }
     impl Drop for Sandbox {
         fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
+            // Fixture trees are retained for private container teardown.
         }
     }
     fn write(path: impl AsRef<Path>, value: &str) {
         let path = path.as_ref();
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, value).unwrap();
+    }
+    #[test]
+    fn replaced_local_lock_directory_is_retained_with_its_contents() {
+        let dir = Sandbox::new();
+        let home = dir.overlay();
+        let shadow = home.runtime.as_ref().unwrap();
+        write(shadow.join("mcp-oauth-locks/unknown-data"), "retained");
+        home.materialize().unwrap();
+        assert!(fs::read_link(shadow.join("mcp-oauth-locks")).is_ok());
+        let retained = fs::read_dir(shadow)
+            .unwrap()
+            .filter_map(std::result::Result::ok)
+            .find(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".o3-retained-")
+            })
+            .unwrap();
+        assert_eq!(
+            fs::read_to_string(retained.path().join("unknown-data")).unwrap(),
+            "retained"
+        );
     }
     #[test]
     fn pinned_typescript_resolvers_match_layout_environment_and_literal_tilde_rules() {

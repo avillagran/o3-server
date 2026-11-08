@@ -4,7 +4,7 @@ use std::{path::PathBuf, process::Command};
 
 fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("o3-pilot-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+    // Fixture trees are retained for private container teardown.
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
@@ -120,7 +120,7 @@ fn pilot_imports_read_only_starts_pairs_refuses_overwrite_and_stops() {
     let state: Value =
         serde_json::from_slice(&std::fs::read(dir.join("pilot.json")).unwrap()).unwrap();
     assert!(!alive(state["pid"].as_u64().unwrap()));
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 
 struct Stop(PathBuf, PathBuf);
@@ -139,5 +139,5 @@ fn pilot_refuses_a_dir_inside_the_t3_profile_and_never_creates_it() {
     let out = pilot(&dir, &t3, &["--no-import"]);
     assert!(!out.status.success());
     assert!(!dir.exists());
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }

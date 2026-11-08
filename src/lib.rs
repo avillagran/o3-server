@@ -4,6 +4,13 @@ extern crate self as o3_server;
 pub mod additions;
 pub mod auth;
 mod deletion;
+mod desktop_auth;
+pub mod desktop_bootstrap;
+pub mod desktop_bootstrap_fd;
+pub mod desktop_bootstrap_grant;
+pub mod desktop_browser;
+pub mod desktop_browser_channel;
+pub mod desktop_startup;
 pub mod http;
 mod mcp;
 mod mcp_access;
@@ -12,14 +19,38 @@ mod mcp_mutations;
 mod mcp_projects;
 mod mcp_tools;
 pub mod native_mcp;
+pub mod native_page_worker;
 mod repositories;
 pub mod rpc;
 mod rpc_input;
+pub mod shared_readiness;
+pub mod speech_catalog;
+mod speech_http;
+pub mod speech_kernel;
+pub mod speech_model_store;
+pub mod speech_request;
+pub mod speech_runtime;
+pub mod speech_service;
+pub mod speech_state;
+pub mod speech_worker;
 pub mod store;
+#[cfg(test)]
+#[path = "../tests/support/sandbox.rs"]
+pub(crate) mod test_sandbox;
 
 pub use http::{serve, serve_io};
 pub mod command_output;
+mod command_shared;
+mod composer_context;
 pub mod events;
+pub mod gitcafe_api;
+pub mod managed_clients;
+pub mod managed_limits;
+pub mod managed_policy;
+mod managed_settings;
+mod managed_settings_codec;
+pub mod managed_tailscale;
+pub mod managed_tailscale_guard;
 pub mod ops;
 #[cfg(target_os = "linux")]
 mod process_scope;
@@ -27,12 +58,20 @@ pub mod profile;
 pub mod provider;
 mod provider_failure;
 mod provider_policy;
+mod provider_secrets;
 pub mod pty;
+mod relay_origin;
 pub mod routes;
 pub mod scheduled;
 pub mod scopes;
+pub mod secret_resolver;
+pub mod server_secret_store;
 pub mod service;
 pub mod settings;
+pub mod settings_secret_transaction;
+pub mod settings_secrets;
+pub mod source_credentials;
+mod source_credentials_runtime;
 
 pub mod agent_scope;
 pub mod assets;
@@ -41,14 +80,17 @@ pub mod body;
 pub mod bridge;
 #[cfg(feature = "bridge")]
 mod bridge_forwards;
+pub mod browser_profile_catalog;
 pub mod claude;
 mod claude_projection;
+pub mod cloud_speech;
 pub mod codex;
 mod codex_projection;
 mod content_search;
 pub mod ext;
 pub mod files;
 mod forge;
+mod fresh_context;
 pub mod import;
 pub mod keybind;
 pub mod misc;
@@ -56,6 +98,9 @@ mod native_goal;
 pub mod p2;
 pub mod paths;
 pub mod preview;
+pub mod preview_activity;
+pub mod preview_control;
+pub mod preview_manager;
 pub mod proc;
 pub mod projects;
 mod provider_frames;
@@ -68,10 +113,15 @@ pub mod snapshot;
 pub mod stacked;
 pub mod streams;
 pub mod t3_shared;
+mod task_shared;
 pub mod terminal;
+mod terminal_environment;
 pub mod thread_commands;
 pub mod threadq;
 pub mod vcs;
+mod webhook_dedupe;
+mod webhook_native;
+mod webhook_payload;
 pub mod workspace;
 mod workspace_transition;
 mod worktree_handoff;
@@ -94,9 +144,25 @@ mod settlement;
 pub mod heap;
 
 pub mod device;
+pub mod device_native_acquire;
+pub mod device_native_client;
+pub mod device_native_hub;
+pub mod device_native_inventory;
+pub mod device_native_local;
+pub mod device_native_owner;
+pub mod device_native_platform;
+pub mod device_native_proxy;
+pub mod device_native_runtime;
+pub mod device_native_ssh;
+pub mod device_native_ssh_owner;
+pub mod device_native_ssh_transport;
+pub mod device_native_state;
+pub mod device_native_tools;
 
 mod background;
 
+mod cliproxy;
+mod cliproxy_projection;
 mod config_sources;
 
 mod title;
@@ -107,7 +173,9 @@ mod source_control;
 
 mod limits;
 
+mod cdp_dialog_json;
 pub mod usage_rates;
+mod utf16_json;
 
 mod usage_ledger;
 
@@ -146,3 +214,12 @@ mod provider_switch;
 mod provider_home;
 
 pub mod selection_transition;
+
+pub mod cleanup;
+
+pub mod worktree_removal;
+
+mod browser_keyboard;
+mod browser_lifetime;
+#[cfg(test)]
+mod terminal_environment_oracle_tests;

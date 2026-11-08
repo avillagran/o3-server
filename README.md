@@ -85,26 +85,32 @@ is pushed; `o3-server --version` prints that version.
 
 ```sh
 cargo build --release -j 4
-tools/test-rust-sandbox -- -j 4
+tools/build-test-image
+tools/test-scheduled-modes --all-tests
+tools/test-scheduled-modes --default-features --all-tests
 ```
 
 Keep build output off tmpfs, for example `CARGO_TARGET_DIR=/var/tmp/o3-build/main`.
-The test runner compiles on the host and runs the test executables in rootless
-Podman with no external network or writable host mounts. It requires Podman,
-a private Node installation and the local `localhost/android-sandbox:latest`
-base image. Its derived image adds ffmpeg for video decoder regressions.
+The test runner compiles without running tests on the host, then executes them in
+a rootless Podman container with read-only source/binaries, temporary state, no
+network and no provider credentials. The runtime includes the media and CLI test
+dependencies. Use `--integration <target>` or `--unit-filter <name>` for a focused
+regression.
+
+For arbitrary Cargo and harness arguments, use the general sandbox with that
+same runtime image:
 
 ```sh
-tools/test-rust-sandbox -- --no-default-features -j 4
-tools/test-rust-sandbox -- --test native_goals stop_during_automatic_goal_turn
+tools/test-rust-sandbox --image localhost/o3-server-tests:local -- --no-default-features -j 4
+tools/test-rust-sandbox --image localhost/o3-server-tests:local -- --test native_goals stop_during_automatic_goal_turn
 ```
 
-Sources, binaries, Git metadata and the Node runtime are mounted read-only;
-test profiles and subprocess fixtures live in the container's temporary filesystems.
-The container has a 6 GiB memory limit and four test workers by default. Set
-`--memory` or `--test-threads` before `--` to adjust them. Tests that require
-credentials, hardware or an official reference remain opt-in and need their
-dedicated isolated runners.
+The general runner requires a private Node installation and mounts its runtime,
+sources, binaries and Git metadata read-only. Its default memory limit is 6 GiB
+with four test workers; set `--memory` or `--test-threads` before `--` to adjust
+those limits. Tests that require credentials, hardware or an official reference
+remain opt-in and use the dedicated isolated runners documented in `docs/nightly/`.
+
 
 `tools/test-agent-systemd` runs the opt-in native scope lifecycle in a separate
 rootless container with its own systemd user manager and private cgroups. It

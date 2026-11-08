@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+"""Run reviewed whole-native page functions against a retained private Chromium owner."""
+import argparse,json,os,pathlib,subprocess,tempfile,hashlib,uuid
+from node_admission import snapshot as snapshot_node, environment as node_environment
+p=argparse.ArgumentParser(description=__doc__);p.add_argument('--supervisor-bin',type=pathlib.Path);p.add_argument('--reuse-supervisor-artifact',action='store_true');p.add_argument('--frozen-runtime-source',type=pathlib.Path);p.add_argument('--handler-source-root',type=pathlib.Path);p.add_argument('--toolkit-source-root',type=pathlib.Path);p.add_argument('--caller-projection-data',type=pathlib.Path);p.add_argument('--broker-source',type=pathlib.Path,help='Pinned complete native PreviewAutomationBroker source');p.add_argument('--consumer-source',type=pathlib.Path,help='Pinned whole native ServerBrowser source for selected consumer oracle');p.add_argument('--reuse-node-artifact',type=pathlib.Path,help='Reuse an existing immutable admitted Node with the same exact hash');p.add_argument('--case',choices=['real-page','page-defaults','manual-cdp-detach','retention','contracts','relay','supervised','supervised-execution','supervised-revoke','entry-protocol','framing','mcp-output','owned-pipe','owned-grants','control-queue','control-consumer','broker-timeout','scope-context','scope-transport','handler-admission','evaluation-tail','evaluation-capacity','owned-gateway','owned-gateway-capacity','projection-caller-oracle','toolkit-source-oracle','caller-db-oracle','toolkit-pipe','toolkit-clock','toolkit-producers','toolkit-entry-peer','mcp-session-identity-oracle'],default='real-page');p.add_argument('--runtime-ref',help='Immutable git runtime source for an isolated checkpoint dependency proof');p.add_argument('--native',type=pathlib.Path,required=True);p.add_argument('--playwright',type=pathlib.Path,required=True);p.add_argument('--deps',type=pathlib.Path,required=True);p.add_argument('--node',type=pathlib.Path,required=True);p.add_argument('--guard',type=pathlib.Path,required=True);p.add_argument('--evidence-root',type=pathlib.Path,required=True);a=p.parse_args()
+node_binary=a.node/'bin/node';node_stat=node_binary.lstat()
+assert node_binary.is_file() and not node_binary.is_symlink() and node_stat.st_mode&0o111
+node_sha=hashlib.sha256(node_binary.read_bytes()).hexdigest()
+if os.environ.get('O3_ADMITTED_NODE'):
+ assert pathlib.Path(os.environ['O3_ADMITTED_NODE']).resolve()==node_binary.resolve()
+ assert os.environ.get('O3_ADMITTED_NODE_SHA256')==node_sha
+ assert os.environ.get('O3_ADMITTED_NODE_VERSION')=='26.13.0'
+manifest=json.loads((pathlib.Path(__file__).resolve().parent.parent/'runtime/preview/native-manifest.json').read_text())
+for name,digest in manifest['files'].items():
+ item=a.native/name;assert item.is_file() and not item.is_symlink() and hashlib.sha256(item.read_bytes()).hexdigest()==digest,name
+assert json.loads((a.deps/'node_modules/effect/package.json').read_text())['version']=='4.1.2'
+effect_manifest=json.loads((pathlib.Path(__file__).resolve().parent.parent/'runtime/preview/effect-manifest.json').read_text())
+for name,digest in effect_manifest['files'].items():
+ item=a.deps/'node_modules/effect'/name;assert item.is_file() and not item.is_symlink() and hashlib.sha256(item.read_bytes()).hexdigest()==digest,name
+artifact=a.playwright.parent/'artifact.json';assert hashlib.sha256(artifact.read_bytes()).hexdigest()=='58221afe10da094f6bc55b5e9166eff06b6ff761ad4031e97614f0f15e941a09'
+for row in json.loads(artifact.read_text())['files']:
+ item=a.playwright.parent/row['path'];assert item.is_file() and not item.is_symlink() and hashlib.sha256(item.read_bytes()).hexdigest()==row['sha256'],row['path']
+assert subprocess.check_output(['podman','--remote=false','info','--format','{{.Host.Security.Rootless}}'],text=True).strip()=='true'
+a.evidence_root.mkdir(parents=True,exist_ok=True);out=pathlib.Path(tempfile.mkdtemp(prefix='page-',dir=a.evidence_root));out.chmod(0o700);source=pathlib.Path(__file__).resolve().parent.parent
+# The shared no-follow copier seals the bytes before any private execution.
+# Version admission is performed on this exact copy inside the container.
+node_receipt={'path':str(node_binary.absolute()),'version':'26.13.0','sha256':node_sha,'bytes':node_stat.st_size}
+if a.reuse_node_artifact:
+ assert a.reuse_node_artifact.is_absolute() and a.reuse_node_artifact.name=='node'
+ original=json.loads((a.reuse_node_artifact.parent.parent/'node-receipt.json').read_text())
+ assert original['version']==node_receipt['version'] and original['sha256']==node_sha and original['bytes']==node_stat.st_size
+ # Shared admission rechecks every component, hash, identity and actual version
+ # in a private container. Its temporary copy stays inside that container.
+ reused=json.loads(subprocess.check_output(['python3',str(source/'tools/admit-node'),'--node',str(a.reuse_node_artifact),'--sha256',node_sha,'--image','localhost/o3-rust-tests:latest'],text=True,timeout=40))
+ assert reused['version']=='26.13.0' and reused['sha256']==node_sha and reused['bytes']==node_stat.st_size
+ node_mount=a.reuse_node_artifact.parent
+ node_receipt=reused
+else:
+ snapshot_node(node_receipt,out/'node-bin'/'node')
+ node_mount=out/'node-bin'
+(out/'node-receipt.json').write_text(json.dumps(node_receipt,indent=2)+'\n')
+snapshot=out/'source';hashes={};runtime_ref=None
+if a.runtime_ref:
+ runtime_ref=subprocess.check_output(['git','rev-parse','--verify',a.runtime_ref+'^{commit}'],cwd=source,text=True).strip()
+ assert len(runtime_ref)==40 and all(c in '0123456789abcdef' for c in runtime_ref)
+for directory in ['runtime/preview','tests/preview']:
+ if directory=='runtime/preview' and runtime_ref:
+  entries=subprocess.check_output(['git','ls-tree','-r','-z',runtime_ref,'--',directory],cwd=source).split(b'\0')
+  payloads=[]
+  for entry in entries:
+   if not entry:continue
+   metadata,name=entry.split(b'\t',1);mode,kind,oid=metadata.split();relative=pathlib.Path(name.decode())
+   assert mode in (b'100644',b'100755') and kind==b'blob' and '..' not in relative.parts
+   if relative.suffix not in ('.mjs','.json'):continue
+   payloads.append((relative,subprocess.check_output(['git','cat-file','blob',oid.decode()],cwd=source)))
+ else:
+  payloads=[]
+  selected=source/directory
+  frozen_hashes=None
+  if directory=='runtime/preview' and a.frozen_runtime_source:
+   selected=a.frozen_runtime_source/directory
+   frozen_hashes=json.loads((a.frozen_runtime_source.parent/'source.json').read_text())
+  for item in selected.iterdir():
+   if item.suffix not in ('.mjs','.json'):continue
+   assert item.is_file() and not item.is_symlink()
+   relative=pathlib.Path(directory)/item.name;payload=item.read_bytes()
+   if frozen_hashes is not None:assert hashlib.sha256(payload).hexdigest()==frozen_hashes[str(relative)],relative
+   payloads.append((relative,payload))
+ for relative,payload in payloads:
+  if a.case=='owned-gateway-capacity' and str(relative)=='runtime/preview/owned-cdp-client.mjs':
+   assert a.frozen_runtime_source and not runtime_ref
+   relative=pathlib.Path('runtime/preview/owned-cdp-client-product.mjs')
+  target=snapshot/relative;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(payload);target.chmod(0o400);hashes[str(relative)]=hashlib.sha256(payload).hexdigest()
+if a.case=='owned-gateway-capacity':
+ assert a.frozen_runtime_source and a.reuse_supervisor_artifact
+ relative=pathlib.Path('runtime/preview/owned-cdp-client.mjs')
+ payload=b"export {OwnedCdpClient} from '../../tests/preview/capacity-producer.mjs';\n"
+ target=snapshot/relative
+ with target.open('xb') as output:output.write(payload)
+ target.chmod(0o400);hashes[str(relative)]=hashlib.sha256(payload).hexdigest()
+ (out/'capacity-fixture.json').write_text(json.dumps({'explicitFixtureProducer':True,'frozenRuntimeSource':str(a.frozen_runtime_source),'originalEntrySha256':hashes['runtime/preview/entry.mjs'],'originalClientSha256':hashes['runtime/preview/owned-cdp-client-product.mjs'],'fixtureWrapperSha256':hashes[str(relative)],'qualification':'Only the private snapshot aliases the O3 upstream client to an explicit seven-background producer; native Page, Playwright, entry and guard bytes are unchanged.'},indent=2)+'\n')
+if runtime_ref:(out/'runtime-ref.json').write_text(json.dumps({'commit':runtime_ref},indent=2)+'\n')
+(out/'source.json').write_text(json.dumps(hashes,indent=2)+'\n')
+if a.case=='handler-admission':
+ assert a.handler_source_root and a.handler_source_root.is_dir()
+ provenance=json.loads((source/'tests/fixtures/native-preview-handler-admission-4314-source.json').read_text())
+ for name,digest in provenance['files'].items():
+  original=a.handler_source_root/name;assert original.is_file() and not original.is_symlink()
+  payload=original.read_bytes();assert hashlib.sha256(payload).hexdigest()==digest
+  destination=out/'native-policy'/pathlib.Path(name).name;destination.parent.mkdir(exist_ok=True)
+  destination.write_bytes(payload);destination.chmod(0o400)
+ (out/'native-policy-source.json').write_text(json.dumps(provenance,indent=2)+'\n')
+if a.case=='broker-timeout':
+ assert a.broker_source and a.broker_source.is_file() and not a.broker_source.is_symlink()
+ provenance=json.loads((source/'tests/fixtures/native-broker-timeout-4314-source.json').read_text())
+ payload=a.broker_source.read_bytes();assert hashlib.sha256(payload).hexdigest()==provenance['sha256']
+ (out/'native-broker.ts').write_bytes(payload);(out/'native-broker.ts').chmod(0o400)
+ (out/'native-broker-source.json').write_text(json.dumps(provenance,indent=2)+'\n')
+if a.case=='control-consumer':
+ assert a.consumer_source and a.consumer_source.is_file() and not a.consumer_source.is_symlink()
+ provenance=json.loads((source/'tests/fixtures/native-control-consumer-4314-source.json').read_text())
+ payload=a.consumer_source.read_bytes();assert hashlib.sha256(payload).hexdigest()==provenance['sha256']
+ (out/'native-consumer.ts').write_bytes(payload);(out/'native-consumer.ts').chmod(0o400)
+ (out/'native-consumer-source.json').write_text(json.dumps(provenance,indent=2)+'\n')
+if a.case in ('supervised','supervised-execution','supervised-revoke','owned-pipe','owned-grants','owned-gateway','owned-gateway-capacity'):
+ assert a.supervisor_bin and a.supervisor_bin.is_file() and not a.supervisor_bin.is_symlink()
+ if a.reuse_supervisor_artifact:
+  receipt=json.loads((a.supervisor_bin.parent/'result.json').read_text())
+  assert (receipt.get('complete') or receipt.get('artifactBuildComplete')) and receipt['build']==0 and receipt['strict']==0
+  assert hashlib.sha256(a.supervisor_bin.read_bytes()).hexdigest()==receipt['binary']['sha256'] and a.supervisor_bin.stat().st_size==receipt['binary']['bytes']
+  supervisor_mount=a.supervisor_bin
+  (out/'supervisor-receipt.json').write_text(json.dumps(receipt['binary'],indent=2)+'\n')
+ else:
+  (out/'supervisor').write_bytes(a.supervisor_bin.read_bytes());(out/'supervisor').chmod(0o500)
+  supervisor_mount=out/'supervisor'
+bootstrap='''
+import pathlib,subprocess
+pathlib.Path('/out/home').mkdir(mode=0o700)
+version=subprocess.check_output(['/node/bin/node','--version'],text=True).strip()
+if version!='v26.13.0':raise SystemExit('Exact Node26.13.0 is required')
+modules=pathlib.Path('/native/node_modules');(modules/'@t3tools').mkdir()
+for entry in pathlib.Path('/deps/node_modules').iterdir():
+ if entry.name!='@t3tools':(modules/entry.name).symlink_to(entry)
+for name in ['contracts']:(modules/'@t3tools'/name).symlink_to('/native/packages/'+name)
+raise SystemExit(subprocess.run(['/node/bin/node','--experimental-vm-modules','/source/tests/preview/real-page.mjs']).returncode)
+'''
+bootstrap=bootstrap.replace('real-page.mjs',a.case+'.mjs')
+container='o3-native-page-'+uuid.uuid4().hex
+cmd=['podman','--remote=false','run','--name',container,'--label','o3.preview-proof='+container,'--rm','--pull=never','--http-proxy=false','--userns=keep-id','--user',f'{os.getuid()}:{os.getgid()}','--read-only','--network=none','--cap-drop=ALL','--security-opt=no-new-privileges','--pids-limit=512','--memory=4g','--tmpfs','/tmp:rw,size=512m,mode=1777','--tmpfs','/native/node_modules:rw,size=32m,mode=1777','--env','HOME=/out/home','--env','XDG_CONFIG_HOME=/out/home/config','--env','XDG_CACHE_HOME=/out/home/cache']
+for name,value in node_environment(node_receipt,path='/node/bin/node').items():cmd+=['--env',name+'='+value]
+for root,target,mode in [(pathlib.Path('/usr'),'/usr','ro'),(snapshot,'/source','ro'),(a.native,'/native','ro'),(a.playwright,'/playwright','ro'),(a.deps,'/deps','ro'),(node_mount,'/node/bin','ro'),(a.guard,'/guard.mjs','ro'),(out,'/out','rw')]:cmd+=['-v',f'{root.resolve()}:{target}:{mode}']
+if a.case in ('supervised','supervised-execution','supervised-revoke','owned-pipe','owned-grants','owned-gateway','owned-gateway-capacity'):cmd+=['-v',f'{supervisor_mount}:/supervisor:ro']
+if a.case in ('projection-caller-oracle','toolkit-source-oracle','caller-db-oracle','toolkit-producers','toolkit-entry-peer','mcp-session-identity-oracle'):
+ assert a.toolkit_source_root and a.toolkit_source_root.is_dir() and not a.toolkit_source_root.is_symlink()
+ cmd+=['-v',f'{a.toolkit_source_root}:/toolkit-native:ro']
+if a.case in ('caller-db-oracle','toolkit-producers','toolkit-entry-peer','mcp-session-identity-oracle'):
+ assert a.caller_projection_data and a.caller_projection_data.is_file() and not a.caller_projection_data.is_symlink()
+ cmd+=['-v',f'{a.caller_projection_data}:/caller-data.json:ro']
+cmd+=['localhost/o3-rust-tests:latest','python3','-c',bootstrap]
+with (out/'runtime.log').open('w') as log:
+ try:result=subprocess.run(cmd,stdout=log,stderr=subprocess.STDOUT,timeout=90);code=result.returncode
+ except subprocess.TimeoutExpired:
+  code=124
+  # Only this uniquely named, owner-labelled container can be stopped.
+  inspected=subprocess.run(['podman','--remote=false','inspect',container],capture_output=True,text=True,timeout=10)
+  if inspected.returncode==0:
+   info=json.loads(inspected.stdout)[0];assert info['Config']['Labels'].get('o3.preview-proof')==container
+   subprocess.run(['podman','--remote=false','stop','--time','5',info['Id']],stdout=log,stderr=subprocess.STDOUT,timeout=15,check=True)
+(out/'result.json').write_text(json.dumps({'exit':code,'retained':str(out),'source':str(source),'network':'none','rootless':True,'nodeSha256':node_sha,'nodeVersion':'26.13.0'},indent=2)+'\n');print(out);print((out/'runtime.log').read_text());raise SystemExit(code)

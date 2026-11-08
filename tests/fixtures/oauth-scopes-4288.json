@@ -1,0 +1,2564 @@
+{
+  "revision": "32a0531748c44b25072d7495ce0b9bd7e9450a87",
+  "effect": "4.1.2",
+  "sources": {
+    "packages/shared/src/oauthScope.ts": "81fcfb593dcd9f37eaf15f1feb8917e5d74425f5c38183eac3b6d8090bf29843",
+    "packages/contracts/src/auth.ts": "afede6403875da53c432f92f947d38a074404553859c95bab2785c57d69a7b5e"
+  },
+  "grantScopes": [
+    "orchestration:read",
+    "orchestration:operate",
+    "settings:write",
+    "providers:manage",
+    "environment:maintain",
+    "preview:operate",
+    "diagnostics:read",
+    "terminal:read",
+    "terminal:operate",
+    "filesystem:read",
+    "filesystem:write",
+    "source-control:write",
+    "access:read",
+    "access:write",
+    "relay:read",
+    "relay:write"
+  ],
+  "cases": [
+    {
+      "input": "",
+      "expected": null
+    },
+    {
+      "input": " ",
+      "expected": null
+    },
+    {
+      "input": "  ",
+      "expected": null
+    },
+    {
+      "input": "unknown",
+      "expected": null
+    },
+    {
+      "input": "review:write",
+      "expected": null
+    },
+    {
+      "input": "orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "orchestration:read unknown",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "orchestration:read orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "orchestration:read  filesystem:read",
+      "expected": null
+    },
+    {
+      "input": " orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "orchestration:read ",
+      "expected": null
+    },
+    {
+      "input": "﻿orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "orchestration:read\tfilesystem:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u0000 orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u0001 orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u0002 orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u0003 orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u0004 orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u0005 orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u0006 orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u0007 orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\b orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\t orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\n orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u000b orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\f orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\r orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u000e orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u000f orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u0010 orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u0011 orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u0012 orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u0013 orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u0014 orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u0015 orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u0016 orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u0017 orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u0018 orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u0019 orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u001a orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u001b orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u001c orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u001d orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u001e orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown\u001f orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown  orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown! orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown\" orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown# orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown$ orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown% orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown& orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown' orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown( orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown) orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown* orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown+ orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown, orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown- orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown. orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown/ orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown0 orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown1 orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown2 orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown3 orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown4 orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown5 orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown6 orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown7 orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown8 orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown9 orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown: orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown; orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown< orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown= orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown> orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown? orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown@ orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownA orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownB orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownC orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownD orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownE orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownF orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownG orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownH orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownI orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownJ orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownK orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownL orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownM orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownN orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownO orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownP orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownQ orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownR orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownS orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownT orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownU orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownV orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownW orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownX orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownY orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownZ orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown[ orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown\\ orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "unknown] orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown^ orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown_ orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown` orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknowna orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownb orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownc orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownd orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknowne orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownf orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknowng orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownh orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknowni orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownj orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownk orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownl orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownm orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownn orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknowno orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownp orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownq orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownr orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknowns orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownt orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownu orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownv orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownw orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownx orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknowny orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknownz orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown{ orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown| orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown} orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown~ orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "unknown orchestration:read",
+      "expected": null
+    },
+    {
+      "input": "orchestration:read orchestration:read orchestration:read",
+      "expected": [
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "orchestration:operate orchestration:read orchestration:operate",
+      "expected": [
+        "orchestration:operate",
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "settings:write orchestration:read settings:write",
+      "expected": [
+        "settings:write",
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "providers:manage orchestration:read providers:manage",
+      "expected": [
+        "providers:manage",
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "environment:maintain orchestration:read environment:maintain",
+      "expected": [
+        "environment:maintain",
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "preview:operate orchestration:read preview:operate",
+      "expected": [
+        "preview:operate",
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "diagnostics:read orchestration:read diagnostics:read",
+      "expected": [
+        "diagnostics:read",
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "terminal:read orchestration:read terminal:read",
+      "expected": [
+        "terminal:read",
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "terminal:operate orchestration:read terminal:operate",
+      "expected": [
+        "terminal:operate",
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "filesystem:read orchestration:read filesystem:read",
+      "expected": [
+        "filesystem:read",
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "filesystem:write orchestration:read filesystem:write",
+      "expected": [
+        "filesystem:write",
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "source-control:write orchestration:read source-control:write",
+      "expected": [
+        "source-control:write",
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "access:read orchestration:read access:read",
+      "expected": [
+        "access:read",
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "access:write orchestration:read access:write",
+      "expected": [
+        "access:write",
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "relay:read orchestration:read relay:read",
+      "expected": [
+        "relay:read",
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "relay:write orchestration:read relay:write",
+      "expected": [
+        "relay:write",
+        "orchestration:read"
+      ]
+    },
+    {
+      "input": "orchestration:read orchestration:operate orchestration:read",
+      "expected": [
+        "orchestration:read",
+        "orchestration:operate"
+      ]
+    },
+    {
+      "input": "orchestration:operate orchestration:operate orchestration:operate",
+      "expected": [
+        "orchestration:operate"
+      ]
+    },
+    {
+      "input": "settings:write orchestration:operate settings:write",
+      "expected": [
+        "settings:write",
+        "orchestration:operate"
+      ]
+    },
+    {
+      "input": "providers:manage orchestration:operate providers:manage",
+      "expected": [
+        "providers:manage",
+        "orchestration:operate"
+      ]
+    },
+    {
+      "input": "environment:maintain orchestration:operate environment:maintain",
+      "expected": [
+        "environment:maintain",
+        "orchestration:operate"
+      ]
+    },
+    {
+      "input": "preview:operate orchestration:operate preview:operate",
+      "expected": [
+        "preview:operate",
+        "orchestration:operate"
+      ]
+    },
+    {
+      "input": "diagnostics:read orchestration:operate diagnostics:read",
+      "expected": [
+        "diagnostics:read",
+        "orchestration:operate"
+      ]
+    },
+    {
+      "input": "terminal:read orchestration:operate terminal:read",
+      "expected": [
+        "terminal:read",
+        "orchestration:operate"
+      ]
+    },
+    {
+      "input": "terminal:operate orchestration:operate terminal:operate",
+      "expected": [
+        "terminal:operate",
+        "orchestration:operate"
+      ]
+    },
+    {
+      "input": "filesystem:read orchestration:operate filesystem:read",
+      "expected": [
+        "filesystem:read",
+        "orchestration:operate"
+      ]
+    },
+    {
+      "input": "filesystem:write orchestration:operate filesystem:write",
+      "expected": [
+        "filesystem:write",
+        "orchestration:operate"
+      ]
+    },
+    {
+      "input": "source-control:write orchestration:operate source-control:write",
+      "expected": [
+        "source-control:write",
+        "orchestration:operate"
+      ]
+    },
+    {
+      "input": "access:read orchestration:operate access:read",
+      "expected": [
+        "access:read",
+        "orchestration:operate"
+      ]
+    },
+    {
+      "input": "access:write orchestration:operate access:write",
+      "expected": [
+        "access:write",
+        "orchestration:operate"
+      ]
+    },
+    {
+      "input": "relay:read orchestration:operate relay:read",
+      "expected": [
+        "relay:read",
+        "orchestration:operate"
+      ]
+    },
+    {
+      "input": "relay:write orchestration:operate relay:write",
+      "expected": [
+        "relay:write",
+        "orchestration:operate"
+      ]
+    },
+    {
+      "input": "orchestration:read settings:write orchestration:read",
+      "expected": [
+        "orchestration:read",
+        "settings:write"
+      ]
+    },
+    {
+      "input": "orchestration:operate settings:write orchestration:operate",
+      "expected": [
+        "orchestration:operate",
+        "settings:write"
+      ]
+    },
+    {
+      "input": "settings:write settings:write settings:write",
+      "expected": [
+        "settings:write"
+      ]
+    },
+    {
+      "input": "providers:manage settings:write providers:manage",
+      "expected": [
+        "providers:manage",
+        "settings:write"
+      ]
+    },
+    {
+      "input": "environment:maintain settings:write environment:maintain",
+      "expected": [
+        "environment:maintain",
+        "settings:write"
+      ]
+    },
+    {
+      "input": "preview:operate settings:write preview:operate",
+      "expected": [
+        "preview:operate",
+        "settings:write"
+      ]
+    },
+    {
+      "input": "diagnostics:read settings:write diagnostics:read",
+      "expected": [
+        "diagnostics:read",
+        "settings:write"
+      ]
+    },
+    {
+      "input": "terminal:read settings:write terminal:read",
+      "expected": [
+        "terminal:read",
+        "settings:write"
+      ]
+    },
+    {
+      "input": "terminal:operate settings:write terminal:operate",
+      "expected": [
+        "terminal:operate",
+        "settings:write"
+      ]
+    },
+    {
+      "input": "filesystem:read settings:write filesystem:read",
+      "expected": [
+        "filesystem:read",
+        "settings:write"
+      ]
+    },
+    {
+      "input": "filesystem:write settings:write filesystem:write",
+      "expected": [
+        "filesystem:write",
+        "settings:write"
+      ]
+    },
+    {
+      "input": "source-control:write settings:write source-control:write",
+      "expected": [
+        "source-control:write",
+        "settings:write"
+      ]
+    },
+    {
+      "input": "access:read settings:write access:read",
+      "expected": [
+        "access:read",
+        "settings:write"
+      ]
+    },
+    {
+      "input": "access:write settings:write access:write",
+      "expected": [
+        "access:write",
+        "settings:write"
+      ]
+    },
+    {
+      "input": "relay:read settings:write relay:read",
+      "expected": [
+        "relay:read",
+        "settings:write"
+      ]
+    },
+    {
+      "input": "relay:write settings:write relay:write",
+      "expected": [
+        "relay:write",
+        "settings:write"
+      ]
+    },
+    {
+      "input": "orchestration:read providers:manage orchestration:read",
+      "expected": [
+        "orchestration:read",
+        "providers:manage"
+      ]
+    },
+    {
+      "input": "orchestration:operate providers:manage orchestration:operate",
+      "expected": [
+        "orchestration:operate",
+        "providers:manage"
+      ]
+    },
+    {
+      "input": "settings:write providers:manage settings:write",
+      "expected": [
+        "settings:write",
+        "providers:manage"
+      ]
+    },
+    {
+      "input": "providers:manage providers:manage providers:manage",
+      "expected": [
+        "providers:manage"
+      ]
+    },
+    {
+      "input": "environment:maintain providers:manage environment:maintain",
+      "expected": [
+        "environment:maintain",
+        "providers:manage"
+      ]
+    },
+    {
+      "input": "preview:operate providers:manage preview:operate",
+      "expected": [
+        "preview:operate",
+        "providers:manage"
+      ]
+    },
+    {
+      "input": "diagnostics:read providers:manage diagnostics:read",
+      "expected": [
+        "diagnostics:read",
+        "providers:manage"
+      ]
+    },
+    {
+      "input": "terminal:read providers:manage terminal:read",
+      "expected": [
+        "terminal:read",
+        "providers:manage"
+      ]
+    },
+    {
+      "input": "terminal:operate providers:manage terminal:operate",
+      "expected": [
+        "terminal:operate",
+        "providers:manage"
+      ]
+    },
+    {
+      "input": "filesystem:read providers:manage filesystem:read",
+      "expected": [
+        "filesystem:read",
+        "providers:manage"
+      ]
+    },
+    {
+      "input": "filesystem:write providers:manage filesystem:write",
+      "expected": [
+        "filesystem:write",
+        "providers:manage"
+      ]
+    },
+    {
+      "input": "source-control:write providers:manage source-control:write",
+      "expected": [
+        "source-control:write",
+        "providers:manage"
+      ]
+    },
+    {
+      "input": "access:read providers:manage access:read",
+      "expected": [
+        "access:read",
+        "providers:manage"
+      ]
+    },
+    {
+      "input": "access:write providers:manage access:write",
+      "expected": [
+        "access:write",
+        "providers:manage"
+      ]
+    },
+    {
+      "input": "relay:read providers:manage relay:read",
+      "expected": [
+        "relay:read",
+        "providers:manage"
+      ]
+    },
+    {
+      "input": "relay:write providers:manage relay:write",
+      "expected": [
+        "relay:write",
+        "providers:manage"
+      ]
+    },
+    {
+      "input": "orchestration:read environment:maintain orchestration:read",
+      "expected": [
+        "orchestration:read",
+        "environment:maintain"
+      ]
+    },
+    {
+      "input": "orchestration:operate environment:maintain orchestration:operate",
+      "expected": [
+        "orchestration:operate",
+        "environment:maintain"
+      ]
+    },
+    {
+      "input": "settings:write environment:maintain settings:write",
+      "expected": [
+        "settings:write",
+        "environment:maintain"
+      ]
+    },
+    {
+      "input": "providers:manage environment:maintain providers:manage",
+      "expected": [
+        "providers:manage",
+        "environment:maintain"
+      ]
+    },
+    {
+      "input": "environment:maintain environment:maintain environment:maintain",
+      "expected": [
+        "environment:maintain"
+      ]
+    },
+    {
+      "input": "preview:operate environment:maintain preview:operate",
+      "expected": [
+        "preview:operate",
+        "environment:maintain"
+      ]
+    },
+    {
+      "input": "diagnostics:read environment:maintain diagnostics:read",
+      "expected": [
+        "diagnostics:read",
+        "environment:maintain"
+      ]
+    },
+    {
+      "input": "terminal:read environment:maintain terminal:read",
+      "expected": [
+        "terminal:read",
+        "environment:maintain"
+      ]
+    },
+    {
+      "input": "terminal:operate environment:maintain terminal:operate",
+      "expected": [
+        "terminal:operate",
+        "environment:maintain"
+      ]
+    },
+    {
+      "input": "filesystem:read environment:maintain filesystem:read",
+      "expected": [
+        "filesystem:read",
+        "environment:maintain"
+      ]
+    },
+    {
+      "input": "filesystem:write environment:maintain filesystem:write",
+      "expected": [
+        "filesystem:write",
+        "environment:maintain"
+      ]
+    },
+    {
+      "input": "source-control:write environment:maintain source-control:write",
+      "expected": [
+        "source-control:write",
+        "environment:maintain"
+      ]
+    },
+    {
+      "input": "access:read environment:maintain access:read",
+      "expected": [
+        "access:read",
+        "environment:maintain"
+      ]
+    },
+    {
+      "input": "access:write environment:maintain access:write",
+      "expected": [
+        "access:write",
+        "environment:maintain"
+      ]
+    },
+    {
+      "input": "relay:read environment:maintain relay:read",
+      "expected": [
+        "relay:read",
+        "environment:maintain"
+      ]
+    },
+    {
+      "input": "relay:write environment:maintain relay:write",
+      "expected": [
+        "relay:write",
+        "environment:maintain"
+      ]
+    },
+    {
+      "input": "orchestration:read preview:operate orchestration:read",
+      "expected": [
+        "orchestration:read",
+        "preview:operate"
+      ]
+    },
+    {
+      "input": "orchestration:operate preview:operate orchestration:operate",
+      "expected": [
+        "orchestration:operate",
+        "preview:operate"
+      ]
+    },
+    {
+      "input": "settings:write preview:operate settings:write",
+      "expected": [
+        "settings:write",
+        "preview:operate"
+      ]
+    },
+    {
+      "input": "providers:manage preview:operate providers:manage",
+      "expected": [
+        "providers:manage",
+        "preview:operate"
+      ]
+    },
+    {
+      "input": "environment:maintain preview:operate environment:maintain",
+      "expected": [
+        "environment:maintain",
+        "preview:operate"
+      ]
+    },
+    {
+      "input": "preview:operate preview:operate preview:operate",
+      "expected": [
+        "preview:operate"
+      ]
+    },
+    {
+      "input": "diagnostics:read preview:operate diagnostics:read",
+      "expected": [
+        "diagnostics:read",
+        "preview:operate"
+      ]
+    },
+    {
+      "input": "terminal:read preview:operate terminal:read",
+      "expected": [
+        "terminal:read",
+        "preview:operate"
+      ]
+    },
+    {
+      "input": "terminal:operate preview:operate terminal:operate",
+      "expected": [
+        "terminal:operate",
+        "preview:operate"
+      ]
+    },
+    {
+      "input": "filesystem:read preview:operate filesystem:read",
+      "expected": [
+        "filesystem:read",
+        "preview:operate"
+      ]
+    },
+    {
+      "input": "filesystem:write preview:operate filesystem:write",
+      "expected": [
+        "filesystem:write",
+        "preview:operate"
+      ]
+    },
+    {
+      "input": "source-control:write preview:operate source-control:write",
+      "expected": [
+        "source-control:write",
+        "preview:operate"
+      ]
+    },
+    {
+      "input": "access:read preview:operate access:read",
+      "expected": [
+        "access:read",
+        "preview:operate"
+      ]
+    },
+    {
+      "input": "access:write preview:operate access:write",
+      "expected": [
+        "access:write",
+        "preview:operate"
+      ]
+    },
+    {
+      "input": "relay:read preview:operate relay:read",
+      "expected": [
+        "relay:read",
+        "preview:operate"
+      ]
+    },
+    {
+      "input": "relay:write preview:operate relay:write",
+      "expected": [
+        "relay:write",
+        "preview:operate"
+      ]
+    },
+    {
+      "input": "orchestration:read diagnostics:read orchestration:read",
+      "expected": [
+        "orchestration:read",
+        "diagnostics:read"
+      ]
+    },
+    {
+      "input": "orchestration:operate diagnostics:read orchestration:operate",
+      "expected": [
+        "orchestration:operate",
+        "diagnostics:read"
+      ]
+    },
+    {
+      "input": "settings:write diagnostics:read settings:write",
+      "expected": [
+        "settings:write",
+        "diagnostics:read"
+      ]
+    },
+    {
+      "input": "providers:manage diagnostics:read providers:manage",
+      "expected": [
+        "providers:manage",
+        "diagnostics:read"
+      ]
+    },
+    {
+      "input": "environment:maintain diagnostics:read environment:maintain",
+      "expected": [
+        "environment:maintain",
+        "diagnostics:read"
+      ]
+    },
+    {
+      "input": "preview:operate diagnostics:read preview:operate",
+      "expected": [
+        "preview:operate",
+        "diagnostics:read"
+      ]
+    },
+    {
+      "input": "diagnostics:read diagnostics:read diagnostics:read",
+      "expected": [
+        "diagnostics:read"
+      ]
+    },
+    {
+      "input": "terminal:read diagnostics:read terminal:read",
+      "expected": [
+        "terminal:read",
+        "diagnostics:read"
+      ]
+    },
+    {
+      "input": "terminal:operate diagnostics:read terminal:operate",
+      "expected": [
+        "terminal:operate",
+        "diagnostics:read"
+      ]
+    },
+    {
+      "input": "filesystem:read diagnostics:read filesystem:read",
+      "expected": [
+        "filesystem:read",
+        "diagnostics:read"
+      ]
+    },
+    {
+      "input": "filesystem:write diagnostics:read filesystem:write",
+      "expected": [
+        "filesystem:write",
+        "diagnostics:read"
+      ]
+    },
+    {
+      "input": "source-control:write diagnostics:read source-control:write",
+      "expected": [
+        "source-control:write",
+        "diagnostics:read"
+      ]
+    },
+    {
+      "input": "access:read diagnostics:read access:read",
+      "expected": [
+        "access:read",
+        "diagnostics:read"
+      ]
+    },
+    {
+      "input": "access:write diagnostics:read access:write",
+      "expected": [
+        "access:write",
+        "diagnostics:read"
+      ]
+    },
+    {
+      "input": "relay:read diagnostics:read relay:read",
+      "expected": [
+        "relay:read",
+        "diagnostics:read"
+      ]
+    },
+    {
+      "input": "relay:write diagnostics:read relay:write",
+      "expected": [
+        "relay:write",
+        "diagnostics:read"
+      ]
+    },
+    {
+      "input": "orchestration:read terminal:read orchestration:read",
+      "expected": [
+        "orchestration:read",
+        "terminal:read"
+      ]
+    },
+    {
+      "input": "orchestration:operate terminal:read orchestration:operate",
+      "expected": [
+        "orchestration:operate",
+        "terminal:read"
+      ]
+    },
+    {
+      "input": "settings:write terminal:read settings:write",
+      "expected": [
+        "settings:write",
+        "terminal:read"
+      ]
+    },
+    {
+      "input": "providers:manage terminal:read providers:manage",
+      "expected": [
+        "providers:manage",
+        "terminal:read"
+      ]
+    },
+    {
+      "input": "environment:maintain terminal:read environment:maintain",
+      "expected": [
+        "environment:maintain",
+        "terminal:read"
+      ]
+    },
+    {
+      "input": "preview:operate terminal:read preview:operate",
+      "expected": [
+        "preview:operate",
+        "terminal:read"
+      ]
+    },
+    {
+      "input": "diagnostics:read terminal:read diagnostics:read",
+      "expected": [
+        "diagnostics:read",
+        "terminal:read"
+      ]
+    },
+    {
+      "input": "terminal:read terminal:read terminal:read",
+      "expected": [
+        "terminal:read"
+      ]
+    },
+    {
+      "input": "terminal:operate terminal:read terminal:operate",
+      "expected": [
+        "terminal:operate",
+        "terminal:read"
+      ]
+    },
+    {
+      "input": "filesystem:read terminal:read filesystem:read",
+      "expected": [
+        "filesystem:read",
+        "terminal:read"
+      ]
+    },
+    {
+      "input": "filesystem:write terminal:read filesystem:write",
+      "expected": [
+        "filesystem:write",
+        "terminal:read"
+      ]
+    },
+    {
+      "input": "source-control:write terminal:read source-control:write",
+      "expected": [
+        "source-control:write",
+        "terminal:read"
+      ]
+    },
+    {
+      "input": "access:read terminal:read access:read",
+      "expected": [
+        "access:read",
+        "terminal:read"
+      ]
+    },
+    {
+      "input": "access:write terminal:read access:write",
+      "expected": [
+        "access:write",
+        "terminal:read"
+      ]
+    },
+    {
+      "input": "relay:read terminal:read relay:read",
+      "expected": [
+        "relay:read",
+        "terminal:read"
+      ]
+    },
+    {
+      "input": "relay:write terminal:read relay:write",
+      "expected": [
+        "relay:write",
+        "terminal:read"
+      ]
+    },
+    {
+      "input": "orchestration:read terminal:operate orchestration:read",
+      "expected": [
+        "orchestration:read",
+        "terminal:operate"
+      ]
+    },
+    {
+      "input": "orchestration:operate terminal:operate orchestration:operate",
+      "expected": [
+        "orchestration:operate",
+        "terminal:operate"
+      ]
+    },
+    {
+      "input": "settings:write terminal:operate settings:write",
+      "expected": [
+        "settings:write",
+        "terminal:operate"
+      ]
+    },
+    {
+      "input": "providers:manage terminal:operate providers:manage",
+      "expected": [
+        "providers:manage",
+        "terminal:operate"
+      ]
+    },
+    {
+      "input": "environment:maintain terminal:operate environment:maintain",
+      "expected": [
+        "environment:maintain",
+        "terminal:operate"
+      ]
+    },
+    {
+      "input": "preview:operate terminal:operate preview:operate",
+      "expected": [
+        "preview:operate",
+        "terminal:operate"
+      ]
+    },
+    {
+      "input": "diagnostics:read terminal:operate diagnostics:read",
+      "expected": [
+        "diagnostics:read",
+        "terminal:operate"
+      ]
+    },
+    {
+      "input": "terminal:read terminal:operate terminal:read",
+      "expected": [
+        "terminal:read",
+        "terminal:operate"
+      ]
+    },
+    {
+      "input": "terminal:operate terminal:operate terminal:operate",
+      "expected": [
+        "terminal:operate"
+      ]
+    },
+    {
+      "input": "filesystem:read terminal:operate filesystem:read",
+      "expected": [
+        "filesystem:read",
+        "terminal:operate"
+      ]
+    },
+    {
+      "input": "filesystem:write terminal:operate filesystem:write",
+      "expected": [
+        "filesystem:write",
+        "terminal:operate"
+      ]
+    },
+    {
+      "input": "source-control:write terminal:operate source-control:write",
+      "expected": [
+        "source-control:write",
+        "terminal:operate"
+      ]
+    },
+    {
+      "input": "access:read terminal:operate access:read",
+      "expected": [
+        "access:read",
+        "terminal:operate"
+      ]
+    },
+    {
+      "input": "access:write terminal:operate access:write",
+      "expected": [
+        "access:write",
+        "terminal:operate"
+      ]
+    },
+    {
+      "input": "relay:read terminal:operate relay:read",
+      "expected": [
+        "relay:read",
+        "terminal:operate"
+      ]
+    },
+    {
+      "input": "relay:write terminal:operate relay:write",
+      "expected": [
+        "relay:write",
+        "terminal:operate"
+      ]
+    },
+    {
+      "input": "orchestration:read filesystem:read orchestration:read",
+      "expected": [
+        "orchestration:read",
+        "filesystem:read"
+      ]
+    },
+    {
+      "input": "orchestration:operate filesystem:read orchestration:operate",
+      "expected": [
+        "orchestration:operate",
+        "filesystem:read"
+      ]
+    },
+    {
+      "input": "settings:write filesystem:read settings:write",
+      "expected": [
+        "settings:write",
+        "filesystem:read"
+      ]
+    },
+    {
+      "input": "providers:manage filesystem:read providers:manage",
+      "expected": [
+        "providers:manage",
+        "filesystem:read"
+      ]
+    },
+    {
+      "input": "environment:maintain filesystem:read environment:maintain",
+      "expected": [
+        "environment:maintain",
+        "filesystem:read"
+      ]
+    },
+    {
+      "input": "preview:operate filesystem:read preview:operate",
+      "expected": [
+        "preview:operate",
+        "filesystem:read"
+      ]
+    },
+    {
+      "input": "diagnostics:read filesystem:read diagnostics:read",
+      "expected": [
+        "diagnostics:read",
+        "filesystem:read"
+      ]
+    },
+    {
+      "input": "terminal:read filesystem:read terminal:read",
+      "expected": [
+        "terminal:read",
+        "filesystem:read"
+      ]
+    },
+    {
+      "input": "terminal:operate filesystem:read terminal:operate",
+      "expected": [
+        "terminal:operate",
+        "filesystem:read"
+      ]
+    },
+    {
+      "input": "filesystem:read filesystem:read filesystem:read",
+      "expected": [
+        "filesystem:read"
+      ]
+    },
+    {
+      "input": "filesystem:write filesystem:read filesystem:write",
+      "expected": [
+        "filesystem:write",
+        "filesystem:read"
+      ]
+    },
+    {
+      "input": "source-control:write filesystem:read source-control:write",
+      "expected": [
+        "source-control:write",
+        "filesystem:read"
+      ]
+    },
+    {
+      "input": "access:read filesystem:read access:read",
+      "expected": [
+        "access:read",
+        "filesystem:read"
+      ]
+    },
+    {
+      "input": "access:write filesystem:read access:write",
+      "expected": [
+        "access:write",
+        "filesystem:read"
+      ]
+    },
+    {
+      "input": "relay:read filesystem:read relay:read",
+      "expected": [
+        "relay:read",
+        "filesystem:read"
+      ]
+    },
+    {
+      "input": "relay:write filesystem:read relay:write",
+      "expected": [
+        "relay:write",
+        "filesystem:read"
+      ]
+    },
+    {
+      "input": "orchestration:read filesystem:write orchestration:read",
+      "expected": [
+        "orchestration:read",
+        "filesystem:write"
+      ]
+    },
+    {
+      "input": "orchestration:operate filesystem:write orchestration:operate",
+      "expected": [
+        "orchestration:operate",
+        "filesystem:write"
+      ]
+    },
+    {
+      "input": "settings:write filesystem:write settings:write",
+      "expected": [
+        "settings:write",
+        "filesystem:write"
+      ]
+    },
+    {
+      "input": "providers:manage filesystem:write providers:manage",
+      "expected": [
+        "providers:manage",
+        "filesystem:write"
+      ]
+    },
+    {
+      "input": "environment:maintain filesystem:write environment:maintain",
+      "expected": [
+        "environment:maintain",
+        "filesystem:write"
+      ]
+    },
+    {
+      "input": "preview:operate filesystem:write preview:operate",
+      "expected": [
+        "preview:operate",
+        "filesystem:write"
+      ]
+    },
+    {
+      "input": "diagnostics:read filesystem:write diagnostics:read",
+      "expected": [
+        "diagnostics:read",
+        "filesystem:write"
+      ]
+    },
+    {
+      "input": "terminal:read filesystem:write terminal:read",
+      "expected": [
+        "terminal:read",
+        "filesystem:write"
+      ]
+    },
+    {
+      "input": "terminal:operate filesystem:write terminal:operate",
+      "expected": [
+        "terminal:operate",
+        "filesystem:write"
+      ]
+    },
+    {
+      "input": "filesystem:read filesystem:write filesystem:read",
+      "expected": [
+        "filesystem:read",
+        "filesystem:write"
+      ]
+    },
+    {
+      "input": "filesystem:write filesystem:write filesystem:write",
+      "expected": [
+        "filesystem:write"
+      ]
+    },
+    {
+      "input": "source-control:write filesystem:write source-control:write",
+      "expected": [
+        "source-control:write",
+        "filesystem:write"
+      ]
+    },
+    {
+      "input": "access:read filesystem:write access:read",
+      "expected": [
+        "access:read",
+        "filesystem:write"
+      ]
+    },
+    {
+      "input": "access:write filesystem:write access:write",
+      "expected": [
+        "access:write",
+        "filesystem:write"
+      ]
+    },
+    {
+      "input": "relay:read filesystem:write relay:read",
+      "expected": [
+        "relay:read",
+        "filesystem:write"
+      ]
+    },
+    {
+      "input": "relay:write filesystem:write relay:write",
+      "expected": [
+        "relay:write",
+        "filesystem:write"
+      ]
+    },
+    {
+      "input": "orchestration:read source-control:write orchestration:read",
+      "expected": [
+        "orchestration:read",
+        "source-control:write"
+      ]
+    },
+    {
+      "input": "orchestration:operate source-control:write orchestration:operate",
+      "expected": [
+        "orchestration:operate",
+        "source-control:write"
+      ]
+    },
+    {
+      "input": "settings:write source-control:write settings:write",
+      "expected": [
+        "settings:write",
+        "source-control:write"
+      ]
+    },
+    {
+      "input": "providers:manage source-control:write providers:manage",
+      "expected": [
+        "providers:manage",
+        "source-control:write"
+      ]
+    },
+    {
+      "input": "environment:maintain source-control:write environment:maintain",
+      "expected": [
+        "environment:maintain",
+        "source-control:write"
+      ]
+    },
+    {
+      "input": "preview:operate source-control:write preview:operate",
+      "expected": [
+        "preview:operate",
+        "source-control:write"
+      ]
+    },
+    {
+      "input": "diagnostics:read source-control:write diagnostics:read",
+      "expected": [
+        "diagnostics:read",
+        "source-control:write"
+      ]
+    },
+    {
+      "input": "terminal:read source-control:write terminal:read",
+      "expected": [
+        "terminal:read",
+        "source-control:write"
+      ]
+    },
+    {
+      "input": "terminal:operate source-control:write terminal:operate",
+      "expected": [
+        "terminal:operate",
+        "source-control:write"
+      ]
+    },
+    {
+      "input": "filesystem:read source-control:write filesystem:read",
+      "expected": [
+        "filesystem:read",
+        "source-control:write"
+      ]
+    },
+    {
+      "input": "filesystem:write source-control:write filesystem:write",
+      "expected": [
+        "filesystem:write",
+        "source-control:write"
+      ]
+    },
+    {
+      "input": "source-control:write source-control:write source-control:write",
+      "expected": [
+        "source-control:write"
+      ]
+    },
+    {
+      "input": "access:read source-control:write access:read",
+      "expected": [
+        "access:read",
+        "source-control:write"
+      ]
+    },
+    {
+      "input": "access:write source-control:write access:write",
+      "expected": [
+        "access:write",
+        "source-control:write"
+      ]
+    },
+    {
+      "input": "relay:read source-control:write relay:read",
+      "expected": [
+        "relay:read",
+        "source-control:write"
+      ]
+    },
+    {
+      "input": "relay:write source-control:write relay:write",
+      "expected": [
+        "relay:write",
+        "source-control:write"
+      ]
+    },
+    {
+      "input": "orchestration:read access:read orchestration:read",
+      "expected": [
+        "orchestration:read",
+        "access:read"
+      ]
+    },
+    {
+      "input": "orchestration:operate access:read orchestration:operate",
+      "expected": [
+        "orchestration:operate",
+        "access:read"
+      ]
+    },
+    {
+      "input": "settings:write access:read settings:write",
+      "expected": [
+        "settings:write",
+        "access:read"
+      ]
+    },
+    {
+      "input": "providers:manage access:read providers:manage",
+      "expected": [
+        "providers:manage",
+        "access:read"
+      ]
+    },
+    {
+      "input": "environment:maintain access:read environment:maintain",
+      "expected": [
+        "environment:maintain",
+        "access:read"
+      ]
+    },
+    {
+      "input": "preview:operate access:read preview:operate",
+      "expected": [
+        "preview:operate",
+        "access:read"
+      ]
+    },
+    {
+      "input": "diagnostics:read access:read diagnostics:read",
+      "expected": [
+        "diagnostics:read",
+        "access:read"
+      ]
+    },
+    {
+      "input": "terminal:read access:read terminal:read",
+      "expected": [
+        "terminal:read",
+        "access:read"
+      ]
+    },
+    {
+      "input": "terminal:operate access:read terminal:operate",
+      "expected": [
+        "terminal:operate",
+        "access:read"
+      ]
+    },
+    {
+      "input": "filesystem:read access:read filesystem:read",
+      "expected": [
+        "filesystem:read",
+        "access:read"
+      ]
+    },
+    {
+      "input": "filesystem:write access:read filesystem:write",
+      "expected": [
+        "filesystem:write",
+        "access:read"
+      ]
+    },
+    {
+      "input": "source-control:write access:read source-control:write",
+      "expected": [
+        "source-control:write",
+        "access:read"
+      ]
+    },
+    {
+      "input": "access:read access:read access:read",
+      "expected": [
+        "access:read"
+      ]
+    },
+    {
+      "input": "access:write access:read access:write",
+      "expected": [
+        "access:write",
+        "access:read"
+      ]
+    },
+    {
+      "input": "relay:read access:read relay:read",
+      "expected": [
+        "relay:read",
+        "access:read"
+      ]
+    },
+    {
+      "input": "relay:write access:read relay:write",
+      "expected": [
+        "relay:write",
+        "access:read"
+      ]
+    },
+    {
+      "input": "orchestration:read access:write orchestration:read",
+      "expected": [
+        "orchestration:read",
+        "access:write"
+      ]
+    },
+    {
+      "input": "orchestration:operate access:write orchestration:operate",
+      "expected": [
+        "orchestration:operate",
+        "access:write"
+      ]
+    },
+    {
+      "input": "settings:write access:write settings:write",
+      "expected": [
+        "settings:write",
+        "access:write"
+      ]
+    },
+    {
+      "input": "providers:manage access:write providers:manage",
+      "expected": [
+        "providers:manage",
+        "access:write"
+      ]
+    },
+    {
+      "input": "environment:maintain access:write environment:maintain",
+      "expected": [
+        "environment:maintain",
+        "access:write"
+      ]
+    },
+    {
+      "input": "preview:operate access:write preview:operate",
+      "expected": [
+        "preview:operate",
+        "access:write"
+      ]
+    },
+    {
+      "input": "diagnostics:read access:write diagnostics:read",
+      "expected": [
+        "diagnostics:read",
+        "access:write"
+      ]
+    },
+    {
+      "input": "terminal:read access:write terminal:read",
+      "expected": [
+        "terminal:read",
+        "access:write"
+      ]
+    },
+    {
+      "input": "terminal:operate access:write terminal:operate",
+      "expected": [
+        "terminal:operate",
+        "access:write"
+      ]
+    },
+    {
+      "input": "filesystem:read access:write filesystem:read",
+      "expected": [
+        "filesystem:read",
+        "access:write"
+      ]
+    },
+    {
+      "input": "filesystem:write access:write filesystem:write",
+      "expected": [
+        "filesystem:write",
+        "access:write"
+      ]
+    },
+    {
+      "input": "source-control:write access:write source-control:write",
+      "expected": [
+        "source-control:write",
+        "access:write"
+      ]
+    },
+    {
+      "input": "access:read access:write access:read",
+      "expected": [
+        "access:read",
+        "access:write"
+      ]
+    },
+    {
+      "input": "access:write access:write access:write",
+      "expected": [
+        "access:write"
+      ]
+    },
+    {
+      "input": "relay:read access:write relay:read",
+      "expected": [
+        "relay:read",
+        "access:write"
+      ]
+    },
+    {
+      "input": "relay:write access:write relay:write",
+      "expected": [
+        "relay:write",
+        "access:write"
+      ]
+    },
+    {
+      "input": "orchestration:read relay:read orchestration:read",
+      "expected": [
+        "orchestration:read",
+        "relay:read"
+      ]
+    },
+    {
+      "input": "orchestration:operate relay:read orchestration:operate",
+      "expected": [
+        "orchestration:operate",
+        "relay:read"
+      ]
+    },
+    {
+      "input": "settings:write relay:read settings:write",
+      "expected": [
+        "settings:write",
+        "relay:read"
+      ]
+    },
+    {
+      "input": "providers:manage relay:read providers:manage",
+      "expected": [
+        "providers:manage",
+        "relay:read"
+      ]
+    },
+    {
+      "input": "environment:maintain relay:read environment:maintain",
+      "expected": [
+        "environment:maintain",
+        "relay:read"
+      ]
+    },
+    {
+      "input": "preview:operate relay:read preview:operate",
+      "expected": [
+        "preview:operate",
+        "relay:read"
+      ]
+    },
+    {
+      "input": "diagnostics:read relay:read diagnostics:read",
+      "expected": [
+        "diagnostics:read",
+        "relay:read"
+      ]
+    },
+    {
+      "input": "terminal:read relay:read terminal:read",
+      "expected": [
+        "terminal:read",
+        "relay:read"
+      ]
+    },
+    {
+      "input": "terminal:operate relay:read terminal:operate",
+      "expected": [
+        "terminal:operate",
+        "relay:read"
+      ]
+    },
+    {
+      "input": "filesystem:read relay:read filesystem:read",
+      "expected": [
+        "filesystem:read",
+        "relay:read"
+      ]
+    },
+    {
+      "input": "filesystem:write relay:read filesystem:write",
+      "expected": [
+        "filesystem:write",
+        "relay:read"
+      ]
+    },
+    {
+      "input": "source-control:write relay:read source-control:write",
+      "expected": [
+        "source-control:write",
+        "relay:read"
+      ]
+    },
+    {
+      "input": "access:read relay:read access:read",
+      "expected": [
+        "access:read",
+        "relay:read"
+      ]
+    },
+    {
+      "input": "access:write relay:read access:write",
+      "expected": [
+        "access:write",
+        "relay:read"
+      ]
+    },
+    {
+      "input": "relay:read relay:read relay:read",
+      "expected": [
+        "relay:read"
+      ]
+    },
+    {
+      "input": "relay:write relay:read relay:write",
+      "expected": [
+        "relay:write",
+        "relay:read"
+      ]
+    },
+    {
+      "input": "orchestration:read relay:write orchestration:read",
+      "expected": [
+        "orchestration:read",
+        "relay:write"
+      ]
+    },
+    {
+      "input": "orchestration:operate relay:write orchestration:operate",
+      "expected": [
+        "orchestration:operate",
+        "relay:write"
+      ]
+    },
+    {
+      "input": "settings:write relay:write settings:write",
+      "expected": [
+        "settings:write",
+        "relay:write"
+      ]
+    },
+    {
+      "input": "providers:manage relay:write providers:manage",
+      "expected": [
+        "providers:manage",
+        "relay:write"
+      ]
+    },
+    {
+      "input": "environment:maintain relay:write environment:maintain",
+      "expected": [
+        "environment:maintain",
+        "relay:write"
+      ]
+    },
+    {
+      "input": "preview:operate relay:write preview:operate",
+      "expected": [
+        "preview:operate",
+        "relay:write"
+      ]
+    },
+    {
+      "input": "diagnostics:read relay:write diagnostics:read",
+      "expected": [
+        "diagnostics:read",
+        "relay:write"
+      ]
+    },
+    {
+      "input": "terminal:read relay:write terminal:read",
+      "expected": [
+        "terminal:read",
+        "relay:write"
+      ]
+    },
+    {
+      "input": "terminal:operate relay:write terminal:operate",
+      "expected": [
+        "terminal:operate",
+        "relay:write"
+      ]
+    },
+    {
+      "input": "filesystem:read relay:write filesystem:read",
+      "expected": [
+        "filesystem:read",
+        "relay:write"
+      ]
+    },
+    {
+      "input": "filesystem:write relay:write filesystem:write",
+      "expected": [
+        "filesystem:write",
+        "relay:write"
+      ]
+    },
+    {
+      "input": "source-control:write relay:write source-control:write",
+      "expected": [
+        "source-control:write",
+        "relay:write"
+      ]
+    },
+    {
+      "input": "access:read relay:write access:read",
+      "expected": [
+        "access:read",
+        "relay:write"
+      ]
+    },
+    {
+      "input": "access:write relay:write access:write",
+      "expected": [
+        "access:write",
+        "relay:write"
+      ]
+    },
+    {
+      "input": "relay:read relay:write relay:read",
+      "expected": [
+        "relay:read",
+        "relay:write"
+      ]
+    },
+    {
+      "input": "relay:write relay:write relay:write",
+      "expected": [
+        "relay:write"
+      ]
+    }
+  ]
+}

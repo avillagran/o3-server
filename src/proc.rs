@@ -1,4 +1,4 @@
-//! Argv-only subprocess runner for git: no shell, no stdin, bounded time and output.
+//! Argv-only subprocess runner: no shell, bounded optional stdin, time and output.
 //! Repository mutations are serialized per repository (git common dir).
 use std::{
     collections::HashMap,
@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    io::{AsyncRead, AsyncReadExt},
+    io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
     sync::OwnedMutexGuard,
 };
 
@@ -68,7 +68,8 @@ impl Opts {
 
 async fn read_capped<R: AsyncRead + Unpin>(mut r: R, cap: usize) -> (Vec<u8>, bool) {
     let mut out = Vec::new();
-    let mut buf = [0u8; 16 * 1024];
+    // Keep bounded pipe buffers out of nested debug poll frames.
+    let mut buf = vec![0u8; 16 * 1024];
     loop {
         match r.read(&mut buf).await {
             Ok(0) | Err(_) => return (out, false),
@@ -97,10 +98,15 @@ fn base_command(program: &str, cwd: &Path, args: &[&str]) -> tokio::process::Com
         .env("GIT_ASKPASS", "true")
         .env("SSH_ASKPASS", "true")
         .env("GIT_PAGER", "cat")
-        .env("LC_ALL", "C")
         .env_remove("GIT_DIR")
         .env_remove("GIT_WORK_TREE")
         .env_remove("GIT_INDEX_FILE");
+    if program == "git" {
+        // Git diagnostics use English without changing the locale inherited by hooks.
+        c.env("LANGUAGE", "C");
+    } else {
+        c.env("LC_ALL", "C");
+    }
     c
 }
 
@@ -159,7 +165,9 @@ pub async fn run(
     opts: Opts,
     env: &[(&str, &Path)],
 ) -> Result<Out, RunError> {
-    run_inner(program, cwd, args, opts, env, false, None).await
+    run_inner(program, cwd, args, opts, env, Controls::default())
+        .await
+        .map_err(|error| error.error)
 }
 
 /// External installers get a fixed interpreter search path and no ambient runtime injection.
@@ -169,7 +177,19 @@ pub async fn run_installer(
     args: &[&str],
     opts: Opts,
 ) -> Result<Out, RunError> {
-    run_inner(program, cwd, args, opts, &[], true, None).await
+    run_inner(
+        program,
+        cwd,
+        args,
+        opts,
+        &[],
+        Controls {
+            installer: true,
+            ..Controls::default()
+        },
+    )
+    .await
+    .map_err(|error| error.error)
 }
 pub(crate) async fn git_controlled(
     cwd: &Path,
@@ -182,7 +202,60 @@ pub(crate) async fn git_controlled(
         .copied()
         .chain(args.iter().copied())
         .collect::<Vec<_>>();
-    run_inner("git", cwd, &args, opts, &[], false, Some(cancel)).await
+    run_inner(
+        "git",
+        cwd,
+        &args,
+        opts,
+        &[],
+        Controls {
+            cancel: Some(cancel),
+            ..Controls::default()
+        },
+    )
+    .await
+    .map_err(|error| error.error)
+}
+/// Typed spawn classification is exposed only by the optional-input API; old
+/// callers retain their existing RunError representation and null stdin.
+#[derive(Debug)]
+pub struct InputRunError {
+    pub error: RunError,
+    pub spawn_kind: Option<std::io::ErrorKind>,
+}
+#[derive(Default)]
+struct Controls<'a> {
+    installer: bool,
+    cancel: Option<tokio::sync::watch::Receiver<bool>>,
+    input: Option<&'a [u8]>,
+}
+/// Input is never included in errors, output or command metadata.
+pub async fn run_with_input(
+    program: &str,
+    cwd: &Path,
+    args: &[&str],
+    opts: Opts,
+    env: &[(&str, &Path)],
+    input: &[u8],
+) -> Result<Out, InputRunError> {
+    if input.len() > 65536 {
+        return Err(InputRunError {
+            error: RunError::Spawn("Command input exceeds limit".into()),
+            spawn_kind: None,
+        });
+    }
+    run_inner(
+        program,
+        cwd,
+        args,
+        opts,
+        env,
+        Controls {
+            input: Some(input),
+            ..Controls::default()
+        },
+    )
+    .await
 }
 async fn run_inner(
     program: &str,
@@ -190,11 +263,13 @@ async fn run_inner(
     args: &[&str],
     opts: Opts,
     env: &[(&str, &Path)],
-    installer: bool,
-    mut cancel: Option<tokio::sync::watch::Receiver<bool>>,
-) -> Result<Out, RunError> {
+    mut controls: Controls<'_>,
+) -> Result<Out, InputRunError> {
     let mut command = base_command(program, cwd, args);
-    if installer {
+    if controls.input.is_some() {
+        command.stdin(Stdio::piped());
+    }
+    if controls.installer {
         let home = std::env::var_os("HOME");
         command
             .env_clear()
@@ -207,23 +282,48 @@ async fn run_inner(
     for (k, v) in env {
         command.env(k, v);
     }
-    let mut child = command
-        .spawn()
-        .map_err(|e| RunError::Spawn(e.to_string()))?;
+    let mut child = command.spawn().map_err(|e| InputRunError {
+        spawn_kind: Some(e.kind()),
+        error: RunError::Spawn(e.to_string()),
+    })?;
     let _group = ProcessGroup(child.id().expect("spawned child"));
     let stdout = child.stdout.take().expect("piped");
     let stderr = child.stderr.take().expect("piped");
+    let mut stdin = child.stdin.take();
     // Boxed: debug builds give big futures big frames, and sockets run on small stacks.
     let mut work = Box::pin(async {
-        let ((out, cut), (err, _)) = tokio::join!(
-            read_capped(stdout, opts.cap),
-            read_capped(stderr, STDERR_CAP)
+        let combined = tokio::try_join!(
+            async {
+                Ok::<_, std::io::Error>(tokio::join!(
+                    read_capped(stdout, opts.cap),
+                    read_capped(stderr, STDERR_CAP)
+                ))
+            },
+            async {
+                if let (Some(mut stdin), Some(input)) = (stdin.take(), controls.input) {
+                    stdin.write_all(input).await?;
+                    stdin.shutdown().await?;
+                }
+                Ok::<(), std::io::Error>(())
+            }
         );
-        if cut {
-            let _ = child.start_kill();
+        match combined {
+            Ok((((out, cut), (err, _)), ())) => {
+                if cut {
+                    let _ = child.start_kill();
+                }
+                let status = child.wait().await.ok();
+                Ok((out, cut, err, status))
+            }
+            Err(error) => {
+                unsafe {
+                    libc::kill(-(_group.0 as i32), libc::SIGKILL);
+                }
+                let _ = child.start_kill();
+                let _ = child.wait().await;
+                Err(error)
+            }
         }
-        let status = child.wait().await.ok();
-        (out, cut, err, status)
     });
     // Checkout and submodule preparation follow upstream's cancellable, unbounded
     // lifetime. Zero opts out of a deadline while retaining process-group cleanup.
@@ -235,7 +335,7 @@ async fn run_inner(
         }
     };
     let cancelled = async {
-        if let Some(cancel) = cancel.as_mut() {
+        if let Some(cancel) = controls.cancel.as_mut() {
             while !*cancel.borrow() {
                 if cancel.changed().await.is_err() {
                     std::future::pending::<()>().await;
@@ -256,7 +356,11 @@ async fn run_inner(
         let _ = child.wait().await;
     }
     match outcome {
-        Ok((stdout, cut, err, status)) => Ok(Out {
+        Ok(Err(error)) => Err(InputRunError {
+            error: RunError::Spawn("Command input could not be written".into()),
+            spawn_kind: Some(error.kind()),
+        }),
+        Ok(Ok((stdout, cut, err, status))) => Ok(Out {
             code: if cut {
                 if opts.allow_truncate {
                     Some(0)
@@ -271,8 +375,14 @@ async fn run_inner(
             truncated: cut,
         }),
         // `kill_on_drop` stops the child when `work` is dropped.
-        Err(_) if was_cancelled => Err(RunError::Spawn("Workspace preparation cancelled".into())),
-        Err(_) => Err(RunError::Timeout(opts.timeout.as_millis() as u64)),
+        Err(_) if was_cancelled => Err(InputRunError {
+            error: RunError::Spawn("Workspace preparation cancelled".into()),
+            spawn_kind: None,
+        }),
+        Err(_) => Err(InputRunError {
+            error: RunError::Timeout(opts.timeout.as_millis() as u64),
+            spawn_kind: None,
+        }),
     }
 }
 
@@ -353,7 +463,79 @@ mod diff_relative_tests {
         let out = super::git(&sub, &["diff", "--name-only", "HEAD"], super::Opts::READ)
             .await
             .unwrap();
-        std::fs::remove_dir_all(&root).unwrap();
+        // Fixture trees are retained for private container teardown.
         assert!(out.text().contains("out.txt"), "{}", out.text());
+    }
+}
+
+#[cfg(test)]
+mod nightly4314_tests {
+    use super::*;
+    use serde_json::Value;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[tokio::test]
+    async fn native_git_language_defaults_and_caller_overrides_reach_owned_child() {
+        crate::test_sandbox::assert_isolated();
+        let fixture: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/nightly-small-4314.json"))
+                .unwrap();
+        let root = std::env::temp_dir().join(format!(
+            "git-language-{}",
+            crate::store::random_id().unwrap()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let executable = root.join("git");
+        std::fs::write(&executable,"#!/usr/bin/python3\nimport os,json\nprint(json.dumps({key:os.environ.get(key) for key in ['LANGUAGE','LC_ALL','LC_CTYPE','LANG']}))\n").unwrap();
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let search = format!("{}:/usr/bin:/bin", root.display());
+        for case in fixture["vcsCases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|case| case["platform"] == "linux" && case["command"] == "git")
+        {
+            let mut extra = case["env"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(key, value)| (key.as_str(), Path::new(value.as_str().unwrap())))
+                .collect::<Vec<_>>();
+            extra.push(("PATH", Path::new(&search)));
+            // The observer must not apply Python locale coercion before recording.
+            extra.push(("PYTHONCOERCECLOCALE", Path::new("0")));
+            extra.push(("PYTHONUTF8", Path::new("0")));
+            let out = git_env(&root, &["fixture"], Opts::READ, &extra)
+                .await
+                .unwrap();
+            assert!(out.ok(), "{}", out.stderr);
+            let actual: Value = serde_json::from_slice(&out.stdout).unwrap();
+            for key in ["LANGUAGE", "LC_ALL", "LC_CTYPE", "LANG"] {
+                let expected = case["observed"][0]["env"]
+                    .get(key)
+                    .cloned()
+                    .unwrap_or_else(|| std::env::var(key).ok().map_or(Value::Null, Value::String));
+                assert_eq!(actual[key], expected, "{case}: {key}");
+            }
+        }
+        let command = base_command("git", &root, &[]);
+        let explicit = command.as_std().get_envs().collect::<Vec<_>>();
+        for key in ["LC_ALL", "LC_CTYPE", "LANG"] {
+            assert!(
+                !explicit
+                    .iter()
+                    .any(|(name, _)| *name == std::ffi::OsStr::new(key)),
+                "git must inherit hook locale {key}"
+            );
+        }
+        let command = base_command("gh", &root, &[]);
+        assert!(
+            !command
+                .as_std()
+                .get_envs()
+                .any(|(name, _)| name == "LANGUAGE"),
+            "the new locale override is git-only"
+        );
+        // Owned fixture files are retained; no recursive cleanup runs.
     }
 }

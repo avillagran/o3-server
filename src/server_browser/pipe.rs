@@ -1,0 +1,110 @@
+//! Continuously bounded NUL-delimited inherited CDP input, including idle notifications.
+use tokio::{
+    io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader},
+    sync::mpsc,
+    task::JoinHandle,
+};
+const LIMIT: u64 = 4 * 1024 * 1024;
+#[cfg(test)]
+type Packet = Result<crate::cdp_dialog_json::Packet, String>;
+#[cfg(test)]
+type Inbox = mpsc::Receiver<Packet>;
+#[cfg(test)]
+pub(super) fn start<R: AsyncRead + Unpin + Send + 'static>(input: R) -> (Inbox, JoinHandle<()>) {
+    start_with(input, |packet| {
+        crate::cdp_dialog_json::decode(&packet).map_err(|_| "Invalid CDP output".into())
+    })
+}
+pub(super) fn start_raw<R: AsyncRead + Unpin + Send + 'static>(
+    input: R,
+) -> (mpsc::Receiver<Result<Vec<u8>, String>>, JoinHandle<()>) {
+    start_with(input, Ok)
+}
+fn start_with<R: AsyncRead + Unpin + Send + 'static, T: Send + 'static>(
+    input: R,
+    decode: fn(Vec<u8>) -> Result<T, String>,
+) -> (mpsc::Receiver<Result<T, String>>, JoinHandle<()>) {
+    let (tx, rx) = mpsc::channel(8);
+    let task = tokio::spawn(async move {
+        let mut input = BufReader::new(input);
+        loop {
+            let mut packet = Vec::new();
+            let result = match (&mut input).take(LIMIT).read_until(0, &mut packet).await {
+                Ok(0) => Err("CDP connection closed".into()),
+                Ok(count) if count >= LIMIT as usize || packet.last() != Some(&0) => {
+                    Err("CDP output limit or truncated packet".into())
+                }
+                Ok(_) => {
+                    packet.pop();
+                    decode(packet)
+                }
+                Err(_) => Err("CDP read failed".into()),
+            };
+            let failed = result.is_err();
+            if tx.send(result).await.is_err() || failed {
+                break;
+            }
+        }
+    });
+    (rx, task)
+}
+pub(super) struct Abort(pub tokio::task::AbortHandle);
+impl Drop for Abort {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::AsyncWriteExt;
+    #[tokio::test]
+    async fn fragmented_idle_packets_remain_correlated_and_truncation_is_explicit() {
+        crate::test_sandbox::assert_isolated();
+        let (mut output, input) = tokio::io::duplex(16);
+        let (mut incoming, reader) = start(input);
+        let writing = tokio::spawn(async move {
+            output
+                .write_all(b"{\"method\":\"Page.loadEventFired\"}\0{\"id\":")
+                .await
+                .unwrap();
+            tokio::task::yield_now().await;
+            output
+                .write_all(b"7,\"result\":{}}\0{\"id\":8")
+                .await
+                .unwrap();
+        });
+        assert_eq!(
+            incoming.recv().await.unwrap().unwrap().value["method"],
+            "Page.loadEventFired"
+        );
+        assert_eq!(incoming.recv().await.unwrap().unwrap().value["id"], 7);
+        assert!(incoming
+            .recv()
+            .await
+            .unwrap()
+            .unwrap_err()
+            .contains("truncated"));
+        writing.await.unwrap();
+        reader.await.unwrap();
+    }
+    #[tokio::test]
+    async fn oversized_packets_stop_without_accepting_a_following_frame() {
+        crate::test_sandbox::assert_isolated();
+        let (mut output, input) = tokio::io::duplex(4096);
+        let (mut incoming, reader) = start(input);
+        let writing = tokio::spawn(async move {
+            let _ = output.write_all(&vec![b'x'; LIMIT as usize]).await;
+        });
+        assert!(incoming
+            .recv()
+            .await
+            .unwrap()
+            .unwrap_err()
+            .contains("limit"));
+        assert!(incoming.recv().await.is_none());
+        reader.await.unwrap();
+        writing.await.unwrap();
+    }
+}

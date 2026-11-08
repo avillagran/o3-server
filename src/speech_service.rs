@@ -1,0 +1,1429 @@
+//! Native speech coordination. Resource ownership and request authority are separate.
+pub mod silence;
+mod stream;
+use crate::{
+    speech_catalog::{self, Model},
+    speech_model_store::Store,
+    speech_worker::{Cleanup, Worker},
+};
+use serde_json::{json, Value};
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::{Arc, Mutex},
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+pub(crate) use stream::Pending;
+pub use stream::Stream;
+use tokio::sync::watch;
+pub type Task<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unload {
+    Immediately,
+    Min2,
+    Min5,
+    Min10,
+    Min15,
+    Hour1,
+    Never,
+}
+impl Unload {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Immediately => "immediately",
+            Self::Min2 => "min_2",
+            Self::Min5 => "min_5",
+            Self::Min10 => "min_10",
+            Self::Min15 => "min_15",
+            Self::Hour1 => "hour_1",
+            Self::Never => "never",
+        }
+    }
+    fn millis(self) -> Option<u64> {
+        match self {
+            Self::Immediately => Some(0),
+            Self::Min2 => Some(120_000),
+            Self::Min5 => Some(300_000),
+            Self::Min10 => Some(600_000),
+            Self::Min15 => Some(900_000),
+            Self::Hour1 => Some(3_600_000),
+            Self::Never => None,
+        }
+    }
+}
+#[derive(Debug, Clone)]
+pub struct Snapshot {
+    pub model_id: String,
+    pub acceleration: String,
+    pub unload: Unload,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Error {
+    Busy {
+        operation: &'static str,
+    },
+    ModelNotFound {
+        model_id: String,
+    },
+    Operation {
+        operation: &'static str,
+        cause: String,
+    },
+    Unsupported {
+        platform: String,
+        architecture: String,
+    },
+    CleanupUnknown,
+    Cancelled,
+    InvalidAudio {
+        byte_length: usize,
+        message: &'static str,
+    },
+}
+/// Bind one of these to each request/session facade. Implementations must read
+/// effective settings afresh and revalidate current authority/policy at commit.
+/// A successful earlier snapshot is never a reusable authorization decision.
+pub trait Settings: Send + Sync {
+    fn read<'a>(&'a self, operation: &'static str) -> Task<'a, Result<Snapshot, Error>>;
+    fn patch<'a>(&'a self, operation: &'static str, patch: Value) -> Task<'a, Result<(), Error>>;
+}
+/// Resource lifetime interface; only the concrete adapter below owns a Worker.
+/// Tests inject an explicit virtual lifetime, never a fabricated process handle.
+pub trait ModelRuntime: Send + Sync {
+    fn close(&self) -> Task<'_, Cleanup>;
+    fn bind_vad(&self, _file: crate::speech_worker::SealedFile) -> Task<'_, Result<(), Error>> {
+        Box::pin(async {
+            Err(operation_error(
+                "VAD binding",
+                "Runtime does not implement sidecar binding",
+            ))
+        })
+    }
+    fn begin_stream<'a>(
+        &'a self,
+        _model: &'a str,
+        _options: &'a crate::speech_request::TranscriptionOptions,
+    ) -> Task<'a, Result<(), Error>> {
+        Box::pin(async {
+            Err(operation_error(
+                "streaming transcription",
+                "Runtime does not implement streaming",
+            ))
+        })
+    }
+    fn feed_stream<'a>(
+        &'a self,
+        _pcm: &'a crate::speech_kernel::Pcm,
+    ) -> Task<'a, Result<Value, Error>> {
+        Box::pin(async {
+            Err(operation_error(
+                "streaming transcription",
+                "Runtime does not implement streaming",
+            ))
+        })
+    }
+    fn finish_stream(&self) -> Task<'_, Result<String, Error>> {
+        Box::pin(async {
+            Err(operation_error(
+                "streaming transcription",
+                "Runtime does not implement streaming",
+            ))
+        })
+    }
+    fn reset_stream(&self) -> Task<'_, Result<(), Error>> {
+        Box::pin(async {
+            Err(operation_error(
+                "reset stream",
+                "Runtime does not implement streaming",
+            ))
+        })
+    }
+    fn infer<'a>(
+        &'a self,
+        _pcm: &'a crate::speech_kernel::Pcm,
+        _model: &'a str,
+        _options: &'a crate::speech_request::TranscriptionOptions,
+    ) -> Task<'a, Result<String, Error>> {
+        Box::pin(async {
+            Err(operation_error(
+                "inference",
+                "Runtime does not implement transcription",
+            ))
+        })
+    }
+}
+pub struct Loaded {
+    pub runtime: Arc<dyn ModelRuntime>,
+    pub metadata: Value,
+}
+impl Loaded {
+    /// Wrap an already loaded, admitted Worker. This is an owner constructor,
+    /// never a decoder for a remote process/model identifier.
+    pub fn from_worker(worker: Worker, metadata: Value) -> Self {
+        Self {
+            runtime: Arc::new(WorkerModel {
+                worker,
+                stream: Mutex::new(None),
+            }),
+            metadata,
+        }
+    }
+}
+struct WorkerModel {
+    worker: Worker,
+    stream: Mutex<Option<crate::speech_worker::Stream>>,
+}
+impl ModelRuntime for WorkerModel {
+    fn bind_vad(&self, file: crate::speech_worker::SealedFile) -> Task<'_, Result<(), Error>> {
+        Box::pin(async move {
+            self.worker
+                .bind_vad(file)
+                .await
+                .map_err(|cause| worker_error("VAD binding", cause))
+        })
+    }
+    fn begin_stream<'a>(
+        &'a self,
+        model: &'a str,
+        options: &'a crate::speech_request::TranscriptionOptions,
+    ) -> Task<'a, Result<(), Error>> {
+        Box::pin(async move {
+            let stream = self
+                .worker
+                .begin_options(model, options)
+                .await
+                .map_err(|cause| worker_error("streaming transcription", cause))?;
+            *self.stream.lock().map_err(|_| Error::CleanupUnknown)? = Some(stream);
+            Ok(())
+        })
+    }
+    fn feed_stream<'a>(
+        &'a self,
+        pcm: &'a crate::speech_kernel::Pcm,
+    ) -> Task<'a, Result<Value, Error>> {
+        Box::pin(async move {
+            let stream = self
+                .stream
+                .lock()
+                .map_err(|_| Error::CleanupUnknown)?
+                .ok_or_else(|| {
+                    operation_error("streaming transcription", "Speech stream is not ready.")
+                })?;
+            self.worker
+                .feed(stream, pcm)
+                .await
+                .map_err(|cause| worker_error("streaming transcription", cause))
+        })
+    }
+    fn finish_stream(&self) -> Task<'_, Result<String, Error>> {
+        Box::pin(async move {
+            let stream = self
+                .stream
+                .lock()
+                .map_err(|_| Error::CleanupUnknown)?
+                .ok_or_else(|| {
+                    operation_error("streaming transcription", "Speech stream is not ready.")
+                })?;
+            let value = self
+                .worker
+                .finish(stream)
+                .await
+                .map_err(|cause| worker_error("streaming transcription", cause))?;
+            *self.stream.lock().map_err(|_| Error::CleanupUnknown)? = None;
+            value.as_str().map(str::to_owned).ok_or_else(|| {
+                operation_error("streaming transcription", "Invalid speech stream response.")
+            })
+        })
+    }
+    fn reset_stream(&self) -> Task<'_, Result<(), Error>> {
+        Box::pin(async move {
+            let stream = self
+                .stream
+                .lock()
+                .map_err(|_| Error::CleanupUnknown)?
+                .ok_or_else(|| operation_error("reset stream", "Speech stream is not ready."))?;
+            self.worker
+                .reset(stream)
+                .await
+                .map_err(|cause| worker_error("reset stream", cause))?;
+            *self.stream.lock().map_err(|_| Error::CleanupUnknown)? = None;
+            Ok(())
+        })
+    }
+    fn infer<'a>(
+        &'a self,
+        pcm: &'a crate::speech_kernel::Pcm,
+        model: &'a str,
+        options: &'a crate::speech_request::TranscriptionOptions,
+    ) -> Task<'a, Result<String, Error>> {
+        Box::pin(async move {
+            self.worker
+                .transcribe_options(pcm, model, options)
+                .await
+                .map_err(|cause| worker_error("inference", cause))?
+                .as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| operation_error("inference", "Invalid transcription result"))
+        })
+    }
+    fn close(&self) -> Task<'_, Cleanup> {
+        Box::pin(self.worker.close())
+    }
+}
+/// The engine implementation owns sealed package/model inputs. No caller URL or
+/// raw executable/model path belongs in a public speech request.
+pub trait Engine: Send + Sync {
+    fn load<'a>(
+        &'a self,
+        model: &'a Model,
+        path: &'a std::path::Path,
+        acceleration: &'a str,
+    ) -> Task<'a, Result<Loaded, Error>>;
+    fn load_cancellable<'a>(
+        &'a self,
+        model: &'a Model,
+        path: &'a std::path::Path,
+        acceleration: &'a str,
+        cancel: watch::Receiver<bool>,
+    ) -> Task<'a, Result<Loaded, Error>> {
+        Box::pin(async move {
+            if *cancel.borrow() {
+                return Err(Error::Cancelled);
+            }
+            let loaded = self.load(model, path, acceleration).await?;
+            if *cancel.borrow() {
+                if loaded.runtime.close().await == Cleanup::Unknown {
+                    return Err(Error::CleanupUnknown);
+                }
+                return Err(Error::Cancelled);
+            }
+            Ok(loaded)
+        })
+    }
+    fn devices(&self) -> Task<'_, Result<Value, Error>>;
+}
+pub trait Clock: Send + Sync {
+    fn now(&self) -> i64;
+    fn sleep_until(&self, deadline: i64) -> Task<'_, ()>;
+}
+pub struct WallClock;
+impl Clock for WallClock {
+    fn now(&self) -> i64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+            .min(i64::MAX as u128) as i64
+    }
+    fn sleep_until(&self, deadline: i64) -> Task<'_, ()> {
+        Box::pin(async move {
+            tokio::time::sleep(Duration::from_millis(
+                deadline.saturating_sub(self.now()).max(0) as u64,
+            ))
+            .await;
+        })
+    }
+}
+#[derive(Clone)]
+struct CachedModel {
+    metadata: Value,
+    id: String,
+    acceleration: String,
+    runtime: Arc<dyn ModelRuntime>,
+}
+struct Transfer {
+    id: u64,
+    model_id: String,
+    downloaded: u64,
+    verifying: bool,
+    cancel: watch::Sender<bool>,
+    result: watch::Receiver<Option<Result<(), Error>>>,
+}
+struct State {
+    closed: bool,
+    unknown: bool,
+    next: u64,
+    active: Option<u64>,
+    active_cancel: Option<watch::Sender<bool>>,
+    auto_cpu: Option<String>,
+    transcribing: u64,
+    loaded: Option<CachedModel>,
+    downloading: Option<Transfer>,
+    unload: Unload,
+    deadline: Option<i64>,
+    devices: Option<(i64, Result<Value, String>)>,
+}
+struct Inner {
+    state: Mutex<State>,
+    store: Arc<Store>,
+    engine: Arc<dyn Engine>,
+    clock: Arc<dyn Clock>,
+    timer: watch::Sender<Option<i64>>,
+    changed: tokio::sync::Notify,
+    silence: Arc<silence::Silence>,
+    discovery: tokio::sync::Mutex<()>,
+    disposal: tokio::sync::Mutex<()>,
+}
+/// Shared resources, but no captured privileged settings writer.
+#[derive(Clone)]
+pub struct Service {
+    inner: Arc<Inner>,
+    _lease: Arc<Lease>,
+    unsupported: Option<(String, String, String)>,
+}
+pub struct Call {
+    service: Service,
+    settings: Arc<dyn Settings>,
+}
+impl Service {
+    pub fn new(
+        store: Arc<Store>,
+        engine: Arc<dyn Engine>,
+        clock: Arc<dyn Clock>,
+        unsupported: Option<(String, String, String)>,
+    ) -> Self {
+        let (timer, mut deadlines) = watch::channel(None);
+        let mut service = Self {
+            inner: Arc::new(Inner {
+                state: Mutex::new(State {
+                    closed: false,
+                    unknown: false,
+                    next: 1,
+                    active: None,
+                    active_cancel: None,
+                    auto_cpu: None,
+                    transcribing: 0,
+                    loaded: None,
+                    downloading: None,
+                    unload: Unload::Min15,
+                    deadline: None,
+                    devices: None,
+                }),
+                silence: Arc::new(silence::Silence::new(store.clone(), clock.clone())),
+                store,
+                engine,
+                clock,
+                timer,
+                changed: tokio::sync::Notify::new(),
+                discovery: tokio::sync::Mutex::new(()),
+                disposal: tokio::sync::Mutex::new(()),
+            }),
+            _lease: Arc::new(Lease {
+                inner: std::sync::Weak::new(),
+            }),
+            unsupported,
+        };
+        service._lease = Arc::new(Lease {
+            inner: Arc::downgrade(&service.inner),
+        });
+        let owner = Arc::downgrade(&service.inner);
+        let clock = service.inner.clock.clone();
+        tokio::spawn(async move {
+            loop {
+                let deadline = *deadlines.borrow_and_update();
+                if let Some(deadline) = deadline {
+                    tokio::select! {
+                        _ = clock.sleep_until(deadline) => {},
+                        changed = deadlines.changed() => { if changed.is_err() {break;} continue; }
+                    }
+                    let Some(inner) = owner.upgrade() else {
+                        break;
+                    };
+                    let permit = {
+                        let Ok(mut state) = inner.state.lock() else {
+                            break;
+                        };
+                        if state.deadline != Some(deadline) {
+                            continue;
+                        }
+                        if state.closed {
+                            break;
+                        }
+                        if Inner::busy(&state) || state.transcribing > 0 {
+                            inner.schedule(&mut state, 1000);
+                            continue;
+                        }
+                        inner.reserve_locked(&mut state)
+                    };
+                    let _permit = permit;
+                    let _ = inner.dispose().await;
+                } else if deadlines.changed().await.is_err() {
+                    break;
+                }
+            }
+        });
+        service
+    }
+    pub fn bind(&self, settings: Arc<dyn Settings>) -> Call {
+        Call {
+            service: self.clone(),
+            settings,
+        }
+    }
+}
+impl Inner {
+    fn schedule(&self, state: &mut State, minimum: u64) {
+        state.deadline = if state.loaded.is_none() || state.closed {
+            None
+        } else {
+            state.unload.millis().map(|millis| {
+                self.clock
+                    .now()
+                    .saturating_add(millis.max(minimum).min(i64::MAX as u64) as i64)
+            })
+        };
+        self.timer.send_replace(state.deadline);
+    }
+    fn busy(state: &State) -> bool {
+        state.closed || state.unknown || state.active.is_some() || state.downloading.is_some()
+    }
+}
+impl Call {
+    async fn snapshot(&self, operation: &'static str) -> Result<Snapshot, Error> {
+        let snapshot = self.settings.read(operation).await?;
+        let mut state = self
+            .service
+            .inner
+            .state
+            .lock()
+            .map_err(|_| Error::CleanupUnknown)?;
+        if snapshot.acceleration != "auto" || state.auto_cpu.as_ref() != Some(&snapshot.model_id) {
+            state.auto_cpu = None;
+        }
+        if state.unload != snapshot.unload {
+            state.unload = snapshot.unload;
+            self.service.inner.schedule(&mut state, 0);
+        }
+        Ok(snapshot)
+    }
+    async fn devices(&self) -> Value {
+        let inner = self.service.inner.clone();
+        owned(async move {
+            let _discovery = inner.discovery.lock().await;
+            let now = inner.clock.now();
+            {
+                let state = inner.state.lock().map_err(|_| Error::CleanupUnknown)?;
+                if let Some((expiry, value)) = &state.devices {
+                    if now < *expiry {
+                        return Ok(value.clone().unwrap_or_else(|_| json!([])));
+                    }
+                }
+                if state.closed || state.unknown {
+                    return Ok(json!([]));
+                }
+            }
+            let value = inner.engine.devices().await;
+            let mut state = inner.state.lock().map_err(|_| Error::CleanupUnknown)?;
+            if value == Err(Error::CleanupUnknown) {
+                state.unknown = true;
+            }
+            state.devices = Some((
+                if value.is_ok() {
+                    i64::MAX
+                } else {
+                    now.saturating_add(60_000)
+                },
+                value.clone().map_err(|cause| format!("{cause:?}")),
+            ));
+            Ok(value.unwrap_or_else(|_| json!([])))
+        })
+        .await
+        .unwrap_or_else(|_| json!([]))
+    }
+    pub async fn status(&self) -> Result<Value, Error> {
+        self.status_for("status").await
+    }
+    async fn status_for(&self, operation: &'static str) -> Result<Value, Error> {
+        let snapshot = self.snapshot(operation).await?;
+        if let Some((_, _, reason)) = &self.service.unsupported {
+            return Ok(json!({"supported":false,"reason":reason}));
+        }
+        let model = speech_catalog::selected(&snapshot.model_id);
+        let definition = model.as_value();
+        let ready = self.service.inner.store.is_ready(model);
+        let transcribing = self
+            .service
+            .inner
+            .state
+            .lock()
+            .map_err(|_| Error::CleanupUnknown)?
+            .transcribing
+            > 0;
+        let devices = self.devices().await;
+        Ok(
+            json!({"supported":true,"state":if transcribing {"transcribing"}else if ready {"ready"}else{"missing-model"},"modelId":model.id(),"model":definition["name"],"size":model.size(),"supportsStreaming":definition["supportsStreaming"],"supportsBufferedStreaming":true,"supportsTranslation":definition["supportsTranslation"],"languages":definition["languages"],"supportsLanguageDetection":definition["supportsLanguageDetection"],"acceleration":snapshot.acceleration,"modelUnloadTimeout":snapshot.unload.as_str(),"gpuDevices":devices}),
+        )
+    }
+    pub async fn models(&self, benchmarks: bool) -> Result<Value, Error> {
+        let snapshot = self.snapshot("model listing").await?;
+        self.models_with(&snapshot, benchmarks)
+    }
+    fn models_with(&self, snapshot: &Snapshot, benchmarks: bool) -> Result<Value, Error> {
+        let selected = speech_catalog::selected(&snapshot.model_id);
+        let state = self
+            .service
+            .inner
+            .state
+            .lock()
+            .map_err(|_| Error::CleanupUnknown)?;
+        let models=speech_catalog::all().iter().map(|model|{
+            let source=model.as_value();let ready=self.service.inner.store.is_ready(model);let transfer=state.downloading.as_ref().filter(|transfer|transfer.model_id==model.id());
+            let mut value=json!({"id":model.id(),"name":source["name"],"description":source["description"],"size":model.size(),"languages":source["languages"],"accuracy":0,"speed":0,"recommended":source["recommended"],"supportsStreaming":source["supportsStreaming"],"supportsLanguageDetection":source["supportsLanguageDetection"],"supportsTranslation":source["supportsTranslation"],"active":ready&&selected.id()==model.id(),"state":if let Some(transfer)=transfer {if transfer.verifying{"verifying"}else{"downloading"}}else if ready{"installed"}else{"downloadable"}});
+            if benchmarks {value["benchmark"]=source["benchmark"].clone();}
+            if let Some(transfer)=transfer {value["downloaded"]=json!(transfer.downloaded);}
+            value
+        }).collect::<Vec<_>>();
+        Ok(json!({"models":models}))
+    }
+}
+
+/// A reservation is owned by its spawned job, never by the waiting RPC future.
+struct Permit {
+    inner: Arc<Inner>,
+    token: u64,
+    minimum: u64,
+    transcribing: bool,
+}
+impl Drop for Permit {
+    fn drop(&mut self) {
+        if let Ok(mut state) = self.inner.state.lock() {
+            if state.active == Some(self.token) {
+                if std::thread::panicking() {
+                    state.unknown = true;
+                }
+                state.active = None;
+                state.active_cancel = None;
+                if self.transcribing {
+                    state.transcribing = state.transcribing.saturating_sub(1);
+                }
+                self.inner.schedule(&mut state, self.minimum);
+            }
+        }
+        self.inner.changed.notify_waiters();
+    }
+}
+impl Inner {
+    fn reserve_locked(self: &Arc<Self>, state: &mut State) -> Permit {
+        let token = state.next;
+        state.next = state.next.wrapping_add(1);
+        state.active = Some(token);
+        Permit {
+            inner: self.clone(),
+            token,
+            minimum: 0,
+            transcribing: false,
+        }
+    }
+    fn reserve(self: &Arc<Self>, operation: &'static str) -> Result<Permit, Error> {
+        let mut state = self.state.lock().map_err(|_| Error::CleanupUnknown)?;
+        if state.unknown {
+            return Err(Error::CleanupUnknown);
+        }
+        if Self::busy(&state) {
+            return Err(Error::Busy { operation });
+        }
+        Ok(self.reserve_locked(&mut state))
+    }
+    async fn dispose(&self) -> Result<(), Error> {
+        let _disposal = self.disposal.lock().await;
+        let already_unknown = self
+            .state
+            .lock()
+            .map_err(|_| Error::CleanupUnknown)?
+            .unknown;
+        let model = self
+            .state
+            .lock()
+            .map_err(|_| Error::CleanupUnknown)?
+            .loaded
+            .take();
+        if let Some(model) = model {
+            if model.runtime.close().await == Cleanup::Unknown {
+                self.state
+                    .lock()
+                    .map_err(|_| Error::CleanupUnknown)?
+                    .unknown = true;
+                return Err(Error::CleanupUnknown);
+            }
+        }
+        if already_unknown {
+            Err(Error::CleanupUnknown)
+        } else {
+            Ok(())
+        }
+    }
+    fn retain_unknown(&self, cause: &Error) {
+        if *cause == Error::CleanupUnknown {
+            if let Ok(mut state) = self.state.lock() {
+                state.unknown = true;
+            }
+        }
+    }
+}
+fn operation_error(operation: &'static str, cause: impl std::fmt::Display) -> Error {
+    Error::Operation {
+        operation,
+        cause: cause.to_string(),
+    }
+}
+async fn owned<T: Send + 'static>(
+    job: impl Future<Output = Result<T, Error>> + Send + 'static,
+) -> Result<T, Error> {
+    // Dropping this receiver leaves the resource owner running through cleanup.
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let result = job.await;
+        let _ = tx.send(result);
+    });
+    rx.await.map_err(|_| Error::CleanupUnknown)?
+}
+impl Call {
+    fn supported(&self) -> Result<(), Error> {
+        if let Some((platform, architecture, _)) = &self.service.unsupported {
+            return Err(Error::Unsupported {
+                platform: platform.clone(),
+                architecture: architecture.clone(),
+            });
+        }
+        Ok(())
+    }
+    pub async fn select(&self, id: &str) -> Result<Value, Error> {
+        let inner = self.service.inner.clone();
+        let permit = inner.reserve("model selection")?;
+        let model = speech_catalog::get(id).ok_or_else(|| Error::ModelNotFound {
+            model_id: id.into(),
+        })?;
+        let settings = self.settings.clone();
+        owned(async move {
+            {
+                let _permit = permit;
+                inner.dispose().await?;
+            }
+            if inner
+                .state
+                .lock()
+                .map_err(|_| Error::CleanupUnknown)?
+                .closed
+            {
+                return Err(Error::Busy {
+                    operation: "model selection",
+                });
+            }
+            // This is a fresh authority check at commit, after asynchronous dispose.
+            settings
+                .patch("model selection", json!({"speechModelId":model.id()}))
+                .await
+        })
+        .await?;
+        self.models(false).await
+    }
+    pub async fn prepare(&self) -> Result<(), Error> {
+        let snapshot = self.snapshot("model preparation").await?;
+        let inner = self.service.inner.clone();
+        let mut permit = inner.reserve("model preparation")?;
+        self.supported()?;
+        permit.minimum = 300_000;
+        let model = speech_catalog::selected(&snapshot.model_id);
+        let (cancel, receiver) = watch::channel(false);
+        inner
+            .state
+            .lock()
+            .map_err(|_| Error::CleanupUnknown)?
+            .active_cancel = Some(cancel.clone());
+        let _cancel = CancelCall(cancel.clone());
+        owned(async move {
+            let _permit = permit;
+            let path = inner.installed_model_path(model).await?;
+            let deadline=inner.clock.now().saturating_add(120_000);
+            let loading=inner.load_cached_at(model, &snapshot.acceleration, receiver, &path);
+            tokio::pin!(loading);
+            tokio::select! {biased;
+                result=&mut loading=>result.map(|_|()),
+                _=inner.clock.sleep_until(deadline)=>{
+                    cancel.send_replace(true);
+                    let result=loading.await;
+                    if result.as_ref().err()==Some(&Error::CleanupUnknown) {return Err(Error::CleanupUnknown);}
+                    Err(operation_error("model preparation","Speech model preparation timed out"))
+                }
+            }
+        })
+        .await
+    }
+    pub async fn remove(&self, id: &str) -> Result<Value, Error> {
+        let snapshot = self.snapshot("model removal").await?;
+        let inner = self.service.inner.clone();
+        let permit = inner.reserve("model removal")?;
+        let model = speech_catalog::get(id).ok_or_else(|| Error::ModelNotFound {
+            model_id: id.into(),
+        })?;
+        let settings = self.settings.clone();
+        owned(async move {
+            let replacement = {
+                let _permit = permit;
+                let loaded = inner
+                    .state
+                    .lock()
+                    .map_err(|_| Error::CleanupUnknown)?
+                    .loaded
+                    .as_ref()
+                    .is_some_and(|loaded| loaded.id == model.id());
+                if loaded {
+                    inner.dispose().await?;
+                }
+                inner
+                    .store
+                    .remove(model)
+                    .await
+                    .map_err(|cause| operation_error("model removal", cause))?;
+                if speech_catalog::selected(&snapshot.model_id).id() == model.id() {
+                    speech_catalog::all()
+                        .iter()
+                        .find(|other| other.id() != model.id() && inner.store.is_ready(other))
+                        .map(|other| other.id().to_owned())
+                } else {
+                    None
+                }
+            };
+            if let Some(id) = replacement {
+                if inner
+                    .state
+                    .lock()
+                    .map_err(|_| Error::CleanupUnknown)?
+                    .closed
+                {
+                    return Err(Error::Busy {
+                        operation: "model removal",
+                    });
+                }
+                settings
+                    .patch("model removal", json!({"speechModelId":id}))
+                    .await?;
+            }
+            Ok(())
+        })
+        .await?;
+        self.models(false).await
+    }
+    pub async fn update_acceleration(&self, value: &str) -> Result<Value, Error> {
+        self.settings
+            .patch("acceleration update", json!({"speechAcceleration":value}))
+            .await?;
+        self.status_for("acceleration update").await
+    }
+    pub async fn update_unload(&self, value: Unload) -> Result<Value, Error> {
+        self.settings
+            .patch(
+                "model unload timeout update",
+                json!({"speechModelUnloadTimeout":value.as_str()}),
+            )
+            .await?;
+        self.status_for("model unload timeout update").await
+    }
+    pub async fn download(&self, id: &str) -> Result<Value, Error> {
+        self.supported()?;
+        let model = speech_catalog::get(id).ok_or_else(|| Error::ModelNotFound {
+            model_id: id.into(),
+        })?;
+        let inner = self.service.inner.clone();
+        let mut result = {
+            let mut state = inner.state.lock().map_err(|_| Error::CleanupUnknown)?;
+            if state.closed || state.active.is_some() {
+                return Err(Error::Busy {
+                    operation: "model download",
+                });
+            }
+            if state.unknown {
+                return Err(Error::CleanupUnknown);
+            }
+            if let Some(transfer) = &state.downloading {
+                if transfer.model_id != id {
+                    return Err(Error::Busy {
+                        operation: "model download",
+                    });
+                }
+                transfer.result.clone()
+            } else {
+                let token = state.next;
+                state.next = state.next.wrapping_add(1);
+                let (cancel, cancel_rx) = watch::channel(false);
+                let (done, receiver) = watch::channel(None);
+                state.downloading = Some(Transfer {
+                    id: token,
+                    model_id: id.into(),
+                    downloaded: 0,
+                    verifying: false,
+                    cancel,
+                    result: receiver.clone(),
+                });
+                let owner = inner.clone();
+                tokio::spawn(async move {
+                    let progress = |progress| {
+                        if let Ok(mut state) = owner.state.lock() {
+                            if let Some(transfer) = state
+                                .downloading
+                                .as_mut()
+                                .filter(|transfer| transfer.id == token)
+                            {
+                                match progress {
+                                    crate::speech_model_store::Progress::Downloaded(bytes) => {
+                                        transfer.downloaded = bytes;
+                                        transfer.verifying = false;
+                                    }
+                                    crate::speech_model_store::Progress::VerificationStarted => {
+                                        transfer.verifying = true
+                                    }
+                                }
+                            }
+                        }
+                    };
+                    let result = tokio::try_join!(
+                        owner.store.download(model, &progress, cancel_rx.clone()),
+                        owner
+                            .silence
+                            .acquire(silence::Purpose::Installation, cancel_rx),
+                    )
+                    .map(|(path, _)| path);
+                    let result = match result {
+                        Ok(_) | Err(crate::speech_model_store::Error::Cancelled) => Ok(()),
+                        Err(cause) => Err(operation_error("model download", cause)),
+                    };
+                    if let Ok(mut state) = owner.state.lock() {
+                        if state
+                            .downloading
+                            .as_ref()
+                            .is_some_and(|transfer| transfer.id == token)
+                        {
+                            state.downloading = None;
+                            owner.schedule(&mut state, 0);
+                        }
+                    }
+                    done.send_replace(Some(result));
+                    owner.changed.notify_waiters();
+                });
+                receiver
+            }
+        };
+        loop {
+            if let Some(done) = result.borrow_and_update().clone() {
+                done?;
+                break;
+            }
+            result.changed().await.map_err(|_| Error::CleanupUnknown)?;
+        }
+        self.models(false).await
+    }
+    pub async fn cancel_download(&self, id: &str) -> Result<Value, Error> {
+        let pending = {
+            let state = self
+                .service
+                .inner
+                .state
+                .lock()
+                .map_err(|_| Error::CleanupUnknown)?;
+            state
+                .downloading
+                .as_ref()
+                .filter(|transfer| transfer.model_id == id)
+                .map(|transfer| {
+                    transfer.cancel.send_replace(true);
+                    transfer.result.clone()
+                })
+        };
+        if let Some(mut pending) = pending {
+            while pending.borrow_and_update().is_none() {
+                pending.changed().await.map_err(|_| Error::CleanupUnknown)?;
+            }
+        }
+        self.models(false).await
+    }
+}
+struct Lease {
+    inner: std::sync::Weak<Inner>,
+}
+impl Drop for Lease {
+    fn drop(&mut self) {
+        let Some(inner) = self.inner.upgrade() else {
+            return;
+        };
+        inner.begin_shutdown();
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(async move {
+                let _ = inner.finish_shutdown().await;
+            });
+        }
+    }
+}
+impl Inner {
+    fn begin_shutdown(&self) {
+        if let Ok(mut state) = self.state.lock() {
+            state.closed = true;
+            if let Some(cancel) = &state.active_cancel {
+                cancel.send_replace(true);
+            }
+            state.deadline = None;
+            self.timer.send_replace(None);
+            if let Some(transfer) = &state.downloading {
+                transfer.cancel.send_replace(true);
+            }
+        }
+    }
+    async fn finish_shutdown(&self) -> Result<(), Error> {
+        loop {
+            let changed = self.changed.notified();
+            tokio::pin!(changed);
+            changed.as_mut().enable();
+            let busy = {
+                let state = self.state.lock().map_err(|_| Error::CleanupUnknown)?;
+                state.active.is_some() || state.downloading.is_some()
+            };
+            if !busy {
+                break;
+            }
+            changed.await;
+        }
+        let _discovery = self.discovery.lock().await;
+        self.dispose().await?;
+        if self
+            .state
+            .lock()
+            .map_err(|_| Error::CleanupUnknown)?
+            .unknown
+        {
+            Err(Error::CleanupUnknown)
+        } else {
+            Ok(())
+        }
+    }
+}
+impl Service {
+    /// Marks closing before awaiting any operation. No fresh work can resurrect a model.
+    pub(crate) fn begin_shutdown(&self) {
+        self.inner.begin_shutdown();
+    }
+    pub async fn shutdown(&self) -> Result<(), Error> {
+        let inner = self.inner.clone();
+        inner.begin_shutdown();
+        owned(async move { inner.finish_shutdown().await }).await
+    }
+}
+
+/// A trusted installed-file receipt, not a wire payload or package downloader.
+#[derive(Clone)]
+pub struct EngineFile {
+    pub relative: std::path::PathBuf,
+    pub source: std::path::PathBuf,
+    pub sha256: String,
+    pub bytes: u64,
+}
+/// Actual Worker-backed engine. Every operation re-admits all graph files before
+/// the Worker creates immutable private snapshots. No ambient Node or PATH lookup.
+pub struct WorkerEngine {
+    pub node: Arc<crate::speech_worker::NodeRuntime>,
+    pub entry: std::path::PathBuf,
+    pub files: Vec<EngineFile>,
+    pub directory: std::path::PathBuf,
+    pub startup_deadline: Duration,
+    pub operation_deadline: Duration,
+    pub close_deadline: Duration,
+}
+impl WorkerEngine {
+    async fn start(
+        &self,
+        model: Option<(&Model, &std::path::Path)>,
+        acceleration: &str,
+        cancel: Option<watch::Receiver<bool>>,
+    ) -> Result<Worker, Error> {
+        let files = self.files.clone();
+        let entry = self.entry.clone();
+        let model =
+            model.map(|(model, path)| (path.to_owned(), model.sha256().to_owned(), model.size()));
+        let (engine, model) = tokio::task::spawn_blocking(move || {
+            let graph = files
+                .into_iter()
+                .map(|file| {
+                    crate::speech_worker::SealedFile::admit(&file.source, &file.sha256, file.bytes)
+                        .map(|sealed| (file.relative, sealed))
+                })
+                .collect::<std::io::Result<Vec<_>>>()?;
+            let engine = crate::speech_worker::EnginePackage::admit(entry, graph)?;
+            let model = model
+                .map(|(path, sha, size)| crate::speech_worker::SealedFile::admit(&path, &sha, size))
+                .transpose()?;
+            Ok::<_, std::io::Error>((engine, model))
+        })
+        .await
+        .map_err(|cause| operation_error("engine admission", cause))?
+        .map_err(|cause| operation_error("engine admission", cause))?;
+        let directory = self.directory.join(
+            crate::store::random_id().map_err(|cause| operation_error("engine startup", cause))?,
+        );
+        let spec = crate::speech_worker::WorkerSpec {
+            node: self.node.clone(),
+            engine,
+            model,
+            vad: None,
+            directory,
+            acceleration: acceleration.into(),
+            startup_deadline: self.startup_deadline,
+            operation_deadline: self.operation_deadline,
+            close_deadline: self.close_deadline,
+        };
+        let result = if let Some(cancel) = cancel {
+            Worker::start_cancellable(spec, cancel).await
+        } else {
+            Worker::start(spec).await
+        };
+        result.map_err(|cause| {
+            if cause
+                .get_ref()
+                .and_then(|cause| cause.downcast_ref::<crate::speech_worker::StartupFailure>())
+                .is_some_and(|failure| failure.cleanup == Cleanup::Unknown)
+            {
+                Error::CleanupUnknown
+            } else {
+                operation_error("engine startup", cause)
+            }
+        })
+    }
+}
+impl Engine for WorkerEngine {
+    fn load<'a>(
+        &'a self,
+        model: &'a Model,
+        path: &'a std::path::Path,
+        acceleration: &'a str,
+    ) -> Task<'a, Result<Loaded, Error>> {
+        Box::pin(async move {
+            let worker = self.start(Some((model, path)), acceleration, None).await?;
+            match worker.load().await {
+                Ok(metadata) => Ok(Loaded::from_worker(worker, metadata)),
+                Err(cause) => {
+                    if worker.close().await == Cleanup::Unknown {
+                        Err(Error::CleanupUnknown)
+                    } else {
+                        Err(operation_error("engine loading", format!("{cause:?}")))
+                    }
+                }
+            }
+        })
+    }
+    fn load_cancellable<'a>(
+        &'a self,
+        model: &'a Model,
+        path: &'a std::path::Path,
+        acceleration: &'a str,
+        mut cancel: watch::Receiver<bool>,
+    ) -> Task<'a, Result<Loaded, Error>> {
+        Box::pin(async move {
+            if *cancel.borrow() {
+                return Err(Error::Cancelled);
+            }
+            let worker = self
+                .start(Some((model, path)), acceleration, Some(cancel.clone()))
+                .await?;
+            let result = tokio::select! { biased;
+                _=wait_cancelled(&mut cancel)=>Err(Error::Cancelled),
+                result=worker.load()=>result.map_err(|cause|worker_error("engine loading",cause)),
+            };
+            match result {
+                Ok(metadata) if !*cancel.borrow() => Ok(Loaded::from_worker(worker, metadata)),
+                result => {
+                    if worker.close().await == Cleanup::Unknown {
+                        Err(Error::CleanupUnknown)
+                    } else {
+                        Err(result.err().unwrap_or(Error::Cancelled))
+                    }
+                }
+            }
+        })
+    }
+    fn devices(&self) -> Task<'_, Result<Value, Error>> {
+        Box::pin(async move {
+            let worker = self.start(None, "auto", None).await?;
+            worker.discover().await.map_err(|cause| {
+                if cause == crate::speech_worker::Error::CleanupUnknown {
+                    Error::CleanupUnknown
+                } else {
+                    operation_error("GPU discovery", format!("{cause:?}"))
+                }
+            })
+        })
+    }
+}
+
+fn worker_error(operation: &'static str, cause: crate::speech_worker::Error) -> Error {
+    match cause {
+        crate::speech_worker::Error::CleanupUnknown => Error::CleanupUnknown,
+        crate::speech_worker::Error::Native(message) => operation_error(operation, message),
+        other => operation_error(operation, format!("{other:?}")),
+    }
+}
+impl Inner {
+    async fn installed_model_path(&self, model: &Model) -> Result<std::path::PathBuf, Error> {
+        self.store
+            .installed_path(model)
+            .await
+            .ok_or_else(|| Error::ModelNotFound {
+                model_id: model.id().into(),
+            })
+    }
+    async fn load_cached(
+        &self,
+        model: &Model,
+        requested: &str,
+        cancel: watch::Receiver<bool>,
+    ) -> Result<CachedModel, Error> {
+        let path = self.installed_model_path(model).await?;
+        self.load_cached_at(model, requested, cancel, &path).await
+    }
+    async fn load_cached_at(
+        &self,
+        model: &Model,
+        requested: &str,
+        cancel: watch::Receiver<bool>,
+        path: &std::path::Path,
+    ) -> Result<CachedModel, Error> {
+        if *cancel.borrow() {
+            return Err(Error::Cancelled);
+        }
+        let acceleration = {
+            let state = self.state.lock().map_err(|_| Error::CleanupUnknown)?;
+            if requested == "auto" && state.auto_cpu.as_deref() == Some(model.id()) {
+                "cpu".to_owned()
+            } else {
+                requested.to_owned()
+            }
+        };
+        if let Some(loaded) = self
+            .state
+            .lock()
+            .map_err(|_| Error::CleanupUnknown)?
+            .loaded
+            .as_ref()
+            .filter(|loaded| loaded.id == model.id() && loaded.acceleration == acceleration)
+            .cloned()
+        {
+            return Ok(loaded);
+        }
+        self.dispose().await?;
+        let loaded = match self
+            .engine
+            .load_cancellable(model, path, &acceleration, cancel.clone())
+            .await
+        {
+            Ok(loaded) => loaded,
+            Err(cause) => {
+                if cause == Error::CleanupUnknown {
+                    self.state
+                        .lock()
+                        .map_err(|_| Error::CleanupUnknown)?
+                        .unknown = true;
+                }
+                return Err(cause);
+            }
+        };
+        let cached = CachedModel {
+            id: model.id().into(),
+            acceleration,
+            runtime: loaded.runtime.clone(),
+            metadata: loaded.metadata,
+        };
+        let published = {
+            let mut state = self.state.lock().map_err(|_| Error::CleanupUnknown)?;
+            if state.closed || *cancel.borrow() {
+                false
+            } else {
+                state.loaded = Some(cached.clone());
+                true
+            }
+        };
+        if published {
+            Ok(cached)
+        } else {
+            if loaded.runtime.close().await == Cleanup::Unknown {
+                self.state
+                    .lock()
+                    .map_err(|_| Error::CleanupUnknown)?
+                    .unknown = true;
+                return Err(Error::CleanupUnknown);
+            }
+            if *cancel.borrow() {
+                Err(Error::Cancelled)
+            } else {
+                Err(Error::Busy {
+                    operation: "model preparation",
+                })
+            }
+        }
+    }
+    async fn bind_optional_vad(
+        &self,
+        loaded: &CachedModel,
+        path: &std::path::Path,
+    ) -> Result<(), Error> {
+        let path = path.to_owned();
+        let file = tokio::task::spawn_blocking(move || {
+            let model = speech_catalog::silero();
+            crate::speech_worker::SealedFile::admit(&path, model.sha256(), model.size())
+        })
+        .await
+        .map_err(|cause| operation_error("VAD binding", cause))?;
+        // VAD is optional in the original native factory. A known sidecar
+        // admission/binding failure falls back to raw audio; uncertain
+        // process cleanup must still fence the resource.
+        if let Ok(file) = file {
+            if loaded.runtime.bind_vad(file).await == Err(Error::CleanupUnknown) {
+                return Err(Error::CleanupUnknown);
+            }
+        }
+        Ok(())
+    }
+    async fn infer(
+        &self,
+        loaded: &CachedModel,
+        model: &Model,
+        pcm: &crate::speech_kernel::Pcm,
+        options: &crate::speech_request::TranscriptionOptions,
+        vad: Option<&std::path::Path>,
+        cancel: &mut watch::Receiver<bool>,
+    ) -> Result<String, Error> {
+        if *cancel.borrow() {
+            return Err(Error::Cancelled);
+        }
+        let inference = async {
+            if let Some(path) = vad {
+                self.bind_optional_vad(loaded, path).await?;
+            }
+            loaded.runtime.infer(pcm, model.id(), options).await
+        };
+        tokio::select! {biased;_=cancel.changed()=>Err(Error::Cancelled),result=inference=>result}
+    }
+}
+async fn wait_cancelled(cancel: &mut watch::Receiver<bool>) {
+    loop {
+        if *cancel.borrow() || cancel.changed().await.is_err() {
+            return;
+        }
+    }
+}
+struct CancelCall(watch::Sender<bool>);
+impl Drop for CancelCall {
+    fn drop(&mut self) {
+        self.0.send_replace(true);
+    }
+}
+impl Call {
+    /// Buffered native transcription. Cancellation signals an owned job; cleanup
+    /// remains supervised after the waiting request has disappeared.
+    pub async fn transcribe(
+        &self,
+        bytes: Vec<u8>,
+        options: crate::speech_request::TranscriptionOptions,
+    ) -> Result<String, Error> {
+        let snapshot = self.snapshot("transcription").await?;
+        let inner = self.service.inner.clone();
+        let mut permit = inner.reserve("transcription")?;
+        self.supported()?;
+        let (cancel, mut receiver) = watch::channel(false);
+        {
+            let mut state = inner.state.lock().map_err(|_| Error::CleanupUnknown)?;
+            if state.closed {
+                return Err(Error::Busy {
+                    operation: "transcription",
+                });
+            }
+            state.active_cancel = Some(cancel.clone());
+        }
+        let _cancel = CancelCall(cancel);
+        let model = speech_catalog::selected(&snapshot.model_id);
+        owned(async move {
+            let pcm =
+                crate::speech_kernel::Pcm::decode(&bytes).map_err(|cause| Error::InvalidAudio {
+                    byte_length: cause.byte_length,
+                    message: cause.message,
+                })?;
+            inner
+                .state
+                .lock()
+                .map_err(|_| Error::CleanupUnknown)?
+                .transcribing += 1;
+            permit.transcribing = true;
+            let _permit = permit;
+            let mut loaded = inner
+                .load_cached(model, &snapshot.acceleration, receiver.clone())
+                .await?;
+            if *receiver.borrow() {
+                inner.dispose().await?;
+                return Err(Error::Cancelled);
+            }
+            let metadata = &loaded.metadata;
+            let needs_vad = options.as_value()["speechSilenceFiltering"] == true
+                || !(metadata["supportsStreaming"] == true || metadata["supportsLongForm"] == true);
+            let vad = if needs_vad {
+                match inner
+                    .silence
+                    .acquire(silence::Purpose::Recording, receiver.clone())
+                    .await
+                {
+                    Ok(path) => path,
+                    Err(crate::speech_model_store::Error::Cancelled) => {
+                        inner.dispose().await?;
+                        return Err(Error::Cancelled);
+                    }
+                    Err(cause) => return Err(operation_error("transcription", cause)),
+                }
+            } else {
+                None
+            };
+            let first = inner
+                .infer(
+                    &loaded,
+                    model,
+                    &pcm,
+                    &options,
+                    vad.as_deref(),
+                    &mut receiver,
+                )
+                .await;
+            match first {
+                Ok(text) => Ok(text),
+                Err(cause) => {
+                    inner.retain_unknown(&cause);
+                    inner.dispose().await?;
+                    if cause == Error::Cancelled || *receiver.borrow() {
+                        return Err(Error::Cancelled);
+                    }
+                    let retry = snapshot.acceleration == "auto"
+                        && loaded.metadata["backend"]
+                            .as_str()
+                            .is_some_and(|backend| !backend.eq_ignore_ascii_case("cpu"));
+                    if !retry {
+                        return Err(cause);
+                    }
+                    loaded = inner.load_cached(model, "cpu", receiver.clone()).await?;
+                    inner
+                        .state
+                        .lock()
+                        .map_err(|_| Error::CleanupUnknown)?
+                        .auto_cpu = Some(model.id().into());
+                    let result = inner
+                        .infer(
+                            &loaded,
+                            model,
+                            &pcm,
+                            &options,
+                            vad.as_deref(),
+                            &mut receiver,
+                        )
+                        .await;
+                    if let Err(cause) = &result {
+                        inner.retain_unknown(cause);
+                        inner.dispose().await?;
+                    }
+                    result
+                }
+            }
+        })
+        .await
+    }
+}

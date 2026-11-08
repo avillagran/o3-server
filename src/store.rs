@@ -27,6 +27,7 @@ pub const STANDARD_SCOPES: [&str; 16] = [
 ];
 
 pub struct State {
+    pub(crate) speech: crate::speech_state::Registry,
     pub(crate) shutting_down: std::sync::atomic::AtomicBool,
     pub agent_scopes: std::sync::Arc<crate::agent_scope::Registry>,
     pub(crate) forge: crate::forge::GitHub,
@@ -48,6 +49,7 @@ pub struct State {
     pub bridge_endpoints: Mutex<Vec<Value>>,
     pub db: Mutex<Connection>,
     pub(crate) worktree_gate: tokio::sync::RwLock<()>,
+    pub worktree_removal: crate::worktree_removal::Registry,
     pub(crate) reader: Mutex<Connection>,
     pub(crate) identities_started: std::sync::atomic::AtomicBool,
     pub(crate) rpc_clients: std::sync::atomic::AtomicUsize,
@@ -61,6 +63,7 @@ pub struct State {
     /// How long a finished run's live requests stay answerable, like T3's session idle window.
     pub request_release_ms: std::sync::atomic::AtomicU64,
     pub(crate) settings_cache: Mutex<crate::settings::Cache>,
+    pub(crate) secret_resolver: std::sync::Arc<crate::secret_resolver::SecretResolver>,
     pub provider: Mutex<Option<std::sync::Arc<dyn crate::provider::Provider>>>,
     pub active: Mutex<
         std::collections::BTreeMap<
@@ -68,8 +71,11 @@ pub struct State {
             tokio::sync::mpsc::Sender<crate::provider::ProviderControl>,
         >,
     >,
-    pub settings_lock: Mutex<()>,
+    pub settings_lock: std::sync::Arc<Mutex<()>>,
     pub launch_lock: Mutex<()>,
+    pub(crate) shared_export: Mutex<()>,
+    pub(crate) managed_policy: crate::managed_policy::Policy,
+    pub(crate) listener_auth: std::sync::OnceLock<crate::desktop_auth::Listener>,
     pub changed: tokio::sync::watch::Sender<u64>,
     pub activity: tokio::sync::watch::Sender<u64>,
     /// Live terminal and command-output sources, with their own wake-up channel.
@@ -163,12 +169,28 @@ mod sql_profile {
 }
 
 impl State {
+    pub fn secret_resolver(&self) -> std::sync::Arc<crate::secret_resolver::SecretResolver> {
+        self.secret_resolver.clone()
+    }
     /// Embedded hosts select the o3-server binary used by the isolated document parser.
     pub fn set_document_worker(&self, path: PathBuf) {
         self.document_text.set_worker(path);
     }
 
     pub fn open(dir: &Path) -> Result<Self, String> {
+        let policy = crate::managed_policy::Policy::load_server().map_err(|e| e.to_string())?;
+        Self::open_with_policy(dir, policy)
+    }
+
+    /// The executable reads its immutable machine policy once before opening the
+    /// profile. Embedded callers use open unless they already performed that read.
+    pub fn open_with_policy(
+        dir: &Path,
+        policy: crate::managed_policy::Policy,
+    ) -> Result<Self, String> {
+        policy
+            .require_enforced(crate::managed_policy::ENFORCED_FAMILIES)
+            .map_err(|e| e.to_string())?;
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
         let mut db = Connection::open(dir.join("o3.sqlite")).map_err(|e| e.to_string())?;
         profiled(&mut db);
@@ -204,7 +226,8 @@ impl State {
         let streams = crate::streams::Hub::new();
         streams.terminals.set_agent_scopes(agent_scopes.clone());
         streams.terminals.restore(&dir.join("terminal-history"))?;
-        Ok(Self {
+        let state = Self {
+            speech: Default::default(),
             shutting_down: Default::default(),
             agent_scopes,
             forge: Default::default(),
@@ -221,10 +244,14 @@ impl State {
             workspace_detach_started: Default::default(),
             provider_switch_gates: Default::default(),
             worktree_handoffs: Default::default(),
+            worktree_removal: Default::default(),
             #[cfg(feature = "bridge")]
             bridge_endpoints: Mutex::new(Vec::new()),
-            settings_lock: Mutex::new(()),
+            settings_lock: std::sync::Arc::new(Mutex::new(())),
             launch_lock: Mutex::new(()),
+            shared_export: Mutex::new(()),
+            managed_policy: policy,
+            listener_auth: std::sync::OnceLock::new(),
             provider: Mutex::new(None),
             active: Mutex::new(std::collections::BTreeMap::new()),
             changed,
@@ -244,7 +271,10 @@ impl State {
             asset_profile_root: dir.into(),
             request_release_ms: std::sync::atomic::AtomicU64::new(30 * 60 * 1000),
             settings_cache: Mutex::new(None),
-        })
+            secret_resolver: std::sync::Arc::new(crate::secret_resolver::SecretResolver::system()),
+        };
+        state.revoke_policy_clients()?;
+        Ok(state)
     }
 
     /// Backpressure on blocking workers, outside the receipt transaction.
@@ -291,9 +321,75 @@ impl State {
         }).expect("start SQLite checkpointer");
     }
 
+    /// Listener classification is fixed before request handling begins.
+    pub fn configure_web_auth(&self, host: Option<&str>) -> Result<(), String> {
+        self.configure_listener_auth(host, false, None, None)
+    }
+    pub fn auth_policy(&self) -> crate::managed_limits::AuthPolicy {
+        self.listener_auth
+            .get()
+            .map(|listener| listener.policy)
+            .unwrap_or(crate::managed_limits::AuthPolicy::LocalBrowser)
+    }
+    /// Revoke only the native link identities the immutable machine policy disallows.
+    pub fn revoke_policy_clients(&self) -> Result<Value, String> {
+        if self.managed_policy.allows_remote() && self.managed_policy.allows_connect() {
+            return Ok(json!({"sessions":0,"pairingLinks":0}));
+        }
+        let now = now_ms();
+        let mut db = self.db.lock().unwrap();
+        let tx = db.transaction().map_err(|error| error.to_string())?;
+        let sessions = {
+            let mut query=tx.prepare("SELECT session_id,subject,client FROM auth_sessions WHERE revoked_at IS NULL AND expires_at>?").map_err(|error|error.to_string())?;
+            let rows = query
+                .query_map([now], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                })
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+            rows
+        };
+        let mut revoked_sessions = 0;
+        for (id, subject, client) in sessions {
+            let client: Value = serde_json::from_str(&client).map_err(|error| error.to_string())?;
+            if crate::managed_clients::session_disallowed(&self.managed_policy, &subject, &client) {
+                revoked_sessions+=tx.execute("UPDATE auth_sessions SET revoked_at=? WHERE session_id=? AND revoked_at IS NULL",params![now,id]).map_err(|error|error.to_string())?;
+            }
+        }
+        let links = {
+            let mut query=tx.prepare("SELECT id,subject FROM auth_pairing_links WHERE revoked_at IS NULL AND consumed_at IS NULL AND expires_at>?").map_err(|error|error.to_string())?;
+            let rows = query
+                .query_map([now], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+            rows
+        };
+        let mut revoked_links = 0;
+        for (id, subject) in links {
+            if crate::managed_clients::subject_disallowed(&self.managed_policy, &subject) {
+                revoked_links+=tx.execute("UPDATE auth_pairing_links SET revoked_at=? WHERE id=? AND revoked_at IS NULL",params![now,id]).map_err(|error|error.to_string())?;
+            }
+        }
+        tx.commit().map_err(|error| error.to_string())?;
+        Ok(json!({"sessions":revoked_sessions,"pairingLinks":revoked_links}))
+    }
+
     /// A one-use pairing secret, as `/api/auth/pairing-token` hands out.
     pub fn issue_pairing(&self, label: Option<&str>, ttl_ms: i64) -> Result<Value, String> {
-        self.issue_pairing_scoped(label, ttl_ms, &STANDARD_SCOPES.join(" "), "owner")
+        self.issue_pairing_scoped(
+            label,
+            ttl_ms,
+            &STANDARD_SCOPES.join(" "),
+            crate::managed_clients::LINK_SUBJECT,
+        )
     }
     pub fn issue_pairing_scoped(
         &self,
@@ -302,6 +398,22 @@ impl State {
         scopes: &str,
         subject: &str,
     ) -> Result<Value, String> {
+        if !self.managed_policy.allows_remote()
+            && subject != crate::managed_clients::STARTUP_SUBJECT
+        {
+            return Err(crate::managed_clients::remote_pairing_refusal(
+                &self.managed_policy,
+            ));
+        }
+        if subject == crate::managed_clients::CONNECT_SUBJECT
+            && !self.managed_policy.allows_connect()
+        {
+            return Err(crate::managed_clients::refusal(
+                &self.managed_policy,
+                "T3 Connect",
+                None,
+            ));
+        }
         let (id, credential, now) = (random_id()?, random_id()?, now_ms());
         self.db.lock().unwrap().execute(
             "INSERT INTO auth_pairing_links(id,credential,scopes,subject,label,created_at,expires_at) VALUES(?,?,?,?,?,?,?)",
@@ -321,8 +433,59 @@ impl State {
         credential: &str,
         client: &Value,
     ) -> Result<Option<Value>, String> {
+        self.exchange_pairing_from(credential, client, None)
+    }
+    pub(crate) fn exchange_pairing_from(
+        &self,
+        credential: &str,
+        client: &Value,
+        peer: Option<std::net::IpAddr>,
+    ) -> Result<Option<Value>, String> {
+        self.exchange_pairing_from_scoped(credential, client, peer, None)
+            .map_err(|error| match error {
+                crate::desktop_auth::ExchangeError::ScopeNotGranted => {
+                    "The requested authentication scope was not granted".into()
+                }
+                crate::desktop_auth::ExchangeError::Internal(error) => error,
+            })
+    }
+    pub(crate) fn exchange_pairing_from_scoped(
+        &self,
+        credential: &str,
+        client: &Value,
+        peer: Option<std::net::IpAddr>,
+        requested: Option<&[String]>,
+    ) -> Result<Option<Value>, crate::desktop_auth::ExchangeError> {
+        if !self.managed_policy.allows_remote()
+            && !peer.is_some_and(crate::managed_clients::local_peer)
+        {
+            return Ok(None);
+        }
+        match self.exchange_desktop(credential, client, peer, requested)? {
+            crate::desktop_auth::Exchange::Session(session) => return Ok(Some(session)),
+            crate::desktop_auth::Exchange::Rejected => return Ok(None),
+            crate::desktop_auth::Exchange::ScopeNotGranted => {
+                return Err(crate::desktop_auth::ExchangeError::ScopeNotGranted)
+            }
+            crate::desktop_auth::Exchange::Unmatched => {}
+        }
         let now = now_ms();
         let db = self.db.lock().unwrap();
+        let subject: Option<String> = db.query_row("SELECT subject FROM auth_pairing_links WHERE credential=? AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>?", params![credential,now], |row|row.get(0)).optional().map_err(|error|error.to_string())?;
+        if subject.as_deref().is_some_and(|subject| {
+            crate::managed_clients::subject_disallowed(&self.managed_policy, subject)
+        }) {
+            return Ok(None);
+        }
+
+        if let Some(requested) = requested {
+            let granted:Option<String> = db.query_row("SELECT scopes FROM auth_pairing_links WHERE credential=? AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>?", params![credential,now],|row|row.get(0)).optional().map_err(|error|error.to_string())?;
+            if granted.is_some_and(|granted| {
+                crate::desktop_auth::select_scopes(&granted, Some(requested)).is_none()
+            }) {
+                return Err(crate::desktop_auth::ExchangeError::ScopeNotGranted);
+            }
+        }
         let grant: Option<(String, String, Option<String>)> = db.query_row(
             "UPDATE auth_pairing_links SET consumed_at=?1 WHERE credential=?2 AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>?1 RETURNING scopes,subject,label",
             params![now, credential], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
@@ -330,7 +493,16 @@ impl State {
         let Some((scopes, subject, label)) = grant else {
             return Ok(None);
         };
+        let scopes = crate::desktop_auth::select_scopes(&scopes, requested)
+            .ok_or(crate::desktop_auth::ExchangeError::ScopeNotGranted)?;
         let mut client = client.clone();
+        if !client.is_object() {
+            client = json!({});
+        }
+        client.as_object_mut().unwrap().remove("ipAddress");
+        if let Some(peer) = peer {
+            client["ipAddress"] = json!(crate::managed_clients::canonical_peer(peer));
+        }
         if let Some(label) = label {
             client["client_label"] = label.into();
         }
@@ -390,6 +562,13 @@ impl State {
         claims["scopes"] = json!(scopes.split_whitespace().collect::<Vec<_>>());
         claims["sub"] = subject.into();
         let client: Value = serde_json::from_str(&client).ok()?;
+        if crate::managed_clients::session_disallowed(
+            &self.managed_policy,
+            claims["sub"].as_str()?,
+            &client,
+        ) {
+            return None;
+        }
         claims["runtimeModeCeiling"] = client["runtimeModeCeiling"].clone();
         Some(claims)
     }
@@ -435,6 +614,16 @@ impl State {
             &self.signing_key,
         ))
     }
+    pub(crate) fn current_session(&self, session: &Value) -> Option<Value> {
+        if self
+            .shutting_down
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            return None;
+        }
+        self.live(session.clone(), now_ms())
+            .filter(|session| session["sub"] != "mcp-client")
+    }
     pub fn session_live(&self, session: &Value) -> bool {
         self.live(session.clone(), now_ms()).is_some()
     }
@@ -449,6 +638,8 @@ impl State {
         self.shutting_down
             .store(true, std::sync::atomic::Ordering::Release);
         self.notify();
+        drop(_db);
+        self.speech.signal_shutdown();
     }
 
     pub fn notify(&self) {

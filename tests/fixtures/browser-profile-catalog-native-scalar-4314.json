@@ -1,0 +1,1408 @@
+{
+  "complete": true,
+  "revision": "83a3674ffd84ffb33de768210c806cb1ac53fd80",
+  "originalProofSha256": "8f63cb0c922bf602081cd352412547047be7786386f603b2a88f5a57edfa882e",
+  "sourceSha256": {
+    "packages/contracts/src/baseSchemas.ts": "edd4d2c73cc79ce5e50bffd35b9c861fe091de23a1ac792db864d3b71b09a7af",
+    "packages/contracts/src/browserProfile.ts": "a8995cb24686afddd7dc66a85b2c61019d1ffbd551dac26864fffbc13e9f10e2",
+    "packages/contracts/src/preview.ts": "d93c13bf3c0510629d61cce4249192cc083b3849d00c7e9f2c4abd70b1d4fb3d",
+    "apps/server/src/preview/ServerBrowser.ts": "e8b025a1c7de82ba8089c5fa7d4439ee69e1d19a74af7657a26a419a51cdfab6"
+  },
+  "catalogFragmentSha256": "7666e6bdb4abd3f643bf61133c2f3762e818da89a63a945892bf7799d3d62c72",
+  "traces": [
+    {
+      "name": "unreported-acquire-retire",
+      "rows": [
+        {
+          "step": [
+            "initial"
+          ],
+          "status": {
+            "profiles": [
+              {
+                "id": "default",
+                "name": "Default"
+              },
+              {
+                "id": "incognito",
+                "name": "Incognito",
+                "incognito": true
+              }
+            ]
+          },
+          "recordingFrameRate": 30
+        },
+        {
+          "step": [
+            "acquire",
+            "a"
+          ],
+          "status": {
+            "profiles": [
+              {
+                "id": "default",
+                "name": "Default"
+              },
+              {
+                "id": "incognito",
+                "name": "Incognito",
+                "incognito": true
+              }
+            ]
+          },
+          "recordingFrameRate": 30
+        },
+        {
+          "step": [
+            "retire",
+            "a"
+          ],
+          "status": {
+            "profiles": [
+              {
+                "id": "default",
+                "name": "Default"
+              },
+              {
+                "id": "incognito",
+                "name": "Incognito",
+                "incognito": true
+              }
+            ]
+          },
+          "recordingFrameRate": 30
+        }
+      ]
+    },
+    {
+      "name": "union-shadow-update-retire-last",
+      "rows": [
+        {
+          "step": [
+            "initial"
+          ],
+          "status": {
+            "profiles": [
+              {
+                "id": "default",
+                "name": "Default"
+              },
+              {
+                "id": "incognito",
+                "name": "Incognito",
+                "incognito": true
+              }
+            ]
+          },
+          "recordingFrameRate": 30
+        },
+        {
+          "step": [
+            "acquire",
+            "a"
+          ],
+          "status": {
+            "profiles": [
+              {
+                "id": "default",
+                "name": "Default"
+              },
+              {
+                "id": "incognito",
+                "name": "Incognito",
+                "incognito": true
+              }
+            ]
+          },
+          "recordingFrameRate": 30
+        },
+        {
+          "step": [
+            "acquire",
+            "b"
+          ],
+          "status": {
+            "profiles": [
+              {
+                "id": "default",
+                "name": "Default"
+              },
+              {
+                "id": "incognito",
+                "name": "Incognito",
+                "incognito": true
+              }
+            ]
+          },
+          "recordingFrameRate": 30
+        },
+        {
+          "step": [
+            "report",
+            "a",
+            {
+              "profiles": [
+                {
+                  "id": "a",
+                  "name": "a",
+                  "kind": "persistent"
+                },
+                {
+                  "id": "x",
+                  "name": "Old X",
+                  "kind": "persistent"
+                }
+              ],
+              "defaultProfileId": "a",
+              "recordingFrameRate": 60
+            }
+          ],
+          "status": {
+            "profiles": [
+              {
+                "id": "default",
+                "name": "Default"
+              },
+              {
+                "id": "incognito",
+                "name": "Incognito",
+                "incognito": true
+              },
+              {
+                "id": "a",
+                "name": "a"
+              },
+              {
+                "id": "x",
+                "name": "Old X"
+              }
+            ],
+            "defaultProfileId": "a"
+          },
+          "recordingFrameRate": 60
+        },
+        {
+          "step": [
+            "report",
+            "b",
+            {
+              "profiles": [
+                {
+                  "id": "b",
+                  "name": "b",
+                  "kind": "persistent"
+                },
+                {
+                  "id": "x",
+                  "name": "New X",
+                  "kind": "persistent"
+                }
+              ],
+              "defaultProfileId": "b"
+            }
+          ],
+          "status": {
+            "profiles": [
+              {
+                "id": "default",
+                "name": "Default"
+              },
+              {
+                "id": "incognito",
+                "name": "Incognito",
+                "incognito": true
+              },
+              {
+                "id": "a",
+                "name": "a"
+              },
+              {
+                "id": "x",
+                "name": "New X"
+              },
+              {
+                "id": "b",
+                "name": "b"
+              }
+            ],
+            "defaultProfileId": "b"
+          },
+          "recordingFrameRate": 60
+        },
+        {
+          "step": [
+            "report",
+            "a",
+            {
+              "profiles": [
+                {
+                  "id": "c",
+                  "name": "c",
+                  "kind": "persistent"
+                },
+                {
+                  "id": "x",
+                  "name": "Latest X",
+                  "kind": "persistent"
+                }
+              ],
+              "defaultProfileId": "c"
+            }
+          ],
+          "status": {
+            "profiles": [
+              {
+                "id": "default",
+                "name": "Default"
+              },
+              {
+                "id": "incognito",
+                "name": "Incognito",
+                "incognito": true
+              },
+              {
+                "id": "b",
+                "name": "b"
+              },
+              {
+                "id": "x",
+                "name": "Latest X"
+              },
+              {
+                "id": "c",
+                "name": "c"
+              }
+            ],
+            "defaultProfileId": "c"
+          },
+          "recordingFrameRate": 60
+        },
+        {
+          "step": [
+            "retire",
+            "a"
+          ],
+          "status": {
+            "profiles": [
+              {
+                "id": "default",
+                "name": "Default"
+              },
+              {
+                "id": "incognito",
+                "name": "Incognito",
+                "incognito": true
+              },
+              {
+                "id": "b",
+                "name": "b"
+              },
+              {
+                "id": "x",
+                "name": "New X"
+              }
+            ],
+            "defaultProfileId": "b"
+          },
+          "recordingFrameRate": 60
+        },
+        {
+          "step": [
+            "retire",
+            "b"
+          ],
+          "status": {
+            "profiles": [
+              {
+                "id": "default",
+                "name": "Default"
+              },
+              {
+                "id": "incognito",
+                "name": "Incognito",
+                "incognito": true
+              },
+              {
+                "id": "b",
+                "name": "b"
+              },
+              {
+                "id": "x",
+                "name": "New X"
+              }
+            ],
+            "defaultProfileId": "b"
+          },
+          "recordingFrameRate": 60
+        },
+        {
+          "step": [
+            "acquire",
+            "empty"
+          ],
+          "status": {
+            "profiles": [
+              {
+                "id": "default",
+                "name": "Default"
+              },
+              {
+                "id": "incognito",
+                "name": "Incognito",
+                "incognito": true
+              },
+              {
+                "id": "b",
+                "name": "b"
+              },
+              {
+                "id": "x",
+                "name": "New X"
+              }
+            ],
+            "defaultProfileId": "b"
+          },
+          "recordingFrameRate": 60
+        },
+        {
+          "step": [
+            "report",
+            "empty",
+            {
+              "profiles": [],
+              "defaultProfileId": "unknown"
+            }
+          ],
+          "status": {
+            "profiles": [
+              {
+                "id": "default",
+                "name": "Default"
+              },
+              {
+                "id": "incognito",
+                "name": "Incognito",
+                "incognito": true
+              }
+            ],
+            "defaultProfileId": "default"
+          },
+          "recordingFrameRate": 60
+        },
+        {
+          "step": [
+            "retire",
+            "empty"
+          ],
+          "status": {
+            "profiles": [
+              {
+                "id": "default",
+                "name": "Default"
+              },
+              {
+                "id": "incognito",
+                "name": "Incognito",
+                "incognito": true
+              }
+            ],
+            "defaultProfileId": "default"
+          },
+          "recordingFrameRate": 60
+        }
+      ]
+    },
+    {
+      "name": "builtin-duplicate-normalization-case-sensitive-default",
+      "rows": [
+        {
+          "step": [
+            "initial"
+          ],
+          "status": {
+            "profiles": [
+              {
+                "id": "default",
+                "name": "Default"
+              },
+              {
+                "id": "incognito",
+                "name": "Incognito",
+                "incognito": true
+              }
+            ]
+          },
+          "recordingFrameRate": 30
+        },
+        {
+          "step": [
+            "acquire",
+            "a"
+          ],
+          "status": {
+            "profiles": [
+              {
+                "id": "default",
+                "name": "Default"
+              },
+              {
+                "id": "incognito",
+                "name": "Incognito",
+                "incognito": true
+              }
+            ]
+          },
+          "recordingFrameRate": 30
+        },
+        {
+          "step": [
+            "report",
+            "a",
+            {
+              "profiles": [
+                {
+                  "id": "incognito",
+                  "name": "Wrong",
+                  "kind": "persistent"
+                },
+                {
+                  "id": "default",
+                  "name": "Wrong default",
+                  "kind": "persistent"
+                },
+                {
+                  "id": "x",
+                  "name": "First",
+                  "kind": "incognito"
+                },
+                {
+                  "id": "x",
+                  "name": "Last",
+                  "kind": "persistent"
+                }
+              ],
+              "defaultProfileId": "X"
+            }
+          ],
+          "status": {
+            "profiles": [
+              {
+                "id": "default",
+                "name": "Default"
+              },
+              {
+                "id": "incognito",
+                "name": "Incognito",
+                "incognito": true
+              },
+              {
+                "id": "x",
+                "name": "Last"
+              }
+            ],
+            "defaultProfileId": "default"
+          },
+          "recordingFrameRate": 30
+        },
+        {
+          "step": [
+            "report",
+            "a",
+            {
+              "profiles": [
+                {
+                  "id": "custom",
+                  "name": "Private label",
+                  "kind": "incognito"
+                }
+              ],
+              "defaultProfileId": "custom",
+              "recordingFrameRate": 30
+            }
+          ],
+          "status": {
+            "profiles": [
+              {
+                "id": "default",
+                "name": "Default"
+              },
+              {
+                "id": "incognito",
+                "name": "Incognito",
+                "incognito": true
+              },
+              {
+                "id": "custom",
+                "name": "Private label"
+              }
+            ],
+            "defaultProfileId": "custom"
+          },
+          "recordingFrameRate": 30
+        },
+        {
+          "step": [
+            "retire",
+            "a"
+          ],
+          "status": {
+            "profiles": [
+              {
+                "id": "default",
+                "name": "Default"
+              },
+              {
+                "id": "incognito",
+                "name": "Incognito",
+                "incognito": true
+              },
+              {
+                "id": "custom",
+                "name": "Private label"
+              }
+            ],
+            "defaultProfileId": "custom"
+          },
+          "recordingFrameRate": 30
+        }
+      ]
+    },
+    {
+      "name": "rate-independent-of-reporter-retirement",
+      "rows": [
+        {
+          "step": [
+            "initial"
+          ],
+          "status": {
+            "profiles": [
+              {
+                "id": "default",
+                "name": "Default"
+              },
+              {
+                "id": "incognito",
+                "name": "Incognito",
+                "incognito": true
+              }
+            ]
+          },
+          "recordingFrameRate": 30
+        },
+        {
+          "step": [
+            "acquire",
+            "a"
+          ],
+          "status": {
+            "profiles": [
+              {
+                "id": "default",
+                "name": "Default"
+              },
+              {
+                "id": "incognito",
+                "name": "Incognito",
+                "incognito": true
+              }
+            ]
+          },
+          "recordingFrameRate": 30
+        },
+        {
+          "step": [
+            "acquire",
+            "b"
+          ],
+          "status": {
+            "profiles": [
+              {
+                "id": "default",
+                "name": "Default"
+              },
+              {
+                "id": "incognito",
+                "name": "Incognito",
+                "incognito": true
+              }
+            ]
+          },
+          "recordingFrameRate": 30
+        },
+        {
+          "step": [
+            "report",
+            "a",
+            {
+              "profiles": [
+                {
+                  "id": "a",
+                  "name": "a",
+                  "kind": "persistent"
+                }
+              ],
+              "defaultProfileId": "a",
+              "recordingFrameRate": 60
+            }
+          ],
+          "status": {
+            "profiles": [
+              {
+                "id": "default",
+                "name": "Default"
+              },
+              {
+                "id": "incognito",
+                "name": "Incognito",
+                "incognito": true
+              },
+              {
+                "id": "a",
+                "name": "a"
+              }
+            ],
+            "defaultProfileId": "a"
+          },
+          "recordingFrameRate": 60
+        },
+        {
+          "step": [
+            "report",
+            "b",
+            {
+              "profiles": [
+                {
+                  "id": "b",
+                  "name": "b",
+                  "kind": "persistent"
+                }
+              ],
+              "defaultProfileId": "b",
+              "recordingFrameRate": 30
+            }
+          ],
+          "status": {
+            "profiles": [
+              {
+                "id": "default",
+                "name": "Default"
+              },
+              {
+                "id": "incognito",
+                "name": "Incognito",
+                "incognito": true
+              },
+              {
+                "id": "a",
+                "name": "a"
+              },
+              {
+                "id": "b",
+                "name": "b"
+              }
+            ],
+            "defaultProfileId": "b"
+          },
+          "recordingFrameRate": 30
+        },
+        {
+          "step": [
+            "retire",
+            "b"
+          ],
+          "status": {
+            "profiles": [
+              {
+                "id": "default",
+                "name": "Default"
+              },
+              {
+                "id": "incognito",
+                "name": "Incognito",
+                "incognito": true
+              },
+              {
+                "id": "a",
+                "name": "a"
+              }
+            ],
+            "defaultProfileId": "a"
+          },
+          "recordingFrameRate": 30
+        },
+        {
+          "step": [
+            "retire",
+            "a"
+          ],
+          "status": {
+            "profiles": [
+              {
+                "id": "default",
+                "name": "Default"
+              },
+              {
+                "id": "incognito",
+                "name": "Incognito",
+                "incognito": true
+              },
+              {
+                "id": "a",
+                "name": "a"
+              }
+            ],
+            "defaultProfileId": "a"
+          },
+          "recordingFrameRate": 30
+        }
+      ]
+    }
+  ],
+  "schemaCases": [
+    {
+      "input": {
+        "profiles": [],
+        "defaultProfileId": "default"
+      },
+      "accepted": true,
+      "decoded": {
+        "profiles": [],
+        "defaultProfileId": "default"
+      }
+    },
+    {
+      "input": {
+        "profiles": [
+          {
+            "id": " ﻿x﻿ ",
+            "name": " ﻿Name ",
+            "kind": "persistent"
+          }
+        ],
+        "defaultProfileId": " x ",
+        "recordingFrameRate": 60
+      },
+      "accepted": true,
+      "decoded": {
+        "profiles": [
+          {
+            "id": "x",
+            "name": "Name",
+            "kind": "persistent"
+          }
+        ],
+        "defaultProfileId": "x",
+        "recordingFrameRate": 60
+      }
+    },
+    {
+      "input": {
+        "profiles": [
+          {
+            "id": "",
+            "name": "Name",
+            "kind": "persistent"
+          }
+        ],
+        "defaultProfileId": "default"
+      },
+      "accepted": false
+    },
+    {
+      "input": {
+        "profiles": [
+          {
+            "id": "x",
+            "name": "",
+            "kind": "persistent"
+          }
+        ],
+        "defaultProfileId": "default"
+      },
+      "accepted": true,
+      "decoded": {
+        "profiles": [
+          {
+            "id": "x",
+            "name": "",
+            "kind": "persistent"
+          }
+        ],
+        "defaultProfileId": "default"
+      }
+    },
+    {
+      "input": {
+        "profiles": [
+          {
+            "id": "x",
+            "name": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+            "kind": "persistent"
+          }
+        ],
+        "defaultProfileId": "default"
+      },
+      "accepted": true,
+      "decoded": {
+        "profiles": [
+          {
+            "id": "x",
+            "name": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+            "kind": "persistent"
+          }
+        ],
+        "defaultProfileId": "default"
+      }
+    },
+    {
+      "input": {
+        "profiles": [
+          {
+            "id": "x",
+            "name": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+            "kind": "persistent"
+          }
+        ],
+        "defaultProfileId": "default"
+      },
+      "accepted": false
+    },
+    {
+      "input": {
+        "profiles": [
+          {
+            "id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "kind": "persistent"
+          }
+        ],
+        "defaultProfileId": "default"
+      },
+      "accepted": false
+    },
+    {
+      "input": {
+        "profiles": [
+          {
+            "id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "kind": "persistent"
+          }
+        ],
+        "defaultProfileId": "default"
+      },
+      "accepted": false
+    },
+    {
+      "input": {
+        "profiles": [
+          {
+            "id": "default",
+            "name": "Override",
+            "kind": "persistent"
+          }
+        ],
+        "defaultProfileId": "default"
+      },
+      "accepted": true,
+      "decoded": {
+        "profiles": [
+          {
+            "id": "default",
+            "name": "Override",
+            "kind": "persistent"
+          }
+        ],
+        "defaultProfileId": "default"
+      }
+    },
+    {
+      "input": {
+        "profiles": [
+          {
+            "id": "x",
+            "name": "Private",
+            "kind": "incognito"
+          }
+        ],
+        "defaultProfileId": "default"
+      },
+      "accepted": true,
+      "decoded": {
+        "profiles": [
+          {
+            "id": "x",
+            "name": "Private",
+            "kind": "incognito"
+          }
+        ],
+        "defaultProfileId": "default"
+      }
+    },
+    {
+      "input": {
+        "profiles": [
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          }
+        ],
+        "defaultProfileId": "default"
+      },
+      "accepted": true,
+      "decoded": {
+        "profiles": [
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          }
+        ],
+        "defaultProfileId": "default"
+      }
+    },
+    {
+      "input": {
+        "profiles": [
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          },
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          }
+        ],
+        "defaultProfileId": "default"
+      },
+      "accepted": false
+    },
+    {
+      "input": {
+        "profiles": [],
+        "defaultProfileId": "default",
+        "recordingFrameRate": null
+      },
+      "accepted": false
+    },
+    {
+      "input": {
+        "profiles": [],
+        "defaultProfileId": "default",
+        "recordingFrameRate": 29
+      },
+      "accepted": false
+    },
+    {
+      "input": {
+        "profiles": [],
+        "defaultProfileId": "default",
+        "recordingFrameRate": 60.5
+      },
+      "accepted": false
+    },
+    {
+      "input": {
+        "profiles": [],
+        "defaultProfileId": "default",
+        "recordingFrameRate": "30"
+      },
+      "accepted": false
+    },
+    {
+      "input": {
+        "profiles": [],
+        "defaultProfileId": "default",
+        "ignored": "stripped"
+      },
+      "accepted": true,
+      "decoded": {
+        "profiles": [],
+        "defaultProfileId": "default"
+      }
+    },
+    {
+      "input": {
+        "profiles": [
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent",
+            "ignored": true
+          }
+        ],
+        "defaultProfileId": "default"
+      },
+      "accepted": true,
+      "decoded": {
+        "profiles": [
+          {
+            "id": "x",
+            "name": "x",
+            "kind": "persistent"
+          }
+        ],
+        "defaultProfileId": "default"
+      }
+    }
+  ],
+  "excludedNativeSchemaCases": [
+    {
+      "index": 18,
+      "reason": "native-string-is-not-well-formed-utf16"
+    },
+    {
+      "index": 19,
+      "reason": "native-string-is-not-well-formed-utf16"
+    }
+  ],
+  "qualification": "All original state traces and scalar-string schema cases. Only the two original accepted !String.isWellFormed inputs are excluded from this additional Rust serde_json::Value reference; their complete inputs/results remain in the separately hashed original native proof. No runtime assertion is inferred from this conversion."
+}

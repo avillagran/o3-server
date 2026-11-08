@@ -1,0 +1,930 @@
+{
+  "revision": "c55db3e9c72fdf584f4b54192fb39beb88667b59",
+  "sourceHash": "6021fbbcf7b486c754cdbd15fd0f3bfc6802342ab296dddc487c70aa1e42527e",
+  "boundaries": [
+    {
+      "runs": [],
+      "through": 0,
+      "expected": 0
+    },
+    {
+      "runs": [],
+      "through": 1,
+      "expected": 0
+    },
+    {
+      "runs": [],
+      "through": 2,
+      "expected": 0
+    },
+    {
+      "runs": [],
+      "through": 99,
+      "expected": 0
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 1,
+          "status": "completed",
+          "freshContext": false,
+          "startedAt": "now"
+        }
+      ],
+      "through": 0,
+      "expected": 0
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 1,
+          "status": "completed",
+          "freshContext": false,
+          "startedAt": "now"
+        }
+      ],
+      "through": 1,
+      "expected": 0
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 1,
+          "status": "completed",
+          "freshContext": false,
+          "startedAt": "now"
+        }
+      ],
+      "through": 2,
+      "expected": 0
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 1,
+          "status": "completed",
+          "freshContext": false,
+          "startedAt": "now"
+        }
+      ],
+      "through": 99,
+      "expected": 0
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 1,
+          "status": "completed",
+          "freshContext": true,
+          "startedAt": "now"
+        },
+        {
+          "ordinal": 2,
+          "status": "queued",
+          "freshContext": true,
+          "startedAt": null
+        },
+        {
+          "ordinal": 3,
+          "status": "cancelled",
+          "freshContext": true,
+          "startedAt": null
+        }
+      ],
+      "through": 0,
+      "expected": 0
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 1,
+          "status": "completed",
+          "freshContext": true,
+          "startedAt": "now"
+        },
+        {
+          "ordinal": 2,
+          "status": "queued",
+          "freshContext": true,
+          "startedAt": null
+        },
+        {
+          "ordinal": 3,
+          "status": "cancelled",
+          "freshContext": true,
+          "startedAt": null
+        }
+      ],
+      "through": 1,
+      "expected": 1
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 1,
+          "status": "completed",
+          "freshContext": true,
+          "startedAt": "now"
+        },
+        {
+          "ordinal": 2,
+          "status": "queued",
+          "freshContext": true,
+          "startedAt": null
+        },
+        {
+          "ordinal": 3,
+          "status": "cancelled",
+          "freshContext": true,
+          "startedAt": null
+        }
+      ],
+      "through": 2,
+      "expected": 1
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 1,
+          "status": "completed",
+          "freshContext": true,
+          "startedAt": "now"
+        },
+        {
+          "ordinal": 2,
+          "status": "queued",
+          "freshContext": true,
+          "startedAt": null
+        },
+        {
+          "ordinal": 3,
+          "status": "cancelled",
+          "freshContext": true,
+          "startedAt": null
+        }
+      ],
+      "through": 99,
+      "expected": 1
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 1,
+          "status": "completed",
+          "freshContext": true,
+          "startedAt": "now"
+        },
+        {
+          "ordinal": 2,
+          "status": "preparing",
+          "freshContext": true,
+          "startedAt": null
+        }
+      ],
+      "through": 0,
+      "expected": 0
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 1,
+          "status": "completed",
+          "freshContext": true,
+          "startedAt": "now"
+        },
+        {
+          "ordinal": 2,
+          "status": "preparing",
+          "freshContext": true,
+          "startedAt": null
+        }
+      ],
+      "through": 1,
+      "expected": 1
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 1,
+          "status": "completed",
+          "freshContext": true,
+          "startedAt": "now"
+        },
+        {
+          "ordinal": 2,
+          "status": "preparing",
+          "freshContext": true,
+          "startedAt": null
+        }
+      ],
+      "through": 2,
+      "expected": 2
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 1,
+          "status": "completed",
+          "freshContext": true,
+          "startedAt": "now"
+        },
+        {
+          "ordinal": 2,
+          "status": "preparing",
+          "freshContext": true,
+          "startedAt": null
+        }
+      ],
+      "through": 99,
+      "expected": 2
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 2,
+          "status": "cancelled",
+          "freshContext": true,
+          "startedAt": null,
+          "restartContinuationOfRunId": "source"
+        }
+      ],
+      "through": 0,
+      "expected": 0
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 2,
+          "status": "cancelled",
+          "freshContext": true,
+          "startedAt": null,
+          "restartContinuationOfRunId": "source"
+        }
+      ],
+      "through": 1,
+      "expected": 0
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 2,
+          "status": "cancelled",
+          "freshContext": true,
+          "startedAt": null,
+          "restartContinuationOfRunId": "source"
+        }
+      ],
+      "through": 2,
+      "expected": 2
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 2,
+          "status": "cancelled",
+          "freshContext": true,
+          "startedAt": null,
+          "restartContinuationOfRunId": "source"
+        }
+      ],
+      "through": 99,
+      "expected": 2
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 2,
+          "status": "failed",
+          "freshContext": true,
+          "startedAt": null
+        }
+      ],
+      "through": 0,
+      "expected": 0
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 2,
+          "status": "failed",
+          "freshContext": true,
+          "startedAt": null
+        }
+      ],
+      "through": 1,
+      "expected": 0
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 2,
+          "status": "failed",
+          "freshContext": true,
+          "startedAt": null
+        }
+      ],
+      "through": 2,
+      "expected": 2
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 2,
+          "status": "failed",
+          "freshContext": true,
+          "startedAt": null
+        }
+      ],
+      "through": 99,
+      "expected": 2
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 2,
+          "status": "cancelled",
+          "freshContext": true,
+          "startedAt": "now"
+        }
+      ],
+      "through": 0,
+      "expected": 0
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 2,
+          "status": "cancelled",
+          "freshContext": true,
+          "startedAt": "now"
+        }
+      ],
+      "through": 1,
+      "expected": 0
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 2,
+          "status": "cancelled",
+          "freshContext": true,
+          "startedAt": "now"
+        }
+      ],
+      "through": 2,
+      "expected": 2
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 2,
+          "status": "cancelled",
+          "freshContext": true,
+          "startedAt": "now"
+        }
+      ],
+      "through": 99,
+      "expected": 2
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 2,
+          "status": "rolled_back",
+          "freshContext": true,
+          "startedAt": "now"
+        }
+      ],
+      "through": 0,
+      "expected": 0
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 2,
+          "status": "rolled_back",
+          "freshContext": true,
+          "startedAt": "now"
+        }
+      ],
+      "through": 1,
+      "expected": 0
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 2,
+          "status": "rolled_back",
+          "freshContext": true,
+          "startedAt": "now"
+        }
+      ],
+      "through": 2,
+      "expected": 2
+    },
+    {
+      "runs": [
+        {
+          "ordinal": 2,
+          "status": "rolled_back",
+          "freshContext": true,
+          "startedAt": "now"
+        }
+      ],
+      "through": 99,
+      "expected": 2
+    }
+  ],
+  "threads": [
+    {
+      "thread": {
+        "firstRunOrdinal": null
+      },
+      "boundary": 0,
+      "expected": false
+    },
+    {
+      "thread": {
+        "firstRunOrdinal": 1
+      },
+      "boundary": 0,
+      "expected": false
+    },
+    {
+      "thread": {
+        "firstRunOrdinal": 3
+      },
+      "boundary": 0,
+      "expected": false
+    },
+    {
+      "thread": {
+        "firstRunOrdinal": 4
+      },
+      "boundary": 0,
+      "expected": false
+    },
+    {
+      "thread": {
+        "firstRunOrdinal": null
+      },
+      "boundary": 1,
+      "expected": true
+    },
+    {
+      "thread": {
+        "firstRunOrdinal": 1
+      },
+      "boundary": 1,
+      "expected": false
+    },
+    {
+      "thread": {
+        "firstRunOrdinal": 3
+      },
+      "boundary": 1,
+      "expected": false
+    },
+    {
+      "thread": {
+        "firstRunOrdinal": 4
+      },
+      "boundary": 1,
+      "expected": false
+    },
+    {
+      "thread": {
+        "firstRunOrdinal": null
+      },
+      "boundary": 3,
+      "expected": true
+    },
+    {
+      "thread": {
+        "firstRunOrdinal": 1
+      },
+      "boundary": 3,
+      "expected": true
+    },
+    {
+      "thread": {
+        "firstRunOrdinal": 3
+      },
+      "boundary": 3,
+      "expected": false
+    },
+    {
+      "thread": {
+        "firstRunOrdinal": 4
+      },
+      "boundary": 3,
+      "expected": false
+    }
+  ],
+  "sessions": [
+    {
+      "providerSessions": [
+        {
+          "id": "one",
+          "status": "ready",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": true
+            }
+          }
+        },
+        {
+          "id": "unrelated",
+          "status": "ready",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": false
+            }
+          }
+        }
+      ],
+      "activeProviderThread": {
+        "providerSessionId": "one"
+      },
+      "expected": []
+    },
+    {
+      "providerSessions": [
+        {
+          "id": "one",
+          "status": "ready",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": true
+            }
+          }
+        },
+        {
+          "id": "unrelated",
+          "status": "ready",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": false
+            }
+          }
+        }
+      ],
+      "activeProviderThread": null,
+      "expected": []
+    },
+    {
+      "providerSessions": [
+        {
+          "id": "one",
+          "status": "ready",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": false
+            }
+          }
+        },
+        {
+          "id": "unrelated",
+          "status": "ready",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": false
+            }
+          }
+        }
+      ],
+      "activeProviderThread": {
+        "providerSessionId": "one"
+      },
+      "expected": [
+        "one"
+      ]
+    },
+    {
+      "providerSessions": [
+        {
+          "id": "one",
+          "status": "ready",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": false
+            }
+          }
+        },
+        {
+          "id": "unrelated",
+          "status": "ready",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": false
+            }
+          }
+        }
+      ],
+      "activeProviderThread": null,
+      "expected": []
+    },
+    {
+      "providerSessions": [
+        {
+          "id": "one",
+          "status": "running",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": true
+            }
+          }
+        },
+        {
+          "id": "unrelated",
+          "status": "ready",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": false
+            }
+          }
+        }
+      ],
+      "activeProviderThread": {
+        "providerSessionId": "one"
+      },
+      "expected": []
+    },
+    {
+      "providerSessions": [
+        {
+          "id": "one",
+          "status": "running",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": true
+            }
+          }
+        },
+        {
+          "id": "unrelated",
+          "status": "ready",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": false
+            }
+          }
+        }
+      ],
+      "activeProviderThread": null,
+      "expected": []
+    },
+    {
+      "providerSessions": [
+        {
+          "id": "one",
+          "status": "running",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": false
+            }
+          }
+        },
+        {
+          "id": "unrelated",
+          "status": "ready",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": false
+            }
+          }
+        }
+      ],
+      "activeProviderThread": {
+        "providerSessionId": "one"
+      },
+      "expected": [
+        "one"
+      ]
+    },
+    {
+      "providerSessions": [
+        {
+          "id": "one",
+          "status": "running",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": false
+            }
+          }
+        },
+        {
+          "id": "unrelated",
+          "status": "ready",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": false
+            }
+          }
+        }
+      ],
+      "activeProviderThread": null,
+      "expected": []
+    },
+    {
+      "providerSessions": [
+        {
+          "id": "one",
+          "status": "stopped",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": true
+            }
+          }
+        },
+        {
+          "id": "unrelated",
+          "status": "ready",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": false
+            }
+          }
+        }
+      ],
+      "activeProviderThread": {
+        "providerSessionId": "one"
+      },
+      "expected": []
+    },
+    {
+      "providerSessions": [
+        {
+          "id": "one",
+          "status": "stopped",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": true
+            }
+          }
+        },
+        {
+          "id": "unrelated",
+          "status": "ready",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": false
+            }
+          }
+        }
+      ],
+      "activeProviderThread": null,
+      "expected": []
+    },
+    {
+      "providerSessions": [
+        {
+          "id": "one",
+          "status": "stopped",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": false
+            }
+          }
+        },
+        {
+          "id": "unrelated",
+          "status": "ready",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": false
+            }
+          }
+        }
+      ],
+      "activeProviderThread": {
+        "providerSessionId": "one"
+      },
+      "expected": []
+    },
+    {
+      "providerSessions": [
+        {
+          "id": "one",
+          "status": "stopped",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": false
+            }
+          }
+        },
+        {
+          "id": "unrelated",
+          "status": "ready",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": false
+            }
+          }
+        }
+      ],
+      "activeProviderThread": null,
+      "expected": []
+    },
+    {
+      "providerSessions": [
+        {
+          "id": "one",
+          "status": "error",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": true
+            }
+          }
+        },
+        {
+          "id": "unrelated",
+          "status": "ready",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": false
+            }
+          }
+        }
+      ],
+      "activeProviderThread": {
+        "providerSessionId": "one"
+      },
+      "expected": []
+    },
+    {
+      "providerSessions": [
+        {
+          "id": "one",
+          "status": "error",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": true
+            }
+          }
+        },
+        {
+          "id": "unrelated",
+          "status": "ready",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": false
+            }
+          }
+        }
+      ],
+      "activeProviderThread": null,
+      "expected": []
+    },
+    {
+      "providerSessions": [
+        {
+          "id": "one",
+          "status": "error",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": false
+            }
+          }
+        },
+        {
+          "id": "unrelated",
+          "status": "ready",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": false
+            }
+          }
+        }
+      ],
+      "activeProviderThread": {
+        "providerSessionId": "one"
+      },
+      "expected": []
+    },
+    {
+      "providerSessions": [
+        {
+          "id": "one",
+          "status": "error",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": false
+            }
+          }
+        },
+        {
+          "id": "unrelated",
+          "status": "ready",
+          "capabilities": {
+            "sessions": {
+              "supportsMultipleProviderThreadsPerSession": false
+            }
+          }
+        }
+      ],
+      "activeProviderThread": null,
+      "expected": []
+    }
+  ]
+}

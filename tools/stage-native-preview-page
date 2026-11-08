@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+"""Stage the exact manifest's original Page sources without changing Git HEAD."""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--source', type=Path, required=True)
+parser.add_argument('--output', type=Path, required=True)
+args = parser.parse_args()
+manifest_path = Path(__file__).resolve().parent.parent / 'runtime/preview/native-manifest.json'
+manifest = json.loads(manifest_path.read_text())
+revision = manifest['revision']
+assert len(revision) == 40 and all(c in '0123456789abcdef' for c in revision)
+
+def git(*arguments):
+    return subprocess.check_output(['git', '-C', str(args.source), *arguments])
+
+assert git('rev-parse', revision + '^{commit}').decode().strip() == revision
+before_head = git('rev-parse', 'HEAD')
+payloads = {}
+for name, expected in manifest['files'].items():
+    path = Path(name)
+    assert not path.is_absolute() and '..' not in path.parts
+    entry = git('ls-tree', revision, '--', name).split(b'\t', 1)
+    assert len(entry) == 2 and entry[0].split()[:2] == [b'100644', b'blob']
+    payload = git('show', revision + ':' + name)
+    assert hashlib.sha256(payload).hexdigest() == expected, name
+    payloads[name] = payload
+
+# Validate the entire immutable source set before creating any output. This
+# only writes original source files; it executes no package lifecycle scripts.
+args.output.mkdir(mode=0o700)
+for name, payload in payloads.items():
+    target = args.output / name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open('xb') as stream:
+        stream.write(payload)
+    target.chmod(0o400)
+# Private runtime owners mount their RAM-only module aliases here over RO source.
+(args.output / 'node_modules').mkdir(mode=0o700)
+with (args.output / 'SOURCE.json').open('x') as stream:
+    json.dump(manifest, stream, indent=2)
+    stream.write('\n')
+(args.output / 'SOURCE.json').chmod(0o400)
+assert git('rev-parse', 'HEAD') == before_head
+print(args.output)

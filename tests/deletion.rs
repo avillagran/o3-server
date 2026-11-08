@@ -111,7 +111,9 @@ fn native_self_project_deletion_reaps_claude_and_unloads_only_its_codex_threads(
         let peer = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/deletion-peer.py");
         let claude = Arc::new(o3_server::claude::ClaudeProvider::new(peer.clone()));
         let codex = Arc::new(o3_server::codex::CodexProvider::new(peer, None));
+        let removals = Arc::new(support::profile_removal::Recording::default());
         let s = support::start(|s| {
+            s.streams.p2.preview.set_profile_removal(removals.clone());
             s.streams.terminals.set_shell("/bin/sh");
             *s.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::Providers {
                 claude: Some(claude.clone()),
@@ -205,6 +207,20 @@ fn native_self_project_deletion_reaps_claude_and_unloads_only_its_codex_threads(
         assert_eq!(code, 200);
         assert_eq!(deleted["result"]["isError"], false, "{deleted}");
         assert!(support::wait_for(WAIT, || effects_done(&s.state)));
+        assert!(support::wait_for(WAIT, || !removals
+            .0
+            .lock()
+            .unwrap()
+            .is_empty()));
+        for plan in removals.0.lock().unwrap().iter() {
+            assert!(plan
+                .operations()
+                .last()
+                .unwrap()
+                .path
+                .join("fixture.pid")
+                .is_file());
+        }
         assert!(root.is_dir(), "the project folder stays");
         assert!(!path.exists());
         assert!(!Path::new(&format!("{}.txt", path.display())).exists());

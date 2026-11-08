@@ -1,0 +1,2453 @@
+{
+  "nativeRevision": "83a3674ffd84ffb33de768210c806cb1ac53fd80",
+  "scope": "whole original HTTP router input decoding, scope order and error serialization; only method dependencies return the already observed native Service error",
+  "cases": [
+    {
+      "name": "download-valid-reader",
+      "input": {
+        "name": "download-valid-reader",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": "handy-computer/parakeet-unified-en-0.6b-gguf"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "191",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "settings:write",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "download-shape-0",
+      "input": {
+        "name": "download-shape-0",
+        "path": "/api/voice/models/download",
+        "body": {}
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-1",
+      "input": {
+        "name": "download-shape-1",
+        "path": "/api/voice/models/download",
+        "body": null
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-2",
+      "input": {
+        "name": "download-shape-2",
+        "path": "/api/voice/models/download",
+        "body": []
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-3",
+      "input": {
+        "name": "download-shape-3",
+        "path": "/api/voice/models/download",
+        "body": 7
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-4",
+      "input": {
+        "name": "download-shape-4",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": null
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-5",
+      "input": {
+        "name": "download-shape-5",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": 7
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-6",
+      "input": {
+        "name": "download-shape-6",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": ""
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-7",
+      "input": {
+        "name": "download-shape-7",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-8",
+      "input": {
+        "name": "download-shape-8",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-9",
+      "input": {
+        "name": "download-shape-9",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": " "
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "191",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "settings:write",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "download-shape-10",
+      "input": {
+        "name": "download-shape-10",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "191",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "settings:write",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "download-shape-11",
+      "input": {
+        "name": "download-shape-11",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": "handy-computer/parakeet-unified-en-0.6b-gguf",
+          "unknown": true
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "191",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "settings:write",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "download-bad-json",
+      "input": {
+        "name": "download-bad-json",
+        "path": "/api/voice/models/download",
+        "raw": "{"
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-no-content-type",
+      "input": {
+        "name": "download-no-content-type",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": "handy-computer/parakeet-unified-en-0.6b-gguf"
+        },
+        "contentType": null
+      },
+      "actualRequestContentType": null,
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "191",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "settings:write",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "download-text-content-type",
+      "input": {
+        "name": "download-text-content-type",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": "handy-computer/parakeet-unified-en-0.6b-gguf"
+        },
+        "contentType": "text/plain"
+      },
+      "actualRequestContentType": "text/plain",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 415,
+      "headers": {
+        "content-length": "36",
+        "content-type": "text/plain"
+      },
+      "body": "Unsupported content-type: text/plain",
+      "calls": []
+    },
+    {
+      "name": "models-query-0",
+      "input": {
+        "name": "models-query-0",
+        "method": "GET",
+        "path": "/api/voice/models"
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "198",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "orchestration:operate",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "models-query-1",
+      "input": {
+        "name": "models-query-1",
+        "method": "GET",
+        "path": "/api/voice/models?benchmarks=1"
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "198",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "orchestration:operate",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "models-query-2",
+      "input": {
+        "name": "models-query-2",
+        "method": "GET",
+        "path": "/api/voice/models?benchmarks=0"
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "models-query-3",
+      "input": {
+        "name": "models-query-3",
+        "method": "GET",
+        "path": "/api/voice/models?benchmarks=1&benchmarks=1"
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "models-query-4",
+      "input": {
+        "name": "models-query-4",
+        "method": "GET",
+        "path": "/api/voice/models?benchmarks=0&benchmarks=1"
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "prepare",
+      "input": {
+        "name": "prepare",
+        "path": "/api/voice/models/prepare"
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "198",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "orchestration:operate",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "acceleration-0",
+      "input": {
+        "name": "acceleration-0",
+        "path": "/api/voice/acceleration",
+        "body": {
+          "acceleration": "cpu"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "191",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "settings:write",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "acceleration-1",
+      "input": {
+        "name": "acceleration-1",
+        "path": "/api/voice/acceleration",
+        "body": {
+          "acceleration": "auto"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "191",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "settings:write",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "acceleration-2",
+      "input": {
+        "name": "acceleration-2",
+        "path": "/api/voice/acceleration",
+        "body": {
+          "acceleration": "gpu:a"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "191",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "settings:write",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "acceleration-3",
+      "input": {
+        "name": "acceleration-3",
+        "path": "/api/voice/acceleration",
+        "body": {
+          "acceleration": "gpu:"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "acceleration-4",
+      "input": {
+        "name": "acceleration-4",
+        "path": "/api/voice/acceleration",
+        "body": {
+          "acceleration": "gpu:a\n"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "191",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "settings:write",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "acceleration-5",
+      "input": {
+        "name": "acceleration-5",
+        "path": "/api/voice/acceleration",
+        "body": {
+          "acceleration": null
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "acceleration-6",
+      "input": {
+        "name": "acceleration-6",
+        "path": "/api/voice/acceleration",
+        "body": {}
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "unload-0",
+      "input": {
+        "name": "unload-0",
+        "path": "/api/voice/model-unload-timeout",
+        "body": {
+          "timeout": "min_15"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "191",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "settings:write",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "unload-1",
+      "input": {
+        "name": "unload-1",
+        "path": "/api/voice/model-unload-timeout",
+        "body": {
+          "timeout": "immediately"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "191",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "settings:write",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "unload-2",
+      "input": {
+        "name": "unload-2",
+        "path": "/api/voice/model-unload-timeout",
+        "body": {
+          "timeout": "never"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "191",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "settings:write",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "unload-3",
+      "input": {
+        "name": "unload-3",
+        "path": "/api/voice/model-unload-timeout",
+        "body": {
+          "timeout": null
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "unload-4",
+      "input": {
+        "name": "unload-4",
+        "path": "/api/voice/model-unload-timeout",
+        "body": {
+          "timeout": "15"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "unload-5",
+      "input": {
+        "name": "unload-5",
+        "path": "/api/voice/model-unload-timeout",
+        "body": {}
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "transcribe-bad-options",
+      "input": {
+        "name": "transcribe-bad-options",
+        "path": "/api/voice/transcribe",
+        "raw": "bad",
+        "contentType": "application/octet-stream"
+      },
+      "actualRequestContentType": "application/octet-stream",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "198",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "orchestration:operate",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "transcribe-oversized-header",
+      "input": {
+        "name": "transcribe-oversized-header",
+        "path": "/api/voice/transcribe",
+        "raw": "bad",
+        "contentType": "application/octet-stream",
+        "contentLength": "19328005"
+      },
+      "actualRequestContentType": "application/octet-stream",
+      "scopes": [
+        "orchestration:read"
+      ],
+      "status": 400,
+      "headers": {
+        "content-length": "115",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentRequestInvalidError",
+        "code": "invalid_request",
+        "reason": "invalid_audio",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "download-valid-reader",
+      "input": {
+        "name": "download-valid-reader",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": "handy-computer/parakeet-unified-en-0.6b-gguf"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "191",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "settings:write",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "download-shape-0",
+      "input": {
+        "name": "download-shape-0",
+        "path": "/api/voice/models/download",
+        "body": {}
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-1",
+      "input": {
+        "name": "download-shape-1",
+        "path": "/api/voice/models/download",
+        "body": null
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-2",
+      "input": {
+        "name": "download-shape-2",
+        "path": "/api/voice/models/download",
+        "body": []
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-3",
+      "input": {
+        "name": "download-shape-3",
+        "path": "/api/voice/models/download",
+        "body": 7
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-4",
+      "input": {
+        "name": "download-shape-4",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": null
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-5",
+      "input": {
+        "name": "download-shape-5",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": 7
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-6",
+      "input": {
+        "name": "download-shape-6",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": ""
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-7",
+      "input": {
+        "name": "download-shape-7",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-8",
+      "input": {
+        "name": "download-shape-8",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-9",
+      "input": {
+        "name": "download-shape-9",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": " "
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "191",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "settings:write",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "download-shape-10",
+      "input": {
+        "name": "download-shape-10",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "191",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "settings:write",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "download-shape-11",
+      "input": {
+        "name": "download-shape-11",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": "handy-computer/parakeet-unified-en-0.6b-gguf",
+          "unknown": true
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "191",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "settings:write",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "download-bad-json",
+      "input": {
+        "name": "download-bad-json",
+        "path": "/api/voice/models/download",
+        "raw": "{"
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-no-content-type",
+      "input": {
+        "name": "download-no-content-type",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": "handy-computer/parakeet-unified-en-0.6b-gguf"
+        },
+        "contentType": null
+      },
+      "actualRequestContentType": null,
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "191",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "settings:write",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "download-text-content-type",
+      "input": {
+        "name": "download-text-content-type",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": "handy-computer/parakeet-unified-en-0.6b-gguf"
+        },
+        "contentType": "text/plain"
+      },
+      "actualRequestContentType": "text/plain",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 415,
+      "headers": {
+        "content-length": "36",
+        "content-type": "text/plain"
+      },
+      "body": "Unsupported content-type: text/plain",
+      "calls": []
+    },
+    {
+      "name": "models-query-0",
+      "input": {
+        "name": "models-query-0",
+        "method": "GET",
+        "path": "/api/voice/models"
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 500,
+      "headers": {
+        "content-length": "130",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentInternalError",
+        "code": "internal_error",
+        "reason": "internal_error",
+        "traceId": "<native-trace>"
+      },
+      "calls": [
+        {
+          "method": "models",
+          "input": false
+        }
+      ]
+    },
+    {
+      "name": "models-query-1",
+      "input": {
+        "name": "models-query-1",
+        "method": "GET",
+        "path": "/api/voice/models?benchmarks=1"
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 500,
+      "headers": {
+        "content-length": "130",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentInternalError",
+        "code": "internal_error",
+        "reason": "internal_error",
+        "traceId": "<native-trace>"
+      },
+      "calls": [
+        {
+          "method": "models",
+          "input": true
+        }
+      ]
+    },
+    {
+      "name": "models-query-2",
+      "input": {
+        "name": "models-query-2",
+        "method": "GET",
+        "path": "/api/voice/models?benchmarks=0"
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "models-query-3",
+      "input": {
+        "name": "models-query-3",
+        "method": "GET",
+        "path": "/api/voice/models?benchmarks=1&benchmarks=1"
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "models-query-4",
+      "input": {
+        "name": "models-query-4",
+        "method": "GET",
+        "path": "/api/voice/models?benchmarks=0&benchmarks=1"
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "prepare",
+      "input": {
+        "name": "prepare",
+        "path": "/api/voice/models/prepare"
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 500,
+      "headers": {
+        "content-length": "130",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentInternalError",
+        "code": "internal_error",
+        "reason": "internal_error",
+        "traceId": "<native-trace>"
+      },
+      "calls": [
+        {
+          "method": "prepareModel",
+          "input": null
+        }
+      ]
+    },
+    {
+      "name": "acceleration-0",
+      "input": {
+        "name": "acceleration-0",
+        "path": "/api/voice/acceleration",
+        "body": {
+          "acceleration": "cpu"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "191",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "settings:write",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "acceleration-1",
+      "input": {
+        "name": "acceleration-1",
+        "path": "/api/voice/acceleration",
+        "body": {
+          "acceleration": "auto"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "191",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "settings:write",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "acceleration-2",
+      "input": {
+        "name": "acceleration-2",
+        "path": "/api/voice/acceleration",
+        "body": {
+          "acceleration": "gpu:a"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "191",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "settings:write",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "acceleration-3",
+      "input": {
+        "name": "acceleration-3",
+        "path": "/api/voice/acceleration",
+        "body": {
+          "acceleration": "gpu:"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "acceleration-4",
+      "input": {
+        "name": "acceleration-4",
+        "path": "/api/voice/acceleration",
+        "body": {
+          "acceleration": "gpu:a\n"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "191",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "settings:write",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "acceleration-5",
+      "input": {
+        "name": "acceleration-5",
+        "path": "/api/voice/acceleration",
+        "body": {
+          "acceleration": null
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "acceleration-6",
+      "input": {
+        "name": "acceleration-6",
+        "path": "/api/voice/acceleration",
+        "body": {}
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "unload-0",
+      "input": {
+        "name": "unload-0",
+        "path": "/api/voice/model-unload-timeout",
+        "body": {
+          "timeout": "min_15"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "191",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "settings:write",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "unload-1",
+      "input": {
+        "name": "unload-1",
+        "path": "/api/voice/model-unload-timeout",
+        "body": {
+          "timeout": "immediately"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "191",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "settings:write",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "unload-2",
+      "input": {
+        "name": "unload-2",
+        "path": "/api/voice/model-unload-timeout",
+        "body": {
+          "timeout": "never"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "191",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "settings:write",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "unload-3",
+      "input": {
+        "name": "unload-3",
+        "path": "/api/voice/model-unload-timeout",
+        "body": {
+          "timeout": null
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "unload-4",
+      "input": {
+        "name": "unload-4",
+        "path": "/api/voice/model-unload-timeout",
+        "body": {
+          "timeout": "15"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "unload-5",
+      "input": {
+        "name": "unload-5",
+        "path": "/api/voice/model-unload-timeout",
+        "body": {}
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "transcribe-bad-options",
+      "input": {
+        "name": "transcribe-bad-options",
+        "path": "/api/voice/transcribe",
+        "raw": "bad",
+        "contentType": "application/octet-stream"
+      },
+      "actualRequestContentType": "application/octet-stream",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 400,
+      "headers": {
+        "content-length": "136",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentRequestInvalidError",
+        "code": "invalid_request",
+        "reason": "invalid_audio",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "transcribe-oversized-header",
+      "input": {
+        "name": "transcribe-oversized-header",
+        "path": "/api/voice/transcribe",
+        "raw": "bad",
+        "contentType": "application/octet-stream",
+        "contentLength": "19328005"
+      },
+      "actualRequestContentType": "application/octet-stream",
+      "scopes": [
+        "orchestration:operate"
+      ],
+      "status": 400,
+      "headers": {
+        "content-length": "115",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentRequestInvalidError",
+        "code": "invalid_request",
+        "reason": "invalid_audio",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "download-valid-reader",
+      "input": {
+        "name": "download-valid-reader",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": "handy-computer/parakeet-unified-en-0.6b-gguf"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 500,
+      "headers": {
+        "content-length": "130",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentInternalError",
+        "code": "internal_error",
+        "reason": "internal_error",
+        "traceId": "<native-trace>"
+      },
+      "calls": [
+        {
+          "method": "downloadModel",
+          "input": "handy-computer/parakeet-unified-en-0.6b-gguf"
+        }
+      ]
+    },
+    {
+      "name": "download-shape-0",
+      "input": {
+        "name": "download-shape-0",
+        "path": "/api/voice/models/download",
+        "body": {}
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-1",
+      "input": {
+        "name": "download-shape-1",
+        "path": "/api/voice/models/download",
+        "body": null
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-2",
+      "input": {
+        "name": "download-shape-2",
+        "path": "/api/voice/models/download",
+        "body": []
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-3",
+      "input": {
+        "name": "download-shape-3",
+        "path": "/api/voice/models/download",
+        "body": 7
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-4",
+      "input": {
+        "name": "download-shape-4",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": null
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-5",
+      "input": {
+        "name": "download-shape-5",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": 7
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-6",
+      "input": {
+        "name": "download-shape-6",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": ""
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-7",
+      "input": {
+        "name": "download-shape-7",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-8",
+      "input": {
+        "name": "download-shape-8",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-shape-9",
+      "input": {
+        "name": "download-shape-9",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": " "
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 500,
+      "headers": {
+        "content-length": "130",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentInternalError",
+        "code": "internal_error",
+        "reason": "internal_error",
+        "traceId": "<native-trace>"
+      },
+      "calls": [
+        {
+          "method": "downloadModel",
+          "input": " "
+        }
+      ]
+    },
+    {
+      "name": "download-shape-10",
+      "input": {
+        "name": "download-shape-10",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 500,
+      "headers": {
+        "content-length": "130",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentInternalError",
+        "code": "internal_error",
+        "reason": "internal_error",
+        "traceId": "<native-trace>"
+      },
+      "calls": [
+        {
+          "method": "downloadModel",
+          "input": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+        }
+      ]
+    },
+    {
+      "name": "download-shape-11",
+      "input": {
+        "name": "download-shape-11",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": "handy-computer/parakeet-unified-en-0.6b-gguf",
+          "unknown": true
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 500,
+      "headers": {
+        "content-length": "130",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentInternalError",
+        "code": "internal_error",
+        "reason": "internal_error",
+        "traceId": "<native-trace>"
+      },
+      "calls": [
+        {
+          "method": "downloadModel",
+          "input": "handy-computer/parakeet-unified-en-0.6b-gguf"
+        }
+      ]
+    },
+    {
+      "name": "download-bad-json",
+      "input": {
+        "name": "download-bad-json",
+        "path": "/api/voice/models/download",
+        "raw": "{"
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "download-no-content-type",
+      "input": {
+        "name": "download-no-content-type",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": "handy-computer/parakeet-unified-en-0.6b-gguf"
+        },
+        "contentType": null
+      },
+      "actualRequestContentType": null,
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 500,
+      "headers": {
+        "content-length": "130",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentInternalError",
+        "code": "internal_error",
+        "reason": "internal_error",
+        "traceId": "<native-trace>"
+      },
+      "calls": [
+        {
+          "method": "downloadModel",
+          "input": "handy-computer/parakeet-unified-en-0.6b-gguf"
+        }
+      ]
+    },
+    {
+      "name": "download-text-content-type",
+      "input": {
+        "name": "download-text-content-type",
+        "path": "/api/voice/models/download",
+        "body": {
+          "modelId": "handy-computer/parakeet-unified-en-0.6b-gguf"
+        },
+        "contentType": "text/plain"
+      },
+      "actualRequestContentType": "text/plain",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 415,
+      "headers": {
+        "content-length": "36",
+        "content-type": "text/plain"
+      },
+      "body": "Unsupported content-type: text/plain",
+      "calls": []
+    },
+    {
+      "name": "models-query-0",
+      "input": {
+        "name": "models-query-0",
+        "method": "GET",
+        "path": "/api/voice/models"
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "198",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "orchestration:operate",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "models-query-1",
+      "input": {
+        "name": "models-query-1",
+        "method": "GET",
+        "path": "/api/voice/models?benchmarks=1"
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "198",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "orchestration:operate",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "models-query-2",
+      "input": {
+        "name": "models-query-2",
+        "method": "GET",
+        "path": "/api/voice/models?benchmarks=0"
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "models-query-3",
+      "input": {
+        "name": "models-query-3",
+        "method": "GET",
+        "path": "/api/voice/models?benchmarks=1&benchmarks=1"
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "models-query-4",
+      "input": {
+        "name": "models-query-4",
+        "method": "GET",
+        "path": "/api/voice/models?benchmarks=0&benchmarks=1"
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "prepare",
+      "input": {
+        "name": "prepare",
+        "path": "/api/voice/models/prepare"
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "198",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "orchestration:operate",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "acceleration-0",
+      "input": {
+        "name": "acceleration-0",
+        "path": "/api/voice/acceleration",
+        "body": {
+          "acceleration": "cpu"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 500,
+      "headers": {
+        "content-length": "130",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentInternalError",
+        "code": "internal_error",
+        "reason": "internal_error",
+        "traceId": "<native-trace>"
+      },
+      "calls": [
+        {
+          "method": "updateAcceleration",
+          "input": "cpu"
+        }
+      ]
+    },
+    {
+      "name": "acceleration-1",
+      "input": {
+        "name": "acceleration-1",
+        "path": "/api/voice/acceleration",
+        "body": {
+          "acceleration": "auto"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 500,
+      "headers": {
+        "content-length": "130",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentInternalError",
+        "code": "internal_error",
+        "reason": "internal_error",
+        "traceId": "<native-trace>"
+      },
+      "calls": [
+        {
+          "method": "updateAcceleration",
+          "input": "auto"
+        }
+      ]
+    },
+    {
+      "name": "acceleration-2",
+      "input": {
+        "name": "acceleration-2",
+        "path": "/api/voice/acceleration",
+        "body": {
+          "acceleration": "gpu:a"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 500,
+      "headers": {
+        "content-length": "130",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentInternalError",
+        "code": "internal_error",
+        "reason": "internal_error",
+        "traceId": "<native-trace>"
+      },
+      "calls": [
+        {
+          "method": "updateAcceleration",
+          "input": "gpu:a"
+        }
+      ]
+    },
+    {
+      "name": "acceleration-3",
+      "input": {
+        "name": "acceleration-3",
+        "path": "/api/voice/acceleration",
+        "body": {
+          "acceleration": "gpu:"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "acceleration-4",
+      "input": {
+        "name": "acceleration-4",
+        "path": "/api/voice/acceleration",
+        "body": {
+          "acceleration": "gpu:a\n"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 500,
+      "headers": {
+        "content-length": "130",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentInternalError",
+        "code": "internal_error",
+        "reason": "internal_error",
+        "traceId": "<native-trace>"
+      },
+      "calls": [
+        {
+          "method": "updateAcceleration",
+          "input": "gpu:a\n"
+        }
+      ]
+    },
+    {
+      "name": "acceleration-5",
+      "input": {
+        "name": "acceleration-5",
+        "path": "/api/voice/acceleration",
+        "body": {
+          "acceleration": null
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "acceleration-6",
+      "input": {
+        "name": "acceleration-6",
+        "path": "/api/voice/acceleration",
+        "body": {}
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "unload-0",
+      "input": {
+        "name": "unload-0",
+        "path": "/api/voice/model-unload-timeout",
+        "body": {
+          "timeout": "min_15"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 500,
+      "headers": {
+        "content-length": "130",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentInternalError",
+        "code": "internal_error",
+        "reason": "internal_error",
+        "traceId": "<native-trace>"
+      },
+      "calls": [
+        {
+          "method": "updateModelUnloadTimeout",
+          "input": "min_15"
+        }
+      ]
+    },
+    {
+      "name": "unload-1",
+      "input": {
+        "name": "unload-1",
+        "path": "/api/voice/model-unload-timeout",
+        "body": {
+          "timeout": "immediately"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 500,
+      "headers": {
+        "content-length": "130",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentInternalError",
+        "code": "internal_error",
+        "reason": "internal_error",
+        "traceId": "<native-trace>"
+      },
+      "calls": [
+        {
+          "method": "updateModelUnloadTimeout",
+          "input": "immediately"
+        }
+      ]
+    },
+    {
+      "name": "unload-2",
+      "input": {
+        "name": "unload-2",
+        "path": "/api/voice/model-unload-timeout",
+        "body": {
+          "timeout": "never"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 500,
+      "headers": {
+        "content-length": "130",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentInternalError",
+        "code": "internal_error",
+        "reason": "internal_error",
+        "traceId": "<native-trace>"
+      },
+      "calls": [
+        {
+          "method": "updateModelUnloadTimeout",
+          "input": "never"
+        }
+      ]
+    },
+    {
+      "name": "unload-3",
+      "input": {
+        "name": "unload-3",
+        "path": "/api/voice/model-unload-timeout",
+        "body": {
+          "timeout": null
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "unload-4",
+      "input": {
+        "name": "unload-4",
+        "path": "/api/voice/model-unload-timeout",
+        "body": {
+          "timeout": "15"
+        }
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "unload-5",
+      "input": {
+        "name": "unload-5",
+        "path": "/api/voice/model-unload-timeout",
+        "body": {}
+      },
+      "actualRequestContentType": "application/json",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 400,
+      "headers": {},
+      "body": "",
+      "calls": []
+    },
+    {
+      "name": "transcribe-bad-options",
+      "input": {
+        "name": "transcribe-bad-options",
+        "path": "/api/voice/transcribe",
+        "raw": "bad",
+        "contentType": "application/octet-stream"
+      },
+      "actualRequestContentType": "application/octet-stream",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 403,
+      "headers": {
+        "content-length": "198",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentScopeRequiredError",
+        "code": "insufficient_scope",
+        "requiredScope": "orchestration:operate",
+        "requiredPermission": "orchestration:operate",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    },
+    {
+      "name": "transcribe-oversized-header",
+      "input": {
+        "name": "transcribe-oversized-header",
+        "path": "/api/voice/transcribe",
+        "raw": "bad",
+        "contentType": "application/octet-stream",
+        "contentLength": "19328005"
+      },
+      "actualRequestContentType": "application/octet-stream",
+      "scopes": [
+        "settings:write"
+      ],
+      "status": 400,
+      "headers": {
+        "content-length": "115",
+        "content-type": "application/json"
+      },
+      "body": {
+        "_tag": "EnvironmentRequestInvalidError",
+        "code": "invalid_request",
+        "reason": "invalid_audio",
+        "traceId": "<native-trace>"
+      },
+      "calls": []
+    }
+  ]
+}

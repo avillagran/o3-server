@@ -68,10 +68,10 @@ mod tests {
         let mise = root.join("mise");
         std::fs::write(&mise, "#!/bin/sh\nexit 77\n").unwrap();
         std::fs::set_permissions(&mise, std::fs::Permissions::from_mode(0o755)).unwrap();
-        // Use an already installed executable: concurrently spawning tests can
-        // inherit a freshly written file descriptor until exec, causing ETXTBSY.
-        // This test checks resolution, not the kernel's write/exec boundary.
-        symlink("/bin/echo", &real).unwrap();
+        // Keep every link target inside this fixture's owned workspace.
+        let fixture_echo = root.join("fixture-echo");
+        std::fs::copy("/bin/echo", &fixture_echo).unwrap();
+        symlink(&fixture_echo, &real).unwrap();
         symlink(root.join("mise"), &wrapper).unwrap();
         let resolved = resolve(&wrapper).unwrap();
         assert_eq!(resolved, real.canonicalize().unwrap());
@@ -82,6 +82,6 @@ mod tests {
             .unwrap();
         assert!(output.status.success());
         assert_eq!(output.stdout, b"resolved\n");
-        std::fs::remove_dir_all(root).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

@@ -1,0 +1,75 @@
+{
+  "accepted": true,
+  "nativeRevision": "6417151c093e54dbba0e6c824c69d03983793b9a",
+  "pageSourceManifestSha256": "7aa24a729358302b9e915fe96f62ee4e2dd23df88c589e66db91d060b187ea9d",
+  "workerSha256": "4f2f10c073f72a333bcd7b6cc21b6196470409ba7ef7d6789c76ed47d7bc8694",
+  "probeSha256": "3f12ba2c24078b4d62d08f1cbf09c60e467b77f2786b6822b9fed93352a53a64",
+  "actualReceipt": "/var/tmp/o3-server/preview-full-capture-4367-3-0qwae7_h/run1/result.json",
+  "actualReceiptSha256": "46c5399c3f05e5cf78cd257eb59724b5b2413843e5d889e372438ce03452d539",
+  "retainedCids": [
+    "1de59942044a2a8a37c6efa80410beffb607a335b318fddfd61338896cd65e8a"
+  ],
+  "actualContainerTerminal": {
+    "name": {
+      "terminal": true,
+      "absent": true
+    },
+    "retained": {
+      "1de59942044a2a8a37c6efa80410beffb607a335b318fddfd61338896cd65e8a": {
+        "terminal": true,
+        "absent": true
+      }
+    },
+    "terminal": true
+  },
+  "cases": [
+    {
+      "name": "invalid-native-input-refused-before-CDP"
+    },
+    {
+      "name": "wide-owned-viewport-keeps-full-and-capped-images",
+      "capped": {
+        "width": 1280,
+        "height": 640
+      },
+      "full": {
+        "width": 2048,
+        "height": 1024
+      },
+      "pixelsPreserved": true
+    },
+    {
+      "name": "omitted-keeps-capped-only"
+    },
+    {
+      "name": "explicit-false-keeps-capped-only"
+    },
+    {
+      "name": "uncapped-viewport-does-not-duplicate-image"
+    },
+    {
+      "name": "whole-native-function-at-actual2x-DPR",
+      "capped": {
+        "width": 1280,
+        "height": 800
+      },
+      "full": {
+        "width": 2560,
+        "height": 1600
+      }
+    }
+  ],
+  "chromiumTerminal": {
+    "code": 0,
+    "signal": null
+  },
+  "inputFiles": 2551,
+  "inputsUnchanged": true,
+  "guardRefusals": 0,
+  "cargoExecuted": false,
+  "newTarget": false,
+  "runtimeCopiesCreated": false,
+  "qualification": "One actual scoped Chromium Page capture component. No full router, MCP save/image projection, Status absence or public activation acceptance.",
+  "publicRouterActivated": false,
+  "mcpSavedFileAndImageProjectionAccepted": false
+}

@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+"""Copy the pinned whole preview toolkit modules into a new owned source stage."""
+import argparse,hashlib,json,pathlib,subprocess
+PIN='83a3674ffd84ffb33de768210c806cb1ac53fd80'
+FILES=['LICENSE','apps/server/src/preview/ServerBrowser.ts','apps/server/src/mcp/McpInvocationContext.ts','apps/server/src/mcp/McpToolAccess.ts','apps/server/src/mcp/threadAccess.ts','apps/server/src/mcp/PreviewAutomationBroker.ts','apps/server/src/mcp/delegatedTaskModes.ts','apps/server/src/mcp/toolkits/preview/tools.ts','apps/server/src/mcp/toolkits/preview/handlers.ts','apps/server/src/attachmentStore.ts','apps/server/src/attachmentPaths.ts','apps/server/src/imageMime.ts','packages/shared/src/threadLinks.ts','packages/shared/src/connectAuth.ts','packages/shared/src/remote.ts','packages/shared/src/orchestrationV2PendingBackgroundWork.ts','packages/shared/src/t3McpToolPresentation.ts','apps/server/src/orchestration-v2/ProjectionStore.ts','apps/server/src/orchestration-v2/threadHistoryPaging.ts','packages/shared/src/orchestrationV2Timeline.ts','packages/shared/src/mcpApp.ts','apps/server/src/sourceControl/threadPullRequests.ts','packages/source-control-core/src/shared/threadPullRequests.ts','packages/shared/src/threadPullRequests.ts','packages/shared/src/orchestrationV2ThreadError.ts']
+p=argparse.ArgumentParser(description=__doc__);p.add_argument('--source',type=pathlib.Path,required=True);p.add_argument('--output',type=pathlib.Path,required=True);p.add_argument('--manifest',type=pathlib.Path);a=p.parse_args()
+assert subprocess.check_output(['git','rev-parse','HEAD'],cwd=a.source,text=True).strip()==PIN
+assert not subprocess.check_output(['git','status','--porcelain','--',*FILES],cwd=a.source)
+a.output.mkdir(mode=0o700)
+manifest={'revision':PIN,'files':{}}
+for name in FILES:
+ item=a.source/name;assert item.is_file() and not item.is_symlink();payload=item.read_bytes()
+ target=a.output/name;target.parent.mkdir(parents=True,exist_ok=True)
+ with target.open('xb') as output:output.write(payload)
+ target.chmod(0o400);manifest['files'][name]=hashlib.sha256(payload).hexdigest()
+consumer=(a.source/'apps/server/src/preview/ServerBrowser.ts').read_text()
+start='  const handleRequest = ';end='  const mirrorManagerEvent = '
+assert consumer.count(start)==1
+method=consumer[consumer.index(start):consumer.index(end,consumer.index(start))]
+manifest['methods']={'ServerBrowser.handleRequest':hashlib.sha256(method.encode()).hexdigest()}
+(a.output/'SOURCE.json').write_text(json.dumps(manifest,indent=2)+'\n')
+if a.manifest:a.manifest.write_text(json.dumps(manifest,indent=2)+'\n')
+print(a.output)

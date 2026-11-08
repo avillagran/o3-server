@@ -343,7 +343,7 @@ mod tests {
         assert!(registry.ensure(&source).is_none());
         std::fs::write(&path, "Cached").unwrap();
         assert_eq!(registry.ensure(&source), Some(path));
-        std::fs::remove_dir_all(root).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[test]
     fn worker_output_limit_and_input_limit_leave_no_sidecar() {
@@ -368,6 +368,6 @@ mod tests {
         assert!(registry.ensure(&source).is_none());
         assert!(sidecar(&source).is_none());
         assert_eq!(std::fs::read_dir(&root).unwrap().count(), 2);
-        std::fs::remove_dir_all(root).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

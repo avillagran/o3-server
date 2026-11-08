@@ -640,12 +640,12 @@ mod tests {
             );
             drop(s);
             tokio::task::yield_now().await;
-            std::fs::remove_dir_all(dir).unwrap();
+            // Fixture trees are retained for private container teardown.
         }
     }
     #[tokio::test]
     async fn unacknowledged_interrupt_times_out_without_sending_replacement() {
-        let (s, peer, dir, rid) = fixture().await;
+        let (s, peer, _dir, rid) = fixture().await;
         let error = drive(&s, "restart", Duration::from_millis(25))
             .await
             .unwrap_err();
@@ -660,6 +660,6 @@ mod tests {
         assert_eq!(record(&s, "runs", &rid)["status"], "failed");
         assert_eq!(*peer.0.lock().unwrap(), vec!["hold"]);
         drop(s);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

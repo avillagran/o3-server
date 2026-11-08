@@ -42,8 +42,10 @@ pub(crate) struct Scope {
     pub thread: String,
     pub instance: String,
     generation: String,
+    issued_at: i64,
     state: Weak<State>,
     revoked: AtomicBool,
+    revocation: tokio::sync::watch::Sender<bool>,
     touched: AtomicI64,
     pub browser: Option<agent_browser::Access>,
     process_check: Mutex<Option<Arc<dyn Fn() -> bool + Send + Sync>>>,
@@ -54,6 +56,15 @@ impl Drop for Context {
     }
 }
 impl Context {
+    pub(crate) fn issued_at(&self) -> i64 {
+        self.scope.issued_at
+    }
+    pub(crate) fn page_authority(&self) -> (Weak<State>, crate::mcp_access::Authority) {
+        (
+            self.scope.state.clone(),
+            crate::mcp_access::Authority::from_native(self.scope.clone()),
+        )
+    }
     pub(crate) fn set_disposer(&self, dispose: Dispose) {
         *self.dispose.lock().unwrap() = Some(dispose);
     }
@@ -89,11 +100,6 @@ impl Context {
     }
     pub(crate) fn id(&self) -> &str {
         &self.scope.id
-    }
-    pub(crate) async fn finish_turn(&self) {
-        if let Some(browser) = &self.browser {
-            browser.finish_turn().await;
-        }
     }
 }
 impl Registry {
@@ -167,20 +173,6 @@ impl Registry {
             if context.scope.thread == thread {
                 context.scope.touched.store(now_ms(), Ordering::Relaxed);
             }
-        }
-    }
-    pub(crate) async fn finish_turn(&self, thread: &str) {
-        let contexts: Vec<_> = self
-            .entries
-            .lock()
-            .unwrap()
-            .tokens
-            .values()
-            .filter_map(Weak::upgrade)
-            .filter(|c| c.scope.thread == thread)
-            .collect();
-        for context in contexts {
-            context.finish_turn().await;
         }
     }
     pub(crate) async fn obtain(
@@ -263,8 +255,10 @@ impl Registry {
             thread: thread.into(),
             instance: instance.into(),
             generation,
+            issued_at: now_ms(),
             state: Arc::downgrade(state),
             revoked: AtomicBool::new(false),
+            revocation: tokio::sync::watch::channel(false).0,
             touched: AtomicI64::new(now_ms()),
             browser: browser.as_ref().map(agent_browser::Broker::access),
             process_check: Mutex::new(None),
@@ -292,8 +286,12 @@ impl Scope {
     pub(crate) fn revoked(&self) -> bool {
         self.revoked.load(Ordering::SeqCst)
     }
+    pub(crate) fn revocation(&self) -> tokio::sync::watch::Receiver<bool> {
+        self.revocation.subscribe()
+    }
     fn revoke(&self) {
         self.revoked.store(true, Ordering::SeqCst);
+        self.revocation.send_replace(true);
         if let Some(state) = self.state.upgrade() {
             state.mcp.close_owner(&self.id);
         }
@@ -310,6 +308,21 @@ impl Scope {
 
         !self.revoked.load(Ordering::SeqCst)
             && now_ms().saturating_sub(self.touched.load(Ordering::Relaxed)) < IDLE_MS
+    }
+    /// The pinned toolkit loads its calling thread before separately checking
+    /// write ownership. This projection retains the issued credential identity;
+    /// it never grants the current provider's authority to the previous caller.
+    pub(crate) fn page_caller(&self, db: &rusqlite::Connection) -> Result<Value, Value> {
+        if !self.valid() {
+            return Err(failure(
+                "capability_denied",
+                "The provider MCP credential is no longer valid.",
+            ));
+        }
+        crate::events::get(db, "thread", &self.thread)
+            .ok()
+            .filter(|thread| thread["deletedAt"].is_null())
+            .ok_or_else(|| failure("thread_not_found", "The calling thread was not found."))
     }
     pub(crate) fn caller(&self, db: &rusqlite::Connection, write: bool) -> Result<Value, Value> {
         if !self.valid() {
@@ -424,7 +437,200 @@ mod tests {
         );
         assert!(state.native_mcp.resolve(token).is_none());
         drop(state);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
+    }
+    #[tokio::test]
+    async fn page_issued_read_identity_preserves_strict_writes_and_credential_lifetime() {
+        crate::test_sandbox::assert_isolated();
+        use crate::native_page_worker::{caller::Caller, NativeOperation};
+        let (state, dir) = fixture();
+        let settings = dir.join("settings.json");
+        std::fs::write(&settings, br#"{"enableAgentBrowserAccess":true}"#).unwrap();
+        // The desktop slot is an explicit private transport fixture. It exposes
+        // capability availability without launching a Page or browser process.
+        let (input, _input_peer) = tokio::io::duplex(4096);
+        let channel = crate::desktop_browser_channel::Channel::start(input, tokio::io::sink());
+        let driver = crate::preview::install_desktop(state.clone(), channel).await;
+        let context = state
+            .native_mcp
+            .obtain(&state, "parent", "claudeAgent", &dir, &Value::Null)
+            .await
+            .unwrap();
+        let live = Arc::new(AtomicBool::new(true));
+        let process = live.clone();
+        context.set_process_check(Arc::new(move || process.load(Ordering::SeqCst)));
+        let caller = Caller::capture(&context).unwrap();
+        let issued = caller.scope().unwrap();
+        assert_eq!(issued["thread"]["providerInstanceId"], "claudeAgent");
+        assert_eq!(issued["capabilities"], json!(["preview"]));
+        let original = get(&state.db.lock().unwrap(), "thread", "parent").unwrap();
+        let authority = context.page_authority().1;
+        for field in ["providerInstanceId", "providerGeneration"] {
+            let mut foreign = original.clone();
+            foreign[field] = json!("foreign-owner");
+            put(
+                &state.db.lock().unwrap(),
+                "thread",
+                "parent",
+                "parent",
+                &foreign,
+            )
+            .unwrap();
+            assert_eq!(caller.scope().unwrap(), issued);
+            assert_eq!(Caller::capture(&context).unwrap().scope().unwrap(), issued);
+            assert_eq!(
+                caller.thread_projection("parent").unwrap()["thread"],
+                foreign
+            );
+            assert!(caller.callback_current(NativeOperation::Status).is_ok());
+            assert!(caller.callback_current(NativeOperation::Snapshot).is_ok());
+            assert!(caller.callback_current(NativeOperation::WaitFor).is_ok());
+            assert_eq!(
+                caller
+                    .callback_current(NativeOperation::Evaluate)
+                    .unwrap_err()["code"],
+                "parent_not_active"
+            );
+            let db = state.reader.lock().unwrap();
+            assert!(context.scope.caller(&db, false).is_err());
+            assert!(authority.session(&db, false).is_err());
+            assert!(authority
+                .check(&db, &json!({"type":"message.dispatch","threadId":"target"}))
+                .is_err());
+        }
+        put(
+            &state.db.lock().unwrap(),
+            "thread",
+            "parent",
+            "parent",
+            &original,
+        )
+        .unwrap();
+        assert!(caller.callback_current(NativeOperation::Evaluate).is_ok());
+        std::fs::write(&settings, br#"{"enableAgentBrowserAccess":false}"#).unwrap();
+        assert_eq!(
+            caller.scope().unwrap(),
+            issued,
+            "Issued capabilities are immutable"
+        );
+        assert!(
+            caller.callback_current(NativeOperation::Status).is_err(),
+            "Execution availability is fresh"
+        );
+        let withheld = state
+            .native_mcp
+            .obtain(&state, "parent", "claudeAgent", &dir, &Value::Null)
+            .await
+            .unwrap();
+        let withheld_caller = Caller::capture(&withheld).unwrap();
+        assert_eq!(withheld_caller.scope().unwrap()["capabilities"], json!([]));
+        std::fs::write(&settings, br#"{"enableAgentBrowserAccess":true}"#).unwrap();
+        assert_eq!(withheld_caller.scope().unwrap()["capabilities"], json!([]));
+        assert!(withheld_caller
+            .callback_current(NativeOperation::Status)
+            .is_err());
+        assert!(caller.callback_current(NativeOperation::Status).is_ok());
+        live.store(false, Ordering::SeqCst);
+        assert!(caller.scope().is_err());
+        assert!(caller.thread_projection("parent").is_err());
+        assert!(Caller::capture(&context).is_err());
+        live.store(true, Ordering::SeqCst);
+        state.native_mcp.touch("parent");
+        assert!(
+            caller.scope().is_err(),
+            "Process revocation cannot be revived by activity"
+        );
+        let replacement = context.refresh(&dir, &Value::Null).await.unwrap();
+        assert_ne!(replacement.id(), context.id());
+        let next = Caller::capture(&replacement).unwrap();
+        assert_eq!(
+            next.scope().unwrap()["thread"]["providerSessionId"],
+            replacement.id()
+        );
+        assert!(
+            caller.scope().is_err(),
+            "A successor cannot retag the previous caller"
+        );
+        replacement
+            .scope
+            .touched
+            .store(now_ms() - IDLE_MS - 1, Ordering::Relaxed);
+        assert!(next.scope().is_err());
+        assert!(next.thread_projection("parent").is_err());
+        assert!(Caller::capture(&replacement).is_err());
+        assert!(replacement
+            .scope
+            .caller(&state.reader.lock().unwrap(), false)
+            .is_err());
+        replacement.revoke();
+        let current = replacement.refresh(&dir, &Value::Null).await.unwrap();
+        let current_caller = Caller::capture(&current).unwrap();
+        let mut deleted = original.clone();
+        deleted["deletedAt"] = json!("2026-11-08T00:00:00.000Z");
+        put(
+            &state.db.lock().unwrap(),
+            "thread",
+            "parent",
+            "parent",
+            &deleted,
+        )
+        .unwrap();
+        assert_eq!(
+            current_caller.scope().unwrap_err()["code"],
+            "thread_not_found"
+        );
+        assert!(current_caller.thread_projection("parent").is_err());
+        assert!(current
+            .scope
+            .caller(&state.reader.lock().unwrap(), false)
+            .is_err());
+        put(
+            &state.db.lock().unwrap(),
+            "thread",
+            "parent",
+            "parent",
+            &original,
+        )
+        .unwrap();
+        assert!(current_caller.scope().is_ok());
+        assert_eq!(
+            state
+                .db
+                .lock()
+                .unwrap()
+                .execute(
+                    "DELETE FROM records WHERE kind='thread' AND id='parent'",
+                    []
+                )
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            current_caller.scope().unwrap_err()["code"],
+            "thread_not_found"
+        );
+        assert!(current_caller.thread_projection("parent").is_err());
+        assert!(current
+            .scope
+            .caller(&state.reader.lock().unwrap(), false)
+            .is_err());
+        put(
+            &state.db.lock().unwrap(),
+            "thread",
+            "parent",
+            "parent",
+            &original,
+        )
+        .unwrap();
+        current.revoke();
+        assert!(current_caller.scope().is_err());
+        assert!(current_caller.thread_projection("parent").is_err());
+        assert!(current
+            .scope
+            .caller(&state.reader.lock().unwrap(), false)
+            .is_err());
+        driver.shutdown().await;
+        // All private fixture files remain for container teardown.
     }
     #[tokio::test]
     async fn current_modes_generation_and_background_ownership_are_authoritative() {
@@ -535,7 +741,7 @@ mod tests {
         drop(db);
         drop(context);
         drop(state);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[tokio::test]
     async fn process_exit_revokes_even_with_surviving_owner_references() {
@@ -562,6 +768,6 @@ mod tests {
         drop(replacement);
         drop(context);
         drop(state);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

@@ -37,7 +37,7 @@ fn error_of(frame: &Value) -> &Value {
 #[test]
 fn admin_reads_project_helpers_and_unavailable_surfaces() {
     let claude = std::env::temp_dir().join(format!("o3-admin-claude-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&claude);
+    // Fixture trees are retained for private container teardown.
     // SAFETY: before any server thread of this process exists; this file has one test.
     unsafe {
         std::env::set_var("CLAUDE_CONFIG_DIR", &claude);
@@ -54,7 +54,7 @@ fn admin_reads_project_helpers_and_unavailable_surfaces() {
     }
     let server = start(|_| {});
     // Named projects live in <base>/projects, and this harness's base is the shared temp dir.
-    let _ = std::fs::remove_dir_all(server.dir.parent().unwrap().join("projects"));
+    // Fixture trees are retained for private container teardown.
     let c = server.connect();
     let scratch = server.dir.join("scratch");
     std::fs::create_dir_all(&scratch).unwrap();
@@ -357,5 +357,5 @@ fn admin_reads_project_helpers_and_unavailable_surfaces() {
             assert_eq!(error_of(&e)["reason"], reason, "{tag}");
         }
     }
-    let _ = std::fs::remove_dir_all(&claude);
+    // Fixture trees are retained for private container teardown.
 }

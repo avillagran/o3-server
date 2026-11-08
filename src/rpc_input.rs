@@ -2,6 +2,10 @@
 use serde_json::{json, Value};
 
 pub(crate) fn decode(tag: &str, input: &Value) -> Result<Option<Value>, String> {
+    if tag == "preview.reportProfiles" {
+        return crate::browser_profile_catalog::Report::decode(input)
+            .map(|report| Some(report.value()));
+    }
     let (fields, array): (&[&str], bool) = match tag {
         "orchestration.getThreadTitles" => (&["threadIds"], true),
         "orchestration.getThreadFamily" => (&["threadId"], false),

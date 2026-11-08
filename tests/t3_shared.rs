@@ -178,7 +178,7 @@ fn o3_and_t3_hand_the_same_history_back_and_forth() {
     );
     assert_t3_verifies(&db);
     drop(db);
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 
 #[test]
@@ -221,7 +221,7 @@ fn history_only_in_t3_is_adopted_and_only_new_o3_records_are_written() {
     assert_t3_verifies(&db);
     drop(state);
     drop(db);
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 
 #[test]
@@ -246,7 +246,7 @@ fn a_t3_schema_newer_than_o3_knows_is_never_written() {
     );
     drop(state);
     drop(db);
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 
 #[test]
@@ -271,7 +271,7 @@ fn a_profile_without_t3_keeps_marks_until_t3_creates_its_base() {
         .unwrap();
     assert_eq!(marked, 1);
     drop(state);
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 
 fn put_record(state: &State, kind: &str, id: &str, tid: &str, body: &Value) {
@@ -433,7 +433,7 @@ fn runs_o3_numbered_without_seeing_t3_move_after_t3_and_o3_values_fit_t3() {
     assert_t3_verifies(&db);
     drop(state);
     drop(db);
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 
 #[test]
@@ -524,7 +524,7 @@ fn sessions_issued_by_either_server_are_accepted_by_the_other() {
     );
     drop(state);
     drop(db);
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 
 #[test]
@@ -552,7 +552,7 @@ fn a_base_t3_just_created_is_shared_from_o3s_first_start() {
     assert_t3_verifies(&db);
     drop(state);
     drop(db);
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }
 
 #[test]
@@ -589,5 +589,5 @@ fn rows_written_under_an_older_mapping_are_corrected_on_start() {
     assert_t3_verifies(&db);
     drop(state);
     drop(db);
-    std::fs::remove_dir_all(root).unwrap();
+    // Fixture trees are retained for private container teardown.
 }

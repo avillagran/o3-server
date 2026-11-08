@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Run two inexpensive native turns through the real client in isolated provider homes."""
-import os, pathlib, shutil, subprocess, tempfile
+from runtime_safety import require_private_runtime, retained_directory
+require_private_runtime()
+import os, pathlib, shutil, subprocess
 root=pathlib.Path(__file__).resolve().parent.parent
 # Build before changing HOME so cargo retains its normal registry/cache access.
 env={**os.environ,'TMPDIR':'/var/tmp/o3-build/tmp','CARGO_TARGET_DIR':'/var/tmp/o3-build/main'}
@@ -9,7 +11,7 @@ p=subprocess.run(['nice','cargo','test','--locked','-j','4','--test','provider_i
 import json
 binary=next(v['executable'] for line in p.stdout.splitlines() if (v:=json.loads(line)).get('executable') and v.get('target',{}).get('name')=='provider_input')
 original=pathlib.Path.home()
-with tempfile.TemporaryDirectory(prefix='o3-live-',dir='/var/tmp/o3-build') as temp:
+with retained_directory(prefix='o3-live-',dir='/var/tmp/o3-build') as temp:
     home=pathlib.Path(temp)
     for folder,name in [('.claude','.credentials.json'),('.codex','auth.json')]:
         destination=home/folder/name;destination.parent.mkdir(mode=0o700)

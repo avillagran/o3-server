@@ -1,0 +1,1118 @@
+{
+  "revision": "c55db3e9c72fdf584f4b54192fb39beb88667b59",
+  "sourceHash": "e34d2071c6686b773970cf470c782490a0a3d6bce50533a4ad71336b363d9245",
+  "cases": [
+    {
+      "existing": null,
+      "input": {},
+      "expected": "new_thread"
+    },
+    {
+      "existing": null,
+      "input": {
+        "threadId": null
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": null,
+      "input": {
+        "threadId": "asked"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": null,
+      "input": {
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": null,
+      "input": {
+        "threadId": null,
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": null,
+      "input": {
+        "threadId": "asked",
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": null,
+      "input": {
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": null,
+      "input": {
+        "threadId": null,
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": null,
+      "input": {
+        "threadId": "asked",
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": null,
+      "input": {
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": null,
+      "input": {
+        "threadId": null,
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": null,
+      "input": {
+        "threadId": "asked",
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": null
+      },
+      "input": {},
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": null
+      },
+      "input": {
+        "threadId": null
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": null
+      },
+      "input": {
+        "threadId": "asked"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": null
+      },
+      "input": {
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": null
+      },
+      "input": {
+        "threadId": null,
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": null
+      },
+      "input": {
+        "threadId": "asked",
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": null
+      },
+      "input": {
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": null
+      },
+      "input": {
+        "threadId": null,
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": null
+      },
+      "input": {
+        "threadId": "asked",
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": null
+      },
+      "input": {
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": null
+      },
+      "input": {
+        "threadId": null,
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": null
+      },
+      "input": {
+        "threadId": "asked",
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": "bound"
+      },
+      "input": {},
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": "bound"
+      },
+      "input": {
+        "threadId": null
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": "bound"
+      },
+      "input": {
+        "threadId": "asked"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": "bound"
+      },
+      "input": {
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": "bound"
+      },
+      "input": {
+        "threadId": null,
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": "bound"
+      },
+      "input": {
+        "threadId": "asked",
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": "bound"
+      },
+      "input": {
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": "bound"
+      },
+      "input": {
+        "threadId": null,
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": "bound"
+      },
+      "input": {
+        "threadId": "asked",
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": "bound"
+      },
+      "input": {
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": "bound"
+      },
+      "input": {
+        "threadId": null,
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": "bound"
+      },
+      "input": {
+        "threadId": "asked",
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "new_thread"
+      },
+      "input": {},
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "new_thread"
+      },
+      "input": {
+        "threadId": null
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "new_thread"
+      },
+      "input": {
+        "threadId": "asked"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "new_thread"
+      },
+      "input": {
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "new_thread"
+      },
+      "input": {
+        "threadId": null,
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "new_thread"
+      },
+      "input": {
+        "threadId": "asked",
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "new_thread"
+      },
+      "input": {
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "new_thread"
+      },
+      "input": {
+        "threadId": null,
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "new_thread"
+      },
+      "input": {
+        "threadId": "asked",
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "new_thread"
+      },
+      "input": {
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "new_thread"
+      },
+      "input": {
+        "threadId": null,
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "new_thread"
+      },
+      "input": {
+        "threadId": "asked",
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "new_thread"
+      },
+      "input": {},
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "new_thread"
+      },
+      "input": {
+        "threadId": null
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "new_thread"
+      },
+      "input": {
+        "threadId": "asked"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "new_thread"
+      },
+      "input": {
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "new_thread"
+      },
+      "input": {
+        "threadId": null,
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "new_thread"
+      },
+      "input": {
+        "threadId": "asked",
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "new_thread"
+      },
+      "input": {
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "new_thread"
+      },
+      "input": {
+        "threadId": null,
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "new_thread"
+      },
+      "input": {
+        "threadId": "asked",
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "new_thread"
+      },
+      "input": {
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "new_thread"
+      },
+      "input": {
+        "threadId": null,
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "new_thread"
+      },
+      "input": {
+        "threadId": "asked",
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "continue"
+      },
+      "input": {},
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "continue"
+      },
+      "input": {
+        "threadId": null
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "continue"
+      },
+      "input": {
+        "threadId": "asked"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "continue"
+      },
+      "input": {
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "continue"
+      },
+      "input": {
+        "threadId": null,
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "continue"
+      },
+      "input": {
+        "threadId": "asked",
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "continue"
+      },
+      "input": {
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "continue"
+      },
+      "input": {
+        "threadId": null,
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "continue"
+      },
+      "input": {
+        "threadId": "asked",
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "continue"
+      },
+      "input": {
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "continue"
+      },
+      "input": {
+        "threadId": null,
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "continue"
+      },
+      "input": {
+        "threadId": "asked",
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "continue"
+      },
+      "input": {},
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "continue"
+      },
+      "input": {
+        "threadId": null
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "continue"
+      },
+      "input": {
+        "threadId": "asked"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "continue"
+      },
+      "input": {
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "continue"
+      },
+      "input": {
+        "threadId": null,
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "continue"
+      },
+      "input": {
+        "threadId": "asked",
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "continue"
+      },
+      "input": {
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "continue"
+      },
+      "input": {
+        "threadId": null,
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "continue"
+      },
+      "input": {
+        "threadId": "asked",
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "continue"
+      },
+      "input": {
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "continue"
+      },
+      "input": {
+        "threadId": null,
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "continue"
+      },
+      "input": {
+        "threadId": "asked",
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "fresh_session"
+      },
+      "input": {},
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "fresh_session"
+      },
+      "input": {
+        "threadId": null
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "fresh_session"
+      },
+      "input": {
+        "threadId": "asked"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "fresh_session"
+      },
+      "input": {
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "fresh_session"
+      },
+      "input": {
+        "threadId": null,
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "fresh_session"
+      },
+      "input": {
+        "threadId": "asked",
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "fresh_session"
+      },
+      "input": {
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "fresh_session"
+      },
+      "input": {
+        "threadId": null,
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "fresh_session"
+      },
+      "input": {
+        "threadId": "asked",
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "fresh_session"
+      },
+      "input": {
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "fresh_session"
+      },
+      "input": {
+        "threadId": null,
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": null,
+        "threadMode": "fresh_session"
+      },
+      "input": {
+        "threadId": "asked",
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "fresh_session"
+      },
+      "input": {},
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "fresh_session"
+      },
+      "input": {
+        "threadId": null
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "fresh_session"
+      },
+      "input": {
+        "threadId": "asked"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "fresh_session"
+      },
+      "input": {
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "fresh_session"
+      },
+      "input": {
+        "threadId": null,
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "fresh_session"
+      },
+      "input": {
+        "threadId": "asked",
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "fresh_session"
+      },
+      "input": {
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "fresh_session"
+      },
+      "input": {
+        "threadId": null,
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "fresh_session"
+      },
+      "input": {
+        "threadId": "asked",
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "fresh_session"
+      },
+      "input": {
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "fresh_session"
+      },
+      "input": {
+        "threadId": null,
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "existing": {
+        "threadId": "bound",
+        "threadMode": "fresh_session"
+      },
+      "input": {
+        "threadId": "asked",
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    }
+  ],
+  "legacy": [
+    {
+      "task": {
+        "threadId": null
+      },
+      "expected": "new_thread"
+    },
+    {
+      "task": {
+        "threadId": "bound"
+      },
+      "expected": "continue"
+    },
+    {
+      "task": {
+        "threadId": null,
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "task": {
+        "threadId": "bound",
+        "threadMode": "new_thread"
+      },
+      "expected": "new_thread"
+    },
+    {
+      "task": {
+        "threadId": null,
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "task": {
+        "threadId": "bound",
+        "threadMode": "continue"
+      },
+      "expected": "continue"
+    },
+    {
+      "task": {
+        "threadId": null,
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    },
+    {
+      "task": {
+        "threadId": "bound",
+        "threadMode": "fresh_session"
+      },
+      "expected": "fresh_session"
+    }
+  ]
+}

@@ -1,3 +1,5 @@
+#[path = "support/worktree_removal.rs"]
+pub mod retained_worktrees;
 mod support;
 use serde_json::json;
 use std::{
@@ -10,7 +12,7 @@ fn uploaded_images_files_and_context_reach_both_native_transports() {
     for instance in ["claudeAgent", "codex"] {
         let binary = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests/fixtures/input/peer.py");
-        let server = support::start(|s| {
+        let server = start_recording_cleanup(|s| {
             *s.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::Providers {
                 claude: Some(Arc::new(o3_server::claude::ClaudeProvider::new(
                     binary.clone(),
@@ -74,7 +76,10 @@ fn uploaded_images_files_and_context_reach_both_native_transports() {
                 );
                 if instance == "claudeAgent" {
                     assert_eq!(p["providerThreads"][0]["contextUsage"]["maxTokens"], 200000);
-                    assert_eq!(p["providerThreads"][0]["contextUsage"]["cost"], 0.01);
+                    assert_eq!(
+                        p["providerThreads"][0]["contextUsage"]["cost"],
+                        json!({"amount":0.01,"currency":"USD"})
+                    );
                     let config = c.rpc("server.getConfig", json!({})).unwrap();
                     assert_eq!(
                         config["providers"][0]["slashCommands"][0]["name"],
@@ -120,7 +125,7 @@ fn uploaded_images_files_and_context_reach_both_native_transports() {
 
 #[test]
 fn launch_claim_survives_rejected_initial_message_and_retry_admits_it_once() {
-    let server = support::start(|s| {
+    let server = start_recording_cleanup(|s| {
         *s.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::ScriptedProvider));
         s.db.lock().unwrap().execute_batch("CREATE TRIGGER reject_run BEFORE INSERT ON records WHEN NEW.kind='runs' BEGIN SELECT RAISE(ABORT, 'injected run failure'); END;").unwrap();
     });
@@ -190,7 +195,7 @@ fn launch_claim_survives_rejected_initial_message_and_retry_admits_it_once() {
 
 #[test]
 fn claude_structured_question_displays_and_accepts_client_answers() {
-    let server = support::start(|s| {
+    let server = start_recording_cleanup(|s| {
         *s.provider.lock().unwrap() = Some(Arc::new(o3_server::claude::ClaudeProvider::new(
             std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("tests/fixtures/input/peer.py"),
@@ -233,7 +238,7 @@ fn claude_structured_question_displays_and_accepts_client_answers() {
 
 #[test]
 fn claude_structured_question_dismisses_through_native_transport() {
-    let server = support::start(|s| {
+    let server = start_recording_cleanup(|s| {
         *s.provider.lock().unwrap() = Some(Arc::new(o3_server::claude::ClaudeProvider::new(
             std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("tests/fixtures/input/peer.py"),
@@ -285,7 +290,7 @@ fn live_claude_and_codex_through_real_client() {
     for (instance, model) in [("claudeAgent", "haiku"), ("codex", "gpt-6.1-sol")] {
         let claude = o3_server::claude::ClaudeProvider::discover().map(Arc::new);
         let codex = Arc::new(o3_server::codex::CodexProvider::default());
-        let server = support::start(|s| {
+        let server = start_recording_cleanup(|s| {
             *s.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::Providers {
                 claude: claude.clone(),
                 codex: codex.clone(),
@@ -420,7 +425,7 @@ fn persistent_exact_operation_approval_survives_database_reopen() {
             })
         }
     }
-    let server = support::start(|s| *s.provider.lock().unwrap() = Some(Arc::new(Peer)));
+    let server = start_recording_cleanup(|s| *s.provider.lock().unwrap() = Some(Arc::new(Peer)));
     let c = server.connect();
     c.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"create","threadId":"t","projectId":"p","title":"Approval","modelSelection":{"instanceId":"claudeAgent","model":"test"},"runtimeMode":"approval-required","interactionMode":"default"})).unwrap();
     for i in 0..3 {
@@ -492,7 +497,7 @@ fn persistent_exact_operation_approval_survives_database_reopen() {
 #[test]
 fn both_plan_acceptances_dispatch_implementation_and_complete_source_plan() {
     for instance in ["codex", "claudeAgent"] {
-        let server = support::start(|s| {
+        let server = start_recording_cleanup(|s| {
             *s.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::Providers {
                 claude: Some(Arc::new(o3_server::claude::ClaudeProvider::new(
                     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -556,7 +561,7 @@ fn both_plan_acceptances_dispatch_implementation_and_complete_source_plan() {
 
 #[test]
 fn startup_catalog_exposes_project_skills_and_commands_before_any_turn() {
-    let server = support::start(|state| {
+    let server = start_recording_cleanup(|state| {
         *state.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::Providers {
             claude: Some(Arc::new(o3_server::claude::ClaudeProvider::new(
                 "/nonexistent".into(),
@@ -608,7 +613,7 @@ fn startup_catalog_exposes_project_skills_and_commands_before_any_turn() {
 
 #[test]
 fn launch_worktree_failure_rolls_back_and_reuse_updates_workspace_only() {
-    let server = support::start(|s| {
+    let server = start_recording_cleanup(|s| {
         *s.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::ScriptedProvider));
     });
     let root = server.dir.join("repo");
@@ -707,4 +712,13 @@ fn launch_project(server: &support::Server, c: &t3_protocol::Connection) {
     let root = server.dir.join("launch-project");
     std::fs::create_dir_all(&root).unwrap();
     c.rpc("projects.mutate",json!({"type":"project.create","commandId":"launch-project","projectId":"p","title":"Test","workspaceRoot":root})).unwrap();
+}
+
+fn start_recording_cleanup(
+    configure: impl FnOnce(&std::sync::Arc<o3_server::store::State>),
+) -> support::Server {
+    support::start(|state| {
+        retained_worktrees::RetainingExecutor::install(state);
+        configure(state);
+    })
 }

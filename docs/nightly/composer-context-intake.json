@@ -1,0 +1,71 @@
+{
+  "reference": {
+    "tag": "v0.1.8-nightly.20261106.4262",
+    "commit": "c55db3e9c72fdf584f4b54192fb39beb88667b59",
+    "effect": "4.1.2"
+  },
+  "latestCoveredCheck": {
+    "tag": "v0.1.8-nightly.20261106.4275",
+    "commit": "6577c6b6185167c0e502fa01f9e8e8f2dee6ff25",
+    "sharedProjectionAndContractSourcesUnchanged": true
+  },
+  "sources": {
+    "packages/contracts/src/composerContext.ts": "0e35cae19e8643c91761283dbfc3e524570814c128608c4f8a63f00f16646a53",
+    "packages/contracts/src/baseSchemas.ts": "edd4d2c73cc79ce5e50bffd35b9c861fe091de23a1ac792db864d3b71b09a7af",
+    "packages/contracts/src/guestShare.ts": "b77e7d798b3c27327f0edee835c2bfca5978ad391b5cef9a94c648850fe0fc5c",
+    "packages/shared/src/remote.ts": "de815ac7f3e17e217d4ca6345d9d0715892d669a660a3707dcd1b99c75f4fdfb",
+    "packages/shared/src/connectAuth.ts": "287baca5ab6ca54e9dac18fb357e66a41d5031f795d925fa0033a35f4be985a6",
+    "packages/shared/src/threadLinks.ts": "df6f710445a0f09515ee60e9c679b670de07e756f7784218262a80513997d237",
+    "packages/shared/src/composerContextReferences.ts": "6f892cb25ea101c5248b8df53ad7d084a3a6554fd397c9a2c9a9c33796197849"
+  },
+  "fixture": {
+    "path": "tests/fixtures/composer-context.json",
+    "sha256": "52566600fb75c8e72f436d3a2c49271f03a9abd5c99788d50af499ac5590faf1",
+    "projections": 178,
+    "contextDecodingCases": 172,
+    "compactBoundaryCases": 12
+  },
+  "implemented": [
+    "All ten known context kinds and forward-compatible unknown JSON payloads; native markers, envelope framing and tag escaping.",
+    "UTF-16 regex label limits and truncation without splitting surrogate pairs; exact JavaScript whitespace, safe integers, number spelling and numeric-key ordering.",
+    "Forward-compatible record dropping, nested field decoding, optional/nullable distinctions, raw serialized-size checks and duplicate IDs after decoding.",
+    "Native message and launch intake, queued edits, both provider starts, direct and queued steering, Codex goal objectives and single-pass goal prompt materialization.",
+    "Stored user text remains separate from normalized context. Portable history resolves tracked context, including hydration of older turn items from their original message rows.",
+    "Unversioned O3 context remains legacy additional context; raw legacy context is not newly replayed into native portable history."
+  ],
+  "validation": [
+    "Complete pinned shared modules execute with TypeScript erasure and import relocation only; contracts source hashes and exact Effect version are checked.",
+    "Deterministic mixed-reference cases cover malformed/nested/image references, unknown kinds, repeated/ambiguous IDs and labels around UTF-16 boundaries.",
+    "Real RPC tests use both Codex and Claude fixture transports and compare their complete received prompt to native oracle output.",
+    "Duplicate initial context is rejected before launch claims or workspace preparation; invalid records cannot impersonate known kinds via payload.",
+    "Every oracle and Rust test body runs in rootless Podman with read-only source/binaries, private HOME/runtime and no network. Host work is compilation only."
+  ],
+  "integrationRequirements": [
+    "serde_json preserve_order must remain enabled so unknown payload property insertion order survives intake. Canonicalization elsewhere must be explicit.",
+    "Native context uses an explicit version field. Unversioned generic context, including old incomplete records arrays, remains compatible.",
+    "The current RPC Value/String transport rejects isolated UTF-16 surrogate code units before context intake. Tests cover valid Unicode and surrogate-pair boundaries, not that existing transport limitation."
+  ],
+  "validationResults": {
+    "minimal": {
+      "passed": 44,
+      "ignored": 4
+    },
+    "default": {
+      "passed": 44,
+      "ignored": 4
+    },
+    "scope": [
+      "nine focused composer units",
+      "one portable-history hydration unit",
+      "four real-RPC context tests",
+      "eight provider-input tests",
+      "two orchestration-reader tests",
+      "twenty native-goal tests"
+    ],
+    "allTargetClippy": [
+      "minimal",
+      "default"
+    ],
+    "providerInference": false
+  }
+}

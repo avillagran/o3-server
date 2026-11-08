@@ -1,0 +1,46 @@
+{
+  "nativeRevision": "83a3674ffd84ffb33de768210c806cb1ac53fd80",
+  "node": "26.13.0",
+  "sources": {
+    "LICENSE": "935d8f2af0c703f9c39517ee57cc4930b19d02d533be930b63f0e82f93614b43",
+    "packages/shared/src/speech.ts": "af32fbbc5e6028bb6ef0c652a1ed26163da61034c1b4330a54093d749f7c9523",
+    "apps/server/src/textGeneration/TranscriptionPostProcessing.ts": "135640ea06c5b7919f0dd48da05ed6a0c67e194757129fe2993088ac1b1c0c51",
+    "apps/server/src/speech/customWords.ts": "e95a33702711e28eff4517eb03c81896b7f59c333e279b1a4b8f2088a0adb815",
+    "apps/server/src/speech/fillerWords.ts": "d59ca0fce9093fb784cb4d9d477fb81f99e1b773e83a4ef82e6c3b556c16c379",
+    "apps/server/src/speech/nativeLanguage.ts": "5ccbf43badbc5b670b582248164b1c9d99798c82015827bd856ac14555c9cccb",
+    "apps/server/src/speech/model.ts": "a9360661e0755026bbf368fcbfce8c3d1df405d78b6ad86ca0e0fbc60cd948d3",
+    "apps/server/src/speech/catalog.json": "f747a6bd95c1e98bcc49bca1c260319f0f5fec6fa26b25617b2cdea50c2e53d3"
+  },
+  "files": {
+    "custom-words.mjs": {
+      "bytes": 9302,
+      "sha256": "2661af41884aa3f955a5041a66c5b152a96dece0899f8ac5ffdbe65be109355a"
+    },
+    "filler-words.mjs": {
+      "bytes": 2351,
+      "sha256": "7c68ae9acc9a8d64d5a51724fa48a6c8426cc080ed70a443f8bbabd4bca8ab9b"
+    },
+    "native-language.mjs": {
+      "bytes": 2032,
+      "sha256": "708395fcff96e77f14f1312918a5fd968a435d4ed7147ec8f31ed83f661d3666"
+    },
+    "model.mjs": {
+      "bytes": 115686,
+      "sha256": "d017cf98e9fe88904ea80d3324a76ca09f95a55e0911ae77be8a00d85dbd9fce"
+    },
+    "transcription-post-processing.mjs": {
+      "bytes": 3621,
+      "sha256": "4f7df2750f5d48c1746292a7bb8e2c57ee2078e6d2c8451492f7920c6cd16b56"
+    }
+  },
+  "functions": {
+    "customWords.ts:applySpeechAliases": "0c538c37011baa085e2034cee758f711e5ff247fb4207355ddf192454ef649c9",
+    "customWords.ts:makeSpeechTextCorrector": "ebb7e42512753faad7fad9a6382a7786842f5cef385a987e83e6338c0e8ef760",
+    "customWords.ts:normalizeSpeechCustomWords": "15fd4f5a5c4d65639032a3b60efbebcbc0495ffa632f8a2336a8e76fca0ae335",
+    "fillerWords.ts:removeSpeechFillerWords": "3cbaa8b8e5698b11670b7fccd78a82e0570d850b2125e08bcbd56313ce11bc3e",
+    "nativeLanguage.ts:nativeSpeechLanguage": "18bb7811f6a411e39375de21be29374191796292546e18c3d7693a14f9da8ee1",
+    "model.ts:effectiveSpeechLanguage": "bfb297519b6e22f1be660288cf4f25dcaef94f6d0403833de6bde8f8c65f66d5",
+    "model.ts:getSpeechModel": "bdd2f73485f685acc91de9e94844aeef4c20694b587e38b439cf11c8e8c94ca8",
+    "../textGeneration/TranscriptionPostProcessing.ts:buildTranscriptionPostProcessingPrompt": "1b07b6ab4dfcfd3e5f82f82dd29ad521391605c97eb2510aadf49a2c971ce626"
+  }
+}

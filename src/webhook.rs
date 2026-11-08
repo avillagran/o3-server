@@ -1,7 +1,9 @@
 //! Signed inbound hooks on the ordinary listener. No payload/secret logging or network delivery.
+#[cfg(test)]
+use crate::store::random_id;
 use crate::{
     events::{get, put},
-    store::{now_ms, random_id, State},
+    store::{now_ms, State},
 };
 use hmac::{Hmac, Mac};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -9,6 +11,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
+#[cfg(test)]
 fn signed_template(template: &str) -> bool {
     let mut rest = template;
     while let Some((_, tail)) = rest.split_once("{{") {
@@ -24,14 +27,15 @@ fn signed_template(template: &str) -> bool {
 }
 pub fn validate(s: &Value) -> Result<(), &'static str> {
     let sig = &s["signature"];
-    if sig["header"].as_str().is_none_or(|h| {
-        h.is_empty() || h.len() > 256 || h.parse::<hyper::header::HeaderName>().is_err()
-    }) || !matches!(sig["encoding"].as_str(), Some("hex" | "base64"))
-        || sig["prefix"]
-            .as_str()
-            .is_none_or(|p| p.len() > 256 || p.chars().any(char::is_control))
+    if !sig.is_null()
+        && (!sig.is_object()
+            || sig["header"]
+                .as_str()
+                .is_none_or(|h| h.trim_matches(crate::webhook_payload::js_space).is_empty())
+            || !matches!(sig["encoding"].as_str(), Some("hex" | "base64"))
+            || !sig["prefix"].is_string())
     {
-        return Err("Webhook requires a signature header, encoding and prefix");
+        return Err("invalid webhook signature");
     }
     if sig.get("secretRef").is_some() {
         return Err("Webhook secretRef is unavailable; supply a signing secret");
@@ -41,58 +45,132 @@ pub fn validate(s: &Value) -> Result<(), &'static str> {
     {
         return Err("invalid delivery age");
     }
-    if s["filters"].as_array().is_some_and(|a| {
-        a.len() > 32
-            || a.iter().any(|f| {
-                !matches!(
-                    f["op"].as_str(),
-                    Some("exists" | "equals" | "notEquals" | "in" | "startsWith")
-                ) || f["path"]
-                    .as_str()
-                    .is_none_or(|p| p.len() > 1024 || !matches!(p.split('.').next(), Some("body")))
+    if let Some(filters) = s.get("filters") {
+        let Some(filters) = filters.as_array() else {
+            return Err("invalid webhook filters");
+        };
+        if filters.len() > 16
+            || filters.iter().any(|f| {
+                let valid_path = f["path"].as_str().is_some_and(|p| {
+                    matches!(p.split('.').next(), Some("body" | "headers" | "query"))
+                });
+                let valid_value = match f["op"].as_str() {
+                    Some("exists") => true,
+                    Some("equals" | "notEquals" | "startsWith") => f["value"].is_string(),
+                    Some("in") => f["value"].as_array().is_some_and(|a| {
+                        !a.is_empty()
+                            && a.iter().all(|v| {
+                                v.as_str().is_some_and(|s| {
+                                    !s.is_empty()
+                                        && !s.contains(',')
+                                        && s.trim_matches(crate::webhook_payload::js_space) == s
+                                })
+                            })
+                    }),
+                    _ => false,
+                };
+                !valid_path || !valid_value
             })
-    }) {
-        return Err("invalid webhook filters");
-    }
-    if s["dedupe"]
-        .get("coalesceWindowSeconds")
-        .is_some_and(|v| v.as_u64().is_none_or(|n| !(10..=3600).contains(&n)))
-    {
-        return Err("invalid coalesce window");
-    }
-    for key in ["replayKey", "coalesceKey"] {
-        if s["dedupe"][key]
-            .as_str()
-            .is_some_and(|t| !signed_template(t))
         {
-            return Err("webhook templates require signed body fields");
+            return Err("invalid webhook filters");
+        }
+    }
+    if let Some(dedupe) = s.get("dedupe") {
+        if !dedupe.is_object()
+            || dedupe
+                .get("coalesceWindowSeconds")
+                .is_some_and(|v| v.as_u64().is_none_or(|n| !(10..=3600).contains(&n)))
+        {
+            return Err("invalid coalesce window");
+        }
+        for key in ["replayKey", "coalesceKey"] {
+            if let Some(template) = dedupe.get(key) {
+                if !template.as_str().is_some_and(dedupe_template) {
+                    return Err("invalid webhook dedupe template");
+                }
+            }
         }
     }
     Ok(())
 }
-fn initialize(db: &Connection) -> Result<(), String> {
-    db.execute_batch("CREATE TABLE IF NOT EXISTS hook_queue(id TEXT PRIMARY KEY,task TEXT NOT NULL,coalesce TEXT NOT NULL,due INTEGER NOT NULL,expires INTEGER NOT NULL,prompt TEXT NOT NULL); CREATE INDEX IF NOT EXISTS hook_queue_due ON hook_queue(due); CREATE TABLE IF NOT EXISTS hook_replay(task TEXT NOT NULL,key TEXT NOT NULL,expires INTEGER NOT NULL,PRIMARY KEY(task,key));").map_err(|e|e.to_string())
+pub(crate) fn dedupe_template(template: &str) -> bool {
+    static PATTERN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let regex=PATTERN.get_or_init(||{
+        let space=r"\t\n\x0b\x0c\r \u{00a0}\u{1680}\u{2000}-\u{200a}\u{2028}\u{2029}\u{202f}\u{205f}\u{3000}\u{feff}";
+        regex::Regex::new(&format!(r"\{{\{{[{space}]*(?:(?:body|headers|query)(?:\.[^{{}}.{space}]+)*|request)[{space}]*\}}\}}" )).unwrap()
+    });
+    let remainder = regex.replace_all(template, "");
+    regex.is_match(template) && !remainder.contains("{{") && !remainder.contains("}}")
+}
+pub(crate) fn initialize(db: &Connection) -> Result<(), String> {
+    db.execute_batch("CREATE TABLE IF NOT EXISTS hook_queue(id TEXT PRIMARY KEY,task TEXT NOT NULL,coalesce TEXT NOT NULL,due INTEGER NOT NULL,expires INTEGER NOT NULL,prompt TEXT NOT NULL); CREATE INDEX IF NOT EXISTS hook_queue_due ON hook_queue(due); CREATE TABLE IF NOT EXISTS hook_replay(task TEXT NOT NULL,key TEXT NOT NULL,expires INTEGER NOT NULL,PRIMARY KEY(task,key));").map_err(|e|e.to_string())?;
+    let done: bool = db
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='hook_coalesce_sha256_v1')",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if done {
+        return Ok(());
+    }
+    db.execute_batch("SAVEPOINT hook_coalesce_upgrade; CREATE TABLE hook_coalesce_sha256_v1(done INTEGER NOT NULL);").map_err(|e|e.to_string())?;
+    let result = (|| -> Result<(), String> {
+        let mut query = db
+            .prepare("SELECT id,coalesce FROM hook_queue WHERE coalesce!=''")
+            .map_err(|e| e.to_string())?;
+        let rows = query
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        drop(query);
+        for (id, key) in rows {
+            db.execute(
+                "UPDATE hook_queue SET coalesce=?1 WHERE id=?2",
+                params![hex(&Sha256::digest(key.as_bytes())), id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        db.execute("INSERT INTO hook_coalesce_sha256_v1 VALUES(1)", [])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })();
+    let end = if result.is_ok() {
+        "RELEASE hook_coalesce_upgrade"
+    } else {
+        "ROLLBACK TO hook_coalesce_upgrade; RELEASE hook_coalesce_upgrade"
+    };
+    db.execute_batch(end).map_err(|e| e.to_string())?;
+    result
 }
 pub fn prepare(db: &Connection, id: &str, task: &mut Value) -> Result<(), String> {
     if task["schedule"]["type"] != "webhook" {
         return Ok(());
     }
     validate(&task["schedule"])?;
-    if !signed_template(task["prompt"].as_str().unwrap_or("")) {
-        return Err("webhook prompt requires signed body fields".into());
-    }
     initialize(db)?;
     let old = get(db, "hookCredentials", id).unwrap_or(Value::Null);
-    let secret = task["schedule"]["signature"]["secret"]
-        .as_str()
-        .or_else(|| old["secret"].as_str())
-        .filter(|v| !v.is_empty() && v.len() <= 4096)
-        .ok_or("Webhook requires a signing secret")?
-        .to_owned();
+    let signed = task["schedule"]["signature"].is_object();
+    let secret = if signed {
+        Some(
+            task["schedule"]["signature"]["secret"]
+                .as_str()
+                .map(|s| s.trim_matches(crate::webhook_payload::js_space))
+                .or_else(|| old["secret"].as_str())
+                .filter(|s| !s.is_empty())
+                .ok_or("A webhook signature check needs a signing secret.")?
+                .to_owned(),
+        )
+    } else {
+        None
+    };
     let token = old["token"]
         .as_str()
         .map(str::to_owned)
-        .unwrap_or(random_id()?);
+        .map_or_else(new_token, Ok)?;
     put(
         db,
         "hookCredentials",
@@ -100,15 +178,14 @@ pub fn prepare(db: &Connection, id: &str, task: &mut Value) -> Result<(), String
         "",
         &json!({"secret":secret,"token":token}),
     )?;
-    task["schedule"]["signature"]
-        .as_object_mut()
-        .ok_or("signature required")?
-        .remove("secret");
-    // T3 `webhookPath`: `encodeURIComponent(taskId)`, since ids look like `scheduled-task:<id>`.
-    task["webhook"] = json!({"path":format!("/api/hooks/{}/{token}", encode_component(id)),"url":null,"hasSecret":true});
+    if let Some(signature) = task["schedule"]["signature"].as_object_mut() {
+        signature.remove("secret");
+    }
+    task["webhook"] = json!({"path":format!("/api/hooks/{}/{token}",encode_component(id)),"url":null,"hasSecret":secret.is_some()});
     Ok(())
 }
 /// A task without the fields its runs write, for comparing definitions.
+#[cfg(test)]
 fn definition(task: &Value) -> Value {
     let mut t = task.clone();
     if let Some(m) = t.as_object_mut() {
@@ -139,71 +216,14 @@ pub fn encode_component(text: &str) -> String {
     out
 }
 
-fn text(v: &Value) -> String {
-    match v {
-        Value::String(s) => s.clone(),
-        Value::Null => String::new(),
-        v => v.to_string(),
-    }
-}
-fn resolve(root: &Value, path: &str) -> Value {
-    path.split('.').fold(root.clone(), |v, k| {
-        if let Ok(n) = k.parse::<usize>() {
-            v.get(n).cloned().unwrap_or(Value::Null)
-        } else {
-            v.get(k).cloned().unwrap_or(Value::Null)
-        }
-    })
-}
-fn render(template: &str, root: &Value, framed: bool) -> String {
-    let mut out = String::new();
-    let mut rest = template;
-    while let Some((before, tail)) = rest.split_once("{{") {
-        out.push_str(before);
-        let Some((path, after)) = tail.split_once("}}") else {
-            out.push_str("{{");
-            rest = tail;
-            break;
-        };
-        let value = text(&resolve(root, path.trim()));
-        if framed {
-            out.push_str("<webhook-data>");
-            out.push_str(
-                &value
-                    .replace('@', "@\u{2060}")
-                    .replace('$', "$\u{2060}")
-                    .replace('/', "/\u{2060}")
-                    .replace("t3-context", "t3\u{2060}-context")
-                    .replace("webhook-data", "webhook\u{2060}-data"),
-            );
-            out.push_str("</webhook-data>");
-        } else {
-            out.push_str(&value);
-        }
-        rest = after;
-        if out.len() > 64 * 1024 {
-            return String::new();
-        }
-    }
-    out.push_str(rest);
-    out
-}
-fn matches(f: &Value, root: &Value) -> bool {
-    let v = resolve(root, f["path"].as_str().unwrap_or(""));
-    let t = text(&v);
-    match f["op"].as_str().unwrap_or("") {
-        "exists" => !v.is_null(),
-        "equals" => !v.is_null() && t == text(&f["value"]),
-        "notEquals" => !v.is_null() && t != text(&f["value"]),
-        "startsWith" => !v.is_null() && t.starts_with(&text(&f["value"])),
-        "in" => f["value"]
-            .as_array()
-            .is_some_and(|a| a.iter().any(|v| text(v) == t)),
-        _ => false,
-    }
-}
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+pub(crate) fn new_token() -> Result<String, String> {
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+    let mut bytes = [0; 32];
+    getrandom::fill(&mut bytes).map_err(|_| "Could not generate webhook token.".to_owned())?;
+    Ok(URL_SAFE_NO_PAD.encode(bytes))
 }
 /// Whether the path names an enabled-or-not webhook task and carries its token. Checked before
 /// any body is read, so only holders of the hook URL cost more than one keyed lookup.
@@ -225,12 +245,13 @@ pub fn admits(s: &State, id: &str, token: &str) -> bool {
             .verify_slice(&candidate.finalize().into_bytes())
             .is_ok()
 }
+#[cfg(test)]
 pub fn accept(
     s: &State,
     id: &str,
     token: &str,
     headers: &hyper::HeaderMap,
-    _query: &str,
+    query: &str,
     body: &[u8],
 ) -> (u16, &'static str) {
     let reader = s.reader.lock().unwrap();
@@ -306,11 +327,24 @@ pub fn accept(
         return (409, "definition_changed");
     }
     let replay = hex(&Sha256::digest(body));
-    let body: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
-    let root = json!({"body":body});
+    let payload = crate::webhook_payload::Request {
+        method: "POST".into(),
+        path: format!("/api/hooks/{}/{token}", encode_component(id)),
+        query: query.into(),
+        headers: headers
+            .iter()
+            .map(|(name, value)| {
+                (
+                    name.as_str().to_owned(),
+                    String::from_utf8_lossy(value.as_bytes()).into_owned(),
+                )
+            })
+            .collect(),
+        body_text: String::from_utf8_lossy(body).into_owned(),
+    };
     if task["schedule"]["filters"]
         .as_array()
-        .is_some_and(|a| a.iter().any(|f| !matches(f, &root)))
+        .is_some_and(|filters| payload.failed_filter(filters).is_some())
     {
         return (202, "filtered");
     }
@@ -349,13 +383,7 @@ pub fn accept(
     {
         return (429, "queue_full");
     }
-    let coalesce = dedupe["coalesceKey"]
-        .as_str()
-        .map(|t| render(t, &root, false))
-        .unwrap_or_default();
-    if coalesce.len() > 4096 {
-        return (400, "invalid_key");
-    }
+    let coalesce = payload.dedupe_key(dedupe["coalesceKey"].as_str());
     let pending = if coalesce.is_empty() {
         None
     } else {
@@ -368,17 +396,29 @@ pub fn accept(
         .ok()
         .flatten()
     };
-    let job = pending.unwrap_or_else(|| random_id().unwrap_or_default());
+    let job = match pending {
+        Some(job) => job,
+        None => match random_id() {
+            Ok(job) => job,
+            Err(_) => return (503, "error"),
+        },
+    };
     let delay = if coalesce.is_empty() {
         0
     } else {
-        dedupe["coalesceWindowSeconds"].as_i64().unwrap_or(60) * 1000
+        dedupe["coalesceWindowSeconds"].as_i64().unwrap_or(120) * 1000
     };
     let age = task["schedule"]["maxDeliveryAgeMinutes"]
         .as_i64()
         .unwrap_or(60)
         * 60000;
-    let prompt = render(task["prompt"].as_str().unwrap_or(""), &root, true);
+    let Ok(frame) = random_id() else {
+        return (503, "error");
+    };
+    let frame = frame.replace('-', "");
+    let prompt = payload
+        .render(task["prompt"].as_str().unwrap_or(""), &frame[..12], false)
+        .prompt;
     if prompt.is_empty() || prompt.len() > 64 * 1024 {
         return (400, "invalid_prompt");
     }
@@ -387,38 +427,80 @@ pub fn accept(
     (202, "accepted")
 }
 pub fn next_due(s: &State) -> Option<i64> {
-    s.db.lock()
-        .unwrap()
+    let db = s.db.lock().unwrap();
+    let active = s.streams.ops.hook_runs.lock().unwrap();
+    let mut q = db
+        .prepare("SELECT id,CASE WHEN due=9223372036854775807 THEN 0 ELSE due END FROM hook_queue")
+        .ok()?;
+    let rows = q
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .ok()?;
+    rows.filter_map(Result::ok)
+        .filter(|(id, _)| !active.contains(id))
+        .map(|(_, due)| due)
+        .min()
+}
+
+/// A persisted claim without an in-process owner is recoverable; a live owner is exclusive.
+struct ActiveHook<'a> {
+    state: &'a State,
+    id: String,
+}
+impl Drop for ActiveHook<'_> {
+    fn drop(&mut self) {
+        self.state
+            .streams
+            .ops
+            .hook_runs
+            .lock()
+            .unwrap()
+            .remove(&self.id);
+        self.state.streams.ops.scheduler_wake.notify_one();
+    }
+}
+type QueuedHook = (String, String, i64, String);
+fn claim_next(s: &State) -> Option<QueuedHook> {
+    let db = s.db.lock().unwrap();
+    let mut active = s.streams.ops.hook_runs.lock().unwrap();
+    let mut q=db.prepare("SELECT id,task,expires FROM hook_queue WHERE due<=?1 OR due=9223372036854775807 ORDER BY due,id").ok()?;
+    let rows = q
+        .query_map([now_ms()], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })
+        .ok()?;
+    let job = rows
+        .filter_map(Result::ok)
+        .find(|job| !active.contains(&job.0))?;
+    // Read the potentially large prompt only for the selected job, not other workers' claims.
+    let prompt = db
         .query_row(
-            "SELECT min(CASE WHEN due=9223372036854775807 THEN 0 ELSE due END) FROM hook_queue",
-            [],
-            |r| r.get(0),
+            "SELECT prompt FROM hook_queue WHERE id=?1",
+            [&job.0],
+            |row| row.get::<_, String>(0),
         )
-        .ok()
-        .flatten()
+        .ok()?;
+    db.execute(
+        "UPDATE hook_queue SET due=9223372036854775807 WHERE id=?1",
+        [&job.0],
+    )
+    .ok()?;
+    active.insert(job.0.clone());
+    Some((job.0, job.1, job.2, prompt))
 }
 pub fn tick(s: &Arc<State>) {
     for _ in 0..8 {
-        let job = {
-            let db = s.db.lock().unwrap();
-            let v=db.query_row("SELECT id,task,expires,prompt FROM hook_queue WHERE due<=? OR due=9223372036854775807 ORDER BY due LIMIT 1",[now_ms()],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,i64>(2)?,r.get::<_,String>(3)?))).optional().ok().flatten();
-            if let Some((id, _, _, _)) = &v {
-                // Freeze the prompt while dispatching. A new coalesced delivery gets
-                // its own job; a crash leaves this claim eligible for receipt replay.
-                if db
-                    .execute(
-                        "UPDATE hook_queue SET due=9223372036854775807 WHERE id=?",
-                        [id],
-                    )
-                    .is_err()
-                {
-                    return;
-                }
-            }
-            v
-        };
-        let Some((id, task, expires, prompt)) = job else {
+        let Some((id, task, expires, prompt)) = claim_next(s) else {
             return;
+        };
+        let _claim = ActiveHook {
+            state: s,
+            id: id.clone(),
         };
         #[cfg(test)]
         if crash_tests::stop(s, "claim") {
@@ -479,6 +561,61 @@ mod definition_tests {
             "scheduled-task%3Aa%20b%2F%C3%B1"
         );
     }
+    #[test]
+    fn old_coalescing_keys_upgrade_once_without_changing_accepted_work() {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch("CREATE TABLE hook_queue(id TEXT PRIMARY KEY,task TEXT NOT NULL,coalesce TEXT NOT NULL,due INTEGER NOT NULL,expires INTEGER NOT NULL,prompt TEXT NOT NULL); INSERT INTO hook_queue VALUES('job','task','existing-group',123,456,'Already rendered prompt');").unwrap();
+        initialize(&db).unwrap();
+        let row: (String, i64, i64, String) = db
+            .query_row(
+                "SELECT coalesce,due,expires,prompt FROM hook_queue WHERE id='job'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            row,
+            (
+                hex(&Sha256::digest(b"existing-group")),
+                123,
+                456,
+                "Already rendered prompt".into()
+            )
+        );
+        initialize(&db).unwrap();
+        assert_eq!(
+            db.query_row(
+                "SELECT coalesce FROM hook_queue WHERE id='job'",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+            row.0
+        );
+    }
+    #[test]
+    fn failed_key_upgrade_retains_original_rows_and_does_not_mark_success() {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch("CREATE TABLE hook_queue(id TEXT PRIMARY KEY,task TEXT NOT NULL,coalesce TEXT NOT NULL,due INTEGER NOT NULL,expires INTEGER NOT NULL,prompt TEXT NOT NULL); INSERT INTO hook_queue VALUES('job','task','existing-group',123,456,'Already rendered prompt'); CREATE TRIGGER refuse_key BEFORE UPDATE ON hook_queue BEGIN SELECT RAISE(ABORT,'fixture write failure'); END;").unwrap();
+        assert!(initialize(&db)
+            .unwrap_err()
+            .contains("fixture write failure"));
+        assert_eq!(
+            db.query_row("SELECT coalesce FROM hook_queue", [], |row| row
+                .get::<_, String>(0))
+                .unwrap(),
+            "existing-group"
+        );
+        assert_eq!(
+            db.query_row(
+                "SELECT count(*) FROM sqlite_master WHERE name='hook_coalesce_sha256_v1'",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0
+        );
+    }
 }
 
 #[cfg(test)]
@@ -493,12 +630,55 @@ mod crash_tests {
             .is_some_and(|(p, at)| p == &s.dir && *at == stage)
     }
     #[test]
+    fn live_claim_is_exclusive_and_an_abandoned_claim_is_immediately_recoverable() {
+        let dir = std::env::temp_dir().join(format!("o3-hook-owner-{}", random_id().unwrap()));
+        let state = State::open(&dir).unwrap();
+        {
+            let db = state.db.lock().unwrap();
+            initialize(&db).unwrap();
+            db.execute(
+                "INSERT INTO hook_queue VALUES('job','task','',0,?1,'synthetic prompt')",
+                [now_ms() + 60000],
+            )
+            .unwrap();
+        }
+        let first = claim_next(&state).unwrap();
+        let owner = ActiveHook {
+            state: &state,
+            id: first.0.clone(),
+        };
+        assert_eq!(first.0, "job");
+        assert!(
+            claim_next(&state).is_none(),
+            "a second worker must not claim live work"
+        );
+        assert!(
+            next_due(&state).is_none(),
+            "a live owner is not a recovery candidate"
+        );
+        drop(owner);
+        assert_eq!(next_due(&state), Some(0));
+        let recovered = claim_next(&state).unwrap();
+        let _owner = ActiveHook {
+            state: &state,
+            id: recovered.0.clone(),
+        };
+        assert_eq!(recovered, first);
+        assert!(claim_next(&state).is_none());
+    }
+    #[test]
     fn durable_claim_and_receipt_survive_interrupted_dispatch_once() {
         use t3_protocol::api::{
             orchestration,
             scheduled_tasks::{self, TaskUpsert},
         };
         let s = crate::checkpoint::recovery_test_support::start(|s| {
+            // This fixture advances each crash boundary manually. The automatic timer
+            // would be another live owner when next_due checks abandoned-claim recovery.
+            s.streams
+                .ops
+                .scheduler
+                .store(true, std::sync::atomic::Ordering::Release);
             *s.provider.lock().unwrap() = Some(Arc::new(crate::provider::ScriptedProvider));
         });
         let c = s.connect();
@@ -537,9 +717,10 @@ mod crash_tests {
             runtime.block_on(async {
                 tick(&s.state);
             });
+            let due = next_due(&s.state);
             assert!(
-                next_due(&s.state).is_some_and(|due| due <= now_ms()),
-                "interrupted claims must be scheduled immediately on recovery"
+                due.is_some_and(|due| due <= now_ms()),
+                "interrupted claim at {stage} must be immediately recoverable, got {due:?}"
             );
             assert_eq!(
                 s.state

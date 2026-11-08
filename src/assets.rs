@@ -1866,7 +1866,7 @@ mod boundary_tests {
         }
         assert!(create_url(&s, &json!({"resource":{"_tag":"draft-workspace-file","cwd":base.join("profile"),"path":private}})).is_err());
         drop(s);
-        std::fs::remove_dir_all(base).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }
 
@@ -1882,7 +1882,7 @@ mod media_cache_tests {
         assert!(bounded_text(&path).is_err());
         assert!(!icon_allowed(&path));
         assert!(bounded_text(&root).is_err());
-        std::fs::remove_dir_all(root).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[test]
     fn expired_cache_is_collected_and_media_types_follow_content() {
@@ -1909,6 +1909,6 @@ mod media_cache_tests {
         assert_eq!(cached_media_extension(b"\xff\xd8\xffJPEG"), Some("jpg"));
         assert_eq!(cached_media_extension(b"\0\0\0\x18ftypisom"), Some("mp4"));
         assert_eq!(cached_media_extension(b"<html>login</html>"), None);
-        std::fs::remove_dir_all(root).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

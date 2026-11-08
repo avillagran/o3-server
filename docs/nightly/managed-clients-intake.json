@@ -1,0 +1,41 @@
+{
+  "referenceRevision": "c55db3e9c72fdf584f4b54192fb39beb88667b59",
+  "verifiedUnchangedThrough": "32a0531748c44b25072d7495ce0b9bd7e9450a87",
+  "scope": "Managed client reachability, native authentication restrictions/revocation, and pre-bind Tailscale inspection only. Desktop bootstrap and complete T3 Connect ownership are not implemented by this checkpoint.",
+  "sources": {
+    "apps/server/src/auth/EnvironmentAuth.ts": "8a2e41dd45597b8d2b8ba728015eebd08ffabf7630a49d47616371a533ba0c38",
+    "apps/server/src/auth/EnvironmentAuthPolicy.ts": "39fc3dd4855dcdca9d96b465fb51b339ba56aac35b2305986da500909cb1ba47",
+    "apps/server/src/auth/http.ts": "4add15463e63e6673f54bb2856fa69b25a19dfe8c564d18526fc79e00d3df93e",
+    "apps/server/src/auth/utils.ts": "d6a33296e7326ddb4fd1ec68270ee75e27aa33447fb9d1d9b55467784b321943",
+    "apps/server/src/cli/auth.ts": "935eee3babf0d6298c328aaeea527ae444420a6ba9607ed00ced0f635711fccb",
+    "apps/server/src/cli/config.ts": "816886a76ef86880ec551d6806bedde10fee423ace0817527c03204ab1e27bf0",
+    "apps/server/src/persistence/AuthPairingLinks.ts": "08a37367604c897fd205e2163f5654dcb68524b1d253059baadb6637bc8a3980",
+    "apps/server/src/persistence/AuthSessions.ts": "d4dbbc249f50af2d4bfd04247b701b4a6fde81e44cffbbbaca0947a6723de6bc",
+    "apps/server/src/policy/managedLimits.ts": "6010de56e54366b191b949eee02dff56ca6dc44fcf278cb2f37931e50f96fda4",
+    "packages/contracts/src/environmentHttp.ts": "74014a4b27389bce640423dd6c12ad1c148535e212a1591ddf163336111c90bd",
+    "packages/shared/src/HostProcess.ts": "eeafedd914ae4aaf81ef6f474139111e98ec40bcb5a077d43ff02382cae7c011",
+    "packages/shared/src/hostClassification.ts": "cc3499701601884850cf130b2fde4e43e08f0f5f4a21d8d8ac091e8b7bca0381",
+    "packages/tailscale/src/tailscale.ts": "5e9cb673245b0e28cdc26d3b5dd661d4565487f12a50ad58346e8094f9369fa6"
+  },
+  "oracle": {
+    "serveParserCases": 5533,
+    "statusParserCases": 49,
+    "selectiveOffCases": 36,
+    "effect": "4.1.2"
+  },
+  "acceptance": {
+    "tailscalePhysicalTests": 5,
+    "tailscaleOfficialRuntimeScenarios": 7,
+    "clientAuthPhysicalTests": 4,
+    "clientAuthOfficialRuntimePolicies": 2,
+    "bridgePhysicalTests": 2,
+    "httpEmbeddedTestsPerFeatureMode": 4,
+    "strictAllTargets": [
+      "no-default-features",
+      "default"
+    ],
+    "formatAndDiffCheck": "Passed"
+  },
+  "enforcedFamilies": "Authentication and Webhooks only. All other managed families remain gated.",
+  "verifiedNightly": "20261106.4288"
+}

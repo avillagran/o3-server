@@ -1,0 +1,33 @@
+{
+  "revision": "32a0531748c44b25072d7495ce0b9bd7e9450a87",
+  "nightly": "4288",
+  "effect": "4.1.2",
+  "sourceHashes": {
+    "apps/server/src/device/DeviceToolchain.ts": "4bc36c0a753d65ee1d1413c23da2efedc25ee7022e7464757ce366914d65350a",
+    "apps/server/src/processRunner.ts": "54dbe11d20d510fcf49b151de83da3efa982f1dc512d4233964062dbc245f1dd",
+    "packages/shared/src/shell.ts": "7d418ba20bf10116b58fb3285be6ad5316eae32a1b82ad41212e1961c86f699b",
+    "packages/shared/src/HostProcess.ts": "eeafedd914ae4aaf81ef6f474139111e98ec40bcb5a077d43ff02382cae7c011",
+    "packages/provider-core/src/server/collectStreamText.ts": "754a726d43c8e03647f2bf97559fe0f675a7dd7f6e71f5537e09b5c4ad093216",
+    "apps/server/src/device/deviceToolVersions.json": "4fc5d7da620049c52a6216bd4cf8699afe28088220a9d0e8b07e055d50d23625",
+    "apps/server/src/auth/RpcAuthorization.ts": "1e46ad4c96975bbfbefef23aa6d0f9fc4f4cbc9b54ef4818518d30be4132200b",
+    "apps/server/src/ws.ts": "976ee2745245d997ee29e441c6796b4eb8415f58084454f6574719f296feffc2"
+  },
+  "inventoryCases": 295,
+  "authorizationCases": 23,
+  "scope": [
+    "Complete native deviceToolVersions with in-memory filesystem",
+    "Actual native authorization helper and WS handler excerpt with inert services",
+    "Actual DeviceListInput contract decoding",
+    "Read-only complete O3 manifest inspection; no sentinel-only adoption",
+    "HTTP protocol2 authorization and dispatch consumer"
+  ],
+  "partialSourceScopes": {
+    "apps/server/src/ws.ts": "Only device-list handler expression; no server startup or other handlers executed",
+    "apps/server/src/auth/RpcAuthorization.ts": "Device-list helper plus verified base method-scope declaration"
+  },
+  "remaining": [
+    "Remote version inventory and tool acquisition",
+    "Agent runtime and running-version ownership",
+    "Real SDK/emulator/hardware acceptance"
+  ]
+}

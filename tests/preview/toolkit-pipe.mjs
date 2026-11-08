@@ -1,0 +1,31 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+import {ToolkitPipeClient} from '../../runtime/preview/toolkit-pipe-client.mjs';
+assert(fs.existsSync('/run/.containerenv'));
+fs.mkdirSync('/out/guard',{mode:0o700});process.env.O3_RECURSIVE_FS_GUARD_DIR='/out/guard';await import('/guard.mjs');
+const nonce='a'.repeat(48),caller='b'.repeat(96),callback='c'.repeat(96),frames=[];
+const client=new ToolkitPipeClient({nonce,send:packet=>frames.push(JSON.stringify(packet))});
+const first=client.service('projection',caller,{text:'\ud800',nonce:'model text cannot replace control'});
+const second=client.service('callerScope',caller,{});
+const a=JSON.parse(frames[0]),b=JSON.parse(frames[1]);
+assert.equal(a.nonce,nonce);assert.equal(a.caller,caller);assert.equal(a.input.text.charCodeAt(0),0xd800);
+client.accept({kind:'service-result',nonce,id:b.id,ok:true,payload:{scope:'owned'}});
+client.accept({kind:'service-result',nonce,id:a.id,ok:false,payload:{value:'\ud800'},callbackReceipt:callback});
+assert.equal((await second).payload.scope,'owned');const exact=await first;assert.equal(exact.payload.value.charCodeAt(0),0xd800);assert.equal(exact.callbackReceipt,callback);
+assert.throws(()=>client.accept({kind:'service-result',nonce,id:a.id,ok:true,payload:null}),/correlation/);
+const cases=['wrong-nonce','unknown-id','invalid-receipt','unexpected-field','mixed-kind'];
+for(const name of cases){
+ const sent=[];const peer=new ToolkitPipeClient({nonce,send:packet=>sent.push(packet)});
+ const pending=peer.service('callerScope',caller,{});const failure=pending.then(()=>false,()=>true);
+ const packet={kind:'service-result',nonce,id:sent[0].id,ok:true,payload:{}};
+ if(name==='wrong-nonce')packet.nonce='d'.repeat(48);
+ if(name==='unknown-id')packet.id++;
+ if(name==='invalid-receipt')packet.callbackReceipt='not-an-owner-receipt';
+ if(name==='unexpected-field')packet.owner='model';
+ if(name==='mixed-kind')packet.kind='result';
+ assert.throws(()=>peer.accept(packet));assert.equal(await failure,true);
+}
+const closing=new ToolkitPipeClient({nonce,send:()=>{}}),pending=closing.service('callerScope',caller,{});const rejected=pending.then(()=>false,()=>true);closing.close();assert.equal(await rejected,true);
+assert.equal(fs.readdirSync('/out/guard').filter(name=>name.endsWith('.attempts.jsonl')).length,0);
+fs.writeFileSync('/out/proof.json',JSON.stringify({complete:true,reverseCorrelation:true,loneUtf16Retained:true,duplicateResponseRefused:true,negativeCases:cases,closeRejectsPending:true,qualification:'Private Node continuation-peer protocol proof; no Rust service or browser/caller admission claim.'},null,2)+'\n');
+console.log('TOOLKIT_PIPE_CLIENT_PASS');

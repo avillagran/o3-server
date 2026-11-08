@@ -27,6 +27,10 @@ pub struct Ops {
     sampler: AtomicBool,
     report: Mutex<(u64, Option<Value>)>,
     pub scheduler: AtomicBool,
+    pub(crate) hook_runs: Mutex<std::collections::HashSet<String>>,
+    pub(crate) scheduled_runs: Mutex<std::collections::HashSet<String>>,
+    pub(crate) native_webhooks: Mutex<crate::webhook_native::AdmissionState>,
+    pub(crate) usage_sources: crate::config_sources::UsageState,
     pub usage_rate_failure: AtomicBool,
     pub usage_rate_refresh: tokio::sync::Mutex<()>,
     pub scheduler_wake: tokio::sync::Notify,
@@ -53,6 +57,10 @@ impl Ops {
             sampler: AtomicBool::new(false),
             report: Mutex::new((0, None)),
             scheduler: AtomicBool::new(false),
+            hook_runs: Mutex::default(),
+            scheduled_runs: Mutex::default(),
+            native_webhooks: Mutex::default(),
+            usage_sources: Default::default(),
             usage_rate_failure: AtomicBool::new(false),
             usage_rate_refresh: tokio::sync::Mutex::new(()),
             scheduler_wake: tokio::sync::Notify::new(),
@@ -111,6 +119,7 @@ pub async fn call(s: &std::sync::Arc<State>, tag: &str, p: &Value) -> Option<Rep
     Some(match tag {
         "server.reportClientActivity" => report_activity(s, p),
         "server.refreshProviders" => refresh_providers(s, p).await,
+        "provider.consumeResetCredit" => crate::config_sources::consume_reset_credit(s, p).await,
         "secrets.answerRequest" => answer_secret(s, p),
         "server.getProcessDiagnostics" => Ok(diagnostics()),
         "server.getResourceTelemetryHistory" => telemetry(s, p),
@@ -174,9 +183,23 @@ fn report_activity(s: &State, p: &Value) -> Reply {
     Ok(Value::Null)
 }
 
-async fn refresh_providers(s: &State, _p: &Value) -> Reply {
+async fn refresh_providers(s: &State, p: &Value) -> Reply {
+    if p["instanceId"].as_str().is_none() {
+        if p["reloadSecrets"] == true {
+            let settings = crate::settings::read(s).ok();
+            crate::settings_secrets::invalidate(s.secret_resolver().as_ref(), settings.as_ref())
+                .await;
+        }
+        crate::config_sources::refresh(s).await;
+    }
     let provider = s.provider.lock().unwrap().clone();
     if let Some(provider) = provider {
+        if p["reloadSecrets"] == true {
+            provider
+                .reload_secrets(p["instanceId"].as_str())
+                .await
+                .map_err(|m| json!({"_tag":"ProviderSetupError","message":m}))?;
+        }
         provider
             .refresh()
             .await
@@ -763,6 +786,6 @@ mod cleanup_policy_tests {
         assert_eq!(cleanup(&s).unwrap()["counts"]["removed"], 1);
         assert!(!path.exists());
         drop(s);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

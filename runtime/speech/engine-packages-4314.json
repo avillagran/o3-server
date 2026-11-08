@@ -1,0 +1,46 @@
+{
+  "nativeRevision": "83a3674ffd84ffb33de768210c806cb1ac53fd80",
+  "platform": "linux-x64-gnu",
+  "engineVersion": "0.4.1",
+  "nodeVersion": "26.13.0",
+  "sourceLockSha256": "c17756114f2002ffc2f66ee725eb953ba17a1a0e8a97f1448643c8fa2de17cd0",
+  "catalogSha256": "f747a6bd95c1e98bcc49bca1c260319f0f5fec6fa26b25617b2cdea50c2e53d3",
+  "packages": [
+    {
+      "name": "transcribe-cpp",
+      "version": "0.4.1",
+      "tarball": "https://registry.npmjs.org/transcribe-cpp/-/transcribe-cpp-0.4.1.tgz",
+      "integrity": "sha512-6+cemagaGsOC8X3XWPCn7Ek+jjwyH2/NdTyBcEH7FtFjC3Ciyih2Xx6/GSRirZolxmxENtbvfwu1WV5RzutgCw==",
+      "unpackedSize": 220899,
+      "fileCount": 24,
+      "license": "MIT"
+    },
+    {
+      "name": "koffi",
+      "version": "3.3.6",
+      "tarball": "https://registry.npmjs.org/koffi/-/koffi-3.3.6.tgz",
+      "integrity": "sha512-pPqCZg8o4laLvzxySGEju/T1Fd+eCJTVnJmcH6h1u98HFRoBQ9EokNuBSj3NxIQdzkEPRxPnHKjhBVkLeB+X0g==",
+      "unpackedSize": 1752291,
+      "fileCount": 87,
+      "license": "MIT"
+    },
+    {
+      "name": "@koromix/koffi-linux-x64",
+      "version": "3.3.6",
+      "tarball": "https://registry.npmjs.org/@koromix/koffi-linux-x64/-/koffi-linux-x64-3.3.6.tgz",
+      "integrity": "sha512-RTRbVTZ1rf1GFowSsbuU2acYoRq66ZwJGh+rTgau1Cat3muv2884p0FRH6UKfwlgWkpjIHJ7N8N0liM7Oe2eAQ==",
+      "unpackedSize": 2363279,
+      "fileCount": 5,
+      "license": "MIT"
+    },
+    {
+      "name": "@transcribe-cpp/linux-x64-cpu-vulkan",
+      "version": "0.4.1",
+      "tarball": "https://registry.npmjs.org/@transcribe-cpp/linux-x64-cpu-vulkan/-/linux-x64-cpu-vulkan-0.4.1.tgz",
+      "integrity": "sha512-AuiE8PSFbDndLJDpt8lilZIyg2syQSRBmZQWklx0rd9vF1M/Wfn4StKUXTGC4rouQOTJPy3ViioGLpyYr6unaw==",
+      "unpackedSize": 66597314,
+      "fileCount": 24,
+      "license": "MIT"
+    }
+  ]
+}

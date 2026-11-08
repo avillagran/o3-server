@@ -15,6 +15,7 @@ This replaces the 2026-10-31 rule "T3's database is never written" (`ARCHITECTUR
 | Settings, keybindings, connection catalog, attachments | Same files. |
 | Thread history | `src/t3_shared.rs`: O3 writes every change into `statev2.sqlite` and takes in what T3 wrote. |
 | Client sessions | O3 mirrors the sessions it issues or revokes into T3's `auth_sessions` and, at start, takes in T3's live sessions and revocations, so a client paired with either server is accepted by the other (tokens are signed with the shared key). |
+| Accepted creation and new-message commands | `src/command_shared.rs` mirrors proven `thread.create` and new-run `message.dispatch` receipts and their original command-linked creation events. Provider entry waits for a native process-bound start claim. See [Shared command admissions](nightly/SHARED-COMMAND-ADMISSIONS.md) for scope and recovery limits. |
 
 Only one server owns a profile at a time (`profile::refuse_live`, the ownership lock and port 3773).
 That is what lets the two directions below run without coordination.
@@ -26,9 +27,12 @@ not rebuild projections at start: it trusts them, after checking that the
 `orchestration_v2_projection_metadata` high-water mark equals the newest agent event and that every
 projected thread has a `thread.created` event. So O3 writes both, exactly as T3's event sink does:
 
-1. **Schema gate.** O3 writes only when the newest row in `effect_sql_migrations` is migration 73,
-   `ActiveTurnItemIndexes` (`t3_shared::MIGRATION_HEAD`), and the projection schema is version 2.
-   Any other base is left untouched and O3 logs why; a newer T3 needs a matching O3.
+1. **Schema gate.** O3 supports exactly migration 80, `ScheduledTaskThreadMode`
+   (`t3_shared::MIGRATION_HEAD`), and the legacy migration 73, `ActiveTurnItemIndexes`,
+   with projection schema version 2. Migration 80 must also contain its new subagent, project
+   and task columns. Intermediate, newer or malformed bases are refused before sync writes.
+   T3 owns schema creation and migration; O3 does not upgrade a database. See
+   [Nightly migration 80 acceptance](nightly/SHARED-SCHEMA-80.md).
 2. **Marks.** Triggers on O3's `records` table mark every changed record of a shared kind in
    `t3_dirty`, with a version so a record rewritten during an export stays marked.
 3. **Export.** A background thread drains the marks about every 250 ms, and once more when the server
@@ -38,7 +42,10 @@ projected thread has a `thread.created` event. So O3 writes both, exactly as T3'
    (recorded run fields, subagent completion delivery, provider turn token usage, the active
    provider thread on the thread row, turn item positions and the thread's `updatedAt`). The
    high-water mark and O3's cursor move in the same transaction. A record T3's columns cannot hold
-   is skipped and listed in `t3_rejects`.
+   is skipped and listed in `t3_rejects`. A later valid export clears that rejection.
+   Migration 80 also writes indexed subagent delivery state and project pin/archive timestamps;
+   old migration 73 rejects project flags it cannot store without dropping O3's local intent.
+   The first migration-80 startup revisits projects previously exported by an older mapping.
 4. **Catch-up.** At start, O3 reads T3's events after its cursor (`o3_sync.o3SeenSequence`) and takes
    in the current T3 row of every record they touched, emitting client events so open clients see
    the change.
@@ -56,15 +63,28 @@ projected thread has a `thread.created` event. So O3 writes both, exactly as T3'
 A profile without `statev2.sqlite` keeps the marks until T3 creates its database; O3 does not create
 T3's schema.
 
+At migration 80, task definitions and private webhook ledger tables use a
+separate row-hash baseline because task mutations emit no orchestration events.
+Both definition directions and ledger preservation pass an official-runtime
+handover. Native webhook dispatch and migration of O3's old private queue remain
+incomplete; see [the task storage boundary](nightly/SHARED-SCHEDULED-STORE.md).
+
 ## What stays O3's own
 
 O3-only data with no T3 table (usage ledger, background and Claude tasks, MCP claims, control outbox,
-`visibleTurnItems`, receipts) stays in `userdata/o3.sqlite` beside `statev2.sqlite`.
+`visibleTurnItems`, legacy or unsupported command receipts) stays in `userdata/o3.sqlite` beside
+`statev2.sqlite`.
 
 ## Verification
 
 - `tests/t3_shared.rs` builds T3's schema at migration 73 (`tests/fixtures/t3-statev2-73.sql`) and
   covers both directions, idempotent re-export, adoption and the schema gate.
+- `tools/test-shared-nightly` builds without executing on the host, then runs the eight
+  legacy tests and six migration-80 regressions in a credential-free, network-disabled
+  rootless container. The migration-80 fixture contains schema only from the official runtime.
+- `tools/live-fresh-context --export-database <synthetic-o3.sqlite> --reference-root <4262-package>`
+  exports migration 80 and proves O3 → T3 → O3 → T3 handover on one disposable profile,
+  preserving sixteen messages and both fresh-context markers.
 - `tests/shared_acceptance.rs` (opt-in) runs O3 on a copy of a real profile, then the real T3 runtime
   on the same copy, and reads every live thread through T3's own decoders.
 - `tools/validate-t3-shared.ts` decodes every projection row, and the events O3 wrote, with T3's

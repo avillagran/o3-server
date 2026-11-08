@@ -337,6 +337,7 @@ pub(crate) async fn handle(state: Arc<State>, req: Request<Incoming>) -> Respons
             let s = state.clone();
             let name = name.to_owned();
             let authority = authority.clone();
+            let mut browser_text = None;
             let result = if let Some(browser) = browser {
                 let _permit = permit;
                 tokio::time::timeout(
@@ -349,6 +350,10 @@ pub(crate) async fn handle(state: Arc<State>, req: Request<Incoming>) -> Respons
                         "orchestration_error",
                         "Browser operation timed out.",
                     ))
+                })
+                .map(|output| {
+                    browser_text = output.text_override;
+                    output.value
                 })
             } else if crate::mcp_projects::handles(&name) {
                 let _permit = permit;
@@ -392,7 +397,7 @@ pub(crate) async fn handle(state: Arc<State>, req: Request<Incoming>) -> Respons
                 Ok(v) => (v, false),
                 Err(v) => (v, true),
             };
-            json!({"content":[{"type":"text","text":content.to_string()}],"structuredContent":content,"isError":is_error})
+            json!({"content":[{"type":"text","text":browser_text.unwrap_or_else(||content.to_string())}],"structuredContent":content,"isError":is_error})
         }
         _ => return rpc_error(StatusCode::OK, id, -32601, "Method not found"),
     };

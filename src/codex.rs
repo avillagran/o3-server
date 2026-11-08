@@ -120,6 +120,7 @@ pub struct CodexProvider {
     home_setup: Option<std::sync::Arc<crate::provider_home::Setup>>,
     environment: Vec<(String, String)>,
     launch_args: Vec<String>,
+    managed_policy: bool,
     idle_timeout: std::time::Duration,
     client: tokio::sync::Mutex<Option<Client>>,
     actors: lifetime::Actors,
@@ -252,6 +253,7 @@ impl CodexProvider {
             home_setup: None,
             environment: Vec::new(),
             launch_args: Vec::new(),
+            managed_policy: false,
             idle_timeout: std::time::Duration::from_secs(60),
             client: tokio::sync::Mutex::new(None),
             auth_seen: Mutex::new(None),
@@ -281,6 +283,10 @@ impl CodexProvider {
         registry: Option<std::sync::Arc<crate::agent_scope::Registry>>,
     ) -> Self {
         self.agent_scopes = registry;
+        self
+    }
+    pub fn with_managed_policy(mut self, managed: bool) -> Self {
+        self.managed_policy = managed;
         self
     }
     pub fn with_launch_args(mut self, args: Vec<String>) -> Self {
@@ -429,6 +435,7 @@ impl CodexProvider {
             setup.prepare().await?;
         }
         let mut cmd = Command::new(&self.executable);
+        crate::managed_policy::provider_host_environment(&mut cmd, self.managed_policy);
         cmd.envs(self.environment.iter().cloned());
         cmd.arg("app-server").arg("--stdio");
         if let Some(home) = &self.home {
@@ -633,7 +640,8 @@ impl CodexProvider {
         let observed_goal = ready.await.map_err(|_| "Codex closed")??;
         let mut active_turn = None;
         let mut terminal_received = false;
-        let goal_command = crate::native_goal::parse(&input.text, &input.attachments);
+        let goal_text = crate::provider_input::project_text(&input.text, input.context.as_ref())?;
+        let goal_command = crate::native_goal::parse(&goal_text, &input.attachments);
         let mut goal = goals::State::new(if let Some(goal) = &observed_goal {
             goal.clone()
         } else if input.native_session_id.as_deref() == Some(tid.as_str()) {
@@ -663,10 +671,7 @@ impl CodexProvider {
                     return Ok(());
                 }
                 if let crate::native_goal::Command::Set(objective) = command {
-                    let original = std::mem::replace(&mut input.text, format!("Start working toward this goal: {objective}"));
-                    let prepared = crate::provider_input::content(&input, false);
-                    input.text = original;
-                    content = prepared?;
+                    content = crate::provider_input::projected_content(&input, &format!("Start working toward this goal: {objective}"), false)?;
                 } else if matches!(command, crate::native_goal::Command::Resume) { content.clear(); }
             }
             let mut inline = vec![];
@@ -1045,6 +1050,7 @@ impl Provider for CodexProvider {
                 .with_environment(self.environment.clone())
                 .with_home_setup(self.home_setup.clone())
                 .with_launch_args(self.launch_args.clone())
+                .with_managed_policy(self.managed_policy)
                 .with_actor_scope(self.actors.clone());
             let result = async {
                 let c = discovery.connection().await?;
@@ -1124,6 +1130,7 @@ impl Provider for CodexProvider {
                 .with_environment(self.environment.clone())
                 .with_home_setup(self.home_setup.clone())
                 .with_launch_args(self.launch_args.clone())
+                .with_managed_policy(self.managed_policy)
                 .with_actor_scope(self.actors.clone());
             let result = async {
                 let c = probe.connection().await?;
@@ -1771,7 +1778,7 @@ mod tests {
         run.cwd = home.clone();
         provider.run(run, out, controls, cancel).await.unwrap();
         provider.dispose().await.unwrap();
-        std::fs::remove_dir_all(home).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[tokio::test]
     async fn discovery_and_runtime_serialize_first_use_of_the_same_native_state_directory() {
@@ -1829,7 +1836,7 @@ mod tests {
         discovery.await.unwrap().unwrap();
         runtime.await.unwrap().unwrap();
         provider.shutdown().await;
-        std::fs::remove_dir_all(home).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[tokio::test]
     async fn signed_in_lazy_provider_is_selectable_by_clients_without_spawning() {
@@ -1855,7 +1862,7 @@ mod tests {
             "readiness spawned app-server"
         );
         let config = provider.config();
-        std::fs::remove_dir_all(&dir).unwrap();
+        // Fixture trees are retained for private container teardown.
         assert_eq!(config[0]["status"], "ready");
         // The real client rule: only `ready` providers offer their models.
         assert_eq!(config[0]["models"][0]["slug"], "a");
@@ -1886,7 +1893,7 @@ mod tests {
         std::fs::remove_file(dir.join("auth.json")).unwrap();
         provider.probe().await.unwrap();
         let signed_out = provider.config()[0]["auth"]["status"].clone();
-        std::fs::remove_dir_all(&dir).unwrap();
+        // Fixture trees are retained for private container teardown.
         assert_eq!(signed_in, "authenticated");
         if std::env::var_os("OPENAI_API_KEY").is_none() {
             assert_eq!(signed_out, "unauthenticated");
@@ -1902,7 +1909,7 @@ mod tests {
             {"slug":"a","display_name":"A","visibility":"list","priority":1}]});
         std::fs::write(dir.join("models_cache.json"), cache.to_string()).unwrap();
         let models = cached_models(Some(&dir));
-        std::fs::remove_dir_all(&dir).unwrap();
+        // Fixture trees are retained for private container teardown.
         assert_eq!(models.as_array().unwrap().len(), 2);
         assert_eq!(
             (&models[0]["slug"], &models[0]["isDefault"]),
@@ -1967,7 +1974,7 @@ mod tests {
         result.unwrap();
         assert!(completed);
         provider.shutdown().await;
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
     #[tokio::test]
     async fn large_outgoing_context_does_not_use_the_incoming_frame_limit() {
@@ -2195,6 +2202,6 @@ mod tests {
         assert!(error.contains("no rollout found for thread id"));
         drop(c);
         provider.shutdown().await;
-        std::fs::remove_dir_all(home).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

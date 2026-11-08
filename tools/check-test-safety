@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+"""Read-only preflight for the repository's test filesystem policy."""
+import argparse
+from pathlib import Path
+from test_safety import check
+
+parser=argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--full',action='store_true')
+options=parser.parse_args()
+check(Path(__file__).resolve().parent.parent,full=options.full)

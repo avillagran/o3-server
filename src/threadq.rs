@@ -900,6 +900,6 @@ mod reader_search_tests {
         assert!(search_thread(&state, &json!({"threadId":"missing", "query":"x"})).is_err());
         drop(writer);
         drop(state);
-        std::fs::remove_dir_all(root).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

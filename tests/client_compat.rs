@@ -24,11 +24,11 @@ fn spawn_server() -> (String, String) {
 
 fn spawn_with_provider(fake: bool) -> (String, String) {
     let dir = std::env::temp_dir().join(format!(
-        "o3-conformance-{}-{:?}",
+        "o3-conformance-{}-{}",
         std::process::id(),
-        std::thread::current().id()
+        o3_server::store::random_id().unwrap()
     ));
-    let _ = std::fs::remove_dir_all(&dir);
+    // Fixture trees are retained for private container teardown.
     let state = o3_server::store::State::open(&dir).unwrap();
     std::fs::write(
         state.dir.join("settings.json"),
@@ -544,7 +544,12 @@ fn protocol_rejected_before_auth() {
 #[test]
 fn projects_share_the_thread_sequence_and_replay_log() {
     let (_, c) = connected(false);
-    let p = json!({"type":"project.create","commandId":"project-create","projectId":"p1","title":"Project","workspaceRoot":std::env::temp_dir(),"scripts":[]});
+    let workspace = std::env::temp_dir().join(format!(
+        "o3-client-project-{}",
+        o3_server::store::random_id().unwrap()
+    ));
+    std::fs::create_dir(&workspace).unwrap();
+    let p = json!({"type":"project.create","commandId":"project-create","projectId":"p1","title":"Project","workspaceRoot":workspace,"scripts":[]});
     let result = c.rpc("projects.mutate", p.clone()).unwrap();
     assert_eq!(result, c.rpc("projects.mutate", p).unwrap());
     let shell = c

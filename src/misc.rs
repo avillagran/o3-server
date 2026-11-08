@@ -414,8 +414,12 @@ pub(crate) async fn create_new_scoped(
     }
     let folder = folder
         .ok_or_else(|| dispatch_error(&format!("Every folder name for \"{slug}\" is taken.")))?;
+    use crate::cleanup::Tree;
+    let folder_identity = crate::cleanup::FileTree
+        .identity(&folder)
+        .map_err(|e| dispatch_error(&e.to_string()))?;
     let cleanup = |e: String| {
-        let _ = std::fs::remove_dir_all(&folder);
+        let _ = crate::cleanup::quarantine_owned(&folder, folder_identity);
         dispatch_error(&e)
     };
     let init = proc::git(&folder, &["init", "--initial-branch=main"], Opts::WRITE).await;
@@ -424,7 +428,7 @@ pub(crate) async fn create_new_scoped(
     }
     if let Some(a) = authority {
         if let Err(e) = a.environment(s) {
-            let _ = std::fs::remove_dir_all(&folder);
+            let _ = crate::cleanup::quarantine_owned(&folder, folder_identity);
             return Err(e);
         }
     }
@@ -508,21 +512,40 @@ async fn clone_start(s: &State, p: &Value) -> Reply {
     if remote.starts_with('-') || remote.chars().any(char::is_control) {
         return Err(repository_error("clone", "The remote URL is invalid."));
     }
-    if destination.exists()
-        && destination
-            .read_dir()
-            .map(|mut d| d.next().is_some())
-            .unwrap_or(true)
-    {
-        return Err(repository_error(
-            "clone",
-            &format!("{} already exists and is not empty.", destination.display()),
-        ));
+    use crate::cleanup::Tree;
+    match crate::cleanup::FileTree.identity(&destination) {
+        Ok(identity) => {
+            if identity.kind == crate::cleanup::Kind::Directory
+                && destination
+                    .read_dir()
+                    .map(|mut entries| entries.next().is_some())
+                    .unwrap_or(true)
+            {
+                return Err(repository_error(
+                    "clone",
+                    "The destination already exists and is not empty.",
+                ));
+            }
+            return Err(repository_error("clone","The destination already exists; choose a new path. Existing directories are never replaced or removed."));
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(repository_error("clone", &error.to_string())),
     }
-    if let Some(parent) = destination.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| repository_error("clone", &e.to_string()))?;
-    }
+    let parent = destination
+        .parent()
+        .ok_or_else(|| repository_error("clone", "Missing destination parent"))?;
+    crate::cleanup::ensure_directory(parent)
+        .map_err(|e| repository_error("clone", &e.to_string()))?;
+    let staging = parent.join(format!(
+        ".o3-clone-{}",
+        crate::store::random_id().map_err(|e| repository_error("clone", &e))?
+    ));
+    std::fs::create_dir(&staging).map_err(|e| repository_error("clone", &e.to_string()))?;
+    let staging_identity = crate::cleanup::FileTree
+        .identity(&staging)
+        .map_err(|e| repository_error("clone", &e.to_string()))?;
     let dest_text = destination.to_string_lossy().into_owned();
+    let staging_text = staging.to_string_lossy().into_owned();
     // The clone blocks until it ends (capabilities.projectCloneTracking is off): at most half an hour.
     let opts = Opts {
         timeout: Duration::from_secs(1800),
@@ -532,14 +555,14 @@ async fn clone_start(s: &State, p: &Value) -> Reply {
     let parent = destination.parent().unwrap_or(Path::new("/")).to_path_buf();
     let cloned = proc::git(
         &parent,
-        &["clone", "--no-tags", "--", &remote, &dest_text],
+        &["clone", "--no-tags", "--", &remote, &staging_text],
         opts,
     )
     .await;
     match cloned {
         Ok(o) if o.ok() => {}
         Ok(o) => {
-            let _ = std::fs::remove_dir_all(&destination);
+            let _ = crate::cleanup::quarantine_owned(&staging, staging_identity);
             let detail = o
                 .stderr
                 .trim()
@@ -550,9 +573,16 @@ async fn clone_start(s: &State, p: &Value) -> Reply {
             return Err(repository_error("clone", &detail));
         }
         Err(e) => {
-            let _ = std::fs::remove_dir_all(&destination);
+            let _ = crate::cleanup::quarantine_owned(&staging, staging_identity);
             return Err(repository_error("clone", &format!("{e:?}")));
         }
+    }
+    if let Err(error) = crate::cleanup::publish_directory(&staging, &destination) {
+        let _ = crate::cleanup::quarantine_owned(&staging, staging_identity);
+        return Err(repository_error(
+            "clone",
+            &format!("Could not publish completed clone: {error}"),
+        ));
     }
     let created = crate::projects::mutate_resolved(s, &json!({"type":"project.create","commandId":format!("project-clone:{project_id}"),"projectId":project_id,"title":title,"workspaceRoot":dest_text,"createdAt":p["createdAt"],"scripts":[]})).await;
     if let Err(e) = created {

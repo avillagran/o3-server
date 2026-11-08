@@ -96,5 +96,5 @@ fn native_icon_tool_image_and_credentialed_media_use_signed_urls() {
             json!({"resource":{"_tag":"github-media","cwd":root,"url":"https://localhost/private"}})
         )
         .is_err());
-    std::fs::remove_dir_all(data).unwrap();
+    // Fixture trees are retained for private container teardown.
 }

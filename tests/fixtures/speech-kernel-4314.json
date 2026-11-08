@@ -1,0 +1,2136 @@
+{
+  "revision": "83a3674ffd84ffb33de768210c806cb1ac53fd80",
+  "effect": "4.1.2",
+  "schemaUrl": "file:///deps/node_modules/effect/dist/Schema.js",
+  "manifestSha256": "33929c89282b2a05fd182e0df0e603a7daa59df781f9a46b9fb8ab6e5636a896",
+  "sources": {
+    "packages/contracts/src/speech.ts": "2d414456f87199db5bcd61eb9a2e32f476806d0716af3d03fbbb1d9f0f2e4915",
+    "packages/shared/src/speech.ts": "af32fbbc5e6028bb6ef0c652a1ed26163da61034c1b4330a54093d749f7c9523",
+    "apps/server/src/speech/nativeLanguage.ts": "5ccbf43badbc5b670b582248164b1c9d99798c82015827bd856ac14555c9cccb",
+    "apps/server/src/speech/SpeechService.ts": "dfaf4bb34e690a70631aa78d7026e6c45197c62b5bda335653ea2eff33e2abdd",
+    "apps/server/src/speech/CloudSpeech.ts": "d601c2c224741096da1266bba6c0e83913fb1e1b52d84abba8c88e10c385279c"
+  },
+  "pcms": [
+    {
+      "byteLength": 0,
+      "error": {
+        "tag": "SpeechInvalidAudioError",
+        "message": "audio must contain at most five minutes of 16 kHz mono Float32 PCM",
+        "byteLength": 0
+      }
+    },
+    {
+      "byteLength": 1,
+      "error": {
+        "tag": "SpeechInvalidAudioError",
+        "message": "audio must contain at most five minutes of 16 kHz mono Float32 PCM",
+        "byteLength": 1
+      }
+    },
+    {
+      "byteLength": 3,
+      "error": {
+        "tag": "SpeechInvalidAudioError",
+        "message": "audio must contain at most five minutes of 16 kHz mono Float32 PCM",
+        "byteLength": 3
+      }
+    },
+    {
+      "byteLength": 4,
+      "allowed": true,
+      "samples": 1
+    },
+    {
+      "byteLength": 8,
+      "allowed": true,
+      "samples": 2
+    },
+    {
+      "byteLength": 19200000,
+      "allowed": true,
+      "samples": 4800000
+    },
+    {
+      "byteLength": 19200004,
+      "error": {
+        "tag": "SpeechInvalidAudioError",
+        "message": "audio must contain at most five minutes of 16 kHz mono Float32 PCM",
+        "byteLength": 19200004
+      }
+    },
+    {
+      "bits": [
+        0
+      ],
+      "viewOffset": 8,
+      "allowed": true,
+      "decodedBits": [
+        0
+      ]
+    },
+    {
+      "bits": [
+        2147483648
+      ],
+      "viewOffset": 8,
+      "allowed": true,
+      "decodedBits": [
+        2147483648
+      ]
+    },
+    {
+      "bits": [
+        1065353216
+      ],
+      "viewOffset": 8,
+      "allowed": true,
+      "decodedBits": [
+        1065353216
+      ]
+    },
+    {
+      "bits": [
+        3212836864
+      ],
+      "viewOffset": 8,
+      "allowed": true,
+      "decodedBits": [
+        3212836864
+      ]
+    },
+    {
+      "bits": [
+        1065353217
+      ],
+      "viewOffset": 8,
+      "error": {
+        "tag": "SpeechInvalidAudioError",
+        "message": "audio contains an invalid PCM sample",
+        "byteLength": 4
+      }
+    },
+    {
+      "bits": [
+        3212836865
+      ],
+      "viewOffset": 8,
+      "error": {
+        "tag": "SpeechInvalidAudioError",
+        "message": "audio contains an invalid PCM sample",
+        "byteLength": 4
+      }
+    },
+    {
+      "bits": [
+        2139095040
+      ],
+      "viewOffset": 8,
+      "error": {
+        "tag": "SpeechInvalidAudioError",
+        "message": "audio contains an invalid PCM sample",
+        "byteLength": 4
+      }
+    },
+    {
+      "bits": [
+        4286578688
+      ],
+      "viewOffset": 8,
+      "error": {
+        "tag": "SpeechInvalidAudioError",
+        "message": "audio contains an invalid PCM sample",
+        "byteLength": 4
+      }
+    },
+    {
+      "bits": [
+        2143289345
+      ],
+      "viewOffset": 8,
+      "error": {
+        "tag": "SpeechInvalidAudioError",
+        "message": "audio contains an invalid PCM sample",
+        "byteLength": 4
+      }
+    },
+    {
+      "bits": [
+        1
+      ],
+      "viewOffset": 8,
+      "allowed": true,
+      "decodedBits": [
+        1
+      ]
+    },
+    {
+      "bits": [
+        2147483649
+      ],
+      "viewOffset": 8,
+      "allowed": true,
+      "decodedBits": [
+        2147483649
+      ]
+    },
+    {
+      "bits": [
+        931135488
+      ],
+      "viewOffset": 8,
+      "allowed": true,
+      "decodedBits": [
+        931135488
+      ]
+    },
+    {
+      "bits": [
+        3078619136
+      ],
+      "viewOffset": 8,
+      "allowed": true,
+      "decodedBits": [
+        3078619136
+      ]
+    }
+  ],
+  "waves": [
+    {
+      "bits": [],
+      "waveHex": "524946462400000057415645666d74201000000001000100803e0000007d0000020010006461746100000000"
+    },
+    {
+      "bits": [
+        0,
+        2147483648,
+        1065353216,
+        3212836864
+      ],
+      "waveHex": "524946462c00000057415645666d74201000000001000100803e0000007d000002001000646174610800000000000000ff7f0080"
+    },
+    {
+      "bits": [
+        931135744,
+        3078619136,
+        943718784,
+        3091202048
+      ],
+      "waveHex": "524946462c00000057415645666d74201000000001000100803e0000007d0000020010006461746108000000000000000100ffff"
+    },
+    {
+      "bits": [
+        1062265173,
+        1041812745,
+        1050322215,
+        3197303213,
+        1025497735,
+        3204566096,
+        1059900056,
+        1062800152,
+        3209318224,
+        3190744798,
+        3207160378,
+        3212257516,
+        1058414453,
+        3211953037,
+        3212566941,
+        3204463417,
+        3190690312,
+        1061521945,
+        3175222373,
+        3205564327,
+        1061128916,
+        1043248771,
+        1058110352,
+        1045434821,
+        3179970579,
+        3204835341,
+        3173125380,
+        1057788472,
+        3207499260,
+        3205507976,
+        3203392321,
+        3205461675,
+        3209460625,
+        3197476305,
+        3203605552,
+        3196751903,
+        1060982599,
+        3202003853,
+        1061194513,
+        1049621862,
+        3204909293,
+        1063403206,
+        1049806660,
+        1060431043,
+        3185629478,
+        3199795127,
+        1054104519,
+        3206420533,
+        3201721263,
+        3211144642,
+        1058906270,
+        3184533630,
+        3152117531,
+        3188351512,
+        1062976281,
+        3201331271,
+        3207227408,
+        1061594304,
+        1065225500,
+        1051365742,
+        3199380491,
+        3210999431,
+        3203858976,
+        1044900001,
+        1058777769,
+        1063950221,
+        3204107592,
+        3209462184,
+        3212720635,
+        1064352611,
+        3157038536,
+        1061471726,
+        3202070230,
+        1013774530,
+        3204285636,
+        3212330989,
+        3212348575,
+        1051653356,
+        3209067644,
+        1059936878,
+        1023245904,
+        3202198009,
+        3207661022,
+        1056502351,
+        3181452672,
+        3212055565,
+        1062732993,
+        1044069279,
+        3183118319,
+        1046567095,
+        1040407713,
+        1061989590,
+        1059615505,
+        3204555493,
+        1058291104,
+        3209747813,
+        1062593540,
+        1057601186,
+        1028542213,
+        3191694980,
+        3199605818,
+        3205971156,
+        3189995132,
+        3201795693,
+        1063242039,
+        1053551425,
+        1043132138,
+        3198795260,
+        1056987912,
+        3212592281,
+        3206009020,
+        3208581967,
+        1052559802,
+        3212647319,
+        1062665158,
+        1035075574,
+        1064958142,
+        1062963981,
+        3208746871,
+        3197906138,
+        1063945524,
+        3202287498,
+        1031066952,
+        3207557482,
+        1064983879,
+        1049247416,
+        1055044833,
+        3208981841,
+        3205054338,
+        1056685230,
+        3170102125,
+        1059717126,
+        3196533309,
+        1055267626,
+        3207980743,
+        3186001372,
+        3203339789,
+        3206654978,
+        3204682249,
+        1060171665,
+        1035034224,
+        1042959330,
+        3205218012,
+        3185871709,
+        3202248242,
+        3205607826,
+        3212003957,
+        1065295990,
+        3186552220,
+        1036297774,
+        1050537187,
+        3195560071,
+        1053512973,
+        1060660968,
+        3204120766,
+        3199370262,
+        1057487005,
+        3194322700,
+        3206683295,
+        1031644703,
+        3189030815,
+        3189146958,
+        3210732423,
+        1048407350,
+        1059432704,
+        3209696610,
+        1062879794,
+        1061580128,
+        1056272311,
+        1054096886,
+        1060234323,
+        1058206656,
+        1062761908,
+        1064718634,
+        1053266505,
+        1049059375,
+        1052725283,
+        3165183389,
+        1062156143,
+        1063971469,
+        3199479306,
+        3209209569,
+        3191408153,
+        3183686069,
+        3209908487,
+        3195692842,
+        3208937971,
+        3158131453,
+        1057281299,
+        3212759106,
+        1041217987,
+        1050809194,
+        3210304814,
+        1062897570,
+        1053708506,
+        1055985770,
+        1019905981,
+        1053774991,
+        1058254154,
+        3208984805,
+        3205684770,
+        3209779560,
+        3211743537,
+        1045165631,
+        3210819398,
+        3209083397,
+        3194790636,
+        1064862011,
+        3207359908,
+        1064793176,
+        1018310247,
+        1064660548,
+        3202500206,
+        1051217969,
+        3211341662,
+        3201851735,
+        1062871691,
+        1063569955,
+        1012278866,
+        1063863699,
+        3205725526,
+        3200894017,
+        1034693896,
+        3203243695,
+        1049465177,
+        1063364919,
+        3197032189,
+        1059411644,
+        3192925583,
+        1057660049,
+        1025943586,
+        1041510873,
+        1063142144,
+        3204891947,
+        3184596133,
+        1062919423,
+        1057535201,
+        3205643924,
+        3198486774,
+        3204357124,
+        1060968390,
+        3188768522,
+        3200407761,
+        3199928521,
+        3209785929,
+        3209473614,
+        1064713450,
+        1039844351,
+        3191712523,
+        1057219248,
+        1059790662,
+        3205939757,
+        3212668576,
+        3186240249,
+        3212002575,
+        1043102959
+      ],
+      "waveHex": "524946462402000057415645666d74201000000001000100803e0000007d000002001000646174610002000070681913a92642dbff041abf6556856cd89a23ea4fab6c840f4bbe860f82e2bf3eeac462f0f97cb7c55fd715bd48021a58f70cbdf0fa4946b9a8eab707c445b8c29999da37c35cdda75e53c94560fd237cbc1f71b224725af2f1c0d11735f4b067cae98cd04efef21fffb4eedd6de4cbccaa5263067fa42a55d3058e3fc2fd18d54d4b754dc1bf99e3805d78a7fe626212c9da019fc0dc83ba83bd2bc29cad56f60396c87da73c3eeef5f685026c671758f42b1c6b10566639542fbf1e4a9197f16adb44720653e879d262b491eb1ecae46ffa329e1591d52d40de8118b476a0322f72817d6b200bfb7cc56d349ff5d842753ec8a70747a82e7d8f22ad38699d60bbef3e30fcff5431de86390da598f13ac42aaf37be7758160b491521bab7f164c827b75b868f7f11f14a0c7b27f4e0d532335c40c15fd3fc4350e3f3aeed0768ed2fed0e90ad1fd452f597206d36635b3d0f35f15879493a6c287be431d821d42f5dfd9b677475f4d2ad9bdfe8cdf35796b3e0bf9d85fe6a429880f71185285193436d9433443c2a03d533d649649d91b6539757887f19648fa39c6ce2407cc9a9b97bc902b67a6ec7142a688be8c9106d6472ac01a27441b68fcdc30a98c46423d4704adcab52fae54e4535058612216f9dbceff26e6d5a44e1b6bed659c08b5ee8ed6acf3ed14797a9991d7bac0f4be8f1418f559fb449815df15d868f15"
+    }
+  ],
+  "languages": [
+    {
+      "advertised": [],
+      "wanted": "auto",
+      "result": null
+    },
+    {
+      "advertised": [],
+      "wanted": "en",
+      "result": "en"
+    },
+    {
+      "advertised": [],
+      "wanted": "en-US",
+      "result": "en-US"
+    },
+    {
+      "advertised": [],
+      "wanted": "de",
+      "result": "de"
+    },
+    {
+      "advertised": [],
+      "wanted": "DE_de",
+      "result": "DE_de"
+    },
+    {
+      "advertised": [],
+      "wanted": "pt",
+      "result": "pt"
+    },
+    {
+      "advertised": [],
+      "wanted": "pt-BR",
+      "result": "pt-BR"
+    },
+    {
+      "advertised": [],
+      "wanted": "zh",
+      "result": "zh"
+    },
+    {
+      "advertised": [],
+      "wanted": "zh-CN",
+      "result": "zh-CN"
+    },
+    {
+      "advertised": [],
+      "wanted": "zz",
+      "result": "zz"
+    },
+    {
+      "advertised": [],
+      "wanted": "İ",
+      "result": "İ"
+    },
+    {
+      "advertised": [
+        "en"
+      ],
+      "wanted": "auto",
+      "result": null
+    },
+    {
+      "advertised": [
+        "en"
+      ],
+      "wanted": "en",
+      "result": "en"
+    },
+    {
+      "advertised": [
+        "en"
+      ],
+      "wanted": "en-US",
+      "result": "en-US"
+    },
+    {
+      "advertised": [
+        "en"
+      ],
+      "wanted": "de",
+      "result": "de"
+    },
+    {
+      "advertised": [
+        "en"
+      ],
+      "wanted": "DE_de",
+      "result": "DE_de"
+    },
+    {
+      "advertised": [
+        "en"
+      ],
+      "wanted": "pt",
+      "result": "pt"
+    },
+    {
+      "advertised": [
+        "en"
+      ],
+      "wanted": "pt-BR",
+      "result": "pt-BR"
+    },
+    {
+      "advertised": [
+        "en"
+      ],
+      "wanted": "zh",
+      "result": "zh"
+    },
+    {
+      "advertised": [
+        "en"
+      ],
+      "wanted": "zh-CN",
+      "result": "zh-CN"
+    },
+    {
+      "advertised": [
+        "en"
+      ],
+      "wanted": "zz",
+      "result": "zz"
+    },
+    {
+      "advertised": [
+        "en"
+      ],
+      "wanted": "İ",
+      "result": "İ"
+    },
+    {
+      "advertised": [
+        "de-DE",
+        "en-US"
+      ],
+      "wanted": "auto",
+      "result": null
+    },
+    {
+      "advertised": [
+        "de-DE",
+        "en-US"
+      ],
+      "wanted": "en",
+      "result": "en-US"
+    },
+    {
+      "advertised": [
+        "de-DE",
+        "en-US"
+      ],
+      "wanted": "en-US",
+      "result": "en-US"
+    },
+    {
+      "advertised": [
+        "de-DE",
+        "en-US"
+      ],
+      "wanted": "de",
+      "result": "de-DE"
+    },
+    {
+      "advertised": [
+        "de-DE",
+        "en-US"
+      ],
+      "wanted": "DE_de",
+      "result": "de-DE"
+    },
+    {
+      "advertised": [
+        "de-DE",
+        "en-US"
+      ],
+      "wanted": "pt",
+      "result": "pt"
+    },
+    {
+      "advertised": [
+        "de-DE",
+        "en-US"
+      ],
+      "wanted": "pt-BR",
+      "result": "pt-BR"
+    },
+    {
+      "advertised": [
+        "de-DE",
+        "en-US"
+      ],
+      "wanted": "zh",
+      "result": "zh"
+    },
+    {
+      "advertised": [
+        "de-DE",
+        "en-US"
+      ],
+      "wanted": "zh-CN",
+      "result": "zh-CN"
+    },
+    {
+      "advertised": [
+        "de-DE",
+        "en-US"
+      ],
+      "wanted": "zz",
+      "result": "zz"
+    },
+    {
+      "advertised": [
+        "de-DE",
+        "en-US"
+      ],
+      "wanted": "İ",
+      "result": "İ"
+    },
+    {
+      "advertised": [
+        "pt_BR",
+        "pt-PT",
+        "en"
+      ],
+      "wanted": "auto",
+      "result": null
+    },
+    {
+      "advertised": [
+        "pt_BR",
+        "pt-PT",
+        "en"
+      ],
+      "wanted": "en",
+      "result": "en"
+    },
+    {
+      "advertised": [
+        "pt_BR",
+        "pt-PT",
+        "en"
+      ],
+      "wanted": "en-US",
+      "result": "en-US"
+    },
+    {
+      "advertised": [
+        "pt_BR",
+        "pt-PT",
+        "en"
+      ],
+      "wanted": "de",
+      "result": "de"
+    },
+    {
+      "advertised": [
+        "pt_BR",
+        "pt-PT",
+        "en"
+      ],
+      "wanted": "DE_de",
+      "result": "DE_de"
+    },
+    {
+      "advertised": [
+        "pt_BR",
+        "pt-PT",
+        "en"
+      ],
+      "wanted": "pt",
+      "result": "pt_BR"
+    },
+    {
+      "advertised": [
+        "pt_BR",
+        "pt-PT",
+        "en"
+      ],
+      "wanted": "pt-BR",
+      "result": "pt_BR"
+    },
+    {
+      "advertised": [
+        "pt_BR",
+        "pt-PT",
+        "en"
+      ],
+      "wanted": "zh",
+      "result": "zh"
+    },
+    {
+      "advertised": [
+        "pt_BR",
+        "pt-PT",
+        "en"
+      ],
+      "wanted": "zh-CN",
+      "result": "zh-CN"
+    },
+    {
+      "advertised": [
+        "pt_BR",
+        "pt-PT",
+        "en"
+      ],
+      "wanted": "zz",
+      "result": "zz"
+    },
+    {
+      "advertised": [
+        "pt_BR",
+        "pt-PT",
+        "en"
+      ],
+      "wanted": "İ",
+      "result": "İ"
+    },
+    {
+      "advertised": [
+        "ZH_cn",
+        "zh-TW"
+      ],
+      "wanted": "auto",
+      "result": null
+    },
+    {
+      "advertised": [
+        "ZH_cn",
+        "zh-TW"
+      ],
+      "wanted": "en",
+      "result": "en"
+    },
+    {
+      "advertised": [
+        "ZH_cn",
+        "zh-TW"
+      ],
+      "wanted": "en-US",
+      "result": "en-US"
+    },
+    {
+      "advertised": [
+        "ZH_cn",
+        "zh-TW"
+      ],
+      "wanted": "de",
+      "result": "de"
+    },
+    {
+      "advertised": [
+        "ZH_cn",
+        "zh-TW"
+      ],
+      "wanted": "DE_de",
+      "result": "DE_de"
+    },
+    {
+      "advertised": [
+        "ZH_cn",
+        "zh-TW"
+      ],
+      "wanted": "pt",
+      "result": "pt"
+    },
+    {
+      "advertised": [
+        "ZH_cn",
+        "zh-TW"
+      ],
+      "wanted": "pt-BR",
+      "result": "pt-BR"
+    },
+    {
+      "advertised": [
+        "ZH_cn",
+        "zh-TW"
+      ],
+      "wanted": "zh",
+      "result": "ZH_cn"
+    },
+    {
+      "advertised": [
+        "ZH_cn",
+        "zh-TW"
+      ],
+      "wanted": "zh-CN",
+      "result": "ZH_cn"
+    },
+    {
+      "advertised": [
+        "ZH_cn",
+        "zh-TW"
+      ],
+      "wanted": "zz",
+      "result": "zz"
+    },
+    {
+      "advertised": [
+        "ZH_cn",
+        "zh-TW"
+      ],
+      "wanted": "İ",
+      "result": "İ"
+    },
+    {
+      "advertised": [
+        "tr",
+        "İ"
+      ],
+      "wanted": "auto",
+      "result": null
+    },
+    {
+      "advertised": [
+        "tr",
+        "İ"
+      ],
+      "wanted": "en",
+      "result": "en"
+    },
+    {
+      "advertised": [
+        "tr",
+        "İ"
+      ],
+      "wanted": "en-US",
+      "result": "en-US"
+    },
+    {
+      "advertised": [
+        "tr",
+        "İ"
+      ],
+      "wanted": "de",
+      "result": "de"
+    },
+    {
+      "advertised": [
+        "tr",
+        "İ"
+      ],
+      "wanted": "DE_de",
+      "result": "DE_de"
+    },
+    {
+      "advertised": [
+        "tr",
+        "İ"
+      ],
+      "wanted": "pt",
+      "result": "pt"
+    },
+    {
+      "advertised": [
+        "tr",
+        "İ"
+      ],
+      "wanted": "pt-BR",
+      "result": "pt-BR"
+    },
+    {
+      "advertised": [
+        "tr",
+        "İ"
+      ],
+      "wanted": "zh",
+      "result": "zh"
+    },
+    {
+      "advertised": [
+        "tr",
+        "İ"
+      ],
+      "wanted": "zh-CN",
+      "result": "zh-CN"
+    },
+    {
+      "advertised": [
+        "tr",
+        "İ"
+      ],
+      "wanted": "zz",
+      "result": "zz"
+    },
+    {
+      "advertised": [
+        "tr",
+        "İ"
+      ],
+      "wanted": "İ",
+      "result": "İ"
+    }
+  ],
+  "effective": [
+    {
+      "model": {
+        "languages": [],
+        "supportsLanguageDetection": false
+      },
+      "intent": "auto",
+      "result": "auto"
+    },
+    {
+      "model": {
+        "languages": [],
+        "supportsLanguageDetection": false
+      },
+      "intent": "en",
+      "result": "auto"
+    },
+    {
+      "model": {
+        "languages": [],
+        "supportsLanguageDetection": false
+      },
+      "intent": "de",
+      "result": "auto"
+    },
+    {
+      "model": {
+        "languages": [],
+        "supportsLanguageDetection": false
+      },
+      "intent": "zz",
+      "result": "auto"
+    },
+    {
+      "model": {
+        "languages": [],
+        "supportsLanguageDetection": true
+      },
+      "intent": "auto",
+      "result": "auto"
+    },
+    {
+      "model": {
+        "languages": [],
+        "supportsLanguageDetection": true
+      },
+      "intent": "en",
+      "result": "auto"
+    },
+    {
+      "model": {
+        "languages": [],
+        "supportsLanguageDetection": true
+      },
+      "intent": "de",
+      "result": "auto"
+    },
+    {
+      "model": {
+        "languages": [],
+        "supportsLanguageDetection": true
+      },
+      "intent": "zz",
+      "result": "auto"
+    },
+    {
+      "model": {
+        "languages": [
+          "en"
+        ],
+        "supportsLanguageDetection": false
+      },
+      "intent": "auto",
+      "result": "en"
+    },
+    {
+      "model": {
+        "languages": [
+          "en"
+        ],
+        "supportsLanguageDetection": false
+      },
+      "intent": "en",
+      "result": "en"
+    },
+    {
+      "model": {
+        "languages": [
+          "en"
+        ],
+        "supportsLanguageDetection": false
+      },
+      "intent": "de",
+      "result": "en"
+    },
+    {
+      "model": {
+        "languages": [
+          "en"
+        ],
+        "supportsLanguageDetection": false
+      },
+      "intent": "zz",
+      "result": "en"
+    },
+    {
+      "model": {
+        "languages": [
+          "de",
+          "en"
+        ],
+        "supportsLanguageDetection": false
+      },
+      "intent": "auto",
+      "result": "en"
+    },
+    {
+      "model": {
+        "languages": [
+          "de",
+          "en"
+        ],
+        "supportsLanguageDetection": false
+      },
+      "intent": "en",
+      "result": "en"
+    },
+    {
+      "model": {
+        "languages": [
+          "de",
+          "en"
+        ],
+        "supportsLanguageDetection": false
+      },
+      "intent": "de",
+      "result": "de"
+    },
+    {
+      "model": {
+        "languages": [
+          "de",
+          "en"
+        ],
+        "supportsLanguageDetection": false
+      },
+      "intent": "zz",
+      "result": "en"
+    },
+    {
+      "model": {
+        "languages": [
+          "de",
+          "fr"
+        ],
+        "supportsLanguageDetection": true
+      },
+      "intent": "auto",
+      "result": "auto"
+    },
+    {
+      "model": {
+        "languages": [
+          "de",
+          "fr"
+        ],
+        "supportsLanguageDetection": true
+      },
+      "intent": "en",
+      "result": "auto"
+    },
+    {
+      "model": {
+        "languages": [
+          "de",
+          "fr"
+        ],
+        "supportsLanguageDetection": true
+      },
+      "intent": "de",
+      "result": "de"
+    },
+    {
+      "model": {
+        "languages": [
+          "de",
+          "fr"
+        ],
+        "supportsLanguageDetection": true
+      },
+      "intent": "zz",
+      "result": "auto"
+    }
+  ],
+  "vocabularies": [
+    {
+      "input": {
+        "personal": [],
+        "project": [],
+        "hints": []
+      },
+      "result": []
+    },
+    {
+      "input": {
+        "personal": [],
+        "project": [],
+        "hints": [
+          "  Project\n name  ",
+          "Open ai",
+          "﻿New﻿word",
+          "NEL"
+        ]
+      },
+      "result": [
+        {
+          "term": "Project name",
+          "aliases": []
+        },
+        {
+          "term": "Open ai",
+          "aliases": []
+        },
+        {
+          "term": "New word",
+          "aliases": []
+        },
+        {
+          "term": "NEL",
+          "aliases": []
+        }
+      ]
+    },
+    {
+      "input": {
+        "personal": [],
+        "project": [],
+        "hints": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "   "
+        ]
+      },
+      "result": [
+        {
+          "term": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "aliases": []
+        }
+      ]
+    },
+    {
+      "input": {
+        "personal": [],
+        "project": [
+          {
+            "term": "GPT",
+            "aliases": [
+              "OpenAI",
+              "Project"
+            ]
+          }
+        ],
+        "hints": []
+      },
+      "result": [
+        {
+          "term": "GPT",
+          "aliases": [
+            "OpenAI",
+            "Project"
+          ]
+        }
+      ]
+    },
+    {
+      "input": {
+        "personal": [],
+        "project": [
+          {
+            "term": "GPT",
+            "aliases": [
+              "OpenAI",
+              "Project"
+            ]
+          }
+        ],
+        "hints": [
+          "  Project\n name  ",
+          "Open ai",
+          "﻿New﻿word",
+          "NEL"
+        ]
+      },
+      "result": [
+        {
+          "term": "Project name",
+          "aliases": []
+        },
+        {
+          "term": "Open ai",
+          "aliases": []
+        },
+        {
+          "term": "New word",
+          "aliases": []
+        },
+        {
+          "term": "NEL",
+          "aliases": []
+        },
+        {
+          "term": "GPT",
+          "aliases": [
+            "OpenAI",
+            "Project"
+          ]
+        }
+      ]
+    },
+    {
+      "input": {
+        "personal": [],
+        "project": [
+          {
+            "term": "GPT",
+            "aliases": [
+              "OpenAI",
+              "Project"
+            ]
+          }
+        ],
+        "hints": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "   "
+        ]
+      },
+      "result": [
+        {
+          "term": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "aliases": []
+        },
+        {
+          "term": "GPT",
+          "aliases": [
+            "OpenAI",
+            "Project"
+          ]
+        }
+      ]
+    },
+    {
+      "input": {
+        "personal": [],
+        "project": [
+          {
+            "term": "é",
+            "aliases": [
+              "beta"
+            ]
+          }
+        ],
+        "hints": []
+      },
+      "result": [
+        {
+          "term": "é",
+          "aliases": [
+            "beta"
+          ]
+        }
+      ]
+    },
+    {
+      "input": {
+        "personal": [],
+        "project": [
+          {
+            "term": "é",
+            "aliases": [
+              "beta"
+            ]
+          }
+        ],
+        "hints": [
+          "  Project\n name  ",
+          "Open ai",
+          "﻿New﻿word",
+          "NEL"
+        ]
+      },
+      "result": [
+        {
+          "term": "Project name",
+          "aliases": []
+        },
+        {
+          "term": "Open ai",
+          "aliases": []
+        },
+        {
+          "term": "New word",
+          "aliases": []
+        },
+        {
+          "term": "NEL",
+          "aliases": []
+        },
+        {
+          "term": "é",
+          "aliases": [
+            "beta"
+          ]
+        }
+      ]
+    },
+    {
+      "input": {
+        "personal": [],
+        "project": [
+          {
+            "term": "é",
+            "aliases": [
+              "beta"
+            ]
+          }
+        ],
+        "hints": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "   "
+        ]
+      },
+      "result": [
+        {
+          "term": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "aliases": []
+        },
+        {
+          "term": "é",
+          "aliases": [
+            "beta"
+          ]
+        }
+      ]
+    },
+    {
+      "input": {
+        "personal": [
+          {
+            "term": "OpenAI",
+            "aliases": [
+              "open ai",
+              "GPT"
+            ]
+          }
+        ],
+        "project": [],
+        "hints": []
+      },
+      "result": [
+        {
+          "term": "OpenAI",
+          "aliases": [
+            "open ai",
+            "GPT"
+          ]
+        }
+      ]
+    },
+    {
+      "input": {
+        "personal": [
+          {
+            "term": "OpenAI",
+            "aliases": [
+              "open ai",
+              "GPT"
+            ]
+          }
+        ],
+        "project": [],
+        "hints": [
+          "  Project\n name  ",
+          "Open ai",
+          "﻿New﻿word",
+          "NEL"
+        ]
+      },
+      "result": [
+        {
+          "term": "Project name",
+          "aliases": []
+        },
+        {
+          "term": "New word",
+          "aliases": []
+        },
+        {
+          "term": "NEL",
+          "aliases": []
+        },
+        {
+          "term": "OpenAI",
+          "aliases": [
+            "open ai",
+            "GPT"
+          ]
+        }
+      ]
+    },
+    {
+      "input": {
+        "personal": [
+          {
+            "term": "OpenAI",
+            "aliases": [
+              "open ai",
+              "GPT"
+            ]
+          }
+        ],
+        "project": [],
+        "hints": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "   "
+        ]
+      },
+      "result": [
+        {
+          "term": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "aliases": []
+        },
+        {
+          "term": "OpenAI",
+          "aliases": [
+            "open ai",
+            "GPT"
+          ]
+        }
+      ]
+    },
+    {
+      "input": {
+        "personal": [
+          {
+            "term": "OpenAI",
+            "aliases": [
+              "open ai",
+              "GPT"
+            ]
+          }
+        ],
+        "project": [
+          {
+            "term": "GPT",
+            "aliases": [
+              "OpenAI",
+              "Project"
+            ]
+          }
+        ],
+        "hints": []
+      },
+      "result": [
+        {
+          "term": "GPT",
+          "aliases": [
+            "OpenAI",
+            "Project"
+          ]
+        }
+      ]
+    },
+    {
+      "input": {
+        "personal": [
+          {
+            "term": "OpenAI",
+            "aliases": [
+              "open ai",
+              "GPT"
+            ]
+          }
+        ],
+        "project": [
+          {
+            "term": "GPT",
+            "aliases": [
+              "OpenAI",
+              "Project"
+            ]
+          }
+        ],
+        "hints": [
+          "  Project\n name  ",
+          "Open ai",
+          "﻿New﻿word",
+          "NEL"
+        ]
+      },
+      "result": [
+        {
+          "term": "Project name",
+          "aliases": []
+        },
+        {
+          "term": "New word",
+          "aliases": []
+        },
+        {
+          "term": "NEL",
+          "aliases": []
+        },
+        {
+          "term": "GPT",
+          "aliases": [
+            "OpenAI",
+            "Project"
+          ]
+        }
+      ]
+    },
+    {
+      "input": {
+        "personal": [
+          {
+            "term": "OpenAI",
+            "aliases": [
+              "open ai",
+              "GPT"
+            ]
+          }
+        ],
+        "project": [
+          {
+            "term": "GPT",
+            "aliases": [
+              "OpenAI",
+              "Project"
+            ]
+          }
+        ],
+        "hints": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "   "
+        ]
+      },
+      "result": [
+        {
+          "term": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "aliases": []
+        },
+        {
+          "term": "GPT",
+          "aliases": [
+            "OpenAI",
+            "Project"
+          ]
+        }
+      ]
+    },
+    {
+      "input": {
+        "personal": [
+          {
+            "term": "OpenAI",
+            "aliases": [
+              "open ai",
+              "GPT"
+            ]
+          }
+        ],
+        "project": [
+          {
+            "term": "é",
+            "aliases": [
+              "beta"
+            ]
+          }
+        ],
+        "hints": []
+      },
+      "result": [
+        {
+          "term": "é",
+          "aliases": [
+            "beta"
+          ]
+        },
+        {
+          "term": "OpenAI",
+          "aliases": [
+            "open ai",
+            "GPT"
+          ]
+        }
+      ]
+    },
+    {
+      "input": {
+        "personal": [
+          {
+            "term": "OpenAI",
+            "aliases": [
+              "open ai",
+              "GPT"
+            ]
+          }
+        ],
+        "project": [
+          {
+            "term": "é",
+            "aliases": [
+              "beta"
+            ]
+          }
+        ],
+        "hints": [
+          "  Project\n name  ",
+          "Open ai",
+          "﻿New﻿word",
+          "NEL"
+        ]
+      },
+      "result": [
+        {
+          "term": "Project name",
+          "aliases": []
+        },
+        {
+          "term": "New word",
+          "aliases": []
+        },
+        {
+          "term": "NEL",
+          "aliases": []
+        },
+        {
+          "term": "é",
+          "aliases": [
+            "beta"
+          ]
+        },
+        {
+          "term": "OpenAI",
+          "aliases": [
+            "open ai",
+            "GPT"
+          ]
+        }
+      ]
+    },
+    {
+      "input": {
+        "personal": [
+          {
+            "term": "OpenAI",
+            "aliases": [
+              "open ai",
+              "GPT"
+            ]
+          }
+        ],
+        "project": [
+          {
+            "term": "é",
+            "aliases": [
+              "beta"
+            ]
+          }
+        ],
+        "hints": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "   "
+        ]
+      },
+      "result": [
+        {
+          "term": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "aliases": []
+        },
+        {
+          "term": "é",
+          "aliases": [
+            "beta"
+          ]
+        },
+        {
+          "term": "OpenAI",
+          "aliases": [
+            "open ai",
+            "GPT"
+          ]
+        }
+      ]
+    },
+    {
+      "input": {
+        "personal": [
+          {
+            "term": "é",
+            "aliases": [
+              "Beta"
+            ]
+          }
+        ],
+        "project": [],
+        "hints": []
+      },
+      "result": [
+        {
+          "term": "é",
+          "aliases": [
+            "Beta"
+          ]
+        }
+      ]
+    },
+    {
+      "input": {
+        "personal": [
+          {
+            "term": "é",
+            "aliases": [
+              "Beta"
+            ]
+          }
+        ],
+        "project": [],
+        "hints": [
+          "  Project\n name  ",
+          "Open ai",
+          "﻿New﻿word",
+          "NEL"
+        ]
+      },
+      "result": [
+        {
+          "term": "Project name",
+          "aliases": []
+        },
+        {
+          "term": "Open ai",
+          "aliases": []
+        },
+        {
+          "term": "New word",
+          "aliases": []
+        },
+        {
+          "term": "NEL",
+          "aliases": []
+        },
+        {
+          "term": "é",
+          "aliases": [
+            "Beta"
+          ]
+        }
+      ]
+    },
+    {
+      "input": {
+        "personal": [
+          {
+            "term": "é",
+            "aliases": [
+              "Beta"
+            ]
+          }
+        ],
+        "project": [],
+        "hints": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "   "
+        ]
+      },
+      "result": [
+        {
+          "term": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "aliases": []
+        },
+        {
+          "term": "é",
+          "aliases": [
+            "Beta"
+          ]
+        }
+      ]
+    },
+    {
+      "input": {
+        "personal": [
+          {
+            "term": "é",
+            "aliases": [
+              "Beta"
+            ]
+          }
+        ],
+        "project": [
+          {
+            "term": "GPT",
+            "aliases": [
+              "OpenAI",
+              "Project"
+            ]
+          }
+        ],
+        "hints": []
+      },
+      "result": [
+        {
+          "term": "GPT",
+          "aliases": [
+            "OpenAI",
+            "Project"
+          ]
+        },
+        {
+          "term": "é",
+          "aliases": [
+            "Beta"
+          ]
+        }
+      ]
+    },
+    {
+      "input": {
+        "personal": [
+          {
+            "term": "é",
+            "aliases": [
+              "Beta"
+            ]
+          }
+        ],
+        "project": [
+          {
+            "term": "GPT",
+            "aliases": [
+              "OpenAI",
+              "Project"
+            ]
+          }
+        ],
+        "hints": [
+          "  Project\n name  ",
+          "Open ai",
+          "﻿New﻿word",
+          "NEL"
+        ]
+      },
+      "result": [
+        {
+          "term": "Project name",
+          "aliases": []
+        },
+        {
+          "term": "Open ai",
+          "aliases": []
+        },
+        {
+          "term": "New word",
+          "aliases": []
+        },
+        {
+          "term": "NEL",
+          "aliases": []
+        },
+        {
+          "term": "GPT",
+          "aliases": [
+            "OpenAI",
+            "Project"
+          ]
+        },
+        {
+          "term": "é",
+          "aliases": [
+            "Beta"
+          ]
+        }
+      ]
+    },
+    {
+      "input": {
+        "personal": [
+          {
+            "term": "é",
+            "aliases": [
+              "Beta"
+            ]
+          }
+        ],
+        "project": [
+          {
+            "term": "GPT",
+            "aliases": [
+              "OpenAI",
+              "Project"
+            ]
+          }
+        ],
+        "hints": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "   "
+        ]
+      },
+      "result": [
+        {
+          "term": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "aliases": []
+        },
+        {
+          "term": "GPT",
+          "aliases": [
+            "OpenAI",
+            "Project"
+          ]
+        },
+        {
+          "term": "é",
+          "aliases": [
+            "Beta"
+          ]
+        }
+      ]
+    },
+    {
+      "input": {
+        "personal": [
+          {
+            "term": "é",
+            "aliases": [
+              "Beta"
+            ]
+          }
+        ],
+        "project": [
+          {
+            "term": "é",
+            "aliases": [
+              "beta"
+            ]
+          }
+        ],
+        "hints": []
+      },
+      "result": [
+        {
+          "term": "é",
+          "aliases": [
+            "beta"
+          ]
+        }
+      ]
+    },
+    {
+      "input": {
+        "personal": [
+          {
+            "term": "é",
+            "aliases": [
+              "Beta"
+            ]
+          }
+        ],
+        "project": [
+          {
+            "term": "é",
+            "aliases": [
+              "beta"
+            ]
+          }
+        ],
+        "hints": [
+          "  Project\n name  ",
+          "Open ai",
+          "﻿New﻿word",
+          "NEL"
+        ]
+      },
+      "result": [
+        {
+          "term": "Project name",
+          "aliases": []
+        },
+        {
+          "term": "Open ai",
+          "aliases": []
+        },
+        {
+          "term": "New word",
+          "aliases": []
+        },
+        {
+          "term": "NEL",
+          "aliases": []
+        },
+        {
+          "term": "é",
+          "aliases": [
+            "beta"
+          ]
+        }
+      ]
+    },
+    {
+      "input": {
+        "personal": [
+          {
+            "term": "é",
+            "aliases": [
+              "Beta"
+            ]
+          }
+        ],
+        "project": [
+          {
+            "term": "é",
+            "aliases": [
+              "beta"
+            ]
+          }
+        ],
+        "hints": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "   "
+        ]
+      },
+      "result": [
+        {
+          "term": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "aliases": []
+        },
+        {
+          "term": "é",
+          "aliases": [
+            "beta"
+          ]
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    "Whole pinned native functions; no engine or HTTP",
+    "PCM max length tested with synthetic raw samples",
+    "Unicode locale and lone-surrogate representation require separate qualification"
+  ]
+}

@@ -29,7 +29,7 @@ pub fn bin_dir() -> PathBuf {
 fn init_process() {
     INIT.call_once(|| {
         let bin = bin_dir();
-        let _ = std::fs::remove_dir_all(&bin);
+        // Fixture trees are retained for private container teardown.
         std::fs::create_dir_all(&bin).unwrap();
         let script = |name: &str, body: &str| {
             use std::os::unix::fs::PermissionsExt;
@@ -59,11 +59,6 @@ pub struct Env {
     pub state: PathBuf,
     pub conn: Connection,
 }
-impl Drop for Env {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.scratch);
-    }
-}
 
 pub fn setup(name: &str) -> Env {
     init_process();
@@ -73,7 +68,7 @@ pub fn setup(name: &str) -> Env {
         name,
         COUNTER.fetch_add(1, Ordering::Relaxed)
     ));
-    let _ = std::fs::remove_dir_all(&scratch);
+    // Fixture trees are retained for private container teardown.
     let state = scratch.join("userdata");
     std::fs::create_dir_all(&state).unwrap();
     let st = o3_server::store::State::open(&state).unwrap();

@@ -1,4 +1,6 @@
 mod common;
+#[path = "support/worktree_removal.rs"]
+mod retained_worktrees;
 mod support;
 use serde_json::{json, Value};
 use std::{
@@ -139,6 +141,7 @@ struct Fixture {
     s: support::Server,
     c: Connection,
     root: PathBuf,
+    removal: std::sync::Arc<retained_worktrees::RetainingExecutor>,
     auth: String,
     sid: String,
     claude: Arc<o3_server::claude::ClaudeProvider>,
@@ -149,7 +152,10 @@ impl Fixture {
         let peer = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/workspace-peer.py");
         let claude = Arc::new(o3_server::claude::ClaudeProvider::new(peer.clone()));
         let codex = Arc::new(o3_server::codex::CodexProvider::new(peer, None));
+        let installed = Arc::new(std::sync::Mutex::new(None));
+        let configure = installed.clone();
         let s = support::start(|s| {
+            *configure.lock().unwrap() = Some(retained_worktrees::RetainingExecutor::install(s));
             s.streams.terminals.set_shell("/bin/sh");
             std::fs::write(s.dir.join("settings.json"),json!({"enableAgentBrowserAccess":false,"worktreesDirectory":s.dir.join("managed")}).to_string()).unwrap();
             *s.provider.lock().unwrap() = Some(Arc::new(o3_server::provider::Providers {
@@ -188,10 +194,12 @@ impl Fixture {
             .unwrap()
             .into();
         let sid = session(&s.base, &auth);
+        let removal = installed.lock().unwrap().clone().unwrap();
         Self {
             s,
             c,
             root,
+            removal,
             auth,
             sid,
             claude,
@@ -402,6 +410,8 @@ fn binding_failure_rolls_back_continuation_and_owned_git_resources_but_partial_f
     );
     assert_eq!(count(&f.s, "SELECT count(*) FROM workspace_detaches"), 0);
     assert!(!f.s.dir.join("managed/repo/feature-retry").exists());
+    f.removal
+        .assert_retained_worktree(&f.s.dir.join("managed/repo/feature-retry"));
     assert!(!git(&f.root, &["branch", "--list", "feature/retry"]).contains("feature/retry"));
     f.s.state
         .db
@@ -451,6 +461,8 @@ fn concurrent_handoff_is_serialized_and_ui_binding_race_rolls_back_only_the_crea
     assert_eq!(projection(&f.c)["thread"]["worktreePath"], json!(other));
     assert!(other.exists());
     assert!(!f.s.dir.join("managed/repo/feature-race").exists());
+    f.removal
+        .assert_retained_worktree(&f.s.dir.join("managed/repo/feature-race"));
     assert!(git(&f.root, &["branch", "--list", "feature/race"]).is_empty());
     assert_eq!(
         count(&f.s, "SELECT count(*) FROM records WHERE kind='messages'"),
@@ -485,6 +497,8 @@ fn native_authority_is_rechecked_after_checkout_before_binding_or_continuation()
     denied(pending.join().unwrap(), "capability_denied");
     assert!(projection(&f.c)["thread"]["worktreePath"].is_null());
     assert!(!f.s.dir.join("managed/repo/feature-stale").exists());
+    f.removal
+        .assert_retained_worktree(&f.s.dir.join("managed/repo/feature-stale"));
     assert!(git(&f.root, &["branch", "--list", "feature/stale"]).is_empty());
     assert_eq!(
         count(&f.s, "SELECT count(*) FROM records WHERE kind='messages'"),

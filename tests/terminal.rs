@@ -542,26 +542,136 @@ fn output_flow_control_bounds_unacknowledged_chunks() {
 }
 
 #[test]
-fn provider_instance_environment_reaches_pty_and_explicit_env_wins() {
+fn provider_instance_environment_reaches_pty_and_native_instance_values_win() {
     let e = common::setup("terminal-provider-env");
     let cwd = e.dir("workspace");
     e.conn.rpc("server.updateSettings", json!({"patch":{"providerInstances":{"custom":{"driver":"codex","environment":[{"name":"O3_ENV_PROOF","value":"instance"},{"name":"O3_SECRET_PROOF","value":"private","sensitive":true}]}}}})).unwrap();
     e.conn.rpc("terminal.open", json!({"threadId":"t","terminalId":"env","cwd":cwd,"providerInstanceId":"custom","env":{"O3_ENV_PROOF":"explicit"}})).unwrap();
     e.conn.rpc("terminal.write", json!({"threadId":"t","terminalId":"env","data":"printf 'RESULT:%s:%s\\n' \"$O3_ENV_PROOF\" \"$O3_SECRET_PROOF\"\n"})).unwrap();
-    let items = common::collect(
-        &e.conn,
-        "terminal.attach",
-        json!({"threadId":"t","terminalId":"env"}),
-        |v| v.to_string().contains("RESULT:explicit:private"),
-    );
-    assert!(
-        items
-            .iter()
-            .any(|v| v.to_string().contains("RESULT:explicit:private")),
-        "{items:?}"
-    );
+    let deadline = std::time::Instant::now() + T;
+    let complete = std::cell::Cell::new(false);
+    let mut items = Vec::new();
+    let mut output = String::new();
+    e.conn
+        .subscribe(
+            "terminal.attach",
+            json!({"threadId":"t","terminalId":"env"}),
+            || complete.get() || std::time::Instant::now() >= deadline,
+            |item| {
+                if let Some(item) = item {
+                    if let Some(history) = item["snapshot"]["history"].as_str() {
+                        output = history.to_owned();
+                    }
+                    if let Some(data) = item["data"].as_str() {
+                        output.push_str(data);
+                    }
+                    complete.set(output.contains("RESULT:instance:private"));
+                    items.push(item);
+                }
+                Ok(())
+            },
+        )
+        .unwrap();
+    assert!(output.contains("RESULT:instance:private"), "{items:?}");
     e.conn
         .rpc("terminal.close", json!({"threadId":"t","terminalId":"env"}))
+        .unwrap();
+}
+
+#[test]
+fn provider_terminal_launch_rejects_missing_instances_and_refreshes_private_environment() {
+    let e = common::setup("terminal-provider-refresh");
+    let cwd = e.dir("workspace");
+    let missing = e.conn.rpc("terminal.open", json!({"threadId":"t","terminalId":"missing","cwd":cwd,"providerInstanceId":"notInstalled"})).unwrap_err();
+    assert!(
+        missing.contains("Provider instance is not available: notInstalled"),
+        "{missing}"
+    );
+    for (index, secret) in ["private-first", "private-second-longer"]
+        .iter()
+        .enumerate()
+    {
+        e.conn.rpc("server.updateSettings", json!({"patch":{"providerInstances":{"custom":{"driver":"codex","environment":[{"name":"O3_ROTATED_SECRET","value":secret,"sensitive":true}]}}}})).unwrap();
+        let operation = if index == 0 {
+            "terminal.open"
+        } else {
+            "terminal.restart"
+        };
+        let snapshot = e.conn.rpc(operation, json!({"threadId":"t","terminalId":"private","cwd":cwd,"providerInstanceId":"custom","cols":80,"rows":24})).unwrap();
+        assert!(snapshot.get("env").is_none());
+        assert!(!snapshot.to_string().contains(secret));
+        e.conn.rpc("terminal.write", json!({"threadId":"t","terminalId":"private","data":"printf 'SECRET-LENGTH:%s:end\\n' \"${#O3_ROTATED_SECRET}\"\n"})).unwrap();
+        let deadline = std::time::Instant::now() + T;
+        let complete = std::cell::Cell::new(false);
+        let expected = format!("SECRET-LENGTH:{}:end", secret.len());
+        let mut output = String::new();
+        e.conn
+            .subscribe(
+                "terminal.attach",
+                json!({"threadId":"t","terminalId":"private"}),
+                || complete.get() || std::time::Instant::now() >= deadline,
+                |item| {
+                    if let Some(item) = item {
+                        if let Some(history) = item["snapshot"]["history"].as_str() {
+                            output = history.to_owned();
+                        }
+                        if let Some(data) = item["data"].as_str() {
+                            output.push_str(data);
+                        }
+                        complete.set(output.contains(&expected));
+                        assert!(!item.to_string().contains(secret));
+                    }
+                    Ok(())
+                },
+            )
+            .unwrap();
+        assert!(output.contains(&expected), "{output:?}");
+    }
+    e.conn
+        .rpc(
+            "terminal.close",
+            json!({"threadId":"t","terminalId":"private"}),
+        )
+        .unwrap();
+}
+
+#[test]
+fn provider_terminal_identifier_decodes_before_private_settings_or_pty_launch() {
+    let e = common::setup("terminal-provider-id");
+    let cwd = e.dir("workspace");
+    for value in [
+        Value::Null,
+        json!(false),
+        json!(7),
+        json!({}),
+        json!([]),
+        json!(""),
+        json!(" "),
+        json!("1codex"),
+        json!("__proto__"),
+        json!("not.valid"),
+        json!("a".repeat(65)),
+        json!("日本"),
+    ] {
+        let failure = e
+            .conn
+            .rpc(
+                "terminal.open",
+                json!({"threadId":"t","terminalId":"invalid","cwd":cwd,"providerInstanceId":value}),
+            )
+            .unwrap_err();
+        assert!(
+            failure.contains("providerInstanceId"),
+            "{value:?}: {failure}"
+        );
+    }
+    let result = e.conn.rpc("terminal.open", json!({"threadId":"t","terminalId":"trimmed","cwd":cwd,"providerInstanceId":" \u{feff}codex\u{a0} "})).unwrap();
+    assert_eq!(result["status"], "running");
+    e.conn
+        .rpc(
+            "terminal.close",
+            json!({"threadId":"t","terminalId":"trimmed"}),
+        )
         .unwrap();
 }
 
@@ -624,8 +734,74 @@ fn bounded_history_survives_state_reopen_for_attach_and_open() {
         .connect()
         .rpc(
             "terminal.close",
-            json!({"threadId":"persist","terminalId":"term-1"}),
+            json!({"threadId":"persist","terminalId":"term-1","deleteHistory":true}),
         )
         .unwrap();
     assert_eq!(std::fs::read_dir(history_dir).unwrap().count(), 0);
+}
+
+#[test]
+fn close_preserves_history_until_explicit_deletion_including_closed_sessions() {
+    let (s, cwd) = server();
+    let c = s.connect();
+    for (thread, terminal, marker) in [
+        ("keep", "one", "KEEP-HISTORY"),
+        ("keep", "two", "BULK-HISTORY"),
+        ("other", "one", "OTHER-HISTORY"),
+    ] {
+        open(&c, thread, terminal, &cwd);
+        let mut tail = attach(s.connect(), thread, terminal, json!({}));
+        tail.next(T);
+        write(&c, thread, terminal, &format!("echo {marker}; exit\n"));
+        tail.until(T, |e| {
+            e["type"] == "exited" || e["snapshot"]["status"] == "exited"
+        });
+    }
+    let history_dir = s.dir.join("terminal-history");
+    c.rpc(
+        "terminal.close",
+        json!({"threadId":"keep","terminalId":"one"}),
+    )
+    .unwrap();
+    assert_eq!(std::fs::read_dir(&history_dir).unwrap().count(), 3);
+    let reopened = open(&c, "keep", "one", &cwd);
+    assert!(reopened["history"]
+        .as_str()
+        .unwrap()
+        .contains("KEEP-HISTORY"));
+    c.rpc(
+        "terminal.close",
+        json!({"threadId":"keep","terminalId":"one"}),
+    )
+    .unwrap();
+    // Explicit deletion applies even after the process/session was already removed.
+    c.rpc(
+        "terminal.close",
+        json!({"threadId":"keep","terminalId":"one","deleteHistory":true}),
+    )
+    .unwrap();
+    assert_eq!(std::fs::read_dir(&history_dir).unwrap().count(), 2);
+    c.rpc(
+        "terminal.close",
+        json!({"threadId":"keep","terminalId":"two"}),
+    )
+    .unwrap();
+    // Bulk deletion includes histories whose sessions are no longer in memory.
+    c.rpc(
+        "terminal.close",
+        json!({"threadId":"keep","deleteHistory":true}),
+    )
+    .unwrap();
+    assert_eq!(std::fs::read_dir(&history_dir).unwrap().count(), 1);
+    let restored = start(|state| state.streams.terminals.restore(&history_dir).unwrap());
+    let mut other = attach(restored.connect(), "other", "one", json!({"resume":true}));
+    assert!(other.next(T)["snapshot"]["history"]
+        .as_str()
+        .unwrap()
+        .contains("OTHER-HISTORY"));
+    let deleted = open(&restored.connect(), "keep", "one", &cwd);
+    assert!(!deleted["history"]
+        .as_str()
+        .unwrap()
+        .contains("KEEP-HISTORY"));
 }

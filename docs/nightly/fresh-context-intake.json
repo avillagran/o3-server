@@ -1,0 +1,73 @@
+{
+  "reference": {
+    "tag": "v0.1.8-nightly.20261106.4262",
+    "commit": "c55db3e9c72fdf584f4b54192fb39beb88667b59",
+    "effect": "4.1.2"
+  },
+  "feature": "message.dispatch.freshContext",
+  "status": "candidate-capability-enabled-not-deployed",
+  "native": {
+    "claude": "2.1.318",
+    "codex": "0.167.0",
+    "turnsPerScenario": 8,
+    "proved": [
+      "old-context-recall",
+      "fresh-context-forgetting",
+      "same-provider-continuation",
+      "post-reset-provider-switch",
+      "changed-native-identities",
+      "visible-history-preserved"
+    ],
+    "isolation": "rootless-podman-readonly-source-and-binaries-tmpfs-provider-homes"
+  },
+  "differential": {
+    "sourceFunctionsExecuted": true,
+    "boundaryCases": 32,
+    "providerThreadCases": 12,
+    "sessionReleaseCases": 16,
+    "nativeReferenceRuntime": {
+      "version": "v0.1.8-nightly.20261106.4262",
+      "archiveSha256": "5df94ca15c4f68f749fa5540fbb9d5ca879ca8750ac43dd2704f6a18899ed6d5",
+      "turns": 8,
+      "behavioralResultsMatch": true,
+      "publicRecordsValidated": 110,
+      "eventsValidated": 264,
+      "schemaRejections": 0
+    }
+  },
+  "sharedState": {
+    "acceptedMigrationHead": 80,
+    "exportedRecords": 81,
+    "freshRuns": 2,
+    "preservedMessages": 16,
+    "eventsValidated": 80,
+    "schemaRejections": 0,
+    "referenceMigration80Acceptance": true,
+    "legacyMigrationHeads": [
+      73
+    ],
+    "runtimeHandover": [
+      "o3-to-t3",
+      "t3-to-o3",
+      "o3-return-to-t3"
+    ],
+    "handoverPublicRecordsValidated": 80,
+    "handoverEventsValidated": 86,
+    "focusedRegressions": 6,
+    "legacyRegressions": 8
+  },
+  "regressionsFixed": [
+    "multi-thread-sessions-kept-alive",
+    "context-cost-currency-shape",
+    "legacy-context-cost-repair",
+    "preserve-imported-cost-currency",
+    "validator-rejects-version-mismatch",
+    "validator-fails-on-rejected-data"
+  ],
+  "remaining": [
+    "desktop-composer-live-server-check",
+    "scheduled-task-shared-storage-and-lifecycle",
+    "full-platform-parity-audit"
+  ],
+  "taskModeEvidence": "task-mode-intake.json"
+}

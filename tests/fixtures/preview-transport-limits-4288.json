@@ -1,0 +1,111 @@
+{
+  "revision": "32a0531748c44b25072d7495ce0b9bd7e9450a87",
+  "relaySource": {
+    "file": "apps/desktop/src/preview/CdpRelay.ts",
+    "sha256": "9c7aa34d4b110777c896f412be1f4eff6c60f08d39fe9b3bae2ad69f22f45754"
+  },
+  "playwright": {
+    "version": "1.60.0",
+    "url": "https://raw.githubusercontent.com/microsoft/playwright/v1.60.0/packages/playwright-core/src/server/transport.ts",
+    "sha256": "e6b580f46cf8b45db46c1a95a438a6393b523666eba6aa0c6dd770c5818b411f",
+    "receiveBytes": 268435456
+  },
+  "nativeSerializedValueBudget": 67108864,
+  "cases": [
+    {
+      "input": {
+        "text": "x",
+        "repeat": 0
+      },
+      "expected": {
+        "fits": true,
+        "serializedUtf8Bytes": 75,
+        "serializedUtf16Units": 73
+      }
+    },
+    {
+      "input": {
+        "text": "x",
+        "repeat": 4194305
+      },
+      "expected": {
+        "fits": true,
+        "serializedUtf8Bytes": 4194380,
+        "serializedUtf16Units": 4194378
+      }
+    },
+    {
+      "input": {
+        "text": "x",
+        "repeat": 5242880
+      },
+      "expected": {
+        "fits": true,
+        "serializedUtf8Bytes": 5242955,
+        "serializedUtf16Units": 5242953
+      }
+    },
+    {
+      "input": {
+        "text": "界",
+        "repeat": 2097152
+      },
+      "expected": {
+        "fits": true,
+        "serializedUtf8Bytes": 6291531,
+        "serializedUtf16Units": 2097225
+      }
+    },
+    {
+      "input": {
+        "text": "🙂",
+        "repeat": 1048576
+      },
+      "expected": {
+        "fits": true,
+        "serializedUtf8Bytes": 4194379,
+        "serializedUtf16Units": 2097225
+      }
+    },
+    {
+      "input": {
+        "text": "\"",
+        "repeat": 1048576
+      },
+      "expected": {
+        "fits": true,
+        "serializedUtf8Bytes": 2097227,
+        "serializedUtf16Units": 2097225
+      }
+    }
+  ],
+  "budgetCases": [
+    {
+      "input": {
+        "sharedStringLength": 1048576,
+        "copies": 63
+      },
+      "expected": {
+        "fits": true
+      }
+    },
+    {
+      "input": {
+        "sharedStringLength": 1048576,
+        "copies": 64
+      },
+      "expected": {
+        "fits": false
+      }
+    },
+    {
+      "input": {
+        "sharedStringLength": 1048576,
+        "copies": 65
+      },
+      "expected": {
+        "fits": false
+      }
+    }
+  ]
+}

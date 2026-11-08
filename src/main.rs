@@ -19,7 +19,12 @@ Commands:
   auth session revoke ID    Revoke a session
   auth pairing create       Create a one-time pairing credential
   service install           Install the user service
+  shared-profile-readiness  Inspect legacy webhook handover without changing the profile
   --version                 Print the version
+
+Local speech startup (optional, no PATH discovery):
+  --speech-node PATH        Exact admitted Node 26.13.0 executable
+  --speech-bundle DIR       Installed pinned engine bundle (contains graph/)
 
 The profile comes from T3CODE_HOME (default ~/.t3).
 ";
@@ -43,6 +48,7 @@ fn ttl(s: &str) -> std::io::Result<i64> {
         .ok_or_else(|| std::io::Error::other("invalid TTL"))
 }
 fn main() -> std::io::Result<()> {
+    let launcher_parent = o3_server::desktop_startup::parent_id();
     o3_server::heap::configure();
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.first().is_some_and(|s| s == "__document-text") {
@@ -60,6 +66,9 @@ fn main() -> std::io::Result<()> {
     if args.iter().any(|a| a == "--help" || a == "-h") {
         print!("{USAGE}");
         return Ok(());
+    }
+    if let Some(code) = o3_server::shared_readiness::run_cli(&args) {
+        std::process::exit(code);
     }
     if args.first().map(String::as_str) == Some("__ssh-helper") {
         match args.get(1).map(String::as_str) {
@@ -109,7 +118,55 @@ fn main() -> std::io::Result<()> {
     {
         return o3_server::bridge::cli(&args);
     }
-    let base = o3_server::profile::base_dir(&args)?;
+    let is_serving = args
+        .first()
+        .is_none_or(|arg| matches!(arg.as_str(), "serve" | "start") || arg.starts_with('-'));
+    let speech_config = if is_serving {
+        o3_server::speech_runtime::Config::from_args(&args).map_err(std::io::Error::other)?
+    } else {
+        None
+    };
+    let mut startup = if is_serving {
+        Some(
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?
+                .block_on({
+                    // SAFETY: this is the sole startup reader, before providers or
+                    // profile discovery; the trusted launcher transfers its channels.
+                    unsafe { o3_server::desktop_startup::Startup::read(&args) }
+                })?,
+        )
+    } else {
+        None
+    };
+    let bootstrap = startup
+        .as_ref()
+        .and_then(|startup| startup.envelope.as_ref());
+    let desktop_mode = startup.as_ref().is_some_and(|startup| startup.desktop);
+    let watch_launcher = startup
+        .as_ref()
+        .is_some_and(|startup| startup.parent_watch_enabled(launcher_parent));
+    let mut profile_args = args.clone();
+    let explicit_home = option(&args, "--base-dir")
+        .map(str::to_owned)
+        .or_else(|| std::env::var("T3CODE_HOME").ok());
+    if explicit_home
+        .as_deref()
+        .is_none_or(|home| home.trim().is_empty())
+    {
+        if let Some(home) = bootstrap.and_then(|bootstrap| bootstrap.home()) {
+            if let Some(index) = profile_args
+                .windows(2)
+                .position(|pair| pair[0] == "--base-dir")
+            {
+                profile_args[index + 1] = home.into();
+            } else {
+                profile_args.extend(["--base-dir".into(), home.into()]);
+            }
+        }
+    }
+    let base = o3_server::profile::base_dir(&profile_args)?;
     let dir = base.join("userdata");
     if args.starts_with(&["service".into(), "install".into()]) {
         return o3_server::service::install(&base, args.iter().any(|s| s == "--dry-run"));
@@ -121,15 +178,81 @@ fn main() -> std::io::Result<()> {
     }
     // Before anything creates o3 files, which would pollute another server's profile.
     o3_server::profile::refuse_foreign_live(Path::new(&dir))?;
+    let policy = match o3_server::managed_policy::Policy::load_server() {
+        Ok(policy) => policy,
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::exit(o3_server::managed_policy::EXIT_CODE);
+        }
+    };
+    let provider_policy = policy.clone();
     let is_auth = args.first().map(String::as_str) == Some("auth");
+    let port = option(&args, "--port")
+        .map(str::to_owned)
+        .or_else(|| std::env::var("T3CODE_PORT").ok())
+        .or_else(|| bootstrap.map(|bootstrap| bootstrap.port().to_string()))
+        .unwrap_or("3773".into());
+    let mut host = option(&args, "--host")
+        .map(str::to_owned)
+        .or_else(|| std::env::var("T3CODE_HOST").ok())
+        .or_else(|| bootstrap.map(|bootstrap| bootstrap.host().to_owned()))
+        .unwrap_or("127.0.0.1".into());
+    if is_serving {
+        let port_number: u16 = port.parse().map_err(std::io::Error::other)?;
+        let reachability = o3_server::managed_limits::Reachability {
+            auth_policy: o3_server::desktop_startup::auth_policy(Some(&host), desktop_mode),
+            host: Some(host.clone()),
+            tailscale_serve_enabled: false,
+            private_network_only: None,
+        };
+        host =
+            o3_server::managed_limits::check_reachability(policy.document.as_ref(), &reachability)
+                .unwrap_or_else(|error| {
+                    eprintln!("{error}");
+                    std::process::exit(o3_server::managed_policy::EXIT_CODE);
+                });
+        if !policy.allows_remote() {
+            if port_number == 0 {
+                eprintln!("A managed local listener requires a fixed nonzero port");
+                std::process::exit(o3_server::managed_policy::EXIT_CODE);
+            }
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?;
+            runtime
+                .block_on(o3_server::managed_tailscale_guard::enforce(
+                    &policy,
+                    &o3_server::managed_tailscale::Target {
+                        host: host.clone(),
+                        port: port_number,
+                    },
+                ))
+                .unwrap_or_else(|error| {
+                    eprintln!("{error}");
+                    std::process::exit(o3_server::managed_policy::EXIT_CODE);
+                });
+        }
+    }
     let _ownership = if !is_auth {
         Some(o3_server::profile::ownership(&dir)?)
     } else {
         None
     };
-    let mut state =
-        o3_server::store::State::open(Path::new(&dir)).map_err(std::io::Error::other)?;
+    let mut state = o3_server::store::State::open_with_policy(Path::new(&dir), policy)
+        .map_err(std::io::Error::other)?;
     state.asset_profile_root = base.clone();
+    if is_serving {
+        state
+            .configure_listener_auth(
+                Some(&host),
+                desktop_mode,
+                bootstrap.map(|bootstrap| bootstrap.token().to_owned()),
+                bootstrap
+                    .and_then(|bootstrap| bootstrap.secret())
+                    .map(str::to_owned),
+            )
+            .map_err(std::io::Error::other)?;
+    }
     if args.first().map(String::as_str) == Some("import") {
         let source =
             option(&args, "--from").ok_or_else(|| std::io::Error::other("--from is required"))?;
@@ -235,14 +358,6 @@ fn main() -> std::io::Result<()> {
         }
         return Err(std::io::Error::other("unsupported auth command"));
     }
-    let port = option(&args, "--port")
-        .map(str::to_owned)
-        .or_else(|| std::env::var("T3CODE_PORT").ok())
-        .unwrap_or("3773".into());
-    let host = option(&args, "--host")
-        .map(str::to_owned)
-        .or_else(|| std::env::var("T3CODE_HOST").ok())
-        .unwrap_or("127.0.0.1".into());
     tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .on_thread_park(o3_server::heap::on_thread_park)
@@ -258,36 +373,57 @@ fn main() -> std::io::Result<()> {
             state.agent_scopes.enable();
             let codex = Arc::new(
                 o3_server::codex::CodexProvider::default()
-                    .with_agent_scopes(state.agent_scopes.clone()),
+                    .with_agent_scopes(state.agent_scopes.clone())
+                    .with_managed_policy(provider_policy.document.is_some()),
             );
             *state.provider.lock().unwrap() = Some(Arc::new(
                 o3_server::provider::ConfiguredProviders::new(
                     Arc::new(o3_server::provider::Providers {
                         claude: o3_server::claude::ClaudeProvider::discover().map(|provider| {
-                            Arc::new(provider.with_agent_scopes(state.agent_scopes.clone()))
+                            Arc::new(
+                                provider
+                                    .with_agent_scopes(state.agent_scopes.clone())
+                                    .with_managed_policy(provider_policy.document.is_some()),
+                            )
                         }),
                         codex: codex.clone(),
                     }),
                     dir.clone(),
                 )
-                .with_agent_scopes(state.agent_scopes.clone()),
+                .with_agent_scopes(state.agent_scopes.clone())
+                .with_policy(provider_policy.clone())
+                .with_secret_resolver(state.secret_resolver())
+                .with_settings_lock(state.settings_lock.clone())
+                .with_notifications(state.changed.clone()),
             ));
             let mut term =
                 tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
             let mut interrupt =
                 tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
-            let listener = tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
+            let listener = tokio::net::TcpListener::bind((
+                host.as_str(),
+                port.parse::<u16>().map_err(std::io::Error::other)?,
+            ))
+            .await?;
             let _guard = o3_server::profile::RuntimeGuard::write(&dir, listener.local_addr()?)?;
-            eprintln!("o3-server listening on {}", listener.local_addr()?);
+            o3_server::desktop_startup::log_stderr(format_args!("o3-server listening on {}", listener.local_addr()?))?;
             // T3's base must be taken in before the first client reads.
             let shared = match o3_server::t3_shared::start(&state) {
                 Ok(shared) => shared,
                 Err(e) => {
-                    eprintln!("T3 shared base not written: {e}");
+                    o3_server::desktop_startup::log_stderr(format_args!("T3 shared base not written: {e}"))?;
                     None
                 }
             };
             let state = Arc::new(state);
+            if let Some(config)=speech_config {
+                if let Err(cause)=o3_server::speech_runtime::install(state.clone(),config).await {
+                    o3_server::desktop_startup::log_stderr(format_args!("Local speech runtime not admitted: {cause}"))?;
+                }
+            }
+            let desktop_driver = if let Some(descriptors) = startup.as_mut().and_then(|startup| startup.browser.take()) {
+                Some(o3_server::preview::install_desktop(state.clone(), descriptors.into_channel()?).await)
+            } else { None };
             let exporter =
                 shared.map(|t3| o3_server::t3_shared::Exporter::spawn(state.clone(), t3));
             let probe = state.provider.lock().unwrap().clone().unwrap();
@@ -303,7 +439,7 @@ fn main() -> std::io::Result<()> {
                     .discover(std::env::current_dir().unwrap_or_else(|_| probe_state.dir.clone()))
                     .await
                 {
-                    eprintln!("Codex unavailable: {e}");
+                    let _ = o3_server::desktop_startup::log_stderr(format_args!("Codex unavailable: {e}"));
                 }
                 probe_state.notify();
             });
@@ -311,43 +447,45 @@ fn main() -> std::io::Result<()> {
             // A standalone OmaBridge can publish this server instead; --no-bridge keeps the
             // embedded node, its identity and its timers out of this process.
             #[cfg(feature = "bridge")]
-            let bridge = if args.iter().any(|a| a == "--no-bridge") {
-                None
-            } else {
-                Some(
-                    o3_server::bridge::start_hosted(
-                        &option(&args, "--bridge-state-dir")
-                            .map(std::path::PathBuf::from)
-                            .unwrap_or_else(|| base.join("omabridge")),
-                        state.clone(),
-                        {
-                            let mut options = omabridge::NetOptions::loopback();
-                            if let Some(bind) = option(&args, "--bridge-bind") {
-                                options.bind = bind.parse().map_err(std::io::Error::other)?;
-                            }
-                            if let Some(relay) = option(&args, "--bridge-relay") {
-                                options.relay = match relay {
-                                    "none" => omabridge::Relay::Disabled,
-                                    "public" => omabridge::Relay::Public,
-                                    url => omabridge::Relay::Custom(
-                                        url.parse().map_err(std::io::Error::other)?,
-                                    ),
-                                };
-                            }
-                            options
-                        },
-                        option(&args, "--bridge-gateway-config").map(Path::new),
-                        args.iter().any(|a| a == "--bridge-relay-host"),
+            let bridge =
+                if args.iter().any(|a| a == "--no-bridge") || !provider_policy.allows_remote() {
+                    None
+                } else {
+                    Some(
+                        o3_server::bridge::start_hosted(
+                            &option(&args, "--bridge-state-dir")
+                                .map(std::path::PathBuf::from)
+                                .unwrap_or_else(|| base.join("omabridge")),
+                            state.clone(),
+                            {
+                                let mut options = omabridge::NetOptions::loopback();
+                                if let Some(bind) = option(&args, "--bridge-bind") {
+                                    options.bind = bind.parse().map_err(std::io::Error::other)?;
+                                }
+                                if let Some(relay) = option(&args, "--bridge-relay") {
+                                    options.relay = match relay {
+                                        "none" => omabridge::Relay::Disabled,
+                                        "public" => omabridge::Relay::Public,
+                                        url => omabridge::Relay::Custom(
+                                            url.parse().map_err(std::io::Error::other)?,
+                                        ),
+                                    };
+                                }
+                                options
+                            },
+                            option(&args, "--bridge-gateway-config").map(Path::new),
+                            args.iter().any(|a| a == "--bridge-relay-host"),
+                        )
+                        .await
+                        .map_err(std::io::Error::other)?,
                     )
-                    .await
-                    .map_err(std::io::Error::other)?,
-                )
-            };
+                };
             // block_on runs on the main thread, outside the runtime worker park hooks.
             let result = tokio::select! {
                 result=&mut serving=>result.map_err(std::io::Error::other)?,
                 _=interrupt.recv()=>Ok(()),
                 _=term.recv()=>Ok(()),
+                _=o3_server::desktop_startup::wait_for_parent_change(launcher_parent,watch_launcher)=>Ok(()),
             };
             state.begin_shutdown();
             if !serving.is_finished() {
@@ -360,11 +498,13 @@ fn main() -> std::io::Result<()> {
             }
             probe_task.abort();
             let _ = probe_task.await;
+            let speech_cleanup=o3_server::speech_state::shutdown(&state).await;
             o3_server::preview::shutdown(&state).await;
+            if let Some(driver) = desktop_driver { driver.shutdown().await; }
             codex.shutdown().await;
             if let Some(exporter) = exporter {
                 exporter.finish();
             }
-            result
+            if speech_cleanup.is_err() && result.is_ok() {Err(std::io::Error::other("Owned speech cleanup remains unknown"))}else{result}
         })
 }

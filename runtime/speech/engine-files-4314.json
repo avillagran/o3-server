@@ -1,0 +1,711 @@
+{
+  "nativeRevision": "83a3674ffd84ffb33de768210c806cb1ac53fd80",
+  "platform": "linux-x64-gnu",
+  "engineVersion": "0.4.1",
+  "nodeVersion": "26.13.0",
+  "nodeSha256": "0adde40d1b7dfa57c8bc83cbc319758c3ec6ebba21363bb2fa752ea6b267ad1b",
+  "entry": "node_modules/transcribe-cpp/dist/index.js",
+  "packagePinsSha256": "a18a9353b924e7d9fe6817946f7bde6459ef5eb250d84b1840d90e7ad599195e",
+  "files": [
+    {
+      "path": "node_modules/@koromix/koffi-linux-x64/README.md",
+      "bytes": 271,
+      "sha256": "015d314be8f33f63bc15d2272ce50ae00a3f2114787ef24a1fc469654572244f"
+    },
+    {
+      "path": "node_modules/@koromix/koffi-linux-x64/index.js",
+      "bytes": 6556,
+      "sha256": "fbe4d645feb0d4232176a3352a2ac6bd145fc496af7ebc2b86cae793cb778b11"
+    },
+    {
+      "path": "node_modules/@koromix/koffi-linux-x64/linux_x64/koffi.node",
+      "bytes": 1146296,
+      "sha256": "a31e7e1ee291d6127be9539ba400a113498df518dda4367533deea6253bb1866"
+    },
+    {
+      "path": "node_modules/@koromix/koffi-linux-x64/musl_x64/koffi.node",
+      "bytes": 1209512,
+      "sha256": "0d9cc36589a15f94deca2fe6d298341a8e0a2f729b3ee420bd3ba2f1b6e100b7"
+    },
+    {
+      "path": "node_modules/@koromix/koffi-linux-x64/package.json",
+      "bytes": 644,
+      "sha256": "0ed3fa2e13884e8fe2b1aedd9c55f6ab4f6e999eda895bbfd2d79c013c7c23f4"
+    },
+    {
+      "path": "node_modules/@transcribe-cpp/linux-x64-cpu-vulkan/contract.json",
+      "bytes": 131,
+      "sha256": "ce4039f7c7a5236fff656c222478b487fd9d0891b2435db393c3fbfa8b78a5be"
+    },
+    {
+      "path": "node_modules/@transcribe-cpp/linux-x64-cpu-vulkan/libggml-base.so",
+      "bytes": 808688,
+      "sha256": "0bedc6858bb1e5aedda81b1f3bd7e7578fd5ab98a8a62c6afd53087ec11df41b"
+    },
+    {
+      "path": "node_modules/@transcribe-cpp/linux-x64-cpu-vulkan/libggml-cpu-alderlake.so",
+      "bytes": 1286184,
+      "sha256": "1aa14e362efd1b874b2c255b89b3bbeb259ae42f0bc6fff72118ca378a037682"
+    },
+    {
+      "path": "node_modules/@transcribe-cpp/linux-x64-cpu-vulkan/libggml-cpu-cannonlake.so",
+      "bytes": 1540136,
+      "sha256": "701352131b5a57dd9d462ceeee48fd4fb71c71634511e8320a52f968d48b2530"
+    },
+    {
+      "path": "node_modules/@transcribe-cpp/linux-x64-cpu-vulkan/libggml-cpu-cascadelake.so",
+      "bytes": 1548328,
+      "sha256": "131677a346d44542ed4b55c30324eb2a4abfd90067af1036dc141a9a3ba2c01d"
+    },
+    {
+      "path": "node_modules/@transcribe-cpp/linux-x64-cpu-vulkan/libggml-cpu-cooperlake.so",
+      "bytes": 1548328,
+      "sha256": "965aaaa59b1d0b66f867bda9d6442a49f8abcb0d180a8a00905fa3cbb61e1842"
+    },
+    {
+      "path": "node_modules/@transcribe-cpp/linux-x64-cpu-vulkan/libggml-cpu-haswell.so",
+      "bytes": 1290280,
+      "sha256": "5787b42303af149aeb18c05463d214e3a966c7630b5ee46cd1884091f8949394"
+    },
+    {
+      "path": "node_modules/@transcribe-cpp/linux-x64-cpu-vulkan/libggml-cpu-icelake.so",
+      "bytes": 1548328,
+      "sha256": "6e5fb33713b8f5549cb02f5a3d6e9dc07b354cbd953f8d315d0fb82c8175bc41"
+    },
+    {
+      "path": "node_modules/@transcribe-cpp/linux-x64-cpu-vulkan/libggml-cpu-ivybridge.so",
+      "bytes": 1220648,
+      "sha256": "204bad8545de1318ca5ce7d158c833acb570358e27ee75ab88418e31a2153595"
+    },
+    {
+      "path": "node_modules/@transcribe-cpp/linux-x64-cpu-vulkan/libggml-cpu-piledriver.so",
+      "bytes": 1216552,
+      "sha256": "c51b31018f9745a65b080a75897f9f3423fc70378c835f4240e1b0185d2e24c5"
+    },
+    {
+      "path": "node_modules/@transcribe-cpp/linux-x64-cpu-vulkan/libggml-cpu-sandybridge.so",
+      "bytes": 1204264,
+      "sha256": "f1f6865e9ff32a11f676050444459bf6a4e19240ffd323be3f5243eaee5c2f3b"
+    },
+    {
+      "path": "node_modules/@transcribe-cpp/linux-x64-cpu-vulkan/libggml-cpu-sapphirerapids.so",
+      "bytes": 1827080,
+      "sha256": "1d94e11beaf4b4957428308a3e48756947048f09b30b50d50cd53ce4bdd65a78"
+    },
+    {
+      "path": "node_modules/@transcribe-cpp/linux-x64-cpu-vulkan/libggml-cpu-skylakex.so",
+      "bytes": 1540136,
+      "sha256": "675a33e18fb2d476a6cbcfafcd6103ee2339d8eb371c0a99ffe196f8a84d13b7"
+    },
+    {
+      "path": "node_modules/@transcribe-cpp/linux-x64-cpu-vulkan/libggml-cpu-sse42.so",
+      "bytes": 897032,
+      "sha256": "8a80b29a97b3b3cd8766df9e5a10b760083b176e8e9f8ffb4b5668b5ad4cc37c"
+    },
+    {
+      "path": "node_modules/@transcribe-cpp/linux-x64-cpu-vulkan/libggml-cpu-x64.so",
+      "bytes": 872488,
+      "sha256": "485a6bff330680534dc050f7d0cec0f8d48589daafcd7c5708e9f2d77881f7d1"
+    },
+    {
+      "path": "node_modules/@transcribe-cpp/linux-x64-cpu-vulkan/libggml-cpu-zen4.so",
+      "bytes": 1548328,
+      "sha256": "88eb58aee7fe085a70c7ecfcfd749cd4102c27d367bb1b09c99f6c6422ee90eb"
+    },
+    {
+      "path": "node_modules/@transcribe-cpp/linux-x64-cpu-vulkan/libggml-vulkan.so",
+      "bytes": 44039912,
+      "sha256": "4fdec8c3a4201fe9fbd8a24a48c43f32494d69aa943c82f3f299a727a04ac9c4"
+    },
+    {
+      "path": "node_modules/@transcribe-cpp/linux-x64-cpu-vulkan/libggml.so",
+      "bytes": 220776,
+      "sha256": "0c5f5ca9beda5ec2ffcbc93f60dad3a029c768378c401e85284ce36b1a983ed6"
+    },
+    {
+      "path": "node_modules/@transcribe-cpp/linux-x64-cpu-vulkan/libtranscribe.so",
+      "bytes": 2434312,
+      "sha256": "78625ee207600f5cbf9a398cdbe03991d0720a41efd1019fd80e108279957cfe"
+    },
+    {
+      "path": "node_modules/@transcribe-cpp/linux-x64-cpu-vulkan/licenses/LICENSE",
+      "bytes": 1083,
+      "sha256": "86a53633b56f6b029d3cb42158bcc7aac0cdff898aceb13e83b93e368bbc4ac6"
+    },
+    {
+      "path": "node_modules/@transcribe-cpp/linux-x64-cpu-vulkan/licenses/LICENSE.ggml",
+      "bytes": 1078,
+      "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d"
+    },
+    {
+      "path": "node_modules/@transcribe-cpp/linux-x64-cpu-vulkan/licenses/LICENSE.miniz",
+      "bytes": 1162,
+      "sha256": "6f20fa7672b00e2e975c291df737cf227addf3ad32e36fef3fe0f416e4664d3d"
+    },
+    {
+      "path": "node_modules/@transcribe-cpp/linux-x64-cpu-vulkan/licenses/LICENSE.silero_vad",
+      "bytes": 1075,
+      "sha256": "2e63e9a38b6e8fc0c7bc37ce174caca1862870856c6daf5697cfb785e925520b"
+    },
+    {
+      "path": "node_modules/@transcribe-cpp/linux-x64-cpu-vulkan/package.json",
+      "bytes": 985,
+      "sha256": "aafd72ce0a1f22887d47df8057f288f9e622bbc274d9369b32c0f73ef6dd4f90"
+    },
+    {
+      "path": "node_modules/koffi/CHANGELOG.md",
+      "bytes": 35289,
+      "sha256": "75ee1f7723c5f357b907a621e2e94ad624926d9d4f19b0d99ed5939d66085019"
+    },
+    {
+      "path": "node_modules/koffi/LICENSE.txt",
+      "bytes": 1117,
+      "sha256": "22bcbbbacd739b026a8dc484f62a31484ce4c4e31f3408b60b29b4e41d62b290"
+    },
+    {
+      "path": "node_modules/koffi/README.md",
+      "bytes": 2972,
+      "sha256": "4b629384f63225cad0265c5c148a3a88f466cd6b337ffeae6242fec5bfb17206"
+    },
+    {
+      "path": "node_modules/koffi/cnoke.cjs",
+      "bytes": 31081,
+      "sha256": "d5e4c3b53c1166265f3b7a386a0aec446bb99c41bf58c6c05643d1dcade12ffd"
+    },
+    {
+      "path": "node_modules/koffi/doc/benchmarks.md",
+      "bytes": 5082,
+      "sha256": "023b59f109a8044b591349c25f59fe4a30f31f173be01b4810865b5a96f59f62"
+    },
+    {
+      "path": "node_modules/koffi/doc/callbacks.md",
+      "bytes": 7909,
+      "sha256": "f1e3f14a1d84a5b6d6d7d6d3015a9859043f4d3773b932d361bc49f08a240284"
+    },
+    {
+      "path": "node_modules/koffi/doc/composites.md",
+      "bytes": 16117,
+      "sha256": "83d107330187f08088a7e2b1aa98f06585dcf2f0719aae66a47af6fb95edc40d"
+    },
+    {
+      "path": "node_modules/koffi/doc/contribute.md",
+      "bytes": 5744,
+      "sha256": "72cecf31345e1d4e46d564bc4aa5020c5a445968cc2a818b337bf3a1019a4cbe"
+    },
+    {
+      "path": "node_modules/koffi/doc/index.md",
+      "bytes": 3044,
+      "sha256": "8a69e582805fff52da9a2149c635895ade22a494502de1770a412673431b71a9"
+    },
+    {
+      "path": "node_modules/koffi/doc/load.md",
+      "bytes": 7522,
+      "sha256": "fb917db1fa983b6e495b498f0dba168b72ac794b6938a585c6473a90c5736f68"
+    },
+    {
+      "path": "node_modules/koffi/doc/migration.md",
+      "bytes": 8909,
+      "sha256": "3826d5c78a612cd11d0319d7c4e0afebde3c5c67a7848fcb5016fc9c4ccd3333"
+    },
+    {
+      "path": "node_modules/koffi/doc/misc.md",
+      "bytes": 3851,
+      "sha256": "25698c141b2324ec4ce133f59901749c69f3880dafb511dae13fabd7c21da673"
+    },
+    {
+      "path": "node_modules/koffi/doc/output.md",
+      "bytes": 9366,
+      "sha256": "78a692be2e23954ad024345806b2d4937a45113be6c48cfc2fdd53dc49c32580"
+    },
+    {
+      "path": "node_modules/koffi/doc/pointers.md",
+      "bytes": 15051,
+      "sha256": "628890dec2cbe8304e006effaaead83e36d5e6b3695f3b7bf7e8add1d26f513c"
+    },
+    {
+      "path": "node_modules/koffi/doc/primitives.md",
+      "bytes": 7561,
+      "sha256": "3b4cab3721ecd6cad4ccc0ba251f9edae24e3b03bb94ac22234b5c8718a7f346"
+    },
+    {
+      "path": "node_modules/koffi/doc/start.md",
+      "bytes": 3008,
+      "sha256": "95c57729bd5b4477e39a8950fd4f1e6c8121cf5fba58907d16f2c8d5bdf92b8d"
+    },
+    {
+      "path": "node_modules/koffi/doc/types.md",
+      "bytes": 2828,
+      "sha256": "d8a1acfcc5f416038f05b6f53a93445e80cba70755592d6ceaf5b9df9b3c5440"
+    },
+    {
+      "path": "node_modules/koffi/doc/unions.md",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "node_modules/koffi/doc/values.md",
+      "bytes": 6324,
+      "sha256": "f712dc80674c1711b76edc64b1a55c06e5003e17b542afe071bc20cdfed161ba"
+    },
+    {
+      "path": "node_modules/koffi/index.cjs",
+      "bytes": 50,
+      "sha256": "a200e15ec168d00cb3155794808a98243051c61dd7f6989c23c57ee220c918b9"
+    },
+    {
+      "path": "node_modules/koffi/index.d.ts",
+      "bytes": 12935,
+      "sha256": "12f9f5e84a44123f0552311bc9e37c9d7f63f28e7f351982721577726139b72e"
+    },
+    {
+      "path": "node_modules/koffi/index.js",
+      "bytes": 85,
+      "sha256": "34508972d2e18b79fd4a289943568a68bbaf18badd2e82a25c8deb1af27f6225"
+    },
+    {
+      "path": "node_modules/koffi/indirect.cjs",
+      "bytes": 53,
+      "sha256": "f36c7fd3caa9c43da3db45e1ee272892087b4001b6f575fffb76dd80574829b1"
+    },
+    {
+      "path": "node_modules/koffi/indirect.js",
+      "bytes": 91,
+      "sha256": "5c5045c5b5ec2083535efdfdbd95f5212545ce29a4b7f33a683504a35e5b6a02"
+    },
+    {
+      "path": "node_modules/koffi/lib/native/base/base.cc",
+      "bytes": 336811,
+      "sha256": "232249f1da58f2388b7ddc844f4e22c07879ddb75626e1fcde4869753d71eac6"
+    },
+    {
+      "path": "node_modules/koffi/lib/native/base/base.hh",
+      "bytes": 189049,
+      "sha256": "ec29df22d7085ee0c2f54e2efd59c40e4cf63d724536cb65243c0feb17bc8b5d"
+    },
+    {
+      "path": "node_modules/koffi/lib/native/base/unicode.inc",
+      "bytes": 36653,
+      "sha256": "a337b5e53a6c72534fcf093c58d7fbf12f7b1075f068ea83a09c91e34373b5a4"
+    },
+    {
+      "path": "node_modules/koffi/package.json",
+      "bytes": 2304,
+      "sha256": "4100420583d59092a0c459c02d927a7d5f772fdf161c59a7cf6d14a0e72e4d75"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/CMakeLists.txt",
+      "bytes": 10084,
+      "sha256": "a25a035c16f80c3a49ea259d867f0003d3a3eee93c5ffb7df2bae3e2fd2974f6"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/index.cjs",
+      "bytes": 10999,
+      "sha256": "af8f6119b5aee1a54459be02342254984d85332493dbce8eaaadbacbb12a2236"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/index.js",
+      "bytes": 9563,
+      "sha256": "d1b545bf8581351978e1ea8d65543b2d7fd58a46c3caf39aacb6a15056a529b2"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/indirect.cjs",
+      "bytes": 10933,
+      "sha256": "5db87df469a0bca929875dafbe8ae10520f7a3f246c771e59c5eaf4528d7aef5"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/indirect.js",
+      "bytes": 9507,
+      "sha256": "9874392fc731abaada34ee0f03e37138aedadce0caa119dfc9ffaae192df3ef4"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/abi/arm32.cc",
+      "bytes": 11352,
+      "sha256": "ecaf681bc9555706c127a828572c5df1ac5afcd81a9c3bd8fe89df47ec87904a"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/abi/arm32_asm.S",
+      "bytes": 4319,
+      "sha256": "7d47bd0119a1433bfb328d54a5c03d96e4b08917cfc469db304e8a5c918ec3c5"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/abi/arm64.cc",
+      "bytes": 13646,
+      "sha256": "0b5977e6e3b542a3e2e67495fa37762c5b801b44f3ac68af5519666ff3eb5cd0"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/abi/arm64_asm.S",
+      "bytes": 5455,
+      "sha256": "bd2ccebb85c62abbf49a351f4b740a660eb2c8b2b1054fa7f9aafd9c0db92e61"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/abi/arm64_asm.asm",
+      "bytes": 4489,
+      "sha256": "89c2d933d801b41cd5adde2bb0762d98a2bcd96d2e2dcc18f76650a3e0f8d5db"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/abi/loong64.cc",
+      "bytes": 273,
+      "sha256": "dc53190f98c24d8f909358f23a20ce861d58124a232e87e8e2aeb3566ae02088"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/abi/loong64_asm.S",
+      "bytes": 4644,
+      "sha256": "0276681d52b70fee199edd73964e7684260027605563ce51c8eb04a8c6400025"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/abi/ppc64.cc",
+      "bytes": 8364,
+      "sha256": "e3490a81075dd9584a573ab19337129ddac09b8402132099c34972c2a55c8ad2"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/abi/ppc64_asm.S",
+      "bytes": 5648,
+      "sha256": "b2d8d01143d980a4ab9ff513d22924e9d41553b1903067f78de0b9bb9bf31570"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/abi/riscv64.cc",
+      "bytes": 12058,
+      "sha256": "8478c20d90d8abdc72e074f5e324324dbe0c012899b53f306b04f69f2745927a"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/abi/riscv64_asm.S",
+      "bytes": 4369,
+      "sha256": "9294984fca21eff02784afe02b59f31d7dcde9c3600b68db1674b7b65174c3d2"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/abi/x64sysv.cc",
+      "bytes": 13827,
+      "sha256": "5e9622e786ef89e800dde18dffcb886a76e1610a2ec5a266b3ca81707e284197"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/abi/x64sysv_asm.S",
+      "bytes": 5486,
+      "sha256": "4daa7ee2445cdd047d582af8c9079447c85b3d58db9806fb734eb6a2440ea411"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/abi/x64win.cc",
+      "bytes": 4873,
+      "sha256": "c49884b12188f63457ffde2c325c1a33f5ca324e732d031fd2faaa1601de3446"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/abi/x64win_asm.S",
+      "bytes": 3883,
+      "sha256": "cf309cb28046d9656e683deed3a4e9f5e44266f129593dd154d0c88f822854d3"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/abi/x64win_asm.asm",
+      "bytes": 4708,
+      "sha256": "2e3e8014820b352cb0eb775c03996edcd8438917b0ca43e975cda3d4f5bfc467"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/abi/x86.cc",
+      "bytes": 9090,
+      "sha256": "d00024375e2625b5d4820c2dfb41914f687b105809aeaf0660efc260e02293c8"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/abi/x86_asm.S",
+      "bytes": 4682,
+      "sha256": "0a264383f7ae06b6513c713beecec3d3248c5d68b1c9cdc53c668b4291c20449"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/abi/x86_asm.asm",
+      "bytes": 3906,
+      "sha256": "a0292cb0dec31c15ce476ae520b239023fd6ef952e0d7b73b1fa03d9d0e63801"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/call.cc",
+      "bytes": 72848,
+      "sha256": "129899b82c9338f85f59f35f4e1a1c314a245ced3ff4363bb2bcc5b6d8c85471"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/call.hh",
+      "bytes": 6017,
+      "sha256": "4492aa7fb78c7d812fe8ad550bb21ab96e579d4de3c5f223444a73cad0963246"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/errno.inc",
+      "bytes": 8776,
+      "sha256": "f2fea4a329fbf7aa7e5a6c52daacc480d70d782344e37fd7e62019f6b914201a"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/ffi.cc",
+      "bytes": 111233,
+      "sha256": "8aea76cf7600838da8bc547e35f92f06f02fc8d5a138fbd4c7402357b12e0e6a"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/ffi.hh",
+      "bytes": 10102,
+      "sha256": "4f1175d5921712b64582642d401c7df3bba98fa794a9540fc7bf31178a280d3f"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/interp.cc",
+      "bytes": 55028,
+      "sha256": "e69ab7d7fc1b6b835fc4257e114187a5859b0af411b1d81f7965a61c6869659e"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/interp.hh",
+      "bytes": 3290,
+      "sha256": "2e1002df27774b422b114ec120ef33d64993740b1c7288cbfc78f8073d6c5310"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/parser.cc",
+      "bytes": 6256,
+      "sha256": "a10d056248137353dbf407788907702a1b1238f5a09709216252ebb04207535d"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/parser.hh",
+      "bytes": 1253,
+      "sha256": "cfd9e374884cdc0f60716de41bbe110d361bc10d0a8539942e37d34c86b525ae"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/primitives.inc",
+      "bytes": 857,
+      "sha256": "34f524982a6e921a63c6766619b337b6d15f0a5cdefbf252481dda4b4369afda"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/static.cjs",
+      "bytes": 3591,
+      "sha256": "522a9d98e271b565de4013910b8c81bb061a34d3460e43fd9a92daab8fbadddc"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/static.js",
+      "bytes": 3674,
+      "sha256": "a2a6ea215e4d5f26d039b48eee1e7c8ca037935c4fcba8d0ec2b6e680fa7a976"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/trampolines.cjs",
+      "bytes": 2033,
+      "sha256": "82895e2a78b911b297e7497d9d6033ab87a0afe64f4904615dacfa318d83adfa"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/type.cc",
+      "bytes": 30155,
+      "sha256": "a9f7ca2230449825472fa3786397a48bceec4f187c96e37fc33bc00d9fc70adc"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/type.hh",
+      "bytes": 2860,
+      "sha256": "44256060ad8a9fe43e7ea5a300eff4c19eb4550e65a1b29f1beed0af51b94041"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/util.cc",
+      "bytes": 32837,
+      "sha256": "5af5ef328b93eedbc94b3966da07ba520985b5324e6ff6b9d5c9ab98fea802cc"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/util.hh",
+      "bytes": 13336,
+      "sha256": "64763a462eee5fe4391e2cf3d0c5c314611d5b747b14d04edaf27fcf90055ad7"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/uv.cc",
+      "bytes": 6731,
+      "sha256": "bca85ba816537329337d4f0e4a62b22e333332130d5a3023477bbf5790a3c1ba"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/uv.def",
+      "bytes": 134,
+      "sha256": "4a40dc700dc66214fc1c464db8c4b78b82845e3b7b4e6103418ac519346ca4d2"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/uv.hh",
+      "bytes": 2652,
+      "sha256": "7c440bf33890aece980fc66882408ae8f864d391a9e3c77596f000ae84afcef5"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/win32.cc",
+      "bytes": 5890,
+      "sha256": "86e4aedf1c66b28225be9a0a6b709961555dc8e6c85809d9a1f20df46c405644"
+    },
+    {
+      "path": "node_modules/koffi/src/koffi/src/win32.hh",
+      "bytes": 3932,
+      "sha256": "46b0b57a2771e1f2647d49711ca249029dc93e92a17007302a78dd58fe3bd4f2"
+    },
+    {
+      "path": "node_modules/koffi/vendor/node-addon-api/LICENSE.md",
+      "bytes": 1150,
+      "sha256": "89024017b88a9f2b763f79b941a4f2db3b4428edfcacdc0b23866b2da633ad0c"
+    },
+    {
+      "path": "node_modules/koffi/vendor/node-addon-api/README.md",
+      "bytes": 4994,
+      "sha256": "9c9fcf38e120933aac37fe2cbdcb85abb59ecb1a674abe944c9b627dff8539a6"
+    },
+    {
+      "path": "node_modules/koffi/vendor/node-addon-api/napi-inl.deprecated.h",
+      "bytes": 6323,
+      "sha256": "b66ed1e565e735bbfabcc2f72d466ab7c5414d3ef8851d1af440b81be7f2375c"
+    },
+    {
+      "path": "node_modules/koffi/vendor/node-addon-api/napi-inl.h",
+      "bytes": 243550,
+      "sha256": "e62de83e6125e45719dff26546e8cf7ec819ac1ed890db28431db433c88fcd50"
+    },
+    {
+      "path": "node_modules/koffi/vendor/node-addon-api/napi.h",
+      "bytes": 125611,
+      "sha256": "5e0eff20229ba021fa7c5ff6f62dfecc36f8c29f2da365b25cde3d6489d8b924"
+    },
+    {
+      "path": "node_modules/koffi/vendor/node-api-headers/LICENSE",
+      "bytes": 1064,
+      "sha256": "a553508f516031c91f3af1148d44970cb81bbae6c4f091be6835d39cc252238c"
+    },
+    {
+      "path": "node_modules/koffi/vendor/node-api-headers/README.md",
+      "bytes": 2741,
+      "sha256": "63a4e81d19f02b164d51c4721ff3e88c81d410640de7e1d3520a2c406f0a7d83"
+    },
+    {
+      "path": "node_modules/koffi/vendor/node-api-headers/def/js_native_api.def",
+      "bytes": 2734,
+      "sha256": "77653a554fbb27f6c5666f4ba05f87d26f0de72bc3d0439961ac030030c2be66"
+    },
+    {
+      "path": "node_modules/koffi/vendor/node-api-headers/def/node_api.def",
+      "bytes": 3550,
+      "sha256": "e0d5e3da0520a42e26b563f6321291081bd15bdd20821d46818e5f47900f77d6"
+    },
+    {
+      "path": "node_modules/koffi/vendor/node-api-headers/include/js_native_api.h",
+      "bytes": 31081,
+      "sha256": "0953395662ea63697cd7a77a9320d94aa2829f9c9569abf3a74272b7a2923ce8"
+    },
+    {
+      "path": "node_modules/koffi/vendor/node-api-headers/include/js_native_api_types.h",
+      "bytes": 6744,
+      "sha256": "21eebde05d2ee59d315ac27d4aa82434ca88508a0b2cf5819802a00ca523831d"
+    },
+    {
+      "path": "node_modules/koffi/vendor/node-api-headers/include/node_api.h",
+      "bytes": 10370,
+      "sha256": "2d4560831e525b47b060ec8a0864ab73993df9e20215ce9f0fe7b24cd31af32a"
+    },
+    {
+      "path": "node_modules/koffi/vendor/node-api-headers/include/node_api_types.h",
+      "bytes": 1930,
+      "sha256": "a25356630d3058f0a0c8937d9f297e9471e037fda58c2696d8a505c2bd99cb00"
+    },
+    {
+      "path": "node_modules/transcribe-cpp/LICENSE",
+      "bytes": 1083,
+      "sha256": "86a53633b56f6b029d3cb42158bcc7aac0cdff898aceb13e83b93e368bbc4ac6"
+    },
+    {
+      "path": "node_modules/transcribe-cpp/README.md",
+      "bytes": 15439,
+      "sha256": "64f963b61f66b74f24ffc5b2d7e7da69f5574c782a7fe780c6ea567bfb6480be"
+    },
+    {
+      "path": "node_modules/transcribe-cpp/dist/_generated.d.ts",
+      "bytes": 7868,
+      "sha256": "8d5267e985d46f9fe22716a38f3673c7aefc3efc3e3cbf2b80a582f83ed2532c"
+    },
+    {
+      "path": "node_modules/transcribe-cpp/dist/_generated.js",
+      "bytes": 37877,
+      "sha256": "d51c9d27455fa064f7f072420cc7adae7ef51509934be9ad24143152b1ee500e"
+    },
+    {
+      "path": "node_modules/transcribe-cpp/dist/abi.d.ts",
+      "bytes": 637,
+      "sha256": "6780eef7bb71d62515510a9cd89be5ff9fdc6c99aa330999ed8ed1c271312fce"
+    },
+    {
+      "path": "node_modules/transcribe-cpp/dist/abi.js",
+      "bytes": 2464,
+      "sha256": "f5bfb2884766999b98649fe2e6f1d9491c157d33a2cb236ae179e6ca97482611"
+    },
+    {
+      "path": "node_modules/transcribe-cpp/dist/cuda.d.ts",
+      "bytes": 1383,
+      "sha256": "363fa713bfb929be0d988a5a28103078bfd91dc5ac211ab429006b0f801105ad"
+    },
+    {
+      "path": "node_modules/transcribe-cpp/dist/cuda.js",
+      "bytes": 3509,
+      "sha256": "9d1db274de8e55fc7c8fb76c2e26e052aedfdee779680c6e77d110f3a932d6e6"
+    },
+    {
+      "path": "node_modules/transcribe-cpp/dist/errors.d.ts",
+      "bytes": 3102,
+      "sha256": "a0f9e616f74bd9c901e2ec08583b8b59fa8381c35af177709b44dad5b7104c92"
+    },
+    {
+      "path": "node_modules/transcribe-cpp/dist/errors.js",
+      "bytes": 4445,
+      "sha256": "9c5b643a214d989f3d856121703e02b588b75028e7090b2f063879fe769e6a54"
+    },
+    {
+      "path": "node_modules/transcribe-cpp/dist/ffi.d.ts",
+      "bytes": 938,
+      "sha256": "41eacce27606eaddd7cadb39ccfdababadfb2f1a81f422d562c7475dbcdaa4f5"
+    },
+    {
+      "path": "node_modules/transcribe-cpp/dist/ffi.js",
+      "bytes": 18515,
+      "sha256": "dd3a184b201380f9877ecb16f8eaa4db9a9275e4d538078d5530f7be64fd0209"
+    },
+    {
+      "path": "node_modules/transcribe-cpp/dist/index.d.ts",
+      "bytes": 9867,
+      "sha256": "91e821341b404c0abf2b441dd004119db36b41ddc97e026b188e4eb3e85e2952"
+    },
+    {
+      "path": "node_modules/transcribe-cpp/dist/index.js",
+      "bytes": 69780,
+      "sha256": "453d2986163810bf721b953541c4c3ece4ebb5db6b04b97293f996d5987f0986"
+    },
+    {
+      "path": "node_modules/transcribe-cpp/dist/loader.d.ts",
+      "bytes": 1362,
+      "sha256": "66ef04d127c34f2d967178348f2a6ae17ff0ae40845dfd8fb7ff5c682b9ef339"
+    },
+    {
+      "path": "node_modules/transcribe-cpp/dist/loader.js",
+      "bytes": 9614,
+      "sha256": "9f8a41f2cc324c709951bd7c7b587d6bb789847ae2ec766d2e0ceb3b33a849c4"
+    },
+    {
+      "path": "node_modules/transcribe-cpp/dist/native.d.ts",
+      "bytes": 3005,
+      "sha256": "11fa1b9a61010b99abb4504594d55c535008ff40ee1109b67a622de75f57de4e"
+    },
+    {
+      "path": "node_modules/transcribe-cpp/dist/native.js",
+      "bytes": 8534,
+      "sha256": "9f45d43b1f8f043ac96aaf5cf603d572d7fb7ca42f8137d1a3c4a3fcdd1f038c"
+    },
+    {
+      "path": "node_modules/transcribe-cpp/dist/types.d.ts",
+      "bytes": 13498,
+      "sha256": "5014406ea0cdc30b7b8f906ad4ef9c90ad61597abcfff3779b9d64bea10c0ad3"
+    },
+    {
+      "path": "node_modules/transcribe-cpp/dist/types.js",
+      "bytes": 80,
+      "sha256": "84cdc9afc11071c688b76d720e9a8fcc9510f31b08cf660f911ef58b7bbfbda3"
+    },
+    {
+      "path": "node_modules/transcribe-cpp/dist/version.d.ts",
+      "bytes": 1002,
+      "sha256": "25ccf3af33f17c6ccb9f509841ffaa17430374c9de4004cc58b5b7122793f739"
+    },
+    {
+      "path": "node_modules/transcribe-cpp/dist/version.js",
+      "bytes": 1393,
+      "sha256": "7905fb4a326e4ed77780901d16b6e6ff609deaf72df4694e55138815c1684869"
+    },
+    {
+      "path": "node_modules/transcribe-cpp/package.json",
+      "bytes": 1620,
+      "sha256": "06a8cfd522f531cc1f0a82f8db85c6ba1d5969f67512eb7f872f7398140640dd"
+    },
+    {
+      "path": "node_modules/transcribe-cpp/scripts/build-from-source.mjs",
+      "bytes": 3884,
+      "sha256": "cddc7e354081298038b4106e70b6505a34726efc9ca904da60e478e90f1fcf2e"
+    }
+  ]
+}

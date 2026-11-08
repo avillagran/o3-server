@@ -98,6 +98,19 @@ pub(crate) fn launch_prepared(
     if let Some(a) = authority {
         a.check_launch(&s.db.lock().unwrap(), incoming)?;
     }
+    let prepared = if let Some(initial) = incoming.get("initialMessage") {
+        match crate::provider_input::normalize_command_context(initial)? {
+            std::borrow::Cow::Borrowed(_) => std::borrow::Cow::Borrowed(incoming),
+            std::borrow::Cow::Owned(initial) => {
+                let mut command = incoming.clone();
+                command["initialMessage"] = initial;
+                std::borrow::Cow::Owned(command)
+            }
+        }
+    } else {
+        std::borrow::Cow::Borrowed(incoming)
+    };
+    let incoming = prepared.as_ref();
     let _workspace = s
         .worktree_gate
         .try_read()
@@ -109,6 +122,14 @@ pub(crate) fn launch_prepared(
         .as_str()
         .filter(|s| !s.is_empty())
         .ok_or("commandId required")?;
+    {
+        let db = s.db.lock().unwrap();
+        if let Some(thread) = p["threadId"].as_str() {
+            crate::command_shared::check_replay(&db, cid, Some(thread))?;
+        } else if let Some(reason) = crate::command_shared::blocked(&db, cid)? {
+            return Err(format!("shared_admission_recovery_required: {reason}"));
+        }
+    }
     let pid = p["projectId"].as_str().ok_or("projectId required")?;
     let mut db = s.db.lock().unwrap();
     let tx = db.transaction().map_err(|e| e.to_string())?;
@@ -255,6 +276,17 @@ pub(crate) fn launch_prepared(
                 r.get(0)
             })
             .map_err(|e| e.to_string())?;
+        if p["reuseExistingThread"] != true {
+            crate::command_shared::admit(
+                &tx,
+                cid,
+                &tid,
+                "thread.create",
+                &at,
+                sequence,
+                (None, None),
+            )?;
+        }
         tx.execute(
             "INSERT INTO receipts VALUES(?1,?2)",
             params![cid, json!({"threadId":tid,"sequence":sequence}).to_string()],
@@ -269,11 +301,13 @@ pub(crate) fn launch_prepared(
     tx.commit().map_err(|e| e.to_string())?;
     drop(db);
     scratch.commit();
+    crate::command_shared::ensure_exported(s, Some(cid))?;
     s.notify();
     let Some(m) = p.get("initialMessage") else {
         return Ok(result);
     };
     if let Some(rid) = claim.and_then(|c| c.2) {
+        crate::command_shared::preparation_fence(s, &format!("{cid}:initial-message"))?;
         let db = s.db.lock().unwrap();
         get(&db, "runs", &rid)?;
         result["projection"] = events::projection_db(&db, &tid)?;
@@ -310,6 +344,14 @@ pub(crate) fn launch_prepared(
     };
     let attachments = &m["attachments"];
     let mut message = json!({"type":"message.dispatch","commandId":format!("{cid}:initial-message"),"threadId":tid,"messageId":m["messageId"].as_str().map(str::to_owned).unwrap_or(format!("message-{cid}")),"text":m["text"],"attachments":attachments,"dispatchMode":{"type":"defer_start","workspaceStrategy":preparation}});
+    for field in ["createdBy", "creationSource"] {
+        if let Some(value) = p.get(field) {
+            message[field] = value.clone();
+        }
+    }
+    if let Some(task) = m.get("scheduledTaskId") {
+        message["scheduledTaskId"] = task.clone();
+    }
     if let Some(sender) = m.get("senderThreadId") {
         message["senderThreadId"] = sender.clone();
     }
@@ -329,6 +371,7 @@ pub(crate) fn launch_prepared(
     result = json!({"threadId":tid,"projection":events::projection_db(&tx,&tid)?,"resumed":false,"sequence":accepted["sequence"]});
     tx.commit().map_err(|e| e.to_string())?;
     drop(db);
+    crate::command_shared::preparation_fence(s, &format!("{cid}:initial-message"))?;
     s.notify();
     if p["generateTitle"] == true {
         if let Some(text) = m["text"].as_str() {
@@ -379,6 +422,20 @@ pub(crate) fn start(s: &Arc<State>) {
                     };
                     let result = crate::launch_worker::run(&state, &id).await;
                     if let Err(error) = result {
+                        if error.starts_with("shared_admission_recovery_required:") {
+                            let _ = state.db.lock().unwrap().execute(
+                                "UPDATE thread_launches SET retry_at=?1,error=?2 WHERE id=?3",
+                                params![now_ms() + 1000, error, id],
+                            );
+                            let weak = Arc::downgrade(&state);
+                            tokio::spawn(async move {
+                                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                                if let Some(state) = weak.upgrade() {
+                                    state.notify();
+                                }
+                            });
+                            return;
+                        }
                         if let Err(e) = crate::launch_worker::fail(&state, &id, &error).await {
                             eprintln!("Launch cleanup: {e}");
                             let _ = state.db.lock().unwrap().execute(
@@ -683,7 +740,7 @@ mod tests {
             assert_eq!(read(&s, "messages", "m")["text"], "exact durable request");
             wait(|| s.launches.active.lock().unwrap().is_empty()).await;
             drop(s);
-            std::fs::remove_dir_all(dir).unwrap();
+            // Fixture trees are retained for private container teardown.
         }
     }
     #[tokio::test]
@@ -712,7 +769,7 @@ mod tests {
             assert_eq!(*peer.0.lock().unwrap(), vec!["independent request"]);
             wait(|| s.launches.active.lock().unwrap().is_empty()).await;
             drop(s);
-            std::fs::remove_dir_all(dir).unwrap();
+            // Fixture trees are retained for private container teardown.
         }
     }
 }

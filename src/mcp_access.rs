@@ -42,6 +42,9 @@ impl Authority {
     pub(crate) fn native_revoked(&self) -> bool {
         self.native.as_ref().is_some_and(|s| s.revoked())
     }
+    pub(crate) fn native_revocation(&self) -> Option<tokio::sync::watch::Receiver<bool>> {
+        self.native.as_ref().map(|scope| scope.revocation())
+    }
     pub(crate) fn native_thread(&self) -> Option<&str> {
         self.native.as_ref().map(|s| s.thread.as_str())
     }
@@ -133,6 +136,29 @@ impl Authority {
             }
         }
         Ok(p)
+    }
+    pub(crate) fn native_caller(&self, db: &Connection, write: bool) -> Result<Value, Value> {
+        self.native
+            .as_ref()
+            .ok_or_else(|| failure("capability_denied", "Native caller required."))?
+            .caller(db, write)
+    }
+    /// Source-toolkit reads preserve the immutable issued caller while loading
+    /// the actual current shell. Generic MCP reads and writes remain stricter.
+    pub(crate) fn native_page_caller(&self, db: &Connection) -> Result<Value, Value> {
+        self.native
+            .as_ref()
+            .ok_or_else(|| failure("capability_denied", "Native caller required."))?
+            .page_caller(db)
+    }
+    pub(crate) fn native_page_binding(&self) -> Option<(&str, &str, bool)> {
+        self.native.as_ref().map(|scope| {
+            (
+                scope.thread.as_str(),
+                scope.instance.as_str(),
+                scope.browser.is_some(),
+            )
+        })
     }
     pub(crate) fn browser_admission(&self, state: &State, write: bool) -> Result<(), Value> {
         let scope = self
@@ -435,6 +461,6 @@ mod tests {
             before
         );
         drop(state);
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

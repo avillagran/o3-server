@@ -1,0 +1,193 @@
+{
+  "phase": "scoped-positive-early-dialog-retention-privately-validated",
+  "base": "6be0e55fdc0f16ca67599c40b591bc57371fef8b",
+  "sources": {
+    "originalContexts": {
+      "path": "/var/tmp/o3-build/t3code-nightly-4314/apps/server/src/preview/ServerBrowserContexts.ts",
+      "sha256": "71aae266a17e577bad933cad935fe87249fba63349a206856caa26bcb0c44cdf",
+      "bytes": 10586
+    },
+    "originalServerBrowser": {
+      "path": "/var/tmp/o3-build/t3code-nightly-4314/apps/server/src/preview/ServerBrowser.ts",
+      "sha256": "e8b025a1c7de82ba8089c5fa7d4439ee69e1d19a74af7657a26a419a51cdfab6",
+      "bytes": 108905
+    },
+    "playwrightCoreBundle": {
+      "path": "/home/node/BuildCache/o3-desktop-next/playwright-core-1.60.0-i48olde5/package/lib/coreBundle.js",
+      "sha256": "f74353fcb8e406756a70a6af0dfc4a5069acd577e35ec9d923ccf36ac009c2f5",
+      "bytes": 3206963
+    },
+    "playwrightProtocol": {
+      "path": "/home/node/BuildCache/o3-desktop-next/playwright-core-1.60.0-i48olde5/package/types/protocol.d.ts",
+      "sha256": "681cf9768031b874fafdd81a20e8a20ca6c92a5cbf12e86532a69182e315b065",
+      "bytes": 812393
+    },
+    "chromiumPageHandler": {
+      "path": "/var/tmp/o3-build/chromium-dialog-source-ujft3m4n/92a6f15143569cf59b340472d0b5030465d95722/content/browser/devtools/protocol/page_handler.cc",
+      "sha256": "af8261b658e665aab4b9cd2566cce5753e56f9f9c9040c305847056be322ba3c",
+      "bytes": 109038
+    },
+    "chromiumPackageBinding": {
+      "path": "/var/tmp/o3-build/chromium-dialog-source-ujft3m4n/package-binding.json",
+      "sha256": "750ae6536cd51d2ef77d4c77c4119f7fb3376150885dd4318bb8162714b5745e",
+      "bytes": 1350
+    },
+    "chromiumSessionDispatch": {
+      "path": "/var/tmp/o3-build/chromium-dialog-source-ujft3m4n/92a6f15143569cf59b340472d0b5030465d95722/content/browser/devtools/devtools_session.cc",
+      "sha256": "674a67632911ea37f01077b54717de27b507c7f30fbc2ba7a64f2b513a115d03",
+      "bytes": 32705
+    }
+  },
+  "dialogSchema": {
+    "frameId": "Required in pinned PW generated protocol; independently emitted by pinned Chromium PageHandler",
+    "defaultPrompt": "Optional",
+    "schemaBlockSha256": "bc2bea4def29e07516840bb4224a3a9ce9e9e0269079f0b81027da6231317e7a",
+    "authority": "The registered Page session, without waiting for cached main-frame discovery",
+    "primaryPageHandlerUrl": "https://raw.githubusercontent.com/chromium/chromium/92a6f15143569cf59b340472d0b5030465d95722/content/browser/devtools/protocol/page_handler.cc"
+  },
+  "launchAlignment": [
+    "--disable-component-extensions-with-background-pages",
+    "--disable-default-apps",
+    "--disable-extensions"
+  ],
+  "doesNotProve": [
+    "Initial absence from Page.enable silence",
+    "No earlier script from waitingForDebugger",
+    "Canonical worker/listeners ready before author navigation",
+    "Complete present-tab Status or legacy Qt birth"
+  ],
+  "notRun": [
+    "complete-present-Status",
+    "public-selector-admission"
+  ],
+  "actualProofPrepared": {
+    "fixture": "tests/fixtures/input/native-dialog-frame-gate.py",
+    "case": "server_browser::events::tests::actual_dialog_opening_is_retained_while_original_frame_tree_ack_is_held",
+    "sessionBinding": "Exact actual Page.enable request sessionId; frame-tree request must match",
+    "fixtureRequestId": -1,
+    "idCollisionPolicy": "Native pending IDs are positive u64 starting at 1; proxy refuses nonpositive native IDs, does not rewrite IDs, and consumes only its own -1 response. Chromium session dispatcher uses signed int call IDs; actual pinned Chromium accepted its -1 evaluation and returned a successful response.",
+    "deliveryGate": "Hold original same-session frame-navigation packets and actual first frame-tree ACK; forward genuine injected literal-alert event. This deliberately delays delivery and is not a claim about natural packet ordering.",
+    "lifetime": "Three-second cap from first held packet; existing five-second native command deadline unchanged; bounded actual reply/observer waits; terminate and reap Chromium on fixture exit",
+    "markerPublication": "Atomic rename after exclusive no-follow regular temporary leaf write/fsync; owned mode-0700 private directory",
+    "qualification": "Accepted positive event preservation in exactly one actual Chromium case plus one observer regression; no initial absence certificate or complete Status admission.",
+    "processOwnership": "Popen and all subsequent socket setup are inside ownership try/finally; optional handles guarded, actual child terminated/waited or killed/waited on bounded exit",
+    "bufferAdmission": {
+      "packetBytes": 4194304,
+      "unterminatedBytes": 4194304,
+      "maximumRecvChunkBytes": 65536,
+      "heldBytes": 4194304,
+      "heldPackets": 8
+    }
+  },
+  "validation": {
+    "sourceFreezeSha256": "cc2a4d8ec41de06cd94ac0d4bf8f5c0b74bff728b1aa963ba59b0d384571e7f2",
+    "sourceCodeAndFixtureUnchangedSinceFreeze": true,
+    "compile1": {
+      "resultSha256": "4d516ff63455f842983c301d89bb0b0a24b62beb8413d926c3198a49bed0297f",
+      "minimalClippy": "pass",
+      "defaultClippy": "failed: Cargo shared-library cache incorrectly mounted read-only",
+      "libtestBuildReached": false,
+      "testsExecuted": 0
+    },
+    "compile2": {
+      "resultSha256": "d1f39e1fc62bd8d61e3ced5d0423e5bcd8049a86fa2e5aaecc02a729429ef684",
+      "commandsPassed": 3,
+      "testsExecuted": 0,
+      "libtestSha256": "1a382055b7d7e3d57c0dcd781e84bf68084b29dc898d6d9ac2bc259c199d3fa9",
+      "libtestBytes": 138585616,
+      "actualSDKArtifacts": [
+        "rlib",
+        "staticlib"
+      ],
+      "fixedInputsUnchanged": 67361,
+      "otherExecutableAliasesProtected": 23
+    },
+    "runtime": {
+      "accepted": true,
+      "exit": 0,
+      "failure": null,
+      "actualContainerTerminal": {
+        "id": "e12175f04cb6c1b6d230e0ce450fe6cc28fb28fb5115b4ee440e6083a90e6f81",
+        "queries": [
+          {
+            "target": "o3-status-early-dialog-runtime-1",
+            "existsExit": 1,
+            "terminal": true
+          },
+          {
+            "target": "e12175f04cb6c1b6d230e0ce450fe6cc28fb28fb5115b4ee440e6083a90e6f81",
+            "existsExit": 1,
+            "terminal": true
+          }
+        ],
+        "terminal": true,
+        "withoutRetainedCid": false
+      },
+      "allInputsAndReservedArtifactsUnchanged": true,
+      "cases": [
+        {
+          "case": "server_browser::events::tests::dialogs_before_frame_discovery_require_exact_session_and_drop_on_detachment",
+          "exit": 0,
+          "actualPassed": 1,
+          "observationExceeded": false,
+          "accepted": true
+        },
+        {
+          "case": "server_browser::events::tests::actual_dialog_opening_is_retained_while_original_frame_tree_ack_is_held",
+          "exit": 0,
+          "actualPassed": 1,
+          "observationExceeded": false,
+          "accepted": true
+        }
+      ],
+      "summary": {
+        "expectedCases": 2,
+        "actualCases": 2,
+        "actualPassed": 2,
+        "accepted": true
+      },
+      "actualFixtureExports": {
+        "fixture-frame-held.json": {
+          "path": "/var/tmp/o3-server/status-early-dialog-runtime-7tfcin0a/fixture-frame-held.json.raw.jsonl",
+          "bytes": 571,
+          "sha256": "87d10a586662ba95f2e4fb3d58fbdf1634b3f74c2553b3a65de9a5528eb43710",
+          "complete": true
+        },
+        "fixture-actual-opening.json": {
+          "path": "/var/tmp/o3-server/status-early-dialog-runtime-7tfcin0a/fixture-actual-opening.json.raw.jsonl",
+          "bytes": 270,
+          "sha256": "6419547789c02c2b7a1f29767df55306de9e2f9c7e64f7069291470391e78209",
+          "complete": true
+        },
+        "fixture-frame-released.json": {
+          "path": "/var/tmp/o3-server/status-early-dialog-runtime-7tfcin0a/fixture-frame-released.json.raw.jsonl",
+          "bytes": 87,
+          "sha256": "d80a73deb439b2455dc490e1adfd5ba1704efce6791cf78f01698b54421a4fbf",
+          "complete": true
+        },
+        "fixture-evaluation-done.json": {
+          "path": "/var/tmp/o3-server/status-early-dialog-runtime-7tfcin0a/fixture-evaluation-done.json.raw.jsonl",
+          "bytes": 104,
+          "sha256": "1cb49d1fd3ec5cb126785de4496986e0d782add888d698a341e8144d7764eaf9",
+          "complete": true
+        },
+        "fixture-chromium.stderr": {
+          "path": "/var/tmp/o3-server/status-early-dialog-runtime-7tfcin0a/fixture-chromium.stderr.raw.jsonl",
+          "bytes": 5105,
+          "sha256": "40c7ade868eeccb3eb583b574a24db26e01c4ca8afe4d7a0ef2e96088845c246",
+          "complete": true
+        }
+      },
+      "deferredSignals": [],
+      "ownershipAuditErrors": [],
+      "ownershipAuditErrorCount": 0,
+      "hostCargo": false,
+      "newCargoTarget": false,
+      "implicitProductionBinBuild": false,
+      "qualification": "Two exact early-dialog cases only: observer regression plus real Chromium opening while original frame ACK is held. No Playwright worker, initial absence, complete present Status, public selector or bootstrap acceptance. Entire existing target and all executable artifacts stay read-only."
+    },
+    "runtimeResultSha256": "8ff1479a6468270980c9a9baa48a307de236de660e8f429062ebcb7e366ef2de",
+    "runtimeLogSha256": "424551bdfda25fbc405807494239865165309f6275523f3eda79b2ea20d9677c",
+    "qualification": "Exactly 1 regression + 1 actual Chromium case; no complete present Status or initial absence proof."
+  }
+}

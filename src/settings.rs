@@ -3,13 +3,37 @@ use crate::store::State;
 use serde_json::{json, Value};
 pub const SENTINEL: &str = "••••••";
 pub fn descriptor(s: &State) -> Value {
-    json!({"environmentId":s.environment_id,"label":s.label,"platform":{"os":std::env::consts::OS,"arch":match std::env::consts::ARCH {"x86_64"=>"x64","aarch64"=>"arm64",_=>"other"}},"serverVersion":crate::rpc::SERVER_VERSION,"orchestrationProtocolVersion":2,"capabilities":{"serverBrowser":crate::server_browser::executable().is_some(),"agentBrowserAccess":crate::agent_browser::enabled(s, ""),"devices":crate::device::available(),"repositoryIdentity":true,"threadSettlement":true,"threadSnooze":true,"threadPinning":true,"threadAutoSettleOptOut":true,"threadTitleRegeneration":true,"attachmentUploads":true,"fileAttachments":{"maxUploadBytes":52428800},"inlineMessageContext":true,"pullRequests":crate::executable::resolve(std::path::Path::new("gh")).is_some(),"pullRequestChecks":true,"threadAutoSettlement":true,"storageCleanup":true,"storageCleanupRun":true,"projectWorktreeCleanup":true,"worktreesDirectory":true,"projectSettingsOverrides":true,"environmentThemes":true,"usageLimitSources":true,"threadPinReorder":true,"threadActiveReorder":true,"threadVisitedTracking":true,"threadPullRequestLinking":true,"threadPullRequests":true,"threadPullRequestWatch":true,"pullRequestStackActions":true,"otlpEndpointCheck":true,"commandOutputStreaming":true}})
+    json!({"environmentId":s.environment_id,"label":s.label,"platform":{"os":std::env::consts::OS,"arch":match std::env::consts::ARCH {"x86_64"=>"x64","aarch64"=>"arm64",_=>"other"}},"serverVersion":crate::rpc::SERVER_VERSION,"orchestrationProtocolVersion":2,"capabilities":{"voiceTranscription":crate::speech_state::available(s),"serverBrowser":s.streams.p2.preview.desktop_available() || crate::server_browser::executable().is_some(),"agentBrowserAccess":crate::agent_browser::enabled(s, ""),"devices":crate::device::available_for(s),"repositoryIdentity":true,"threadSettlement":true,"threadSnooze":true,"threadPinning":true,"threadAutoSettleOptOut":true,"threadTitleRegeneration":true,"attachmentUploads":true,"fileAttachments":{"maxUploadBytes":52428800},"inlineMessageContext":true,"pullRequests":crate::executable::resolve(std::path::Path::new("gh")).is_some(),"pullRequestChecks":true,"threadAutoSettlement":true,"storageCleanup":true,"storageCleanupRun":true,"projectWorktreeCleanup":true,"worktreesDirectory":true,"projectSettingsOverrides":true,"environmentThemes":true,"usageLimitSources":true,"threadPinReorder":true,"threadActiveReorder":true,"threadVisitedTracking":true,"threadPullRequestLinking":true,"threadPullRequests":true,"threadPullRequestWatch":true,"pullRequestStackActions":true,"otlpEndpointCheck":true,"commandOutputStreaming":true,"freshContext":true,"scheduledTaskThreadModes":true}})
 }
 pub fn auth_descriptor() -> Value {
     json!({"policy":"loopback-browser","bootstrapMethods":["pairing-token"],"sessionMethods":["bearer-access-token"],"sessionCookieName":"t3code_session"})
 }
+pub fn auth_descriptor_for(state: &State) -> Value {
+    let mut descriptor = auth_descriptor();
+    descriptor["policy"] = serde_json::to_value(state.auth_policy()).unwrap();
+    descriptor["bootstrapMethods"] = if state
+        .listener_auth
+        .get()
+        .is_some_and(|listener| listener.desktop)
+    {
+        if matches!(
+            state.auth_policy(),
+            crate::managed_limits::AuthPolicy::Remote
+        ) {
+            json!(["desktop-bootstrap", "one-time-token"])
+        } else {
+            json!(["desktop-bootstrap"])
+        }
+    } else {
+        json!(["one-time-token"])
+    };
+    descriptor
+}
 pub(crate) type Cache = Option<(Option<(std::time::SystemTime, u64)>, Value)>;
 pub fn read(s: &State) -> Result<Value, String> {
+    s.managed_policy.effective_settings(&read_stored(s)?)
+}
+pub(crate) fn read_stored(s: &State) -> Result<Value, String> {
     let stamp = match std::fs::metadata(s.dir.join("settings.json")) {
         Ok(m) => Some((m.modified().map_err(|e| e.to_string())?, m.len())),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
@@ -22,32 +46,78 @@ pub fn read(s: &State) -> Result<Value, String> {
         }
     }
     let mut v: Value = serde_json::from_str(include_str!("settings-defaults.json")).unwrap();
+    if s.managed_policy.settings_controls()?.is_some() {
+        v = with_native_fields(&v, crate::managed_settings_codec::encoded_defaults());
+    }
     match std::fs::read(s.dir.join("settings.json")) {
         Ok(b) => {
             let stored: Value = serde_json::from_slice(&b).map_err(|e| e.to_string())?;
-            merge(&mut v, &stored);
-            // T3 keeps keyed forge literals in private secret slots. Retain their public marker
-            // when loading a profile; patch merging still treats that marker as "keep existing".
-            if let Some(hosts) = stored["sourceControlHosts"].as_object() {
-                for (kind, settings) in hosts {
-                    for field in ["tokens", "signIns"] {
-                        if let Some(entries) = settings[field].as_object() {
-                            for (host, value) in entries {
-                                if value == SENTINEL {
-                                    v["sourceControlHosts"][kind][field][host] = json!(SENTINEL);
-                                }
-                            }
-                        }
-                    }
+            let filled = match s.managed_policy.settings_controls()? {
+                Some(controls) => controls.with_defaults(&stored),
+                None => stored.clone(),
+            };
+            merge(&mut v, &filled);
+            // These complete source records contain public saved-secret markers.
+            // Generic legacy merge skips markers, which would erase their slots.
+            for key in [
+                "sourceControlHosts",
+                "usageLimitSources",
+                "secretProviders",
+                "cloudSpeechCredentials",
+            ] {
+                if let Some(value) = filled.get(key) {
+                    v[key] = value.clone();
                 }
             }
         }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            if let Some(controls) = s.managed_policy.settings_controls()? {
+                merge(&mut v, &controls.with_defaults(&json!({})));
+            }
+        }
         Err(e) => return Err(e.to_string()),
+    }
+    if s.managed_policy.settings_controls()?.is_some() {
+        let native = crate::managed_settings_codec::decode_persisted(v.clone())
+            .and_then(crate::managed_settings_codec::encode)
+            .map_err(|_| "Invalid managed settings input")?;
+        v = with_native_fields(&v, native);
     }
     normalize(&mut v, &json!({}))?;
     *cache = Some((stamp, v.clone()));
     Ok(v)
+}
+/// Keep O3 extension keys outside the pinned native schema projection.
+pub(crate) fn with_native_fields(original: &Value, mut native: Value) -> Value {
+    for (key, value) in original.as_object().into_iter().flatten() {
+        if !crate::managed_settings_codec::fields().contains_key(key) {
+            native[key] = value.clone();
+        }
+    }
+    native
+}
+fn strip_defaults(
+    current: &Value,
+    defaults: &Value,
+    is_atomic: &impl Fn(&str) -> bool,
+) -> Option<Value> {
+    if let (Some(current), Some(defaults)) = (current.as_object(), defaults.as_object()) {
+        let mut stripped = serde_json::Map::new();
+        for (key, value) in current {
+            if is_atomic(key) {
+                if Some(value) != defaults.get(key) {
+                    stripped.insert(key.clone(), value.clone());
+                }
+            } else if let Some(value) =
+                strip_defaults(value, defaults.get(key).unwrap_or(&Value::Null), is_atomic)
+            {
+                stripped.insert(key.clone(), value);
+            }
+        }
+        (!stripped.is_empty()).then_some(Value::Object(stripped))
+    } else {
+        (current != defaults).then(|| current.clone())
+    }
 }
 pub fn merge(dst: &mut Value, patch: &Value) {
     if let (Some(d), Some(p)) = (dst.as_object_mut(), patch.as_object()) {
@@ -112,21 +182,199 @@ pub fn redact(v: &mut Value) {
         _ => {}
     }
 }
+/// Capture settings and private slots under the same lock as write/rollback.
+pub(crate) fn read_materialized(s: &State) -> Result<Value, String> {
+    let _guard = s.settings_lock.lock().unwrap();
+    crate::settings_secrets::materialize_profile(&s.dir, &read(s)?)
+}
+fn private_projection(value: &Value) -> Result<Value, String> {
+    let providers = value["providerInstances"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter(|(_, entry)| matches!(entry["driver"].as_str(), Some("codex" | "claudeAgent")))
+        .map(|(id, entry)| (id.clone(), entry.clone()))
+        .collect::<serde_json::Map<_, _>>();
+    let mut decoded=crate::managed_settings_codec::decode_patch(json!({"providerInstances":providers,"sourceControlHosts":value["sourceControlHosts"],"usageLimitSources":value["usageLimitSources"],"cloudSpeechCredentials":value["cloudSpeechCredentials"]}))
+        .map_err(|_|"Invalid private settings fields".to_owned())?;
+    decoded["easDeviceHosts"] = json!([]);
+    decoded["simlockDeviceHosts"] = json!([]);
+    decoded["secretProviders"] = crate::managed_settings_codec::decode_field(
+        "secretProviders",
+        value.get("secretProviders").cloned(),
+    )
+    .map_err(|_| "Invalid private settings fields")?;
+    Ok(decoded)
+}
+fn clear_removed_provider_references(current: &Value, next: &Value) -> Result<Value, String> {
+    let removed = current["secretProviders"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .any(|(id, _)| next["secretProviders"].get(id).is_none());
+    if !removed {
+        return Ok(next.clone());
+    }
+    let transform = |settings: &Value, encode: bool| -> Result<Value, String> {
+        let mut result = settings.clone();
+        for (id, entry) in settings["providerInstances"]
+            .as_object()
+            .into_iter()
+            .flatten()
+        {
+            if let Some(environment) = entry.get("environment") {
+                result["providerInstances"][id]["environment"] =
+                    crate::managed_settings_codec::provider_environment(
+                        environment.clone(),
+                        encode,
+                    )
+                    .map_err(|_| "Invalid provider environment")?;
+            }
+        }
+        Ok(result)
+    };
+    // Native cleanup consumes decoded reference values; shared-profile files
+    // encode those same provider variables with a separate `secret` member.
+    let decoded = transform(next, false)?;
+    transform(
+        &crate::settings_secrets::without_removed_providers(current, &decoded),
+        true,
+    )
+}
+fn apply_private_projection(value: &mut Value, projected: &Value) -> Result<(), String> {
+    let encoded = crate::managed_settings_codec::encode_sparse(projected.clone())
+        .map_err(|_| "Invalid private settings encoding".to_owned())?;
+    for key in [
+        "sourceControlHosts",
+        "usageLimitSources",
+        "secretProviders",
+        "cloudSpeechCredentials",
+    ] {
+        value[key] = encoded[key].clone();
+    }
+    for (id, entry) in encoded["providerInstances"]
+        .as_object()
+        .into_iter()
+        .flatten()
+    {
+        value["providerInstances"][id] = entry.clone();
+    }
+    Ok(())
+}
+fn redact_client(value: &mut Value) -> Result<(), String> {
+    // Full client reference capability negotiation remains gated.
+    let projected = crate::settings_secret_transaction::redact(&private_projection(value)?, false);
+    redact(value);
+    let encoded = crate::managed_settings_codec::encode_sparse(projected)
+        .map_err(|_| "Invalid private settings encoding".to_owned())?;
+    for key in [
+        "sourceControlHosts",
+        "usageLimitSources",
+        "secretProviders",
+        "cloudSpeechCredentials",
+    ] {
+        value[key] = encoded[key].clone();
+    }
+    for (id, entry) in encoded["providerInstances"]
+        .as_object()
+        .into_iter()
+        .flatten()
+    {
+        if let Some(environment) = entry.get("environment") {
+            value["providerInstances"][id]["environment"] = environment.clone();
+        }
+    }
+    Ok(())
+}
+fn private_error(s: &State, error: &crate::settings_secret_transaction::TransactionError) -> Value {
+    for failure in &error.rollback_errors {
+        eprintln!(
+            "Failed to roll back settings secret: {} ({})",
+            failure.resource, failure.tag
+        );
+    }
+    let message = format!(
+        "Server settings {} failed at {}.",
+        error.operation,
+        s.dir.join("settings.json").display()
+    );
+    json!({"operation":error.operation,"message":message,"cause":{"_tag":error.cause.tag,"resource":error.cause.resource}})
+}
 pub fn get(s: &State) -> Result<Value, String> {
     let mut v = read(s)?;
-    redact(&mut v);
+    redact_client(&mut v)?;
     Ok(v)
 }
 pub fn update(s: &State, p: &Value) -> Result<Value, String> {
+    update_inner(s, p, &mut None, None)
+}
+pub(crate) fn update_rpc(s: &State, p: &Value) -> Result<Value, Value> {
+    let mut policy_error = None;
+    update_inner(s, p, &mut policy_error, None).map_err(|message| {
+        let mut error =
+            policy_error.unwrap_or_else(|| json!({"operation":"write","message":message}));
+        error["_tag"] = json!("ServerSettingsError");
+        error["settingsPath"] = json!(s.dir.join("settings.json"));
+        error
+    })
+}
+/// Recheck a caller's authority under the existing writer lock, before any
+/// settings, private-secret or provider side effect. Typed denial stays with the caller.
+pub(crate) fn update_checked(
+    s: &State,
+    p: &Value,
+    check: &mut dyn FnMut() -> Result<(), String>,
+) -> Result<Value, String> {
+    update_inner(s, p, &mut None, Some(check))
+}
+fn update_inner(
+    s: &State,
+    p: &Value,
+    policy_error: &mut Option<Value>,
+    check: Option<&mut dyn FnMut() -> Result<(), String>>,
+) -> Result<Value, String> {
+    // Never acquire the provider pointer mutex while holding the settings lock:
+    // provider inspection takes the shared settings snapshot lock itself.
+    let provider = s.provider.lock().unwrap().clone();
     let _guard = s.settings_lock.lock().unwrap();
+    if let Some(check) = check {
+        check()?;
+    }
     let patch = p
         .get("patch")
         .filter(|v| v.is_object())
         .ok_or("patch must be an object")?;
-    let mut v = read(s)?;
+    let mut v = read_stored(s)?;
     let previous = v.clone();
     // Preserve sensitive environment values echoed by clients as valueRedacted.
     let mut patch = patch.clone();
+    if let Some(entries) = patch.get("secretProviders") {
+        let decoded =
+            crate::managed_settings_codec::decode_patch(json!({"secretProviders":entries}))
+                .map_err(|_| "Invalid secret provider patch")?;
+        for (id, entry) in decoded["secretProviders"].as_object().unwrap() {
+            if entry.is_null() {
+                continue;
+            }
+            let kind = entry["kind"].as_str().unwrap();
+            let problem = match s.secret_resolver.validates_config(kind, &entry["config"]) {
+                None => Some(format!("Unsupported secret provider kind: {kind}.")),
+                Some(false) => Some(format!("Invalid {kind} config for secret provider {id}.")),
+                Some(true) => None,
+            };
+            if let Some(problem) = problem {
+                let message = format!(
+                    "Server settings write-secret-provider failed at {}.",
+                    s.dir.join("settings.json").display()
+                );
+                *policy_error = Some(
+                    json!({"operation":"write-secret-provider","message":message,"cause":{"_tag":"Error","message":problem}}),
+                );
+                return Err(message);
+            }
+        }
+        patch["secretProviders"] = decoded["secretProviders"].clone();
+    }
     preserve_environment(&v, &mut patch);
     merge(&mut v, &patch);
     apply_entry_patches(&previous, &mut v, &patch)?;
@@ -200,18 +448,169 @@ pub fn update(s: &State, p: &Value) -> Result<Value, String> {
             v["textGenerationModelSelection"]["options"] = json!([]);
         }
     }
+    v = crate::settings_secret_transaction::echo(&previous, &v);
     normalize_preferences(&previous, &mut v, &patch)?;
     normalize(&mut v, &patch)?;
-    crate::profile::atomic_json(&s.dir.join("settings.json"), &v).map_err(|e| e.to_string())?;
+    if let Some(controls) = s.managed_policy.settings_controls()? {
+        let current = crate::managed_settings_codec::decode(previous.clone())
+            .map_err(|_| "Invalid current managed settings")?;
+        let next = crate::managed_settings_codec::decode(v.clone())
+            .map_err(|_| "Invalid updated managed settings")?;
+        let decoded_patch = crate::managed_settings_codec::decode_patch(patch.clone())
+            .map_err(|_| "Invalid managed settings patch")?;
+        let vetted = match controls
+            .vet_write(&current, &next, &decoded_patch)
+            .map_err(|_| "Invalid managed settings write")?
+        {
+            crate::managed_settings::VetWrite::Allowed(value) => value,
+            crate::managed_settings::VetWrite::Locked { path } => {
+                let organization = s
+                    .managed_policy
+                    .document
+                    .as_ref()
+                    .unwrap()
+                    .organization
+                    .as_str();
+                let message = format!("{path} is managed by {organization} and cannot be changed.");
+                *policy_error = Some(
+                    json!({"operation":"write-managed-setting","managedSetting":path,"managedBy":organization,"message":message}),
+                );
+                return Err(message);
+            }
+        };
+        v = with_native_fields(
+            &v,
+            crate::managed_settings_codec::encode(vetted)
+                .map_err(|_| "Invalid managed settings encoding")?,
+        );
+    }
+    v = s
+        .managed_policy
+        .vet_provider_write_rpc(&previous, &v)
+        .map_err(|error| {
+            let message = error["message"].as_str().unwrap().to_owned();
+            *policy_error = Some(error);
+            message
+        })?;
+    v = clear_removed_provider_references(&previous, &v)?;
+    let mut previous_private = private_projection(&previous)?;
+    let next_private = private_projection(&v).map_err(|_| {
+        let message = format!(
+            "Server settings normalize failed at {}.",
+            s.dir.join("settings.json").display()
+        );
+        *policy_error = Some(json!({"operation":"normalize","message":message}));
+        message
+    })?;
+    // Switching to an unsupported driver leaves its opaque private state alone.
+    // Its storage/launch activation is a separate consumer boundary.
+    if let Some(entries) = previous_private["providerInstances"].as_object_mut() {
+        entries.retain(|id, _| {
+            v["providerInstances"].get(id).is_none()
+                || next_private["providerInstances"].get(id).is_some()
+        });
+    }
+    let (private_settings, private_changes) =
+        crate::settings_secret_transaction::plan(&previous_private, &next_private);
+    apply_private_projection(&mut v, &private_settings)?;
+    let persisted = if let Some(controls) = s.managed_policy.settings_controls()? {
+        let decoded = crate::managed_settings_codec::decode(v.clone())
+            .map_err(|_| "Invalid managed settings persistence")?;
+        let defaults = crate::managed_settings_codec::defaults();
+        let is_atomic = |key: &str| {
+            matches!(
+                key,
+                "backgroundActivity"
+                    | "automaticGitFetchInterval"
+                    | "providerHealthRefreshInterval"
+                    | "sourceControlWriterModelSelection"
+                    | "reviewGuideModelSelection"
+                    | "textGenerationModelSelection"
+                    | "fallbackModelSelection"
+                    | "pullRequestMergeMethod"
+            ) || defaults.get(key).is_some_and(Value::is_null)
+        };
+        let stripped = strip_defaults(&decoded, &controls.defaults_value, &is_atomic)
+            .unwrap_or_else(|| json!({}));
+        let raw = match std::fs::read(s.dir.join("settings.json")) {
+            Ok(bytes) => serde_json::from_slice(&bytes).map_err(|error| error.to_string())?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Value::Null,
+            Err(error) => return Err(error.to_string()),
+        };
+        let kept = if controls.has_defaults() {
+            controls
+                .keep_stored(stripped, &decoded, &raw, is_atomic)
+                .map_err(|_| "Invalid managed settings stored defaults")?
+        } else {
+            stripped
+        };
+        with_native_fields(
+            &v,
+            crate::managed_settings_codec::encode_sparse(kept)
+                .map_err(|_| "Invalid managed settings sparse encoding")?,
+        )
+    } else {
+        v.clone()
+    };
+    use crate::server_secret_store::FileSecretStore;
+    let private_store = if private_changes.is_empty() {
+        None
+    } else {
+        Some(FileSecretStore::open(&s.dir.join("secrets")).map_err(|cause| {
+            let error=json!({"operation":"write-secret","message":format!("Failed to secure private settings storage ({}).",cause.tag),"cause":{"_tag":cause.tag,"resource":cause.resource}});
+            let message=error["message"].as_str().unwrap().to_owned();*policy_error=Some(error);message
+        })?)
+    };
+    let applied = if let Some(store) = &private_store {
+        let applied = crate::settings_secret_transaction::apply(store, &private_changes).map_err(
+            |cause| {
+                let error = private_error(s, &cause);
+                let message = error["message"].as_str().unwrap().to_owned();
+                *policy_error = Some(error);
+                message
+            },
+        )?;
+        // Verify the exact selected snapshot before publishing its public markers.
+        if let Err(cause) =
+            crate::settings_secret_transaction::materialize(store, &private_settings)
+        {
+            let failures = crate::settings_secret_transaction::rollback(store, &applied);
+            let mut cause = cause;
+            cause.rollback_errors.extend(failures);
+            let error = private_error(s, &cause);
+            let message = error["message"].as_str().unwrap().to_owned();
+            *policy_error = Some(error);
+            return Err(message);
+        }
+        applied
+    } else {
+        Vec::new()
+    };
+    if let Err(error) = crate::profile::atomic_json(&s.dir.join("settings.json"), &persisted) {
+        if let Some(store) = &private_store {
+            for failure in crate::settings_secret_transaction::rollback(store, &applied) {
+                eprintln!(
+                    "Failed to roll back settings secret: {} ({})",
+                    failure.resource, failure.tag
+                );
+            }
+        }
+        return Err(error.to_string());
+    }
+    *s.settings_cache.lock().unwrap() = None;
+    if private_changes
+        .iter()
+        .any(|change| change.secret_name.starts_with("usage-limit-source-"))
+    {
+        crate::config_sources::private_settings_changed(s);
+    }
     s.notify();
+    s.streams.ops.scheduler_wake.notify_one();
     if patch.get("providerInstances").is_some()
         || patch.get("projectSettingsOverrides").is_some()
         || p.get("providerInstanceMutation").is_some()
     {
-        if let (Ok(runtime), Some(provider)) = (
-            tokio::runtime::Handle::try_current(),
-            s.provider.lock().unwrap().clone(),
-        ) {
+        if let (Ok(runtime), Some(provider)) = (tokio::runtime::Handle::try_current(), provider) {
             let changed = s.changed.clone();
             let cwd = std::env::current_dir().unwrap_or_else(|_| s.dir.clone());
             runtime.spawn(async move {
@@ -220,7 +619,8 @@ pub fn update(s: &State, p: &Value) -> Result<Value, String> {
             });
         }
     }
-    redact(&mut v);
+    v = s.managed_policy.effective_settings(&v)?;
+    redact_client(&mut v)?;
     Ok(v)
 }
 fn preserve_environment(old: &Value, patch: &mut Value) {
@@ -232,15 +632,15 @@ fn preserve_environment(old: &Value, patch: &mut Value) {
             if let Some(vars) = instance["environment"].as_array_mut() {
                 for var in vars {
                     if var["valueRedacted"] == true {
-                        if let Some(prev) = old["providerInstances"][id]["environment"]
+                        let previous = old["providerInstances"][id]["environment"]
                             .as_array()
-                            .and_then(|a| a.iter().find(|p| p["name"] == var["name"]))
-                        {
-                            var["value"] = prev["value"].clone();
-                        } else {
-                            var["value"] = json!("");
+                            .and_then(|a| a.iter().find(|p| p["name"] == var["name"]));
+                        var["value"] = previous
+                            .map(|prev| prev["value"].clone())
+                            .unwrap_or_else(|| json!(""));
+                        if previous.is_none_or(|prev| prev["valueRedacted"] != true) {
+                            var.as_object_mut().unwrap().remove("valueRedacted");
                         }
-                        var.as_object_mut().unwrap().remove("valueRedacted");
                     }
                 }
             }
@@ -249,8 +649,15 @@ fn preserve_environment(old: &Value, patch: &mut Value) {
 }
 pub fn config(s: &State) -> Result<Value, String> {
     let (keybindings, issues) = crate::keybind::resolved(s);
-    let mut config = json!({"environment":descriptor(s),"directEndpoints":direct_endpoints(s),"auth":auth_descriptor(),"cwd":std::env::current_dir().unwrap_or_default(),"keybindingsConfigPath":s.dir.join("keybindings.json"),"keybindings":keybindings,"issues":issues,"providers":s.provider.lock().unwrap().as_ref().map(|p|p.config()).unwrap_or_default(),"availableEditors":crate::files::available_editors(),"observability":{"logsDirectoryPath":s.dir.join("logs"),"localTracingEnabled":false,"otlpTracesEnabled":false,"otlpMetricsEnabled":false,"otlpLogsEnabled":false},"settings":get(s)?,"shellResumeCompletionMarker":true,"threadResumeCompletionMarker":true,"shellThreadFamilies":false,"shellOlderSettled":false,"threadSnapshotPagination":false});
+    let provider = s.provider.lock().unwrap().clone();
+    let providers = provider
+        .map(|provider| provider.config())
+        .unwrap_or_default();
+    let mut config = json!({"environment":descriptor(s),"directEndpoints":direct_endpoints(s),"auth":auth_descriptor_for(s),"cwd":std::env::current_dir().unwrap_or_default(),"keybindingsConfigPath":s.dir.join("keybindings.json"),"keybindings":keybindings,"issues":issues,"providers":providers,"availableEditors":crate::files::available_editors(),"observability":{"logsDirectoryPath":s.dir.join("logs"),"localTracingEnabled":false,"otlpTracesEnabled":false,"otlpMetricsEnabled":false,"otlpLogsEnabled":false},"settings":get(s)?,"shellResumeCompletionMarker":true,"threadResumeCompletionMarker":true,"shellThreadFamilies":false,"shellOlderSettled":false,"threadSnapshotPagination":false});
     config["settingsSupport"] = json!({"enableAgentBrowserAccess":{"supported":true},"projectAgentBrowserAccessOverrides":{"supported":true}});
+    if let Some(summary) = s.managed_policy.basic_summary() {
+        config["managedPolicy"] = summary;
+    }
     startup_catalog(s, &mut config);
     crate::setup::decorate(s, &mut config);
     Ok(config)
@@ -283,6 +690,7 @@ fn retain_sentinels(old: &Value, new: &mut Value) {
 fn apply_entry_patches(old: &Value, next: &mut Value, patch: &Value) -> Result<(), String> {
     for field in [
         "usageLimitSources",
+        "secretProviders",
         "usagePriceOverrides",
         "usageModelAliases",
         "projectSettingsOverrides",

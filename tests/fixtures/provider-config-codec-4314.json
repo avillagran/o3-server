@@ -1,0 +1,2774 @@
+[
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    }
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": [],
+      "setupMode": null
+    },
+    "error": "Expected \"managed\" | \"existing\"\n  at [\"setupMode\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": [],
+      "setupMode": true
+    },
+    "error": "Expected \"managed\" | \"existing\"\n  at [\"setupMode\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": [],
+      "setupMode": false
+    },
+    "error": "Expected \"managed\" | \"existing\"\n  at [\"setupMode\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": [],
+      "setupMode": 0
+    },
+    "error": "Expected \"managed\" | \"existing\"\n  at [\"setupMode\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": [],
+      "setupMode": ""
+    },
+    "error": "Expected \"managed\" | \"existing\"\n  at [\"setupMode\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": [],
+      "setupMode": " native "
+    },
+    "error": "Expected \"managed\" | \"existing\"\n  at [\"setupMode\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": [],
+      "setupMode": []
+    },
+    "error": "Expected \"managed\" | \"existing\"\n  at [\"setupMode\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": [],
+      "setupMode": {}
+    },
+    "error": "Expected \"managed\" | \"existing\"\n  at [\"setupMode\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": [],
+      "setupMode": [
+        {
+          "slug": " model ",
+          "name": " Name "
+        }
+      ]
+    },
+    "error": "Expected \"managed\" | \"existing\"\n  at [\"setupMode\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": [],
+      "setupMode": [
+        {
+          "slug": 0
+        }
+      ]
+    },
+    "error": "Expected \"managed\" | \"existing\"\n  at [\"setupMode\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": [],
+      "setupMode": {
+        "invalid": true
+      }
+    },
+    "error": "Expected \"managed\" | \"existing\"\n  at [\"setupMode\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    }
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": null,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected boolean | undefined\n  at [\"enabled\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    }
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": false,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "decoded": {
+      "enabled": false,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    }
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": 0,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected boolean | undefined\n  at [\"enabled\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": "",
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected boolean | undefined\n  at [\"enabled\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": " native ",
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected boolean | undefined\n  at [\"enabled\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": [],
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected boolean | undefined\n  at [\"enabled\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": {},
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected boolean | undefined\n  at [\"enabled\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": [
+        {
+          "slug": " model ",
+          "name": " Name "
+        }
+      ],
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected boolean | undefined\n  at [\"enabled\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": [
+        {
+          "slug": 0
+        }
+      ],
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected boolean | undefined\n  at [\"enabled\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": {
+        "invalid": true
+      },
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected boolean | undefined\n  at [\"enabled\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    }
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": null,
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"binaryPath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": true,
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"binaryPath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": false,
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"binaryPath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": 0,
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"binaryPath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    }
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": " native ",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "native",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    }
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": [],
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"binaryPath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": {},
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"binaryPath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": [
+        {
+          "slug": " model ",
+          "name": " Name "
+        }
+      ],
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"binaryPath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": [
+        {
+          "slug": 0
+        }
+      ],
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"binaryPath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": {
+        "invalid": true
+      },
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"binaryPath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    }
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": null,
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"homePath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": true,
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"homePath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": false,
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"homePath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": 0,
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"homePath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    }
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": " native ",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "native",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    }
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": [],
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"homePath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": {},
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"homePath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": [
+        {
+          "slug": " model ",
+          "name": " Name "
+        }
+      ],
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"homePath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": [
+        {
+          "slug": 0
+        }
+      ],
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"homePath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": {
+        "invalid": true
+      },
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"homePath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    }
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": null,
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"shadowHomePath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": true,
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"shadowHomePath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": false,
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"shadowHomePath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": 0,
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"shadowHomePath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    }
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": " native ",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "native",
+      "launchArgs": "",
+      "customModels": []
+    }
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": [],
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"shadowHomePath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": {},
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"shadowHomePath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": [
+        {
+          "slug": " model ",
+          "name": " Name "
+        }
+      ],
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"shadowHomePath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": [
+        {
+          "slug": 0
+        }
+      ],
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"shadowHomePath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": {
+        "invalid": true
+      },
+      "launchArgs": "",
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"shadowHomePath\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "customModels": []
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    }
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": null,
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"launchArgs\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": true,
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"launchArgs\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": false,
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"launchArgs\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": 0,
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"launchArgs\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    }
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": " native ",
+      "customModels": []
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "native",
+      "customModels": []
+    }
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": [],
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"launchArgs\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": {},
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"launchArgs\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": [
+        {
+          "slug": " model ",
+          "name": " Name "
+        }
+      ],
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"launchArgs\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": [
+        {
+          "slug": 0
+        }
+      ],
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"launchArgs\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": {
+        "invalid": true
+      },
+      "customModels": []
+    },
+    "error": "Expected string | undefined\n  at [\"launchArgs\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": ""
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    }
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": null
+    },
+    "error": "Expected array | undefined\n  at [\"customModels\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": true
+    },
+    "error": "Expected array | undefined\n  at [\"customModels\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": false
+    },
+    "error": "Expected array | undefined\n  at [\"customModels\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": 0
+    },
+    "error": "Expected array | undefined\n  at [\"customModels\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": ""
+    },
+    "error": "Expected array | undefined\n  at [\"customModels\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": " native "
+    },
+    "error": "Expected array | undefined\n  at [\"customModels\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    }
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": {}
+    },
+    "error": "Expected array | undefined\n  at [\"customModels\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": [
+        {
+          "slug": " model ",
+          "name": " Name "
+        }
+      ]
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": [
+        {
+          "slug": "model",
+          "name": "Name"
+        }
+      ]
+    }
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": [
+        {
+          "slug": 0
+        }
+      ]
+    },
+    "error": "Expected string\n  at [\"customModels\"][0][\"slug\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": {
+        "invalid": true
+      }
+    },
+    "error": "Expected array | undefined\n  at [\"customModels\"]"
+  },
+  {
+    "driver": "codex",
+    "input": null,
+    "error": "Expected object"
+  },
+  {
+    "driver": "codex",
+    "input": false,
+    "error": "Expected object"
+  },
+  {
+    "driver": "codex",
+    "input": [],
+    "error": "Expected object"
+  },
+  {
+    "driver": "codex",
+    "input": {},
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "codex",
+      "homePath": "",
+      "shadowHomePath": "",
+      "launchArgs": "",
+      "customModels": []
+    }
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "customModels": [
+        {
+          "slug": " ",
+          "name": "n"
+        }
+      ]
+    },
+    "error": "Expected a non-blank string\n  at [\"customModels\"][0][\"slug\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "customModels": [
+        {
+          "slug": "x",
+          "name": "n",
+          "capabilities": {
+            "optionDescriptors": [
+              {}
+            ]
+          }
+        }
+      ]
+    },
+    "error": "Expected { readonly \"type\": \"select\", ... } | { readonly \"type\": \"boolean\", ... }\n  at [\"customModels\"][0][\"capabilities\"][\"optionDescriptors\"][0]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "customModels": [
+        {
+          "slug": "x",
+          "name": "n",
+          "capabilities": {
+            "optionDescriptors": [
+              {
+                "type": "select"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "error": "Missing key\n  at [\"customModels\"][0][\"capabilities\"][\"optionDescriptors\"][0][\"id\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "customModels": [
+        {
+          "slug": "x",
+          "name": "n",
+          "capabilities": {
+            "optionDescriptors": [
+              {
+                "type": "boolean",
+                "id": 0
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "error": "Expected string\n  at [\"customModels\"][0][\"capabilities\"][\"optionDescriptors\"][0][\"id\"]"
+  },
+  {
+    "driver": "codex",
+    "input": {
+      "customModels": [
+        {
+          "slug": "x",
+          "name": "n",
+          "capabilities": {
+            "optionDescriptors": [
+              {
+                "type": "boolean",
+                "id": " ",
+                "label": "x"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "error": "Expected a non-blank string\n  at [\"customModels\"][0][\"capabilities\"][\"optionDescriptors\"][0][\"id\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    }
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": null,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected boolean | undefined\n  at [\"enabled\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    }
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": false,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "decoded": {
+      "enabled": false,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    }
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": 0,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected boolean | undefined\n  at [\"enabled\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": "",
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected boolean | undefined\n  at [\"enabled\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": " native ",
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected boolean | undefined\n  at [\"enabled\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": [],
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected boolean | undefined\n  at [\"enabled\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": {},
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected boolean | undefined\n  at [\"enabled\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": [
+        {
+          "slug": " model ",
+          "name": " Name "
+        }
+      ],
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected boolean | undefined\n  at [\"enabled\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": [
+        {
+          "slug": 0
+        }
+      ],
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected boolean | undefined\n  at [\"enabled\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": {
+        "invalid": true
+      },
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected boolean | undefined\n  at [\"enabled\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    }
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": null,
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"binaryPath\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": true,
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"binaryPath\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": false,
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"binaryPath\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": 0,
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"binaryPath\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    }
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": " native ",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "native",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    }
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": [],
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"binaryPath\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": {},
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"binaryPath\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": [
+        {
+          "slug": " model ",
+          "name": " Name "
+        }
+      ],
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"binaryPath\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": [
+        {
+          "slug": 0
+        }
+      ],
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"binaryPath\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": {
+        "invalid": true
+      },
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"binaryPath\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    }
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": null,
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"homePath\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": true,
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"homePath\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": false,
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"homePath\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": 0,
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"homePath\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    }
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": " native ",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "native",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    }
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": [],
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"homePath\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": {},
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"homePath\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": [
+        {
+          "slug": " model ",
+          "name": " Name "
+        }
+      ],
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"homePath\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": [
+        {
+          "slug": 0
+        }
+      ],
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"homePath\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": {
+        "invalid": true
+      },
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"homePath\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    }
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": null,
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected array | undefined\n  at [\"customModels\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": true,
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected array | undefined\n  at [\"customModels\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": false,
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected array | undefined\n  at [\"customModels\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": 0,
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected array | undefined\n  at [\"customModels\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": "",
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected array | undefined\n  at [\"customModels\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": " native ",
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected array | undefined\n  at [\"customModels\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    }
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": {},
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected array | undefined\n  at [\"customModels\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [
+        {
+          "slug": " model ",
+          "name": " Name "
+        }
+      ],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [
+        {
+          "slug": "model",
+          "name": "Name"
+        }
+      ],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    }
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [
+        {
+          "slug": 0
+        }
+      ],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string\n  at [\"customModels\"][0][\"slug\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": {
+        "invalid": true
+      },
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected array | undefined\n  at [\"customModels\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    }
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": null,
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"launchArgs\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": true,
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"launchArgs\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": false,
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"launchArgs\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": 0,
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"launchArgs\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    }
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": " native ",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": " native ",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    }
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": [],
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"launchArgs\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": {},
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"launchArgs\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": [
+        {
+          "slug": " model ",
+          "name": " Name "
+        }
+      ],
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"launchArgs\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": [
+        {
+          "slug": 0
+        }
+      ],
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"launchArgs\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": {
+        "invalid": true
+      },
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"launchArgs\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "idleCompaction": "default"
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    }
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": null,
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"autoCompactWindow\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": true,
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"autoCompactWindow\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": false,
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"autoCompactWindow\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": 0,
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"autoCompactWindow\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    }
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": " native ",
+      "idleCompaction": "default"
+    },
+    "error": "Expected a string matching the RegExp ^(?:|[1-9]\\d{5}|1000000)$\n  at [\"autoCompactWindow\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": [],
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"autoCompactWindow\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": {},
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"autoCompactWindow\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": [
+        {
+          "slug": " model ",
+          "name": " Name "
+        }
+      ],
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"autoCompactWindow\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": [
+        {
+          "slug": 0
+        }
+      ],
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"autoCompactWindow\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": {
+        "invalid": true
+      },
+      "idleCompaction": "default"
+    },
+    "error": "Expected string | undefined\n  at [\"autoCompactWindow\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": ""
+    },
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    }
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": null
+    },
+    "error": "Expected \"default\" | \"onReturn\" | \"beforeCacheExpires\" | \"off\" | undefined\n  at [\"idleCompaction\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": true
+    },
+    "error": "Expected \"default\" | \"onReturn\" | \"beforeCacheExpires\" | \"off\" | undefined\n  at [\"idleCompaction\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": false
+    },
+    "error": "Expected \"default\" | \"onReturn\" | \"beforeCacheExpires\" | \"off\" | undefined\n  at [\"idleCompaction\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": 0
+    },
+    "error": "Expected \"default\" | \"onReturn\" | \"beforeCacheExpires\" | \"off\" | undefined\n  at [\"idleCompaction\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": ""
+    },
+    "error": "Expected \"default\" | \"onReturn\" | \"beforeCacheExpires\" | \"off\"\n  at [\"idleCompaction\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": " native "
+    },
+    "error": "Expected \"default\" | \"onReturn\" | \"beforeCacheExpires\" | \"off\"\n  at [\"idleCompaction\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": []
+    },
+    "error": "Expected \"default\" | \"onReturn\" | \"beforeCacheExpires\" | \"off\" | undefined\n  at [\"idleCompaction\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": {}
+    },
+    "error": "Expected \"default\" | \"onReturn\" | \"beforeCacheExpires\" | \"off\" | undefined\n  at [\"idleCompaction\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": [
+        {
+          "slug": " model ",
+          "name": " Name "
+        }
+      ]
+    },
+    "error": "Expected \"default\" | \"onReturn\" | \"beforeCacheExpires\" | \"off\" | undefined\n  at [\"idleCompaction\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": [
+        {
+          "slug": 0
+        }
+      ]
+    },
+    "error": "Expected \"default\" | \"onReturn\" | \"beforeCacheExpires\" | \"off\" | undefined\n  at [\"idleCompaction\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": {
+        "invalid": true
+      }
+    },
+    "error": "Expected \"default\" | \"onReturn\" | \"beforeCacheExpires\" | \"off\" | undefined\n  at [\"idleCompaction\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": null,
+    "error": "Expected object"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": false,
+    "error": "Expected object"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": [],
+    "error": "Expected object"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {},
+    "decoded": {
+      "enabled": true,
+      "binaryPath": "claude",
+      "homePath": "",
+      "customModels": [],
+      "launchArgs": "",
+      "autoCompactWindow": "",
+      "idleCompaction": "default"
+    }
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "customModels": [
+        {
+          "slug": " ",
+          "name": "n"
+        }
+      ]
+    },
+    "error": "Expected a non-blank string\n  at [\"customModels\"][0][\"slug\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "customModels": [
+        {
+          "slug": "x",
+          "name": "n",
+          "capabilities": {
+            "optionDescriptors": [
+              {}
+            ]
+          }
+        }
+      ]
+    },
+    "error": "Expected { readonly \"type\": \"select\", ... } | { readonly \"type\": \"boolean\", ... }\n  at [\"customModels\"][0][\"capabilities\"][\"optionDescriptors\"][0]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "customModels": [
+        {
+          "slug": "x",
+          "name": "n",
+          "capabilities": {
+            "optionDescriptors": [
+              {
+                "type": "select"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "error": "Missing key\n  at [\"customModels\"][0][\"capabilities\"][\"optionDescriptors\"][0][\"id\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "customModels": [
+        {
+          "slug": "x",
+          "name": "n",
+          "capabilities": {
+            "optionDescriptors": [
+              {
+                "type": "boolean",
+                "id": 0
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "error": "Expected string\n  at [\"customModels\"][0][\"capabilities\"][\"optionDescriptors\"][0][\"id\"]"
+  },
+  {
+    "driver": "claudeAgent",
+    "input": {
+      "customModels": [
+        {
+          "slug": "x",
+          "name": "n",
+          "capabilities": {
+            "optionDescriptors": [
+              {
+                "type": "boolean",
+                "id": " ",
+                "label": "x"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "error": "Expected a non-blank string\n  at [\"customModels\"][0][\"capabilities\"][\"optionDescriptors\"][0][\"id\"]"
+  }
+]

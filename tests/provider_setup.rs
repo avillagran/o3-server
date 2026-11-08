@@ -29,7 +29,7 @@ fn registry_server(body: String) -> String {
 #[test]
 fn sign_in_install_update_and_registry() {
     let bin = std::env::temp_dir().join(format!("o3-setup-bin-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&bin);
+    // Fixture trees are retained for private container teardown.
     std::fs::create_dir_all(&bin).unwrap();
     let signed = bin.join("signed-in");
     script(
@@ -258,5 +258,5 @@ esac"#,
         missing["exit"]["cause"][0]["error"]["reason"],
         "agent_not_found"
     );
-    let _ = std::fs::remove_dir_all(&bin);
+    // Fixture trees are retained for private container teardown.
 }

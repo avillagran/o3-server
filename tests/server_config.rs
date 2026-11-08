@@ -12,10 +12,10 @@ use std::{
 #[test]
 fn custom_instances_route_native_binary_environment_and_home_and_reconfigure() {
     let server = support::start(|s| {
-        *s.provider.lock().unwrap() = Some(Arc::new(ConfiguredProviders::new(
-            Arc::new(ScriptedProvider),
-            s.dir.clone(),
-        )));
+        *s.provider.lock().unwrap() = Some(Arc::new(
+            ConfiguredProviders::new(Arc::new(ScriptedProvider), s.dir.clone())
+                .with_settings_lock(s.settings_lock.clone()),
+        ));
     });
     let c = server.connect();
     let binary = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -160,10 +160,10 @@ fn custom_instances_route_native_binary_environment_and_home_and_reconfigure() {
 fn failed_native_discovery_does_not_report_an_installed_binary_as_missing() {
     use std::os::unix::fs::PermissionsExt;
     let server = support::start(|s| {
-        *s.provider.lock().unwrap() = Some(Arc::new(ConfiguredProviders::new(
-            Arc::new(ScriptedProvider),
-            s.dir.clone(),
-        )));
+        *s.provider.lock().unwrap() = Some(Arc::new(
+            ConfiguredProviders::new(Arc::new(ScriptedProvider), s.dir.clone())
+                .with_settings_lock(s.settings_lock.clone()),
+        ));
     });
     let binary = server.dir.join("unhealthy-codex");
     std::fs::write(&binary, "#!/bin/sh\nexit 17\n").unwrap();
@@ -324,9 +324,11 @@ fn hub_account_windows_and_failures_reach_the_real_quota_reducer() {
                 }
             }
             let text = String::from_utf8_lossy(&bytes);
-            assert!(text.contains("Authorization: Bearer test-management"));
+            assert!(text
+                .to_ascii_lowercase()
+                .contains("authorization: bearer test-management"));
             let response = if text.starts_with("GET /v0/management/auth-files") {
-                json!({"files":[{"id":"a","auth_index":"idx","provider":"codex","email":"person@example.invalid"},{"id":"disabled","provider":"claude","disabled":true}]})
+                json!({"files":[{"id":"a","auth_index":"idx","provider":"codex","email":"person@example.invalid"},{"id":"disabled","auth_index":"disabled-idx","provider":"claude","disabled":true}]})
             } else if text.contains("rate-limit-reset-credits") {
                 json!({"status_code":200,"body":json!({"credits":[{"id":"private-credit","status":"available","reset_type":"codex_rate_limits","expires_at":"2099-01-01T00:00:00Z"}]}).to_string()})
             } else {
@@ -359,8 +361,16 @@ fn hub_account_windows_and_failures_reach_the_real_quota_reducer() {
     let account = &state["usageLimitSources"][0]["accounts"][0];
     assert_eq!(account["usageLimits"]["windows"][0]["usedPercent"], 38.0);
     assert_eq!(account["usageLimits"]["resetCredits"]["availableCount"], 1);
+    assert_eq!(
+        account["usageLimits"]["resetCredits"]["nextCreditId"],
+        "private-credit"
+    );
     assert!(!state.to_string().contains("test-management"));
-    assert!(!state.to_string().contains("private-credit"));
+    assert_eq!(
+        events.last().unwrap()["payload"]["sources"][0]["accounts"][0]["usageLimits"]
+            ["resetCredits"]["nextCreditId"],
+        "private-credit"
+    );
     stream.cancel();
     hub.join().unwrap();
     assert_eq!(calls.load(Ordering::SeqCst), 3);
@@ -375,7 +385,7 @@ fn normalized_settings_are_readable_by_native_settings_and_atomic_on_rejection()
             .unwrap()
     };
     let initial = c.rpc("server.getSettings", json!({})).unwrap();
-    assert_eq!(initial["sidebarAutoSettleAfterDays"], 3);
+    assert_eq!(initial["sidebarAutoSettleAfterDays"], 7);
     assert_eq!(
         initial["sourceControlWritingStyle"]["followChangeRequestTemplates"],
         true

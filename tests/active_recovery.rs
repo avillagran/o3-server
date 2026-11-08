@@ -63,7 +63,7 @@ fn sigkill_active_native_sessions_continue_after_restart() {
         ));
         std::fs::create_dir_all(root.join("bin")).unwrap();
         for name in ["claude", "codex"] {
-            std::os::unix::fs::symlink(
+            std::fs::copy(
                 concat!(
                     env!("CARGO_MANIFEST_DIR"),
                     "/tests/fixtures/recovery-peer.py"
@@ -147,6 +147,6 @@ fn sigkill_active_native_sessions_continue_after_restart() {
         child.wait().unwrap();
         drop(db);
         drop(state);
-        std::fs::remove_dir_all(root).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }

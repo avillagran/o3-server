@@ -8,29 +8,57 @@ use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
 pub const SERVER_VERSION: &str = concat!("o3-", env!("CARGO_PKG_VERSION"));
 // SQLite caches are useful while any client is active. Return their transient
 // pages when the last WebSocket leaves, including error and cancellation paths.
-struct ClientGuard(Arc<State>);
+struct ClientGuard {
+    state: Arc<State>,
+    profile_reporter: Option<crate::browser_profile_catalog::Reporter>,
+}
 impl ClientGuard {
     fn new(state: Arc<State>) -> Self {
         state
             .rpc_clients
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         state.activity.send_modify(|v| *v = v.wrapping_add(1));
-        Self(state)
+        Self {
+            state,
+            profile_reporter: None,
+        }
+    }
+    fn report_profiles(&mut self, input: &Value) -> Result<Value, Value> {
+        let report =
+            crate::browser_profile_catalog::Report::decode(input).map_err(crate::p2::invalid)?;
+        if self.profile_reporter.is_none() {
+            self.profile_reporter = Some(
+                self.state
+                    .streams
+                    .p2
+                    .preview
+                    .profile_reporter()
+                    .map_err(crate::p2::invalid)?,
+            );
+        }
+        self.profile_reporter
+            .as_ref()
+            .expect("Reporter was initialized")
+            .report(report)
+            .map_err(crate::p2::invalid)?;
+        Ok(Value::Null)
     }
 }
 impl Drop for ClientGuard {
     fn drop(&mut self) {
-        self.0.activity.send_modify(|v| *v = v.wrapping_add(1));
+        // Retire the report before publishing connection retirement.
+        drop(self.profile_reporter.take());
+        self.state.activity.send_modify(|v| *v = v.wrapping_add(1));
         if self
-            .0
+            .state
             .rpc_clients
             .fetch_sub(1, std::sync::atomic::Ordering::Relaxed)
             == 1
         {
-            if let Ok(db) = self.0.reader.lock() {
+            if let Ok(db) = self.state.reader.lock() {
                 let _ = db.release_memory();
             }
-            if let Ok(db) = self.0.db.lock() {
+            if let Ok(db) = self.state.db.lock() {
                 let _ = db.release_memory();
             }
         }
@@ -94,7 +122,7 @@ pub fn authorize(session: &Value, tag: &str, p: &Value) -> Result<(), Value> {
             m.keys().any(|k| {
                 matches!(
                     k.as_str(),
-                    "providers" | "providerInstances" | "usageLimitSources"
+                    "providers" | "providerInstances" | "usageLimitSources" | "secretProviders"
                 )
             })
         }) || p.get("providerInstanceMutation").is_some();
@@ -102,10 +130,13 @@ pub fn authorize(session: &Value, tag: &str, p: &Value) -> Result<(), Value> {
             m.keys().any(|k| {
                 !matches!(
                     k.as_str(),
-                    "providers" | "providerInstances" | "usageLimitSources"
+                    "providers" | "providerInstances" | "usageLimitSources" | "secretProviders"
                 )
             })
-        }) || !providers;
+        }) || !providers
+            || p["patch"]["secretProviders"]
+                .as_object()
+                .is_some_and(|entries| entries.values().any(Value::is_null));
         if settings {
             check("settings:write")?;
         }
@@ -116,6 +147,14 @@ pub fn authorize(session: &Value, tag: &str, p: &Value) -> Result<(), Value> {
         check("orchestration:operate")?;
         if p.get("scripts").is_some() {
             check("settings:write")?;
+        }
+    } else if tag == "device.list" {
+        check("orchestration:read")?;
+        match crate::device::list_action(p)? {
+            crate::device::ListAction::Update(_) | crate::device::ListAction::Retry(_) => {
+                check("orchestration:operate")?
+            }
+            crate::device::ListAction::List | crate::device::ListAction::Inspect => {}
         }
     } else if tag == "assets.createUrl" {
         check(crate::assets::required_scope(p))?;
@@ -159,7 +198,7 @@ fn dispatch(s: &Arc<State>, tag: &str, p: &Value) -> Result<Value, Value> {
     match tag {
         "server.getConfig"=>settings::config(s),
         "server.getSettings"=>return settings::get(s).map_err(|message|json!({"_tag":"ServerSettingsError","settingsPath":s.dir.join("settings.json"),"operation":"read","message":message})),
-        "server.updateSettings"=>return settings::update(s,p).map_err(|message|json!({"_tag":"ServerSettingsError","settingsPath":s.dir.join("settings.json"),"operation":"write","message":message})),
+        "server.updateSettings"=>return settings::update_rpc(s,p),
         "projects.mutate"=>return crate::projects::mutate(s,p).map_err(|message|json!({"_tag":"ProjectMutationError","message":message})),
         "orchestration.launchThread"=>return events::launch(s,p).map_err(|message|json!({"_tag":"OrchestrationV2ThreadLaunchError","commandId":p["commandId"],"projectId":p["projectId"],"message":crate::provider_policy::display_error(message)})),
         "orchestration.dispatchCommand"=>return events::dispatch(s,p).map_err(|m|dispatch_command_error(s,p,m)),
@@ -179,11 +218,16 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
     s: Arc<State>,
     session: Value,
 ) {
-    let _client = ClientGuard::new(s.clone());
+    let mut client = ClientGuard::new(s.clone());
     s.start_checkpointer();
     let mut changed = s.changed.subscribe();
     let mut live_changed = s.streams.changed.subscribe();
     let mut subscriptions: BTreeMap<String, Subscription> = BTreeMap::new();
+    struct PreviewOpen {
+        cancel: tokio::sync::oneshot::Sender<()>,
+        state: Arc<std::sync::atomic::AtomicU8>,
+    }
+    let mut preview_opens = std::collections::HashMap::<String, PreviewOpen>::new();
     let mut eof = false;
     let mut expiry = tokio::time::interval(std::time::Duration::from_secs(1));
     // Results of spawned unary calls, and the wake-up for action streams. At most 16 calls are in flight.
@@ -410,7 +454,8 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
         }
         tokio::select! {
             _=live_changed.changed()=>{},_=changed.changed()=>{},_=expiry.tick()=>{},_=wake.notified()=>{},
-            Some(frame)=done_rx.recv()=>{if send(&mut ws,frame).await.is_err(){return}},
+            Some(frame)=done_rx.recv()=>{let key=frame["requestId"].to_string();if preview_opens.get(&key).is_some_and(|pending|pending.cancel.is_closed()){preview_opens.remove(&key);}
+                if send(&mut ws,frame).await.is_err(){return}},
             message=ws.next()=>{
                 let Some(Ok(message))=message else {break};
                 match message {
@@ -423,7 +468,8 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                             match frame["_tag"].as_str().unwrap_or("") {
                                 "Ping"=>if send(&mut ws,json!({"_tag":"Pong"})).await.is_err(){return},
                                 "Ack"=>{if let Some(sub)=subscriptions.get_mut(&key){match sub.live.as_mut(){Some(live)=>live.ack(),None=>sub.waiting=false}}},
-                                "Interrupt"=>{if let Some(sub)=subscriptions.remove(&key){let v=json!({"_tag":"Exit","requestId":sub.id,"exit":{"_tag":"Failure","cause":[{"_tag":"Interrupt","fiberId":frame["interruptors"]}]}});if send(&mut ws,v).await.is_err(){return}}},
+                                "Interrupt"=>{if let Some(pending)=preview_opens.remove(&key){if pending.state.compare_exchange(0,2,std::sync::atomic::Ordering::AcqRel,std::sync::atomic::Ordering::Acquire).is_ok(){let _=pending.cancel.send(());if send(&mut ws,json!({"_tag":"Exit","requestId":frame["requestId"],"exit":{"_tag":"Failure","cause":[{"_tag":"Interrupt","fiberId":frame["interruptors"]}]}})).await.is_err(){return}}}
+                                    if let Some(sub)=subscriptions.remove(&key){let v=json!({"_tag":"Exit","requestId":sub.id,"exit":{"_tag":"Failure","cause":[{"_tag":"Interrupt","fiberId":frame["interruptors"]}]}});if send(&mut ws,v).await.is_err(){return}}},
                                 "Eof"=>eof=true,
                                 "Request" if !eof=>{
                                     let tag=frame["tag"].as_str().unwrap_or("");let p=&frame["payload"];
@@ -436,6 +482,11 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                                     };
                                     let p=decoded.as_ref().unwrap_or(p);
                                     if let Err(e)=authorize(&session,tag,p){if send(&mut ws,exit(&id,Err(e))).await.is_err(){return}continue;}
+                                    if tag=="preview.reportProfiles" {
+                                        let result=client.report_profiles(p);
+                                        if send(&mut ws,exit(&id,result)).await.is_err(){return}
+                                        continue;
+                                    }
                                     // T3 strips task webhooks for sessions without operate; never trust a client flag.
                                     let task_view;let p=if matches!(tag,"scheduledTasks.list"|"scheduledTasks.subscribe") {let mut v=p.clone();if !v.is_object(){v=json!({});}v["_hideWebhook"]=json!(authorize(&session,"scheduledTasks.upsert",&Value::Null).is_err());task_view=v;&task_view}else{p};
                                     if crate::streams::is_live_tag(tag) {
@@ -457,7 +508,11 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                                         inflight.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
                                         let (s2,tag2,mut p2,tx2,count)=(s.clone(),tag.to_owned(),p.clone(),done_tx.clone(),inflight.clone());
                                         if matches!(tag,"assets.createUrl"|"attachments.createUploadUrl") { p2["_assetSession"] = session["sid"].clone(); }
-                                        tokio::spawn(async move{let r=crate::ext::call(&s2,&tag2,p2).await;count.fetch_sub(1,std::sync::atomic::Ordering::Relaxed);let _=tx2.send(exit(&id,r));});
+                                        if tag=="preview.open" {
+                                            if preview_opens.contains_key(&id.to_string()){count.fetch_sub(1,std::sync::atomic::Ordering::Relaxed);if send(&mut ws,exit(&id,Err(error("duplicate preview request id".into())))).await.is_err(){return}continue;}
+                                            let(cancel,cancelled)=tokio::sync::oneshot::channel();let status=Arc::new(std::sync::atomic::AtomicU8::new(0));preview_opens.insert(id.to_string(),PreviewOpen{cancel,state:status.clone()});
+                                            tokio::spawn(async move{let result=tokio::select!{_=cancelled=>None,_=tx2.closed()=>None,result=crate::ext::call(&s2,&tag2,p2)=>Some(result)};if let Some(result)=result{if status.compare_exchange(0,1,std::sync::atomic::Ordering::AcqRel,std::sync::atomic::Ordering::Acquire).is_ok(){let _=tx2.send(exit(&id,result));}else if let Ok(snapshot)=result{let _=crate::preview::call(&s2,"preview.close",&json!({"threadId":snapshot["threadId"],"tabId":snapshot["tabId"]})).await;}}count.fetch_sub(1,std::sync::atomic::Ordering::Relaxed);});
+                                        }else{tokio::spawn(async move{let r=crate::ext::call(&s2,&tag2,p2).await;count.fetch_sub(1,std::sync::atomic::Ordering::Relaxed);let _=tx2.send(exit(&id,r));});}
                                     }else if matches!(tag,"orchestration.subscribeShell"|"orchestration.subscribeThread"|"server.subscribeServerConfig"|"subscribeServerConfig") {
                                         if subscriptions.len()>=64||subscriptions.contains_key(&id.to_string()) {if send(&mut ws,exit(&id,Err(error("subscription limit or duplicate id".into())))).await.is_err(){return}continue;}
                                         // Register notification receiver before any snapshot; no await until cursor is installed.
@@ -591,6 +646,10 @@ mod isolation_tests {
         }
         client.close(None).await.unwrap();
         task.await.unwrap();
-        std::fs::remove_dir_all(dir).unwrap();
+        // Fixture trees are retained for private container teardown.
     }
 }
+
+#[cfg(test)]
+#[path = "browser_profile_catalog_rpc_tests.rs"]
+mod profile_catalog_tests;
