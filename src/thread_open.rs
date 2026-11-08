@@ -2,7 +2,7 @@
 use crate::{events, speech_worker::{NodeRuntime,SealedFile},store::{now_ms,State}};
 use rusqlite::OptionalExtension;
 use serde_json::{json,Value};
-use std::{path::PathBuf,sync::{Arc,MutexGuard}};
+use std::{path::PathBuf,sync::MutexGuard};
 const NODE_SHA256:&str="0adde40d1b7dfa57c8bc83cbc319758c3ec6ebba21363bb2fa752ea6b267ad1b";
 /// Application-owner startup only. Installed packages place the pinned runtime
 /// next to the server; a service may select the same admitted executable explicitly.
