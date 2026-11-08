@@ -532,14 +532,28 @@ fn native_launch_inherits_caller_model_modes_and_project_but_uses_project_root()
         let owner = s.connect();
         owner.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"parent","threadId":"parent","projectId":"p","title":"Parent","modelSelection":{"instanceId":instance,"model":"test","options":[{"id":"effort","value":"high"}]},"runtimeMode":"approval-required","interactionMode":"plan","branch":"caller","worktreePath":work})).unwrap();
         owner.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"start","threadId":"parent","messageId":"parent-message","text":"launch-parent","attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
+        let publication = work.join("native-launch.json");
+        let mut published = None;
         assert!(
-            support::wait_for(WAIT, || work.join("native-launch.json").exists()),
+            support::wait_for(WAIT, || {
+                let bytes = match std::fs::read(&publication) {
+                    Ok(bytes) => bytes,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => return false,
+                    Err(error) => panic!("Unable to read native launch fixture: {error}"),
+                };
+                match serde_json::from_slice::<Value>(&bytes) {
+                    Ok(value) => {
+                        published = Some(value);
+                        true
+                    }
+                    Err(error) if error.is_eof() => false,
+                    Err(error) => panic!("Invalid native launch fixture JSON: {error}"),
+                }
+            }),
             "{}",
             projection(&s, &json!("parent"))
         );
-        let result: Value =
-            serde_json::from_slice(&std::fs::read(work.join("native-launch.json")).unwrap())
-                .unwrap();
+        let result = published.expect("The existing deadline requires complete fixture JSON");
         let tid = &result["threadId"];
         assert!(
             support::wait_for(WAIT, || projection(&s, tid)["runs"][0]["status"]
