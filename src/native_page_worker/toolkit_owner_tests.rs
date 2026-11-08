@@ -66,6 +66,7 @@ impl CallbackExecutor for Arc<SyntheticExecutor> {
 }
 
 #[tokio::test]
+#[ignore = "requires the private admitted nightly4314/Effect/Node fixture mounts"]
 async fn actual_entry_observer_drop_ends_source_before_late_callback_without_metadata_producer() {
     crate::test_sandbox::assert_isolated();
     let root = std::env::temp_dir().join(format!(

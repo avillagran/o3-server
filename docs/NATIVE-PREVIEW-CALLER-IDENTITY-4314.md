@@ -75,3 +75,11 @@ remain qualified. Their caller-policy assertions implemented the incorrect
 runtime-publication requirement and do not prove credential-identity parity.
 The earlier published caller implementation needs this correction before any
 parity claim or activation.
+
+The two owner-process integration cases are explicit opt-in libtests because
+ordinary repository CI does not contain the external pinned nightly, Effect,
+Playwright and browser fixtures. Run each exact filter with `--ignored` only
+inside the coordinated private container. They have real passing receipts above;
+ordinary unit-test execution must not silently pretend those assets exist or
+return success without exercising the case. The credential/projection case
+remains an ordinary unit test. Public MCP selection stays closed.

@@ -64,6 +64,7 @@ fn home(root: &std::path::Path, name: &str) -> PathBuf {
     path
 }
 #[tokio::test]
+#[ignore = "requires the private admitted nightly4314/Effect/Node fixture mounts"]
 async fn actual_toolkit_factory_evaluates_real_page_and_accounts_optional_metadata_refusal() {
     crate::test_sandbox::assert_isolated();
     assert!(
