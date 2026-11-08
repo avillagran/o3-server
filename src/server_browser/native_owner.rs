@@ -122,6 +122,7 @@ struct Caller {
     state: Weak<crate::store::State>,
     authority: crate::mcp_access::Authority,
     write: bool,
+    source: Option<crate::native_page_worker::toolkit_owner::SourceCallback>,
 }
 impl Caller {
     fn valid(&self, owner: &Owner) -> bool {
@@ -147,7 +148,12 @@ impl Caller {
             .get(&(owner.thread.clone(), owner.tab.clone()))
             .and_then(|tab| tab.events.as_ref())
             .is_some_and(|actual| Arc::ptr_eq(actual, &registry));
-        same_owner && self.authority.browser_admission(&state, self.write).is_ok()
+        same_owner
+            && if let Some(source) = &self.source {
+                source.validates_thread(&owner.thread)
+            } else {
+                self.authority.browser_admission(&state, self.write).is_ok()
+            }
     }
     async fn invalidated(&self, owner: &Owner) {
         let Some(state) = self.state.upgrade() else {
@@ -424,6 +430,36 @@ impl Owner {
     }
 }
 impl NativePage {
+    pub(crate) fn same_owner(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+    pub(crate) fn admitted_source_callback(
+        &self,
+        context: &RunContext,
+        source: crate::native_page_worker::toolkit_owner::SourceCallback,
+    ) -> Result<NativeInvocation, Value> {
+        let mut invocation = self.admitted(context)?;
+        let provider = source.context()?;
+        let (state, authority) = provider.page_authority();
+        let operation = source.request().class;
+        if operation.writes()
+            && context.source_agent() != Some(source.request().agent_session_id.as_str())
+        {
+            return Err(fault("callback_scope"));
+        }
+        let caller = Caller {
+            state,
+            authority,
+            write: false,
+            source: Some(source),
+        };
+        if !caller.valid(&self.inner) {
+            return Err(fault("provider_scope"));
+        }
+        invocation.caller = Some(caller);
+        invocation.operation = Some(operation);
+        Ok(invocation)
+    }
     pub fn control(&self) -> Control {
         self.inner.control.clone()
     }
@@ -454,6 +490,7 @@ impl NativePage {
             state,
             authority,
             write: operation.writes(),
+            source: None,
         };
         if !caller.valid(&self.inner) {
             return Err(fault("provider_scope"));
@@ -734,7 +771,7 @@ impl crate::preview::Manager {
         let registry_weak = Arc::downgrade(registry);
         let mut registry = registry.lock().unwrap();
         if let Some(owner) = registry.native.get(&target) {
-            if owner.thread != thread {
+            if owner.thread != thread || owner.tab != tab {
                 return Err(fault("thread_scope"));
             }
             let grants = owner.grants.lock().unwrap();

@@ -12,9 +12,32 @@ type ResultValue = Result<Value, Value>;
 type PlainWork = Box<dyn FnOnce(Value) -> Pin<Box<dyn Future<Output = ResultValue> + Send>> + Send>;
 type AdmittedWork =
     Box<dyn FnOnce(Value, RunContext) -> Pin<Box<dyn Future<Output = ResultValue> + Send>> + Send>;
+/// Private source-lifetime admission, invoked while Control holds its entry
+/// mutex. Implementations must use only atomics/watch state: no database,
+/// provider/process checks, blocking locks, external callbacks or async work.
+#[derive(Clone)]
+pub(crate) struct SourceEntryGate(Arc<dyn Fn() -> Result<(), Value> + Send + Sync>);
+impl SourceEntryGate {
+    pub(crate) fn new(gate: Arc<dyn Fn() -> Result<(), Value> + Send + Sync>) -> Self {
+        Self(gate)
+    }
+    fn admit(&self) -> Result<(), Value> {
+        (self.0)()
+    }
+}
 enum Work {
     Plain(PlainWork),
     Admitted(AdmittedWork),
+    SourceAdmitted {
+        agent: String,
+        deadline: tokio::time::Instant,
+        entry: SourceEntryGate,
+        callback: AdmittedWork,
+    },
+    SourceObserved {
+        entry: SourceEntryGate,
+        callback: AdmittedWork,
+    },
 }
 /// A callback admission minted by this actual Control, never deserialized from
 /// caller arguments. Generation changes do not revoke an already running tail.
@@ -25,6 +48,7 @@ pub struct RunContext {
     identity: std::sync::Weak<()>,
     active: Arc<Mutex<bool>>,
     ended: watch::Receiver<bool>,
+    source_agent: Option<String>,
 }
 impl RunContext {
     pub fn action_id(&self) -> ActionId {
@@ -40,6 +64,11 @@ impl RunContext {
     }
     pub fn is_active(&self) -> bool {
         *self.active.lock().unwrap()
+    }
+    /// Only the private exact source-agent entry can mint this provenance.
+    /// Generic agent/observe admissions remain unsealed.
+    pub(crate) fn source_agent(&self) -> Option<&str> {
+        self.source_agent.as_deref()
     }
 }
 struct EndAdmission(Arc<Mutex<bool>>, watch::Sender<bool>);
@@ -212,6 +241,9 @@ impl Control {
     pub fn subscribe(&self) -> watch::Receiver<Snapshot> {
         self.0.shared.state.lock().unwrap().snapshot.subscribe()
     }
+    pub(crate) fn same_identity(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0.shared.identity, &other.0.shared.identity)
+    }
     fn submit(
         &self,
         submission: Submission<'_>,
@@ -226,7 +258,9 @@ impl Control {
             return Call { action: 0, result };
         }
         let callback = state.sequence();
-        if matches!(&submission, Submission::Observe) && matches!(&work, Work::Admitted(_)) {
+        if matches!(&submission, Submission::Observe)
+            && matches!(&work, Work::Admitted(_) | Work::SourceObserved { .. })
+        {
             let generation = state.kernel.generation();
             state.callback_generations.insert(callback, generation);
         }
@@ -286,6 +320,51 @@ impl Control {
             Submission::Agent(caller, deadline),
             Value::Null,
             Work::Admitted(Box::new(move |_, context| Box::pin(work(context)))),
+            |_, next| next,
+        )
+    }
+    /// Source admission retains its exact monotonic deadline until the queue
+    /// enters this callback. The generic kernel still checks ownership and
+    /// generation, but this path never converts the deadline through f64.
+    pub(crate) fn source_agent_admitted<F>(
+        &self,
+        caller: &str,
+        deadline: tokio::time::Instant,
+        entry: SourceEntryGate,
+        work: impl FnOnce(RunContext) -> F + Send + 'static,
+    ) -> Call
+    where
+        F: Future<Output = ResultValue> + Send + 'static,
+    {
+        self.submit(
+            Submission::Agent(caller, None),
+            Value::Null,
+            Work::SourceAdmitted {
+                agent: caller.to_owned(),
+                deadline,
+                entry,
+                callback: Box::new(move |_, context| Box::pin(work(context))),
+            },
+            |_, next| next,
+        )
+    }
+    /// The source's foreign read observes without joining the agent queue, but
+    /// still crosses its real lifetime entry gate before any context is minted.
+    pub(crate) fn source_observe_admitted<F>(
+        &self,
+        entry: SourceEntryGate,
+        work: impl FnOnce(RunContext) -> F + Send + 'static,
+    ) -> Call
+    where
+        F: Future<Output = ResultValue> + Send + 'static,
+    {
+        self.submit(
+            Submission::Observe,
+            Value::Null,
+            Work::SourceObserved {
+                entry,
+                callback: Box::new(move |_, context| Box::pin(work(context))),
+            },
             |_, next| next,
         )
     }
@@ -493,7 +572,33 @@ async fn run(shared: Arc<Shared>, done: watch::Sender<bool>) {
                             .remove(&callback)
                             .unwrap_or_else(|| state.kernel.generation());
                         if let Some(callback) = state.callbacks.remove(&callback) {
-                            work.push((action, callback, input, generation));
+                            // Event::Run follows the kernel's real ownership and
+                            // generation guard. Apply this source-only deadline
+                            // exactly once here, before minting any RunContext.
+                            let expired = matches!(
+                                &callback,
+                                Work::SourceAdmitted { deadline, .. }
+                                    if tokio::time::Instant::now() >= *deadline
+                            );
+                            let entry = if expired {
+                                Err(json!({
+                                    "name":"TimeoutError",
+                                    "message":"This browser request expired before it could start."
+                                }))
+                            } else {
+                                match &callback {
+                                    Work::SourceAdmitted { entry, .. }
+                                    | Work::SourceObserved { entry, .. } => entry.admit(),
+                                    _ => Ok(()),
+                                }
+                            };
+                            if let Err(cause) = entry {
+                                state.discarded.push(callback);
+                                state.kernel.finish_action(action, Err(cause));
+                                shared.wake.notify_one();
+                            } else {
+                                work.push((action, callback, input, generation));
+                            }
                         } else {
                             state.kernel.finish_action(action, Err(ended()));
                             shared.wake.notify_one();
@@ -530,7 +635,7 @@ async fn run(shared: Arc<Shared>, done: watch::Sender<bool>) {
                 Work::Plain(callback) => {
                     jobs.spawn(async move { Finished::Action(action, callback(input).await) })
                 }
-                Work::Admitted(callback) => {
+                Work::Admitted(callback) | Work::SourceObserved { callback, .. } => {
                     let (end, ended) = watch::channel(false);
                     let context = RunContext {
                         action,
@@ -538,6 +643,24 @@ async fn run(shared: Arc<Shared>, done: watch::Sender<bool>) {
                         identity: Arc::downgrade(&shared.identity),
                         active: Arc::new(Mutex::new(true)),
                         ended,
+                        source_agent: None,
+                    };
+                    jobs.spawn(async move {
+                        let _end = EndAdmission(context.active.clone(), end);
+                        Finished::Action(action, callback(input, context).await)
+                    })
+                }
+                Work::SourceAdmitted {
+                    agent, callback, ..
+                } => {
+                    let (end, ended) = watch::channel(false);
+                    let context = RunContext {
+                        action,
+                        generation,
+                        identity: Arc::downgrade(&shared.identity),
+                        active: Arc::new(Mutex::new(true)),
+                        ended,
+                        source_agent: Some(agent),
                     };
                     jobs.spawn(async move {
                         let _end = EndAdmission(context.active.clone(), end);
@@ -586,3 +709,7 @@ async fn run(shared: Arc<Shared>, done: watch::Sender<bool>) {
     }
     done.send_replace(true);
 }
+
+#[cfg(test)]
+#[path = "source_entry_tests.rs"]
+mod source_entry_tests;

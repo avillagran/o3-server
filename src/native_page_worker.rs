@@ -8,6 +8,11 @@ pub use crate::server_browser::native_owner::{
 };
 pub mod caller;
 pub mod control;
+pub(crate) mod source_deadline;
+pub mod toolkit_callback;
+mod toolkit_ledger;
+pub mod toolkit_owner;
+pub mod toolkit_pages;
 mod toolkit_wire;
 pub use toolkit_wire::{ServiceFuture, ServiceMethod, ServiceReply, ServiceRequest};
 
@@ -19,7 +24,7 @@ use std::{
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     process::Command,
-    sync::{mpsc, oneshot, watch},
+    sync::{mpsc, oneshot, watch, Notify},
     time::Instant,
 };
 const MAGIC: &[u8; 8] = b"O3PG0001";
@@ -265,6 +270,7 @@ struct Budget {
     retain_execution: bool,
 }
 struct Call {
+    toolkit: Option<toolkit_owner::ToolkitInvocation>,
     scope: Option<InvocationScope>,
     native_timeout: Duration,
     operation: String,
@@ -286,6 +292,8 @@ struct InvocationFrame<'a> {
     timeout_ms: u128,
     #[serde(skip_serializing_if = "Option::is_none")]
     owner_scope: Option<InvocationFrameScope<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    caller: Option<&'a str>,
 }
 #[derive(serde::Serialize)]
 struct InvocationFrameScope<'a> {
@@ -302,6 +310,7 @@ fn encode_invocation(call: &Call, id: u64, nonce: &str) -> Result<Vec<u8>, Fault
         operation: &call.operation,
         input: &call.input,
         timeout_ms: call.native_timeout.as_millis().max(1),
+        caller: call.toolkit.as_ref().map(|ticket| ticket.caller()),
         owner_scope: call.scope.as_ref().map(|scope| InvocationFrameScope {
             receipt: scope.receipt.worker_receipt(),
             tool: scope.operation.tool_name(),
@@ -318,16 +327,19 @@ enum ExecutionStage {
     Queued,
     Admitted,
     Cancelled,
+    Completed,
 }
 struct ExecutionAdmission {
     state: std::sync::Mutex<ExecutionStage>,
     changed: watch::Sender<bool>,
+    observer_cancelled: std::sync::atomic::AtomicBool,
 }
 impl ExecutionAdmission {
     fn new() -> Arc<Self> {
         Arc::new(Self {
             state: std::sync::Mutex::new(ExecutionStage::Queued),
             changed: watch::channel(false).0,
+            observer_cancelled: std::sync::atomic::AtomicBool::new(false),
         })
     }
     fn admit(&self, deadline: Instant) -> bool {
@@ -339,6 +351,19 @@ impl ExecutionAdmission {
         self.changed.send_replace(true);
         true
     }
+    fn cancel_observer(&self) {
+        if *self.state.lock().unwrap() == ExecutionStage::Admitted {
+            self.observer_cancelled
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
+    }
+    fn complete(&self) {
+        *self.state.lock().unwrap() = ExecutionStage::Completed;
+    }
+    fn observer_cancelled(&self) -> bool {
+        self.observer_cancelled
+            .load(std::sync::atomic::Ordering::Acquire)
+    }
     fn cancel_queued(&self) -> bool {
         let mut state = self.state.lock().unwrap();
         if *state != ExecutionStage::Queued {
@@ -348,11 +373,16 @@ impl ExecutionAdmission {
         true
     }
 }
-struct CancelQueuedExecution(Option<Arc<ExecutionAdmission>>);
+struct CancelQueuedExecution(Option<Arc<ExecutionAdmission>>, Option<Arc<Notify>>);
 impl Drop for CancelQueuedExecution {
     fn drop(&mut self) {
         if let Some(admission) = &self.0 {
-            admission.cancel_queued();
+            if !admission.cancel_queued() {
+                if let Some(wake) = &self.1 {
+                    admission.cancel_observer();
+                    wake.notify_one();
+                }
+            }
         }
     }
 }
@@ -361,13 +391,28 @@ struct OwnerCall {
     reply: oneshot::Sender<Result<(), Fault>>,
 }
 struct Pending {
+    cancellation: Option<Arc<ExecutionAdmission>>,
+    cancellation_sent: bool,
+    _toolkit: Option<toolkit_owner::ToolkitInvocation>,
     _scope: Option<InvocationScope>,
     deadline: Instant,
     retire_on_deadline: bool,
     retain_execution: bool,
     reply: Option<oneshot::Sender<Result<OperationResult, Fault>>>,
 }
+impl Pending {
+    fn needs_observer_cancel(&self) -> bool {
+        !self.cancellation_sent
+            && self
+                .cancellation
+                .as_ref()
+                .is_some_and(|admission| admission.observer_cancelled())
+    }
+}
+
 struct Handle {
+    cancel_wake: Arc<Notify>,
+    toolkit_owner: Option<std::sync::Weak<dyn ToolkitOwner>>,
     calls: mpsc::Sender<Call>,
     controls: mpsc::Sender<OwnerCall>,
     retire: mpsc::Sender<Fault>,
@@ -396,6 +441,10 @@ impl Worker {
         Self::spawn_owned(spec, OwnedRuntime::Toolkit(owner)).await
     }
     async fn spawn_owned(spec: WorkerSpec, owner: OwnedRuntime) -> Result<Self, CloseReceipt> {
+        let toolkit_owner = match &owner {
+            OwnedRuntime::Toolkit(owner) => Some(Arc::downgrade(owner)),
+            _ => None,
+        };
         let owner = Arc::new(owner);
         if spec.validate().is_err() {
             return Err(close_without_child(&spec, &owner, Fault::InvalidInstallation).await);
@@ -466,7 +515,9 @@ impl Worker {
             }
             OwnedRuntime::Toolkit(_) => bootstrap["resourceId"] = json!(owner.id()),
         }
+        let cancel_wake = Arc::new(Notify::new());
         tokio::spawn(run(Running {
+            cancel_wake: cancel_wake.clone(),
             child,
             stdin,
             stdout,
@@ -485,6 +536,8 @@ impl Worker {
         match ready.await {
             Ok(Ok(())) => Ok(Self {
                 handle: Arc::new(Handle {
+                    cancel_wake,
+                    toolkit_owner,
                     calls,
                     controls,
                     retire,
@@ -758,6 +811,35 @@ impl Worker {
         self.invoke_raw_budget(operation, input, budget, scope)
             .await
     }
+    async fn invoke_toolkit(
+        &self,
+        ticket: toolkit_owner::ToolkitInvocation,
+        input: JavaScriptJson,
+    ) -> Result<OperationResult, Fault> {
+        let expected = self
+            .handle
+            .toolkit_owner
+            .as_ref()
+            .and_then(std::sync::Weak::upgrade)
+            .ok_or(Fault::Revoked)?;
+        if !Arc::ptr_eq(&expected, &ticket.owner()) {
+            return Err(Fault::Revoked);
+        }
+        let operation = ticket.operation().to_owned();
+        self.invoke_raw_budget_owned(
+            &operation,
+            input,
+            Budget {
+                timeout: Duration::from_secs(120),
+                grace: Duration::ZERO,
+                retire_on_deadline: false,
+                retain_execution: true,
+            },
+            None,
+            Some(ticket),
+        )
+        .await
+    }
     async fn invoke_raw_budget(
         &self,
         operation: &str,
@@ -765,6 +847,22 @@ impl Worker {
         budget: Budget,
         scope: Option<InvocationScope>,
     ) -> Result<OperationResult, Fault> {
+        self.invoke_raw_budget_owned(operation, input, budget, scope, None)
+            .await
+    }
+    async fn invoke_raw_budget_owned(
+        &self,
+        operation: &str,
+        input: JavaScriptJson,
+        budget: Budget,
+        scope: Option<InvocationScope>,
+        toolkit: Option<toolkit_owner::ToolkitInvocation>,
+    ) -> Result<OperationResult, Fault> {
+        if self.handle.toolkit_owner.is_some() != toolkit.is_some()
+            || (toolkit.is_some() && scope.is_some())
+        {
+            return Err(Fault::Protocol);
+        }
         let Budget {
             timeout,
             grace,
@@ -780,10 +878,12 @@ impl Worker {
         let (reply, mut result) = oneshot::channel();
         let deadline = Instant::now() + timeout + grace;
         let admission = retain_execution.then(ExecutionAdmission::new);
-        let _cancel = CancelQueuedExecution(admission.clone());
+        let cancel_wake = toolkit.as_ref().map(|_| self.handle.cancel_wake.clone());
+        let _cancel = CancelQueuedExecution(admission.clone(), cancel_wake);
         self.handle
             .calls
             .try_send(Call {
+                toolkit,
                 scope,
                 operation: operation.into(),
                 input,
@@ -920,6 +1020,7 @@ impl From<Value> for Outbound {
     }
 }
 struct Running {
+    cancel_wake: Arc<Notify>,
     child: tokio::process::Child,
     stdin: tokio::process::ChildStdin,
     stdout: tokio::process::ChildStdout,
@@ -937,6 +1038,7 @@ struct Running {
 }
 async fn run(running: Running) {
     let Running {
+        cancel_wake,
         mut child,
         mut stdin,
         mut stdout,
@@ -1028,7 +1130,19 @@ async fn run(running: Running) {
                 .chain(owner_pending.iter().map(|(_, call)| call.deadline))
                 .min()
                 .unwrap_or(Instant::now() + Duration::from_secs(86400));
+            // Notices live in their bounded pending slot until the same invoke
+            // FIFO has capacity. They never use the priority control channel.
+            let cancel_id = pending
+                .iter()
+                .find_map(|(id, call)| call.needs_observer_cancel().then_some(*id));
             tokio::select! {
+                    _=cancel_wake.notified()=>{},
+                    permit=writes.reserve(),if cancel_id.is_some()=>{
+                        let Ok(permit)=permit else {break Fault::Exited;};
+                        let id=cancel_id.expect("cancellation branch requires a pending ID");
+                        permit.send(json!({"kind":"cancel-invocation","nonce":nonce,"id":id}).into());
+                        pending.get_mut(&id).expect("pending ID remains owned by actor").cancellation_sent=true;
+                    },
                     _=stop.changed()=>break Fault::Closed,
                     Some(reason)=retire.recv()=>break reason,
                     _=revoked.changed()=>break Fault::Revoked,
@@ -1059,7 +1173,8 @@ async fn run(running: Running) {
                      next+=1;if next>9_007_199_254_740_991{break Fault::Protocol;}
                      let packet=match encode_invocation(&call,next,&nonce){Ok(packet)=>packet,Err(error)=>{let _=call.reply.send(Err(error));continue;}};
                      if call.admission.as_ref().is_some_and(|admission|!admission.admit(call.deadline)){let _=call.reply.send(Err(Fault::Deadline));continue;}
-                     pending.insert(next,Pending{_scope:call.scope,deadline:call.deadline,retire_on_deadline:call.retire_on_deadline,retain_execution:call.retain_execution,reply:Some(call.reply)});if writes.try_send(Outbound::Exact(packet)).is_err(){break Fault::Busy;}
+                     let mut accepted=Pending{cancellation:if call.toolkit.is_some(){call.admission.clone()}else{None},cancellation_sent:false,_toolkit:call.toolkit,_scope:call.scope,deadline:call.deadline,retire_on_deadline:call.retire_on_deadline,retain_execution:call.retain_execution,reply:Some(call.reply)};if writes.try_send(Outbound::Exact(packet)).is_err(){break Fault::Busy;}
+                     if let Some(ticket)=accepted._toolkit.as_mut(){ticket.dispatched();}pending.insert(next,accepted);
                     },
                     packet=inbound.recv()=>{
                      let mut packet=match packet{Some(Ok(v))=>v,Some(Err(e))=>break e,None=>break Fault::Exited};
@@ -1086,7 +1201,7 @@ async fn run(running: Running) {
                          let _=call.reply.send(Ok(()));continue;
                      }
                      if !packet.as_object().is_some_and(|m|m.keys().all(|k|matches!(k.as_str(),"kind"|"nonce"|"id"|"ok"|"value"|"error")))||packet["kind"]!="result"||packet["nonce"]!=nonce{break Fault::Protocol;}
-                     let Some(id)=packet["id"].as_u64()else{break Fault::Protocol;};let Some(call)=pending.remove(&id)else{break Fault::Protocol;};
+                     let Some(id)=packet["id"].as_u64()else{break Fault::Protocol;};let Some(call)=pending.remove(&id)else{break Fault::Protocol;};if let Some(admission)=&call.cancellation{admission.complete();}
                      if *revoked.borrow()||*stop.borrow(){if let Some(reply)=call.reply{let _=reply.send(Err(Fault::Revoked));}break Fault::Revoked;}
                      let exact=packet.exact.take();let result=match packet["ok"].as_bool(){Some(true)if packet.get("error").is_none()&&packet.get("value").is_some()=>Ok(OperationResult::Value(packet["value"].clone())),Some(false)if packet.get("value").is_none()&&packet["error"].is_object()=>Ok(OperationResult::NativeError(packet["error"].clone())),_=>{if let Some(reply)=call.reply{let _=reply.send(Err(Fault::Protocol));}break Fault::Protocol;}};let result=result.map(|value|exact.unwrap_or(value));if let Some(reply)=call.reply{if call.deadline<=Instant::now() && !call.retain_execution{let _=reply.send(Err(Fault::Deadline));if call.retire_on_deadline{break Fault::Deadline;}}else{let _=reply.send(result);}}
                     }
@@ -1281,6 +1396,80 @@ mod tests {
             })
         }
     }
+    #[tokio::test]
+    async fn toolkit_observer_cancel_is_queued_or_admitted_without_ending_execution() {
+        crate::test_sandbox::assert_isolated();
+        let queued = ExecutionAdmission::new();
+        let wake = Arc::new(Notify::new());
+        drop(CancelQueuedExecution(
+            Some(queued.clone()),
+            Some(wake.clone()),
+        ));
+        assert!(!queued.admit(Instant::now() + Duration::from_secs(1)));
+        assert!(!queued.observer_cancelled());
+        let entered = ExecutionAdmission::new();
+        assert!(entered.admit(Instant::now() + Duration::from_secs(1)));
+        drop(CancelQueuedExecution(
+            Some(entered.clone()),
+            Some(wake.clone()),
+        ));
+        tokio::time::timeout(Duration::from_secs(1), wake.notified())
+            .await
+            .unwrap();
+        assert!(entered.observer_cancelled());
+        assert!(*entered.state.lock().unwrap() == ExecutionStage::Admitted);
+        let completed = ExecutionAdmission::new();
+        assert!(completed.admit(Instant::now() + Duration::from_secs(1)));
+        completed.complete();
+        drop(CancelQueuedExecution(Some(completed.clone()), Some(wake)));
+        assert!(!completed.observer_cancelled());
+    }
+
+    #[tokio::test]
+    async fn toolkit_cancel_notice_survives_full_invoke_fifo_without_retirement() {
+        crate::test_sandbox::assert_isolated();
+        let admission = ExecutionAdmission::new();
+        assert!(admission.admit(Instant::now() + Duration::from_secs(1)));
+        admission.cancel_observer();
+        let (reply, _receiver) = oneshot::channel();
+        let mut pending = Pending {
+            cancellation: Some(admission),
+            cancellation_sent: false,
+            _toolkit: None,
+            _scope: None,
+            deadline: Instant::now() + Duration::from_secs(1),
+            retire_on_deadline: false,
+            retain_execution: true,
+            reply: Some(reply),
+        };
+        let (writes, mut reader) = mpsc::channel::<Outbound>(8);
+        for id in 1..=8 {
+            assert!(writes
+                .try_send(json!({"kind":"invoke","id":id}).into())
+                .is_ok());
+        }
+        assert!(writes.try_reserve().is_err());
+        assert!(pending.needs_observer_cancel());
+        // Drain one frame, append the retained notice, and verify all earlier
+        // invokes precede it. This is the actor FIFO, not priority controls.
+        assert!(matches!(reader.recv().await, Some(Outbound::Scalar(value)) if value["id"]==1));
+        writes
+            .reserve()
+            .await
+            .unwrap()
+            .send(json!({"kind":"cancel-invocation","nonce":"fixture","id":8}).into());
+        pending.cancellation_sent = true;
+        assert!(!pending.needs_observer_cancel());
+        for id in 2..=8 {
+            assert!(
+                matches!(reader.recv().await, Some(Outbound::Scalar(value)) if value["kind"]=="invoke" && value["id"]==id)
+            );
+        }
+        assert!(
+            matches!(reader.recv().await, Some(Outbound::Scalar(value)) if value==json!({"kind":"cancel-invocation","nonce":"fixture","id":8}))
+        );
+    }
+
     fn spec(mode: &str) -> WorkerSpec {
         crate::test_sandbox::assert_isolated();
         let home = std::env::temp_dir().join(format!(

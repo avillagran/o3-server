@@ -10,6 +10,9 @@ export async function attachPage({chromium,endpoint,nativePage,nativeContracts,S
  if(!admitted()||pages.length!==1){await browser.close();throw Error('Invalid owned page grant');}
  const page=pages[0];cdp=await page.context().newCDPSession(page);
  const identity=await cdp.send('Target.getTargetInfo');if(identity.targetInfo?.targetId!==targetId)throw Error('Owner target identity mismatch');
+ // Original ServerBrowser.ensureTab sets both Page defaults to its 15s
+ // navigation budget; Playwright's own defaults are different.
+ page.setDefaultTimeout(15000);page.setDefaultNavigationTimeout(15000);
  const allowed=new Set(['click','type','hover','select','drag','press','scroll','waitFor']);
  return {
   page,

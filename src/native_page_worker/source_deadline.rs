@@ -1,10 +1,10 @@
 //! Frozen admission-only conversion from the original Node monotonic deadline.
-//! This module is not registered until the real caller/control entry consumes it.
+//! Used by the private owner-library caller/control path; no public MCP installation.
 use super::Fault;
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy)]
-pub(super) struct FrozenDeadline {
+pub struct FrozenDeadline {
     instant: Instant,
     source_lower_ns: i128,
     source_upper_ns: i128,
@@ -95,16 +95,16 @@ impl FrozenDeadline {
     }
     /// Transfer to Tokio with Instant::from_std, never a second now()+remaining.
     /// This deadline applies once at queued callback entry, not to an entered tail.
-    pub(super) fn std_instant(&self) -> Instant {
+    pub fn std_instant(&self) -> Instant {
         self.instant
     }
-    pub(super) fn expired(&self) -> bool {
+    pub fn expired(&self) -> bool {
         Instant::now() >= self.instant
     }
-    pub(super) fn source_bounds(&self) -> (i128, i128) {
+    pub fn source_bounds(&self) -> (i128, i128) {
         (self.source_lower_ns, self.source_upper_ns)
     }
-    pub(super) fn calibration_sample(&self) -> (i128, Instant, i128) {
+    pub fn calibration_sample(&self) -> (i128, Instant, i128) {
         (
             self.sample_before_ns,
             self.sample_instant,

@@ -38,6 +38,12 @@ async function invoke(packet){
  catch{await send({kind:'result',nonce,id:packet.id,ok:false,error:{tag:'PreviewAutomationFailure',message:'Owned toolkit invocation failed.'}});}
  finally{invocations.delete(packet.id);}
 }
+function cancelInvocation(packet){
+ if(!dispatcher||!keys(packet,['kind','nonce','id'])||packet.nonce!==nonce||!Number.isSafeInteger(packet.id)||packet.id<1||packet.id>lastId)throw Error('Owned observer cancellation unavailable');
+ // Only the original invocation observer is interrupted. Host callbacks retain
+ // their independent reservations and actual finally/markUsed completion.
+ invocations.get(packet.id)?.controller.abort();
+}
 function finish(success=true){
  if(finishTask)return finishTask;closing=true;
  finishTask=(async()=>{
@@ -56,6 +62,7 @@ const decoder=new FrameDecoder(packet=>{
  if(packet.kind==='init')void initialize(packet).catch(fail);
  else if(packet.kind==='service-result')client?.accept(packet);
  else if(packet.kind==='invoke')void invoke(packet).catch(fail);
+ else if(packet.kind==='cancel-invocation')cancelInvocation(packet);
  else if(packet.kind==='close'&&packet.nonce===nonce&&keys(packet,['kind','nonce']))void finish();
  else throw Error('Owned frame unavailable');
 });

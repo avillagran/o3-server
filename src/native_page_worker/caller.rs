@@ -1,24 +1,52 @@
 //! Actual provider caller projection for the whole native toolkit. Scope input
 //! is never read from tool parameters, and credential IDs are not tab identity.
-use crate::{events, mcp_access::Authority, native_mcp::Context, store::State};
+use crate::{mcp_access::Authority, native_mcp::Context, store::State};
 use serde_json::{json, Value};
 use std::sync::{Arc, Weak};
 fn denied(reason: &str) -> Value {
     json!({"code":"capability_denied","message":"The native preview caller is unavailable.","reason":reason})
 }
 
-/// Retains the real provider authority and captures its actual provider-session
-/// binding. A later binding is refused, never silently retagged as a successor.
+/// Retains the actual MCP credential session, as the original registry does.
+/// Runtime provider-session rows and provider-thread IDs are separate identities;
+/// neither their publication nor their transitions mint this caller's session.
 pub struct Caller {
     state: Weak<State>,
     authority: Authority,
     thread: String,
     instance: String,
-    provider_thread: String,
     provider_session: String,
     issued_at: i64,
 }
 impl Caller {
+    pub(crate) fn belongs_to(&self, state: &Arc<State>) -> bool {
+        Weak::ptr_eq(&self.state, &Arc::downgrade(state))
+    }
+    pub(crate) fn thread_id(&self) -> &str {
+        &self.thread
+    }
+    pub(crate) fn agent_session_key(&self) -> Result<String, Value> {
+        let scope = self.scope()?;
+        Ok(format!(
+            "{}\0{}\0{}",
+            scope["environmentId"]
+                .as_str()
+                .ok_or_else(|| denied("environment_identity"))?,
+            self.provider_session,
+            self.thread
+        ))
+    }
+    pub(crate) fn preview_current(&self) -> Result<(), Value> {
+        let scope = self.scope()?;
+        if scope["capabilities"]
+            .as_array()
+            .is_some_and(|values| values.iter().any(|value| value == "preview"))
+        {
+            Ok(())
+        } else {
+            Err(denied("preview_unavailable"))
+        }
+    }
     pub fn capture(context: &Context) -> Result<Self, Value> {
         let (state, authority) = context.page_authority();
         let current = state.upgrade().ok_or_else(|| denied("owner_closed"))?;
@@ -30,25 +58,12 @@ impl Caller {
         let instance = thread["providerInstanceId"]
             .as_str()
             .ok_or_else(|| denied("provider_identity"))?;
-        let provider_thread = thread["activeProviderThreadId"]
-            .as_str()
-            .filter(|id| !id.is_empty())
-            .ok_or_else(|| denied("provider_session_not_ready"))?;
-        let binding = events::get(&db, "providerThreads", provider_thread)
-            .map_err(|_| denied("provider_session_not_ready"))?;
-        if binding["appThreadId"] != tid || binding["providerInstanceId"] != instance {
-            return Err(denied("provider_binding"));
-        }
-        let session = binding["providerSessionId"]
-            .as_str()
-            .filter(|id| !id.is_empty())
-            .ok_or_else(|| denied("provider_session_not_ready"))?;
+        let session = context.id();
         Ok(Self {
             state,
             authority,
             thread: tid.into(),
             instance: instance.into(),
-            provider_thread: provider_thread.into(),
             provider_session: session.into(),
             issued_at: context.issued_at(),
         })
@@ -58,18 +73,7 @@ impl Caller {
     }
     fn checked(&self, db: &rusqlite::Connection) -> Result<Value, Value> {
         let thread = self.authority.native_caller(db, false)?;
-        if thread["id"] != self.thread
-            || thread["providerInstanceId"] != self.instance
-            || thread["activeProviderThreadId"] != self.provider_thread
-        {
-            return Err(denied("provider_binding_changed"));
-        }
-        let binding = events::get(db, "providerThreads", &self.provider_thread)
-            .map_err(|_| denied("provider_binding_changed"))?;
-        if binding["appThreadId"] != self.thread
-            || binding["providerInstanceId"] != self.instance
-            || binding["providerSessionId"] != self.provider_session
-        {
+        if thread["id"] != self.thread || thread["providerInstanceId"] != self.instance {
             return Err(denied("provider_binding_changed"));
         }
         Ok(thread)
@@ -148,6 +152,7 @@ impl Caller {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::events;
     #[tokio::test]
     async fn actual_credential_reads_complete_owned_projection_and_fences_rebinding() {
         crate::test_sandbox::assert_isolated();
@@ -205,32 +210,88 @@ mod tests {
             let caller = Caller::capture(&context).unwrap();
             assert_eq!(
                 caller.scope().unwrap()["thread"]["providerSessionId"],
-                "actual-provider-session"
+                context.id()
             );
+            assert_eq!(caller.scope().unwrap()["requestNamespace"], context.id());
             assert!(caller.thread_projection("foreign").is_err());
             let projection = caller.thread_projection("thread").unwrap();
             assert_eq!(
                 &projection, input,
                 "Authoritative records must not be replaced by shell summaries"
             );
-            extracted.push(json!({"name":case["name"],"status":case["status"],"background":case["background"],"input":projection,"expectedShell":case["expectedShell"],"caller":case["caller"]}));
+            extracted.push(json!({"name":case["name"],"status":case["status"],"background":case["background"],"input":projection,"expectedShell":case["expectedShell"],"caller":case["caller"],"sourceScope":caller.scope().unwrap()}));
+            // Runtime publication is not MCP credential identity. Missing,
+            // placeholder and successor runtime bindings cannot retag it.
+            for status in ["active", "prepared", "not_loaded"] {
+                {
+                    let db = state.db.lock().unwrap();
+                    let mut binding =
+                        events::get(&db, "providerThreads", "provider-thread").unwrap();
+                    binding["id"] = json!("next-provider-thread");
+                    binding["status"] = json!(status);
+                    binding["providerSessionId"] = json!("runtime-successor-session");
+                    events::put(
+                        &db,
+                        "providerThreads",
+                        "next-provider-thread",
+                        "thread",
+                        &binding,
+                    )
+                    .unwrap();
+                    let mut thread = events::get(&db, "thread", "thread").unwrap();
+                    thread["activeProviderThreadId"] = json!("next-provider-thread");
+                    events::put(&db, "thread", "thread", "thread", &thread).unwrap();
+                }
+                assert_eq!(
+                    caller.scope().unwrap()["thread"]["providerSessionId"],
+                    context.id()
+                );
+            }
             {
                 let db = state.db.lock().unwrap();
-                let mut binding = events::get(&db, "providerThreads", "provider-thread").unwrap();
-                binding["providerSessionId"] = json!("successor-session");
-                events::put(
-                    &db,
-                    "providerThreads",
-                    "provider-thread",
-                    "thread",
-                    &binding,
-                )
-                .unwrap();
+                let mut thread = events::get(&db, "thread", "thread").unwrap();
+                thread["activeProviderThreadId"] = Value::Null;
+                events::put(&db, "thread", "thread", "thread", &thread).unwrap();
             }
-            assert!(caller.thread_projection("thread").is_err());
+            assert_eq!(
+                caller.scope().unwrap()["thread"]["providerSessionId"],
+                context.id()
+            );
+            for field in ["providerInstanceId", "providerGeneration"] {
+                let previous = {
+                    let db = state.db.lock().unwrap();
+                    let mut thread = events::get(&db, "thread", "thread").unwrap();
+                    let previous = thread[field].clone();
+                    thread[field] = json!("foreign-owner");
+                    events::put(&db, "thread", "thread", "thread", &thread).unwrap();
+                    previous
+                };
+                assert!(caller.scope().is_err());
+                {
+                    let db = state.db.lock().unwrap();
+                    let mut thread = events::get(&db, "thread", "thread").unwrap();
+                    thread[field] = previous;
+                    events::put(&db, "thread", "thread", "thread", &thread).unwrap();
+                }
+            }
+            context.revoke();
             assert!(caller.scope().is_err());
-            // New contexts may be constructed later, but an old captured caller
-            // never inherits its successor's provider-session identity.
+            assert!(caller.thread_projection("thread").is_err());
+            let replacement = state
+                .native_mcp
+                .obtain(&state, "thread", "codex", &root, &Value::Null)
+                .await
+                .unwrap();
+            assert_ne!(replacement.id(), context.id());
+            let replacement_caller = Caller::capture(&replacement).unwrap();
+            assert_eq!(
+                replacement_caller.scope().unwrap()["thread"]["providerSessionId"],
+                replacement.id()
+            );
+            assert!(
+                caller.scope().is_err(),
+                "A replacement credential cannot retag the old caller"
+            );
         }
         if let Ok(output) = std::env::var("O3_NATIVE_CALLER_PROJECTION_OUTPUT") {
             use std::io::Write;
