@@ -71,3 +71,19 @@ live cloud-provider acceptance claim. Existing local CPU HTTP/WS acceptance is
 separate. No microphone, user profile, real credential or live service is used.
 The cloud capability remains absent until startup ownership, complete provider
 postprocessing, cancellation/shutdown and current-authority consumers are ready.
+
+## CI admission fixture correction
+
+Combined CI run 42427209136 failed the HTTP child before provider execution:
+`capture_or_reuse` rejected an untrusted destination ancestor. The admitted Node
+input can be valid without its original directory being an approved snapshot
+destination. The fixture had incorrectly used that input path as its destination.
+It now uses `NodeRuntime::capture` into its existing privately owned 0700 fixture
+root. Production admission and ancestor validation are unchanged.
+
+The narrowly selected HTTP case passes in both modes with this separate private
+Node copy, including its child stack, provider requests and secret authority
+assertions. Directed strict checks pass both modes. The frozen evidence is
+`cloud-private-node-fixture-proof.json`; the earlier 72-case corpus was not rerun
+or reassigned to this fixture-only change. Postprocessing work was excluded from
+the compiled test root and remains a separate uncommitted increment.

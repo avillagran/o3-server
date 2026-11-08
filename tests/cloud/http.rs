@@ -221,16 +221,17 @@ fn private_settings_named_vault_and_actual_provider_http_preserve_authority_and_
     let root = directory();
     let state = Arc::new(State::open(&root).unwrap());
     let path = PathBuf::from(std::env::var("O3_ADMITTED_NODE").unwrap());
-    let node = NodeRuntime::capture_or_reuse(
+    let node = NodeRuntime::capture(
         SealedFile::admit(
             &path,
             &std::env::var("O3_ADMITTED_NODE_SHA256").unwrap(),
             fs::metadata(&path).unwrap().len(),
         )
         .unwrap(),
-        &path,
+        &root.join("node"),
     )
     .unwrap();
+    assert!(root.join("node").is_file());
     let native = Arc::new(cloud::text::NativeText::new(node, root.clone()).unwrap());
     native.prepare().await.unwrap();
     let vault = Arc::new(Vault {
