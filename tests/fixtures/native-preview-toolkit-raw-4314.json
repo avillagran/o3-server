@@ -1,0 +1,35 @@
+{
+  "revision": "83a3674ffd84ffb33de768210c806cb1ac53fd80",
+  "sourceSha256": {
+    "src/native_page_worker.rs": "35b80196cd7c3377b8843d8efef35fddd61c2849df93d4246c51ea0c0e9c42bd",
+    "src/native_page_worker/toolkit_wire.rs": "beee6f55a55cf7a9d2819f2ce52d0ba13022466533ffa7162047108f5170130d",
+    "tests/preview/supervisor-peer.mjs": "894460f60adc9866e5e14ab24b7540aff2b16df5d9bef023f40bb83ef983c8c2"
+  },
+  "strictMinimalLibraryReceipt": "/var/tmp/o3-server/page-toolkit-raw-library-2/result.json",
+  "retainedInitialLintReceipt": "/var/tmp/o3-server/page-toolkit-raw-library-1/result.json",
+  "testBuildReceipt": "/var/tmp/o3-server/page-toolkit-raw-tests-1/build-result.json",
+  "runtimeReceipt": "/var/tmp/o3-server/page-toolkit-raw-tests-1/runtime-result.json",
+  "artifact": {
+    "path": "/home/node/BuildCache/o3-native-page-worker-next/target/debug/deps/o3_server-02f97294db623867",
+    "bytes": 132909296,
+    "sha256": "a1c43e88dab799a8a6772bf32c69b2d75b51f5404abfad78941d1dd4e5422c43"
+  },
+  "cases": [
+    "native_page_worker::tests::raw_input_preserves_javascript_units_and_cannot_promote_input_authority",
+    "native_page_worker::tests::toolkit_close_ack_cannot_certify_an_unfinished_owned_continuation"
+  ],
+  "sourceTreeQualification": "Built current private tree including preserved unrelated events.rs/caller WIP; not a clean published-checkout binary claim.",
+  "preservedUnacceptedInputs": {
+    "src/events.rs": "b2190899b8066ee554cdcec93d0460e1d7319ec0bbe32361389fb63b7c49736a",
+    "src/native_page_worker/caller.rs": "505f9e5584251462738377727d935e38986af3ef4c485890895d8fd697d4bd33"
+  },
+  "qualification": "Two exact library tests with real framed Node peers only. No concrete ToolkitOwner, real CDP, original full limits or public MCP acceptance.",
+  "pending": [
+    "Typed opaque toolkit caller invocation envelope",
+    "Register complete immutable callback ledger and real ToolkitOwner",
+    "Actual published provider binding and original-handler source permission",
+    "Actual per-tab factory and full native operation router",
+    "Real callback deadline entry and original preferred-open budget",
+    "All original consumers, reconnect/live tabs, bounds and outer MCP transport"
+  ]
+}

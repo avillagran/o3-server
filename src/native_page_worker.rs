@@ -8,6 +8,8 @@ pub use crate::server_browser::native_owner::{
 };
 pub mod caller;
 pub mod control;
+mod toolkit_wire;
+pub use toolkit_wire::{ServiceFuture, ServiceMethod, ServiceReply, ServiceRequest};
 
 use serde_json::{json, Value};
 use std::{
@@ -55,6 +57,60 @@ pub trait GrantOwner: Send + Sync + 'static {
     /// Synchronously fence this grant before any process cleanup awaits.
     fn revoke(&self);
     fn close(&self) -> Pin<Box<dyn Future<Output = Result<(), Fault>> + Send + '_>>;
+}
+/// An owned caller/callback service for the toolkit process. This resource has
+/// no Chrome target or browser-wide CDP grant. Its identity and pipe capabilities are
+/// constructed by Rust, independently of tool parameters.
+pub trait ToolkitOwner: Send + Sync + 'static {
+    fn resource_id(&self) -> &str;
+    fn revocation(&self) -> watch::Receiver<bool>;
+    fn revoke(&self);
+    fn close(&self) -> Pin<Box<dyn Future<Output = Result<(), Fault>> + Send + '_>>;
+    /// Admit synchronously in receive order before any asynchronous work. The
+    /// source end marker can therefore account for all preceding producers.
+    fn admit(&self, request: ServiceRequest) -> Result<ServiceFuture, Fault>;
+}
+enum OwnedRuntime {
+    Page(Arc<dyn GrantOwner>),
+    Toolkit(Arc<dyn ToolkitOwner>),
+}
+impl OwnedRuntime {
+    fn id(&self) -> &str {
+        match self {
+            Self::Page(owner) => owner.target_id(),
+            Self::Toolkit(owner) => owner.resource_id(),
+        }
+    }
+    fn endpoint(&self) -> Option<&str> {
+        match self {
+            Self::Page(owner) => Some(owner.endpoint()),
+            Self::Toolkit(_) => None,
+        }
+    }
+    fn revocation(&self) -> watch::Receiver<bool> {
+        match self {
+            Self::Page(owner) => owner.revocation(),
+            Self::Toolkit(owner) => owner.revocation(),
+        }
+    }
+    fn revoke(&self) {
+        match self {
+            Self::Page(owner) => owner.revoke(),
+            Self::Toolkit(owner) => owner.revoke(),
+        }
+    }
+    fn close(&self) -> Pin<Box<dyn Future<Output = Result<(), Fault>> + Send + '_>> {
+        match self {
+            Self::Page(owner) => owner.close(),
+            Self::Toolkit(owner) => owner.close(),
+        }
+    }
+    fn admit(&self, request: ServiceRequest) -> Result<ServiceFuture, Fault> {
+        match self {
+            Self::Toolkit(owner) => owner.admit(request),
+            Self::Page(_) => Err(Fault::Protocol),
+        }
+    }
 }
 /// Trusted sealed-installation inputs. Verify package manifests before building
 /// this specification. No argument or environment inherits an MCP payload.
@@ -126,6 +182,7 @@ impl serde::Serialize for JavaScriptJson {
 struct Packet {
     envelope: Value,
     exact: Option<OperationResult>,
+    service: Option<ServiceRequest>,
 }
 impl std::ops::Deref for Packet {
     type Target = Value;
@@ -135,15 +192,35 @@ impl std::ops::Deref for Packet {
 }
 fn decode_packet(bytes: &[u8]) -> Result<Packet, Fault> {
     if let Ok(envelope) = serde_json::from_slice(bytes) {
+        let envelope: Value = envelope;
+        if envelope["kind"] == "service" {
+            let (nonce, service) = toolkit_wire::decode(bytes)?;
+            return Ok(Packet {
+                envelope: json!({"kind":"service","nonce":nonce,"id":service.id}),
+                exact: None,
+                service: Some(service),
+            });
+        }
         return Ok(Packet {
             envelope,
             exact: None,
+            service: None,
         });
     }
     // Parse only the control envelope as scalar JSON. RawValue validates the
     // original JSON grammar while retaining every escaped UTF-16 payload unit.
     let mut fields: BTreeMap<String, Box<serde_json::value::RawValue>> =
         serde_json::from_slice(bytes).map_err(|_| Fault::Protocol)?;
+    if fields.get("kind").is_some_and(|kind| {
+        serde_json::from_str::<String>(kind.get()).is_ok_and(|kind| kind == "service")
+    }) {
+        let (nonce, service) = toolkit_wire::decode(bytes)?;
+        return Ok(Packet {
+            envelope: json!({"kind":"service","nonce":nonce,"id":service.id}),
+            exact: None,
+            service: Some(service),
+        });
+    }
     let value = fields.remove("value");
     let error = fields.remove("error");
     let (field, payload, failed) = match (value, error) {
@@ -171,6 +248,7 @@ fn decode_packet(bytes: &[u8]) -> Result<Packet, Fault> {
     Ok(Packet {
         envelope: Value::Object(envelope),
         exact: Some(exact),
+        service: None,
     })
 }
 /// Native broker grace is response transport time, never page-operation time.
@@ -190,12 +268,50 @@ struct Call {
     scope: Option<InvocationScope>,
     native_timeout: Duration,
     operation: String,
-    input: Value,
+    input: JavaScriptJson,
     deadline: Instant,
     retire_on_deadline: bool,
     retain_execution: bool,
     admission: Option<Arc<ExecutionAdmission>>,
     reply: oneshot::Sender<Result<OperationResult, Fault>>,
+}
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InvocationFrame<'a> {
+    kind: &'static str,
+    id: u64,
+    nonce: &'a str,
+    operation: &'a str,
+    input: &'a JavaScriptJson,
+    timeout_ms: u128,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    owner_scope: Option<InvocationFrameScope<'a>>,
+}
+#[derive(serde::Serialize)]
+struct InvocationFrameScope<'a> {
+    receipt: &'a str,
+    tool: &'static str,
+}
+fn encode_invocation(call: &Call, id: u64, nonce: &str) -> Result<Vec<u8>, Fault> {
+    // Serializing RawValue directly is essential: a Value intermediary rejects
+    // valid JavaScript JSON containing an unpaired UTF-16 code unit.
+    let packet = serde_json::to_vec(&InvocationFrame {
+        kind: "invoke",
+        id,
+        nonce,
+        operation: &call.operation,
+        input: &call.input,
+        timeout_ms: call.native_timeout.as_millis().max(1),
+        owner_scope: call.scope.as_ref().map(|scope| InvocationFrameScope {
+            receipt: scope.receipt.worker_receipt(),
+            tool: scope.operation.tool_name(),
+        }),
+    })
+    .map_err(|_| Fault::Protocol)?;
+    if packet.len() > MAX_FRAME_BYTES {
+        return Err(Fault::TooLarge);
+    }
+    Ok(packet)
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ExecutionStage {
@@ -269,11 +385,23 @@ pub struct Worker {
 }
 impl Worker {
     pub async fn spawn(spec: WorkerSpec, owner: Arc<dyn GrantOwner>) -> Result<Self, CloseReceipt> {
+        Self::spawn_owned(spec, OwnedRuntime::Page(owner)).await
+    }
+    /// The toolkit process can exist before any tab. It receives only its
+    /// caller/callback service capability; Page workers retain tab CDP grants.
+    pub async fn spawn_toolkit(
+        spec: WorkerSpec,
+        owner: Arc<dyn ToolkitOwner>,
+    ) -> Result<Self, CloseReceipt> {
+        Self::spawn_owned(spec, OwnedRuntime::Toolkit(owner)).await
+    }
+    async fn spawn_owned(spec: WorkerSpec, owner: OwnedRuntime) -> Result<Self, CloseReceipt> {
+        let owner = Arc::new(owner);
         if spec.validate().is_err() {
             return Err(close_without_child(&spec, &owner, Fault::InvalidInstallation).await);
         }
-        let url = match url::Url::parse(owner.endpoint()) {
-            Ok(url)
+        let url = match owner.endpoint().map(url::Url::parse) {
+            Some(Ok(url))
                 if url.scheme() == "ws"
                     && url.host_str() == Some("127.0.0.1")
                     && url.port().is_some()
@@ -283,14 +411,18 @@ impl Worker {
                     && url.fragment().is_none()
                     && url.path().len() >= 32 =>
             {
-                url
+                Some(url)
             }
+            None => None,
             _ => return Err(close_without_child(&spec, &owner, Fault::Protocol).await),
         };
-        if owner.target_id().is_empty() || *owner.revocation().borrow() {
+        if owner.id().is_empty() || *owner.revocation().borrow() {
             return Err(close_without_child(&spec, &owner, Fault::Revoked).await);
         }
         let mut command = Command::new(&spec.node);
+        if matches!(owner.as_ref(), OwnedRuntime::Toolkit(_)) {
+            command.arg("--experimental-vm-modules");
+        }
         command
             .arg(&spec.entry)
             .current_dir(&spec.private_home)
@@ -325,7 +457,15 @@ impl Worker {
             return Err(close_without_child(&spec, &owner, Fault::SpawnFailed).await);
         }
         let nonce = bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
-        let bootstrap = json!({"kind":"init","protocol":1,"nonce":nonce,"targetId":owner.target_id(),"endpoint":url.as_str(),"configuration":spec.configuration});
+        let mut bootstrap =
+            json!({"kind":"init","protocol":1,"nonce":nonce,"configuration":spec.configuration});
+        match owner.as_ref() {
+            OwnedRuntime::Page(_) => {
+                bootstrap["targetId"] = json!(owner.id());
+                bootstrap["endpoint"] = json!(url.expect("Page endpoint was validated").as_str());
+            }
+            OwnedRuntime::Toolkit(_) => bootstrap["resourceId"] = json!(owner.id()),
+        }
         tokio::spawn(run(Running {
             child,
             stdin,
@@ -517,11 +657,73 @@ impl Worker {
         )
         .await
     }
+    /// Exact JavaScript input from the original toolkit callback. Scope and
+    /// operation still come from the actual admitted owner, outside this JSON.
+    pub async fn invoke_native_scoped_raw(
+        &self,
+        invocation: &NativeInvocation,
+        operation: &str,
+        input: JavaScriptJson,
+        native_timeout: Duration,
+        update_current_tab: bool,
+    ) -> Result<OperationResult, Fault> {
+        self.invoke_scoped_raw_budget(
+            invocation,
+            operation,
+            input,
+            Budget {
+                timeout: native_timeout,
+                grace: if update_current_tab {
+                    HOST_RESPONSE_GRACE
+                } else {
+                    Duration::ZERO
+                },
+                retire_on_deadline: update_current_tab,
+                retain_execution: false,
+            },
+        )
+        .await
+    }
+    /// Retain the real admitted callback until its terminal result, including
+    /// when its raw input cannot be represented by a Unicode-scalar Value.
+    pub async fn invoke_execution_scoped_raw(
+        &self,
+        invocation: &NativeInvocation,
+        operation: &str,
+        input: JavaScriptJson,
+        native_timeout: Duration,
+    ) -> Result<OperationResult, Fault> {
+        self.invoke_scoped_raw_budget(
+            invocation,
+            operation,
+            input,
+            Budget {
+                timeout: native_timeout,
+                grace: Duration::ZERO,
+                retire_on_deadline: false,
+                retain_execution: true,
+            },
+        )
+        .await
+    }
     async fn invoke_scoped_budget(
         &self,
         invocation: &NativeInvocation,
         operation: &str,
         input: Value,
+        budget: Budget,
+    ) -> Result<OperationResult, Fault> {
+        let input =
+            JavaScriptJson::parse(serde_json::to_string(&input).map_err(|_| Fault::Protocol)?)
+                .map_err(|_| Fault::Protocol)?;
+        self.invoke_scoped_raw_budget(invocation, operation, input, budget)
+            .await
+    }
+    async fn invoke_scoped_raw_budget(
+        &self,
+        invocation: &NativeInvocation,
+        operation: &str,
+        input: JavaScriptJson,
         budget: Budget,
     ) -> Result<OperationResult, Fault> {
         if budget.timeout.as_millis() == 0
@@ -532,7 +734,7 @@ impl Worker {
         let (receipt, tool) = invocation
             .issue_page_receipt(operation)
             .map_err(|_| Fault::Revoked)?;
-        self.invoke_budget(
+        self.invoke_raw_budget(
             operation,
             input,
             budget,
@@ -547,6 +749,19 @@ impl Worker {
         &self,
         operation: &str,
         input: Value,
+        budget: Budget,
+        scope: Option<InvocationScope>,
+    ) -> Result<OperationResult, Fault> {
+        let input =
+            JavaScriptJson::parse(serde_json::to_string(&input).map_err(|_| Fault::Protocol)?)
+                .map_err(|_| Fault::Protocol)?;
+        self.invoke_raw_budget(operation, input, budget, scope)
+            .await
+    }
+    async fn invoke_raw_budget(
+        &self,
+        operation: &str,
+        input: JavaScriptJson,
         budget: Budget,
         scope: Option<InvocationScope>,
     ) -> Result<OperationResult, Fault> {
@@ -635,7 +850,7 @@ impl Worker {
 }
 async fn close_without_child(
     spec: &WorkerSpec,
-    owner: &Arc<dyn GrantOwner>,
+    owner: &Arc<OwnedRuntime>,
     cause: Fault,
 ) -> CloseReceipt {
     let limit = if spec.close_deadline.is_zero() {
@@ -676,9 +891,14 @@ async fn read_frame<R: tokio::io::AsyncRead + Unpin>(reader: &mut R) -> Result<P
 }
 async fn write_frame<W: tokio::io::AsyncWrite + Unpin>(
     writer: &mut W,
-    value: &Value,
+    value: &Outbound,
 ) -> Result<(), Fault> {
-    let body = serde_json::to_vec(value).map_err(|_| Fault::Protocol)?;
+    let body: std::borrow::Cow<'_, [u8]> = match value {
+        Outbound::Scalar(value) => {
+            std::borrow::Cow::Owned(serde_json::to_vec(value).map_err(|_| Fault::Protocol)?)
+        }
+        Outbound::Exact(bytes) => std::borrow::Cow::Borrowed(bytes),
+    };
     if body.len() > MAX_FRAME_BYTES {
         return Err(Fault::TooLarge);
     }
@@ -689,6 +909,15 @@ async fn write_frame<W: tokio::io::AsyncWrite + Unpin>(
         .map_err(|_| Fault::Exited)?;
     writer.write_all(&body).await.map_err(|_| Fault::Exited)?;
     writer.flush().await.map_err(|_| Fault::Exited)
+}
+enum Outbound {
+    Scalar(Value),
+    Exact(Vec<u8>),
+}
+impl From<Value> for Outbound {
+    fn from(value: Value) -> Self {
+        Self::Scalar(value)
+    }
 }
 struct Running {
     child: tokio::process::Child,
@@ -702,7 +931,7 @@ struct Running {
     closed: watch::Sender<Option<CloseReceipt>>,
     ready: oneshot::Sender<Result<(), Fault>>,
     spec: WorkerSpec,
-    owner: Arc<dyn GrantOwner>,
+    owner: Arc<OwnedRuntime>,
     bootstrap: Value,
     nonce: String,
 }
@@ -725,8 +954,8 @@ async fn run(running: Running) {
     } = running;
     let mut revoked = owner.revocation();
     let (frames, mut inbound) = mpsc::channel(8);
-    let (writes, mut outbound) = mpsc::channel::<Value>(8);
-    let (control_writes, mut control_outbound) = mpsc::channel::<Value>(1);
+    let (writes, mut outbound) = mpsc::channel::<Outbound>(8);
+    let (control_writes, mut control_outbound) = mpsc::channel::<Outbound>(1);
     let (fault_tx, mut faults) = mpsc::channel(2);
     let reader = tokio::spawn(async move {
         loop {
@@ -773,7 +1002,7 @@ async fn run(running: Running) {
     });
     let initially_revoked = *revoked.borrow();
     if !initially_revoked {
-        let _ = writes.send(bootstrap).await;
+        let _ = writes.send(bootstrap.into()).await;
     }
     let handshake = if initially_revoked {
         Err(Fault::Revoked)
@@ -784,6 +1013,8 @@ async fn run(running: Running) {
     let mut next = 0u64;
     let mut next_owner = 0u64;
     let mut owner_pending: Option<(u64, OwnerCall)> = None;
+    let mut last_service = 0;
+    let mut services = tokio::task::JoinSet::new();
     let cause = if let Err(error) = handshake {
         let _ = ready.send(Err(error));
         error
@@ -819,21 +1050,33 @@ async fn run(running: Running) {
                         next_owner+=1;if next_owner>9_007_199_254_740_991{break Fault::Protocol;}
                         let packet=json!({"kind":"owner-control","nonce":nonce,"id":next_owner,"action":"invalidateRefs"});
                         owner_pending=Some((next_owner,call));
-                        if control_writes.try_send(packet).is_err(){break Fault::Busy;}
+                        if control_writes.try_send(packet.into()).is_err(){break Fault::Busy;}
                     },
                     call=calls.recv(),if pending.len()<MAX_PENDING=>{
                      let Some(call)=call else{break Fault::Closed;};if *revoked.borrow()||*stop.borrow(){let _=call.reply.send(Err(Fault::Revoked));break Fault::Revoked;}
             if call.reply.is_closed(){continue;}
             if call.deadline<=Instant::now(){let _=call.reply.send(Err(Fault::Deadline));continue;}
                      next+=1;if next>9_007_199_254_740_991{break Fault::Protocol;}
-                     let mut packet=json!({"kind":"invoke","id":next,"nonce":nonce,"operation":call.operation,"input":call.input,"timeoutMs":call.native_timeout.as_millis().max(1)});
-                     if let Some(scope)=&call.scope {packet["ownerScope"]=json!({"receipt":scope.receipt.worker_receipt(),"tool":scope.operation.tool_name()});}
-                     if serde_json::to_vec(&packet).map_or(true,|b|b.len()>MAX_FRAME_BYTES){let _=call.reply.send(Err(Fault::TooLarge));continue;}
+                     let packet=match encode_invocation(&call,next,&nonce){Ok(packet)=>packet,Err(error)=>{let _=call.reply.send(Err(error));continue;}};
                      if call.admission.as_ref().is_some_and(|admission|!admission.admit(call.deadline)){let _=call.reply.send(Err(Fault::Deadline));continue;}
-                     pending.insert(next,Pending{_scope:call.scope,deadline:call.deadline,retire_on_deadline:call.retire_on_deadline,retain_execution:call.retain_execution,reply:Some(call.reply)});if writes.try_send(packet).is_err(){break Fault::Busy;}
+                     pending.insert(next,Pending{_scope:call.scope,deadline:call.deadline,retire_on_deadline:call.retire_on_deadline,retain_execution:call.retain_execution,reply:Some(call.reply)});if writes.try_send(Outbound::Exact(packet)).is_err(){break Fault::Busy;}
                     },
                     packet=inbound.recv()=>{
                      let mut packet=match packet{Some(Ok(v))=>v,Some(Err(e))=>break e,None=>break Fault::Exited};
+                     if let Some(request)=packet.service.take() {
+                         if packet["nonce"]!=nonce || request.id<=last_service {break Fault::Protocol;}
+                         last_service=request.id;
+                         // Admission is synchronous and ordered with source end
+                         // markers. Work then runs independently of observation.
+                         let work=match owner.admit(request){Ok(work)=>work,Err(error)=>break error};
+                         let sender=writes.clone();let service_nonce=nonce.clone();let id=last_service;
+                         services.spawn(async move {
+                             let reply=work.await?;
+                             let encoded=toolkit_wire::encode(&service_nonce,id,&reply)?;
+                             sender.send(Outbound::Exact(encoded)).await.map_err(|_|Fault::Exited)
+                         });
+                         continue;
+                     }
                      if packet["kind"]=="owner-result" {
                          if packet.envelope!=json!({"kind":"owner-result","nonce":nonce,"id":packet["id"],"ok":true}) {break Fault::Protocol;}
                          let Some((id,call))=owner_pending.take() else {break Fault::Protocol;};
@@ -846,6 +1089,13 @@ async fn run(running: Running) {
                      let Some(id)=packet["id"].as_u64()else{break Fault::Protocol;};let Some(call)=pending.remove(&id)else{break Fault::Protocol;};
                      if *revoked.borrow()||*stop.borrow(){if let Some(reply)=call.reply{let _=reply.send(Err(Fault::Revoked));}break Fault::Revoked;}
                      let exact=packet.exact.take();let result=match packet["ok"].as_bool(){Some(true)if packet.get("error").is_none()&&packet.get("value").is_some()=>Ok(OperationResult::Value(packet["value"].clone())),Some(false)if packet.get("value").is_none()&&packet["error"].is_object()=>Ok(OperationResult::NativeError(packet["error"].clone())),_=>{if let Some(reply)=call.reply{let _=reply.send(Err(Fault::Protocol));}break Fault::Protocol;}};let result=result.map(|value|exact.unwrap_or(value));if let Some(reply)=call.reply{if call.deadline<=Instant::now() && !call.retain_execution{let _=reply.send(Err(Fault::Deadline));if call.retire_on_deadline{break Fault::Deadline;}}else{let _=reply.send(result);}}
+                    }
+                    completed=services.join_next(),if !services.is_empty()=>{
+                        match completed {
+                            Some(Ok(Ok(())))=>{},
+                            Some(Ok(Err(error)))=>break error,
+                            _=>break Fault::Protocol,
+                        }
                     }
                    }
         }
@@ -891,24 +1141,66 @@ async fn run(running: Running) {
     while let Ok(call) = calls.try_recv() {
         let _ = call.reply.send(Err(cause));
     }
-    let _ = writes.try_send(json!({"kind":"close","nonce":nonce}));
+    let _ = writes.try_send(json!({"kind":"close","nonce":nonce}).into());
     let acknowledgment = tokio::time::timeout(spec.close_deadline, async {
-        while let Some(packet) = inbound.recv().await {
-            match packet {
-                Ok(v)
-                    if v["kind"] == "closed"
+        loop {
+            let packet = tokio::select! {
+                packet=inbound.recv()=>packet,
+                completed=services.join_next(),if !services.is_empty()=>{
+                    if !matches!(completed,Some(Ok(Ok(())))){return None;}
+                    continue;
+                }
+            };
+            let packet = packet?;
+            if let Ok(mut packet) = packet {
+                if let Some(request) = packet.service.take() {
+                    if packet["nonce"] != nonce || request.id <= last_service {
+                        return None;
+                    }
+                    last_service = request.id;
+                    // Revoke fences new authority. The owner may still admit
+                    // cleanup for its already registered callback receipts.
+                    let work = match owner.admit(request) {
+                        Ok(work) => work,
+                        Err(_) => return None,
+                    };
+                    let sender = writes.clone();
+                    let service_nonce = nonce.clone();
+                    let id = last_service;
+                    services.spawn(async move {
+                        let reply = work.await?;
+                        let encoded = toolkit_wire::encode(&service_nonce, id, &reply)?;
+                        sender
+                            .send(Outbound::Exact(encoded))
+                            .await
+                            .map_err(|_| Fault::Exited)
+                    });
+                    continue;
+                }
+                match packet {
+                    v if v["kind"] == "closed"
                         && v["nonce"] == nonce
                         && v["artifactHealthy"] == true
                         && v["executedRecursiveRemovals"] == 0
                         && v.get("guardRefusals").is_none_or(|n| n == 0) =>
-                {
-                    return Some(v.envelope)
+                    {
+                        // A child acknowledgment is not an executor-terminal
+                        // receipt. Drain every admitted continuation before
+                        // certifying the independent owner close.
+                        while let Some(completed) = services.join_next().await {
+                            if !matches!(completed, Ok(Ok(()))) {
+                                return None;
+                            }
+                        }
+                        return Some(v.envelope);
+                    }
+                    v if v["kind"] == "result" && v["nonce"] == nonce => {}
+                    _ => return None,
                 }
-                Ok(v) if v["kind"] == "result" && v["nonce"] == nonce => {}
-                _ => return None,
+            } else {
+                return None;
             }
         }
-        None
     })
     .await
     .ok()
@@ -927,10 +1219,11 @@ async fn run(running: Running) {
     reader.abort();
     writer.abort();
     stderr_task.abort();
+    let continuations_drained = services.is_empty();
     let owner_closed = matches!(
         tokio::time::timeout(spec.close_deadline, owner.close()).await,
         Ok(Ok(()))
-    );
+    ) && continuations_drained;
     let _ = closed.send(Some(CloseReceipt {
         cause,
         worker_reaped: reaped,
@@ -1012,6 +1305,52 @@ mod tests {
             }),
             close_deadline: Duration::from_millis(100),
         }
+    }
+    #[tokio::test]
+    async fn toolkit_close_ack_cannot_certify_an_unfinished_owned_continuation() {
+        struct ServiceOwner {
+            revoked: watch::Sender<bool>,
+            admitted: tokio::sync::Notify,
+            closes: AtomicUsize,
+        }
+        impl ToolkitOwner for ServiceOwner {
+            fn resource_id(&self) -> &str {
+                "synthetic-toolkit-resource-without-tab"
+            }
+            fn revocation(&self) -> watch::Receiver<bool> {
+                self.revoked.subscribe()
+            }
+            fn revoke(&self) {
+                self.revoked.send_replace(true);
+            }
+            fn close(&self) -> Pin<Box<dyn Future<Output = Result<(), Fault>> + Send + '_>> {
+                Box::pin(async move {
+                    self.closes.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                })
+            }
+            fn admit(&self, request: ServiceRequest) -> Result<ServiceFuture, Fault> {
+                assert_eq!(request.method, ServiceMethod::Projection);
+                self.admitted.notify_one();
+                Ok(Box::pin(std::future::pending()))
+            }
+        }
+        let owner = Arc::new(ServiceOwner {
+            revoked: watch::channel(false).0,
+            admitted: Default::default(),
+            closes: AtomicUsize::new(0),
+        });
+        let worker = Worker::spawn_toolkit(spec("service-close-early"), owner.clone())
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), owner.admitted.notified())
+            .await
+            .unwrap();
+        let receipt = worker.close().await;
+        assert!(receipt.worker_reaped);
+        assert!(!receipt.graceful_worker);
+        assert!(!receipt.owner_grant_closed);
+        assert_eq!(owner.closes.load(Ordering::SeqCst), 1);
     }
     #[tokio::test]
     async fn closed_control_before_binding_reaps_the_late_worker() {
@@ -1118,6 +1457,81 @@ mod tests {
             panic!("Lost JavaScript units")
         };
         assert!(result.json().contains(r#""\ud800":"\udfff""#));
+        assert!(worker.close().await.graceful_worker);
+    }
+    #[tokio::test]
+    async fn raw_input_preserves_javascript_units_and_cannot_promote_input_authority() {
+        let worker = Worker::spawn(spec("raw-input"), Owner::new(false))
+            .await
+            .unwrap();
+        let input = JavaScriptJson::parse(
+            r#"{"\ud800":"\udfff","pair":"\ud83d\ude00","ownerScope":{"receipt":"model","tool":"preview_evaluate"},"caller":"model"}"#.into(),
+        )
+        .unwrap();
+        assert!(serde_json::from_str::<Value>(input.json()).is_err());
+        let OperationResult::JavaScriptValue(result) = worker
+            .invoke_raw_budget(
+                "evaluate",
+                input,
+                Budget {
+                    timeout: Duration::from_secs(1),
+                    grace: Duration::ZERO,
+                    retire_on_deadline: true,
+                    retain_execution: false,
+                },
+                None,
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("The real peer response lost JavaScript code units")
+        };
+        #[derive(serde::Deserialize)]
+        struct Echo {
+            input: Box<serde_json::value::RawValue>,
+            keys: Vec<String>,
+            operation: String,
+        }
+        let echoed: Echo = serde_json::from_str(result.json()).unwrap();
+        assert_eq!(
+            echoed.input.get(),
+            r#"{"\ud800":"\udfff","pair":"😀","ownerScope":{"receipt":"model","tool":"preview_evaluate"},"caller":"model"}"#,
+        );
+        assert_eq!(echoed.operation, "evaluate");
+        assert_eq!(
+            echoed.keys,
+            ["id", "input", "kind", "nonce", "operation", "timeoutMs"]
+        );
+        let oversized =
+            JavaScriptJson::parse(format!("\"{}\"", "x".repeat(MAX_FRAME_BYTES))).unwrap();
+        assert_eq!(
+            worker
+                .invoke_raw_budget(
+                    "evaluate",
+                    oversized,
+                    Budget {
+                        timeout: Duration::from_secs(1),
+                        grace: Duration::ZERO,
+                        retire_on_deadline: true,
+                        retain_execution: false,
+                    },
+                    None,
+                )
+                .await,
+            Err(Fault::TooLarge)
+        );
+        // Refusing this input must not retire the retained process or leave a
+        // pending wire receipt that prevents the next admitted invocation.
+        assert!(matches!(
+            worker
+                .invoke(
+                    "evaluate",
+                    json!({"afterOversize":true}),
+                    Duration::from_secs(1)
+                )
+                .await,
+            Ok(OperationResult::Value(_))
+        ));
         assert!(worker.close().await.graceful_worker);
     }
     #[tokio::test]
