@@ -98,6 +98,6 @@ while True:
                     events=[dict(event,sessionId=session) for event in params['events']]
                 elif method=='Fixture.schedule':
                     threading.Thread(target=later,args=(session,dict(params)),daemon=True).start();result={'scheduled':True}
-        if not held:write({'id':command['id'],**({'error':failure} if failure is not None else {'result':result})})
+        if not held:write({'id':command['id'],**({'sessionId':session} if session is not None else {}),**({'error':failure} if failure is not None else {'result':result})})
         for event in events:write(event)
         for reply in deferred:write(reply)
