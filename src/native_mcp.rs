@@ -2,16 +2,16 @@
 use crate::{
     agent_browser,
     mcp_tools::failure,
-    store::{State, now_ms, random_id},
+    store::{now_ms, random_id, State},
 };
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use serde_json::{Value, json};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
     sync::{
-        Arc, Mutex, Weak,
         atomic::{AtomicBool, AtomicI64, Ordering},
+        Arc, Mutex, Weak,
     },
 };
 const IDLE_MS: i64 = 24 * 60 * 60 * 1000;
@@ -442,7 +442,7 @@ mod tests {
     #[tokio::test]
     async fn page_issued_read_identity_preserves_strict_writes_and_credential_lifetime() {
         crate::test_sandbox::assert_isolated();
-        use crate::native_page_worker::{NativeOperation, caller::Caller};
+        use crate::native_page_worker::{caller::Caller, NativeOperation};
         let (state, dir) = fixture();
         let settings = dir.join("settings.json");
         std::fs::write(&settings, br#"{"enableAgentBrowserAccess":true}"#).unwrap();
@@ -494,11 +494,9 @@ mod tests {
             let db = state.reader.lock().unwrap();
             assert!(context.scope.caller(&db, false).is_err());
             assert!(authority.session(&db, false).is_err());
-            assert!(
-                authority
-                    .check(&db, &json!({"type":"message.dispatch","threadId":"target"}))
-                    .is_err()
-            );
+            assert!(authority
+                .check(&db, &json!({"type":"message.dispatch","threadId":"target"}))
+                .is_err());
         }
         put(
             &state.db.lock().unwrap(),
@@ -528,11 +526,9 @@ mod tests {
         assert_eq!(withheld_caller.scope().unwrap()["capabilities"], json!([]));
         std::fs::write(&settings, br#"{"enableAgentBrowserAccess":true}"#).unwrap();
         assert_eq!(withheld_caller.scope().unwrap()["capabilities"], json!([]));
-        assert!(
-            withheld_caller
-                .callback_current(NativeOperation::Status)
-                .is_err()
-        );
+        assert!(withheld_caller
+            .callback_current(NativeOperation::Status)
+            .is_err());
         assert!(caller.callback_current(NativeOperation::Status).is_ok());
         live.store(false, Ordering::SeqCst);
         assert!(caller.scope().is_err());
@@ -562,12 +558,10 @@ mod tests {
         assert!(next.scope().is_err());
         assert!(next.thread_projection("parent").is_err());
         assert!(Caller::capture(&replacement).is_err());
-        assert!(
-            replacement
-                .scope
-                .caller(&state.reader.lock().unwrap(), false)
-                .is_err()
-        );
+        assert!(replacement
+            .scope
+            .caller(&state.reader.lock().unwrap(), false)
+            .is_err());
         replacement.revoke();
         let current = replacement.refresh(&dir, &Value::Null).await.unwrap();
         let current_caller = Caller::capture(&current).unwrap();
@@ -586,12 +580,10 @@ mod tests {
             "thread_not_found"
         );
         assert!(current_caller.thread_projection("parent").is_err());
-        assert!(
-            current
-                .scope
-                .caller(&state.reader.lock().unwrap(), false)
-                .is_err()
-        );
+        assert!(current
+            .scope
+            .caller(&state.reader.lock().unwrap(), false)
+            .is_err());
         put(
             &state.db.lock().unwrap(),
             "thread",
@@ -618,12 +610,10 @@ mod tests {
             "thread_not_found"
         );
         assert!(current_caller.thread_projection("parent").is_err());
-        assert!(
-            current
-                .scope
-                .caller(&state.reader.lock().unwrap(), false)
-                .is_err()
-        );
+        assert!(current
+            .scope
+            .caller(&state.reader.lock().unwrap(), false)
+            .is_err());
         put(
             &state.db.lock().unwrap(),
             "thread",
@@ -635,12 +625,10 @@ mod tests {
         current.revoke();
         assert!(current_caller.scope().is_err());
         assert!(current_caller.thread_projection("parent").is_err());
-        assert!(
-            current
-                .scope
-                .caller(&state.reader.lock().unwrap(), false)
-                .is_err()
-        );
+        assert!(current
+            .scope
+            .caller(&state.reader.lock().unwrap(), false)
+            .is_err());
         driver.shutdown().await;
         // All private fixture files remain for container teardown.
     }
@@ -659,21 +647,17 @@ mod tests {
         let mut parent = get(&db, "thread", "parent").unwrap();
         parent["runtimeMode"] = json!("approval-required");
         put(&db, "thread", "parent", "parent", &parent).unwrap();
-        assert!(
-            authority
-                .check(&db, &command)
-                .unwrap_err()
-                .contains("runtime_mode_escalation_denied")
-        );
+        assert!(authority
+            .check(&db, &command)
+            .unwrap_err()
+            .contains("runtime_mode_escalation_denied"));
         parent["runtimeMode"] = json!("full-access");
         parent["interactionMode"] = json!("plan");
         put(&db, "thread", "parent", "parent", &parent).unwrap();
-        assert!(
-            authority
-                .check(&db, &command)
-                .unwrap_err()
-                .contains("interaction_mode_escalation_denied")
-        );
+        assert!(authority
+            .check(&db, &command)
+            .unwrap_err()
+            .contains("interaction_mode_escalation_denied"));
         parent["interactionMode"] = json!("default");
         put(&db, "thread", "parent", "parent", &parent).unwrap();
         put(

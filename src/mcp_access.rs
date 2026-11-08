@@ -2,10 +2,10 @@
 use crate::{
     events,
     mcp_tools::failure,
-    store::{State, now_ms},
+    store::{now_ms, State},
 };
-use rusqlite::{Connection, OptionalExtension, params};
-use serde_json::{Value, json};
+use rusqlite::{params, Connection, OptionalExtension};
+use serde_json::{json, Value};
 #[derive(Clone)]
 pub(crate) struct Authority {
     pub session_id: String,
@@ -414,7 +414,7 @@ pub(crate) fn replay_reply(db: &Connection, c: &Value, mut result: Value) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::{State, random_id};
+    use crate::store::{random_id, State};
     use std::sync::Arc;
     #[test]
     fn stale_authority_is_rechecked_in_both_command_transactions_before_receipts() {

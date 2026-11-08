@@ -1,7 +1,7 @@
 //! Actual provider caller projection for the whole native toolkit. Scope input
 //! is never read from tool parameters, and credential IDs are not tab identity.
 use crate::{mcp_access::Authority, native_mcp::Context, store::State};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::sync::{Arc, Weak};
 fn denied(reason: &str) -> Value {
     json!({"code":"capability_denied","message":"The native preview caller is unavailable.","reason":reason})

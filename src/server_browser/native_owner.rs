@@ -1,7 +1,7 @@
 //! Owner-library native CDP sessions on the existing actor. This is not an MCP
 //! endpoint; provider tickets require the separate dynamic caller admission.
 use super::*;
-use crate::native_page_worker::{JavaScriptJson, cdp::Packet};
+use crate::native_page_worker::{cdp::Packet, JavaScriptJson};
 use crate::preview_control::runtime::{Control, RunContext};
 use native_grant::{Reservation, State as Grants};
 use std::sync::{Arc, Mutex as SyncMutex, Weak};

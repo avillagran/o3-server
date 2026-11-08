@@ -189,3 +189,15 @@ all pinned 4314 receipts remain unchanged.
 This source comparison permits retaining evidence for those exact footprints.
 It does not accept the whole 4340 application, changed contracts/settings,
 dependencies, schemas, auth/config/provider behavior, or other changed UI code.
+
+## Repository formatting follow-up
+
+CI run `42456652518` on `079c9f9` stopped in both feature modes at
+`cargo fmt --check`, before any runtime tests. The source increment had used a
+different rustfmt style edition from this repository's Cargo edition 2021.
+The follow-up applies the repository-default `cargo fmt` to the five affected
+Rust files: import ordering and assertion layout only. Local `cargo fmt --check`
+passes. The focused runtime receipts above retain their exact pre-format source
+qualification; no executable is rebuilt or reaccepted by this formatting change.
+The complete green catalog-base CI is `42455079829` on `b77885f`; the new
+formatted-head matrix must pass separately.
