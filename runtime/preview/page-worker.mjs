@@ -28,7 +28,8 @@ export async function attachPage({chromium,endpoint,nativePage,nativeContracts,S
     const timeout=Schema.decodeUnknownSync(nativeContracts.PreviewAutomationRequest.fields.timeoutMs)(ownerTimeoutMs);
     result=await nativePage.evaluate(cdp,decoded,timeout);
    }else if(operation==='snapshot'){
-    result=await nativePage.snapshot({page,cdp,renderScale:1,consoleEntries:[],networkEntries:[],actionTimeline:[]});
+    const decoded=Schema.decodeUnknownSync(nativeContracts.PreviewAutomationSnapshotInput)(input??{});
+    result=await nativePage.snapshot({page,cdp,renderScale:1,...decoded,consoleEntries:[],networkEntries:[],actionTimeline:[]});
    }else throw Error('Operation not implemented by this foundation');
    if(!artifactFs.healthy)throw Error('Owned artifact boundary failed');
    if(!admitted())throw Error('Browser grant revoked');
