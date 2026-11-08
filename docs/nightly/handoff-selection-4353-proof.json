@@ -1,0 +1,39 @@
+{
+  "reference": "3cd97a1ee230437b1bfd8441dffe65eac55be1e5",
+  "upstreamChange": "8a84e9426d26bb50de24a8d36c262a851a3befd2",
+  "component": "scalar historical-message selection",
+  "cases": 63,
+  "accepted": true,
+  "sourceSha256": "36bd72660dd61e3e0c43eabc6347b52962c4cc5c2a0c15864d530558f5807c9a",
+  "selectedClosedSourceSha256": "df08740b240fa2547c943638777e1668ab5e2babca944d1f82e5fee6def89553",
+  "originalCompleteModuleSha256": "433d320b01521471fdcd2deaed82b7f7dc8aabeae58d5d0dcd812e333cffd7db",
+  "evidenceRoot": "/var/tmp/o3-server/handoff-selection-4353-proof-lj7fl5jb",
+  "evidence": {
+    "plan.json": "b12879ba245b13c2b7dbf3096c413a0717fdd4760bddb572d3ec529ee369b24b",
+    "owner.py": "323d98bb659573eb4da418c42f0d1e7c900ada960dce25104693bd1dbd4ecceb",
+    "container.py": "43525b3416780cb66f3feed232c82c98916ef2325ed3b62a89b2c85b1debca1f",
+    "probe.rs": "9e4ab49c9279b6978756e25672ea386ab6074bc5eebe1a4fe911414700b23bf5",
+    "oracle.mjs": "dd5e5bcbcc6e14b2b7d54b8230748d77cc7bc9b8be212d8c85327b9b4f4a87a6",
+    "result.json": "c08ec129f03bafcf586187e8c882dc467819351e81d633e0579fe32e8eeba632",
+    "runtime.log": "bc4b18ed9e7b39bcffdfb86c643385af2ca387b15ff151155ace0d658784bbeb"
+  },
+  "actualOriginalMarker": "HANDOFF_SELECTION_ORIGINAL_PASS cases=63 bytes=10773182 sha256=41fd2e360c11fb69d044171992534e9ca74cc681ddc5babafc046e90ae384f34",
+  "actualContainerTerminal": {
+    "name": {
+      "terminal": true,
+      "existsExit": 1
+    },
+    "cid": null,
+    "identified": null,
+    "terminal": true
+  },
+  "sameOwnedCliExit": 0,
+  "fastExitBeforeRetainedCid": true,
+  "hostTestsExecuted": false,
+  "cargoExecuted": false,
+  "persistentProbeBinary": false,
+  "wholeServerBuild": false,
+  "wholeHandoffAcceptance": false,
+  "genericLoneSurrogates": false,
+  "qualification": "Exact closed scalar/render/response/cost/select Rust source subgraph versus complete original Nightly4353 handoffBudget.ts; no whole-server or handoff-admission acceptance."
+}

@@ -85,7 +85,13 @@ pub(crate) fn select(messages: &[Value], coverage: &str, omitted: usize, budget:
     let mut selected = HashSet::new();
     let mut add = |index: usize| {
         let m = &messages[index];
-        if selected.contains(&index) {
+        if selected.contains(&index)
+            || scalar(&m["text"])
+                .encode_utf16()
+                .take(remaining.saturating_add(1))
+                .count()
+                > remaining
+        {
             return;
         }
         let price = bytes(&response_items(std::slice::from_ref(m), "")[1]) + 1;
