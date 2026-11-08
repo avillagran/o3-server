@@ -1,0 +1,12 @@
+{
+  "effectVersion": "4.1.2",
+  "packetSha256": "4eec7b0bc689f6206260ea5ed6b04bc50ca83e3a53e94bffa2a5252c9e0a1121",
+  "originalModules": 66,
+  "originalSourceBytes": 1577130,
+  "proofResultSha256": "b818b941e44ad9f460d55724c3f7bdd22470e55faaf233fa056f3b9f6ba4b5c4",
+  "qualification": "Original module source bytes preserved; three timezone differential against the complete original Effect graph, strict minimal/default compilation and five genuine Rust RPC cases passed. No full nightly/client/release claim.",
+  "upstreamRevision": "ade473018d32003658b7d38693e083ee2e314bd8",
+  "effectTarballIntegrity": "sha512-d3Oah1WyKxFLFh19yWheS5IXIVaITzxZ71JkE1rkUozq/6EcJSU5nPk5bF2QrSygZ3SQoiNQB8TsxFriyMeMaQ==",
+  "compileResultSha256": "db198f86851ecea7fa2eb7d6c64014b0faaaa94b6c689f913eb80e4843483352",
+  "rpcResultSha256": "23acb94824039f95e544e5091882d98790cf741086d535bd87eab62b9869ef52"
+}

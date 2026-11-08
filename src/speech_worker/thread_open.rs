@@ -4,23 +4,35 @@ use serde_json::Value;
 use std::{io, path::Path, sync::Arc, time::Duration};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 const ORIGINAL: &str = include_str!("../../runtime/search/NativeSearchRuntime.cjs");
+const DATE_PACKET: &str = include_str!("../../runtime/search/NativeDateModules.json");
+const DATE_CORE: &str = include_str!("../../runtime/search/NativeDateCore.mjs");
+// The transport accepts 8 MiB. The separately owned immutable source envelope
+// is not request authority and must not narrow that public wire budget.
+const REQUEST_LIMIT: usize = 8 * 1024 * 1024 + 65536;
 const ENTRY: &str = r#"
 const native=module.exports;
 const held=setInterval(()=>{},3600000);
 process.on('SIGTERM',()=>{clearInterval(held);process.exit(0)});
-try {
- const input=JSON.parse(require('node:fs').readFileSync(0,'utf8'));
- if(input.op!=='recordOpen')throw Error('Invalid operation');
- const result=native.recordThreadOpen(input.previous,input.at,input.query);
- process.stdout.write(JSON.stringify({result})+'\n');
-} catch (_) { clearInterval(held);process.exitCode=1; }
+(async()=>{
+ try {
+  const envelope=JSON.parse(require('node:fs').readFileSync(0,'utf8'));
+  const {createNativeVisitCore}=await import('data:text/javascript;base64,'+Buffer.from(envelope.core).toString('base64'));
+  const core=await createNativeVisitCore(envelope.packet,'4eec7b0bc689f6206260ea5ed6b04bc50ca83e3a53e94bffa2a5252c9e0a1121');
+  try {
+   const result=core.prepare(envelope.request,native.recordThreadOpen);
+   process.stdout.write(JSON.stringify({result})+'\n');
+  } finally {core.close();}
+ } catch (_) {clearInterval(held);process.exitCode=1;}
+})();
 "#;
+
 impl NodeRuntime {
     /// No path, code or module authority is accepted from a request.
-    pub(crate) fn record_thread_open(
+    pub(crate) fn prepare_thread_visit(
         self: &Arc<Self>,
         directory: &Path,
         input: Value,
+        timezone: Option<std::ffi::OsString>,
     ) -> io::Result<Value> {
         let node = self.clone();
         let directory = directory.to_owned();
@@ -30,10 +42,11 @@ impl NodeRuntime {
             runtime.block_on(async move {
                 if !node.file.is_executable()? {return Err(io::Error::other("Unadmitted search runtime"));}
                 let mut command=tokio::process::Command::new(node.file.path());
-                command.args(["--no-addons","--disable-proto=throw","--max-old-space-size=64","-e"])
+                command.args(["--no-addons","--disable-proto=throw","--max-old-space-size=128","-e"])
                     .arg(format!("{ORIGINAL}\n{ENTRY}"))
                     .current_dir(directory).env_clear().env("PATH","").env("HOME","/nonexistent")
                     .env("NODE_OPTIONS","").env("NODE_PATH","");
+                if let Some(timezone)=timezone {command.env("TZ",timezone);}
                 let mut process=OwnedProcess::spawn(&mut command)?;
                 let (mut stdin,stdout)=match process.take_pipes(){
                     Ok(pipes)=>pipes,
@@ -41,8 +54,8 @@ impl NodeRuntime {
                 };
                 let mut output=BufReader::new(stdout).take(65537);
                 let operation=async {
-                    let bytes=serde_json::to_vec(&input)?;
-                    if bytes.len()>65536{return Err(io::Error::other("Oversized search input"));}
+                    if serde_json::to_vec(&input)?.len()>REQUEST_LIMIT{return Err(io::Error::other("Oversized visit input"));}
+                    let bytes=serde_json::to_vec(&serde_json::json!({"packet":DATE_PACKET,"core":DATE_CORE,"request":input}))?;
                     stdin.write_all(&bytes).await?;stdin.shutdown().await?;
                     // Pipe shutdown keeps its writer; dropping the owned handle sends
                     // the EOF required by the native readFileSync request decoder.

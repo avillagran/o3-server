@@ -17,7 +17,8 @@ fn thread(s: &support::Server) -> Value {
 }
 #[test]
 fn visits_are_forward_only_and_do_not_change_activity() {
-    let s = support::start(|_| {});
+    let node = std::env::var("O3_ADMITTED_NODE").expect("Private admitted Node mount required");
+    let s = support::start(|state| crate_install(state, &node));
     let c = s.connect();
     create(&c);
     let before = thread(&s);
@@ -84,4 +85,47 @@ fn actual_original_opens_use_server_event_time_dedupe_and_persist_picks() {
 }
 fn crate_install(state: &o3_server::store::State, node: &str) {
     o3_server::thread_open::install(state, &["--native-search-node".into(), node.into()]).unwrap();
+}
+
+#[test]
+fn native_date_domain_and_projection_order_are_preserved() {
+    let node = std::env::var("O3_ADMITTED_NODE").expect("Private admitted Node mount required");
+    let s = support::start(|state| crate_install(state, &node));
+    let c = s.connect();
+    create(&c);
+    let trusted_zone = std::env::var("TZ").unwrap_or_else(|_| "UTC".into());
+    let local_1999 = match trusted_zone.as_str() {
+        "UTC" => "1999-01-01T00:00:00.000Z",
+        "America/Santiago" => "1999-01-01T03:00:00.000Z",
+        "Asia/Kolkata" => "1998-12-31T18:30:00.000Z",
+        _ => panic!("Private corpus requires one of three admitted trusted zones"),
+    };
+    for (index, raw, expected) in [
+        (10, "99-01-01", local_1999),
+        (0, "2026-11-08T12:34:56", "2026-11-08T12:34:56.000Z"),
+        (1, "2026-11-09", "2026-11-09T00:00:00.000Z"),
+        (2, "2027-02-30T00:00:00Z", "2027-03-02T00:00:00.000Z"),
+        (3, "+275760-09-13T00:00:00Z", "+275760-09-13T00:00:00.000Z"),
+    ] {
+        c.rpc("orchestration.dispatchCommand",json!({"type":"thread.visit","commandId":format!("native-{index}"),"threadId":"open","visitedAt":raw})).unwrap();
+        assert_eq!(thread(&s)["lastVisitedAt"], expected);
+    }
+    let before = thread(&s);
+    let wrong_type = c.rpc("orchestration.dispatchCommand",json!({"type":"thread.visit","commandId":"native-numeric","threadId":"open","visitedAt":0})).unwrap_err().to_string();
+    assert!(wrong_type.contains("string required"), "{wrong_type}");
+    assert_eq!(thread(&s), before);
+    let error=c.rpc("orchestration.dispatchCommand",json!({"type":"thread.visit","commandId":"native-invalid","threadId":"open","visitedAt":"not a date","opened":true})).unwrap_err().to_string();
+    assert!(error.contains("not a valid timestamp"), "{error}");
+    assert_eq!(thread(&s), before);
+    c.rpc("orchestration.dispatchCommand",json!({"type":"thread.visit","commandId":"native-large","threadId":"open","visitedAt":format!("{}2026-11-08", " ".repeat(140000)),"opened":true})).unwrap();
+    assert_eq!(thread(&s)["lastVisitedAt"], before["lastVisitedAt"]);
+    assert_eq!(thread(&s)["opens"]["score"], 1);
+    c.rpc(
+        "orchestration.dispatchCommand",
+        json!({"type":"thread.delete","commandId":"native-delete","threadId":"open"}),
+    )
+    .unwrap();
+    let deleted=c.rpc("orchestration.dispatchCommand",json!({"type":"thread.visit","commandId":"native-deleted-invalid","threadId":"open","visitedAt":"not a date"})).unwrap_err().to_string();
+    assert!(deleted.contains("is deleted"), "{deleted}");
+    assert!(!deleted.contains("not a valid timestamp"), "{deleted}");
 }

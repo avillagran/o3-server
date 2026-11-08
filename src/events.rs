@@ -698,9 +698,9 @@ fn dispatch_prepared_with_auto(
     };
     let kind = c["type"].as_str().ok_or("type required")?;
     let tid = c["threadId"].as_str().ok_or("threadId required")?;
-    let at = iso(prepared_visit
+    let at = prepared_visit
         .as_ref()
-        .map_or_else(now_ms, |visit| visit.at));
+        .map_or_else(|| iso(now_ms()), |visit| visit.at.clone());
     let mut t = if kind == "thread.create" {
         new_thread(&tx, c, tid, &at)?
     } else {
@@ -779,29 +779,18 @@ fn dispatch_prepared_with_auto(
             "thread.unsettled"
         }
         "thread.visit" => {
-            let visited = c["visitedAt"]
-                .as_str()
-                .and_then(|v| chrono::DateTime::parse_from_rfc3339(v).ok())
-                .ok_or("Invalid visit time")?;
-            let previous = t["lastVisitedAt"]
-                .as_str()
-                .and_then(|v| chrono::DateTime::parse_from_rfc3339(v).ok());
-            if previous
-                .is_none_or(|previous| visited.timestamp_millis() > previous.timestamp_millis())
+            let visit = prepared_visit.as_ref().ok_or("Missing prepared visit")?;
+            if !t["deletedAt"].is_null()
+                || t["createdAt"] != visit.generation
+                || t["opens"] != visit.previous
+                || t["lastVisitedAt"] != visit.previous_visited
             {
-                t["lastVisitedAt"] = json!(visited
-                    .with_timezone(&chrono::Utc)
-                    .to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
+                return Err("Thread visit projection changed during computation".into());
             }
-            if let Some(visit) = prepared_visit.as_ref() {
-                if !t["deletedAt"].is_null()
-                    || t["createdAt"] != visit.generation
-                    || t["opens"] != visit.previous
-                {
-                    return Err(
-                        "Thread open history changed during computation; retry command".into(),
-                    );
-                }
+            if visit.moves_forward {
+                t["lastVisitedAt"] = json!(visit.visited_at);
+            }
+            if !visit.opens.is_null() {
                 t["opens"] = visit.opens.clone();
             }
             "thread.visited"

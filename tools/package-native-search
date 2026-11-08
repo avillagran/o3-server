@@ -69,6 +69,19 @@ for name, stream, before, digest in [('o3-server', server, server_info, server_h
         if hashlib.file_digest(check, 'sha256').hexdigest() != digest:
             raise SystemExit('Package verification failed; partial package retained')
     artifacts[name] = {'sha256': digest, 'bytes': before.st_size}
+# Distribute the exact notices for the original code compiled into the server.
+notices = Path(__file__).resolve().parent.parent / 'runtime' / 'search'
+(output / 'licenses').mkdir(mode=0o700)
+for name in ['T3-Code-MIT.txt', 'Effect-MIT.txt']:
+    stream, before = regular(notices / name)
+    with stream, (output / 'licenses' / name).open('xb') as destination:
+        data = stream.read(65537)
+        if len(data) > 65536:
+            raise SystemExit('License notice oversized; partial package retained')
+        destination.write(data)
+        destination.flush()
+        os.fsync(destination.fileno())
+    artifacts['licenses/' + name] = {'sha256': hashlib.sha256(data).hexdigest(), 'bytes': len(data)}
 with (output / 'native-search-package.json').open('x') as receipt:
     json.dump({'version': 1, 'artifacts': artifacts, 'node': '26.13.0', 'runtimeIsExistingPrivateImmutableCapsule': True, 'executed': False}, receipt, indent=2)
     receipt.write('\n')

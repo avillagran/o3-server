@@ -4,8 +4,8 @@ The complete visit/open source contract is byte-identical in nightly 4380
 (`ade473018d32003658b7d38693e083ee2e314bd8`).
 
 Nightly 4367 extends `thread.visit` with optional `opened: boolean` and
-`searchQuery: string` (at most 200 UTF-16 units). A watermark-only visit does
-not need a JavaScript runtime. Watermarks only move forward and visits never
+`searchQuery: string` (at most 200 UTF-16 units). All visits use the original
+Effect DateTime implementation in the admitted JavaScript runtime. Watermarks only move forward and visits never
 advance the thread's activity `updatedAt`.
 
 An open runs the complete original `recordThreadOpen` implementation from
@@ -27,11 +27,11 @@ passes the admitted source itself as the existing factory destination; a missing
 source is rejected before that call. No executable is copied into the profile.
 The package installer creates the immutable capsule before startup. There is no PATH discovery, model,
 voice enablement, download, per-visit executable copy, or request-selected code.
-Without that resource, an open fails explicitly; watermark-only legacy visits
-remain available. Packaging must include the runtime rather than silently
+Without that resource, visits fail explicitly. The original native DateTime
+semantics are also required for watermark-only visits. Packaging must include the runtime rather than silently
 falling back to an approximate algorithm.
 
-A visit gate serializes open computations. The server reads the actual previous
+A visit gate serializes all native visit computations. The server reads the actual previous
 history, releases SQLite, and invokes an owned bounded pure worker. It then
 rechecks the previous history and thread creation identity in the normal receipt
 transaction. A conflict fails explicitly; it never blindly retries or overwrites
@@ -134,3 +134,64 @@ and failed with `Invalid visit time`. The correction supplies that timestamp
 only for the visit command, retains every existing assertion, and additionally
 requires the exact persisted timestamp. Production validation and timestamps
 are unchanged. The failed workflow is retained and is not rerun unchanged.
+
+
+## Native DateTime fidelity validation
+
+The initial green CI implementation accepted only RFC 3339 visit strings. The
+4380 command actually accepts strings through Effect 4.1.2 `DateTime.make`.
+The private whole-package oracle found native date-only, zone-free, normalized
+calendar overflow, TimeClip-boundary, long padded-string and trusted-timezone
+cases outside that subset. Its original receipts are retained.
+
+The follow-up source embeds the exact 66-module original Effect graph and its
+MIT notice. A sealed in-memory loader checks the compiled packet digest and
+module hashes; a fresh admitted Node worker owns one graph instance. Neither
+source text, expected digest nor timezone comes from an RPC request. The normal
+runtime installation captures the application's timezone once. The request
+budget remains the transport's 8 MiB, separate from the immutable source envelope.
+All visits use this capability, including visits without `opened`. Node remains
+an ordinary packaged runtime dependency; speech/model installation is unrelated.
+The package command includes both original license notices beside the executable.
+
+Projection lookup/deletion refusal precedes date evaluation. An invalid previous
+projection date maps to a projection error; an invalid requested date maps to a
+dispatch error before clock/history reads. Valid stale/equal timestamps still
+read the real native server clock, update optional opens, and emit an event.
+Only a strictly newer watermark replaces `lastVisitedAt`. The canonical native
+string persists directly, including dates outside Rust timestamp ranges.
+Computation happens outside SQLite; commit rechecks generation, raw previous
+opens and watermark under the existing command transaction before applying it.
+
+The generated graph/adapter matched all 74 admitted strings in each of three
+trusted zones against the prior complete-package oracle, with 138 original
+history calls and tamper/module-escape refusals. The follow-up then passed strict minimal/default all-target checks and a
+normal DEFAULT library build. Its complete actual Cargo graph (1,335 files and
+four native output directories) supplied a single RAM-only genuine server
+fixture. Five actual RPC cases passed: forward-only legacy visits, complete
+original open history/server-event clock/replay/picks, and native date-domain
+transactions under UTC, America/Santiago and Asia/Kolkata. The timezone-sensitive
+`99-01-01` result differed as the original engine requires. These cases also
+validated date-only/zone-free strings, normalized calendar overflow, the expanded
+TimeClip boundary, non-string and invalid-input refusal without mutation, an
+accepted 140,010-character string, stale-watermark opens, and deleted-thread
+refusal before invalid-date evaluation. Each real worker retained the original
+two-second computation and confirmed graceful retirement bounds.
+
+The same physical container retired with exit zero; all source, complete graph,
+native outputs and 24 protected executable aliases remained unchanged. No
+Cargo invocation, persistent executable link or runtime copy occurred in that
+RPC gate. Its result SHA-256 is
+`23acb94824039f95e544e5091882d98790cf741086d535bd87eab62b9869ef52`.
+The compile result is
+`db198f86851ecea7fa2eb7d6c64014b0faaaa94b6c689f913eb80e4843483352`.
+This is server visit/date/history acceptance, not full nightly or client acceptance.
+No new release, default merge or install is claimed.
+
+The wire decoder admits strings, not numbers or other DateTime input types.
+The Rust boundary checks this before entering the native helper. The complete
+command retains its 8 MiB limit, with a separate 64 KiB allowance for bounded
+stored projection/history fields inside the owned worker request. The source
+packet is outside both budgets. The fresh worker has a 128 MiB V8 heap cap so
+native graph loading and a full-size public string share an explicit envelope;
+the existing two-second computation and retirement deadlines are unchanged.

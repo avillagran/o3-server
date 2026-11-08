@@ -213,7 +213,9 @@ fn scheduling_flags_ordering_and_modes() {
 
 #[test]
 fn mark_unread_rewinds_the_visit_watermark_before_the_last_completion() {
-    let (_s, c) = server(true);
+    let (s, c) = server(true);
+    let node = std::env::var("O3_ADMITTED_NODE").expect("Admitted native runtime required");
+    o3_server::thread_open::install(&s.state, &["--native-search-node".into(), node]).unwrap();
     create(&c, "t1");
     let err = cmd(
         &c,

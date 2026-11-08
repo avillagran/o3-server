@@ -2,12 +2,16 @@
 use crate::{
     events,
     speech_worker::{NodeRuntime, SealedFile},
-    store::{now_ms, State},
+    store::State,
 };
 use rusqlite::OptionalExtension;
 use serde_json::{json, Value};
 use std::{path::PathBuf, sync::MutexGuard};
 const NODE_SHA256: &str = "0adde40d1b7dfa57c8bc83cbc319758c3ec6ebba21363bb2fa752ea6b267ad1b";
+pub(crate) struct NativeVisitRuntime {
+    pub node: std::sync::Arc<NodeRuntime>,
+    pub timezone: Option<std::ffi::OsString>,
+}
 /// Application-owner startup only. Installed packages place the pinned runtime
 /// next to the server; a service may select the same admitted executable explicitly.
 pub fn install(state: &State, args: &[String]) -> Result<(), String> {
@@ -53,7 +57,10 @@ pub fn install(state: &State, args: &[String]) -> Result<(), String> {
     let node = NodeRuntime::capture_or_reuse(file, &source).map_err(|e| e.to_string())?;
     state
         .thread_open_node
-        .set(node)
+        .set(NativeVisitRuntime {
+            node,
+            timezone: std::env::var_os("TZ"),
+        })
         .map_err(|_| "Native search runtime already installed".to_owned())
 }
 // The upstream thread schema decodes an unreadable opens shape as null.
@@ -82,7 +89,10 @@ fn lenient_opens(value: &Value) -> Value {
 }
 pub(crate) struct Prepared<'a> {
     _gate: MutexGuard<'a, ()>,
-    pub at: i64,
+    pub at: String,
+    pub visited_at: String,
+    pub moves_forward: bool,
+    pub previous_visited: Value,
     pub previous: Value,
     pub generation: Value,
     pub opens: Value,
@@ -108,14 +118,21 @@ pub(crate) fn prepare<'a>(
             return Err("Invalid searchQuery".into());
         }
     }
-    if command["opened"] != true {
-        return Ok(None);
+    if !command["visitedAt"].is_string() {
+        return Err("Invalid visitedAt: string required".into());
+    }
+    if serde_json::to_vec(command)
+        .map_err(|e| e.to_string())?
+        .len()
+        > 8 * 1024 * 1024
+    {
+        return Err("Oversized visit command".into());
     }
     let gate = state
         .thread_open_gate
         .lock()
         .map_err(|_| "Thread visit owner poisoned")?;
-    let (previous, generation) = {
+    let (previous, generation, previous_visited) = {
         let db = state.db.lock().map_err(|_| "Database owner poisoned")?;
         if let Some(authority) = authority {
             authority.check(&db, command)?;
@@ -136,27 +153,61 @@ pub(crate) fn prepare<'a>(
             &db,
             "thread",
             command["threadId"].as_str().ok_or("threadId required")?,
-        )?;
+        )
+        .map_err(|error| format!("Thread visit projection unavailable: {error}"))?;
         if !thread["deletedAt"].is_null() {
             return Err("Thread is deleted".into());
         }
-        (thread["opens"].clone(), thread["createdAt"].clone())
+        (
+            thread["opens"].clone(),
+            thread["createdAt"].clone(),
+            thread["lastVisitedAt"].clone(),
+        )
     };
-    let at = now_ms();
-    let node = state
+    let runtime = state
         .thread_open_node
         .get()
         .ok_or("native_search_runtime_unavailable")?;
-    let mut input = json!({"op":"recordOpen","previous":lenient_opens(&previous),"at":at});
+    let mut input = json!({"previousVisitedAt":previous_visited,"visitedAt":command["visitedAt"],"opened":command["opened"]==true,"previousOpens":lenient_opens(&previous)});
     if let Some(query) = command.get("searchQuery") {
-        input["query"] = query.clone();
+        input["searchQuery"] = query.clone();
     }
-    let opens = node
-        .record_thread_open(&state.dir, input)
+    let result = runtime
+        .node
+        .prepare_thread_visit(&state.dir, input, runtime.timezone.clone())
         .map_err(|e| e.to_string())?;
+    match result["kind"].as_str() {
+        Some("invalidPrevious") => {
+            return Err("Thread visit projection timestamp is invalid".into())
+        }
+        Some("invalidTimestamp") => {
+            return Err(format!(
+                "Thread {} visit time {} is not a valid timestamp.",
+                command["threadId"].as_str().unwrap_or(""),
+                command["visitedAt"].as_str().unwrap_or("")
+            ))
+        }
+        Some("prepared") => {}
+        _ => return Err("Invalid native visit result".into()),
+    }
+    let at = result["occurredAt"]
+        .as_str()
+        .ok_or("Missing native visit clock")?
+        .to_owned();
+    let visited_at = result["visitedAt"]
+        .as_str()
+        .ok_or("Missing native visit timestamp")?
+        .to_owned();
+    let moves_forward = result["movesForward"]
+        .as_bool()
+        .ok_or("Missing native visit comparison")?;
+    let opens = result["opens"].clone();
     Ok(Some(Prepared {
         _gate: gate,
         at,
+        visited_at,
+        moves_forward,
+        previous_visited,
         previous,
         generation,
         opens,

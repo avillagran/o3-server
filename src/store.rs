@@ -28,8 +28,7 @@ pub const STANDARD_SCOPES: [&str; 16] = [
 
 pub struct State {
     pub(crate) thread_open_gate: Mutex<()>,
-    pub(crate) thread_open_node:
-        std::sync::OnceLock<std::sync::Arc<crate::speech_worker::NodeRuntime>>,
+    pub(crate) thread_open_node: std::sync::OnceLock<crate::thread_open::NativeVisitRuntime>,
     pub(crate) speech: crate::speech_state::Registry,
     pub(crate) shutting_down: std::sync::atomic::AtomicBool,
     pub agent_scopes: std::sync::Arc<crate::agent_scope::Registry>,
