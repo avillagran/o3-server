@@ -60,6 +60,29 @@ async fn exercise_ssh_flow(fixture: Fixture, state: Arc<State>) {
     )
     .await
     .unwrap();
+    if listed["hostStatuses"]["mini"]["status"] != "ready" {
+        let runtime = state
+            .streams
+            .p2
+            .device
+            .ssh
+            .lock()
+            .await
+            .get("mini")
+            .map(|entry| entry.runtime.clone());
+        let current = runtime.as_ref().and_then(|runtime| runtime.owner.current());
+        eprintln!(
+            "Private SSH unexpected configure state: {}",
+            json!({
+                "returnedStatus":listed["hostStatuses"]["mini"],
+                "returnedDeviceCount":listed["devices"].as_array().map(Vec::len),
+                "currentGeneration":current.as_ref().map(|ready|ready.generation),
+                "currentAlive":current.as_ref().map(|ready|ready.hub.process.alive()),
+                "runtimeSnapshot":runtime.as_ref().map(|runtime|runtime.snapshot()),
+                "fixtureTrace":fixture.trace()
+            })
+        );
+    }
     assert_eq!(listed["hostStatuses"]["mini"]["status"], "ready");
     assert!(listed["devices"]
         .as_array()

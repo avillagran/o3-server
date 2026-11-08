@@ -343,7 +343,30 @@ impl Cli {
                     }
                 }
             };
-            tokio::select! {_=child.wait()=>{},_=&mut stopped=>{group.terminate();let _=tokio::time::timeout(Duration::from_secs(5),child.wait()).await;},_=unhealthy=>{group.terminate();let _=tokio::time::timeout(Duration::from_secs(5),child.wait()).await;}}
+            tokio::select! {
+                status=child.wait()=>{
+                    #[cfg(test)]
+                    if std::env::var_os("O3_PRIVATE_DEVICE_STACK_CHILD").is_some() {
+                        eprintln!("Private SSH forward child wait: {status:?}");
+                    }
+                    #[cfg(not(test))]
+                    let _ = status;
+                },
+                _=&mut stopped=>{
+                    #[cfg(test)]
+                    if std::env::var_os("O3_PRIVATE_DEVICE_STACK_CHILD").is_some() {
+                        eprintln!("Private SSH forward ended: explicit owned stop");
+                    }
+                    group.terminate();let _=tokio::time::timeout(Duration::from_secs(5),child.wait()).await;
+                },
+                _=unhealthy=>{
+                    #[cfg(test)]
+                    if std::env::var_os("O3_PRIVATE_DEVICE_STACK_CHILD").is_some() {
+                        eprintln!("Private SSH forward ended: readiness health monitor");
+                    }
+                    group.terminate();let _=tokio::time::timeout(Duration::from_secs(5),child.wait()).await;
+                }
+            }
             drop(group);
             let _ = child.start_kill();
             let _ = child.wait().await;

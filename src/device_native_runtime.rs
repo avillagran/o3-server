@@ -212,10 +212,25 @@ impl NativeRuntime {
                 sessions_before: &sessions,
                 ends_devices: false,
                 enabled: self.enabled.load(Ordering::Acquire),
-                host_unchanged: self
-                    .owner
-                    .current()
-                    .is_some_and(|current| current.generation == ready.generation),
+                host_unchanged: {
+                    let current = self.owner.current();
+                    #[cfg(test)]
+                    if std::env::var_os("O3_PRIVATE_DEVICE_STACK_CHILD").is_some()
+                        && self.host_id == "mini"
+                    {
+                        eprintln!(
+                            "Private SSH discovery ownership: {}",
+                            json!({
+                                "usedGeneration":ready.generation,
+                                "currentGeneration":current.as_ref().map(|current|current.generation),
+                                "currentAlive":current.as_ref().map(|current|current.hub.process.alive()),
+                                "enabled":self.enabled.load(Ordering::Acquire),
+                                "statusBefore":state["hostStatuses"][&self.host_id]
+                            })
+                        );
+                    }
+                    current.is_some_and(|current| current.generation == ready.generation)
+                },
             },
         );
         *state = refresh.state;
