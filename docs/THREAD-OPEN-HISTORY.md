@@ -123,3 +123,14 @@ properties are stripped at both object levels, invalid history becomes null,
 and valid empty queries remain valid. Forward watermarks compare epoch
 milliseconds and persist the canonical UTC millisecond timestamp, matching the
 original DateTime event encoder.
+
+## First public CI observation
+
+Run `42520902690` on `23fd209` passed Node capsule admission, formatting and
+filesystem policy in both feature modes. The library suites passed 477 minimal and 479 default cases with zero
+failures and 17 ignored per mode. Both jobs then reached an existing dynamic
+command-loop fixture that omitted the original required `visitedAt` field for `thread.visit`
+and failed with `Invalid visit time`. The correction supplies that timestamp
+only for the visit command, retains every existing assertion, and additionally
+requires the exact persisted timestamp. Production validation and timestamps
+are unchanged. The failed workflow is retained and is not rerun unchanged.

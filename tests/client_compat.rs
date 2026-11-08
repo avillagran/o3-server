@@ -213,15 +213,22 @@ fn thread_commands_are_durable_and_idempotent() {
         ("thread.unsettle", "settledAt", false),
         ("thread.visit", "lastVisitedAt", true),
     ] {
-        c.rpc(
-            "orchestration.dispatchCommand",
-            json!({"type":command,"commandId":command,"threadId":"t1","reason":"user"}),
-        )
-        .unwrap();
+        let mut payload =
+            json!({"type":command,"commandId":command,"threadId":"t1","reason":"user"});
+        if command == "thread.visit" {
+            payload["visitedAt"] = json!("2999-01-01T00:00:00.000Z");
+        }
+        c.rpc("orchestration.dispatchCommand", payload).unwrap();
         assert_eq!(
             !snap(&c, "t1")["projection"]["thread"][field].is_null(),
             set
         );
+        if command == "thread.visit" {
+            assert_eq!(
+                snap(&c, "t1")["projection"]["thread"][field],
+                "2999-01-01T00:00:00.000Z"
+            );
+        }
     }
     c.rpc("orchestration.dispatchCommand",json!({"type":"thread.metadata.update","commandId":"rename","threadId":"t1","title":"Renamed"})).unwrap();
     assert_eq!(snap(&c, "t1")["projection"]["thread"]["title"], "Renamed");
