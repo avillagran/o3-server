@@ -29,12 +29,16 @@ impl NodeRuntime {
                     .current_dir(directory).env_clear().env("PATH","").env("HOME","/nonexistent")
                     .env("NODE_OPTIONS","").env("NODE_PATH","");
                 let mut process=OwnedProcess::spawn(&mut command)?;
+                let (mut stdin,stdout)=match process.take_pipes(){
+                    Ok(pipes)=>pipes,
+                    Err(error)=>{let _=process.close(async {false},Duration::from_secs(2)).await;return Err(error);}
+                };
+                let mut output=BufReader::new(stdout).take(65537);
                 let operation=async {
-                    let (mut stdin,stdout)=process.take_pipes()?;
                     let bytes=serde_json::to_vec(&input)?;
                     if bytes.len()>65536{return Err(io::Error::other("Oversized search input"));}
-                    stdin.write_all(&bytes).await?;stdin.shutdown().await?;drop(stdin);
-                    let mut output=BufReader::new(stdout).take(65537);let mut line=Vec::new();
+                    stdin.write_all(&bytes).await?;stdin.shutdown().await?;
+                    let mut line=Vec::new();
                     output.read_until(b'\n',&mut line).await?;
                     if line.len()>65536||line.last()!=Some(&b'\n'){return Err(io::Error::other("Invalid search response"));}
                     let row:Value=serde_json::from_slice(&line)?;
@@ -43,7 +47,10 @@ impl NodeRuntime {
                 };
                 let result=tokio::time::timeout(Duration::from_secs(2),operation).await
                     .map_err(|_|io::Error::other("Search computation timed out")).and_then(|v|v);
-                let cleanup=process.close(async {true},Duration::from_secs(2)).await;
+                drop(stdin);
+                // The owner sends TERM; actual stdout EOF from the installed
+                // handler is the grace receipt, never a fabricated immediate ACK.
+                let cleanup=process.close(async {let mut byte=[0u8;1];matches!(output.read(&mut byte).await,Ok(0))},Duration::from_secs(2)).await;
                 if cleanup!= (Cleanup::Confirmed {graceful:true}) {return Err(io::Error::other("Search owner cleanup unconfirmed"));}
                 result
             })
