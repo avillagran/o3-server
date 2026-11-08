@@ -69,6 +69,7 @@ impl Inner {
 }
 #[derive(Default)]
 pub struct Manager {
+    profiles: crate::browser_profile_catalog::Catalog,
     pub(crate) activity: crate::preview_activity::Activity,
     inner: Arc<Mutex<Inner>>,
     lifecycle: tokio::sync::Mutex<()>,
@@ -91,6 +92,13 @@ impl Default for IdleWorker {
     }
 }
 impl Manager {
+    /// A token is owned by a real client coordinator/connection, never by input JSON.
+    pub fn profile_reporter(&self) -> Result<crate::browser_profile_catalog::Reporter, String> {
+        self.profiles.reporter()
+    }
+    pub fn profile_catalog(&self) -> crate::browser_profile_catalog::Snapshot {
+        self.profiles.snapshot()
+    }
     pub(crate) fn start_idle_worker(&self, state: &Arc<State>) {
         use std::sync::atomic::Ordering;
         let inner = self.inner.lock().unwrap();

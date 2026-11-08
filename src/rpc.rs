@@ -8,29 +8,57 @@ use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
 pub const SERVER_VERSION: &str = concat!("o3-", env!("CARGO_PKG_VERSION"));
 // SQLite caches are useful while any client is active. Return their transient
 // pages when the last WebSocket leaves, including error and cancellation paths.
-struct ClientGuard(Arc<State>);
+struct ClientGuard {
+    state: Arc<State>,
+    profile_reporter: Option<crate::browser_profile_catalog::Reporter>,
+}
 impl ClientGuard {
     fn new(state: Arc<State>) -> Self {
         state
             .rpc_clients
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         state.activity.send_modify(|v| *v = v.wrapping_add(1));
-        Self(state)
+        Self {
+            state,
+            profile_reporter: None,
+        }
+    }
+    fn report_profiles(&mut self, input: &Value) -> Result<Value, Value> {
+        let report =
+            crate::browser_profile_catalog::Report::decode(input).map_err(crate::p2::invalid)?;
+        if self.profile_reporter.is_none() {
+            self.profile_reporter = Some(
+                self.state
+                    .streams
+                    .p2
+                    .preview
+                    .profile_reporter()
+                    .map_err(crate::p2::invalid)?,
+            );
+        }
+        self.profile_reporter
+            .as_ref()
+            .expect("Reporter was initialized")
+            .report(report)
+            .map_err(crate::p2::invalid)?;
+        Ok(Value::Null)
     }
 }
 impl Drop for ClientGuard {
     fn drop(&mut self) {
-        self.0.activity.send_modify(|v| *v = v.wrapping_add(1));
+        // Retire the report before publishing connection retirement.
+        drop(self.profile_reporter.take());
+        self.state.activity.send_modify(|v| *v = v.wrapping_add(1));
         if self
-            .0
+            .state
             .rpc_clients
             .fetch_sub(1, std::sync::atomic::Ordering::Relaxed)
             == 1
         {
-            if let Ok(db) = self.0.reader.lock() {
+            if let Ok(db) = self.state.reader.lock() {
                 let _ = db.release_memory();
             }
-            if let Ok(db) = self.0.db.lock() {
+            if let Ok(db) = self.state.db.lock() {
                 let _ = db.release_memory();
             }
         }
@@ -190,7 +218,7 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
     s: Arc<State>,
     session: Value,
 ) {
-    let _client = ClientGuard::new(s.clone());
+    let mut client = ClientGuard::new(s.clone());
     s.start_checkpointer();
     let mut changed = s.changed.subscribe();
     let mut live_changed = s.streams.changed.subscribe();
@@ -454,6 +482,11 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                                     };
                                     let p=decoded.as_ref().unwrap_or(p);
                                     if let Err(e)=authorize(&session,tag,p){if send(&mut ws,exit(&id,Err(e))).await.is_err(){return}continue;}
+                                    if tag=="preview.reportProfiles" {
+                                        let result=client.report_profiles(p);
+                                        if send(&mut ws,exit(&id,result)).await.is_err(){return}
+                                        continue;
+                                    }
                                     // T3 strips task webhooks for sessions without operate; never trust a client flag.
                                     let task_view;let p=if matches!(tag,"scheduledTasks.list"|"scheduledTasks.subscribe") {let mut v=p.clone();if !v.is_object(){v=json!({});}v["_hideWebhook"]=json!(authorize(&session,"scheduledTasks.upsert",&Value::Null).is_err());task_view=v;&task_view}else{p};
                                     if crate::streams::is_live_tag(tag) {
@@ -616,3 +649,7 @@ mod isolation_tests {
         // Fixture trees are retained for private container teardown.
     }
 }
+
+#[cfg(test)]
+#[path = "browser_profile_catalog_rpc_tests.rs"]
+mod profile_catalog_tests;

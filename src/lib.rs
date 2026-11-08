@@ -80,6 +80,7 @@ pub mod body;
 pub mod bridge;
 #[cfg(feature = "bridge")]
 mod bridge_forwards;
+pub mod browser_profile_catalog;
 pub mod claude;
 mod claude_projection;
 pub mod cloud_speech;
