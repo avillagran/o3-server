@@ -23,6 +23,7 @@ use tokio::sync::watch;
 pub enum CallbackOutput {
     Value(OperationResult),
     Undefined,
+    StatusNoTab(crate::browser_profile_catalog::Snapshot),
 }
 pub type CallbackFuture = Pin<Box<dyn Future<Output = Result<CallbackOutput, Fault>> + Send>>;
 pub type InvocationFuture =
@@ -41,9 +42,28 @@ pub struct SourceCallback {
     admission: Arc<AtomicU64>,
     entered: Arc<AtomicU8>,
 }
+pub(crate) struct EnteredStatusCallback {
+    callback: SourceCallback,
+}
+impl EnteredStatusCallback {
+    pub(crate) fn callback(&self) -> &SourceCallback {
+        &self.callback
+    }
+}
 impl SourceCallback {
     pub fn request(&self) -> &CallbackRequest {
         &self.request
+    }
+    pub(crate) fn enter_status(&self) -> Result<EnteredStatusCallback, Value> {
+        if self.request.class != NativeOperation::Status || self.request.operation != "status" {
+            return Err(json!({"code":"capability_denied","reason":"status_callback_class"}));
+        }
+        self.validate()?;
+        admit_entry(&self.admission, &self.entered, &self.active)?;
+        self.validate()?;
+        Ok(EnteredStatusCallback {
+            callback: self.clone(),
+        })
     }
     pub fn validate(&self) -> Result<(), Value> {
         if (self.entered.load(Ordering::Acquire) != 2
@@ -89,32 +109,41 @@ fn entry_gate(
     active: Arc<AtomicBool>,
 ) -> crate::preview_control::runtime::SourceEntryGate {
     crate::preview_control::runtime::SourceEntryGate::new(Arc::new(move || {
-        if !active.load(Ordering::Acquire)
-            || entered
-                .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
-                .is_err()
-        {
+        admit_entry(&admission, &entered, &active)
+    }))
+}
+/// Shared by actual Control entry and the private Status entry. No database,
+/// provider callback, Control state or await occurs inside this atomic gate.
+fn admit_entry(
+    admission: &AtomicU64,
+    entered: &AtomicU8,
+    active: &AtomicBool,
+) -> Result<(), Value> {
+    if !active.load(Ordering::Acquire)
+        || entered
+            .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+    {
+        return Err(json!({"code":"capability_denied","reason":"callback_closed"}));
+    }
+    let mut current = admission.load(Ordering::Acquire);
+    loop {
+        if current & CLOSING != 0 || current == CLOSING - 1 {
             return Err(json!({"code":"capability_denied","reason":"callback_closed"}));
         }
-        let mut current = admission.load(Ordering::Acquire);
-        loop {
-            if current & CLOSING != 0 || current == CLOSING - 1 {
-                return Err(json!({"code":"capability_denied","reason":"callback_closed"}));
+        match admission.compare_exchange_weak(
+            current,
+            current + 1,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => {
+                entered.store(2, Ordering::Release);
+                return Ok(());
             }
-            match admission.compare_exchange_weak(
-                current,
-                current + 1,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => {
-                    entered.store(2, Ordering::Release);
-                    return Ok(());
-                }
-                Err(actual) => current = actual,
-            }
+            Err(actual) => current = actual,
         }
-    }))
+    }
 }
 
 struct CallbackLifetime(Arc<AtomicBool>);
@@ -411,6 +440,9 @@ impl Service {
                     };
                     let mut ledger = owner.ledger.lock().unwrap();
                     let value = match result {
+                        Ok(CallbackOutput::StatusNoTab(catalog)) => reply(json!({
+                            "ok":true,"statusNoTab":catalog.source_status_catalog()
+                        })),
                         Ok(CallbackOutput::Undefined) => reply(json!({"ok":true})),
                         Ok(CallbackOutput::Value(OperationResult::Value(value))) => {
                             reply(json!({"ok":true,"value":value}))

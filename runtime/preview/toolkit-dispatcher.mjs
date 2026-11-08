@@ -3,6 +3,8 @@
 import {createNativePreviewToolkit} from './native-toolkit.mjs';
 import {pathToFileURL} from 'node:url';
 import path from 'node:path';
+import fs from 'node:fs';
+import {originalNoTabStatus} from './native-status-no-tab.mjs';
 import {captureSourceDeadline} from './source-deadline.mjs';
 export async function createToolkitDispatcher({client,sourceRoot,nativeRoot,effectRoot,environmentId,attachmentsDir,supportedOperations}){
  const callers=new WeakMap(),callbacks=new WeakMap(),endStarted=new WeakSet(),running=new Set(),invocations=new Set();let closing=false,unknown=false;
@@ -11,6 +13,7 @@ export async function createToolkitDispatcher({client,sourceRoot,nativeRoot,effe
   const reply=await client.service(method,receipt,input);
   if(!reply.ok)throw Error('Owned continuation refused');return reply;
  };
+ const noTabStatus=originalNoTabStatus({serverBrowserSource:fs.readFileSync(path.join(sourceRoot,'apps/server/src/preview/ServerBrowser.ts'),'utf8')});
  let nativePage;
  const platform={environmentId,attachmentsDir,supportedOperations,
   captureCaller:()=>{throw Error('Explicit owned invocation required');},
@@ -34,6 +37,10 @@ export async function createToolkitDispatcher({client,sourceRoot,nativeRoot,effe
     const result=reply.payload;
     if(!result||typeof result.ok!=='boolean')throw Error('Owned callback result unavailable');
     if(!result.ok){const error=result.error;if(!error||typeof error.tag!=='string'||typeof error.message!=='string')throw Error('Owned callback error unavailable');throw new nativePage.ServerBrowserOperationError(error);}
+    if(Object.hasOwn(result,'statusNoTab')){
+     if(request.operation!=='status'||Object.keys(result).sort().join(',')!=='ok,statusNoTab')throw Error('Owned status result unavailable');
+     return await noTabStatus(result.statusNoTab);
+    }
     return result.value;
    }finally{callback.phase='responded';}
   },

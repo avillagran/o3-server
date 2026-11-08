@@ -444,6 +444,38 @@ impl CallbackExecutor for OwnedPageFactory {
             "click" | "type" | "hover" | "drag" | "press" | "scroll" | "waitFor"
         );
         Box::pin(async move {
+            if callback.request().class == super::NativeOperation::Status {
+                let entered = match callback.enter_status() {
+                    Ok(entered) => entered,
+                    Err(_) => {
+                        return Ok(CallbackOutput::Value(refusal(
+                            "The source status caller is unavailable.",
+                        )))
+                    }
+                };
+                let owner = factory.0.owner.upgrade().ok_or(Fault::Closed)?;
+                let request = entered.callback().request();
+                let browser = &owner.streams.p2.preview.browser;
+                // Selection is read-only and bypasses the action ownership gate.
+                // A present closing/unready target is never reported as absent.
+                // An empty matching registry proves both explicit absence and
+                // absence of every possible implicit latest-thread selection.
+                let Some(catalog) = browser.status_catalog_if_absent(
+                    &request.thread_id,
+                    request.tab_id.as_deref(),
+                    || owner.streams.p2.preview.profile_catalog(),
+                ) else {
+                    return Ok(CallbackOutput::Value(refusal(
+                        "The existing tab status producers are not yet completely observed.",
+                    )));
+                };
+                if entered.callback().validate().is_err() {
+                    return Ok(CallbackOutput::Value(refusal(
+                        "The source status caller has closed.",
+                    )));
+                }
+                return Ok(CallbackOutput::StatusNoTab(catalog));
+            }
             let result = factory.run_existing(callback, deadline).await?;
             Ok(match result {
                 OperationResult::Value(_) | OperationResult::JavaScriptValue(_) if void => {

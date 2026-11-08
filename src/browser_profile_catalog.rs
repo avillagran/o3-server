@@ -112,6 +112,15 @@ pub struct Snapshot {
     pub recording_frame_rate: u8,
 }
 impl Snapshot {
+    /// Raw actual catalog for the pinned original profileStatus closure.
+    pub(crate) fn source_status_catalog(&self) -> Value {
+        let mut value = json!({"profiles": self.profiles});
+        if let Some(default) = &self.default_profile_id {
+            value["defaultProfileId"] = json!(default);
+        }
+        value
+    }
+
     /// Original status projection: omit the default until an actual report;
     /// emit `incognito` only for the built-in incognito partition.
     pub fn status(&self) -> Value {

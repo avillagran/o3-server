@@ -1,0 +1,114 @@
+{
+  "date": "2026-11-08",
+  "scope": "Private original no-tab Status only; public selector remains closed",
+  "localEvidenceRoot": "/var/tmp/o3-server/status-no-tab-core-review-wncdypn9",
+  "receipts": {
+    "compile-result.json": {
+      "sha256": "50a331c079689ad99407f5bb4d741536857e4b9be738cf837ca0816c9f687968",
+      "bytes": 3537
+    },
+    "runtime-preflight-refusal.json": {
+      "sha256": "40716300e5e71982f0b68c4a6c8324928be0849be417331ec32ef3060c9d4d48",
+      "bytes": 583
+    },
+    "runtime-attempt2-result.json": {
+      "sha256": "b95c14b6c9b85c38dbe81c6c7229a88a4c601aa93feda6f1eb63bf1e4ccd32ec",
+      "bytes": 957
+    },
+    "runtime-attempt2-owned.log": {
+      "sha256": "81729b0e105bbbe87e6d462061941a2789ffeffce4b659799b43ef93cb7e8333",
+      "bytes": 734
+    },
+    "runtime-attempt3-result.json": {
+      "sha256": "99b7f293da1cc606ec236d0688c6783fac6c33d6ef1429b4d46e013965862039",
+      "bytes": 1278
+    },
+    "runtime-attempt3-owned.log": {
+      "sha256": "83c47f4e41a5ee72b664ec4df4ba5bfab91950cd62ef1ec3c0e3f74b32f0133c",
+      "bytes": 1810
+    },
+    "runtime-attempt3-container-terminal.json": {
+      "sha256": "714cdbe2b6a5e2a1e61276b51f8ec8802f54585fe6b3c49a9d36bb379bed8a40",
+      "bytes": 118
+    },
+    "runtime-attempt3-owned-cid.json": {
+      "sha256": "9ee6d22d2e821ff7179d1598dac237750e52c1fe0da4018216586fc01d868cd5",
+      "bytes": 167
+    }
+  },
+  "compile": {
+    "commandsPassed": 3,
+    "artifact": {
+      "path": "/home/node/BuildCache/o3-native-page-worker-next/target/debug/deps/o3_server-02f97294db623867",
+      "sha256": "ae95254956f15185f340dc133c3b182d620623a250e903b96f9421a5f61e74c0",
+      "bytes": 139791720
+    },
+    "protectedArtifacts": {
+      "/home/node/BuildCache/o3-native-page-worker-next/target/debug/o3-server": "f410a988119e736bbbee0ec1ab2de4ce588ff5f4bd42da79ef7f312c0d0d94b5",
+      "/home/node/BuildCache/o3-native-page-worker-next/target/debug/examples/profile_reporting_acceptance-28d0b1baa527bb1f": "4dd078f9347cdd2ebe53af1a4c537aded185e91e1677fc059ebde12819781c9c",
+      "/home/node/BuildCache/o3-native-page-worker-next/target/debug/examples/profile_reporting_acceptance": "4dd078f9347cdd2ebe53af1a4c537aded185e91e1677fc059ebde12819781c9c"
+    }
+  },
+  "acceptedRuntime": {
+    "success": true,
+    "hostChildExit": 0,
+    "failure": null,
+    "containerTerminal": {
+      "existsExit": 1,
+      "terminal": true,
+      "id": "ee9126de45024799caaf82bf1602c723bb111b5576b8d67b8b24e71dc1e57cec"
+    },
+    "beforeFence": {
+      "all1046SourceInputsUnchanged": true,
+      "all26OriginalWipFilesUnchanged": true,
+      "all5162FixedInputsUnchanged": true,
+      "allDependenciesUnchanged": true
+    },
+    "afterFence": {
+      "all1046SourceInputsUnchanged": true,
+      "all26OriginalWipFilesUnchanged": true,
+      "all5162FixedInputsUnchanged": true,
+      "allDependenciesUnchanged": true
+    },
+    "node": {
+      "exit": 0,
+      "counts": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "accepted": true
+    },
+    "factory": {
+      "exit": 0,
+      "case": "native_page_worker::toolkit_owner::physical_page_tests::actual_toolkit_and_factory_format_absent_status_without_starting_page_worker",
+      "actualPassed": 1,
+      "accepted": true
+    },
+    "deferredSignals": [],
+    "qualification": "Four real Node formatter cases plus one actual whole-toolkit/factory no-tab integration only. No Page, Chromium, Playwright, present-tab producer, closing/unready negative or revocation acceptance. Public selector remains closed."
+  },
+  "attempts": [
+    {
+      "attempt": 1,
+      "outcome": "Preflight image-prefix representation refusal; no container or tests"
+    },
+    {
+      "attempt": 2,
+      "outcome": "Four Node cases passed; reporter parser refused; integration not run"
+    },
+    {
+      "attempt": 3,
+      "outcome": "Accepted bounded proof: four Node cases and one actual toolkit/factory integration"
+    }
+  ],
+  "limitations": [
+    "No complete present-tab Status or full browser parity",
+    "No present/closing/unready negative proof",
+    "No caller-revocation or source-cancellation proof",
+    "No public selector/bootstrap admission"
+  ]
+}

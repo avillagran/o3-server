@@ -619,6 +619,23 @@ impl Browsers {
             entries[index].0.activity.used.store(now, Ordering::Relaxed);
         }
     }
+    /// Capture the actual catalog at the same registry-locked absence point.
+    /// Closing or not-yet-ready tabs still count as present.
+    pub(crate) fn status_catalog_if_absent(
+        &self,
+        thread: &str,
+        explicit: Option<&str>,
+        read_catalog: impl FnOnce() -> crate::browser_profile_catalog::Snapshot,
+    ) -> Option<crate::browser_profile_catalog::Snapshot> {
+        let tabs = self.tabs.lock().unwrap();
+        if tabs
+            .keys()
+            .any(|(owner, tab)| owner == thread && explicit.is_none_or(|wanted| wanted == tab))
+        {
+            return None;
+        }
+        Some(read_catalog())
+    }
     pub(crate) fn latest_tab(&self, thread: &str, agent: Option<&str>) -> Option<String> {
         let entries = self.lifetime_catalog();
         let rows: Vec<_> = entries.iter().map(|(_, row)| row.clone()).collect();
