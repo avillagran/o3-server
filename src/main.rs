@@ -22,6 +22,9 @@ Commands:
   shared-profile-readiness  Inspect legacy webhook handover without changing the profile
   --version                 Print the version
 
+Native search runtime (installed runtime/node-26.13.0, no PATH discovery):
+  --native-search-node PATH Exact admitted Node for thread open history
+
 Local speech startup (optional, no PATH discovery):
   --speech-node PATH        Exact admitted Node 26.13.0 executable
   --speech-bundle DIR       Installed pinned engine bundle (contains graph/)
@@ -416,6 +419,7 @@ fn main() -> std::io::Result<()> {
                 }
             };
             let state = Arc::new(state);
+            o3_server::thread_open::install(&state,&args).map_err(std::io::Error::other)?;
             if let Some(config)=speech_config {
                 if let Err(cause)=o3_server::speech_runtime::install(state.clone(),config).await {
                     o3_server::desktop_startup::log_stderr(format_args!("Local speech runtime not admitted: {cause}"))?;

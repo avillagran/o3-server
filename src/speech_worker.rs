@@ -1,5 +1,6 @@
 //! Owned native speech transport. This module does not enable a speech service.
 mod frame;
+mod thread_open;
 mod process;
 mod seal;
 pub use process::Cleanup;

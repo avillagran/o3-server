@@ -509,12 +509,16 @@ pub fn next(s: &State, after: i64, tid: Option<&str>, shell: bool) -> Result<Opt
     })
     .transpose()
 }
-pub(crate) fn append(
+pub(crate) fn append(db:&Connection,tid:&str,kind:&str,payload:Value,thread:&Value)->Result<i64>{
+    append_at(db,tid,kind,payload,thread,None)
+}
+fn append_at(
     db: &Connection,
     tid: &str,
     kind: &str,
     mut payload: Value,
     thread: &Value,
+    occurred_at:Option<&str>,
 ) -> Result<i64> {
     crate::projection::normalize_context_cost(&mut payload);
     // Older internal producers used an alias the real client reducer ignores.
@@ -526,7 +530,7 @@ pub(crate) fn append(
     if matches!(kind, "run.created" | "run.updated") {
         take_run_internal(&mut payload);
     }
-    let mut event = json!({"id":random_id()?,"threadId":tid,"occurredAt":iso(now_ms()),"type":kind,"payload":payload});
+    let mut event = json!({"id":random_id()?,"threadId":tid,"occurredAt":occurred_at.map(str::to_owned).unwrap_or_else(||iso(now_ms())),"type":kind,"payload":payload});
     for key in ["runId", "nodeId"] {
         if let Some(v) = payload.get(key).filter(|v| !v.is_null()) {
             event[key] = v.clone();
@@ -642,6 +646,7 @@ fn dispatch_prepared_with_auto(
             }
         }
     }
+    let prepared_visit=crate::thread_open::prepare(s,c,authority)?;
     let mut db = s.db.lock().unwrap();
     if s.rollback_pending
         .load(std::sync::atomic::Ordering::Acquire)
@@ -687,7 +692,7 @@ fn dispatch_prepared_with_auto(
     };
     let kind = c["type"].as_str().ok_or("type required")?;
     let tid = c["threadId"].as_str().ok_or("threadId required")?;
-    let at = iso(now_ms());
+    let at = iso(prepared_visit.as_ref().map_or_else(now_ms,|visit|visit.at));
     let mut t = if kind == "thread.create" {
         new_thread(&tx, c, tid, &at)?
     } else {
@@ -766,7 +771,13 @@ fn dispatch_prepared_with_auto(
             "thread.unsettled"
         }
         "thread.visit" => {
-            t["lastVisitedAt"] = json!(at);
+            let visited=c["visitedAt"].as_str().and_then(|v|chrono::DateTime::parse_from_rfc3339(v).ok()).ok_or("Invalid visit time")?;
+            let previous=t["lastVisitedAt"].as_str().and_then(|v|chrono::DateTime::parse_from_rfc3339(v).ok());
+            if previous.is_none_or(|previous|visited>previous){t["lastVisitedAt"]=c["visitedAt"].clone();}
+            if let Some(visit)=prepared_visit.as_ref(){
+                if !t["deletedAt"].is_null()||t["createdAt"]!=visit.generation||t["opens"]!=visit.previous{return Err("Thread open history changed during computation; retry command".into());}
+                t["opens"]=visit.opens.clone();
+            }
             "thread.visited"
         }
         "thread.metadata.update" => {
@@ -1298,9 +1309,9 @@ fn dispatch_prepared_with_auto(
         }
         _ => return Err(format!("command {kind} is not implemented")),
     };
-    t["updatedAt"] = json!(at);
+    if kind!="thread.visit"{t["updatedAt"] = json!(at);}
     put(&tx, "thread", tid, tid, &t)?;
-    let seq = append(&tx, tid, event, t.clone(), &t)?;
+    let seq = append_at(&tx, tid, event, t.clone(), &t,Some(&at))?;
     let result = json!({"sequence":seq});
     crate::outbox::stage(&tx, c)?;
     crate::command_shared::admit(&tx, cid, tid, kind, &at, seq, (None, None))?;

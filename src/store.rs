@@ -27,6 +27,8 @@ pub const STANDARD_SCOPES: [&str; 16] = [
 ];
 
 pub struct State {
+    pub(crate) thread_open_gate: Mutex<()>,
+    pub(crate) thread_open_node: std::sync::OnceLock<std::sync::Arc<crate::speech_worker::NodeRuntime>>,
     pub(crate) speech: crate::speech_state::Registry,
     pub(crate) shutting_down: std::sync::atomic::AtomicBool,
     pub agent_scopes: std::sync::Arc<crate::agent_scope::Registry>,
@@ -228,6 +230,8 @@ impl State {
         streams.terminals.restore(&dir.join("terminal-history"))?;
         let state = Self {
             speech: Default::default(),
+            thread_open_gate: Default::default(),
+            thread_open_node: Default::default(),
             shutting_down: Default::default(),
             agent_scopes,
             forge: Default::default(),
