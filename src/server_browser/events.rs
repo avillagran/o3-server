@@ -132,7 +132,9 @@ impl Observer {
         dialog_text: Option<&crate::cdp_dialog_json::DialogText>,
     ) -> bool {
         if value["sessionId"] == session {
-            if value["method"] == "Page.javascriptDialogOpening" && self.main_frame.is_some() {
+            // The registered session owns this Page event. Frame discovery can
+            // still be pending, and dialogs from child frames also block it.
+            if value["method"] == "Page.javascriptDialogOpening" {
                 let params = &value["params"];
                 if let (Some(kind), Some(message)) =
                     (params["type"].as_str(), params["message"].as_str())
@@ -503,20 +505,28 @@ mod tests {
         assert!(*done_b.borrow());
     }
     #[test]
-    fn dialogs_require_live_frame_and_exact_opaque_session_and_drop_on_detachment() {
+    fn dialogs_before_frame_discovery_require_exact_session_and_drop_on_detachment() {
         crate::test_sandbox::assert_isolated();
         let pages: Shared = Default::default();
         register_desktop(&pages, "opaque-a", "target-a");
         register(&pages, "opaque-b", "target-b");
-        let opening = json!({"method":"Page.javascriptDialogOpening","sessionId":"opaque-a","params":{"type":"prompt","message":"Owned","defaultPrompt":"default"}});
-        notify(&pages, &opening);
+        let opening = json!({"method":"Page.javascriptDialogOpening","sessionId":"opaque-a","params":{"url":"about:blank","frameId":"frame-a","type":"prompt","message":"Owned","defaultPrompt":"default","hasBrowserHandler":true}});
+        let mut foreign = opening.clone();
+        foreign["sessionId"] = json!("unregistered-session");
+        notify(&pages, &foreign);
         assert!(dialog_state(&pages, "opaque-a").unwrap().status().is_null());
+        assert!(dialog_state(&pages, "opaque-b").unwrap().status().is_null());
+        notify(&pages, &opening);
+        assert_eq!(
+            dialog_state(&pages, "opaque-a").unwrap().status()["message"],
+            "Owned",
+            "An owned dialog event cannot wait for getFrameTree discovery"
+        );
         frame(
             &pages,
             Some("opaque-a"),
             &json!({"frameTree":{"frame":{"id":"frame-a"}}}),
         );
-        notify(&pages, &opening);
         assert_eq!(
             dialog_state(&pages, "opaque-a").unwrap().status()["message"],
             "Owned"
@@ -542,5 +552,166 @@ mod tests {
         notify(&pages, &opening);
         assert!(dialog_state(&pages, "opaque-a").is_none());
         assert!(begin_dialog(&pages, "opaque-a", true, None).is_err());
+    }
+    #[tokio::test]
+    #[ignore = "requires admitted actual Chromium inside the reviewed rootless container"]
+    async fn actual_dialog_opening_is_retained_while_original_frame_tree_ack_is_held() {
+        use std::os::unix::fs::PermissionsExt;
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+        struct Retain(AtomicUsize);
+        impl crate::cleanup::Removal for Retain {
+            fn execute(&self, _: &crate::cleanup::RemovalPlan) -> std::io::Result<()> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "Private proof retains profiles",
+                ))
+            }
+        }
+        crate::test_sandbox::assert_isolated();
+        let root = std::env::temp_dir().join(format!(
+            "dialog-frame-gate-{}",
+            crate::store::random_id().unwrap()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let launcher = root.join("chromium-gate.py");
+        std::fs::write(
+            &launcher,
+            include_bytes!("../../tests/fixtures/input/native-dialog-frame-gate.py"),
+        )
+        .unwrap();
+        std::fs::set_permissions(&launcher, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let state = Arc::new(crate::store::State::open(&root).unwrap());
+        let browser = &state.streams.p2.preview.browser;
+        *browser.fixture_binary.lock().unwrap() = Some(launcher);
+        let retained = Arc::new(Retain(AtomicUsize::new(0)));
+        browser.set_profile_removal(retained.clone());
+        {
+            let parameters =
+                json!({"threadId":"dialog-birth","runtime":"server","profileId":"default"});
+            let open = crate::preview::call(&state, "preview.open", &parameters);
+            tokio::pin!(open);
+            let held_path = root.join("frame-held.json");
+            tokio::time::timeout(Duration::from_secs(20), async {
+                loop {
+                    tokio::select! {
+                        result=&mut open=>panic!("Setup ended before held actual frame ACK: {result:?}"),
+                        _=tokio::time::sleep(Duration::from_millis(5))=>{},
+                    }
+                    if held_path.is_file() { break; }
+                }
+            }).await.unwrap();
+            // Fixture markers are complete atomic publications, never exists-only
+            // readiness for a writer that is still constructing its JSON.
+            let held: Value = serde_json::from_slice(&std::fs::read(&held_path).unwrap()).unwrap();
+            let session = held["sessionId"].as_str().unwrap();
+            let tab = browser
+                .tabs
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|((thread, _), _)| thread == "dialog-birth")
+                .map(|(_, tab)| tab.clone())
+                .unwrap();
+            let pages = tab.events.clone().unwrap();
+            let target = tab.target.as_deref().unwrap();
+            {
+                let registry = pages.lock().unwrap();
+                let observer = registry.pages.get(session).unwrap();
+                assert_eq!(observer.target, target);
+                assert!(observer.main_frame.is_none());
+            }
+            let mut dialogs = dialog_watch(&pages, session).unwrap();
+            tokio::time::timeout(Duration::from_secs(2), async {
+                loop {
+                    if !dialogs.borrow().status().is_null() {
+                        break;
+                    }
+                    dialogs.changed().await.unwrap();
+                }
+            })
+            .await
+            .unwrap();
+            let observed = dialogs.borrow().clone();
+            assert_eq!(
+                observed.status(),
+                json!({"type":"alert","message":"owned-before-frame","defaultValue":""})
+            );
+            assert!(pages
+                .lock()
+                .unwrap()
+                .pages
+                .get(session)
+                .unwrap()
+                .main_frame
+                .is_none());
+            assert!(!root.join("frame-released.json").exists());
+            let actual: Value =
+                serde_json::from_slice(&std::fs::read(root.join("actual-opening.json")).unwrap())
+                    .unwrap();
+            assert_eq!(actual["sessionId"], session);
+            assert_eq!(actual["method"], "Page.javascriptDialogOpening");
+            assert_eq!(actual["params"]["message"], "owned-before-frame");
+            let (token, params) = begin_dialog(&pages, session, false, None).unwrap();
+            super::request_in(
+                &tab.tx,
+                "Page.handleJavaScriptDialog",
+                params,
+                Some(session.to_owned()),
+            )
+            .await
+            .unwrap();
+            finish_dialog(&pages, session, token);
+            assert!(dialog_state(&pages, session).unwrap().status().is_null());
+            std::fs::write(root.join("release-frame"), b"release").unwrap();
+            let opened = tokio::time::timeout(Duration::from_secs(2), open)
+                .await
+                .unwrap()
+                .unwrap();
+            let page = browser
+                .page("dialog-birth", opened["tabId"].as_str().unwrap())
+                .unwrap();
+            assert_eq!(page.tab.target.as_deref(), Some(target));
+            assert_eq!(browser.thread_tabs("dialog-birth").len(), 1);
+            assert!(pages
+                .lock()
+                .unwrap()
+                .pages
+                .get(session)
+                .unwrap()
+                .main_frame
+                .is_some());
+            tokio::time::timeout(Duration::from_secs(2), async {
+                while !root.join("frame-released.json").is_file() {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            let released: Value =
+                serde_json::from_slice(&std::fs::read(root.join("frame-released.json")).unwrap())
+                    .unwrap();
+            assert_eq!(released["requestId"], held["requestId"]);
+            assert_eq!(released["sessionId"], held["sessionId"]);
+            tokio::time::timeout(Duration::from_secs(2), async {
+                while !root.join("evaluation-done.json").is_file() {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            let evaluation: Value =
+                serde_json::from_slice(&std::fs::read(root.join("evaluation-done.json")).unwrap())
+                    .unwrap();
+            assert_eq!(evaluation["id"], -1);
+            assert!(evaluation.get("error").is_none());
+            assert!(evaluation.get("result").is_some());
+        }
+        crate::preview::shutdown(&state).await;
+        assert_eq!(retained.0.load(Ordering::SeqCst), 0);
     }
 }

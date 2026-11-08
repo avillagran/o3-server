@@ -352,7 +352,10 @@ async fn launch(
             "--no-first-run",
             "--no-default-browser-check",
             "--disable-background-networking",
+            "--disable-component-extensions-with-background-pages",
             "--disable-component-update",
+            "--disable-default-apps",
+            "--disable-extensions",
             "--disable-sync",
         ])
         .arg(format!("--user-data-dir={}", dir.display()))
@@ -1064,6 +1067,9 @@ impl Browsers {
             if let (Some(pages), Some(session), Some(target)) =
                 (&browser.events, &browser.session, &browser.target)
             {
+                // Own Page events before enabling them or awaiting frame discovery.
+                // A pending getFrameTree reply must not suppress a real dialog.
+                // This ordering alone does not establish initial dialog absence.
                 let (done, navigation) = events::register(pages, session, target);
                 browser.done = done;
                 browser.navigation = Some(navigation);
