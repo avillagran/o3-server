@@ -1,0 +1,46 @@
+{
+  "revision": "83a3674ffd84ffb33de768210c806cb1ac53fd80",
+  "sourceSha256": {
+    "runtime/preview/toolkit-entry.mjs": "600f5e0f6f907fba0bc80b19af0fc710b6a85a5c8b22fce1da1c18d5fa734c60",
+    "runtime/preview/toolkit-dispatcher.mjs": "e6bda44aad8d202c4910f2a6f0c1187d8321af43f5ccd9db42960f25af5b5065",
+    "runtime/preview/source-deadline.mjs": "f5b2817e3968455d0519f3cdedb7e383f22e8eb77725729e589473dce1856fab",
+    "tests/preview/toolkit-entry-peer.mjs": "c770d5d7a9ec411b5f29c423322f883b95cfa5e13574abec984457d451434397",
+    "tests/preview/source-deadline.mjs": "bba1c68990374d643f510400a7895265fcde5f952e4dde0d015721b99b5a49ca",
+    "src/native_page_worker/source_deadline.rs": "c1265b3479519e962afd8d35b47095eb547c5a5fe9e666effdd02119d257c68c",
+    "tests/preview/source-deadline-rust.rs": "9c909814a4565ddc19ffead8e34439d91b917b2d5f42c6f35e67323a788fec8c",
+    "tests/preview/source-deadline-rust.mjs": "f1ec87362603f7dcc45b725bdd5315ae9579c5e03ccfeefd9cac85ea2e69ec45"
+  },
+  "entryPeerReceipt": "/var/tmp/o3-server/page-toolkit-entry-peer-1/page-sdrje0xk/result.json",
+  "entryQualification": "Actual no-tab Node entry and whole original toolkit with synthetic continuation peer; no concrete Rust owner, CDP or outer MCP acceptance.",
+  "nodeClockReceipt": "/var/tmp/o3-server/page-source-deadline-next/run-8yojess6/result.json",
+  "rustClockReceipt": "/var/tmp/o3-server/page-source-deadline-rust-next/run-rt45831a/result.json",
+  "rustClockArtifact": {
+    "path": "/var/tmp/o3-server/page-source-deadline-rust-next/run-rt45831a/fixture",
+    "sha256": "4611c58fe3b5882e49f176502c037439a00bcf4a780ea7ec61eeb0a4be6a1afc",
+    "bytes": 371784,
+    "executedOnHost": false,
+    "nodeCopied": false
+  },
+  "rustReportCorrection": {
+    "originalProofSha256": "a7110dfb4750373e12ae4c737bb0aaa5bc4a1c4dcc6b4997f80497d8cc6fe761",
+    "originalExecutedTestSha256": "71b803137594bf444673ed7906c406ef74f3e250ba8f22b8ad9420a84fb166d4",
+    "finalTestSourceSha256": "f1ec87362603f7dcc45b725bdd5315ae9579c5e03ccfeefd9cac85ea2e69ec45",
+    "correction": {
+      "field": "rejectedCases",
+      "correctName": "validationCases",
+      "value": 19,
+      "rejections": 18,
+      "validExpiredSignedCase": 1
+    },
+    "qualification": "Only the test report field was renamed in source after the accepted execution. The original proof and source fence are retained unchanged. No new execution or binary build was performed, and the final test source hash is not represented as executed."
+  },
+  "qualification": "Rust source module is compiled verbatim only by a standalone Linux x86-64 fixture and remains unregistered; no Tokio equivalence or actual Control proof.",
+  "pending": [
+    "Concrete ToolkitOwner and immutable stored callback request",
+    "Actual provider publication before original toolkit registration",
+    "Frozen deadline checked once at real Control entry",
+    "Real per-tab sessions and all original consumers",
+    "Reconnect/live-tab report lifecycle",
+    "Full outer MCP transport and original capacity limits"
+  ]
+}
