@@ -377,3 +377,6 @@ async fn actual_toolkit_and_factory_format_absent_status_without_starting_page_w
     driver.shutdown().await;
     crate::preview::shutdown(&state).await;
 }
+
+#[path = "status_negative_tests.rs"]
+mod status_negative_tests;

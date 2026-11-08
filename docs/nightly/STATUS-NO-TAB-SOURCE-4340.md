@@ -78,35 +78,75 @@ The machine-local receipts and their exact SHA-256 values are recorded in
 [STATUS-NO-TAB-PROOF-4340.json](STATUS-NO-TAB-PROOF-4340.json). Receipt hashes bind
 the executed source snapshot; this documentation update is subsequent to it.
 
-## Remaining scope and proposed negative proofs
+## Executed negative and lifecycle proofs
+
+Four actual cases now have qualified private evidence. They did not all pass in
+one invocation or on one test binary:
+
+| Cases | Actual evidence | Libtest SHA-256 |
+| --- | --- | --- |
+| Live/reserved-closing target refusal; held-ACK unready target refusal | First two cases passed in the initial negative sequence; that sequence later failed on the refresh assumption below | `1beb04ffdf59494e2898731dc6bc4801b154986250f9e878ea3f2ae8f1523e1f` |
+| Explicit credential revocation; actual source-observer cancellation | Separate corrected sequence passed exactly two cases, once each | `43734b6a665ee02cb49d730a33e1b43ebfb81b5bcbda00532bb4c66564989783` |
+
+The first physical case opens an actual Chromium target, verifies explicit and
+implicit Status refusal, calls the actual `reserve_close`, and verifies both
+refusals again while normal live selection excludes the closing target. No
+`StatusNoTab` result or Page worker is created. The second holds an unaltered
+actual attach acknowledgement through `native-status-cdp-gate.py`, proves Status
+refuses during the real unadmitted setup, releases that same acknowledgement,
+and completes that same setup successfully. No CDP result or target is invented.
+
+The initial negative sequence stopped at case 3, after those two physical passes.
+It incorrectly expected `Context.refresh()` to revoke the previous Context.
+Actual source inspection and output showed that a provider-generation transition
+can create a successor Context while the old read-only credential remains valid.
+The assertion failed; case 4 was not run. The failed sequence and its logs remain
+preserved, rather than being relabeled as a four-case pass. Production behavior
+was not changed to force the expected error.
+
+Only case 3 was corrected. Its positive control now exercises the actual old
+caller after both the provider transition and refresh, proving read-only Status
+still works. It then pauses a new actual callback, invokes the genuine
+`Context.revoke()`, checks that the old caller's scope is revoked, and releases
+the callback. The actual factory refuses, with no fabricated no-tab response.
+Case 4 drops the actual owned Status invocation while its callback is paused.
+The original source-end and observer-return receipts are retained; accounting
+stays non-clean until the actual callback and finalizer complete. Releasing it
+produces one actual no-tab callback result and one mark-used finalizer, then
+clean accounting. Cancellation is not misrepresented as credential revocation.
+
+The first two passing case bodies, shared fixture, and production logic were
+byte-identical across the case-3 correction, so they were not repeated. Their
+source body digests are included in the proof JSON. Both negative source
+snapshots passed strict minimal/default all-targets compilation and minimal
+libtest compilation before their reviewed runtime. The corrected two-case run
+retained CID
+`c85d3fc270524f210d8868cecace57f7423d3e39a8334080383a5c78cb575b81`
+until exact container-exists returned 1. Its CLI exited 0. All 1,049 source
+inputs, 26 separate producer WIP files and 5,411 fixed/dependency inputs were
+unchanged before and after that run. The initial sequence likewise terminated
+its exact container and preserved all of its 5,407 fixed inputs.
+
+The timing wrapper delegates every callback result to the actual factory. All
+four cases assert no Page-worker creation and real finalizer/accounting results.
+The capability-only desktop transport is synthetic; target and CDP behavior in
+the physical cases are actual Chromium. No installed desktop/Qt configuration
+was modified. Machine-local receipts and exact hashes are in the proof JSON.
+This documentation update follows the executed source snapshots.
+
+Ordinary public CI for `b4f8acef527c4b0b9c4bdb2ae831cd9a0a9b94bf`
+completed successfully in run `42465238296`. The library summaries were
+478 passed/12 ignored with default features and 476 passed/12 ignored with
+minimal features, both with zero failures. Its private native fixture tests were
+ignored: ordinary CI does not substitute for the private proofs above. The
+new negative tests were not part of that published CI head.
+
+## Remaining scope
 
 The public selector and bootstrap remain closed. Present tabs still refuse
-Status. Missing chooser, download, opener, viewport and viewer producers remain
-unproven. The separate full producer worktree remains active and unchanged;
-this core slice does not import its unused lease or read-wire APIs.
-
-The accepted integration does not prove refusal for live, closing or unready
-targets, caller revocation, source cancellation, or complete present-tab Status.
-Proposed follow-up tests, requiring a fresh source freeze and reviewed build:
-
-- Open an actual target through the existing rootless CDP fixture, then call
-  Status through the actual toolkit/factory. Assert explicit and implicit
-  selections refuse without a `StatusNoTab` reply or Page-worker startup.
-- Call the actual `reserve_close` on that target before Status. The raw registry
-  entry must still refuse even though normal live selection excludes it.
-- Hold the actual setup CDP acknowledgement after `open_owned` inserts its
-  closing/unadmitted registry entry. Status must refuse while setup is pending;
-  release the same acknowledgement and finish the same setup afterward.
-- Pause a real service callback immediately before handing it to the actual
-  factory, refresh the real Context to revoke its credential, then release it.
-  The factory's fresh callback validation must refuse without a no-tab result.
-  A provider ownership transition alone must retain the original read-only
-  semantics rather than being mistaken for credential revocation.
-- Drop the actual owned Status invocation while that callback is paused. Assert
-  the original source-end receipt is retained, accounting stays non-clean until
-  the callback/finalizer actually finishes, and no second response or worker is
-  created. Cancellation alone must not be invented as a credential revocation.
-
-These proposals have not been implemented or executed. They must use actual
-registry entries and issued callers, not fabricated tabs or model-selected
-absence. No new build or runtime is authorized by this document.
+Status. Complete present-tab Status and missing chooser, download, opener,
+viewport and viewer producers remain pending. These bounded absence/refusal and
+lifecycle proofs do not admit a complete Status formatter for an existing tab or
+establish full browser parity. The separate full producer worktree remains
+active and unchanged; this core slice does not import its unused lease or
+read-wire APIs. No new build or runtime is authorized by this document.

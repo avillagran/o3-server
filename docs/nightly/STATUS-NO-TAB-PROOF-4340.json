@@ -107,8 +107,196 @@
   ],
   "limitations": [
     "No complete present-tab Status or full browser parity",
-    "No present/closing/unready negative proof",
-    "No caller-revocation or source-cancellation proof",
-    "No public selector/bootstrap admission"
-  ]
+    "No public selector/bootstrap admission",
+    "Four private negative/lifecycle cases are qualified across two snapshots; not one four-case passing invocation",
+    "The published b4 CI head predates the new negative fixture tests"
+  ],
+  "negativeAndLifecycleEvidence": {
+    "qualification": "Four qualified actual cases across two runtime snapshots; no claim of a single four-case passing invocation. No production logic changed.",
+    "initialSequence": {
+      "result": {
+        "success": false,
+        "hostChildExit": 1,
+        "failure": null,
+        "containerTerminal": {
+          "existsExit": 1,
+          "terminal": true,
+          "id": "3dc231d88d6c410340c494a3fceaad7a1bfdb11e8eac89128466e68199b61680"
+        },
+        "beforeFence": {
+          "all1049SourceInputsUnchanged": true,
+          "all26OriginalWipFilesUnchanged": true,
+          "all5407FixedInputsUnchanged": true,
+          "allDependenciesUnchanged": true
+        },
+        "afterFence": {
+          "all1049SourceInputsUnchanged": true,
+          "all26OriginalWipFilesUnchanged": true,
+          "all5407FixedInputsUnchanged": true,
+          "allDependenciesUnchanged": true
+        },
+        "cases": [
+          {
+            "case": "native_page_worker::toolkit_owner::physical_page_tests::status_negative_tests::actual_present_and_reserved_closing_targets_refuse_without_no_tab_or_worker",
+            "exit": 0,
+            "actualPassed": 1,
+            "accepted": true
+          },
+          {
+            "case": "native_page_worker::toolkit_owner::physical_page_tests::status_negative_tests::actual_pending_setup_with_held_native_attach_ack_refuses_then_same_setup_completes",
+            "exit": 0,
+            "actualPassed": 1,
+            "accepted": true
+          },
+          {
+            "case": "native_page_worker::toolkit_owner::physical_page_tests::status_negative_tests::actual_context_refresh_revokes_status_while_factory_handoff_is_paused",
+            "exit": 101,
+            "actualPassed": 0,
+            "accepted": false
+          }
+        ],
+        "summary": {
+          "expectedCases": 4,
+          "actualCases": 3,
+          "actualPassed": 2,
+          "accepted": false
+        },
+        "deferredSignals": [],
+        "qualification": "Four exact private actual Status negative cases only. Chromium targets and actual forwarded attach acknowledgement are used for present/closing/unready cases. No Page worker, Playwright, complete present-tab Status, public selector or bootstrap acceptance."
+      },
+      "receipt": {
+        "localPath": "/var/tmp/o3-server/status-negative-runtime-pzu8t5x1/negative-runtime-attempt1-result.json",
+        "sha256": "4ec9e0e8eb0914a0c915fe854eac6c00fa46bc9752b848e036f20aa384634092",
+        "bytes": 1775
+      },
+      "fullLog": {
+        "localPath": "/var/tmp/o3-server/status-negative-runtime-pzu8t5x1/negative-runtime-attempt1-owned.log",
+        "sha256": "b913bff6a7e082c2e2b66f2ba4896a23c0693fb6724a96fc4059531bd2573f39",
+        "bytes": 2254
+      },
+      "terminalReceipt": {
+        "localPath": "/var/tmp/o3-server/status-negative-runtime-pzu8t5x1/negative-runtime-attempt1-container-terminal.json",
+        "sha256": "209a15c186f9fd758188f48be38dee8e0ca2572aea2112e61fa9b35160b13fe4",
+        "bytes": 118
+      },
+      "retainedIndividualPhysicalPasses": [
+        {
+          "case": "native_page_worker::toolkit_owner::physical_page_tests::status_negative_tests::actual_present_and_reserved_closing_targets_refuse_without_no_tab_or_worker",
+          "exit": 0,
+          "actualPassed": 1,
+          "accepted": true
+        },
+        {
+          "case": "native_page_worker::toolkit_owner::physical_page_tests::status_negative_tests::actual_pending_setup_with_held_native_attach_ack_refuses_then_same_setup_completes",
+          "exit": 0,
+          "actualPassed": 1,
+          "accepted": true
+        }
+      ],
+      "libtestSha256": "1beb04ffdf59494e2898731dc6bc4801b154986250f9e878ea3f2ae8f1523e1f",
+      "failedAssumption": "Context.refresh creates a successor after providerGeneration changes but does not revoke the old read-only Context; the old Status succeeded, so the expected-error assertion failed. Case 4 did not run."
+    },
+    "correctedSequence": {
+      "result": {
+        "success": true,
+        "hostChildExit": 0,
+        "failure": null,
+        "containerTerminal": {
+          "existsExit": 1,
+          "terminal": true,
+          "id": "c85d3fc270524f210d8868cecace57f7423d3e39a8334080383a5c78cb575b81"
+        },
+        "beforeFence": {
+          "all1049SourceInputsUnchanged": true,
+          "all26OriginalWipFilesUnchanged": true,
+          "all5411FixedInputsUnchanged": true,
+          "allDependenciesUnchanged": true
+        },
+        "afterFence": {
+          "all1049SourceInputsUnchanged": true,
+          "all26OriginalWipFilesUnchanged": true,
+          "all5411FixedInputsUnchanged": true,
+          "allDependenciesUnchanged": true
+        },
+        "cases": [
+          {
+            "case": "native_page_worker::toolkit_owner::physical_page_tests::status_negative_tests::actual_context_revocation_refuses_status_while_factory_handoff_is_paused",
+            "exit": 0,
+            "actualPassed": 1,
+            "accepted": true
+          },
+          {
+            "case": "native_page_worker::toolkit_owner::physical_page_tests::status_negative_tests::actual_status_observer_drop_retains_callback_and_finally_until_actual_factory_finishes",
+            "exit": 0,
+            "actualPassed": 1,
+            "accepted": true
+          }
+        ],
+        "summary": {
+          "expectedCases": 2,
+          "actualCases": 2,
+          "actualPassed": 2,
+          "accepted": true
+        },
+        "deferredSignals": [],
+        "qualification": "Two exact remaining private Status cases: corrected actual credential revocation plus source observer cancellation. No repeated physical target cases, Page worker, Playwright, complete present-tab Status, public selector or bootstrap acceptance."
+      },
+      "receipt": {
+        "localPath": "/var/tmp/o3-server/status-revocation-runtime-5mj2mhlw/revocation-runtime-attempt1-result.json",
+        "sha256": "45e505e31680cf9851368b23040b29259cf9a709890e89e6fe7f880dda9e6882",
+        "bytes": 1516
+      },
+      "fullLog": {
+        "localPath": "/var/tmp/o3-server/status-revocation-runtime-5mj2mhlw/revocation-runtime-attempt1-owned.log",
+        "sha256": "c11912504e370d3c3000222a0e5801324faf79f1a6cc02ed090887bf968bace2",
+        "bytes": 1177
+      },
+      "terminalReceipt": {
+        "localPath": "/var/tmp/o3-server/status-revocation-runtime-5mj2mhlw/revocation-runtime-attempt1-container-terminal.json",
+        "sha256": "5f0e689e609035fc5910e90caa6b2c4caff775c368071fd3b3af83f53b3b056d",
+        "bytes": 118
+      },
+      "libtestSha256": "43734b6a665ee02cb49d730a33e1b43ebfb81b5bcbda00532bb4c66564989783",
+      "correction": "Case 3 positively checks the old read-only caller after provider transition plus refresh, then uses actual Context.revoke before releasing a new paused callback. Case 4 retains actual source-end/finalizer accounting after observer drop."
+    },
+    "unchangedCaseBodies": {
+      "actual_present_and_reserved_closing_targets_refuse_without_no_tab_or_worker": "05afb762af97d21e59c3b09b4eac6394e3125909123accc6ec3c9caa548f27b7",
+      "actual_pending_setup_with_held_native_attach_ack_refuses_then_same_setup_completes": "5288515b2cb37226c54e3023b6419ae6337e834b2dcca12f5013d61448b33644",
+      "actual_status_observer_drop_retains_callback_and_finally_until_actual_factory_finishes": "3ea49ce82dbf83376f3d6d166573913f969f01249136331e9f9a5a09a46b6794"
+    },
+    "compileEvidence": [
+      {
+        "localPath": "/var/tmp/o3-server/status-negative-compile-5ln7qaek/compile-result.json",
+        "sha256": "b4090ecfb5a431b4b17382db17b5c71b1233764472f07cdaedb4878382be1e84",
+        "bytes": 3640
+      },
+      {
+        "localPath": "/var/tmp/o3-server/status-revocation-correction-6u0q2k6n/compile-result.json",
+        "sha256": "d20cc36385e61068ab39d0bf12bd3c44852cba1858ff7c02a778d317dd1a55ab",
+        "bytes": 3641
+      }
+    ],
+    "case3CorrectionFreeze": {
+      "localPath": "/var/tmp/o3-server/status-revocation-correction-6u0q2k6n/source.json",
+      "sha256": "c0ea48ad694f3faed4d8c4b1ef7cc0da4dba4f0862b123328c88dd16c13af40a",
+      "bytes": 2379
+    },
+    "priorPhysicalCasesRepeated": false,
+    "productionLogicChanged": false
+  },
+  "publishedCheckpointCi": {
+    "head": "b4f8acef527c4b0b9c4bdb2ae831cd9a0a9b94bf",
+    "run": 42465238296,
+    "conclusion": "success",
+    "evidence": {
+      "localPath": "/var/tmp/o3-server/status-negative-compile-5ln7qaek/public-ci-evidence.json",
+      "sha256": "31e645c2b22d33ddc27bf14baaa988e6c0ab22a326fb764af68509e81425e821",
+      "bytes": 52559
+    },
+    "librarySummaries": {
+      "128683120558": "test result: ok. 478 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out; finished in 41.12s",
+      "128683120945": "test result: ok. 476 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out; finished in 40.45s"
+    },
+    "qualification": "Ordinary CI ignored the private native fixtures and predates these new negative test sources. Harness totals that include nested children are not unique-test counts."
+  }
 }
