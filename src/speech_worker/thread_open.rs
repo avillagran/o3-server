@@ -38,6 +38,9 @@ impl NodeRuntime {
                     let bytes=serde_json::to_vec(&input)?;
                     if bytes.len()>65536{return Err(io::Error::other("Oversized search input"));}
                     stdin.write_all(&bytes).await?;stdin.shutdown().await?;
+                    // Pipe shutdown keeps its writer; dropping the owned handle sends
+                    // the EOF required by the native readFileSync request decoder.
+                    drop(stdin);
                     let mut line=Vec::new();
                     output.read_until(b'\n',&mut line).await?;
                     if line.len()>65536||line.last()!=Some(&b'\n'){return Err(io::Error::other("Invalid search response"));}
@@ -47,11 +50,10 @@ impl NodeRuntime {
                 };
                 let result=tokio::time::timeout(Duration::from_secs(2),operation).await
                     .map_err(|_|io::Error::other("Search computation timed out")).and_then(|v|v);
-                drop(stdin);
                 // The owner sends TERM; actual stdout EOF from the installed
                 // handler is the grace receipt, never a fabricated immediate ACK.
                 let cleanup=process.close(async {let mut byte=[0u8;1];matches!(output.read(&mut byte).await,Ok(0))},Duration::from_secs(2)).await;
-                if cleanup!= (Cleanup::Confirmed {graceful:true}) {return Err(io::Error::other("Search owner cleanup unconfirmed"));}
+                if cleanup!= (Cleanup::Confirmed {graceful:true}) {return Err(io::Error::other(format!("Search owner cleanup unconfirmed: result_ok={}, cleanup={cleanup:?}",result.is_ok())));}
                 result
             })
         }).join().map_err(|_|io::Error::other("Search owner failed"))?)
