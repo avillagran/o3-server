@@ -19,7 +19,10 @@ The server package places the exact admitted Node 26.13.0 executable at
 supply `--native-search-node /absolute/path/to/node`. The existing sealed Node
 resource factory admits SHA-256
 `0adde40d1b7dfa57c8bc83cbc319758c3ec6ebba21363bb2fa752ea6b267ad1b`
-and retains one private reusable snapshot. There is no PATH discovery, model,
+and reuses that exact existing private immutable capsule. The install path
+passes the admitted source itself as the existing factory destination; a missing
+source is rejected before that call. No executable is copied into the profile.
+The package installer creates the immutable capsule before startup. There is no PATH discovery, model,
 voice enablement, download, per-visit executable copy, or request-selected code.
 Without that resource, an open fails explicitly; watermark-only legacy visits
 remain available. Packaging must include the runtime rather than silently
@@ -38,3 +41,24 @@ including `picks`; shared T3 export preserves the complete thread payload.
 Validation is pending: focused original-algorithm, actual transaction/replay,
 readiness/resource ownership, SDK round-trip, and client visit tests must run in
 private rootless containers. Source checkpoints are not runtime acceptance.
+
+## Building a normal user package
+
+After the server build and release review, the packaging step is:
+
+```sh
+tools/package-native-search --server /absolute/admitted/o3-server \
+  --node /absolute/admitted/node --output /absolute/new/package
+```
+
+The existing artifacts are read without following links, the exact Node digest
+is checked, and an exclusive user-owned package receives `o3-server` plus
+`runtime/node-26.13.0`. The immutable executable and private directory modes meet
+the same existing resource factory's reuse admission. Starting that packaged
+server requires no search-specific flag or speech bundle. The normal service
+installer uses the packaged server's executable path, so its adjacent runtime
+is discovered identically. A package receipt records both hashes. Nothing is
+downloaded, launched, overwritten, or recursively removed. Partial output is
+retained on failure. This release packaging action must not be used to create
+additional executable/runtime copies in test acceptance workflows; tests mount
+and reuse an already admitted capsule.

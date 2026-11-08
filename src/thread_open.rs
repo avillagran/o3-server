@@ -15,13 +15,10 @@ pub fn install(state:&State,args:&[String])->Result<(),String>{
         None=>std::env::current_exe().map_err(|e|e.to_string())?.parent().ok_or("Missing server directory")?.join("runtime/node-26.13.0"),
     };
     if !source.exists(){return if flags.is_empty(){Ok(())}else{Err("Native search runtime missing".into())};}
-    let directory=state.dir.join("native-search");
-    use std::os::unix::fs::DirBuilderExt;
-    if !directory.exists(){std::fs::DirBuilder::new().mode(0o700).create(&directory).map_err(|e|e.to_string())?;}
     let size=std::fs::symlink_metadata(&source).map_err(|e|e.to_string())?.len();
     if size>512*1024*1024{return Err("Native search runtime oversized".into());}
     let file=SealedFile::admit(&source,NODE_SHA256,size).map_err(|e|e.to_string())?;
-    let node=NodeRuntime::capture_or_reuse(file,&directory.join("node-26.13.0" )).map_err(|e|e.to_string())?;
+    let node=NodeRuntime::capture_or_reuse(file,&source).map_err(|e|e.to_string())?;
     state.thread_open_node.set(node).map_err(|_|"Native search runtime already installed".to_owned())
 }
 // The upstream thread schema decodes an unreadable opens shape as null.

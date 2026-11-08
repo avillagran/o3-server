@@ -1311,7 +1311,7 @@ fn dispatch_prepared_with_auto(
     };
     if kind!="thread.visit"{t["updatedAt"] = json!(at);}
     put(&tx, "thread", tid, tid, &t)?;
-    let seq = append_at(&tx, tid, event, t.clone(), &t,Some(&at))?;
+    let seq = append_at(&tx, tid, event, t.clone(), &t,prepared_visit.as_ref().map(|_|at.as_str()))?;
     let result = json!({"sequence":seq});
     crate::outbox::stage(&tx, c)?;
     crate::command_shared::admit(&tx, cid, tid, kind, &at, seq, (None, None))?;
