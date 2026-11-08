@@ -626,6 +626,10 @@ impl ClaudeProvider {
                                 session.send(permission_response(native,&json!("decline"),Some("The client captured your proposed plan. Stop and wait for user feedback or implementation in a later turn."),json!({}))).await?;
                                 continue;
                             }
+                            if let Some(warning)=removal_safety_denial(mode(&input),&v["request"]) {
+                                session.send(permission_response(native,&json!("decline"),Some(&format!("Claude Code's removal safety check denied this command; the user did not reject it. The command did not run. Do not bypass the check by splitting the removal, putting it in a script, or using another tool or shell. If the warning below supplies a safe rewrite, use it and let the same check evaluate it. Otherwise continue the rest of the task without the removal and tell the user what you needed to delete and why. Warning: {warning}")),json!({}))).await?;
+                                continue;
+                            }
                             if pending.len()>=64 { return Err("Claude pending request limit".into()); }
                             pending.insert(native.into(),v["request"].clone());
                             output.send(ProviderEvent::Native(json!({"type":"permission","request_id":format!("{}:{native}",input.run_id),"native_id":native,"request":v["request"]}))).await.map_err(|_|"receiver closed")?;
@@ -745,6 +749,44 @@ impl TurnBoundary {
     fn ready(&self) -> bool {
         self.terminal.is_some() && self.tasks.is_empty()
     }
+}
+/// Under bypassPermissions the CLI still forwards removals its safety check cannot
+/// verify. T3 denies those instead of asking a person; return the CLI warning to deny.
+fn removal_safety_denial(mode: &str, request: &Value) -> Option<String> {
+    if mode != "bypassPermissions"
+        || request["tool_name"] != "Bash"
+        || !request["matched_ask_rule"].is_null()
+    {
+        return None;
+    }
+    let raw = request["decision_reason"].as_str()?;
+    let mut reason = String::with_capacity(raw.len());
+    let mut chars = raw.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' {
+            // Strip CSI sequences (ESC [ ... final byte), as Node's stripVTControlCharacters does.
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                for c in chars.by_ref() {
+                    if ('@'..='~').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+        reason.push(ch);
+    }
+    let reason = reason.trim();
+    let lower = reason.to_ascii_lowercase();
+    let dangerous_rm = lower.strip_prefix("dangerous rm").is_some_and(|rest| {
+        let rest = rest.strip_prefix("dir").unwrap_or(rest);
+        !rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+    });
+    (dangerous_rm
+        || reason == "This shell -c script runs rm and could not be checked"
+        || reason == "A permission rule denies a command in this shell -c script")
+        .then(|| reason.to_owned())
 }
 fn mode(input: &RunInput) -> &str {
     if input.interaction_mode == "plan" {
@@ -1168,6 +1210,47 @@ mod tests {
             std::env::temp_dir().join(format!("o3-env-{}", crate::store::random_id().unwrap()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+    #[test]
+    fn bypass_denies_unverifiable_removals_instead_of_asking() {
+        let request = |reason: &str| json!({"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"rm -rf $D/x"},"decision_reason":reason});
+        let warning = "Dangerous rm operation on possibly-empty variable path: ${D}/x (D)";
+        assert_eq!(
+            super::removal_safety_denial(
+                "bypassPermissions",
+                &request(&format!("\u{1b}[1m{warning}\u{1b}[22m "))
+            )
+            .as_deref(),
+            Some(warning)
+        );
+        assert!(super::removal_safety_denial(
+            "bypassPermissions",
+            &request("Dangerous rmdir operation")
+        )
+        .is_some());
+        assert!(super::removal_safety_denial(
+            "bypassPermissions",
+            &request("This shell -c script runs rm and could not be checked")
+        )
+        .is_some());
+        // Other safety checks, other modes, other tools and explicit ask rules still reach a person.
+        assert!(super::removal_safety_denial(
+            "bypassPermissions",
+            &request("Dangerous rmx operation")
+        )
+        .is_none());
+        assert!(super::removal_safety_denial(
+            "bypassPermissions",
+            &request("Output redirection could not be checked")
+        )
+        .is_none());
+        assert!(super::removal_safety_denial("default", &request(warning)).is_none());
+        let mut ask = request(warning);
+        ask["matched_ask_rule"] = json!({"source":"userSettings","tool_name":"Bash"});
+        assert!(super::removal_safety_denial("bypassPermissions", &ask).is_none());
+        let mut write = request(warning);
+        write["tool_name"] = json!("Write");
+        assert!(super::removal_safety_denial("bypassPermissions", &write).is_none());
     }
     #[test]
     fn host_session_variables_are_removed_but_instance_overrides_win() {
