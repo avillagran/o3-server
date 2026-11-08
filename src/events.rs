@@ -773,7 +773,7 @@ fn dispatch_prepared_with_auto(
         "thread.visit" => {
             let visited=c["visitedAt"].as_str().and_then(|v|chrono::DateTime::parse_from_rfc3339(v).ok()).ok_or("Invalid visit time")?;
             let previous=t["lastVisitedAt"].as_str().and_then(|v|chrono::DateTime::parse_from_rfc3339(v).ok());
-            if previous.is_none_or(|previous|visited>previous){t["lastVisitedAt"]=c["visitedAt"].clone();}
+            if previous.is_none_or(|previous|visited.timestamp_millis()>previous.timestamp_millis()){t["lastVisitedAt"]=json!(visited.with_timezone(&chrono::Utc).to_rfc3339_opts(chrono::SecondsFormat::Millis,true));}
             if let Some(visit)=prepared_visit.as_ref(){
                 if !t["deletedAt"].is_null()||t["createdAt"]!=visit.generation||t["opens"]!=visit.previous{return Err("Thread open history changed during computation; retry command".into());}
                 t["opens"]=visit.opens.clone();

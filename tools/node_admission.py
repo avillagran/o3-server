@@ -65,7 +65,7 @@ def _sha(value):
     return value
 
 
-def probe_version(path, expected_sha):
+def probe_version(path, expected_sha, retained_capsule=None):
     if not isolated():
         raise RuntimeError("Node execution requires private Podman or genuine GitHub Docker CI")
     home = pathlib.Path(tempfile.mkdtemp(prefix="o3-node-admission-home-", dir="/tmp"))
@@ -93,7 +93,12 @@ def probe_version(path, expected_sha):
                 raise RuntimeError("Admitted Node version response exceeds its bound")
         if process.wait(timeout=max(0.01, deadline-time.monotonic())) != 0:
             raise RuntimeError("Admitted Node version probe failed")
-        return bytes(output).decode("ascii").strip().removeprefix("v")
+        version = bytes(output).decode("ascii").strip().removeprefix("v")
+        if version == VERSION and retained_capsule is not None:
+            # The successful probe already owns this immutable snapshot. Expose
+            # that same capsule to its trusted acquisition owner, never copy it.
+            retained_capsule(home/"node-bin"/"node")
+        return version
     finally:
         selector.close()
         process.stdout.close()

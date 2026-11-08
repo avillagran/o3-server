@@ -26,7 +26,8 @@ fn lenient_opens(value:&Value)->Value{
     let finite=|v:&Value|v.as_f64().is_some_and(f64::is_finite);
     let valid=value.is_object()&&finite(&value["openedAt"])&&value["score"].as_f64().is_some_and(|v|v.is_finite()&&v>=0.0)
         &&value["picks"].as_array().is_some_and(|picks|picks.len()<=3&&picks.iter().all(|pick|pick["query"].as_str().is_some_and(|q|q.encode_utf16().count()<=32)&&finite(&pick["at"])));
-    if valid{value.clone()}else{Value::Null}
+    // Effect Struct decoding emits declared properties only, including nested picks.
+    if valid{json!({"openedAt":value["openedAt"],"score":value["score"],"picks":value["picks"].as_array().unwrap().iter().map(|pick|json!({"query":pick["query"],"at":pick["at"]})).collect::<Vec<_>>()})}else{Value::Null}
 }
 pub(crate) struct Prepared<'a>{
     _gate:MutexGuard<'a,()>,pub at:i64,pub previous:Value,pub generation:Value,pub opens:Value,
@@ -53,4 +54,17 @@ pub(crate) fn prepare<'a>(state:&'a State,command:&Value,authority:Option<&crate
     if let Some(query)=command.get("searchQuery"){input["query"]=query.clone();}
     let opens=node.record_thread_open(&state.dir,input).map_err(|e|e.to_string())?;
     Ok(Some(Prepared{_gate:gate,at,previous,generation,opens}))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn upstream_struct_admission_strips_extra_fields_and_rejects_invalid_picks() {
+        let value=json!({"openedAt":1,"score":0,"picks":[{"query":"","at":2,"extra":true}],"extra":true});
+        assert_eq!(lenient_opens(&value),json!({"openedAt":1,"score":0,"picks":[{"query":"","at":2}]}));
+        let mut invalid=value;
+        invalid["picks"][0]["query"]=json!("😀".repeat(17));
+        assert_eq!(lenient_opens(&invalid),Value::Null);
+    }
 }

@@ -24,6 +24,18 @@ class Admission(unittest.TestCase):
         self.node.chmod(0o700)
         return hashlib.sha256(self.node.read_bytes()).hexdigest()
 
+    def test_successful_probe_exposes_its_existing_capsule_without_another_snapshot(self):
+        retained=[]
+        digest=hashlib.sha256(self.node.read_bytes()).hexdigest()
+        with mock.patch.object(admission,"snapshot",wraps=admission.snapshot) as snapshots:
+            receipt=admission.admit(self.node,digest,probe=lambda path,sha: admission.probe_version(path,sha,retained_capsule=retained.append))
+            self.assertEqual(snapshots.call_count,1)
+        self.assertEqual(len(retained),1)
+        self.assertEqual(retained[0].read_bytes(),self.node.read_bytes())
+        self.assertEqual(retained[0].stat().st_mode & 0o777,0o500)
+        self.assertEqual(receipt["path"],str(self.node))
+        self.assertEqual(admission.environment(receipt,retained[0])["O3_ADMITTED_NODE"],str(retained[0]))
+
     def test_real_private_probe_clears_environment_and_snapshot_is_exact(self):
         audit=self.root/"environment.json"
         digest=self.program("import os,json\nfrom pathlib import Path\nPath("+repr(str(audit))+").write_text(json.dumps(dict(os.environ)))\nprint('v26.13.0')")

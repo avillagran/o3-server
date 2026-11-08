@@ -11,10 +11,10 @@ fn thread(s:&support::Server)->Value{
 #[test]
 fn visits_are_forward_only_and_do_not_change_activity(){
     let s=support::start(|_|{});let c=s.connect();create(&c);let before=thread(&s);
-    for (id,at) in [("forward","2099-01-01T00:00:00Z"),("backward","2020-01-01T00:00:00Z")]{
+    for (id,at) in [("forward","2099-01-01T01:00:00+01:00"),("backward","2020-01-01T00:00:00Z")]{
         c.rpc("orchestration.dispatchCommand",json!({"type":"thread.visit","commandId":id,"threadId":"open","visitedAt":at})).unwrap();
     }
-    let after=thread(&s);assert_eq!(after["lastVisitedAt"],"2099-01-01T00:00:00Z");assert_eq!(after["updatedAt"],before["updatedAt"]);assert!(after["opens"].is_null());
+    let after=thread(&s);assert_eq!(after["lastVisitedAt"],"2099-01-01T00:00:00.000Z");assert_eq!(after["updatedAt"],before["updatedAt"]);assert!(after["opens"].is_null());
 }
 #[test]
 fn actual_original_opens_use_server_event_time_dedupe_and_persist_picks(){

@@ -1,5 +1,8 @@
 # Native thread open history
 
+The complete visit/open source contract is byte-identical in nightly 4380
+(`ade473018d32003658b7d38693e083ee2e314bd8`).
+
 Nightly 4367 extends `thread.visit` with optional `opened: boolean` and
 `searchQuery: string` (at most 200 UTF-16 units). A watermark-only visit does
 not need a JavaScript runtime. Watermarks only move forward and visits never
@@ -62,3 +65,17 @@ downloaded, launched, overwritten, or recursively removed. Partial output is
 retained on failure. This release packaging action must not be used to create
 additional executable/runtime copies in test acceptance workflows; tests mount
 and reuse an already admitted capsule.
+
+## CI resource reuse
+
+The genuine disposable CI job exports the immutable capsule already created by
+its successful Node version probe. It checks the existing capsule's ownership,
+mode, link count, byte length, and digest before exporting it. The original
+setup-node executable remains the acquisition receipt; the runtime path points
+to the same retained probe capsule. No second snapshot or profile copy is needed.
+
+Stored open history follows the original Effect Struct decoder: undeclared
+properties are stripped at both object levels, invalid history becomes null,
+and valid empty queries remain valid. Forward watermarks compare epoch
+milliseconds and persist the canonical UTC millisecond timestamp, matching the
+original DateTime event encoder.
