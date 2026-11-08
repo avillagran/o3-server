@@ -1,7 +1,7 @@
 //! Actual provider caller projection for the whole native toolkit. Scope input
 //! is never read from tool parameters, and credential IDs are not tab identity.
 use crate::{mcp_access::Authority, native_mcp::Context, store::State};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::{Arc, Weak};
 fn denied(reason: &str) -> Value {
     json!({"code":"capability_denied","message":"The native preview caller is unavailable.","reason":reason})
@@ -15,6 +15,7 @@ pub struct Caller {
     authority: Authority,
     thread: String,
     instance: String,
+    preview: bool,
     provider_session: String,
     issued_at: i64,
 }
@@ -36,7 +37,9 @@ impl Caller {
             self.thread
         ))
     }
-    pub(crate) fn preview_current(&self) -> Result<(), Value> {
+    /// The issued preview option never changes when a physical backend becomes
+    /// unavailable. Execution checks that separate authority in callback_current.
+    pub(crate) fn preview_issued(&self) -> Result<(), Value> {
         let scope = self.scope()?;
         if scope["capabilities"]
             .as_array()
@@ -47,23 +50,41 @@ impl Caller {
             Err(denied("preview_unavailable"))
         }
     }
+    /// Only the fixed decoded operation chooses whether fresh provider ownership
+    /// is required. The original toolkit checks run liveness before creating a
+    /// write callback; every actual callback entry and frame rechecks ownership.
+    pub(crate) fn callback_current(&self, operation: super::NativeOperation) -> Result<(), Value> {
+        self.preview_issued()?;
+        if operation.writes() {
+            let state = self.state()?;
+            self.authority
+                .native_caller(&state.reader.lock().unwrap(), false)?;
+        }
+        self.authority
+            .browser()
+            .map(|_| ())
+            .ok_or_else(|| denied("preview_unavailable"))
+    }
     pub fn capture(context: &Context) -> Result<Self, Value> {
         let (state, authority) = context.page_authority();
         let current = state.upgrade().ok_or_else(|| denied("owner_closed"))?;
         let db = current.reader.lock().unwrap();
-        let thread = authority.native_caller(&db, false)?;
-        let tid = thread["id"]
-            .as_str()
-            .ok_or_else(|| denied("thread_identity"))?;
-        let instance = thread["providerInstanceId"]
-            .as_str()
+        let thread = authority.native_page_caller(&db)?;
+        let (tid, instance, preview) = authority
+            .native_page_binding()
             .ok_or_else(|| denied("provider_identity"))?;
+        if thread["id"] != tid {
+            return Err(denied("thread_identity"));
+        }
+        let tid = tid.to_owned();
+        let instance = instance.to_owned();
         let session = context.id();
         Ok(Self {
             state,
             authority,
-            thread: tid.into(),
-            instance: instance.into(),
+            thread: tid,
+            instance,
+            preview,
             provider_session: session.into(),
             issued_at: context.issued_at(),
         })
@@ -72,9 +93,9 @@ impl Caller {
         self.state.upgrade().ok_or_else(|| denied("owner_closed"))
     }
     fn checked(&self, db: &rusqlite::Connection) -> Result<Value, Value> {
-        let thread = self.authority.native_caller(db, false)?;
-        if thread["id"] != self.thread || thread["providerInstanceId"] != self.instance {
-            return Err(denied("provider_binding_changed"));
+        let thread = self.authority.native_page_caller(db)?;
+        if thread["id"] != self.thread {
+            return Err(denied("thread_identity"));
         }
         Ok(thread)
     }
@@ -85,7 +106,7 @@ impl Caller {
         let db = state.reader.lock().unwrap();
         self.checked(&db)?;
         drop(db);
-        let capabilities = if self.authority.browser().is_some() {
+        let capabilities = if self.preview {
             vec!["preview"]
         } else {
             vec![]
@@ -154,7 +175,7 @@ mod tests {
     use super::*;
     use crate::events;
     #[tokio::test]
-    async fn actual_credential_reads_complete_owned_projection_and_fences_rebinding() {
+    async fn actual_credential_reads_complete_projection_and_retains_issued_binding() {
         crate::test_sandbox::assert_isolated();
         let fixture: Value = serde_json::from_str(include_str!(
             "../../tests/fixtures/native-preview-caller-projection-4314.json"
@@ -208,6 +229,7 @@ mod tests {
                 .await
                 .unwrap();
             let caller = Caller::capture(&context).unwrap();
+            let issued = caller.scope().unwrap();
             assert_eq!(
                 caller.scope().unwrap()["thread"]["providerSessionId"],
                 context.id()
@@ -266,7 +288,20 @@ mod tests {
                     events::put(&db, "thread", "thread", "thread", &thread).unwrap();
                     previous
                 };
-                assert!(caller.scope().is_err());
+                assert_eq!(caller.scope().unwrap(), issued);
+                assert_eq!(Caller::capture(&context).unwrap().scope().unwrap(), issued);
+                assert_eq!(
+                    caller.thread_projection("thread").unwrap()["thread"][field],
+                    "foreign-owner"
+                );
+                assert!(
+                    context
+                        .page_authority()
+                        .1
+                        .native_caller(&state.reader.lock().unwrap(), false)
+                        .is_err(),
+                    "The generic MCP read policy remains strict"
+                );
                 {
                     let db = state.db.lock().unwrap();
                     let mut thread = events::get(&db, "thread", "thread").unwrap();

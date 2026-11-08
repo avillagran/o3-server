@@ -2,21 +2,21 @@
 //! physical Page, Control context, or callback authority.
 pub use super::source_deadline::FrozenDeadline;
 use super::{
+    Fault, JavaScriptJson, NativeInvocation, NativeOperation, NativePage, OperationResult,
+    ServiceFuture, ServiceMethod, ServiceReply, ServiceRequest, ToolkitOwner, Worker,
     caller::Caller,
     toolkit_callback::CallbackRequest,
     toolkit_ledger::{Binding, CallbackPhase, Ledger},
-    Fault, JavaScriptJson, NativeInvocation, NativeOperation, NativePage, OperationResult,
-    ServiceFuture, ServiceMethod, ServiceReply, ServiceRequest, ToolkitOwner, Worker,
 };
 use crate::{native_mcp::Context, preview_control::runtime::RunContext, store::State};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{
     future::Future,
     pin::Pin,
     sync::{
-        atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
         Arc, Mutex, Weak,
+        atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
 };
 use tokio::sync::watch;
@@ -53,7 +53,7 @@ impl SourceCallback {
         {
             return Err(json!({"code":"capability_denied","reason":"callback_closed"}));
         }
-        self.binding.caller.preview_current()
+        self.binding.caller.callback_current(self.request.class)
     }
     pub fn admitted(&self, page: &NativePage, run: &RunContext) -> Result<NativeInvocation, Value> {
         if self.entered.load(Ordering::Acquire) != 2 {
@@ -279,7 +279,7 @@ impl Service {
             if !caller.belongs_to(&state) {
                 return Err(Fault::Revoked);
             }
-            caller.preview_current().map_err(|_| Fault::Revoked)?;
+            caller.scope().map_err(|_| Fault::Revoked)?;
             let receipt = secret()?;
             self.ledger
                 .lock()
@@ -328,7 +328,7 @@ impl Service {
                     return refused(json!({"code":"capability_denied","reason":"toolkit_closing"}));
                 }
                 let _: Empty = decode(&request.input)?;
-                if let Err(error) = binding.caller.preview_current() {
+                if let Err(error) = binding.caller.scope() {
                     return refused(error);
                 }
                 let value = binding.descriptor.clone();
@@ -354,7 +354,7 @@ impl Service {
                 if input.tool != tool.tool_name() {
                     return Err(Fault::Protocol);
                 }
-                if let Err(error) = binding.caller.preview_current() {
+                if let Err(error) = binding.caller.preview_issued() {
                     return refused(error);
                 }
                 let agent = match binding.caller.agent_session_key() {
@@ -662,23 +662,27 @@ mod close_tests {
             .await
             .unwrap();
         assert_eq!(entered.load(Ordering::Acquire), 2);
-        assert!(control
-            .source_observe_admitted(
-                entry_gate(admission.clone(), entered, active.clone()),
-                |_| async { Ok(Value::Null) },
-            )
-            .wait()
-            .await
-            .is_err());
+        assert!(
+            control
+                .source_observe_admitted(
+                    entry_gate(admission.clone(), entered, active.clone()),
+                    |_| async { Ok(Value::Null) },
+                )
+                .wait()
+                .await
+                .is_err()
+        );
         admission.fetch_or(CLOSING, Ordering::AcqRel);
-        assert!(control
-            .source_observe_admitted(
-                entry_gate(admission, Arc::new(AtomicU8::new(0)), active),
-                |_| async { panic!("closed source observer entered") },
-            )
-            .wait()
-            .await
-            .is_err());
+        assert!(
+            control
+                .source_observe_admitted(
+                    entry_gate(admission, Arc::new(AtomicU8::new(0)), active),
+                    |_| async { panic!("closed source observer entered") },
+                )
+                .wait()
+                .await
+                .is_err()
+        );
         control.close().wait().await.unwrap();
     }
 }

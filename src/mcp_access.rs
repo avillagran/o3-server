@@ -2,10 +2,10 @@
 use crate::{
     events,
     mcp_tools::failure,
-    store::{now_ms, State},
+    store::{State, now_ms},
 };
-use rusqlite::{params, Connection, OptionalExtension};
-use serde_json::{json, Value};
+use rusqlite::{Connection, OptionalExtension, params};
+use serde_json::{Value, json};
 #[derive(Clone)]
 pub(crate) struct Authority {
     pub session_id: String,
@@ -142,6 +142,23 @@ impl Authority {
             .as_ref()
             .ok_or_else(|| failure("capability_denied", "Native caller required."))?
             .caller(db, write)
+    }
+    /// Source-toolkit reads preserve the immutable issued caller while loading
+    /// the actual current shell. Generic MCP reads and writes remain stricter.
+    pub(crate) fn native_page_caller(&self, db: &Connection) -> Result<Value, Value> {
+        self.native
+            .as_ref()
+            .ok_or_else(|| failure("capability_denied", "Native caller required."))?
+            .page_caller(db)
+    }
+    pub(crate) fn native_page_binding(&self) -> Option<(&str, &str, bool)> {
+        self.native.as_ref().map(|scope| {
+            (
+                scope.thread.as_str(),
+                scope.instance.as_str(),
+                scope.browser.is_some(),
+            )
+        })
     }
     pub(crate) fn browser_admission(&self, state: &State, write: bool) -> Result<(), Value> {
         let scope = self
@@ -397,7 +414,7 @@ pub(crate) fn replay_reply(db: &Connection, c: &Value, mut result: Value) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::{random_id, State};
+    use crate::store::{State, random_id};
     use std::sync::Arc;
     #[test]
     fn stale_authority_is_rechecked_in_both_command_transactions_before_receipts() {

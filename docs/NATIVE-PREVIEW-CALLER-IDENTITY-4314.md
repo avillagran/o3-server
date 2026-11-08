@@ -23,8 +23,9 @@ O3's corresponding immutable credential identity is the actual native MCP
 retains this identity and the actual authority; input JSON cannot replace them.
 Runtime provider-thread/session transitions, missing runtime bindings, and
 `prepared`/`not_loaded` rows do not change this credential. Actual credential
-revocation/replacement, owner generation/provider mismatch, process loss, and
-current capability checks still fence the caller. The generic mutation gate is
+revocation, process loss, idle expiry, and a missing/deleted calling thread still
+fence source reads. Provider and generation changes fence actual write callbacks
+without replacing the issued scope. The generic MCP read and mutation gates are
 unchanged. No runtime record is manufactured to make source admission succeed.
 
 Obtaining a Context before provider binding is not itself a source invocation.
@@ -76,7 +77,7 @@ runtime-publication requirement and do not prove credential-identity parity.
 The earlier published caller implementation needs this correction before any
 parity claim or activation.
 
-The two owner-process integration cases are explicit opt-in libtests because
+The two earlier owner-process integration cases are explicit opt-in libtests because
 ordinary repository CI does not contain the external pinned nightly, Effect,
 Playwright and browser fixtures. Run each exact filter with `--ignored` only
 inside the coordinated private container. They have real passing receipts above;
@@ -93,10 +94,98 @@ modes and the full static filesystem-safety preflight. The unrelated worktree
 in its original worktree. These replace the earlier worktree-contaminated
 integration qualification, while preserving those earlier receipts unchanged.
 
-The actual O3 authority continues to require the current provider instance and
-owner generation, including readonly capture. The whole-original registry
-oracle's foreign-provider readonly behavior is reference evidence; it does not
-prove that stricter O3 authority has foreign-read parity. A source-specific
-readonly credential path, actual provider-manager capability replacement and
-inherited/related thread projection semantics remain separate work. Generic
-mutation authority has not been relaxed.
+## Source-specific readonly compatibility
+
+The increment starts from published server revision `1947191` and integrates the
+published profile-catalog revision `b77885f` before validation. The eight caller
+files retain their exact bytes through that fast-forward.
+
+`Scope.page_caller` validates the actual credential and reads the current
+calling thread without requiring that thread's current provider or generation to
+match the issued credential. `Scope.caller`, including generic readonly calls,
+and the generic mutation authority retain their existing strict checks.
+
+`Caller.capture`, `scope`, and `thread_projection` use this source-specific read
+path. The descriptor retains the credential's issued thread, provider instance,
+session ID, namespace, issue time, and browser capability option. It never copies
+a successor provider's identity from the current thread. Capability disclosure
+does not change when an issued browser backend becomes unavailable.
+
+The toolkit's initial invocation and caller-scope service validate the issued
+read without preempting the original handler's capability or live-caller checks.
+The whole original `loadCaller` can therefore see the current foreign shell and
+`assertLiveCaller` can return `parent_not_active` before creating a write
+callback. A withheld preview capability likewise reaches the original handler
+and dispatches no callback.
+
+`SourceCallback.validate` requires the issued preview capability and fresh
+backend availability. Its fixed decoded `NativeOperation` additionally requires
+the unchanged generic provider/generation check for write operations. Native
+Page admission and every source frame retain the actual tab/owner fences and
+call this validation again. The separately decoded, fixed metadata-status
+producer remains readonly; no JSON input flag selects write admission.
+
+The focused fixtures for this increment are:
+
+- `actual_credential_reads_complete_projection_and_retains_issued_binding`:
+  all 26 original projections retain their issued scope through runtime-binding,
+  current-provider, and generation changes, while generic readonly checks reject
+  the foreign binding.
+- `page_issued_read_identity_preserves_strict_writes_and_credential_lifetime`:
+  real Context credentials cover readonly/write classification, immutable issued
+  capabilities versus current availability, process loss, idle expiry,
+  revocation/replacement, and deleted/missing threads. Generic read and mutation
+  checks remain strict.
+- `actual_context_foreign_reads_reach_original_toolkit_and_late_writes_remain_fenced`:
+  the actual Rust service and Node entry run the whole pinned original toolkit,
+  with an explicitly synthetic callback executor. Foreign readonly access
+  succeeds, the original write prelude rejects before callbacks, and a generation
+  change after callback admission prevents the held write. Withheld preview
+  capability returns the original formatted error without dispatching callbacks.
+
+The current focused evidence is:
+
+| Receipt | Accepted scope |
+| --- | --- |
+| `native-readonly-caller-build-1/build-result.json` | Minimal and default strict all-target checks pass, followed by the minimal libtest build. Production source remains unchanged through the later fixture-only correction. |
+| `native-readonly-caller-runtime-1/runtime-result.json` | The first two exact cases pass: all 26 projections and actual credential lifetime/capability/generic-policy checks. The third case fails its fixture's error-format assertion; the fourth case does not run. This is a partial receipt, not a successful four-case run. |
+| `native-readonly-caller-build-2/build-result.json` | Minimal libtest build passes after correcting only the new process fixture's two expected error messages. Current artifact SHA-256 is `8272803e87322135ae8971e2e4f1219f29525fa414e2a6b29df1e057fda3b802`. |
+| `native-readonly-caller-runtime-2/runtime-result.json` | The changed whole-toolkit case passes, followed by the previously unrun actual Context/toolkit/factory/NativePage/Gateway/Chromium evaluation case. Both process fixtures explicitly select `--ignored`; the unchanged first two cases are not repeated. |
+
+The failed assertion expected the internal `parent_not_active` code in the MCP
+wire result. The admitted original Effect 4.1.2 `declaredFailureResult` formats
+an `Error` with a nonempty message as `isError: true` and text content. The
+corrected fixture compares the original ownership and missing-preview messages
+exactly and retains the actual JSON on a mismatch. No production error formatter
+or authority check changed to satisfy the fixture. The failed receipt and its
+complete log remain intact.
+
+The generic `Scope.caller` body remains byte-identical to the public base, with
+SHA-256 `6b5d75218924817f5d9a2e899f9576208f6c6374c72eecb20ef50ef6f76673c6`.
+Builds use the existing coordinated target, two jobs, no incremental output, and
+a 1.5 GiB free-space floor before each Cargo command. Every runtime runs inside
+private rootless Podman with source, binary, Node, and dependency hashes checked
+before and after. No binary/runtime copies, host tests, live profiles, public MCP
+selection, or full-suite acceptance are implied.
+
+The Chromium case validates the changed caller path through the existing real
+evaluation route and retains its optional metadata-status refusal. The foreign
+readonly toolkit case uses synthetic callbacks. Neither case proves complete
+physical foreign-provider status, all status producers, or the remaining native
+router. Actual provider-manager capability replacement and inherited/related
+thread projections remain separate work.
+
+## Newer reference equivalence
+
+`nightly-4340-reference-20261108/equivalence.json` compares the original pinned
+revision `83a3674ffd84ffb33de768210c806cb1ac53fd80` with nightly 4340 revision
+`a9e709f15f825cacac1b6d665fa1920c328d68b7`. Its SHA-256 is
+`833a85636b405d6eb996d1fbf95f277cfdbafec081bf5535361a674df8a208ba`.
+The exact 70 listed footprints are byte-identical, including the entire MCP
+directory, full ServerBrowser/Page sources, preview contract, profile reporter,
+configuration projection, and presentation sources. The original checkout and
+all pinned 4314 receipts remain unchanged.
+
+This source comparison permits retaining evidence for those exact footprints.
+It does not accept the whole 4340 application, changed contracts/settings,
+dependencies, schemas, auth/config/provider behavior, or other changed UI code.

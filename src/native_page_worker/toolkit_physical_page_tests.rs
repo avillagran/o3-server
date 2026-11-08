@@ -132,7 +132,7 @@ async fn actual_toolkit_factory_evaluates_real_page_and_accounts_optional_metada
         .unwrap();
     let caller = Caller::capture(&context).unwrap();
     let key = caller.agent_session_key().unwrap();
-    assert!(caller.preview_current().is_ok());
+    assert!(caller.preview_issued().is_ok());
     let opened=crate::preview::call(&state,"preview.open",&json!({"threadId":"thread","runtime":"server","profileId":"default","automationOwner":key})).await.unwrap();
     let tab = opened["tabId"].as_str().unwrap().to_owned();
     let native = state
