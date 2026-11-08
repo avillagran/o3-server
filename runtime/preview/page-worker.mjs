@@ -1,11 +1,12 @@
+import {installBirthProducers} from './birth-producers.mjs';
 // The owner supplies an already admitted tab-only endpoint and pinned imports.
 // This foundation has no public MCP catalog or ambient endpoint discovery.
-export async function attachPage({chromium,endpoint,nativePage,nativeContracts,Schema,admitted,artifactFs,targetId}){
+export async function attachPage({chromium,endpoint,nativePage,nativeContracts,Schema,admitted,artifactFs,targetId,canonicalBirth}){
  if(typeof targetId!=='string'||!targetId)throw Error('Owner target identity required');
  if(!artifactFs?.installed||!artifactFs.healthy)throw Error('Owned artifact boundary unavailable');
  if(!admitted())throw Error('Browser grant revoked');
  const browser=await chromium.connectOverCDP(endpoint,{noDefaults:true,timeout:15000});
- let cdp;try{
+ let cdp,birthProducers;try{
  const pages=browser.contexts().flatMap(context=>context.pages());
  if(!admitted()||pages.length!==1){await browser.close();throw Error('Invalid owned page grant');}
  const page=pages[0];cdp=await page.context().newCDPSession(page);
@@ -13,9 +14,14 @@ export async function attachPage({chromium,endpoint,nativePage,nativeContracts,S
  // Original ServerBrowser.ensureTab sets both Page defaults to its 15s
  // navigation budget; Playwright's own defaults are different.
  page.setDefaultTimeout(15000);page.setDefaultNavigationTimeout(15000);
+ if(canonicalBirth!==undefined){
+  if(!canonicalBirth||Object.keys(canonicalBirth).sort().join(',')!=='kind,targetId'||canonicalBirth.kind!=='new-local-target'||canonicalBirth.targetId!==targetId)throw Error('Invalid source birth installation');
+  birthProducers=await installBirthProducers({page,cdp,targetId});
+ }
  const allowed=new Set(['click','type','hover','select','drag','press','scroll','waitFor']);
  return {
   page,
+  producerBindings:birthProducers?.receipt,
   async invoke(operation,input,ownerTimeoutMs=15000){
    if(!artifactFs.installed||!artifactFs.healthy)throw Error('Owned artifact boundary unavailable');
    if(!admitted())throw Error('Browser grant revoked');
@@ -36,7 +42,7 @@ export async function attachPage({chromium,endpoint,nativePage,nativeContracts,S
    return result;
   },
   invalidateRefs(){nativePage.invalidateRefs(page);},
-  async close(){await cdp.detach().catch(()=>{});await browser.close();}
+  async close(){birthProducers?.close();await cdp.detach().catch(()=>{});await browser.close();}
  };
- }catch(error){if(cdp)await cdp.detach().catch(()=>{});await browser.close().catch(()=>{});throw error;}
+ }catch(error){birthProducers?.close();if(cdp)await cdp.detach().catch(()=>{});await browser.close().catch(()=>{});throw error;}
 }

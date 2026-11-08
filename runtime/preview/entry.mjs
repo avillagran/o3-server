@@ -12,7 +12,7 @@ function verifyFile(root,name,digest){if(path.isAbsolute(name)||name.split('/').
 async function initialize(packet){
  if(initializing||!keys(packet,['kind','protocol','nonce','targetId','endpoint','configuration'])||packet.protocol!==1||typeof packet.nonce!=='string'||!/^[a-f0-9]{48}$/.test(packet.nonce)||typeof packet.targetId!=='string'||!packet.targetId)throw Error('init');
  initializing=true;nonce=packet.nonce;const c=packet.configuration;
- if(!keys(c,['nativeRoot','playwrightRoot','effectRoot','ownerScopes'])||!['nativeRoot','playwrightRoot','effectRoot'].every(k=>typeof c[k]==='string'&&path.isAbsolute(c[k])))throw Error('configuration');
+ if(!keys(c,['nativeRoot','playwrightRoot','effectRoot','ownerScopes','canonicalBirth'])||!['nativeRoot','playwrightRoot','effectRoot'].every(k=>typeof c[k]==='string'&&path.isAbsolute(c[k])))throw Error('configuration');
  let endpoint=new URL(packet.endpoint);if(endpoint.protocol!=='ws:'||endpoint.hostname!=='127.0.0.1'||!endpoint.port||endpoint.username||endpoint.password||endpoint.search||endpoint.hash||endpoint.pathname.length<32)throw Error('grant');
  const native=JSON.parse(fs.readFileSync(new URL('./native-manifest.json',import.meta.url),'utf8'));for(const [name,digest]of Object.entries(native.files))verifyFile(c.nativeRoot,name,digest);
  const playwright=JSON.parse(fs.readFileSync(new URL('./playwright-manifest.json',import.meta.url),'utf8'));if(playwright.version!=='1.60.0')throw Error('playwright_version');for(const row of playwright.files){if(!row.path.startsWith('package/'))throw Error('playwright_path');verifyFile(c.playwrightRoot,row.path.slice(8),row.sha256);}
@@ -25,7 +25,7 @@ async function initialize(packet){
  const require=createRequire(path.join(c.nativeRoot,'package.json'));const schemaPath=require.resolve('effect/Schema');if(!fs.realpathSync(schemaPath).startsWith(fs.realpathSync(c.effectRoot)+path.sep))throw Error('effect_identity');
  const Schema=await import(pathToFileURL(schemaPath).href);const nativePage=await import(pathToFileURL(path.join(c.nativeRoot,'apps/server/src/preview/ServerBrowserPage.ts')).href);nativePageModule=nativePage;const nativeContracts=await import(pathToFileURL(path.join(c.nativeRoot,'packages/contracts/src/previewAutomation.ts')).href);
  const playwrightRequire=createRequire(path.join(c.playwrightRoot,'package.json'));const {chromium}=playwrightRequire(c.playwrightRoot);
- const attach=()=>attachPage({chromium,endpoint:endpoint.href,nativePage,nativeContracts,Schema,admitted:()=>!closing,artifactFs:artifacts,targetId:packet.targetId});
+ const attach=()=>attachPage({chromium,endpoint:endpoint.href,nativePage,nativeContracts,Schema,admitted:()=>!closing,artifactFs:artifacts,targetId:packet.targetId,canonicalBirth:c.canonicalBirth});
  if(c.ownerScopes!==undefined){
   if(!keys(c.ownerScopes,['runtimeReceipt','cleanupReceipt'])||!['runtimeReceipt','cleanupReceipt'].every(key=>typeof c.ownerScopes[key]==='string'&&/^[a-f0-9]{48}$/.test(c.ownerScopes[key]))||c.ownerScopes.runtimeReceipt===c.ownerScopes.cleanupReceipt)throw Error('owner_configuration');
   const {ws:WebSocket,wsServer:WebSocketServer}=playwrightRequire(path.join(c.playwrightRoot,'lib/utilsBundle.js'));
@@ -37,7 +37,7 @@ async function initialize(packet){
   page=await scopeTransport.run(runtimeScope,attach);
  }else page=await attach();
  if(closing){await page.close();return;}
- ready=true;await send({kind:'ready',protocol:1,nonce});
+ ready=true;await send({kind:'ready',protocol:1,nonce,producerBindings:page.producerBindings});
 }
 async function invoke(packet){
  if(!ready||closing||!keys(packet,['kind','id','nonce','operation','input','timeoutMs','ownerScope'])||packet.nonce!==nonce||!Number.isSafeInteger(packet.id)||packet.id<=lastId||!Number.isSafeInteger(packet.timeoutMs)||packet.timeoutMs<=0||packet.timeoutMs>120000||typeof packet.operation!=='string'||active>=8)throw Error('invoke');

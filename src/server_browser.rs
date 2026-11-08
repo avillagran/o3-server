@@ -47,8 +47,9 @@ pub struct Browsers {
     pub(crate) fixture_binary: std::sync::Mutex<Option<PathBuf>>,
     removal: ProfileRemoval,
     setup: Mutex<()>,
-    tabs: std::sync::Mutex<BTreeMap<(String, String), Tab>>,
+    tabs: std::sync::Arc<std::sync::Mutex<BTreeMap<(String, String), Tab>>>,
     viewers: ViewerRegistry,
+    birth_provider: std::sync::Mutex<Option<std::sync::Weak<dyn BirthInstaller>>>,
 }
 struct ProfileRemoval(std::sync::Mutex<std::sync::Arc<dyn crate::cleanup::Removal>>);
 impl Default for ProfileRemoval {
@@ -96,6 +97,18 @@ struct TabActivity {
     created: std::sync::atomic::AtomicI64,
     used: std::sync::atomic::AtomicI64,
     admitted: std::sync::atomic::AtomicBool,
+    setup_phase: std::sync::atomic::AtomicU8,
+}
+/// Cancellation/admission state of one real local setup, not producer coverage.
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SetupPhase {
+    Legacy = 0,
+    Staged = 1,
+    NavigationEntered = 2,
+    CanceledBeforeEntry = 3,
+    CanceledAfterEntry = 4,
+    Admitted = 5,
 }
 impl Default for TabActivity {
     fn default() -> Self {
@@ -107,10 +120,72 @@ impl Default for TabActivity {
             created: now.into(),
             used: now.into(),
             admitted: false.into(),
+            setup_phase: (SetupPhase::Legacy as u8).into(),
         }
     }
 }
 impl TabActivity {
+    fn local_birth() -> Self {
+        let activity = Self::default();
+        activity.setup_phase.store(
+            SetupPhase::Staged as u8,
+            std::sync::atomic::Ordering::Release,
+        );
+        activity
+    }
+    fn setup_phase(&self) -> SetupPhase {
+        use std::sync::atomic::Ordering;
+        match self.setup_phase.load(Ordering::Acquire) {
+            0 => SetupPhase::Legacy,
+            1 => SetupPhase::Staged,
+            2 => SetupPhase::NavigationEntered,
+            4 => SetupPhase::CanceledAfterEntry,
+            5 => SetupPhase::Admitted,
+            _ => SetupPhase::CanceledBeforeEntry,
+        }
+    }
+    fn cancel_birth(&self) {
+        use std::sync::atomic::Ordering;
+        let _ =
+            self.setup_phase
+                .try_update(Ordering::AcqRel, Ordering::Acquire, |phase| match phase {
+                    value if value == SetupPhase::Staged as u8 => {
+                        Some(SetupPhase::CanceledBeforeEntry as u8)
+                    }
+                    value if value == SetupPhase::NavigationEntered as u8 => {
+                        Some(SetupPhase::CanceledAfterEntry as u8)
+                    }
+                    _ => None,
+                });
+    }
+    fn begin_birth_navigation(&self) -> bool {
+        self.setup_phase
+            .compare_exchange(
+                SetupPhase::Staged as u8,
+                SetupPhase::NavigationEntered as u8,
+                std::sync::atomic::Ordering::AcqRel,
+                std::sync::atomic::Ordering::Acquire,
+            )
+            .is_ok()
+    }
+    fn admit_birth(&self) -> bool {
+        use std::sync::atomic::Ordering;
+        let admitted = self
+            .setup_phase
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |phase| {
+                if phase == SetupPhase::Staged as u8 || phase == SetupPhase::NavigationEntered as u8
+                {
+                    Some(SetupPhase::Admitted as u8)
+                } else {
+                    None
+                }
+            })
+            .is_ok();
+        if admitted {
+            self.admit();
+        }
+        admitted
+    }
     fn admit(&self) {
         use std::sync::atomic::Ordering;
         let now = crate::store::now_ms();
@@ -122,6 +197,301 @@ impl TabActivity {
 pub(crate) struct OpenPage<'a> {
     pub url: Option<&'a str>,
     pub owner: Option<&'a str>,
+}
+/// A newly created local target remains unavailable until its exact setup owner
+/// publishes it. Holding the setup guard prevents another setup from replacing
+/// the same profile/target during a canonical producer handoff. Dropping a lease
+/// retains the closing registry entry; it does not invent clean retirement.
+type TabRegistry = std::sync::Mutex<BTreeMap<(String, String), Tab>>;
+struct BirthNavigation {
+    tabs: std::sync::Weak<TabRegistry>,
+    key: (String, String),
+    tab: Tab,
+}
+impl BirthNavigation {
+    fn matches(&self, tabs: &BTreeMap<(String, String), Tab>) -> bool {
+        tabs.get(&self.key).is_some_and(|current| {
+            current.closing
+                && current.exact_tx.same_channel(&self.tab.exact_tx)
+                && current.target == self.tab.target
+                && current.session == self.tab.session
+                && std::sync::Arc::ptr_eq(&current.activity, &self.tab.activity)
+                && !*current.done.borrow()
+                && !*current.process_done.borrow()
+                && current
+                    .control
+                    .as_ref()
+                    .is_some_and(|control| !control.snapshot().closed)
+        })
+    }
+}
+impl write::Authority for BirthNavigation {
+    fn valid(&self) -> bool {
+        let Some(registry) = self.tabs.upgrade() else {
+            return false;
+        };
+        let tabs = registry.lock().unwrap();
+        self.matches(&tabs) && self.tab.activity.setup_phase() == SetupPhase::Staged
+    }
+    fn begin(&self) -> bool {
+        let Some(registry) = self.tabs.upgrade() else {
+            return false;
+        };
+        // This is the native writer entry, not a check before an await. The
+        // closing path takes this same registry lock before canceling the phase.
+        let tabs = registry.lock().unwrap();
+        self.matches(&tabs) && self.tab.activity.begin_birth_navigation()
+    }
+}
+struct BirthLease<'a> {
+    owner: &'a Browsers,
+    key: (String, String),
+    tab: Tab,
+    _setup: tokio::sync::MutexGuard<'a, ()>,
+}
+pub(crate) type BirthInstallFuture = std::pin::Pin<
+    Box<dyn std::future::Future<Output = Result<CanonicalBirthInstallation, Value>> + Send>,
+>;
+pub(crate) trait BirthInstaller: Send + Sync {
+    fn validate(&self) -> Result<(), Value>;
+    fn install(self: std::sync::Arc<Self>, page: native_owner::NativePage) -> BirthInstallFuture;
+}
+/// Issued from an actual worker handshake for the same physical NativePage.
+/// Event bindings alone never certify initial absence or complete Status fields.
+pub(crate) struct CanonicalBirthInstallation {
+    page: native_owner::NativePage,
+    bindings: crate::native_page_worker::birth_bindings::ProducerBindings,
+    bound: crate::native_page_worker::control::ControlledPage,
+    _retirement_gate: tokio::sync::OwnedRwLockReadGuard<()>,
+}
+impl CanonicalBirthInstallation {
+    pub(crate) async fn issued(
+        page: native_owner::NativePage,
+        bound: crate::native_page_worker::control::ControlledPage,
+        retirement_gate: tokio::sync::OwnedRwLockReadGuard<()>,
+    ) -> Result<Self, Value> {
+        let bindings = bound.birth_bindings();
+        if !bindings
+            .as_ref()
+            .is_some_and(|bindings| bindings.matches_target(page.target()))
+        {
+            let close = bound.retire_worker().await;
+            return Err(
+                json!({"message":"Canonical worker did not acknowledge actual producer bindings","reason":if close.worker_reaped && close.owner_grant_closed {"birth_bindings_unavailable"} else {"birth_cleanup_unknown"}}),
+            );
+        }
+        Ok(Self {
+            page,
+            bindings: bindings.expect("Actual binding was checked"),
+            bound,
+            _retirement_gate: retirement_gate,
+        })
+    }
+    async fn retire(&self) -> Result<(), Value> {
+        let close = self.bound.retire_worker().await;
+        if close.worker_reaped && close.owner_grant_closed {
+            Ok(())
+        } else {
+            Err(
+                json!({"message":"Canonical birth cleanup did not complete","reason":"birth_cleanup_unknown"}),
+            )
+        }
+    }
+}
+impl BirthLease<'_> {
+    async fn publish(self, url: Option<&str>) -> Result<(), Value> {
+        let configured = self.owner.birth_provider.lock().unwrap().clone();
+        let installed = if let Some(configured) = configured {
+            let result = async {
+                let installer = configured
+                    .upgrade()
+                    .ok_or_else(|| error("Canonical birth owner retired".into()))?;
+                // Retain this exact trusted installer through navigation/publication;
+                // dropping the external facade must not retire observers mid-birth.
+                let retained_installer = installer.clone();
+                let page = native_owner::capture_page(Page {
+                    key: self.key.clone(),
+                    tab: self.tab.clone(),
+                })?;
+                let installation = installer.install(page.clone()).await?;
+                if retained_installer.validate().is_err() {
+                    installation.retire().await?;
+                    return Err(error("Canonical birth owner is closing".into()));
+                }
+                if !page.same_owner(&installation.page)
+                    || !installation.bindings.matches_target(page.target())
+                    || !self.current()
+                {
+                    installation.retire().await?;
+                    return Err(error("Canonical birth changed before publication".into()));
+                }
+                Ok((installation, retained_installer))
+            }
+            .await;
+            match result {
+                Ok(installed) => Some(installed),
+                Err(cause) => {
+                    self.owner.rollback_setup(self.tab, false).await;
+                    return Err(cause);
+                }
+            }
+        } else {
+            None
+        };
+        let result = self
+            .publish_legacy(
+                url,
+                installed.as_ref().map(|(installation, _)| installation),
+            )
+            .await;
+        drop(installed);
+        result
+    }
+    fn current(&self) -> bool {
+        if !matches!(
+            self.tab.activity.setup_phase(),
+            SetupPhase::Staged | SetupPhase::NavigationEntered
+        ) || *self.tab.done.borrow()
+            || *self.tab.process_done.borrow()
+            || self
+                .tab
+                .control
+                .as_ref()
+                .is_none_or(|control| control.snapshot().closed)
+        {
+            return false;
+        }
+        self.owner
+            .tabs
+            .lock()
+            .unwrap()
+            .get(&self.key)
+            .is_some_and(|current| {
+                current.closing
+                    && current.tx.same_channel(&self.tab.tx)
+                    && current.exact_tx.same_channel(&self.tab.exact_tx)
+                    && current.target == self.tab.target
+                    && current.session == self.tab.session
+                    && std::sync::Arc::ptr_eq(&current.activity, &self.tab.activity)
+            })
+    }
+    /// Existing preview callers retain their legacy behavior until a trusted
+    /// canonical producer installer is configured. This path issues no Status
+    /// observation, initial-clear fact, worker receipt or producer-ready proof.
+    async fn navigate(&self, url: &str) -> Result<(), Value> {
+        let expires = tokio::time::Instant::now() + Duration::from_secs(6);
+        let authority = std::sync::Arc::new(BirthNavigation {
+            tabs: std::sync::Arc::downgrade(&self.owner.tabs),
+            key: self.key.clone(),
+            tab: self.tab.clone(),
+        });
+        let permit = write::Permit::leased(
+            expires,
+            self.tab.done.clone(),
+            authority,
+            self.tab.exact_wake.clone(),
+        );
+        let _cancel = permit.hold();
+        let (reply, result) = oneshot::channel();
+        let params =
+            crate::native_page_worker::JavaScriptJson::parse(json!({"url":url}).to_string())
+                .map_err(|_| error("Invalid author navigation".into()))?;
+        tokio::time::timeout_at(
+            expires,
+            self.tab.exact_tx.send(exact::Request {
+                method: "Page.navigate".into(),
+                observer: None,
+                params,
+                session: self.tab.session.clone(),
+                expires,
+                reply,
+                permit,
+            }),
+        )
+        .await
+        .map_err(|_| error("Browser command timed out".into()))?
+        .map_err(|_| error("Browser session ended".into()))?;
+        // Actual owner cancellation after writer entry never drops this wait.
+        // The original command settles; the canceled phase still forbids admit.
+        let packet = tokio::time::timeout_at(expires, result).await
+            .map_err(|_| error("Browser command timed out".into()))?
+            .map_err(|_| error("Browser session ended".into()))?
+            .map_err(|cause| json!({"message":"Owned birth navigation did not settle","reason":format!("{cause:?}")}))?;
+        if matches!(
+            packet.payload(),
+            Some(crate::native_page_worker::cdp::Payload::Result(_))
+        ) {
+            Ok(())
+        } else {
+            Err(error("Browser rejected author navigation".into()))
+        }
+    }
+    async fn rollback_birth(
+        self,
+        installed: Option<&CanonicalBirthInstallation>,
+        cause: Value,
+    ) -> Result<(), Value> {
+        // Close canonical sessions while the raw actor is still available.
+        // This direct Worker receipt never waits on the slot retirement gate.
+        let retirement = if let Some(installed) = installed {
+            installed.retire().await
+        } else {
+            Ok(())
+        };
+        self.owner.rollback_setup(self.tab, false).await;
+        retirement.and(Err(cause))
+    }
+    async fn publish_legacy(
+        mut self,
+        url: Option<&str>,
+        installed: Option<&CanonicalBirthInstallation>,
+    ) -> Result<(), Value> {
+        if !self.current() {
+            return self
+                .rollback_birth(
+                    installed,
+                    error("Browser setup was canceled before publication".into()),
+                )
+                .await;
+        }
+        if let Some(url) = url {
+            if let Err(cause) = self.navigate(url).await {
+                return self.rollback_birth(installed, cause).await;
+            }
+        }
+        let admitted = {
+            let mut tabs = self.owner.tabs.lock().unwrap();
+            let current = tabs.get(&self.key).is_some_and(|current| {
+                current.closing
+                    && current.exact_tx.same_channel(&self.tab.exact_tx)
+                    && current.target == self.tab.target
+                    && current.session == self.tab.session
+                    && std::sync::Arc::ptr_eq(&current.activity, &self.tab.activity)
+                    && !*current.done.borrow()
+                    && !*current.process_done.borrow()
+                    && current
+                        .control
+                        .as_ref()
+                        .is_some_and(|control| !control.snapshot().closed)
+            });
+            if current && self.tab.activity.admit_birth() {
+                self.tab.closing = false;
+                tabs.insert(self.key.clone(), self.tab.clone());
+                true
+            } else {
+                false
+            }
+        };
+        if !admitted {
+            return self
+                .rollback_birth(
+                    installed,
+                    error("Canceled browser setup was not admitted".into()),
+                )
+                .await;
+        }
+        Ok(())
+    }
 }
 /// Immutable transport identity captured before submitting controlled work.
 #[derive(Clone)]
@@ -541,6 +911,12 @@ impl Drop for Viewer {
     }
 }
 impl Browsers {
+    pub(crate) fn install_birth_provider(&self, provider: std::sync::Weak<dyn BirthInstaller>) {
+        let mut configured = self.birth_provider.lock().unwrap();
+        if configured.is_none() {
+            *configured = Some(provider);
+        }
+    }
     fn lifetime_catalog(&self) -> Vec<(Page, crate::browser_lifetime::Tab)> {
         use std::sync::atomic::Ordering;
         let viewers = self.viewers.lock().unwrap();
@@ -809,6 +1185,9 @@ impl Browsers {
                 if !matches(key, tab) {
                     return None;
                 }
+                // Serialize cancellation with the writer's source-owned begin
+                // gate under this same actual target registry lock.
+                tab.activity.cancel_birth();
                 tab.closing = true;
                 Some(tab.clone())
             })
@@ -961,7 +1340,23 @@ impl Browsers {
         page: OpenPage<'_>,
     ) -> Result<(), Value> {
         let OpenPage { url, owner } = page;
-        let _setup = self.setup.lock().await;
+        self.stage_owned_birth(root, registry, thread, tab, profile, owner)
+            .await?
+            .publish(url)
+            .await
+    }
+    /// Retain the exact new blank target and setup ownership before author input.
+    /// This lease is a physical handoff, not a certificate of observed absence.
+    async fn stage_owned_birth<'a>(
+        &'a self,
+        root: &Path,
+        registry: &std::sync::Arc<crate::agent_scope::Registry>,
+        thread: &str,
+        tab: &str,
+        profile: &str,
+        owner: Option<&str>,
+    ) -> Result<BirthLease<'a>, Value> {
+        let setup = self.setup.lock().await;
         let tabs = {
             let mut tabs = self.tabs.lock().unwrap();
             tabs.retain(|_, t| {
@@ -1016,7 +1411,7 @@ impl Browsers {
         browser.control = Some(crate::preview_control::runtime::Control::new(
             owner.map(str::to_owned),
         ));
-        browser.activity = Default::default();
+        browser.activity = std::sync::Arc::new(TabActivity::local_birth());
         browser.keyboard = Default::default();
         browser.closing = true;
         // A canceled setup retains a non-usable cleanup receipt, including before target discovery.
@@ -1117,15 +1512,6 @@ impl Browsers {
                 json!({"discover":true}),
             )
             .await?;
-            if let Some(url) = url {
-                request_in(
-                    &browser.tx,
-                    "Page.navigate",
-                    json!({"url":url}),
-                    browser.session.clone(),
-                )
-                .await?;
-            }
             Ok(())
         }
         .await;
@@ -1133,10 +1519,18 @@ impl Browsers {
             self.rollback_setup(browser, false).await;
             return Err(error(cause));
         }
-        browser.closing = false;
-        browser.activity.admit();
-        self.tabs.lock().unwrap().insert(key, browser);
-        Ok(())
+        // Keep the registered session in the closing entry for the owner-only
+        // canonical producer handoff. Ordinary page()/Status capture stays shut.
+        self.tabs
+            .lock()
+            .unwrap()
+            .insert(key.clone(), browser.clone());
+        Ok(BirthLease {
+            owner: self,
+            key,
+            tab: browser,
+            _setup: setup,
+        })
     }
     /// Adopt a frontend-owned page without navigating or creating another target.
     /// Unowned adoption helper for the actual private actor fixtures.

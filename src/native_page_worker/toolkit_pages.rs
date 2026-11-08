@@ -141,6 +141,7 @@ struct Slot {
     page: NativePage,
     ready: watch::Receiver<Option<Result<ControlledPage, Fault>>>,
     closed: watch::Receiver<Option<Result<(), Fault>>>,
+    birth_retirement: Arc<tokio::sync::RwLock<()>>,
 }
 impl Slot {
     async fn ready(&self) -> Result<ControlledPage, Fault> {
@@ -173,6 +174,26 @@ struct Handle {
     closing: AtomicBool,
     stop: watch::Sender<bool>,
 }
+impl crate::server_browser::BirthInstaller for Handle {
+    fn validate(&self) -> Result<(), Value> {
+        if self.closing.load(Ordering::Acquire) || *self.stop.borrow() {
+            Err(json!({"message":"Canonical birth owner is closing","reason":"birth_owner_closed"}))
+        } else {
+            Ok(())
+        }
+    }
+    fn install(self: Arc<Self>, page: NativePage) -> crate::server_browser::BirthInstallFuture {
+        Box::pin(async move {
+            let factory = OwnedPageFactory(self);
+            let slot = factory.slot(page.clone(), StartPurpose::LocalBirth).map_err(|cause| json!({"message":"Canonical birth worker refused","cause":format!("{cause:?}")}))?;
+            let retirement_gate = slot.birth_retirement.clone().read_owned().await;
+            crate::server_browser::BirthInstaller::validate(factory.0.as_ref())?;
+            let bound = slot.ready().await.map_err(|cause| json!({"message":"Canonical birth worker did not initialize","cause":format!("{cause:?}")}))?;
+            crate::server_browser::CanonicalBirthInstallation::issued(page, bound, retirement_gate)
+                .await
+        })
+    }
+}
 impl Drop for Handle {
     fn drop(&mut self) {
         self.closing.store(true, Ordering::Release);
@@ -187,15 +208,23 @@ impl Drop for Handle {
 pub struct OwnedPageFactory(Arc<Handle>);
 impl OwnedPageFactory {
     pub fn new(owner: &Arc<State>, installation: PageInstallation) -> Self {
-        Self(Arc::new(Handle {
+        let handle = Arc::new(Handle {
             owner: Arc::downgrade(owner),
             installation,
             slots: Mutex::new(Vec::new()),
             closing: AtomicBool::new(false),
             stop: watch::channel(false).0,
-        }))
+        });
+        let installer: Arc<dyn crate::server_browser::BirthInstaller> = handle.clone();
+        owner
+            .streams
+            .p2
+            .preview
+            .browser
+            .install_birth_provider(Arc::downgrade(&installer));
+        Self(handle)
     }
-    fn slot(&self, page: NativePage) -> Result<Arc<Slot>, Fault> {
+    fn slot(&self, page: NativePage, purpose: StartPurpose) -> Result<Arc<Slot>, Fault> {
         let mut slots = self.0.slots.lock().unwrap();
         if self.0.closing.load(Ordering::Acquire) {
             return Err(Fault::Closed);
@@ -205,7 +234,9 @@ impl OwnedPageFactory {
         }
         let (ready, readiness) = watch::channel(None);
         let (closed, completion) = watch::channel(None);
+        let birth_retirement = Arc::new(tokio::sync::RwLock::new(()));
         let slot = Arc::new(Slot {
+            birth_retirement: birth_retirement.clone(),
             page: page.clone(),
             ready: readiness,
             closed: completion,
@@ -220,7 +251,7 @@ impl OwnedPageFactory {
             let result = if stopped {
                 Err(Fault::Closed)
             } else {
-                start(page, installation).await
+                start(page, installation, purpose).await
             };
             match result {
                 Ok(bound) => {
@@ -238,6 +269,9 @@ impl OwnedPageFactory {
                             break;
                         }
                     }
+                    // A configured birth retains these actual observers until
+                    // its first author navigation/publication finishes or aborts.
+                    let _retirement = birth_retirement.write().await;
                     closed.send_replace(Some(clean_close(bound.retire_worker().await)));
                 }
                 Err(cause) => {
@@ -314,7 +348,7 @@ impl OwnedPageFactory {
                 "The physical browser tab changed before admission.",
             ));
         }
-        let slot = match self.slot(page.clone()) {
+        let slot = match self.slot(page.clone(), StartPurpose::Existing) {
             Ok(slot) => slot,
             Err(cause) => return ordinary_fault(cause),
         };
@@ -359,8 +393,31 @@ impl OwnedPageFactory {
     }
 }
 
-async fn start(page: NativePage, installation: PageInstallation) -> Result<ControlledPage, Fault> {
+#[derive(Clone, Copy)]
+enum StartPurpose {
+    Existing,
+    LocalBirth,
+}
+async fn start(
+    page: NativePage,
+    installation: PageInstallation,
+    purpose: StartPurpose,
+) -> Result<ControlledPage, Fault> {
     let mut specification = installation.worker()?;
+    if matches!(purpose, StartPurpose::LocalBirth) {
+        let configuration = specification
+            .configuration
+            .as_object_mut()
+            .ok_or(Fault::InvalidInstallation)?;
+        if configuration.contains_key("canonicalBirth") {
+            return Err(Fault::InvalidInstallation);
+        }
+        configuration.insert(
+            "canonicalBirth".into(),
+            json!({"kind":"new-local-target","targetId":page.target()}),
+        );
+    }
+
     let gateway = Arc::new(page.gateway().await.map_err(|_| Fault::Revoked)?);
     if let Err(cause) = gateway.configure_worker(&mut specification) {
         let close = gateway.shutdown().await?;

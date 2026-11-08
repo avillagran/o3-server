@@ -765,52 +765,58 @@ impl NativeInvocation {
 impl crate::preview::Manager {
     /// Trusted owner capture. No public RPC accepts this target or actor handle.
     pub fn capture_native_page(&self, thread: &str, tab: &str) -> Result<NativePage, Value> {
-        let page = self.browser.page(thread, tab)?;
-        let target = page.tab.target.clone().ok_or_else(|| fault("target"))?;
-        let registry = page.tab.events.as_ref().ok_or_else(|| fault("events"))?;
-        let registry_weak = Arc::downgrade(registry);
-        let mut registry = registry.lock().unwrap();
-        if let Some(owner) = registry.native.get(&target) {
-            if owner.thread != thread || owner.tab != tab {
-                return Err(fault("thread_scope"));
-            }
-            let grants = owner.grants.lock().unwrap();
-            if !grants.closing() {
-                return Ok(NativePage {
-                    inner: owner.clone(),
-                });
-            }
-            if !grants.clean() {
-                return Err(fault("previous_grant_cleanup_unknown"));
-            }
-            // Explicit clean retirement permits a new toolkit binding on the
-            // same visible target. Ordinary handoffs never retire this owner.
-        }
-        let owner = Arc::new(Owner {
-            target: target.clone(),
-            borrowed_session: page
-                .tab
-                .session
-                .clone()
-                .ok_or_else(|| fault("borrowed_session"))?,
-            thread: thread.into(),
-            tab: tab.into(),
-            registry: registry_weak,
-            receipts: Default::default(),
-            revoked: tokio::sync::watch::channel(false).0,
-            gateway_bound: std::sync::atomic::AtomicBool::new(false),
-            actor: page.tab.exact_tx.downgrade(),
-            done: page.tab.done.clone(),
-            control: page.control(),
-            wake: page.tab.exact_wake.clone(),
-            changed: Default::default(),
-            grants: SyncMutex::new(Grants::captured(target.clone()).map_err(|_| fault("target"))?),
-            events: tokio::sync::broadcast::channel(64).0,
-            close: Mutex::new(()),
-        });
-        registry.native.insert(target, owner.clone());
-        Ok(NativePage { inner: owner })
+        capture_page(self.browser.page(thread, tab)?)
     }
+}
+/// Only actual Page handles created by the owner or its sealed birth lease
+/// enter here. Public lookup continues to reject closing/unready targets.
+pub(super) fn capture_page(page: Page) -> Result<NativePage, Value> {
+    let thread = page.key.0.as_str();
+    let tab = page.key.1.as_str();
+    let target = page.tab.target.clone().ok_or_else(|| fault("target"))?;
+    let registry = page.tab.events.as_ref().ok_or_else(|| fault("events"))?;
+    let registry_weak = Arc::downgrade(registry);
+    let mut registry = registry.lock().unwrap();
+    if let Some(owner) = registry.native.get(&target) {
+        if owner.thread != thread || owner.tab != tab {
+            return Err(fault("thread_scope"));
+        }
+        let grants = owner.grants.lock().unwrap();
+        if !grants.closing() {
+            return Ok(NativePage {
+                inner: owner.clone(),
+            });
+        }
+        if !grants.clean() {
+            return Err(fault("previous_grant_cleanup_unknown"));
+        }
+        // Explicit clean retirement permits a new toolkit binding on the
+        // same visible target. Ordinary handoffs never retire this owner.
+    }
+    let owner = Arc::new(Owner {
+        target: target.clone(),
+        borrowed_session: page
+            .tab
+            .session
+            .clone()
+            .ok_or_else(|| fault("borrowed_session"))?,
+        thread: thread.into(),
+        tab: tab.into(),
+        registry: registry_weak,
+        receipts: Default::default(),
+        revoked: tokio::sync::watch::channel(false).0,
+        gateway_bound: std::sync::atomic::AtomicBool::new(false),
+        actor: page.tab.exact_tx.downgrade(),
+        done: page.tab.done.clone(),
+        control: page.control(),
+        wake: page.tab.exact_wake.clone(),
+        changed: Default::default(),
+        grants: SyncMutex::new(Grants::captured(target.clone()).map_err(|_| fault("target"))?),
+        events: tokio::sync::broadcast::channel(64).0,
+        close: Mutex::new(()),
+    });
+    registry.native.insert(target, owner.clone());
+    Ok(NativePage { inner: owner })
 }
 /// Consume only events for newly owned sessions. All other actor traffic keeps
 /// its existing scalar decoder and legacy tab lifecycle consumer.

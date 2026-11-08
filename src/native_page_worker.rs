@@ -1,5 +1,6 @@
 //! Inactive native Page process supervisor. Only a trusted owner can supply a
 //! scoped grant; this module is not an MCP endpoint or a browser launcher.
+pub(crate) mod birth_bindings;
 pub mod cdp;
 pub use crate::server_browser::exact::CapturedEvaluation;
 /// Trusted owner handles for native Page sessions; no public MCP dispatch is installed.
@@ -418,6 +419,7 @@ struct Handle {
     retire: mpsc::Sender<Fault>,
     stop: watch::Sender<bool>,
     closed: watch::Receiver<Option<CloseReceipt>>,
+    producer_bindings: Option<birth_bindings::ProducerBindings>,
 }
 impl Drop for Handle {
     fn drop(&mut self) {
@@ -429,6 +431,9 @@ pub struct Worker {
     handle: Arc<Handle>,
 }
 impl Worker {
+    pub(crate) fn birth_bindings(&self) -> Option<birth_bindings::ProducerBindings> {
+        self.handle.producer_bindings.clone()
+    }
     pub async fn spawn(spec: WorkerSpec, owner: Arc<dyn GrantOwner>) -> Result<Self, CloseReceipt> {
         Self::spawn_owned(spec, OwnedRuntime::Page(owner)).await
     }
@@ -534,10 +539,11 @@ impl Worker {
             nonce,
         }));
         match ready.await {
-            Ok(Ok(())) => Ok(Self {
+            Ok(Ok(producer_bindings)) => Ok(Self {
                 handle: Arc::new(Handle {
                     cancel_wake,
                     toolkit_owner,
+                    producer_bindings,
                     calls,
                     controls,
                     retire,
@@ -1030,7 +1036,7 @@ struct Running {
     retire: mpsc::Receiver<Fault>,
     stop: watch::Receiver<bool>,
     closed: watch::Sender<Option<CloseReceipt>>,
-    ready: oneshot::Sender<Result<(), Fault>>,
+    ready: oneshot::Sender<Result<Option<birth_bindings::ProducerBindings>, Fault>>,
     spec: WorkerSpec,
     owner: Arc<OwnedRuntime>,
     bootstrap: Value,
@@ -1109,7 +1115,7 @@ async fn run(running: Running) {
     let handshake = if initially_revoked {
         Err(Fault::Revoked)
     } else {
-        tokio::select! {packet=inbound.recv()=>match packet{Some(Ok(v))if v.envelope==json!({"kind":"ready","protocol":1,"nonce":nonce})=>Ok(()),Some(Err(e))=>Err(e),_=>Err(Fault::Protocol)},_=tokio::time::sleep(spec.startup_deadline)=>Err(Fault::Deadline),_=stop.changed()=>Err(Fault::Closed),_=revoked.changed()=>Err(Fault::Revoked),Some(error)=faults.recv()=>Err(error),Some(error)=stderr_fail.recv()=>Err(error),_=child.wait()=>Err(Fault::Exited)}
+        tokio::select! {packet=inbound.recv()=>match packet{Some(Ok(v))=>birth_bindings::ProducerBindings::handshake(&v.envelope,&nonce,if matches!(owner.as_ref(),OwnedRuntime::Page(_)){Some(owner.id())}else{None}),Some(Err(e))=>Err(e),_=>Err(Fault::Protocol)},_=tokio::time::sleep(spec.startup_deadline)=>Err(Fault::Deadline),_=stop.changed()=>Err(Fault::Closed),_=revoked.changed()=>Err(Fault::Revoked),Some(error)=faults.recv()=>Err(error),Some(error)=stderr_fail.recv()=>Err(error),_=child.wait()=>Err(Fault::Exited)}
     };
     let mut pending = BTreeMap::<u64, Pending>::new();
     let mut next = 0u64;
@@ -1117,11 +1123,12 @@ async fn run(running: Running) {
     let mut owner_pending: Option<(u64, OwnerCall)> = None;
     let mut last_service = 0;
     let mut services = tokio::task::JoinSet::new();
+    let producer_bindings = handshake.as_ref().ok().cloned().flatten();
     let cause = if let Err(error) = handshake {
         let _ = ready.send(Err(error));
         error
     } else {
-        let _ = ready.send(Ok(()));
+        let _ = ready.send(Ok(producer_bindings));
         loop {
             let deadline = pending
                 .values()

@@ -29,6 +29,9 @@ pub enum Error {
     Transport(Fault),
 }
 impl ControlledPage {
+    pub(crate) fn birth_bindings(&self) -> Option<super::birth_bindings::ProducerBindings> {
+        self.0.worker.birth_bindings()
+    }
     pub fn new(worker: Worker, control: Control) -> Self {
         let (stop, mut stopping) = watch::channel(false);
         let state = Arc::new(State {
