@@ -17,9 +17,15 @@ try {
 "#;
 impl NodeRuntime {
     /// No path, code or module authority is accepted from a request.
-    pub(crate) fn record_thread_open(self: &Arc<Self>, directory: &Path, input: Value) -> io::Result<Value> {
-        let node=self.clone();let directory=directory.to_owned();
-        std::thread::scope(|scope| scope.spawn(move || {
+    pub(crate) fn record_thread_open(
+        self: &Arc<Self>,
+        directory: &Path,
+        input: Value,
+    ) -> io::Result<Value> {
+        let node = self.clone();
+        let directory = directory.to_owned();
+        std::thread::scope(|scope| {
+            scope.spawn(move || {
             let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build()?;
             runtime.block_on(async move {
                 if !node.file.is_executable()? {return Err(io::Error::other("Unadmitted search runtime"));}
@@ -56,6 +62,7 @@ impl NodeRuntime {
                 if cleanup!= (Cleanup::Confirmed {graceful:true}) {return Err(io::Error::other(format!("Search owner cleanup unconfirmed: result_ok={}, cleanup={cleanup:?}",result.is_ok())));}
                 result
             })
-        }).join().map_err(|_|io::Error::other("Search owner failed"))?)
+        }).join().map_err(|_|io::Error::other("Search owner failed"))?
+        })
     }
 }

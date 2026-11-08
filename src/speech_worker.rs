@@ -1,8 +1,8 @@
 //! Owned native speech transport. This module does not enable a speech service.
 mod frame;
-mod thread_open;
 mod process;
 mod seal;
+mod thread_open;
 pub use process::Cleanup;
 pub use seal::{EnginePackage, SealedFile};
 

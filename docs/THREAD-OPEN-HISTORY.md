@@ -41,9 +41,53 @@ computation and again in the commit transaction. Receipt replay does not repeat
 an open. Full thread records and shell projection clones persist `opens`,
 including `picks`; shared T3 export preserves the complete thread payload.
 
-Validation is pending: focused original-algorithm, actual transaction/replay,
-readiness/resource ownership, SDK round-trip, and client visit tests must run in
-private rootless containers. Source checkpoints are not runtime acceptance.
+Private server component validation passed for implementation
+`23113f07c85525ee3a56e37ab4d06cf2110dbb2a`. Publication applies only
+repository-default rustfmt layout/import ordering to its eight changed Rust
+files and adds this validation record; those cosmetic successors are not
+represented as a new independent runtime observation:
+
+- Strict minimal and default all-target checks and a normal default library
+  build passed using the actual Cargo dependency graph.
+- A RAM-linked genuine RPC/SQLite fixture passed original V8 open-history,
+  server-clock event timing, receipt replay, deduplication, picked-query folding,
+  and shell persistence checks through the existing sealed Node factory.
+- All eight synthetic Node-admission regressions passed, including reuse of the
+  already-created successful version-probe capsule.
+- The earlier watermark-only case passed canonical offset handling, forward-only
+  read state, and unchanged activity time. It was not repeated after the
+  independent open-worker correction.
+
+The first actual opened-history run failed honestly because the writer remained
+open while Node's synchronous request decoder awaited EOF. Tokio pipe shutdown
+does not close that descriptor. The correction drops the request writer before
+awaiting its response. The same two-second operation/close bounds and required
+normal owned cleanup remain unchanged. The failed receipt remains separate;
+no expected failure is counted as a passing feature.
+
+The accepted runtime retained one actual container identity to terminal and
+verified all 24 reserved executable aliases, 1,070 source inputs and 1,335
+actual normal-graph artifacts unchanged. Source and target were read-only;
+only the test fixture was linked into private RAM. No Cargo/runtime copying,
+profile installation or production executable build occurred during runtime.
+
+This establishes the tested server component only. Client visit integration,
+normal release packaging execution, public CI and full nightly parity remain
+separate acceptance requirements. The accompanying SDK has its own 129-test,
+C ABI and Kotlin/JNI validation and public green CI; those do not substitute
+for server/client runtime proof.
+
+Local evidence hashes:
+
+| Evidence | SHA-256 |
+| --- | --- |
+| Canonical formatter token/literal equivalence | `ac630dc91b871d417a695d193c34f0aad626d6c0945b2ff0e7ad71e8bec4d988` |
+| Build3 actual strict/default/normal result | `29e20690bfe4a233c5f3a3051e9dd00b459736a3c1bf62f452bc897e23283f05` |
+| Preserved first opened-history failure | `652ab0243c372b40004db4e766d83705c5c9695773be8e18528d5acf8d642fa0` |
+| Corrected actual history and admission runtime | `684c2744b6bebe3fbcb0985e0f77d4315babd4bb7fe0aba7a58b6524a11e690d` |
+
+These receipts are retained under `/var/tmp/o3-build/thread-open-4380-server-*`;
+public source checkpoints alone do not establish runtime acceptance.
 
 ## Building a normal user package
 
