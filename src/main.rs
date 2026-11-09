@@ -14,7 +14,7 @@ Commands:
   serve                     Run the server (default)
   import --from PATH        Import a T3 statev2.sqlite, read-only
   auth session issue        Issue a bearer session
-  auth mcp issue            Issue a dedicated MCP credential (--access read-only by default)
+  auth mcp issue            Issue a dedicated MCP credential (--access read-only by default; --bot-id binds it to one bot mailbox)
   auth session list         List sessions
   auth session revoke ID    Revoke a session
   auth pairing create       Create a one-time pairing credential
@@ -153,10 +153,11 @@ fn main() -> std::io::Result<()> {
             && args.get(2).map(String::as_str) == Some("issue")
         {
             let token = state
-                .issue_mcp_session(
+                .issue_mcp_session_for(
                     option(&args, "--access").unwrap_or("read-only"),
                     ttl(option(&args, "--ttl").unwrap_or("30d"))?,
                     option(&args, "--label").unwrap_or("MCP client"),
+                    option(&args, "--bot-id"),
                 )
                 .map_err(std::io::Error::other)?;
             if args.iter().any(|s| s == "--token-only") {

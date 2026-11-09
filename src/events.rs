@@ -58,6 +58,7 @@ pub fn initialize(db: &Connection) -> Result<()> {
     crate::native_recovery::initialize(db)?;
     crate::provider_switch::initialize(db)?;
     crate::context_transfer::initialize(db)?;
+    crate::bot_inbox::initialize(db)?;
     crate::threadq::initialize(db)?;
     crate::t3_shared::initialize(db)
 }

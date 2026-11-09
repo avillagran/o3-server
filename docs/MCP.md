@@ -739,3 +739,63 @@ Validation: full suites 403 default / 400 no-default, 22 opt-ins ignored each; f
 affected suites 151 / 151 (6 ignored each), strict all-target Clippy both modes, fmt,
 generated compatibility and nightly monitor (9 tests) pass. The eight-turn native opt-in
 also passed explicitly.
+
+
+## Bot inbox (external bots)
+
+MCP is pull-only, so an agent running in a thread cannot start a conversation with an
+external MCP client (for example a ChatGPT connector). Using an ordinary thread as a mailbox
+does not work either: `t3_thread_send` starts a turn in that thread's agent. The bot inbox
+is a durable, per-bot mailbox that is independent of provider turns.
+
+Tools (all accept `environmentId` like the rest of the catalog):
+
+- `t3_bot_inbox_post {botId, body, correlationId?, threadId?, clientRequestId?}`: leave a
+  `to_bot` message. It never starts a turn. Inside a thread the message is attributed to
+  that thread (a native caller cannot post as another thread, and needs a live turn);
+  external operators pass `threadId`.
+- `t3_bot_inbox_wait {botId?, afterCursor?, timeoutMs?, limit?}`: long-poll for undelivered
+  `to_bot` messages. It returns as soon as one exists, otherwise `timedOut: true` after
+  `timeoutMs` (default 25 000, at most 50 000, so it fits connector timeouts). Messages stay
+  pending until acknowledged, so delivery is at-least-once; pass the previous `nextCursor`
+  as `afterCursor` to skip messages already seen.
+- `t3_bot_inbox_read {botId?, afterCursor?, direction?, pendingOnly?, limit?}`: read without
+  waiting, oldest first.
+- `t3_bot_inbox_ack {botId?, messageIds}`: acknowledge `to_bot` messages.
+- `t3_bot_inbox_reply {botId?, messageId, body, mode?, clientRequestId?}`: records a
+  `from_bot` message, acknowledges the original and delivers `[Reply from bot … ·
+  correlationId: …]` plus the body to the originating thread through the same path as
+  `t3_thread_send`, so it wakes that thread's agent. Reuse `clientRequestId` to make a
+  retry deliver once. A bot may also answer with plain `t3_thread_send` to the message's
+  `threadId`; that path is not recorded in the mailbox.
+
+Messages are `{cursor, id, botId, direction, threadId, environmentId, body, correlationId,
+replyTo, createdAt, ackedAt}`. The cursor is a global monotonic integer that is never reused,
+so it orders every mailbox. Storage is the `bot_inbox` table in the server database and
+survives restarts.
+
+### Access
+
+- Native agent credentials may post, and read only messages of their own thread. They cannot
+  wait, acknowledge or reply.
+- A credential issued with `o3-server auth mcp issue --access <level> --bot-id dot` is bound
+  to exactly that mailbox: other `botId` values are denied, omitting `botId` selects its own,
+  and it cannot post. Its `--access` level still governs the other tools and the runtime
+  ceiling of threads it may reply to (replying to a `full-access` thread needs a
+  `full-access` credential). `read-only` is enough to wait, read and acknowledge but not to
+  reply.
+- Other external credentials need `orchestration:operate`, pass `botId` explicitly and may
+  address any mailbox; treat them as trusted, like the credential an OmaBridge gateway holds.
+- Revocation or expiry ends an open long poll at its next wake-up (at most five seconds).
+
+### Limits
+
+`botId` is 1–64 characters of `a-z`, `0-9`, `.`, `_`, `-`, starting with a letter or digit.
+`body` is at most 20 000 UTF-16 units; `correlationId` and `clientRequestId` at most 256.
+Per mailbox: 200 undelivered requests (then `inbox_full`) and 1 000 retained rows (the
+oldest acknowledged or bot-authored rows go first; undelivered requests are never trimmed);
+acknowledged rows expire after 14 days; at most 64 mailboxes; four concurrent long polls per
+server. Bodies are never logged.
+
+The OmaBridge MCP gateway publishes its own fixed `t3_*` tool contract, so these tools are not
+visible through `https://…/mcp` until the gateway maps them.
