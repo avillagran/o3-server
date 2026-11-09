@@ -986,6 +986,29 @@ pub(crate) fn dispatch_prepared(
                 run["providerThreadId"].as_str().unwrap_or(""),
             )
             .ok();
+            // A repeated Stop can arrive while the first interrupt is still settling
+            // the provider turn. Like T3, accept it while that turn runs; once it
+            // settles the run is terminal and Stop is rejected below.
+            let settling = run["status"] == "interrupted"
+                && root.is_some()
+                && owner.is_some()
+                && (s.active.lock().unwrap().contains_key(rid)
+                    || list(&tx, "providerTurns", Some(tid), 10000)?
+                        .iter()
+                        .any(|turn| {
+                            turn["runAttemptId"] == run["activeAttemptId"]
+                                && turn["status"] == "running"
+                        }));
+            if settling {
+                let result = json!({"sequence":sequence(&tx)?});
+                tx.execute(
+                    "INSERT INTO receipts VALUES(?,?)",
+                    params![cid, result.to_string()],
+                )
+                .map_err(|e| e.to_string())?;
+                tx.commit().map_err(|e| e.to_string())?;
+                return Ok(result);
+            }
             if root.is_none()
                 || owner.is_none()
                 || matches!(
@@ -2360,5 +2383,66 @@ mod upstream_4093_tests {
             "completed"
         );
         assert_eq!(get(&db, "nodes", "r").unwrap()["status"], "interrupted");
+    }
+}
+
+#[cfg(test)]
+mod repeated_stop_tests {
+    use super::*;
+    use std::sync::Arc;
+    #[test]
+    fn repeated_stop_is_accepted_only_while_the_interrupted_turn_settles() {
+        let dir = std::env::temp_dir().join(format!("o3-stop-{}", random_id().unwrap()));
+        let s = Arc::new(State::open(&dir).unwrap());
+        mutate_project(&s,&json!({"type":"project.create","commandId":"p","projectId":"p","title":"p","workspaceRoot":dir})).unwrap();
+        dispatch(&s,&json!({"type":"thread.create","commandId":"t","threadId":"t","projectId":"p","title":"t","modelSelection":{"instanceId":"codex","model":"test"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
+        {
+            let db = s.db.lock().unwrap();
+            put(
+                &db,
+                "nodes",
+                "r",
+                "t",
+                &json!({"id":"r","runId":"r","providerTurnId":"turn"}),
+            )
+            .unwrap();
+            put(
+                &db,
+                "providerThreads",
+                "owner",
+                "t",
+                &json!({"id":"owner","status":"active"}),
+            )
+            .unwrap();
+            put(&db,"runs","r","t",&json!({"id":"r","threadId":"t","status":"interrupted","rootNodeId":"r","providerThreadId":"owner","activeAttemptId":"a"})).unwrap();
+            put(
+                &db,
+                "providerTurns",
+                "turn",
+                "t",
+                &json!({"id":"turn","runAttemptId":"a","status":"running"}),
+            )
+            .unwrap();
+        }
+        let stop = |id: &str| {
+            dispatch(
+                &s,
+                &json!({"type":"run.interrupt","commandId":id,"threadId":"t","runId":"r"}),
+            )
+        };
+        stop("while-settling").unwrap();
+        assert_eq!(
+            get(&s.db.lock().unwrap(), "runs", "r").unwrap()["status"],
+            "interrupted"
+        );
+        put(
+            &s.db.lock().unwrap(),
+            "providerTurns",
+            "turn",
+            "t",
+            &json!({"id":"turn","runAttemptId":"a","status":"interrupted"}),
+        )
+        .unwrap();
+        assert_eq!(stop("settled").unwrap_err(), "Run r is not interruptible.");
     }
 }
