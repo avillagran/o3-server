@@ -126,7 +126,11 @@ async fn loopback_clients_are_not_limited_to_sixteen_connections() {
         .await
         .unwrap()
         .unwrap();
-    assert!(response.starts_with(b"HTTP/1.1 200"), "{}", String::from_utf8_lossy(&response));
+    assert!(
+        response.starts_with(b"HTTP/1.1 200"),
+        "{}",
+        String::from_utf8_lossy(&response)
+    );
     drop(held);
     server.abort();
     let _ = server.await;
