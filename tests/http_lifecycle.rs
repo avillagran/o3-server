@@ -103,3 +103,32 @@ async fn connection_limit_releases_permits_when_clients_disconnect() {
     drop(state);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[tokio::test]
+async fn loopback_clients_are_not_limited_to_sixteen_connections() {
+    let root = std::env::temp_dir().join(format!(
+        "o3-loopback-{}",
+        o3_server::store::random_id().unwrap()
+    ));
+    let state = Arc::new(o3_server::store::State::open(&root).unwrap());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(o3_server::serve(listener, state));
+    // The local client and the bridge relay share 127.0.0.1 and keep many sockets open.
+    let mut held = Vec::new();
+    for _ in 0..24 {
+        held.push(tokio::net::TcpStream::connect(address).await.unwrap());
+    }
+    let mut client = tokio::net::TcpStream::connect(address).await.unwrap();
+    client.write_all(b"GET /.well-known/t3/environment HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").await.unwrap();
+    let mut response = Vec::new();
+    tokio::time::timeout(Duration::from_secs(5), client.read_to_end(&mut response))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(response.starts_with(b"HTTP/1.1 200"), "{}", String::from_utf8_lossy(&response));
+    drop(held);
+    server.abort();
+    let _ = server.await;
+    std::fs::remove_dir_all(root).unwrap();
+}
