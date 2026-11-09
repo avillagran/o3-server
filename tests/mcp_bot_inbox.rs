@@ -160,6 +160,12 @@ fn post_wakes_a_waiting_bot_and_its_reply_reaches_the_thread_exactly_once() {
         .collect();
     assert_eq!(directions, [json!("to_bot"), json!("from_bot")]);
     assert_eq!(log["messages"][1]["replyTo"], posted["messageId"]);
+    let one = operator.ok(
+        "t3_bot_inbox_read",
+        json!({"botId":"dot","messageId":posted["messageId"]}),
+    );
+    assert_eq!(one["messages"].as_array().unwrap().len(), 1);
+    assert_eq!(one["messages"][0]["threadId"], "t");
     assert!(log["messages"][0]["ackedAt"].is_string());
 
     // Explicit acknowledgement for requests that need no answer.

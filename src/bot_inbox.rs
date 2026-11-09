@@ -95,8 +95,8 @@ pub(crate) fn catalog() -> Vec<Value> {
         ),
         definition(
             "t3_bot_inbox_read",
-            "Read mailbox messages without waiting, oldest first. direction filters to_bot, from_bot or any (default). Inside a thread only that thread's messages are visible.",
-            json!({"botId":bot_id(),"afterCursor":cursor,"direction":{"type":"string","enum":["to_bot","from_bot","any"]},"pendingOnly":{"type":"boolean"},"limit":limit}),
+            "Read mailbox messages without waiting, oldest first; messageId selects exactly one. direction filters to_bot, from_bot or any (default). Inside a thread only that thread's messages are visible.",
+            json!({"botId":bot_id(),"messageId":string(256),"afterCursor":cursor,"direction":{"type":"string","enum":["to_bot","from_bot","any"]},"pendingOnly":{"type":"boolean"},"limit":limit}),
             &[],
         ),
         write(
@@ -211,28 +211,31 @@ fn message(r: &rusqlite::Row) -> rusqlite::Result<Value> {
     }))
 }
 
-fn fetch(
-    db: &Connection,
-    bot: &str,
-    direction: Option<&str>,
-    thread: Option<&str>,
+#[derive(Default)]
+struct Filter<'a> {
+    direction: Option<&'a str>,
+    thread: Option<&'a str>,
     after: i64,
     pending_only: bool,
+    id: Option<&'a str>,
     limit: usize,
-) -> Result<Vec<Value>, Value> {
+}
+
+fn fetch(db: &Connection, bot: &str, f: &Filter) -> Result<Vec<Value>, Value> {
     let sql = format!(
-        "SELECT {COLUMNS} FROM bot_inbox WHERE bot_id=?1 AND seq>?2 AND (?3 IS NULL OR direction=?3) AND (?4 IS NULL OR thread_id=?4) AND (?5=0 OR (direction='to_bot' AND acked_at IS NULL)) ORDER BY seq LIMIT ?6"
+        "SELECT {COLUMNS} FROM bot_inbox WHERE bot_id=?1 AND seq>?2 AND (?3 IS NULL OR direction=?3) AND (?4 IS NULL OR thread_id=?4) AND (?5=0 OR (direction='to_bot' AND acked_at IS NULL)) AND (?6 IS NULL OR id=?6) ORDER BY seq LIMIT ?7"
     );
     let mut q = db.prepare(&sql).map_err(internal)?;
     let rows = q
         .query_map(
             params![
                 bot,
-                after,
-                direction,
-                thread,
-                pending_only as i64,
-                limit as i64
+                f.after,
+                f.direction,
+                f.thread,
+                f.pending_only as i64,
+                f.id,
+                f.limit as i64
             ],
             message,
         )
@@ -396,11 +399,14 @@ fn read(s: &State, caller: &InboxCaller, bot: &str, p: &Value) -> Reply {
     let rows = fetch(
         &s.reader.lock().unwrap(),
         bot,
-        direction,
-        thread,
-        after,
-        p["pendingOnly"].as_bool().unwrap_or(false),
-        limit(p),
+        &Filter {
+            direction,
+            thread,
+            after,
+            pending_only: p["pendingOnly"].as_bool().unwrap_or(false),
+            id: p["messageId"].as_str().map(str::trim),
+            limit: limit(p),
+        },
     )?;
     let mut out = collect(rows, after);
     out["botId"] = json!(bot);
@@ -519,11 +525,13 @@ async fn wait(
                 fetch(
                     &s.reader.lock().unwrap(),
                     &bot,
-                    Some("to_bot"),
-                    None,
-                    after,
-                    true,
-                    limit,
+                    &Filter {
+                        direction: Some("to_bot"),
+                        after,
+                        pending_only: true,
+                        limit,
+                        ..Filter::default()
+                    },
                 )
             })
             .await
@@ -711,11 +719,12 @@ mod tests {
         let pending = fetch(
             &state.reader.lock().unwrap(),
             "dot",
-            Some("to_bot"),
-            None,
-            0,
-            true,
-            10,
+            &Filter {
+                direction: Some("to_bot"),
+                pending_only: true,
+                limit: 10,
+                ..Filter::default()
+            },
         )
         .unwrap();
         assert_eq!(pending.len(), 1);
