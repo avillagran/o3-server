@@ -708,6 +708,30 @@ fn queued_dispatch_waits_for_completion_and_steering_reuses_active_run() {
 }
 
 #[test]
+fn steering_that_cannot_reach_the_adapter_is_queued_instead_of_rejected() {
+    let (_, c) = connected(true);
+    create(&c, "t1");
+    c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"send","messageId":"first","threadId":"t1","text":"first","attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
+    let first = wait_status(&c, "waiting")["projection"]["runs"][0]["id"].clone();
+    // More steers than the control channel holds while the adapter is blocked on an approval.
+    for i in 0..12 {
+        let steer = json!({"type":"message.dispatch","commandId":format!("steer-{i}"),"messageId":format!("steer-{i}"),"threadId":"t1","text":format!("STEER {i}"),"attachments":[],"dispatchMode":{"type":"steer_active","targetRunId":first}});
+        c.rpc("orchestration.dispatchCommand", steer).unwrap();
+    }
+    // A steer aimed at a run that is no longer live becomes an ordinary message.
+    c.rpc("orchestration.dispatchCommand",json!({"type":"runtime-request.respond","commandId":"approve-first","threadId":"t1","requestId":"approval-1","decision":"accept"})).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    while snap(&c, "t1")["projection"]["runs"][0]["status"] != "completed" {
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"late","messageId":"late","threadId":"t1","text":"late","attachments":[],"dispatchMode":{"type":"steer_active","targetRunId":first}})).unwrap();
+    let runs = snap(&c, "t1")["projection"]["runs"].clone();
+    assert_eq!(runs.as_array().unwrap().len(), 2, "{runs}");
+    assert_eq!(runs[1]["userMessageId"], "late", "{runs}");
+}
+
+#[test]
 fn idle_model_and_permission_mode_updates_are_durable() {
     let (_, c) = connected(false);
     create(&c, "t1");
