@@ -1228,6 +1228,11 @@ impl Provider for Providers {
             if !excluded.iter().any(|id| id == "codex") {
                 self.codex.probe().await?;
             }
+            if !excluded.iter().any(|id| id == "claudeAgent") {
+                if let Some(claude) = &self.claude {
+                    let _ = claude.refresh().await;
+                }
+            }
             Ok(())
         })
     }

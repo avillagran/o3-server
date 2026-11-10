@@ -69,7 +69,19 @@ pub struct ClaudeProvider {
     environment: Vec<(String, String)>,
     launch_args: Vec<String>,
     metadata: Mutex<Value>,
+    /// Models the CLI reported in its last `initialize` response.
+    reported_models: Mutex<Vec<Value>>,
+    /// Binary fingerprint and time of the last model discovery.
+    models_probe: Mutex<Option<(BinaryFingerprint, std::time::Instant)>>,
     sessions: std::sync::Arc<Mutex<HashMap<String, Session>>>,
+}
+type BinaryFingerprint = (PathBuf, u64, Option<std::time::SystemTime>);
+/// Rediscover models at least this often even when the binary is unchanged.
+const MODEL_DISCOVERY_TTL: std::time::Duration = std::time::Duration::from_secs(6 * 60 * 60);
+fn fingerprint(binary: &std::path::Path) -> Option<BinaryFingerprint> {
+    let real = std::fs::canonicalize(binary).ok()?;
+    let meta = std::fs::metadata(&real).ok()?;
+    Some((real, meta.len(), meta.modified().ok()))
 }
 struct Session {
     _agent_scope: Option<crate::agent_scope::Lease>,
@@ -127,8 +139,31 @@ impl ClaudeProvider {
             environment: Vec::new(),
             launch_args: Vec::new(),
             metadata: Mutex::new(json!({})),
+            reported_models: Mutex::new(Vec::new()),
+            models_probe: Mutex::new(None),
             sessions: std::sync::Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+    fn reported(&self) -> Vec<Value> {
+        self.reported_models.lock().unwrap().clone()
+    }
+    /// Ask the CLI for its models again when its binary changed (an update) or the last
+    /// discovery is older than [`MODEL_DISCOVERY_TTL`].
+    async fn refresh_models(&self) -> Result<(), String> {
+        let current = fingerprint(&self.binary);
+        let stale = match &*self.models_probe.lock().unwrap() {
+            Some((seen, at)) => {
+                Some(seen) != current.as_ref() || at.elapsed() >= MODEL_DISCOVERY_TTL
+            }
+            None => true,
+        };
+        if !stale {
+            return Ok(());
+        }
+        let cwd = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir);
+        Provider::discover(self, cwd).await
     }
     pub fn with_idle_timeout(mut self, timeout: std::time::Duration) -> Self {
         self.idle_timeout = timeout;
@@ -198,7 +233,7 @@ impl ClaudeProvider {
     }
     async fn spawn(&self, input: &RunInput) -> Result<Session, String> {
         let (model, effort, mut settings, _) =
-            crate::claude_models::compile(&input.model_selection)?;
+            crate::claude_models::compile(&input.model_selection, &self.reported())?;
         let mut cmd = Command::new(&self.binary);
         apply_environment(&mut cmd, &self.environment);
         cmd.env(
@@ -336,6 +371,10 @@ impl ClaudeProvider {
                     }
                     let response = &v["response"]["response"];
                     let mut metadata = self.metadata.lock().unwrap();
+                    if let Some(models) = response["models"].as_array().filter(|m| !m.is_empty()) {
+                        metadata["models"] = crate::claude_models::models(models);
+                        *self.reported_models.lock().unwrap() = models.clone();
+                    }
                     if let Some(commands) = response["commands"].as_array() {
                         metadata["slashCommands"] = json!(commands.iter().map(|c| {
                             let mut command = json!({"name":c["name"],"description":c["description"]});
@@ -473,7 +512,7 @@ impl ClaudeProvider {
                 {
                     s.control(
                         "model",
-                        json!({"subtype":"set_model","model":crate::claude_models::compile(&input.model_selection)?.0}),
+                        json!({"subtype":"set_model","model":crate::claude_models::compile(&input.model_selection, &self.reported())?.0}),
                     )
                     .await?;
                     s.control(
@@ -536,7 +575,7 @@ impl ClaudeProvider {
             }
             Err(error) => return Err(error),
         };
-        if crate::claude_models::compile(&input.model_selection)?.3 {
+        if crate::claude_models::compile(&input.model_selection, &self.reported())?.3 {
             let text = content[0]["text"].as_str().unwrap().to_owned();
             content[0]["text"] = json!(format!("{text}\n\nultrathink"));
         }
@@ -918,10 +957,18 @@ impl Provider for ClaudeProvider {
                 attachments: json!([]),
                 context: None,
             };
+            let probe = fingerprint(&self.binary);
             let mut session = self.spawn(&input).await?;
             session.stop().await;
+            if let Some(probe) = probe {
+                *self.models_probe.lock().unwrap() = Some((probe, std::time::Instant::now()));
+            }
             Ok(())
         })
+    }
+
+    fn refresh<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(self.refresh_models())
     }
 
     fn poll_usage<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
@@ -1166,7 +1213,7 @@ fn credentials_present() -> bool {
 pub fn config(installed: bool) -> Value {
     static CHECKED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     let checked = CHECKED.get_or_init(|| crate::store::iso(crate::store::now_ms()));
-    json!({"instanceId":"claudeAgent","driver":"claudeAgent","displayName":"Claude Code","enabled":installed,"installed":installed,"version":null,"status":if !installed {"disabled"}else if credentials_present() {"ready"}else{"warning"},"auth":{"status":"unknown"},"checkedAt":checked,"message":"Direct CLI adapter; authentication checked at execution. Native-session continuation after restart; no inference reattachment.","slashCommands":[{"name":"compact","description":"Compact conversation history"}],"skills":[],"slashCommandsPending":true,"models":crate::claude_models::models(),"supportedRuntimeModes":["approval-required","auto-accept-edits","full-access"],"supportsConversationRollback":false,"nativeSessions":{"canList":false,"canLoad":false,"canResume":true}})
+    json!({"instanceId":"claudeAgent","driver":"claudeAgent","displayName":"Claude Code","enabled":installed,"installed":installed,"version":null,"status":if !installed {"disabled"}else if credentials_present() {"ready"}else{"warning"},"auth":{"status":"unknown"},"checkedAt":checked,"message":"Direct CLI adapter; authentication checked at execution. Native-session continuation after restart; no inference reattachment.","slashCommands":[{"name":"compact","description":"Compact conversation history"}],"skills":[],"slashCommandsPending":true,"models":crate::claude_models::models(&[]),"supportedRuntimeModes":["approval-required","auto-accept-edits","full-access"],"supportsConversationRollback":false,"nativeSessions":{"canList":false,"canLoad":false,"canResume":true}})
 }
 
 fn usage_limits(info: &Value) -> Value {
@@ -1355,6 +1402,72 @@ mod tests {
             .unwrap();
         assert!(provider.sessions.lock().unwrap().is_empty());
         assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists());
+    }
+    #[tokio::test]
+    async fn refresh_lists_models_the_cli_reports_and_rediscovers_after_an_update() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir()
+            .join(crate::store::random_id().unwrap())
+            .join("model-discovery");
+        std::fs::create_dir_all(&dir).unwrap();
+        let binary = dir.join("claude");
+        let script = |model: &str| {
+            format!(
+                r#"#!/usr/bin/env python3
+import json, os, sys
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "spawns"), "a") as f:
+    f.write("x")
+for line in sys.stdin:
+    request = json.loads(line)
+    if request.get("request_id") == "initialize":
+        models = [{{"value": "fable", "resolvedModel": "{model}", "displayName": "Fable Next",
+                   "supportsEffort": True, "supportedEffortLevels": ["low", "medium", "high"]}}]
+        print(json.dumps({{"type": "control_response", "response": {{"subtype": "success",
+              "request_id": "initialize", "response": {{"models": models}}}}}}), flush=True)
+"#
+            )
+        };
+        let install = |model: &str| {
+            std::fs::write(&binary, script(model)).unwrap();
+            std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755)).unwrap();
+        };
+        let spawns = || {
+            std::fs::read_to_string(dir.join("spawns"))
+                .unwrap_or_default()
+                .len()
+        };
+        let listed = |provider: &ClaudeProvider| -> Vec<String> {
+            provider.config()[0]["models"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|m| m["slug"].as_str().unwrap().to_owned())
+                .collect()
+        };
+        install("claude-fable-9-1");
+        let provider = ClaudeProvider::new(binary.clone());
+        assert!(!listed(&provider).contains(&"claude-fable-9-1".to_owned()));
+        provider.refresh().await.unwrap();
+        assert_eq!(spawns(), 1);
+        assert_eq!(listed(&provider)[0], "claude-fable-9-1");
+        let selection = json!({"model":"fable","options":[{"id":"effort","value":"high"}]});
+        assert_eq!(
+            crate::claude_models::compile(&selection, &provider.reported())
+                .unwrap()
+                .0,
+            "claude-fable-9-1"
+        );
+        // An unchanged binary is not spawned again on every health refresh.
+        provider.refresh().await.unwrap();
+        assert_eq!(spawns(), 1);
+        // Updating the CLI changes the binary, so the next refresh asks it again.
+        install("claude-fable-9-20");
+        provider.refresh().await.unwrap();
+        assert_eq!(spawns(), 2);
+        assert_eq!(listed(&provider)[0], "claude-fable-9-20");
+        assert!(!listed(&provider).contains(&"claude-fable-9-1".to_owned()));
+        provider.shutdown().await;
+        std::fs::remove_dir_all(dir.parent().unwrap()).unwrap();
     }
     #[tokio::test]
     async fn text_generation_cannot_remove_a_colliding_conversation_session() {
