@@ -815,6 +815,25 @@ pub(crate) fn dispatch_prepared(
                 )
                 .to_string());
             }
+            // A steer that cannot reach the live adapter right now (the run is not
+            // running yet, or its control channel is full or not registered) is
+            // queued after the active run instead of being rejected.
+            let mut steer_permit = None;
+            if resolved["dispatchMode"]["type"] == "steer_active" {
+                let sender = resolved["dispatchMode"]["targetRunId"]
+                    .as_str()
+                    .filter(|rid| {
+                        get(&tx, "runs", rid).is_ok_and(|run| {
+                            run["threadId"] == tid
+                                && matches!(run["status"].as_str(), Some("running" | "waiting"))
+                        })
+                    })
+                    .and_then(|rid| s.active.lock().unwrap().get(rid).cloned());
+                steer_permit = sender.and_then(|sender| sender.try_reserve_owned().ok());
+                if steer_permit.is_none() {
+                    resolved["dispatchMode"] = json!({"type":"queue_after_active"});
+                }
+            }
             let c = &resolved;
             if c["dispatchMode"]["type"] == "restart_active" {
                 let rid = c["dispatchMode"]["targetRunId"]
@@ -882,16 +901,7 @@ pub(crate) fn dispatch_prepared(
                     c.get("context"),
                     crate::provider_input::driver(s, &run["providerInstanceId"])? != "codex",
                 )?;
-                let sender = s
-                    .active
-                    .lock()
-                    .unwrap()
-                    .get(rid)
-                    .cloned()
-                    .ok_or("provider control unavailable")?;
-                let permit = sender
-                    .try_reserve_owned()
-                    .map_err(|_| "provider control busy")?;
+                let permit = steer_permit.take().ok_or("provider control unavailable")?;
                 let mid = c["messageId"].as_str().ok_or("messageId required")?;
                 let m = json!({"id":mid,"threadId":tid,"runId":rid,"nodeId":rid,"role":"user","text":text,"attachments":c["attachments"],"context":c["context"],"streaming":false,"createdBy":if authority.is_some(){"agent"}else{"user"},"creationSource":if authority.is_some(){"mcp"}else{"web"},"createdAt":at,"updatedAt":at});
                 let mut m = m;
