@@ -17,12 +17,15 @@ const BODY_LIMIT: usize = 1024 * 1024;
 pub(crate) struct Sessions {
     sessions: Mutex<HashMap<String, Session>>,
     calls: Arc<tokio::sync::Semaphore>,
+    /// Open bot inbox long polls; they hold a request slot for up to a minute.
+    pub(crate) bot_waits: Arc<tokio::sync::Semaphore>,
 }
 impl Default for Sessions {
     fn default() -> Self {
         Self {
             sessions: Mutex::new(HashMap::new()),
             calls: Arc::new(tokio::sync::Semaphore::new(8)),
+            bot_waits: Arc::new(tokio::sync::Semaphore::new(4)),
         }
     }
 }
@@ -354,6 +357,12 @@ pub(crate) async fn handle(state: Arc<State>, req: Request<Incoming>) -> Respons
                 let _permit = permit;
                 match authority.arguments(&s, &name, args) {
                     Ok(args) => crate::mcp_projects::call(s, authority, &name, args).await,
+                    Err(e) => Err(e),
+                }
+            } else if crate::bot_inbox::handles(&name) {
+                let _permit = permit;
+                match authority.arguments(&s, &name, args) {
+                    Ok(args) => crate::bot_inbox::call(s, authority, &name, args).await,
                     Err(e) => Err(e),
                 }
             } else if name == "t3_thread_wait" {

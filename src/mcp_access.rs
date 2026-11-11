@@ -6,6 +6,16 @@ use crate::{
 };
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
+/// How a caller may use the bot inbox tools; see `crate::bot_inbox`.
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) enum InboxCaller {
+    /// An agent in this thread: may post as the thread and read that thread's messages.
+    Native(String),
+    /// A credential issued with `--bot-id`: confined to that mailbox.
+    Bot(String),
+    /// An unbound external credential that holds `orchestration:operate`.
+    Operator,
+}
 #[derive(Clone)]
 pub(crate) struct Authority {
     pub session_id: String,
@@ -96,6 +106,39 @@ impl Authority {
             self.check(db, &json!({"type":"launch.replay","threadId":tid}))?;
         }
         Ok(())
+    }
+    pub(crate) fn inbox_caller(&self, db: &Connection, write: bool) -> Result<InboxCaller, Value> {
+        self.session(db, write)?;
+        if let Some(scope) = &self.native {
+            return Ok(InboxCaller::Native(scope.thread.clone()));
+        }
+        let invalid = || {
+            failure(
+                "capability_denied",
+                "The MCP credential is no longer valid.",
+            )
+        };
+        let (scopes, client): (String, String) = db
+            .query_row(
+                "SELECT scopes,client FROM auth_sessions WHERE session_id=? AND revoked_at IS NULL AND expires_at>?",
+                params![self.session_id, now_ms()],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .map_err(|_| invalid())?;
+        let client: Value = serde_json::from_str(&client).map_err(|_| invalid())?;
+        if let Some(bot) = client["botId"].as_str() {
+            return Ok(InboxCaller::Bot(bot.to_owned()));
+        }
+        if scopes
+            .split_whitespace()
+            .any(|s| s == "orchestration:operate")
+        {
+            return Ok(InboxCaller::Operator);
+        }
+        Err(failure(
+            "capability_denied",
+            "Bot inbox access needs a bot-bound or operating MCP credential.",
+        ))
     }
     pub(crate) fn browser(&self) -> Option<crate::agent_browser::Access> {
         self.native

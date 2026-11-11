@@ -41,6 +41,7 @@ pub(crate) fn catalog() -> Vec<Value> {
     tools.extend(crate::mcp_mutations::catalog());
     tools.extend(crate::mcp_projects::catalog());
     tools.extend(crate::mcp_attachments::catalog());
+    tools.extend(crate::bot_inbox::catalog());
     tools
 }
 pub(crate) fn prepare_arguments(name: &str, mut args: Value) -> Value {

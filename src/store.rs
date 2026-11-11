@@ -404,6 +404,19 @@ impl State {
         self.issue_session_client(subject, scopes, ttl, &json!({"client_label":label}))
     }
     pub fn issue_mcp_session(&self, access: &str, ttl: i64, label: &str) -> Result<String, String> {
+        self.issue_mcp_session_for(access, ttl, label, None)
+    }
+    /// With `bot_id`, the credential may use only that bot's mailbox (`crate::bot_inbox`).
+    pub fn issue_mcp_session_for(
+        &self,
+        access: &str,
+        ttl: i64,
+        label: &str,
+        bot_id: Option<&str>,
+    ) -> Result<String, String> {
+        if bot_id.is_some_and(|id| !crate::bot_inbox::valid_bot_id(id)) {
+            return Err("invalid bot id: use 1-64 of a-z, 0-9, '.', '_' or '-', starting with a letter or digit".into());
+        }
         let scopes: &[&str] = match access {
             "read-only" => &["orchestration:read"],
             "approval-required" | "auto-accept-edits" | "auto" => {
@@ -418,7 +431,7 @@ impl State {
             _ => return Err("invalid MCP access level".into()),
         };
         self.issue_session_client("mcp-client", &scopes.iter().map(|s|(*s).to_owned()).collect::<Vec<_>>(),ttl,
-            &json!({"client_label":label,"runtimeModeCeiling":if access=="read-only"{Value::Null}else{json!(access)}}))
+            &json!({"client_label":label,"runtimeModeCeiling":if access=="read-only"{Value::Null}else{json!(access)},"botId":bot_id}))
     }
     fn issue_session_client(
         &self,
