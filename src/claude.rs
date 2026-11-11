@@ -1001,12 +1001,9 @@ impl Provider for ClaudeProvider {
             .await
             .map_err(|_| "Claude quota request failed")?;
             let mut windows = Vec::new();
-            for (key, kind, label) in [
-                ("five_hour", "session", "Session"),
-                ("seven_day", "weekly", "Weekly"),
-            ] {
+            for (key, kind, label, mins) in WINDOWS {
                 if let Some(used) = usage[key]["utilization"].as_f64() {
-                    windows.push(json!({"id":key,"kind":kind,"label":label,"usedPercent":used.clamp(0.,100.),"resetsAt":usage[key]["resets_at"]}));
+                    windows.push(json!({"id":key,"kind":kind,"label":label,"usedPercent":used.clamp(0.,100.),"resetsAt":usage[key]["resets_at"],"windowDurationMins":mins}));
                 }
             }
             self.metadata.lock().unwrap()["usageLimits"] =
@@ -1216,17 +1213,21 @@ pub fn config(installed: bool) -> Value {
     json!({"instanceId":"claudeAgent","driver":"claudeAgent","displayName":"Claude Code","enabled":installed,"installed":installed,"version":null,"status":if !installed {"disabled"}else if credentials_present() {"ready"}else{"warning"},"auth":{"status":"unknown"},"checkedAt":checked,"message":"Direct CLI adapter; authentication checked at execution. Native-session continuation after restart; no inference reattachment.","slashCommands":[{"name":"compact","description":"Compact conversation history"}],"skills":[],"slashCommandsPending":true,"models":crate::claude_models::models(&[]),"supportedRuntimeModes":["approval-required","auto-accept-edits","full-access"],"supportsConversationRollback":false,"nativeSessions":{"canList":false,"canLoad":false,"canResume":true}})
 }
 
+/// Claude's quota windows have fixed lengths; clients need the length to place the
+/// expected-pace marker on the usage bar.
+pub(crate) const WINDOWS: [(&str, &str, &str, u64); 2] = [
+    ("five_hour", "session", "Session", 300),
+    ("seven_day", "weekly", "Weekly", 10080),
+];
+
 fn usage_limits(info: &Value) -> Value {
     let mut windows = Vec::new();
-    for (native, id, label) in [
-        ("five_hour", "session", "Session"),
-        ("seven_day", "weekly", "Weekly"),
-    ] {
+    for (native, id, label, mins) in WINDOWS {
         let w = &info["unifiedWindows"][native];
         let Some(used) = w["utilization"].as_f64().filter(|v| v.is_finite()) else {
             continue;
         };
-        let mut window = json!({"id":native,"kind":id,"label":label,"usedPercent":(used*100.0).clamp(0.0,100.0)});
+        let mut window = json!({"id":native,"kind":id,"label":label,"usedPercent":(used*100.0).clamp(0.0,100.0),"windowDurationMins":mins});
         if let Some(reset) = w["resetsAt"]
             .as_i64()
             .and_then(|s| s.checked_mul(1000))
@@ -1354,6 +1355,17 @@ mod tests {
     }
 
     use super::*;
+    #[test]
+    fn quota_windows_carry_their_length_for_the_pace_marker() {
+        let limits = usage_limits(&json!({"unifiedWindows":{
+            "five_hour":{"utilization":0.4,"resetsAt":1_800_000_000},
+            "seven_day":{"utilization":0.76,"resetsAt":1_800_000_000}
+        }}));
+        let windows = limits["windows"].as_array().unwrap();
+        assert_eq!(windows[0]["windowDurationMins"], 300);
+        assert_eq!(windows[1]["windowDurationMins"], 10080);
+        assert_eq!(windows[1]["usedPercent"], 76.0);
+    }
     fn fixtures(name: &str) -> Vec<Value> {
         let text = match name {
             "permission" => include_str!("../tests/fixtures/claude/permission.jsonl"),
