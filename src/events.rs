@@ -884,7 +884,7 @@ pub(crate) fn dispatch_prepared(
                 let rid = c["dispatchMode"]["targetRunId"]
                     .as_str()
                     .ok_or("targetRunId required")?;
-                let run = get(&tx, "runs", rid)?;
+                let mut run = get(&tx, "runs", rid)?;
                 if run["threadId"] != tid
                     || !matches!(run["status"].as_str(), Some("running" | "waiting"))
                 {
@@ -923,6 +923,7 @@ pub(crate) fn dispatch_prepared(
                     &json!({"position":item["ordinal"],"visibility":"local","sourceThreadId":tid,"sourceItemId":item["id"],"item":item}),
                 )?;
                 let seq = append(&tx, tid, "turn-item.updated", item, &t)?;
+                crate::provider::begin_assistant_segment(&tx, tid, rid, &t, &mut run)?;
                 let result = json!({"sequence":seq});
                 crate::outbox::stage(&tx, c)?;
                 tx.execute(

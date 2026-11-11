@@ -708,6 +708,51 @@ fn queued_dispatch_waits_for_completion_and_steering_reuses_active_run() {
 }
 
 #[test]
+fn a_steer_reply_is_a_new_assistant_message_after_the_steer() {
+    let (_, c) = connected(true);
+    create(&c, "t1");
+    c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"send","messageId":"first","threadId":"t1","text":"first","attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
+    let run = wait_status(&c, "waiting")["projection"]["runs"][0]["id"].clone();
+    c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"steer","messageId":"steer","threadId":"t1","text":"STEERING","attachments":[],"dispatchMode":{"type":"steer_active","targetRunId":run}})).unwrap();
+    // The scripted adapter answers the steer, then completes on the approval.
+    c.rpc("orchestration.dispatchCommand",json!({"type":"runtime-request.respond","commandId":"approve","threadId":"t1","requestId":"approval-1","decision":"accept"})).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    let messages = loop {
+        let s = snap(&c, "t1");
+        if s["projection"]["runs"][0]["status"] == "completed" {
+            break s["projection"]["messages"].as_array().unwrap().clone();
+        }
+        assert!(std::time::Instant::now() < deadline, "{s}");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    };
+    let roles: Vec<_> = messages
+        .iter()
+        .map(|m| {
+            format!(
+                "{}:{}",
+                m["role"].as_str().unwrap(),
+                m["text"].as_str().unwrap()
+            )
+        })
+        .collect();
+    assert_eq!(
+        roles,
+        [
+            "user:first",
+            "assistant:scripted response",
+            "user:STEERING",
+            "assistant:STEERING"
+        ],
+        "{messages:?}"
+    );
+    assert!(
+        messages.iter().all(|m| m["streaming"] == false),
+        "{messages:?}"
+    );
+    assert_ne!(messages[1]["id"], messages[3]["id"]);
+}
+
+#[test]
 fn steering_that_cannot_reach_the_adapter_is_queued_instead_of_rejected() {
     let (_, c) = connected(true);
     create(&c, "t1");

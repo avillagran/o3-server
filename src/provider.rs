@@ -624,6 +624,23 @@ pub(crate) fn start(
                 event
             };
             if let ProviderEvent::TextDelta(delta) = event {
+                if assistant_segment_pending(&s, &rid) {
+                    if !buffered.is_empty()
+                        && persist_attempt(
+                            &s,
+                            &tid,
+                            &rid,
+                            attempt.as_deref(),
+                            ProviderEvent::TextDelta(std::mem::take(&mut buffered)),
+                        )
+                        .is_err()
+                    {
+                        break;
+                    }
+                    if activate_assistant_segment(&s, &tid, &rid).is_err() {
+                        break;
+                    }
+                }
                 if buffered.len().saturating_add(delta.len()) > 1024 * 1024 {
                     failure = Some("assistant message exceeds 1 MiB".into());
                     break;
@@ -1019,19 +1036,28 @@ pub(crate) fn persist_attempt(
             message["providerThreadId"] = run["providerThreadId"].clone();
             message["providerTurnId"] = run["codexProviderTurnId"].clone();
             let mut text = message["text"].as_str().unwrap_or("").to_owned();
-            if text.len().saturating_add(delta.len()) > 1024 * 1024 {
-                return Err("assistant message exceeds 1 MiB".into());
+            // Adapters separate assistant text blocks with a paragraph break;
+            // a message never starts with one.
+            let delta = if text.is_empty() {
+                delta.trim_start_matches('\n').to_owned()
+            } else {
+                delta
+            };
+            if !delta.is_empty() {
+                if text.len().saturating_add(delta.len()) > 1024 * 1024 {
+                    return Err("assistant message exceeds 1 MiB".into());
+                }
+                text.push_str(&delta);
+                if text.len() > 1024 * 1024 {
+                    return Err("assistant message exceeds 1 MiB".into());
+                }
+                message["text"] = json!(text);
+                message["updatedAt"] = json!(at);
+                put(&tx, "messages", &mid, tid, &message)?;
+                append(&tx, tid, "message.updated", message.clone(), &thread)?;
+                let item = message_item(&tx, tid, &message)?;
+                append(&tx, tid, "turn-item.updated", item, &thread)?;
             }
-            text.push_str(&delta);
-            if text.len() > 1024 * 1024 {
-                return Err("assistant message exceeds 1 MiB".into());
-            }
-            message["text"] = json!(text);
-            message["updatedAt"] = json!(at);
-            put(&tx, "messages", &mid, tid, &message)?;
-            append(&tx, tid, "message.updated", message.clone(), &thread)?;
-            let item = message_item(&tx, tid, &message)?;
-            append(&tx, tid, "turn-item.updated", item, &thread)?;
         }
         ProviderEvent::ApprovalRequest {
             request_id,
@@ -1119,8 +1145,11 @@ pub(crate) fn persist_attempt(
     Ok(())
 }
 
+/// Text an adapter emits between two assistant text blocks.
+pub(crate) const TEXT_BLOCK_BREAK: &str = "\n\n";
+
 fn assistant_message_id(run: &serde_json::Value, rid: &str) -> String {
-    if let Some(turn) = run["codexGoalMessageSuffix"].as_str() {
+    let base = if let Some(turn) = run["codexGoalMessageSuffix"].as_str() {
         format!("assistant-{rid}-goal-{turn}")
     } else if run["rootNodeId"].as_str().is_some_and(|root| root != rid) {
         format!(
@@ -1129,7 +1158,58 @@ fn assistant_message_id(run: &serde_json::Value, rid: &str) -> String {
         )
     } else {
         format!("assistant-{rid}")
+    };
+    match run["assistantSegment"].as_u64() {
+        Some(segment) if segment > 0 => format!("{base}-s{segment}"),
+        _ => base,
     }
+}
+
+/// A steer delivered into an active run starts a new assistant message, so the
+/// reply appears after the steer instead of extending the message above it.
+/// The switch happens in the supervisor at the first text after the steer, once
+/// text buffered before it has been written to the previous message.
+pub(crate) fn begin_assistant_segment(
+    db: &rusqlite::Connection,
+    tid: &str,
+    rid: &str,
+    thread: &serde_json::Value,
+    run: &mut serde_json::Value,
+) -> Result<(), String> {
+    use crate::events::{append, put};
+    run["assistantSegmentPending"] = serde_json::json!(true);
+    put(db, "runs", rid, tid, run)?;
+    append(db, tid, "run.updated", run.clone(), thread)?;
+    Ok(())
+}
+
+fn assistant_segment_pending(s: &crate::store::State, rid: &str) -> bool {
+    crate::events::get(&s.db.lock().unwrap(), "runs", rid)
+        .is_ok_and(|run| run["assistantSegmentPending"] == true)
+}
+
+fn activate_assistant_segment(s: &crate::store::State, tid: &str, rid: &str) -> Result<(), String> {
+    use crate::events::{append, get, put};
+    use serde_json::json;
+    let mut db = s.db.lock().unwrap();
+    let tx = db.transaction().map_err(|e| e.to_string())?;
+    let thread = get(&tx, "thread", tid)?;
+    let mut run = get(&tx, "runs", rid)?;
+    if run["assistantSegmentPending"] != true {
+        return Ok(());
+    }
+    let at = crate::store::iso(crate::store::now_ms());
+    finish_assistant_message(&tx, tid, rid, &thread, &run, &at)?;
+    run["assistantSegment"] = json!(run["assistantSegment"].as_u64().unwrap_or(0) + 1);
+    if let Some(fields) = run.as_object_mut() {
+        fields.remove("assistantSegmentPending");
+    }
+    put(&tx, "runs", rid, tid, &run)?;
+    append(&tx, tid, "run.updated", run, &thread)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    drop(db);
+    s.notify();
+    Ok(())
 }
 
 pub(crate) fn finish_assistant_message(

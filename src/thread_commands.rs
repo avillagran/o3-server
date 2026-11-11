@@ -521,7 +521,7 @@ fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outco
                 .ok_or("queued message missing")?
                 .to_owned();
             let active = string(c, "targetRunId")?.to_owned();
-            let run = get(tx, "runs", &active)?;
+            let mut run = get(tx, "runs", &active)?;
             if run["threadId"] != tid
                 || !matches!(run["status"].as_str(), Some("running" | "waiting"))
             {
@@ -557,6 +557,7 @@ fn apply(s: &Arc<State>, tx: &Connection, c: &Value, kind: &str) -> Result<Outco
             let mut item = message_item(tx, tid, &message)?;
             item["inputIntent"] = json!("steer");
             crate::projection::save_item(tx, tid, &t, item)?;
+            crate::provider::begin_assistant_segment(tx, tid, &active, &t, &mut run)?;
             steer = Some((
                 permit,
                 crate::provider::ProviderControl::SteerContent(content),
