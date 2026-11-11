@@ -1,0 +1,29 @@
+#!/usr/bin/env python3
+"""Run `cargo test` on the host with a private TMPDIR that is removed afterwards.
+
+Test harnesses create profiles such as `o3-it-*` in $TMPDIR and do not delete
+them (tests never delete trees). This runner gives each run its own directory
+under $O3_BUILD_ROOT/tmp (default ~/.cache/o3-build/tmp) and removes it when
+cargo exits. Build output goes to $CARGO_TARGET_DIR, default $O3_BUILD_ROOT/main.
+Prefer tools/test-rust-sandbox for full runs; use this for quick host runs.
+"""
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+
+root = os.environ.get('O3_BUILD_ROOT') or os.path.expanduser('~/.cache/o3-build')
+base = os.path.join(root, 'tmp')
+os.makedirs(base, exist_ok=True)
+run_dir = tempfile.mkdtemp(prefix='cargo-test-', dir=base)
+env = {**os.environ, 'TMPDIR': run_dir}
+env.setdefault('CARGO_TARGET_DIR', os.path.join(root, 'main'))
+try:
+    code = subprocess.call(['cargo', 'test', *sys.argv[1:]], env=env)
+except KeyboardInterrupt:
+    code = 130
+finally:
+    # Only the directory this runner created; rmtree does not follow symlinks.
+    shutil.rmtree(run_dir, ignore_errors=True)
+sys.exit(code)

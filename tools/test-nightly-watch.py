@@ -64,7 +64,7 @@ class WatchTests(unittest.TestCase):
             if args[0] == 'diff':
                 return 'M\tapps/server/test.ts\nM\tpackages/source-control-github/a.ts\nA\tapps/mobile/b.ts'
             return 'sha fix'
-        with tempfile.TemporaryDirectory(dir='/var/tmp') as directory, patch.object(watch, 'git', side_effect=fake_git), patch.object(watch.subprocess, 'run'):
+        with tempfile.TemporaryDirectory() as directory, patch.object(watch, 'git', side_effect=fake_git), patch.object(watch.subprocess, 'run'):
             result = watch.collect(pathlib.Path(directory), rows)
         self.assertEqual(result[0]['serverNeutral'], ['sha'])
         self.assertEqual(result[0]['previous'], 'old')

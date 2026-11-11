@@ -1,6 +1,6 @@
 // Token comes from a private file, never argv or retained evidence.
 import fs from 'node:fs';
-const W='/var/tmp/o3-build/android';
+const W=`${process.env.O3_BUILD_ROOT||`${process.env.HOME}/.cache/o3-build`}/android`;
 const [tag,payload='{}',output]=process.argv.slice(2);
 const ws=new WebSocket('ws://127.0.0.1:38900/ws?orchestrationProtocol=2',{headers:{Authorization:`Bearer ${fs.readFileSync(W+'/session','utf8').trim()}`}});
 const timer=setTimeout(()=>{console.error('RPC timeout');process.exit(1)},20000);

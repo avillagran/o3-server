@@ -20,17 +20,25 @@ Do not use:
 The production service sets the same rule for agents it launches:
 `TMPDIR=/home/node/.cache/o3-tmp` in `o3-server.service`.
 
-## Known leftovers
+## Build root
 
-- `tests/support/mod.rs` creates an `o3-it-*` profile in `$TMPDIR` for every
-  test server and does not remove it. Other harnesses leave `o3-mcp-*`,
-  `o3-conformance-*` and `o3-shell-*` directories. Point `TMPDIR` at a per-run
-  directory and remove that directory from the runner after the run, never from
-  inside a test.
-- Several tools and `tests/differential.rs` still hard-code `/var/tmp/o3-build`
-  (`tools/bench-rss`, `tools/live-chat-e2e`, `tools/rss_profile.py`,
-  `tools/conformance-diff`, `tools/desktop-bridge-e2e`, among others). Moving
-  them to a configurable root under `/home` is pending.
+Tools under `tools/` keep their state under `$O3_BUILD_ROOT`, default
+`~/.cache/o3-build` (`main/` for the release build, `tmp/` for temporary state,
+`android/`, `qml/`, `e2e/` for the end-to-end harnesses). Rust tests write only
+below `$TMPDIR`.
+
+## Test leftovers
+
+Test harnesses create profiles such as `o3-it-*`, `o3-mcp-*`,
+`o3-conformance-*` and `o3-shell-*` in `$TMPDIR` and do not remove them: tests
+never delete trees. Run tests so the runner owns the cleanup:
+
+- `tools/test-rust-sandbox` runs the tests in Podman with a disposable `/tmp`.
+- `tools/cargo-test <cargo test args>` runs on the host with a private
+  `TMPDIR` under `$O3_BUILD_ROOT/tmp` and removes it when cargo exits.
+
+A bare `cargo test` with `TMPDIR` pointing at a shared directory leaves these
+profiles behind.
 
 Historical reports that mention `/var/tmp` record where a measurement ran; they
 are not instructions.

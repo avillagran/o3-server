@@ -10,13 +10,15 @@ existing dir. The T3 profile is only read: its statev2.sqlite is opened read-onl
 `o3-server import`, and nothing else under it is opened, written or signalled.
 """
 import argparse, hashlib, json, os, pathlib, signal, socket, subprocess, sys, time
+BUILD_ROOT = os.environ.get('O3_BUILD_ROOT') or os.path.expanduser('~/.cache/o3-build')
+os.makedirs(os.path.join(BUILD_ROOT, 'tmp'), exist_ok=True)
 
 home = pathlib.Path(os.environ.get("HOME", "/"))
 parser = argparse.ArgumentParser(prog="pilot", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 parser.add_argument("--stop", action="store_true", help="stop the pilot server")
 parser.add_argument("--resume", action="store_true", help="restart the server of an existing pilot dir; no import")
 parser.add_argument("--t3-home", help="T3 profile to import from (default $T3CODE_HOME or ~/.t3)")
-parser.add_argument("--bin", help="o3-server binary (default $O3_BIN, PATH, then /var/tmp/o3-build/main/release)")
+parser.add_argument("--bin", help="o3-server binary (default $O3_BIN, PATH, then $O3_BUILD_ROOT/main/release, default ~/.cache/o3-build)")
 parser.add_argument("--bridge-relay", default="none", help="OmaBridge relay: none, public or an HTTPS URL (default none)")
 parser.add_argument("--no-import", action="store_true", help="start with an empty history")
 parser.add_argument("--ttl", default="30m", help="lifetime of the printed pairing link (default 30m)")
@@ -88,7 +90,7 @@ elif pilot.exists():
 binary = args.bin or os.environ.get("O3_BIN")
 if not binary:
     from shutil import which
-    binary = which("o3-server") or "/var/tmp/o3-build/main/release/o3-server"
+    binary = which("o3-server") or os.path.join(BUILD_ROOT, "main/release/o3-server")
 binary = str(pathlib.Path(binary).absolute())
 if not os.access(binary, os.X_OK):
     fail(f"o3-server binary not found or not executable: {binary} (use --bin)")
