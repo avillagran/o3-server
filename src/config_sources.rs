@@ -240,8 +240,11 @@ async fn account(config: &Value, account: &Value) -> Value {
                 if let Some(seconds) = w["limit_window_seconds"].as_u64() {
                     window["windowDurationMins"] = json!(seconds / 60);
                 }
-            } else if w["resets_at"].is_string() {
-                window["resetsAt"] = w["resets_at"].clone();
+            } else {
+                if w["resets_at"].is_string() {
+                    window["resetsAt"] = w["resets_at"].clone();
+                }
+                window["windowDurationMins"] = json!(if kind == "session" { 300 } else { 10080 });
             }
             windows.push(window);
         }
