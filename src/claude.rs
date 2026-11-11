@@ -1000,14 +1000,36 @@ impl Provider for ClaudeProvider {
             )
             .await
             .map_err(|_| "Claude quota request failed")?;
+            // The account is otherwise known only after a CLI session initializes;
+            // clients need it to merge the same account seen on several hosts.
+            let config_file = if self
+                .environment
+                .iter()
+                .any(|(k, _)| k == "CLAUDE_CONFIG_DIR")
+                || std::env::var_os("CLAUDE_CONFIG_DIR").is_some()
+            {
+                dir.join(".claude.json")
+            } else {
+                dir.with_file_name(".claude.json")
+            };
+            let account = account_identity(&config_file);
             let mut windows = Vec::new();
             for (key, kind, label, mins) in WINDOWS {
                 if let Some(used) = usage[key]["utilization"].as_f64() {
                     windows.push(json!({"id":key,"kind":kind,"label":label,"usedPercent":used.clamp(0.,100.),"resetsAt":usage[key]["resets_at"],"windowDurationMins":mins}));
                 }
             }
-            self.metadata.lock().unwrap()["usageLimits"] =
+            let mut metadata = self.metadata.lock().unwrap();
+            metadata["usageLimits"] =
                 json!({"checkedAt":crate::store::iso(crate::store::now_ms()),"windows":windows});
+            if let Some(email) = account {
+                if !metadata["auth"].is_object() {
+                    metadata["auth"] = json!({"status":"unknown"});
+                }
+                if !metadata["auth"]["email"].is_string() {
+                    metadata["auth"]["email"] = json!(email);
+                }
+            }
             Ok(())
         })
     }
@@ -1213,6 +1235,17 @@ pub fn config(installed: bool) -> Value {
     json!({"instanceId":"claudeAgent","driver":"claudeAgent","displayName":"Claude Code","enabled":installed,"installed":installed,"version":null,"status":if !installed {"disabled"}else if credentials_present() {"ready"}else{"warning"},"auth":{"status":"unknown"},"checkedAt":checked,"message":"Direct CLI adapter; authentication checked at execution. Native-session continuation after restart; no inference reattachment.","slashCommands":[{"name":"compact","description":"Compact conversation history"}],"skills":[],"slashCommandsPending":true,"models":crate::claude_models::models(&[]),"supportedRuntimeModes":["approval-required","auto-accept-edits","full-access"],"supportsConversationRollback":false,"nativeSessions":{"canList":false,"canLoad":false,"canResume":true}})
 }
 
+/// Email of the signed-in Claude account, as the CLI caches it in `.claude.json`.
+fn account_identity(config_file: &std::path::Path) -> Option<String> {
+    let bytes = std::fs::read(config_file).ok()?;
+    let config: Value = serde_json::from_slice(&bytes).ok()?;
+    config["oauthAccount"]["emailAddress"]
+        .as_str()
+        .map(str::trim)
+        .filter(|e| e.contains('@') && e.len() <= 320)
+        .map(str::to_owned)
+}
+
 /// Claude's quota windows have fixed lengths; clients need the length to place the
 /// expected-pace marker on the usage bar.
 pub(crate) const WINDOWS: [(&str, &str, &str, u64); 2] = [
@@ -1355,6 +1388,24 @@ mod tests {
     }
 
     use super::*;
+    #[test]
+    fn account_identity_reads_the_cached_oauth_account_email() {
+        let dir =
+            std::env::temp_dir().join(format!("o3-account-{}", crate::store::random_id().unwrap()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join(".claude.json");
+        std::fs::write(
+            &file,
+            r#"{"oauthAccount":{"emailAddress":" Me@Example.com ","organizationUuid":"o"}}"#,
+        )
+        .unwrap();
+        assert_eq!(account_identity(&file).as_deref(), Some("Me@Example.com"));
+        std::fs::write(&file, r#"{"oauthAccount":{}}"#).unwrap();
+        assert_eq!(account_identity(&file), None);
+        std::fs::remove_file(&file).unwrap();
+        std::fs::remove_dir(&dir).unwrap();
+        assert_eq!(account_identity(&file), None);
+    }
     #[test]
     fn quota_windows_carry_their_length_for_the_pace_marker() {
         let limits = usage_limits(&json!({"unifiedWindows":{
