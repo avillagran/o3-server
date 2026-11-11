@@ -323,7 +323,7 @@ mod overflow_tests {
             .filter_map(|v| v["text"].as_str())
             .filter(|t| t.contains("did not fit inline"))
             .collect();
-        assert!(inline >= 1 && inline < 7, "inline {inline}");
+        assert!((1..7).contains(&inline), "inline {inline}");
         assert_eq!(inline + by_path.len(), 7);
         assert!(by_path
             .iter()
