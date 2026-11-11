@@ -297,8 +297,10 @@ mod overflow_tests {
     use super::*;
     #[test]
     fn many_claude_images_split_between_inline_and_paths_within_the_frame() {
-        let root =
-            std::env::temp_dir().join(format!("o3-overflow-{}", crate::store::random_id().unwrap()));
+        let root = std::env::temp_dir().join(format!(
+            "o3-overflow-{}",
+            crate::store::random_id().unwrap()
+        ));
         std::fs::create_dir_all(&root).unwrap();
         let mut attachments = Vec::new();
         let mut files = Vec::new();
@@ -307,7 +309,8 @@ mod overflow_tests {
             let file = root.join(format!("{id}.png"));
             std::fs::write(&file, vec![0u8; 1536 * 1024]).unwrap();
             files.push(file);
-            attachments.push(json!({"id":id,"name":format!("shot-{i}.png"),"mimeType":"image/png"}));
+            attachments
+                .push(json!({"id":id,"name":format!("shot-{i}.png"),"mimeType":"image/png"}));
         }
         let blocks = materialize(&root, "look", &json!(attachments), None, true).unwrap();
         for file in &files {
@@ -322,7 +325,9 @@ mod overflow_tests {
             .collect();
         assert!(inline >= 1 && inline < 7, "inline {inline}");
         assert_eq!(inline + by_path.len(), 7);
-        assert!(by_path.iter().all(|t| t.contains("shot-") && t.contains(".png")));
+        assert!(by_path
+            .iter()
+            .all(|t| t.contains("shot-") && t.contains(".png")));
         assert!(serde_json::to_vec(&blocks).unwrap().len() <= FRAME_LIMIT);
     }
 }
