@@ -1093,6 +1093,14 @@ fn decode_with_continuation(v: &Value, awaiting_continuation: bool) -> Vec<Provi
     match v["type"].as_str().unwrap_or("") {
         "stream_event" => {
             let e = &v["event"];
+            if e["type"] == "content_block_start"
+                && e["content_block"]["type"] == "text"
+                && v["parent_tool_use_id"].is_null()
+            {
+                out.push(ProviderEvent::TextDelta(
+                    crate::provider::TEXT_BLOCK_BREAK.into(),
+                ));
+            }
             if e["type"] == "content_block_delta" {
                 let d = &e["delta"];
                 if d["type"] == "text_delta" && v["parent_tool_use_id"].is_null() {
@@ -1405,6 +1413,16 @@ mod tests {
         std::fs::remove_file(&file).unwrap();
         std::fs::remove_dir(&dir).unwrap();
         assert_eq!(account_identity(&file), None);
+    }
+    #[test]
+    fn each_main_text_block_starts_with_a_paragraph_break() {
+        let start = |parent: Value| json!({"type":"stream_event","parent_tool_use_id":parent,"event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}});
+        assert!(
+            matches!(&decode(&start(Value::Null))[..], [ProviderEvent::TextDelta(t)] if t == "\n\n")
+        );
+        assert!(decode(&start(json!("toolu_1"))).is_empty());
+        let tool = json!({"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_start","index":1,"content_block":{"type":"tool_use"}}});
+        assert!(decode(&tool).is_empty());
     }
     #[test]
     fn quota_windows_carry_their_length_for_the_pace_marker() {
