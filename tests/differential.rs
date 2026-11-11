@@ -616,7 +616,8 @@ fn reference_binary() -> PathBuf {
 #[test]
 #[ignore = "starts isolated real T3 and o3; tools/conformance-diff"]
 fn upstream_differential() {
-    let root = PathBuf::from("/var/tmp/o3-build/tmp/differential")
+    let root = std::env::temp_dir()
+        .join("differential")
         .join(format!("run-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();
     use std::os::unix::fs::PermissionsExt;
@@ -1288,7 +1289,7 @@ fn concurrent_scenario(s: &Server, home: &Path, reference: bool) -> Value {
 #[ignore = "real isolated reference and credential-free gated Codex; tools/conformance-diff concurrent"]
 fn upstream_concurrent_differential() {
     use std::os::unix::fs::PermissionsExt;
-    let root = PathBuf::from("/var/tmp/o3-build/tmp").join(format!(
+    let root = std::env::temp_dir().join(format!(
         "concurrent-{}-{}",
         std::process::id(),
         o3_server::store::random_id().unwrap()
@@ -1553,14 +1554,12 @@ fn wait_file(path: &Path) {
 #[test]
 #[ignore = "isolated pinned binary restart and control race windows"]
 fn upstream_control_windows() {
-    let root = PathBuf::from("/var/tmp/o3-build/tmp").join(format!(
+    let root = std::env::temp_dir().join(format!(
         "control-{}",
         o3_server::store::random_id().unwrap()
     ));
     let mut results = vec![];
-    let version = cli_output(
-        command(&reference_binary(), Path::new("/var/tmp/o3-build/tmp")).arg("--version"),
-    );
+    let version = cli_output(command(&reference_binary(), &std::env::temp_dir()).arg("--version"));
     assert!(String::from_utf8_lossy(&version.stdout).contains("0.1.7-nightly.20261031.3991"));
     let selected = std::env::var("O3_CONTROL_CASE").ok();
     for instance in ["codex", "claudeAgent"] {
@@ -1754,7 +1753,7 @@ fn upstream_control_windows() {
 #[test]
 #[ignore = "isolated pinned 3991 P1 readers, no credentials or inference"]
 fn upstream_p1_readers() {
-    let root = PathBuf::from("/var/tmp/o3-build/tmp").join(format!(
+    let root = std::env::temp_dir().join(format!(
         "p1-{}-{}",
         std::process::id(),
         o3_server::store::random_id().unwrap()
@@ -1816,8 +1815,7 @@ fn upstream_p1_readers() {
 #[test]
 #[ignore = "isolated pinned settings acceptance probe, no inference"]
 fn upstream_generation_setting_acceptance() {
-    let home = PathBuf::from("/var/tmp/o3-build/tmp")
-        .join(format!("generation-setting-{}", std::process::id()));
+    let home = std::env::temp_dir().join(format!("generation-setting-{}", std::process::id()));
     std::fs::create_dir_all(&home).unwrap();
     let server = start(&reference_binary(), &home);
     let c = connect(&server);
@@ -1830,8 +1828,7 @@ fn upstream_generation_setting_acceptance() {
 #[test]
 #[ignore = "isolated pinned shell preview and automatic launch probe, no inference"]
 fn upstream_shell_preview_and_launch() {
-    let home = PathBuf::from("/var/tmp/o3-build/tmp")
-        .join(format!("shell-preview-{}", std::process::id()));
+    let home = std::env::temp_dir().join(format!("shell-preview-{}", std::process::id()));
     std::fs::create_dir_all(&home).unwrap();
     let server = start(&reference_binary(), &home);
     let c = connect(&server);
@@ -1861,7 +1858,7 @@ fn upstream_shell_preview_and_launch() {
 #[test]
 #[ignore = "isolated pinned 3991 P2 telemetry, deterministic terminal child"]
 fn upstream_p2_telemetry_reader() {
-    let root = PathBuf::from("/var/tmp/o3-build/tmp").join(format!(
+    let root = std::env::temp_dir().join(format!(
         "p2-telemetry-{}-{}",
         std::process::id(),
         o3_server::store::random_id().unwrap()
@@ -1947,7 +1944,7 @@ fn upstream_p2_webhook_reader() {
     use hmac::{Hmac, Mac};
     use std::io::{Read, Write};
     use t3_protocol::api::scheduled_tasks::{self, TaskUpsert};
-    let root = PathBuf::from("/var/tmp/o3-build/tmp").join(format!(
+    let root = std::env::temp_dir().join(format!(
         "p2-hooks-{}",
         o3_server::store::random_id().unwrap()
     ));
@@ -2013,7 +2010,7 @@ fn upstream_p2_webhook_reader() {
 #[ignore = "starts isolated real T3 and o3; tools/conformance-diff"]
 fn upstream_scheduled_tasks_android_contract() {
     use t3_protocol::api::scheduled_tasks::{self, TaskUpsert};
-    let root = PathBuf::from("/var/tmp/o3-build/tmp").join(format!(
+    let root = std::env::temp_dir().join(format!(
         "scheduled-android-{}",
         o3_server::store::random_id().unwrap()
     ));

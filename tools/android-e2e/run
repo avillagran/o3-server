@@ -2,8 +2,10 @@
 """Resumable isolated Android E2E operations; see README.md. Never selects another device."""
 import os, sys, pathlib, subprocess, json, time, re, shutil
 import signal
-W=pathlib.Path('/var/tmp/o3-build/android'); W.mkdir(parents=True,exist_ok=True)
-SDK=pathlib.Path.home()/'.android-sdk'; BIN='/var/tmp/o3-build/main/release/o3-server'
+BUILD_ROOT = os.environ.get('O3_BUILD_ROOT') or os.path.expanduser('~/.cache/o3-build')
+os.makedirs(os.path.join(BUILD_ROOT, 'tmp'), exist_ok=True)
+W=pathlib.Path(os.path.join(BUILD_ROOT, 'android')); W.mkdir(parents=True,exist_ok=True)
+SDK=pathlib.Path.home()/'.android-sdk'; BIN=os.path.join(BUILD_ROOT, 'main/release/o3-server')
 env={**os.environ,'TMPDIR':str(W/'tmp'),'ANDROID_SDK_ROOT':str(SDK),'ANDROID_AVD_HOME':str(W/'avd'),'ANDROID_EMULATOR_HOME':str(W/'emu')}
 for d in ['tmp','avd','emu','profile','evidence','home']: (W/d).mkdir(exist_ok=True)
 def adb(*args,**kw):return subprocess.run([str(SDK/'platform-tools/adb'),'-s','emulator-5570',*args],check=True,**kw)

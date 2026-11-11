@@ -1,5 +1,5 @@
 //! Shared fixtures: a real server on loopback, the real `t3-protocol` client, scratch dirs on disk
-//! (`/var/tmp`, never tmpfs) and fake `code`/`gh` executables on PATH.
+//! (`$TMPDIR`, kept under `~/.cache`, never tmpfs or `/var/tmp`) and fake `code`/`gh` executables on PATH.
 #![allow(dead_code)]
 // Both harnesses can be used independently in the same test crate. Include
 // this stateless helper here without loading its module twice.

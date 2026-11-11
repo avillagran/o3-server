@@ -1,14 +1,16 @@
 """Real desktop probe. Private records stay in memory and the isolated disk copy."""
 import shutil
 import argparse, hashlib, json, os, pathlib, queue, signal, sqlite3, subprocess, threading, time, urllib.request
+BUILD_ROOT = os.environ.get('O3_BUILD_ROOT') or os.path.expanduser('~/.cache/o3-build')
+os.makedirs(os.path.join(BUILD_ROOT, 'tmp'), exist_ok=True)
 
 def run(memory):
     parser = argparse.ArgumentParser()
-    parser.add_argument('binary', nargs='?', default='/var/tmp/o3-build/main/release/o3-server')
+    parser.add_argument('binary', nargs='?', default=os.path.join(BUILD_ROOT, 'main/release/o3-server'))
     parser.add_argument('--profile', required=True)
     parser.add_argument('--bridge-public', action='store_true', help='public relay, QUIC client and real Claude turn (copies local credentials)')
     parser.add_argument('--settle-seconds', type=float, default=3)
-    parser.add_argument('--probe', default='/var/tmp/o3-build/main/release/examples/bridge_probe')
+    parser.add_argument('--probe', default=os.path.join(BUILD_ROOT, 'main/release/examples/bridge_probe'))
     parser.add_argument('--diagnostics', action='store_true')
     parser.add_argument('--output', default='docs/rss-measurement.json')
     args = parser.parse_args()
@@ -17,7 +19,7 @@ def run(memory):
         assert pathlib.Path(args.probe).is_file(), 'build release example bridge_probe first'
     binary = pathlib.Path(args.binary).resolve()
     assert '/release/' in str(binary), 'benchmark requires a release binary'
-    root = pathlib.Path('/var/tmp/o3-build/real-opt')
+    root = pathlib.Path(os.path.join(BUILD_ROOT, 'real-opt'))
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     # A consistent read-only backup, never open the source in writable mode.
     source = pathlib.Path(args.profile).resolve() / 'userdata/o3.sqlite'
@@ -32,7 +34,7 @@ def run(memory):
     dst.close()
     (home/'bin').mkdir()
     (home/'bin/t3').symlink_to(binary)
-    env = {**os.environ, 'HOME':str(home), 'T3CODE_HOME':str(profile), 'TMPDIR':'/var/tmp/o3-build/tmp',
+    env = {**os.environ, 'HOME':str(home), 'T3CODE_HOME':str(profile), 'TMPDIR':os.path.join(BUILD_ROOT, 'tmp'),
            'CODEX_HOME':str(home/'codex'), 'CLAUDE_CONFIG_DIR':str(home/'claude'),
            'PATH':str(home/'bin')+':/usr/bin:/bin'}
     for name in ('CONFIG','DATA','STATE','RUNTIME'):
@@ -43,7 +45,7 @@ def run(memory):
         (home/'claude/.credentials.json').chmod(0o600)
         env['PATH'] = str(home/'bin')+':'+os.environ['PATH']
         (home/'server').symlink_to(profile)
-    client = os.environ.get('O3_DESKTOP_BIN','/var/tmp/o3-build/e2e/desktop-target/debug/omarchy-t3-client')
+    client = os.environ.get('O3_DESKTOP_BIN',os.path.join(BUILD_ROOT, 'e2e/desktop-target/debug/omarchy-t3-client'))
     diagnostics = []
     phase = 'startup'
     process = subprocess.Popen([str(binary),'serve','--port','0']+(['--bridge-bind','0.0.0.0:0','--bridge-relay','public'] if args.bridge_public else []),env=env,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True)
