@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Run two inexpensive native turns through the real client in isolated provider homes."""
 import os, pathlib, shutil, subprocess, tempfile
+BUILD_ROOT = os.environ.get('O3_BUILD_ROOT') or os.path.expanduser('~/.cache/o3-build')
+os.makedirs(os.path.join(BUILD_ROOT, 'tmp'), exist_ok=True)
 root=pathlib.Path(__file__).resolve().parent.parent
 # Build before changing HOME so cargo retains its normal registry/cache access.
-env={**os.environ,'TMPDIR':'/var/tmp/o3-build/tmp','CARGO_TARGET_DIR':'/var/tmp/o3-build/main'}
+env={**os.environ,'TMPDIR':os.path.join(BUILD_ROOT, 'tmp'),'CARGO_TARGET_DIR':os.path.join(BUILD_ROOT, 'main')}
 # Find the executable via cargo's JSON artifact metadata, avoiding stale hashes.
 p=subprocess.run(['nice','cargo','test','--locked','-j','4','--test','provider_input','--no-run','--message-format=json'],cwd=root,env=env,check=True,capture_output=True,text=True)
 import json
 binary=next(v['executable'] for line in p.stdout.splitlines() if (v:=json.loads(line)).get('executable') and v.get('target',{}).get('name')=='provider_input')
 original=pathlib.Path.home()
-with tempfile.TemporaryDirectory(prefix='o3-live-',dir='/var/tmp/o3-build') as temp:
+with tempfile.TemporaryDirectory(prefix='o3-live-',dir=BUILD_ROOT) as temp:
     home=pathlib.Path(temp)
     for folder,name in [('.claude','.credentials.json'),('.codex','auth.json')]:
         destination=home/folder/name;destination.parent.mkdir(mode=0o700)

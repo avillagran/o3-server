@@ -53,7 +53,7 @@ sample is taken immediately after runtime discovery. See the [raw aggregate evid
 for timestamps, KiB values and binary hashes. Reproduce with a release build:
 
 ```sh
-TMPDIR=/var/tmp O3_BENCH_SOURCE_SHA=$(git rev-parse HEAD) tools/measure-rss /path/to/release/o3-server
+TMPDIR=~/.cache/o3-build/tmp O3_BENCH_SOURCE_SHA=$(git rev-parse HEAD) tools/measure-rss /path/to/release/o3-server
 ```
 
 For context, the live T3 serving process was also observed on each host. Those profiles,
@@ -88,7 +88,10 @@ cargo build --release -j 4
 tools/test-rust-sandbox -- -j 4
 ```
 
-Keep build output off tmpfs, for example `CARGO_TARGET_DIR=/var/tmp/o3-build/main`.
+Keep build output and test state under `/home`, for example
+`CARGO_TARGET_DIR=~/.cache/o3-build/main` and `TMPDIR=~/.cache/o3-build/tmp`.
+Avoid `/tmp` (tmpfs in RAM) and `/var/tmp` (the small root filesystem); see
+[docs/DEV_PATHS.md](docs/DEV_PATHS.md).
 The test runner compiles on the host and runs the test executables in rootless
 Podman with no external network or writable host mounts. It requires Podman,
 a private Node installation and the local `localhost/android-sandbox:latest`

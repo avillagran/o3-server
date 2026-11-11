@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Measure an isolated release server from disk; second argument is bridge_probe."""
 import json, os, pathlib, shutil, subprocess, sys, tempfile, time
+BUILD_ROOT = os.environ.get('O3_BUILD_ROOT') or os.path.expanduser('~/.cache/o3-build')
+os.makedirs(os.path.join(BUILD_ROOT, 'tmp'), exist_ok=True)
 binary, probe = map(lambda p: pathlib.Path(p).resolve(), sys.argv[1:3])
-root = pathlib.Path(tempfile.mkdtemp(prefix='o3-bridge-rss-', dir='/var/tmp/o3-build/embed'))
+root = pathlib.Path(tempfile.mkdtemp(prefix='o3-bridge-rss-', dir=os.path.join(BUILD_ROOT, 'embed')))
 assert subprocess.check_output(['stat','-f','-c','%T',str(root)], text=True).strip() != 'tmpfs'
 server = root/'o3-server'
 shutil.copy2(binary, server)

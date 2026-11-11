@@ -2202,7 +2202,7 @@ mod migration_benchmark {
     #[test]
     #[ignore = "synthetic 400-thread large-profile writer lock measurement"]
     fn large_profile_writer_windows() {
-        let root = std::path::Path::new("/var/tmp/o3-build/migration-profile");
+        let root = &std::env::temp_dir().join("migration-profile");
         std::fs::create_dir_all(root).unwrap();
         let path = root.join(format!("{}.sqlite", random_id().unwrap()));
         let db = Connection::open(&path).unwrap();

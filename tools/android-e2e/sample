@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Sample only the helper-owned server PID across restarts (five minutes)."""
 import time,pathlib,json
-w=pathlib.Path('/var/tmp/o3-build/android'); p=w/'evidence/memory.ndjson'
+import os
+BUILD_ROOT = os.environ.get('O3_BUILD_ROOT') or os.path.expanduser('~/.cache/o3-build')
+os.makedirs(os.path.join(BUILD_ROOT, 'tmp'), exist_ok=True)
+w=pathlib.Path(os.path.join(BUILD_ROOT, 'android')); p=w/'evidence/memory.ndjson'
 for _ in range(1200):
  try:
   pid=(w/'server.pid').read_text();s=pathlib.Path('/proc/'+pid+'/status').read_text();d={'at':time.time(),'pid':int(pid)}

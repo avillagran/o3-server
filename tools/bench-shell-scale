@@ -13,14 +13,16 @@ import subprocess
 import tempfile
 import time
 import urllib.request
+BUILD_ROOT = os.environ.get('O3_BUILD_ROOT') or os.path.expanduser('~/.cache/o3-build')
+os.makedirs(os.path.join(BUILD_ROOT, 'tmp'), exist_ok=True)
 
 repo = pathlib.Path(__file__).resolve().parent.parent
-binary = pathlib.Path(os.environ.get("CARGO_TARGET_DIR", "/var/tmp/o3-build/main")) / "release/o3-server"
+binary = pathlib.Path(os.environ.get("CARGO_TARGET_DIR", os.path.join(BUILD_ROOT, "main"))) / "release/o3-server"
 # Share the benchmark's fragmented WebSocket reader without running its workload.
 tree = ast.parse((repo / "tools/bench-rss").read_text())
 exec(compile(ast.Module(body=[n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "WS"], type_ignores=[]), "bench-rss:WS", "exec"))
-os.environ["TMPDIR"] = "/var/tmp/o3-build/tmp"
-with tempfile.TemporaryDirectory(prefix="shell-scale-", dir="/var/tmp/o3-build/tmp") as temp:
+os.environ["TMPDIR"] = os.path.join(BUILD_ROOT, "tmp")
+with tempfile.TemporaryDirectory(prefix="shell-scale-", dir=os.path.join(BUILD_ROOT, "tmp")) as temp:
     env = {**os.environ, "HOME": temp, "T3CODE_HOME": temp, "CODEX_HOME": temp + "/codex",
            "CLAUDE_CONFIG_DIR": temp + "/claude"}
     token = subprocess.check_output([str(binary), "auth", "session", "issue", "--scope",

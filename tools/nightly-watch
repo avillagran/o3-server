@@ -9,6 +9,8 @@ import pathlib
 import re
 import subprocess
 import urllib.request
+BUILD_ROOT = os.environ.get('O3_BUILD_ROOT') or os.path.expanduser('~/.cache/o3-build')
+os.makedirs(os.path.join(BUILD_ROOT, 'tmp'), exist_ok=True)
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 REPO = 'https://github.com/pingdotgg/t3code.git'
@@ -122,7 +124,7 @@ def render(report, entries=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--cache', type=pathlib.Path, default=pathlib.Path('/var/tmp/o3-build/upstream-watch.git'))
+    parser.add_argument('--cache', type=pathlib.Path, default=pathlib.Path(os.path.join(BUILD_ROOT, 'upstream-watch.git')))
     parser.add_argument('--output', type=pathlib.Path, default=ROOT / 'docs/nightly')
     parser.add_argument('--count', type=int, default=5)
     args = parser.parse_args()
