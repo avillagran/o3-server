@@ -1,0 +1,54 @@
+{
+  "checkedAt": "2026-11-05T00:19:48.616309+00:00",
+  "trigger": "Android acceptance on Xiaomi (2026-11-03): both hosts authenticated, then scheduledTasks.list failed with rpc_rejected 'Unknown request tag: scheduledTasks.list'.",
+  "tags": [
+    "v0.1.7-nightly.20261031.3991",
+    "v0.1.8-nightly.20261104.4192"
+  ],
+  "references": {
+    "3991": "deployed on NODE",
+    "4192": "7f6f47b27b44456f1c8214d3b566b375c09f629e"
+  },
+  "rootCause": [
+    "'Unknown request tag: <tag>' is the defect text of effect/rpc RpcServer; o3 answers unknown tags with 'o3-server does not implement <tag>'. The Android rejection therefore came from T3 Node servers, not from o3.",
+    "T3 nightly 3991 and 4192 define no scheduledTasks.list. WS_METHODS carry subscribe/upsert/setEnabled/delete/runNow/rotateWebhookToken/listWebhookDeliveries/getWebhookDelivery; the only task read is the scheduledTasks.subscribe stream (subscribeList). lib-t3-rust registered scheduledTasks.list from the older pinned contract t3code@3f9448747.",
+    "Hosts on 2026-11-04: NODE port 3773 (OmaBridge service t3) is T3 Node 0.1.7-nightly.20261031.3991; mbp-m2 port 3773 is now the o3 trial build o3-server-usage-3b2ba97 (base 1155b85), which serves scheduledTasks.list but not subscribe. On 2026-11-03 mbp-m2 still answered with T3's Effect text."
+  ],
+  "sourceFiles": [
+    "packages/contracts/src/rpc.ts (WS_METHODS, WsScheduledTasks*Rpc)",
+    "packages/contracts/src/scheduledTask.ts",
+    "apps/server/src/ws.ts (scheduledTasksSubscribe, withVisibleWebhookUrls)",
+    "apps/server/src/scheduledTasks/ScheduledTaskService.ts (subscribeList, upsert, setEnabled, delete, runNow, listRows)",
+    "apps/server/src/scheduledTasks/Schedule.ts (nextScheduledRunAt, isSameSchedule)"
+  ],
+  "implemented": [
+    "scheduledTasks.subscribe: {tasks} at once, then the full list after every task write; slow readers see the newest list, as with T3's sliding PubSub. Without orchestration:operate each task's webhook is removed, decided from the session (a client cannot override it). scheduledTasks.list returns the same view.",
+    "List order is T3 listRows: createdAt descending, then id.",
+    "upsert: id resolves to id ?? scheduled-task:<commandId> ?? scheduled-task:<uuid>; a commandId replay updates the same row and keeps run history. 'once' schedules with T3's ISO-with-offset check (real day, explicit offset, UTC year 0000-9999), stored normalized; enabled past times are refused. An unchanged schedule and enabled state keep nextRunAt. creationSource comes from the save; createdBy is kept.",
+    "Stored webhook schedule as T3: lowercase signature header, maxDeliveryAgeMinutes null when omitted, omitted dedupe/filters keep the stored ones, empty filters dropped. Hook paths encode the task id with encodeURIComponent; the route decodes it.",
+    "setEnabled with the current value is a no-op; delete is idempotent; runNow refuses webhook tasks, stores 'running' before launch and computes a once task's next run from the run start. Error texts follow T3 ('Schedule task not found.', 'Webhook tasks run when their URL receives a request.', 'The run time has passed. Pick a time in the future.').",
+    "Webhook admission compares task definitions without run-state fields, so a concurrent run marking itself running does not reject a valid delivery as definition_changed."
+  ],
+  "intentionalDifferences": [
+    "Webhook tasks still require an HMAC-SHA256 signature and body-only templates (T3 also allows URL-token-only hooks and query/header templates); unchanged o3 hardening.",
+    "fixed_time stays UTC.",
+    "rotateWebhookToken, listWebhookDeliveries, getWebhookDelivery and secretRef-backed signatures remain unimplemented (no client call site)."
+  ],
+  "client": {
+    "repository": "avillagran/lib-t3-rust",
+    "pullRequest": "https://github.com/avillagran/lib-t3-rust/pull/26",
+    "base": "o3/server-capabilities (Android pin 47bb556)",
+    "change": "scheduledTasks.list keeps its name and reads the first scheduledTasks.subscribe item; only a server that rejects the stream as unknown gets the old RPC. Android needs only a pin bump."
+  },
+  "validation": {
+    "differential": "upstream_scheduled_tasks_android_contract against an isolated real T3 3991 and o3: reference list is the Die 'Unknown request tag: scheduledTasks.list', o3 list succeeds; subscribe empty {tasks:[]}; created/replay/off/hook/runNow-webhook/populated/deletedAgain/missing shapes equal. upstream_p2_webhook_reader still equal.",
+    "effectiveServers": "Read-only probes with short-lived orchestration:read tokens, revoked afterwards. NODE live T3 3991: raw scheduledTasks.list rejected as Unknown request tag; lib PR26 list (Android call by name) returns the tasks with webhooks hidden. mbp-m2 o3 usage-3b2ba97: raw list and lib fallback return {tasks:[]}. Local o3 from this branch: {tasks:[]} through the stream.",
+    "status": "passed",
+    "suites": "466 default / 463 without default features, 29 opt-ins ignored each; strict all-target Clippy both modes, fmt, gen-compat and diff checks."
+  },
+  "pendingDeployment": [
+    "NODE serves T3 3991 itself: Android works there once it ships lib PR26; no server change is needed or possible from o3.",
+    "mbp-m2 o3 trial works today through the lib fallback; deploying this o3 branch there would serve subscribe and the T3-aligned mutations. Not deployed.",
+    "Xiaomi acceptance must be repeated with an APK built on lib PR26."
+  ]
+}

@@ -16,8 +16,16 @@ fn item(db: &Connection, tid: &str, rid: &str, id: &str, at: &str) -> Result<Val
             |r| r.get(0),
         )
         .map_err(|e| e.to_string())?;
+    let run = get(db, "runs", rid).unwrap_or_default();
+    let root = run["rootNodeId"].as_str().unwrap_or(rid);
+    let turn = run["activeAttemptId"]
+        .as_str()
+        .and_then(|aid| get(db, "attempts", aid).ok())
+        .map(|a| a["providerTurnId"].clone())
+        .filter(|id| id.is_string())
+        .unwrap_or(json!(rid));
     Ok(
-        json!({"id":id,"threadId":tid,"runId":rid,"nodeId":rid,"providerThreadId":get(db,"runs",rid).ok().map(|r|r["providerThreadId"].clone()),"providerTurnId":rid,"nativeItemRef":null,"parentItemId":null,"ordinal":ordinal,"status":"running","title":null,"startedAt":at,"completedAt":null,"updatedAt":at}),
+        json!({"id":id,"threadId":tid,"runId":rid,"nodeId":root,"providerThreadId":run["providerThreadId"],"providerTurnId":turn,"nativeItemRef":null,"parentItemId":null,"ordinal":ordinal,"status":"running","title":null,"startedAt":at,"completedAt":null,"updatedAt":at}),
     )
 }
 pub(crate) fn save_item(db: &Connection, tid: &str, t: &Value, mut v: Value) -> Result<(), String> {
@@ -31,7 +39,12 @@ pub(crate) fn save_item(db: &Connection, tid: &str, t: &Value, mut v: Value) -> 
     };
     if let Some(kind) = kind {
         v["nodeId"] = json!(id);
-        let node = json!({"id":id,"threadId":tid,"runId":v["runId"],"parentNodeId":v["parentItemId"].as_str().map(|s|json!(s)).unwrap_or_else(||v["runId"].clone()),"rootNodeId":v["runId"],"kind":kind,"status":v["status"],"countsForRun":true,"providerThreadId":t["activeProviderThreadId"],"providerTurnId":v["providerTurnId"],"nativeItemRef":v["nativeItemRef"],"runtimeRequestId":null,"checkpointScopeId":null,"startedAt":v["startedAt"],"completedAt":v["completedAt"]});
+        let root = get(db, "runs", v["runId"].as_str().unwrap_or(""))
+            .ok()
+            .map(|r| r["rootNodeId"].clone())
+            .filter(|v| !v.is_null())
+            .unwrap_or_else(|| v["runId"].clone());
+        let node = json!({"id":id,"threadId":tid,"runId":v["runId"],"parentNodeId":v["parentItemId"].as_str().map(|s|json!(s)).unwrap_or_else(||root.clone()),"rootNodeId":root,"kind":kind,"status":v["status"],"countsForRun":true,"providerThreadId":t["activeProviderThreadId"],"providerTurnId":v["providerTurnId"],"nativeItemRef":v["nativeItemRef"],"runtimeRequestId":null,"checkpointScopeId":null,"startedAt":v["startedAt"],"completedAt":v["completedAt"]});
         put(db, "nodes", id, tid, &node)?;
         append(db, tid, "node.updated", node, t)?;
     }
@@ -55,9 +68,53 @@ pub(crate) fn persist(
     at: &str,
     f: &Value,
 ) -> Result<(), String> {
+    let root = run["rootNodeId"].as_str().unwrap_or(rid).to_owned();
+    let aid = run["activeAttemptId"]
+        .as_str()
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("attempt-{rid}"));
+    let previous_attempt = get(db, "attempts", &aid).unwrap_or_default();
+    let ordinal = previous_attempt["attemptOrdinal"].as_i64().unwrap_or(1);
+    let reason = previous_attempt["reason"].as_str().unwrap_or("initial");
+    let turn_id = if root == rid {
+        rid.to_owned()
+    } else {
+        format!("claude-turn-{aid}")
+    };
     match f["type"].as_str().unwrap_or("") {
+        "goal_message" | "goal_checked" => {
+            if let Some(id) = t["activeProviderThreadId"].as_str() {
+                let Ok(provider) = get(db, "providerThreads", id) else {
+                    return Ok(());
+                };
+                if f["type"] == "goal_checked" {
+                    if provider["goal"]["status"] == "active" {
+                        run["claudeGoalChecked"] = json!(true);
+                    }
+                } else if let Some(goal) =
+                    crate::native_goal::claude(&provider["goal"], &f["message"])
+                {
+                    crate::native_goal::publish(
+                        db,
+                        tid,
+                        t,
+                        provider["nativeThreadRef"]["nativeId"]
+                            .as_str()
+                            .unwrap_or(""),
+                        goal,
+                        at,
+                    )?;
+                }
+            }
+        }
         "session" => {
+            run["claudeGoalChecked"] = json!(false);
+            run["claudeTerminalReason"] = Value::Null;
+            if let Some(run) = run.as_object_mut() {
+                run.remove("codexGoalMessageSuffix");
+            }
             let native = f["session_id"].as_str().ok_or("session id missing")?;
+            crate::native_recovery::bound(db, run, native)?;
             let owned = t["activeProviderThreadId"]
                 .as_str()
                 .unwrap_or(native)
@@ -65,10 +122,9 @@ pub(crate) fn persist(
             let id = owned.as_str();
             t["activeProviderThreadId"] = json!(id);
             run["providerThreadId"] = json!(id);
-            run["rootNodeId"] = json!(rid);
-            let aid = format!("attempt-{rid}");
+            run["rootNodeId"] = json!(root);
             run["activeAttemptId"] = json!(aid);
-            let attempt = json!({"id":aid,"runId":rid,"attemptOrdinal":1,"providerInstanceId":t["providerInstanceId"],"providerThreadId":id,"reason":"initial","rootNodeId":rid,"providerTurnId":rid,"status":"running","startedAt":at,"completedAt":null});
+            let attempt = json!({"id":aid,"runId":rid,"attemptOrdinal":ordinal,"providerInstanceId":t["providerInstanceId"],"providerThreadId":id,"reason":reason,"rootNodeId":root,"nativeThreadId":native,"providerTurnId":turn_id,"status":"running","startedAt":at,"completedAt":null});
             put(db, "attempts", &aid, tid, &attempt)?;
             append(db, tid, "attempt.updated", attempt, t)?;
             put(db, "thread", tid, tid, t)?;
@@ -77,23 +133,23 @@ pub(crate) fn persist(
                 serde_json::from_str(include_str!("claude-capabilities.json"))
                     .map_err(|e| e.to_string())?;
             let cwd = t["worktreePath"].as_str().unwrap_or(".");
-            let session = json!({"id":id,"driver":"claudeAgent","providerInstanceId":t["providerInstanceId"],"status":"running","cwd":cwd,"model":t["modelSelection"]["model"],"capabilities":capabilities,"createdAt":at,"updatedAt":at,"lastError":null});
+            let session = json!({"id":id,"driver":"claudeAgent","providerInstanceId":t["providerInstanceId"],"status":"running","cwd":cwd,"model":run["modelSelection"]["model"],"capabilities":capabilities,"createdAt":at,"updatedAt":at,"lastError":null});
             put(db, "providerSessions", id, tid, &session)?;
             append(db, tid, "provider-session.updated", session, t)?;
             let previous = get(db, "providerThreads", id).unwrap_or(Value::Null);
-            let p = json!({"id":id,"driver":"claudeAgent","providerInstanceId":t["providerInstanceId"],"providerSessionId":id,"appThreadId":tid,"ownerNodeId":rid,"nativeThreadRef":reference(&json!(native)),"nativeConversationHeadRef":null,"contextUsage":null,"goal":null,"nativeMetadata":null,"pendingBackgroundTasks":[],"status":"active","firstRunOrdinal":previous.get("firstRunOrdinal").unwrap_or(&run["ordinal"]),"lastRunOrdinal":run["ordinal"],"handoffIds":[],"forkedFrom":null,"createdAt":previous.get("createdAt").unwrap_or(&json!(at)),"updatedAt":at});
+            let p = json!({"id":id,"driver":"claudeAgent","providerInstanceId":t["providerInstanceId"],"providerSessionId":id,"appThreadId":tid,"ownerNodeId":null,"nativeThreadRef":reference(&json!(native)),"nativeConversationHeadRef":null,"contextUsage":if previous["nativeThreadRef"]["nativeId"]==native{previous["contextUsage"].clone()}else{Value::Null},"goal":if previous["nativeThreadRef"]["nativeId"]==native{previous["goal"].clone()}else{Value::Null},"nativeMetadata":if previous["nativeThreadRef"]["nativeId"]==native{previous["nativeMetadata"].clone()}else{Value::Null},"pendingBackgroundTasks":if previous["nativeThreadRef"]["nativeId"]==native{previous.get("pendingBackgroundTasks").cloned().unwrap_or(json!([]))}else{json!([])},"status":"active","firstRunOrdinal":previous.get("firstRunOrdinal").filter(|ordinal|ordinal.is_number()).unwrap_or(&run["ordinal"]),"lastRunOrdinal":run["ordinal"],"handoffIds":previous.get("handoffIds").cloned().unwrap_or(json!([])),"forkedFrom":previous["forkedFrom"],"createdAt":previous.get("createdAt").unwrap_or(&json!(at)),"updatedAt":at});
             put(db, "providerThreads", id, tid, &p)?;
             append(db, tid, "provider-thread.updated", p, t)?;
-            let turn = json!({"id":rid,"providerThreadId":id,"nodeId":rid,"runAttemptId":aid,"nativeTurnRef":null,"ordinal":run["ordinal"],"status":"running","startedAt":at,"completedAt":null});
-            put(db, "providerTurns", rid, tid, &turn)?;
+            let turn = json!({"id":turn_id,"providerThreadId":id,"nodeId":root,"runAttemptId":aid,"nativeTurnRef":null,"ordinal":run["ordinal"],"status":"running","startedAt":at,"completedAt":null});
+            put(db, "providerTurns", &turn_id, tid, &turn)?;
             append(db, tid, "provider-turn.updated", turn, t)?;
-            let node = json!({"id":rid,"threadId":tid,"runId":rid,"parentNodeId":null,"rootNodeId":rid,"kind":"root_turn","status":"running","countsForRun":true,"providerThreadId":id,"providerTurnId":rid,"nativeItemRef":null,"runtimeRequestId":null,"checkpointScopeId":null,"startedAt":at,"completedAt":null});
-            put(db, "nodes", rid, tid, &node)?;
+            let node = json!({"id":root,"threadId":tid,"runId":rid,"parentNodeId":null,"rootNodeId":root,"kind":"root_turn","status":"running","countsForRun":true,"providerThreadId":id,"providerTurnId":turn_id,"nativeItemRef":null,"runtimeRequestId":null,"checkpointScopeId":null,"startedAt":at,"completedAt":null});
+            put(db, "nodes", &root, tid, &node)?;
             append(db, tid, "node.updated", node, t)?;
         }
         "proposed_plan" => {
             let id = f["id"].as_str().ok_or("plan id missing")?;
-            let plan = json!({"id":id,"threadId":tid,"runId":rid,"nodeId":rid,"status":"active","kind":"proposed_plan","markdown":f["markdown"]});
+            let plan = json!({"id":id,"threadId":tid,"runId":rid,"nodeId":root,"status":"active","kind":"proposed_plan","markdown":f["markdown"]});
             put(db, "plans", id, tid, &plan)?;
             append(db, tid, "plan.updated", plan, t)?;
             let mut i = item(db, tid, rid, &format!("item-{id}"), at)?;
@@ -198,7 +254,7 @@ pub(crate) fn persist(
                 i["completedAt"] = Value::Null;
             }
             if i["type"] == "subagent" {
-                let sub = json!({"id":id,"threadId":tid,"runId":rid,"parentNodeId":rid,"origin":"provider_native","createdBy":"agent","driver":"claudeAgent","providerInstanceId":t["providerInstanceId"],"providerThreadId":t["activeProviderThreadId"],"childThreadId":null,"nativeTaskRef":reference(native),"prompt":i["prompt"],"title":i["title"],"model":null,"status":i["status"],"result":i["result"],"startedAt":i["startedAt"],"completedAt":i["completedAt"],"updatedAt":at});
+                let sub = json!({"id":id,"threadId":tid,"runId":rid,"parentNodeId":rid,"origin":"provider_native","createdBy":"agent","driver":"claudeAgent","providerInstanceId":run["providerInstanceId"],"providerThreadId":t["activeProviderThreadId"],"childThreadId":null,"nativeTaskRef":reference(native),"prompt":i["prompt"],"title":i["title"],"model":null,"status":i["status"],"result":i["result"],"startedAt":i["startedAt"],"completedAt":i["completedAt"],"updatedAt":at});
                 put(db, "subagents", &id, tid, &sub)?;
                 append(db, tid, "subagent.updated", sub, t)?;
             }
@@ -232,7 +288,7 @@ pub(crate) fn persist(
                     crate::background::update(
                         db,
                         tid,
-                        rid,
+                        run,
                         t,
                         at,
                         task["task_id"].as_str().ok_or("task id missing")?,
@@ -261,7 +317,7 @@ pub(crate) fn persist(
                 crate::background::update(
                     db,
                     tid,
-                    rid,
+                    run,
                     t,
                     at,
                     task_id,
@@ -311,10 +367,10 @@ pub(crate) fn persist(
             let id = f["request_id"].as_str().ok_or("request id missing")?;
             let user = f["request"]["tool_name"] == "AskUserQuestion";
             let node_id = format!("node-{id}");
-            let node = json!({"id":node_id,"threadId":tid,"runId":rid,"parentNodeId":rid,"rootNodeId":rid,"kind":if user{"user_input_request"}else{"approval_request"},"status":"waiting","countsForRun":false,"providerThreadId":t["activeProviderThreadId"],"providerTurnId":rid,"nativeItemRef":reference(&f["native_id"]),"runtimeRequestId":id,"checkpointScopeId":null,"startedAt":at,"completedAt":null});
+            let node = json!({"id":node_id,"threadId":tid,"runId":rid,"parentNodeId":root,"rootNodeId":root,"kind":if user{"user_input_request"}else{"approval_request"},"status":"waiting","countsForRun":false,"providerThreadId":t["activeProviderThreadId"],"providerTurnId":turn_id,"nativeItemRef":reference(&f["native_id"]),"runtimeRequestId":id,"checkpointScopeId":null,"startedAt":at,"completedAt":null});
             put(db, "nodes", &node_id, tid, &node)?;
             append(db, tid, "node.updated", node, t)?;
-            let mut req = json!({"id":id,"nodeId":node_id,"providerTurnId":rid,"nativeRequestRef":reference(&f["native_id"]),"kind":if user {"user_input"}else{"permission"},"status":"pending","responseCapability":{"type":"live","providerSessionId":t["activeProviderThreadId"],"supportsFeedback":true},"createdAt":at,"resolvedAt":null});
+            let mut req = json!({"id":id,"nodeId":node_id,"providerTurnId":turn_id,"nativeRequestRef":reference(&f["native_id"]),"kind":if user {"user_input"}else{"permission"},"status":"pending","responseCapability":{"type":"live","providerSessionId":t["activeProviderThreadId"],"supportsFeedback":true},"createdAt":at,"resolvedAt":null});
             if let Some(key) = crate::approval_policy::key(f, true) {
                 req["approvalPolicyKey"] = key;
             }
@@ -345,7 +401,7 @@ pub(crate) fn persist(
             let id = f["request_id"].as_str().ok_or("request id missing")?;
             let Some(mut request) = get(db, "runtimeRequests", id)
                 .ok()
-                .filter(|r| r["status"] == "pending" && r["providerTurnId"] == rid)
+                .filter(|r| r["status"] == "pending" && r["providerTurnId"] == turn_id)
             else {
                 return Ok(());
             };
@@ -371,7 +427,7 @@ pub(crate) fn persist(
             }
             let pending: bool = db.query_row(
                 "SELECT EXISTS(SELECT 1 FROM records WHERE kind='runtimeRequests' AND thread_id=? AND json_extract(body,'$.providerTurnId')=? AND json_extract(body,'$.status')='pending')",
-                [tid, rid], |r| r.get(0),
+                [tid, turn_id.as_str()], |r| r.get(0),
             ).map_err(|e| e.to_string())?;
             if !pending && run["status"] == "waiting" {
                 run["status"] = json!("running");
@@ -397,9 +453,10 @@ pub(crate) fn persist(
             append(db, tid, "thread.metadata-updated", t.clone(), t)?;
         }
         "usage" => {
+            run["claudeTerminalReason"] = f["terminal_reason"].clone();
             // Store only the current result's accounting, never the CLI transcript.
             put(db, "claudeUsage", rid, tid, f)?;
-            if let Ok(mut turn) = get(db, "providerTurns", rid) {
+            if let Ok(mut turn) = get(db, "providerTurns", &turn_id) {
                 let u = &f["usage"];
                 let input = u["input_tokens"].as_u64().unwrap_or(0);
                 let cached = u["cache_read_input_tokens"].as_u64().unwrap_or(0);
@@ -425,7 +482,7 @@ pub(crate) fn persist(
                         append(db, tid, "provider-thread.updated", pt, t)?;
                     }
                 }
-                put(db, "providerTurns", rid, tid, &turn)?;
+                put(db, "providerTurns", &turn_id, tid, &turn)?;
                 append(db, tid, "provider-turn.updated", turn, t)?;
             }
         }
@@ -442,11 +499,50 @@ pub(crate) fn finish(
     at: &str,
     status: &str,
 ) -> Result<(), String> {
-    let aid = format!("attempt-{rid}");
+    let run = get(db, "runs", rid).unwrap_or_default();
+    if status == "completed"
+        && run["claudeGoalChecked"] == true
+        && (run["claudeTerminalReason"].is_null() || run["claudeTerminalReason"] == "completed")
+    {
+        if let Some(id) = t["activeProviderThreadId"].as_str() {
+            if let Ok(provider) = get(db, "providerThreads", id) {
+                if provider["goal"]["status"] == "active"
+                    && provider["pendingBackgroundTasks"]
+                        .as_array()
+                        .is_none_or(|tasks| tasks.is_empty())
+                {
+                    let mut goal =
+                        json!({"objective":provider["goal"]["objective"],"status":"complete"});
+                    if let Some(checks) = provider["goal"].get("checks") {
+                        goal["checks"] = checks.clone();
+                    }
+                    crate::native_goal::publish(
+                        db,
+                        tid,
+                        t,
+                        provider["nativeThreadRef"]["nativeId"]
+                            .as_str()
+                            .unwrap_or(""),
+                        goal,
+                        at,
+                    )?;
+                }
+            }
+        }
+    }
+    let aid = run["activeAttemptId"]
+        .as_str()
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("attempt-{rid}"));
+    let root = run["rootNodeId"].as_str().unwrap_or(rid);
+    let turn_id = get(db, "attempts", &aid)
+        .ok()
+        .and_then(|a| a["providerTurnId"].as_str().map(str::to_owned))
+        .unwrap_or_else(|| rid.into());
     let ended = |v: &Value| {
         matches!(
             v["status"].as_str(),
-            Some("completed" | "failed" | "interrupted" | "cancelled")
+            Some("completed" | "failed" | "interrupted" | "cancelled" | "superseded")
         )
     };
     if let Some(mut a) = get(db, "attempts", &aid).ok().filter(|a| !ended(a)) {
@@ -455,14 +551,14 @@ pub(crate) fn finish(
         put(db, "attempts", &aid, tid, &a)?;
         append(db, tid, "attempt.updated", a, t)?;
     }
-    for (kind, event) in [
-        ("nodes", "node.updated"),
-        ("providerTurns", "provider-turn.updated"),
+    for (kind, event, id) in [
+        ("nodes", "node.updated", root),
+        ("providerTurns", "provider-turn.updated", turn_id.as_str()),
     ] {
-        if let Some(mut v) = get(db, kind, rid).ok().filter(|v| !ended(v)) {
+        if let Some(mut v) = get(db, kind, id).ok().filter(|v| !ended(v)) {
             v["status"] = json!(status);
             v["completedAt"] = json!(at);
-            put(db, kind, rid, tid, &v)?;
+            put(db, kind, id, tid, &v)?;
             append(db, tid, event, v, t)?;
         }
     }

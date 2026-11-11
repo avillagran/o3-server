@@ -1,0 +1,70 @@
+{
+  "checkedAt": "2026-11-04T17:04:33.216865+00:00",
+  "tag": "v0.1.8-nightly.20261104.4179",
+  "reference": "9e85538535c8553901351112ab02dd1dd62db5ee",
+  "url": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.8-nightly.20261104.4179",
+  "scope": "Native provider home resolution, Codex auth overlays and shared continuation identity. Full protocol goal remains active.",
+  "sourceFiles": [
+    "apps/server/src/provider/Drivers/CodexHomeLayout.ts",
+    "apps/server/src/provider/Drivers/CodexHomeLayout.test.ts",
+    "apps/server/src/provider/Drivers/CodexDriver.ts",
+    "apps/server/src/provider/Drivers/ClaudeHome.ts",
+    "apps/server/src/provider/Drivers/ClaudeHome.test.ts",
+    "packages/provider-core/src/server/pathExpansion.ts",
+    "packages/provider-core/src/server/instanceIdentity.ts"
+  ],
+  "implemented": [
+    "Runtime home paths and continuation identity use the same resolver. Codex applies explicit home, inherited CODEX_HOME only without a shadow home, and host .codex fallback. Claude expands explicit home and resolves inherited CLAUDE_CONFIG_DIR literally. Relative configured paths resolve before the native workspace cwd changes; configured aliases take precedence over legacy fallback aliases. Provider snapshots stamp continuation.groupKey.",
+    "Codex overlays share eleven known directories and other existing shared-home entries while keeping auth.json, auth.lock, models_cache.json and local runtime directories separate. Private auth symlinks fail before native launch. Stale auth.lock/model-cache symlinks are removed, while regular private entries remain unchanged. Existing shared-entry conflicts and equal homes produce typed source-shaped errors. Correct relative links remain intact; wrong links are retargeted.",
+    "Replaceable runtime locks become shared links, except local thread-writer-locks with live writer names, which remain local until later setup. Materialization runs outside database/registry locks, is serialized per provider setup, and tolerates concurrent installation of the same target link. Probes/session/usage clones share preparation.",
+    "Installed Codex 0.166.0 exposed a cache-retention gap: unsubscribe acknowledges subscription removal before native writer eviction. New sessions request native thread_unload_delay_secs=0; detach waits for thread/closed when the response reports a subscription, under a bounded deadline. The actor continues serving sibling sessions. Timeout preserves the durable release job and blocks incoming native input; active-writer errors continue to reject without rotating or forking history."
+  ],
+  "evidence": [
+    "Original home integration failed before port because the expected sessions link was a real directory. Compatible Rust Connection and native subprocess peers now verify cross-account native history, separate credential sentinels, configured relative homes, exact Claude aliases, auth-symlink refusal without child launch and recovery after an explicit file repair. The Codex peer uses OS file locks and delays writer eviction after unsubscribe ACK. A second app thread retains its native id, private history and original process while its sibling switches profiles.",
+    "A generator executes pinned pure TypeScript resolvers and the CodexDriver environment-home selection snippet. Twenty-one cases match Rust, including literal inherited tilde/whitespace, Codex explicit whitespace, repeated separators after tilde, relative paths, overlays and instance environment precedence. Seven unit tests also cover filesystem conflicts, typed errors, lock migration, idempotence and concurrent setup.",
+    "Three installed Codex gpt-6.1-sol inference turns pass through direct home, account A and account B: each retains the same provider-thread/native id, recalls private codewords from earlier turns and creates no context handoff. Auth files remain regular and separate inodes. Isolated credential-copy homes and owned-process cleanup run on success and failure. This proves storage/auth isolation with one copied login; separate paid account identities are not claimed."
+  ],
+  "nativeRuntimeEvidence": {
+    "version": "codex-cli 0.166.0",
+    "source": "https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/app-server/src/request_processors/thread_processor.rs",
+    "lifecycleSource": "https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/app-server/src/request_processors/thread_lifecycle.rs",
+    "note": "Runtime-retention setting and close-notification barrier supplement T3 home-layout port; no shared process is killed to release one thread."
+  },
+  "validation": {
+    "status": "passed",
+    "fullDefault": 432,
+    "fullNoDefault": 429,
+    "ignoredEach": 25,
+    "strictClippy": "all targets, both feature modes",
+    "other": [
+      "rustfmt",
+      "generated compatibility table",
+      "nightly monitor9",
+      "git diff --check",
+      "Python syntax",
+      "21-case TypeScript fixture reproduction",
+      "three installed Codex inference turns with native-close barrier"
+    ],
+    "scopeNotes": [
+      "The final default home integration was repeated after adding the sibling process/identity proof. Complete no-default suite and both Clippy modes cover that final test. Native production code is unchanged after the three-turn installed proof.",
+      "Remote default CI on14151a6 exposed a webhook fixture race: runCount commits before the failed claim is requeued. The fixture now waits for its future due time before simulating a crash/receipt replay. Both webhook suites (4 each), 12 targeted repetitions per mode and strict Clippy both modes pass; production webhook code is unchanged.",
+      "Remote minimal CI on a02c536 exposed an RPC read deadline during source-control discovery. CLI probes now use the source five-second budget, authenticated API probes three seconds, and independent VCS/CLI/API groups execute together. Barrier scripts prove parallel start; a timed-out native auth process is reaped and returns unknown. New discovery budget units (2), thread commands (11), vcs compatibility (13) and strict Clippy pass in both modes. Complete final-head CI remains the merge gate."
+    ],
+    "fullLocalReference": "14151a68ec2e62ebd3a2c6a30ad89ca31ffe2269",
+    "ciRepairAffectedEachMode": 26,
+    "remoteCi": {
+      "head": "2cec3bdcfbb88515385db693314673b1aa27afd4",
+      "requiredChecks": "both SUCCESS, no comments/reviews pending",
+      "mergedDev": "0d6a6280380d139046a563e63aa116bc13dfd6d0"
+    }
+  },
+  "pending": [
+    "Complete same-instance selection transition classifiers and all negotiated capabilities; full registry replacement/session-pool lifetime semantics.",
+    "Active cross-instance restart/continuation/settlement and all historical SDK/source-busy/subagent/setup-side-chat guards, timeline and event-order fidelity.",
+    "request_secret4179, broader MCP/auth/environment/provider/importer/forceStop surfaces, complete source-wide differential, current desktop/Android acceptance and resource measurements. No deployment, main promotion or M2 changes."
+  ],
+  "ciRepairSources": [
+    "apps/server/src/sourceControl/SourceControlDiscovery.ts",
+    "packages/source-control-core/src/server/discovery.ts"
+  ]
+}

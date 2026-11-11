@@ -42,6 +42,7 @@ pub enum RunError {
 
 #[derive(Clone, Copy)]
 pub struct Opts {
+    /// Zero has no deadline; cancellation still stops the child process group.
     pub timeout: Duration,
     pub cap: usize,
     /// When true a capped stdout is an `Out { truncated: true }`, otherwise a failure.
@@ -158,7 +159,7 @@ pub async fn run(
     opts: Opts,
     env: &[(&str, &Path)],
 ) -> Result<Out, RunError> {
-    run_inner(program, cwd, args, opts, env, false).await
+    run_inner(program, cwd, args, opts, env, false, None).await
 }
 
 /// External installers get a fixed interpreter search path and no ambient runtime injection.
@@ -168,7 +169,20 @@ pub async fn run_installer(
     args: &[&str],
     opts: Opts,
 ) -> Result<Out, RunError> {
-    run_inner(program, cwd, args, opts, &[], true).await
+    run_inner(program, cwd, args, opts, &[], true, None).await
+}
+pub(crate) async fn git_controlled(
+    cwd: &Path,
+    args: &[&str],
+    opts: Opts,
+    cancel: tokio::sync::watch::Receiver<bool>,
+) -> Result<Out, RunError> {
+    let args = SAFE_CONFIG
+        .iter()
+        .copied()
+        .chain(args.iter().copied())
+        .collect::<Vec<_>>();
+    run_inner("git", cwd, &args, opts, &[], false, Some(cancel)).await
 }
 async fn run_inner(
     program: &str,
@@ -177,6 +191,7 @@ async fn run_inner(
     opts: Opts,
     env: &[(&str, &Path)],
     installer: bool,
+    mut cancel: Option<tokio::sync::watch::Receiver<bool>>,
 ) -> Result<Out, RunError> {
     let mut command = base_command(program, cwd, args);
     if installer {
@@ -199,7 +214,7 @@ async fn run_inner(
     let stdout = child.stdout.take().expect("piped");
     let stderr = child.stderr.take().expect("piped");
     // Boxed: debug builds give big futures big frames, and sockets run on small stacks.
-    let work = Box::pin(async {
+    let mut work = Box::pin(async {
         let ((out, cut), (err, _)) = tokio::join!(
             read_capped(stdout, opts.cap),
             read_capped(stderr, STDERR_CAP)
@@ -210,7 +225,37 @@ async fn run_inner(
         let status = child.wait().await.ok();
         (out, cut, err, status)
     });
-    match tokio::time::timeout(opts.timeout, work).await {
+    // Checkout and submodule preparation follow upstream's cancellable, unbounded
+    // lifetime. Zero opts out of a deadline while retaining process-group cleanup.
+    let deadline = async {
+        if opts.timeout.is_zero() {
+            std::future::pending::<()>().await;
+        } else {
+            tokio::time::sleep(opts.timeout).await;
+        }
+    };
+    let cancelled = async {
+        if let Some(cancel) = cancel.as_mut() {
+            while !*cancel.borrow() {
+                if cancel.changed().await.is_err() {
+                    std::future::pending::<()>().await;
+                }
+            }
+        } else {
+            std::future::pending::<()>().await;
+        }
+    };
+    let mut was_cancelled = false;
+    let outcome = tokio::select! {result=&mut work=>Ok(result),_=deadline=>Err(()),_=cancelled=>{was_cancelled=true;Err(())}};
+    drop(work);
+    if outcome.is_err() {
+        unsafe {
+            libc::kill(-(_group.0 as i32), libc::SIGKILL);
+        }
+        let _ = child.start_kill();
+        let _ = child.wait().await;
+    }
+    match outcome {
         Ok((stdout, cut, err, status)) => Ok(Out {
             code: if cut {
                 if opts.allow_truncate {
@@ -226,6 +271,7 @@ async fn run_inner(
             truncated: cut,
         }),
         // `kill_on_drop` stops the child when `work` is dropped.
+        Err(_) if was_cancelled => Err(RunError::Spawn("Workspace preparation cancelled".into())),
         Err(_) => Err(RunError::Timeout(opts.timeout.as_millis() as u64)),
     }
 }

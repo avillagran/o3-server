@@ -110,3 +110,31 @@ fn withdrawn_permissions_and_questions_close_before_the_turn_finishes() {
             .is_empty());
     }
 }
+
+#[test]
+fn unrelated_zero_turn_notification_keeps_the_prompt_reader_attached() {
+    let s = support::start(|s| {
+        *s.provider.lock().unwrap() = Some(Arc::new(o3_server::claude::ClaudeProvider::new(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/claude/notification-result.py"),
+        )));
+    });
+    let cwd = s.dir.join("work");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let c = s.connect();
+    c.rpc("projects.mutate", json!({"type":"project.create","commandId":"project","projectId":"p","title":"Fixture","workspaceRoot":cwd})).unwrap();
+    c.rpc("orchestration.launchThread", json!({"commandId":"launch","threadId":"t","projectId":"p","title":"Resume boundary","modelSelection":{"instanceId":"claudeAgent","model":"test"},"runtimeMode":"approval-required","interactionMode":"default","workspaceStrategy":{"type":"root"},"initialMessage":{"text":"new prompt","attachments":[]}})).unwrap();
+    assert!(support::wait_for(Duration::from_secs(5), || {
+        projection(&c)["runs"][0]["status"] == "completed"
+    }));
+    let final_projection = projection(&c);
+    assert!(
+        final_projection["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| { m["role"] == "assistant" && m["text"] == "ACTUAL_PROMPT_REPLY" }),
+        "the real reply after the unrelated result must reach the projection"
+    );
+    assert_eq!(final_projection["runs"].as_array().unwrap().len(), 1);
+}

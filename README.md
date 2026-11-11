@@ -7,7 +7,8 @@ and O3 Android can talk to it like T3, with OmaBridge built in. Claude runs thro
 
 ## Status
 
-Not a finished replacement and not installed anywhere. T3 stays the daily server.
+Not a finished replacement. M2 runs a reversible service trial using an isolated profile;
+daily-use acceptance is tracked separately from protocol coverage.
 
 - Compatibility is tracked per RPC and command in [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md),
   with evidence and limits in [docs/CONFORMANCE.md](docs/CONFORMANCE.md).
@@ -15,21 +16,104 @@ Not a finished replacement and not installed anywhere. T3 stays the daily server
 - Development integrates on `dev`; `main` receives explicitly validated promotions.
   [Nightly maintenance](docs/UPSTREAM.md) documents the automated source monitor,
   port ledger and stability gates. Detection never promotes a nightly automatically.
-- Memory: about 17 MB idle and 21 MB peak with a real 374-thread history ([docs/RSS.md](docs/RSS.md)),
-  against 579 MB for T3 headless.
+- Memory depends on workload and platform: see the controlled M2/NODE measurements below
+  and the separate real-history workloads in [docs/RSS.md](docs/RSS.md).
 - Verified against the real lib-t3-rust client, real Claude and Codex turns, the O3 desktop backend
   and QML UI, and O3 Android on an emulator: pairing, new threads, chat, approval, reconnect, an image
   attachment and terminal commands ([docs/E2E.md](docs/E2E.md)). Not verified: daily use and Android through an
   OmaBridge gateway, which needs the real gateway deployment.
 
+## M2 and NODE comparison
+
+Measured on 2026-11-03. Both release binaries use source `7c9223e` (the same tree promoted
+into `main` as `c9c667b`). These are Linux hosts; M2 runs Asahi Linux, not macOS.
+
+| Host | Processor | Architecture | Logical CPUs | RAM available to Linux |
+|---|---|---|---:|---:|
+| M2 | Apple M2 Pro (8 performance + 4 efficiency cores) | aarch64 | 12 | 15,379 MiB |
+| NODE | AMD Ryzen 9 5900X | x86_64 | 24 | 31,979 MiB |
+
+The same isolated synthetic workload seeds 1,000 deferred messages of approximately 1 KB in
+one thread, then attaches one authenticated WebSocket client. Its bounded snapshot contains
+10 messages. No provider inference, desktop UI, browser or Android process is included.
+Bridge support is enabled; no public relay traffic is generated.
+
+| o3-server metric | M2 | NODE |
+|---|---:|---:|
+| Release binary, decimal MB | 14.44 | 16.10 |
+| Startup RSS, decimal MB | 15.01 | 11.79 |
+| Seeded RSS, no subscribed client, decimal MB | 17.04 | 17.95 |
+| Seeded RSS, one bounded subscription, decimal MB | 16.97 | 17.95 |
+| Durable messages seeded | 1,000 | 1,000 |
+| Messages in the bounded snapshot | 10 | 10 |
+
+One run per host, sampled from Linux `/proc/PID/smaps_rollup`; these are observations,
+not peak-memory limits or CPU speed rankings. Hosts also ran other services. The startup
+sample is taken immediately after runtime discovery. See the [raw aggregate evidence](docs/platform-measurements.json)
+for timestamps, KiB values and binary hashes. Reproduce with a release build:
+
+```sh
+TMPDIR=~/.cache/o3-build/tmp O3_BENCH_SOURCE_SHA=$(git rev-parse HEAD) tools/measure-rss /path/to/release/o3-server
+```
+
+For context, the live T3 serving process was also observed on each host. Those profiles,
+versions and activity differ from each other and from the synthetic workload above, so
+these figures do **not** establish a controlled T3-to-o3 memory reduction:
+
+| Live T3 observation | M2 | NODE |
+|---|---:|---:|
+| T3 nightly | 3904 | 3991 |
+| Serving-process RSS, decimal MB | 287.20 | 625.53 |
+
+These live samples use `/proc/PID/status` (`VmRSS`) and exclude launchers, provider children
+and clients. Full compatibility remains pending: `/mcp` now provides authenticated
+readers and thread control with dedicated credentials and automatic Claude/Codex injection
+([contract and gaps](docs/MCP.md)); project mutations, worktree readers and calling-thread
+worktree handoff with setup/continuation and same-instance Codex run restart are also
+available. Thread launch/transfer, cross-instance active handoff,
+remaining toolkits, OpenCode/ACP and DPoP/browser authentication remain pending. Native Claude/Codex support does not imply those capabilities are available.
+
+## Install
+
+Prebuilt Linux binaries (x86_64 and aarch64, glibc 2.39 or newer) are attached to each
+[release](https://github.com/avillagran/o3-server/releases) with a `SHA256SUMS` file. The O3
+Code installer can install and pin one for you (choose O3 Server when it asks). Releases are
+built by `.github/workflows/release.yml` when a `vX.Y.Z` tag equal to `Cargo.toml`'s version
+is pushed; `o3-server --version` prints that version.
+
 ## Build and test
 
 ```sh
 cargo build --release -j 4
-cargo test -j 4
+tools/test-rust-sandbox -- -j 4
 ```
 
-Keep build output off tmpfs, for example `CARGO_TARGET_DIR=/var/tmp/o3-build/main`.
+Keep build output and test state under `/home`, for example
+`CARGO_TARGET_DIR=~/.cache/o3-build/main` and `TMPDIR=~/.cache/o3-build/tmp`.
+Avoid `/tmp` (tmpfs in RAM) and `/var/tmp` (the small root filesystem); see
+[docs/DEV_PATHS.md](docs/DEV_PATHS.md).
+The test runner compiles on the host and runs the test executables in rootless
+Podman with no external network or writable host mounts. It requires Podman,
+a private Node installation and the local `localhost/android-sandbox:latest`
+base image. Its derived image adds ffmpeg for video decoder regressions.
+
+```sh
+tools/test-rust-sandbox -- --no-default-features -j 4
+tools/test-rust-sandbox -- --test native_goals stop_during_automatic_goal_turn
+```
+
+Sources, binaries, Git metadata and the Node runtime are mounted read-only;
+test profiles and subprocess fixtures live in the container's temporary filesystems.
+The container has a 6 GiB memory limit and four test workers by default. Set
+`--memory` or `--test-threads` before `--` to adjust them. Tests that require
+credentials, hardware or an official reference remain opt-in and need their
+dedicated isolated runners.
+
+`tools/test-agent-systemd` runs the opt-in native scope lifecycle in a separate
+rootless container with its own systemd user manager and private cgroups. It
+verifies detached descendants, shared-process protection, profile orphan cleanup
+an OOM fixture capped at 32 MiB, CDP pipes and interactive/setup PTY ownership.
+No host service manager or bus is mounted.
 
 ## Try it beside T3 (pilot)
 

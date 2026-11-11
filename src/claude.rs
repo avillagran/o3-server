@@ -1,15 +1,15 @@
 //! Direct Claude Code stream-json transport. No transcript cache or Node bridge.
 use crate::provider::{Provider, ProviderControl, ProviderEvent, RunInput};
+use crate::provider_frames::{Frame, FrameBuffer, FrameError, MAX_FRAME};
 use serde_json::{json, Value};
 use std::{
     collections::HashMap, future::Future, path::PathBuf, pin::Pin, process::Stdio, sync::Mutex,
 };
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncWriteExt, BufReader},
     process::{Child, ChildStdin, ChildStdout, Command},
     sync::{mpsc, watch},
 };
-const MAX_FRAME: usize = 1024 * 1024;
 const MAX_SESSIONS: usize = 16;
 /// A Claude Code session that launched this server exports these. A child spawned with them
 /// joins that session (id, messaging socket/token, effort). Upstream 47f2c8d29.
@@ -63,19 +63,34 @@ fn settings_entrypoint(instance: &[(String, String)]) -> Option<String> {
         .map(str::to_owned)
 }
 pub struct ClaudeProvider {
+    agent_scopes: Option<std::sync::Arc<crate::agent_scope::Registry>>,
     binary: PathBuf,
     idle_timeout: std::time::Duration,
     environment: Vec<(String, String)>,
     launch_args: Vec<String>,
     metadata: Mutex<Value>,
+    /// Models the CLI reported in its last `initialize` response.
+    reported_models: Mutex<Vec<Value>>,
+    /// Binary fingerprint and time of the last model discovery.
+    models_probe: Mutex<Option<(BinaryFingerprint, std::time::Instant)>>,
     sessions: std::sync::Arc<Mutex<HashMap<String, Session>>>,
 }
+type BinaryFingerprint = (PathBuf, u64, Option<std::time::SystemTime>);
+/// Rediscover models at least this often even when the binary is unchanged.
+const MODEL_DISCOVERY_TTL: std::time::Duration = std::time::Duration::from_secs(6 * 60 * 60);
+fn fingerprint(binary: &std::path::Path) -> Option<BinaryFingerprint> {
+    let real = std::fs::canonicalize(binary).ok()?;
+    let meta = std::fs::metadata(&real).ok()?;
+    Some((real, meta.len(), meta.modified().ok()))
+}
 struct Session {
+    _agent_scope: Option<crate::agent_scope::Lease>,
+    native_mcp: Option<std::sync::Arc<crate::native_mcp::Context>>,
     _mcp_config: Option<PrivateConfig>,
     child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
-    buffer: Vec<u8>,
+    buffer: FrameBuffer,
     native: String,
     cwd: PathBuf,
     options: Value,
@@ -118,16 +133,54 @@ impl ClaudeProvider {
     }
     pub fn new(binary: PathBuf) -> Self {
         Self {
+            agent_scopes: None,
             binary,
             idle_timeout: std::time::Duration::from_secs(60),
             environment: Vec::new(),
             launch_args: Vec::new(),
             metadata: Mutex::new(json!({})),
+            reported_models: Mutex::new(Vec::new()),
+            models_probe: Mutex::new(None),
             sessions: std::sync::Arc::new(Mutex::new(HashMap::new())),
         }
     }
+    fn reported(&self) -> Vec<Value> {
+        self.reported_models.lock().unwrap().clone()
+    }
+    /// Ask the CLI for its models again when its binary changed (an update) or the last
+    /// discovery is older than [`MODEL_DISCOVERY_TTL`].
+    async fn refresh_models(&self) -> Result<(), String> {
+        let current = fingerprint(&self.binary);
+        let stale = match &*self.models_probe.lock().unwrap() {
+            Some((seen, at)) => {
+                Some(seen) != current.as_ref() || at.elapsed() >= MODEL_DISCOVERY_TTL
+            }
+            None => true,
+        };
+        if !stale {
+            return Ok(());
+        }
+        let cwd = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir);
+        Provider::discover(self, cwd).await
+    }
     pub fn with_idle_timeout(mut self, timeout: std::time::Duration) -> Self {
         self.idle_timeout = timeout;
+        self
+    }
+    pub fn with_agent_scopes(
+        mut self,
+        registry: std::sync::Arc<crate::agent_scope::Registry>,
+    ) -> Self {
+        self.agent_scopes = Some(registry);
+        self
+    }
+    pub(crate) fn with_optional_agent_scopes(
+        mut self,
+        registry: Option<std::sync::Arc<crate::agent_scope::Registry>>,
+    ) -> Self {
+        self.agent_scopes = registry;
         self
     }
     pub fn with_launch_args(mut self, args: Vec<String>) -> Self {
@@ -139,7 +192,15 @@ impl ClaudeProvider {
         self
     }
     pub async fn shutdown(&self) {
-        let sessions = std::mem::take(&mut *self.sessions.lock().unwrap());
+        let sessions = {
+            let mut sessions = self.sessions.lock().unwrap();
+            for s in sessions.values() {
+                if let Some(c) = &s.native_mcp {
+                    c.revoke();
+                }
+            }
+            std::mem::take(&mut *sessions)
+        };
         for (_, mut session) in sessions {
             session.stop().await;
         }
@@ -156,7 +217,11 @@ impl ClaudeProvider {
             let expired = {
                 let mut map = sessions.lock().unwrap();
                 if map.get(&thread_id).is_some_and(|s| s.idle_since == stamp) {
-                    map.remove(&thread_id)
+                    let expired = map.remove(&thread_id);
+                    if let Some(context) = expired.as_ref().and_then(|s| s.native_mcp.as_ref()) {
+                        context.revoke();
+                    }
+                    expired
                 } else {
                     None
                 }
@@ -168,9 +233,15 @@ impl ClaudeProvider {
     }
     async fn spawn(&self, input: &RunInput) -> Result<Session, String> {
         let (model, effort, mut settings, _) =
-            crate::claude_models::compile(&input.model_selection)?;
+            crate::claude_models::compile(&input.model_selection, &self.reported())?;
         let mut cmd = Command::new(&self.binary);
         apply_environment(&mut cmd, &self.environment);
+        cmd.env(
+            "T3CODE_THREAD_ID",
+            input.model_selection["o3AppThreadId"]
+                .as_str()
+                .unwrap_or(&input.thread_id),
+        );
         cmd.args(&self.launch_args);
         cmd.args([
             "-p",
@@ -188,18 +259,28 @@ impl ClaudeProvider {
         .arg(model)
         .arg("--permission-mode")
         .arg(mode(input))
-        .process_group(0)
-        .current_dir(&input.cwd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
+        .current_dir(&input.cwd);
+        if input.model_selection["o3ColdCompact"] == true {
+            // Build the continuation summary without permitting historical tool replay.
+            cmd.args([
+                "--tools",
+                "",
+                "--strict-mcp-config",
+                "--mcp-config",
+                r#"{"mcpServers":{}}"#,
+            ]);
+        }
         if let Some(effort) = effort {
             cmd.arg("--effort").arg(effort);
         }
         let mut mcp_config = None;
-        if input.model_selection["o3BrowserMcp"].is_object() {
-            let mut config = input.model_selection["o3BrowserMcp"].clone();
+        let injected = if input.model_selection["o3NativeMcp"].is_object() {
+            &input.model_selection["o3NativeMcp"]
+        } else {
+            &input.model_selection["o3BrowserMcp"]
+        };
+        if injected.is_object() {
+            let mut config = injected.clone();
             config["type"] = json!("http");
             let file = PrivateConfig::create(&json!({"mcpServers":{"t3-code":config}}))?;
             cmd.arg("--mcp-config").arg(file.0.join("config.json"));
@@ -230,24 +311,53 @@ impl ClaudeProvider {
             ]);
         }
         cmd.arg("--settings").arg(settings.to_string());
+        if let Some(id) = input.model_selection["o3NewSessionId"].as_str() {
+            cmd.arg("--session-id").arg(id);
+        }
         if let Some(id) = input.model_selection["nativeForkSource"].as_str() {
             cmd.arg("--resume").arg(id).arg("--fork-session");
         } else if let Some(id) = &input.native_session_id {
             cmd.arg("--resume").arg(id);
         }
+
+        let (mut cmd, agent_scope) = if let Some(registry) = &self.agent_scopes {
+            let thread = input.model_selection["o3AppThreadId"]
+                .as_str()
+                .unwrap_or(&input.thread_id);
+            registry
+                .wrap(cmd, "claude", Some(thread), false, false)
+                .await?
+        } else {
+            (cmd, None)
+        };
+        cmd.process_group(0)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .kill_on_drop(true);
         let mut child = cmd.spawn().map_err(|e| format!("Claude spawn: {e}"))?;
         let stdin = child.stdin.take().ok_or("Claude stdin missing")?;
         let stdout = BufReader::new(child.stdout.take().ok_or("Claude stdout missing")?);
         let mut s = Session {
+            _agent_scope: agent_scope,
+            native_mcp: input.native_mcp.clone(),
             _mcp_config: mcp_config,
             child,
             stdin,
             stdout,
-            buffer: Vec::new(),
-            native: input.native_session_id.clone().unwrap_or_default(),
+            buffer: FrameBuffer::default(),
+            native: input
+                .native_session_id
+                .clone()
+                .or_else(|| {
+                    input.model_selection["o3NewSessionId"]
+                        .as_str()
+                        .map(str::to_owned)
+                })
+                .unwrap_or_default(),
             cwd: input.cwd.clone(),
             options: input.model_selection["options"].clone(),
-            browser: input.model_selection["o3BrowserMcp"].is_object(),
+            browser: injected.is_object(),
             idle_since: tokio::time::Instant::now(),
         };
         s.send(json!({"type":"control_request","request_id":"initialize","request":{"subtype":"initialize"}})).await?;
@@ -257,10 +367,14 @@ impl ClaudeProvider {
                 let v = s.frame().await?;
                 if v["type"] == "control_response" && v["response"]["request_id"] == "initialize" {
                     if v["response"]["subtype"] != "success" {
-                        return Err("Claude initialize rejected".into());
+                        return Err(format!("Claude initialize rejected: {}",v["response"]["error"].as_str().unwrap_or("native initialization failed").chars().take(500).collect::<String>()));
                     }
                     let response = &v["response"]["response"];
                     let mut metadata = self.metadata.lock().unwrap();
+                    if let Some(models) = response["models"].as_array().filter(|m| !m.is_empty()) {
+                        metadata["models"] = crate::claude_models::models(models);
+                        *self.reported_models.lock().unwrap() = models.clone();
+                    }
                     if let Some(commands) = response["commands"].as_array() {
                         metadata["slashCommands"] = json!(commands.iter().map(|c| {
                             let mut command = json!({"name":c["name"],"description":c["description"]});
@@ -281,7 +395,54 @@ impl ClaudeProvider {
         })
         .await
         .map_err(|_| "Claude initialize timeout")??;
+        if let Some(context) = &input.native_mcp {
+            let sessions = std::sync::Arc::downgrade(&self.sessions);
+            let key = input.thread_id.clone();
+            let id = context.id().to_owned();
+            let dispose_sessions = sessions.clone();
+            let dispose_key = key.clone();
+            context.set_disposer(std::sync::Arc::new(move |_revoke| {
+                let sessions = dispose_sessions.clone();
+                let key = dispose_key.clone();
+                Box::pin(async move {
+                    let session = sessions
+                        .upgrade()
+                        .and_then(|sessions| sessions.lock().unwrap().remove(&key));
+                    if let Some(mut session) = session {
+                        session.stop().await;
+                    }
+                    Ok(())
+                })
+            }));
+            context.set_process_check(std::sync::Arc::new(move || {
+                let Some(sessions) = sessions.upgrade() else {
+                    return false;
+                };
+                let mut sessions = sessions.lock().unwrap();
+                sessions
+                    .get_mut(&key)
+                    .filter(|s| s.native_mcp.as_ref().is_some_and(|c| c.id() == id))
+                    .is_none_or(|s| matches!(s.child.try_wait(), Ok(None)))
+            }));
+        }
         Ok(s)
+    }
+    async fn recover_input(
+        &self,
+        input: &mut RunInput,
+        output: &mpsc::Sender<ProviderEvent>,
+        reason: crate::provider::NativeRecoveryReason,
+        current: &[Value],
+    ) -> Result<(), String> {
+        let id = crate::native_recovery::request(input, output, reason, current).await?;
+        let previous = self.sessions.lock().unwrap().remove(&input.thread_id);
+        if let Some(mut previous) = previous {
+            previous.stop().await;
+        }
+        if let Some(context) = &input.native_mcp {
+            context.revoke();
+        }
+        crate::native_recovery::released(output, id).await
     }
     async fn run(
         &self,
@@ -294,50 +455,140 @@ impl ClaudeProvider {
             return Ok(());
         }
         let mut content = crate::provider_input::content(&input, true)?;
-        if crate::claude_models::compile(&input.model_selection)?.3 {
-            let text = content[0]["text"].as_str().unwrap().to_owned();
-            content[0]["text"] = json!(format!("{text}\n\nultrathink"));
+        if let Some(reason) = crate::handoff_delivery::recovery_reason(&input, &content) {
+            self.recover_input(&mut input, &output, reason, &content)
+                .await?;
+            content = crate::provider_input::content(&input, true)?;
         }
-        let existing = if input.runtime_mode == "text-only" {
+        let maintenance = crate::handoff_delivery::maintenance_input(&input);
+        let manual = if maintenance {
+            vec![]
+        } else {
+            crate::handoff_delivery::manual(&input, &mut content)?
+        };
+        let mut deliveries = if maintenance {
+            vec![]
+        } else {
+            crate::handoff_delivery::prepare(&input, &content)?
+        };
+        if (!deliveries.is_empty() || !manual.is_empty()) && input.native_session_id.is_none() {
+            input.model_selection["o3NewSessionId"] = json!(crate::store::random_id()?);
+        }
+        if !deliveries.is_empty() {
+            let context = deliveries
+                .iter()
+                .map(|d| d.inline())
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            let current = content[0]["text"].as_str().unwrap_or("");
+            content[0]["text"] = json!(format!("{context}\n\nUser message:\n{current}"));
+        }
+        deliveries.extend(manual);
+        let existing = if input.runtime_mode == "text-only"
+            || input.model_selection["o3ForceNewNativeThread"] == true
+        {
             None
         } else {
             self.sessions.lock().unwrap().remove(&input.thread_id)
         };
-        let mut session = if let Some(mut s) = existing {
-            if input.native_session_id.is_none() && !s.native.is_empty() {
-                input.native_session_id = Some(s.native.clone());
-            }
-            if !s.browser
-                && !input.model_selection["o3BrowserMcp"].is_object()
-                && s.cwd == input.cwd
-                && s.options == input.model_selection["options"]
-                && s.child.try_wait().map_err(|e| e.to_string())?.is_none()
-            {
-                s.control(
-                    "model",
-                    json!({"subtype":"set_model","model":crate::claude_models::compile(&input.model_selection)?.0}),
-                )
-                .await?;
-                s.control(
-                    "mode",
-                    json!({"subtype":"set_permission_mode","mode":mode(&input)}),
-                )
-                .await?;
-                s
+        let loaded: Result<Session, String> = async {
+            let session = if let Some(mut s) = existing {
+                if input.native_session_id.is_none() && !s.native.is_empty() {
+                    input.native_session_id = Some(s.native.clone());
+                }
+                let same_mcp = match (&s.native_mcp, &input.native_mcp) {
+                    (Some(old), Some(new)) => old.id() == new.id(),
+                    (None, None) => {
+                        !s.browser
+                            && !input.model_selection["o3BrowserMcp"].is_object()
+                            && !input.model_selection["o3NativeMcp"].is_object()
+                    }
+                    _ => false,
+                };
+                if same_mcp
+                    && s.cwd == input.cwd
+                    && crate::selection_transition::option_key(&s.options) == crate::selection_transition::option_key(&input.model_selection["options"])
+                    && s.child.try_wait().map_err(|e| e.to_string())?.is_none()
+                {
+                    s.control(
+                        "model",
+                        json!({"subtype":"set_model","model":crate::claude_models::compile(&input.model_selection, &self.reported())?.0}),
+                    )
+                    .await?;
+                    s.control(
+                        "mode",
+                        json!({"subtype":"set_permission_mode","mode":mode(&input)}),
+                    )
+                    .await?;
+                    s
+                } else {
+                    s.stop().await;
+                    refresh_mcp(&mut input).await?;
+                    self.spawn(&input).await?
+                }
             } else {
-                s.stop().await;
+                refresh_mcp(&mut input).await?;
+                self.spawn(&input).await?
+            };
+            Ok(session)
+        }
+        .await;
+        let mut session = match loaded {
+            Ok(session) => session,
+            Err(error)
+                if input.model_selection["nativeForkSource"].is_string()
+                    || (input.native_session_id.is_some()
+                        && !crate::native_recovery::thread_in_use(&error)) =>
+            {
+                let base = crate::provider_input::content(&input, true)?;
+                let reason = if input.model_selection["nativeForkSource"].is_string() {
+                    crate::provider::NativeRecoveryReason::ForkFailed
+                } else {
+                    crate::provider::NativeRecoveryReason::ResumeFailed
+                };
+                self.recover_input(&mut input, &output, reason, &base)
+                    .await?;
+                content = crate::provider_input::content(&input, true)?;
+                let manual = if maintenance {
+                    vec![]
+                } else {
+                    crate::handoff_delivery::manual(&input, &mut content)?
+                };
+                deliveries = if maintenance {
+                    vec![]
+                } else {
+                    crate::handoff_delivery::prepare(&input, &content)?
+                };
+                if !deliveries.is_empty() {
+                    let history = deliveries
+                        .iter()
+                        .map(|d| d.inline())
+                        .collect::<Vec<_>>()
+                        .join("\n\n");
+                    let current = content[0]["text"].as_str().unwrap_or("");
+                    content[0]["text"] = json!(format!("{history}\n\nUser message:\n{current}"));
+                }
+                deliveries.extend(manual);
+                input.model_selection["o3NewSessionId"] = json!(crate::store::random_id()?);
+                refresh_mcp(&mut input).await?;
                 self.spawn(&input).await?
             }
-        } else {
-            self.spawn(&input).await?
+            Err(error) => return Err(error),
         };
+        if crate::claude_models::compile(&input.model_selection, &self.reported())?.3 {
+            let text = content[0]["text"].as_str().unwrap().to_owned();
+            content[0]["text"] = json!(format!("{text}\n\nultrathink"));
+        }
         let result = async {
             if *cancel.borrow() || output.is_closed() || matches!(control.try_recv(), Ok(ProviderControl::Interrupt)) { return Ok(false); }
+            for delivery in &deliveries {delivery.acknowledge(&output,&session.native,"pending").await?;}
+            let mut history_inline = false;
             session.send(json!({"type":"user","message":{"role":"user","content":content},"parent_tool_use_id":null,"session_id":session.native})).await?;
             output.send(ProviderEvent::Started).await.map_err(|_|"receiver closed")?;
             let mut pending: HashMap<String, Value> = HashMap::new();
             let mut boundary=TurnBoundary::default();
             let mut interrupt_requested=false;
+            let mut cold_compact_pending = input.model_selection["o3ColdCompact"] == true;
             loop {
                 tokio::select! {
                     biased;
@@ -389,7 +640,10 @@ impl ClaudeProvider {
                         if v["type"]=="rate_limit_event" {
                             self.metadata.lock().unwrap()["usageLimits"]=usage_limits(&v["rate_limit_info"]);
                         }
-                        if let Some(id)=v["session_id"].as_str() { session.native=id.into(); }
+                        if let Some(id)=v["session_id"].as_str() {
+                            session.native=id.into();
+                            if !history_inline { for delivery in &deliveries {delivery.acknowledge(&output,id,"inline").await?;} history_inline=true; }
+                        }
                         if v["type"]=="control_response" && v["response"]["subtype"]=="error" { return Err(format!("Claude control rejected: {}",v["response"]["error"])); }
                         if v["type"]=="control_cancel_request" {
                             if let Some(native)=v["request_id"].as_str() {
@@ -411,21 +665,37 @@ impl ClaudeProvider {
                                 session.send(permission_response(native,&json!("decline"),Some("The client captured your proposed plan. Stop and wait for user feedback or implementation in a later turn."),json!({}))).await?;
                                 continue;
                             }
+                            if let Some(warning)=removal_safety_denial(mode(&input),&v["request"]) {
+                                session.send(permission_response(native,&json!("decline"),Some(&format!("Claude Code's removal safety check denied this command; the user did not reject it. The command did not run. Do not bypass the check by splitting the removal, putting it in a script, or using another tool or shell. If the warning below supplies a safe rewrite, use it and let the same check evaluate it. Otherwise continue the rest of the task without the removal and tell the user what you needed to delete and why. Warning: {warning}")),json!({}))).await?;
+                                continue;
+                            }
                             if pending.len()>=64 { return Err("Claude pending request limit".into()); }
                             pending.insert(native.into(),v["request"].clone());
                             output.send(ProviderEvent::Native(json!({"type":"permission","request_id":format!("{}:{native}",input.run_id),"native_id":native,"request":v["request"]}))).await.map_err(|_|"receiver closed")?;
                         } else {
                             boundary.observe(&v)?;
-                            for event in decode(&v) {
-                                if matches!(event,ProviderEvent::Completed|ProviderEvent::Failed(_)) {boundary.terminal=Some(if interrupt_requested {ProviderEvent::Interrupted}else{event});} else {output.send(event).await.map_err(|_|"receiver closed")?;}
+                            for event in decode_with_continuation(&v, boundary.awaiting_continuation) {
+                                if matches!(event,ProviderEvent::Completed|ProviderEvent::Failed(_)) {boundary.awaiting_continuation=false; boundary.terminal=Some(if interrupt_requested {ProviderEvent::Interrupted}else{event});} else {output.send(event).await.map_err(|_|"receiver closed")?;}
                             }
                         }
-                        if boundary.ready() {output.send(boundary.terminal.take().unwrap()).await.map_err(|_|"receiver closed")?;return Ok(true); }
+                        if boundary.ready() {
+                            if cold_compact_pending && matches!(boundary.terminal, Some(ProviderEvent::Completed)) {
+                                cold_compact_pending = false;
+                                boundary = TurnBoundary::default();
+                                session.prompt("/compact").await?;
+                                continue;
+                            }
+                            output.send(boundary.terminal.take().unwrap()).await.map_err(|_|"receiver closed")?;
+                            return Ok(true);
+                        }
                     }
                 }
             }
         }.await;
-        if matches!(result, Ok(true)) && input.runtime_mode != "text-only" {
+        if matches!(result, Ok(true))
+            && input.runtime_mode != "text-only"
+            && input.model_selection["o3ColdCompact"] != true
+        {
             let stamp = tokio::time::Instant::now();
             session.idle_since = stamp;
             let thread_id = input.thread_id.clone();
@@ -433,7 +703,11 @@ impl ClaudeProvider {
                 let mut sessions = self.sessions.lock().unwrap();
                 let evicted = if sessions.len() >= MAX_SESSIONS {
                     let key = sessions.keys().next().cloned().unwrap();
-                    sessions.remove(&key)
+                    let removed = sessions.remove(&key);
+                    if let Some(c) = removed.as_ref().and_then(|s| s.native_mcp.as_ref()) {
+                        c.revoke();
+                    }
+                    removed
                 } else {
                     None
                 };
@@ -450,11 +724,23 @@ impl ClaudeProvider {
         result.map(|_| ())
     }
 }
+async fn refresh_mcp(input: &mut RunInput) -> Result<(), String> {
+    if let Some(context) = &input.native_mcp {
+        let context = context
+            .refresh(&input.cwd, &input.model_selection["options"])
+            .await?;
+        input.model_selection["o3NativeMcp"] = context.config();
+        input.native_mcp = Some(context);
+    }
+    Ok(())
+}
+
 #[derive(Default)]
 struct TurnBoundary {
     tasks: std::collections::HashSet<String>,
     ended: std::collections::HashSet<String>,
     terminal: Option<ProviderEvent>,
+    awaiting_continuation: bool,
 }
 impl TurnBoundary {
     fn observe(&mut self, v: &Value) -> Result<(), String> {
@@ -481,7 +767,15 @@ impl TurnBoundary {
                     }
                 }
                 if v["subtype"] == "task_notification" {
-                    self.tasks.remove(id);
+                    // The root's earlier result only acknowledged launching background work.
+                    // Claude next emits a task-notification turn; consume that turn before
+                    // settling the app run. Duplicate notifications cannot reopen a result.
+                    if self.tasks.remove(id)
+                        && matches!(self.terminal, Some(ProviderEvent::Completed))
+                    {
+                        self.terminal = None;
+                        self.awaiting_continuation = true;
+                    }
                     if self.ended.len() >= 1024 {
                         return Err("Claude completed task limit reached".into());
                     }
@@ -494,6 +788,44 @@ impl TurnBoundary {
     fn ready(&self) -> bool {
         self.terminal.is_some() && self.tasks.is_empty()
     }
+}
+/// Under bypassPermissions the CLI still forwards removals its safety check cannot
+/// verify. T3 denies those instead of asking a person; return the CLI warning to deny.
+fn removal_safety_denial(mode: &str, request: &Value) -> Option<String> {
+    if mode != "bypassPermissions"
+        || request["tool_name"] != "Bash"
+        || !request["matched_ask_rule"].is_null()
+    {
+        return None;
+    }
+    let raw = request["decision_reason"].as_str()?;
+    let mut reason = String::with_capacity(raw.len());
+    let mut chars = raw.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' {
+            // Strip CSI sequences (ESC [ ... final byte), as Node's stripVTControlCharacters does.
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                for c in chars.by_ref() {
+                    if ('@'..='~').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+        reason.push(ch);
+    }
+    let reason = reason.trim();
+    let lower = reason.to_ascii_lowercase();
+    let dangerous_rm = lower.strip_prefix("dangerous rm").is_some_and(|rest| {
+        let rest = rest.strip_prefix("dir").unwrap_or(rest);
+        !rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+    });
+    (dangerous_rm
+        || reason == "This shell -c script runs rm and could not be checked"
+        || reason == "A permission rule denies a command in this shell -c script")
+        .then(|| reason.to_owned())
 }
 fn mode(input: &RunInput) -> &str {
     if input.interaction_mode == "plan" {
@@ -508,6 +840,9 @@ fn mode(input: &RunInput) -> &str {
 }
 impl Drop for Session {
     fn drop(&mut self) {
+        if let Some(context) = &self.native_mcp {
+            context.revoke();
+        }
         if let Some(pid) = self.child.id() {
             // Each CLI owns an isolated process group. Never leave tool grandchildren behind.
             // SAFETY: kill takes integer arguments and no pointers; pid is our live child's ID.
@@ -519,6 +854,9 @@ impl Drop for Session {
 }
 impl Session {
     async fn stop(&mut self) {
+        if let Some(context) = self.native_mcp.take() {
+            context.revoke();
+        }
         if let Some(pid) = self.child.id() {
             // SAFETY: the isolated group is owned by this Session, with no borrowed pointers.
             unsafe {
@@ -526,6 +864,9 @@ impl Session {
             }
         }
         let _ = self.child.kill().await;
+        if let Some(mut scope) = self._agent_scope.take() {
+            scope.stop().await;
+        }
     }
     async fn send(&mut self, v: Value) -> Result<(), String> {
         let mut bytes = serde_json::to_vec(&v).map_err(|e| e.to_string())?;
@@ -545,40 +886,64 @@ impl Session {
     async fn prompt(&mut self, text: &str) -> Result<(), String> {
         self.send(json!({"type":"user","message":{"role":"user","content":[{"type":"text","text":text}]},"parent_tool_use_id":null,"session_id":self.native})).await
     }
-    // fill_buf is cancellation safe; the partial frame survives select! cancellation.
+    // Cancellation safe; the partial frame survives select! cancellation. A frame above the
+    // buffering limit is drained and surfaced as `o3_oversized_frame` so the turn continues.
     async fn frame(&mut self) -> Result<Value, String> {
-        loop {
-            let bytes = self.stdout.fill_buf().await.map_err(|e| e.to_string())?;
-            if bytes.is_empty() {
-                return Err("Claude stdout closed".into());
+        match self.buffer.next(&mut self.stdout, MAX_FRAME).await {
+            Ok(Some(Frame::Json(v, _))) => Ok(v),
+            Ok(Some(Frame::Oversized(bytes))) => {
+                Ok(json!({"type":"o3_oversized_frame","bytes":bytes}))
             }
-            let n = bytes
-                .iter()
-                .position(|b| *b == b'\n')
-                .map(|n| n + 1)
-                .unwrap_or(bytes.len());
-            if self.buffer.len() + n > MAX_FRAME {
-                return Err("Claude frame exceeds 1 MiB".into());
-            }
-            let done = bytes[n - 1] == b'\n';
-            self.buffer.extend_from_slice(&bytes[..n]);
-            self.stdout.consume(n);
-            if done {
-                let v = serde_json::from_slice(&self.buffer)
-                    .map_err(|e| format!("Claude invalid JSON: {e}"));
-                self.buffer.clear();
-                return v;
-            }
+            Ok(None) | Err(FrameError::Truncated) => Err("Claude stdout closed".into()),
+            Err(FrameError::Io(e)) => Err(e),
+            Err(FrameError::Json(e)) => Err(format!("Claude invalid JSON: {e}")),
         }
     }
 }
 impl Provider for ClaudeProvider {
+    fn dispose<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            self.shutdown().await;
+            Ok(())
+        })
+    }
+
+    fn capabilities(&self, _instance: &str) -> Option<Value> {
+        crate::selection_transition::native_capabilities("claudeAgent")
+    }
+    fn plan_selection_transition(
+        &self,
+        _instance: &str,
+        _current: &Value,
+        _target: &Value,
+        _capabilities: &Value,
+    ) -> Result<Option<crate::selection_transition::Selection>, String> {
+        Ok(crate::selection_transition::turn_scoped())
+    }
+
+    fn detach<'a>(
+        &'a self,
+        _instance: &'a str,
+        key: &'a str,
+        _native: Option<&'a str>,
+        _revoke: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            let session = self.sessions.lock().unwrap().remove(key);
+            if let Some(mut session) = session {
+                session.stop().await;
+            }
+            Ok(())
+        })
+    }
+
     fn discover<'a>(
         &'a self,
         cwd: PathBuf,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(async move {
             let input = RunInput {
+                native_mcp: None,
                 provider_instance_id: "claudeAgent".into(),
                 native_session_id: None,
                 thread_id: "discovery".into(),
@@ -592,10 +957,18 @@ impl Provider for ClaudeProvider {
                 attachments: json!([]),
                 context: None,
             };
+            let probe = fingerprint(&self.binary);
             let mut session = self.spawn(&input).await?;
             session.stop().await;
+            if let Some(probe) = probe {
+                *self.models_probe.lock().unwrap() = Some((probe, std::time::Instant::now()));
+            }
             Ok(())
         })
+    }
+
+    fn refresh<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(self.refresh_models())
     }
 
     fn poll_usage<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
@@ -627,17 +1000,36 @@ impl Provider for ClaudeProvider {
             )
             .await
             .map_err(|_| "Claude quota request failed")?;
+            // The account is otherwise known only after a CLI session initializes;
+            // clients need it to merge the same account seen on several hosts.
+            let config_file = if self
+                .environment
+                .iter()
+                .any(|(k, _)| k == "CLAUDE_CONFIG_DIR")
+                || std::env::var_os("CLAUDE_CONFIG_DIR").is_some()
+            {
+                dir.join(".claude.json")
+            } else {
+                dir.with_file_name(".claude.json")
+            };
+            let account = account_identity(&config_file);
             let mut windows = Vec::new();
-            for (key, kind, label) in [
-                ("five_hour", "session", "Session"),
-                ("seven_day", "weekly", "Weekly"),
-            ] {
+            for (key, kind, label, mins) in WINDOWS {
                 if let Some(used) = usage[key]["utilization"].as_f64() {
-                    windows.push(json!({"id":key,"kind":kind,"label":label,"usedPercent":used.clamp(0.,100.),"resetsAt":usage[key]["resets_at"]}));
+                    windows.push(json!({"id":key,"kind":kind,"label":label,"usedPercent":used.clamp(0.,100.),"resetsAt":usage[key]["resets_at"],"windowDurationMins":mins}));
                 }
             }
-            self.metadata.lock().unwrap()["usageLimits"] =
+            let mut metadata = self.metadata.lock().unwrap();
+            metadata["usageLimits"] =
                 json!({"checkedAt":crate::store::iso(crate::store::now_ms()),"windows":windows});
+            if let Some(email) = account {
+                if !metadata["auth"].is_object() {
+                    metadata["auth"] = json!({"status":"unknown"});
+                }
+                if !metadata["auth"]["email"].is_string() {
+                    metadata["auth"]["email"] = json!(email);
+                }
+            }
             Ok(())
         })
     }
@@ -692,11 +1084,23 @@ fn sdk_answers(answers: &Value) -> Result<Value, String> {
     Ok(Value::Object(result))
 }
 
+#[cfg(test)]
 pub(crate) fn decode(v: &Value) -> Vec<ProviderEvent> {
+    decode_with_continuation(v, false)
+}
+fn decode_with_continuation(v: &Value, awaiting_continuation: bool) -> Vec<ProviderEvent> {
     let mut out = Vec::new();
     match v["type"].as_str().unwrap_or("") {
         "stream_event" => {
             let e = &v["event"];
+            if e["type"] == "content_block_start"
+                && e["content_block"]["type"] == "text"
+                && v["parent_tool_use_id"].is_null()
+            {
+                out.push(ProviderEvent::TextDelta(
+                    crate::provider::TEXT_BLOCK_BREAK.into(),
+                ));
+            }
             if e["type"] == "content_block_delta" {
                 let d = &e["delta"];
                 if d["type"] == "text_delta" && v["parent_tool_use_id"].is_null() {
@@ -727,9 +1131,36 @@ pub(crate) fn decode(v: &Value) -> Vec<ProviderEvent> {
             out.push(ProviderEvent::Native(json!({"type":"task","frame":v})))
         }
         "assistant" | "user" => {
+            if v["parent_tool_use_id"].is_null() {
+                if v["type"] == "assistant" && v["message"]["model"] != "<synthetic>" {
+                    out.push(ProviderEvent::Native(json!({"type":"goal_checked"})));
+                } else if v["message"]["model"] == "<synthetic>"
+                    || (v["type"] == "user" && v["isSynthetic"] == true)
+                {
+                    let text = crate::native_goal::claude_text(v);
+                    if crate::native_goal::trim(&text).starts_with("Goal ")
+                        || crate::native_goal::trim(&text).starts_with("No goal set")
+                        || text.starts_with("Stop hook feedback:\n[")
+                    {
+                        out.push(ProviderEvent::Native(
+                            json!({"type":"goal_message","message":v}),
+                        ));
+                        if v["type"] == "assistant"
+                            && (crate::native_goal::trim(&text).starts_with("Goal active: ")
+                                || crate::native_goal::trim(&text).starts_with("No goal set"))
+                        {
+                            out.push(ProviderEvent::TextDelta(text));
+                        }
+                    }
+                }
+            }
             if let Some(content) = v["message"]["content"].as_array() {
                 for block in content {
                     if matches!(block["type"].as_str(), Some("tool_use" | "tool_result")) {
+                        let mut block = block.clone();
+                        if block["type"] == "tool_result" {
+                            crate::provider_frames::redact_inline_binary(&mut block["content"]);
+                        }
                         out.push(ProviderEvent::Native(json!({"type":"tool","block":block,"parent_tool_use_id":v["parent_tool_use_id"]})));
                         if block["type"] == "tool_use" && block["name"] == "Bash" {
                             out.push(ProviderEvent::Command(
@@ -767,7 +1198,20 @@ pub(crate) fn decode(v: &Value) -> Vec<ProviderEvent> {
             }
         }
         "result" => {
-            out.push(ProviderEvent::Native(json!({"type":"usage","usage":v["usage"],"modelUsage":v["modelUsage"],"cost":v["total_cost_usd"],"session_id":v["session_id"]})));
+            // A resumed CLI can flush a zero-turn task-notification result before it
+            // processes our user message. It neither settles that message nor supplies
+            // its usage. An observed background completion, however, owns a continuation:
+            // its zero-turn result can legitimately settle that continuation without text.
+            // Upstream ClaudeAdapterV2 also distinguishes these two routes.
+            if !awaiting_continuation
+                && v["origin"]["kind"] == "task-notification"
+                && v["num_turns"].as_u64() == Some(0)
+                && v["subtype"] == "success"
+                && v["is_error"] != true
+            {
+                return out;
+            }
+            out.push(ProviderEvent::Native(json!({"type":"usage","usage":v["usage"],"modelUsage":v["modelUsage"],"cost":v["total_cost_usd"],"session_id":v["session_id"],"origin":v["origin"],"num_turns":v["num_turns"],"subtype":v["subtype"],"terminal_reason":v["terminal_reason"]})));
             out.push(if v["is_error"] == true || v["subtype"] != "success" {
                 ProviderEvent::Failed(v["result"].as_str().unwrap_or("Claude turn failed").into())
             } else {
@@ -796,20 +1240,35 @@ fn credentials_present() -> bool {
 pub fn config(installed: bool) -> Value {
     static CHECKED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     let checked = CHECKED.get_or_init(|| crate::store::iso(crate::store::now_ms()));
-    json!({"instanceId":"claudeAgent","driver":"claudeAgent","displayName":"Claude Code","enabled":installed,"installed":installed,"version":null,"status":if !installed {"disabled"}else if credentials_present() {"ready"}else{"warning"},"auth":{"status":"unknown"},"checkedAt":checked,"message":"Direct CLI adapter; authentication checked at execution. Native-session continuation after restart; no inference reattachment.","slashCommands":[{"name":"compact","description":"Compact conversation history"}],"skills":[],"slashCommandsPending":true,"models":crate::claude_models::models(),"supportedRuntimeModes":["approval-required","auto-accept-edits","full-access"],"supportsConversationRollback":false,"nativeSessions":{"canList":false,"canLoad":false,"canResume":true}})
+    json!({"instanceId":"claudeAgent","driver":"claudeAgent","displayName":"Claude Code","enabled":installed,"installed":installed,"version":null,"status":if !installed {"disabled"}else if credentials_present() {"ready"}else{"warning"},"auth":{"status":"unknown"},"checkedAt":checked,"message":"Direct CLI adapter; authentication checked at execution. Native-session continuation after restart; no inference reattachment.","slashCommands":[{"name":"compact","description":"Compact conversation history"}],"skills":[],"slashCommandsPending":true,"models":crate::claude_models::models(&[]),"supportedRuntimeModes":["approval-required","auto-accept-edits","full-access"],"supportsConversationRollback":false,"nativeSessions":{"canList":false,"canLoad":false,"canResume":true}})
 }
+
+/// Email of the signed-in Claude account, as the CLI caches it in `.claude.json`.
+fn account_identity(config_file: &std::path::Path) -> Option<String> {
+    let bytes = std::fs::read(config_file).ok()?;
+    let config: Value = serde_json::from_slice(&bytes).ok()?;
+    config["oauthAccount"]["emailAddress"]
+        .as_str()
+        .map(str::trim)
+        .filter(|e| e.contains('@') && e.len() <= 320)
+        .map(str::to_owned)
+}
+
+/// Claude's quota windows have fixed lengths; clients need the length to place the
+/// expected-pace marker on the usage bar.
+pub(crate) const WINDOWS: [(&str, &str, &str, u64); 2] = [
+    ("five_hour", "session", "Session", 300),
+    ("seven_day", "weekly", "Weekly", 10080),
+];
 
 fn usage_limits(info: &Value) -> Value {
     let mut windows = Vec::new();
-    for (native, id, label) in [
-        ("five_hour", "session", "Session"),
-        ("seven_day", "weekly", "Weekly"),
-    ] {
+    for (native, id, label, mins) in WINDOWS {
         let w = &info["unifiedWindows"][native];
         let Some(used) = w["utilization"].as_f64().filter(|v| v.is_finite()) else {
             continue;
         };
-        let mut window = json!({"id":native,"kind":id,"label":label,"usedPercent":(used*100.0).clamp(0.0,100.0)});
+        let mut window = json!({"id":native,"kind":id,"label":label,"usedPercent":(used*100.0).clamp(0.0,100.0),"windowDurationMins":mins});
         if let Some(reset) = w["resetsAt"]
             .as_i64()
             .and_then(|s| s.checked_mul(1000))
@@ -840,6 +1299,47 @@ mod tests {
             std::env::temp_dir().join(format!("o3-env-{}", crate::store::random_id().unwrap()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+    #[test]
+    fn bypass_denies_unverifiable_removals_instead_of_asking() {
+        let request = |reason: &str| json!({"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"rm -rf $D/x"},"decision_reason":reason});
+        let warning = "Dangerous rm operation on possibly-empty variable path: ${D}/x (D)";
+        assert_eq!(
+            super::removal_safety_denial(
+                "bypassPermissions",
+                &request(&format!("\u{1b}[1m{warning}\u{1b}[22m "))
+            )
+            .as_deref(),
+            Some(warning)
+        );
+        assert!(super::removal_safety_denial(
+            "bypassPermissions",
+            &request("Dangerous rmdir operation")
+        )
+        .is_some());
+        assert!(super::removal_safety_denial(
+            "bypassPermissions",
+            &request("This shell -c script runs rm and could not be checked")
+        )
+        .is_some());
+        // Other safety checks, other modes, other tools and explicit ask rules still reach a person.
+        assert!(super::removal_safety_denial(
+            "bypassPermissions",
+            &request("Dangerous rmx operation")
+        )
+        .is_none());
+        assert!(super::removal_safety_denial(
+            "bypassPermissions",
+            &request("Output redirection could not be checked")
+        )
+        .is_none());
+        assert!(super::removal_safety_denial("default", &request(warning)).is_none());
+        let mut ask = request(warning);
+        ask["matched_ask_rule"] = json!({"source":"userSettings","tool_name":"Bash"});
+        assert!(super::removal_safety_denial("bypassPermissions", &ask).is_none());
+        let mut write = request(warning);
+        write["tool_name"] = json!("Write");
+        assert!(super::removal_safety_denial("bypassPermissions", &write).is_none());
     }
     #[test]
     fn host_session_variables_are_removed_but_instance_overrides_win() {
@@ -896,6 +1396,45 @@ mod tests {
     }
 
     use super::*;
+    #[test]
+    fn account_identity_reads_the_cached_oauth_account_email() {
+        let dir =
+            std::env::temp_dir().join(format!("o3-account-{}", crate::store::random_id().unwrap()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join(".claude.json");
+        std::fs::write(
+            &file,
+            r#"{"oauthAccount":{"emailAddress":" Me@Example.com ","organizationUuid":"o"}}"#,
+        )
+        .unwrap();
+        assert_eq!(account_identity(&file).as_deref(), Some("Me@Example.com"));
+        std::fs::write(&file, r#"{"oauthAccount":{}}"#).unwrap();
+        assert_eq!(account_identity(&file), None);
+        std::fs::remove_file(&file).unwrap();
+        std::fs::remove_dir(&dir).unwrap();
+        assert_eq!(account_identity(&file), None);
+    }
+    #[test]
+    fn each_main_text_block_starts_with_a_paragraph_break() {
+        let start = |parent: Value| json!({"type":"stream_event","parent_tool_use_id":parent,"event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}});
+        assert!(
+            matches!(&decode(&start(Value::Null))[..], [ProviderEvent::TextDelta(t)] if t == "\n\n")
+        );
+        assert!(decode(&start(json!("toolu_1"))).is_empty());
+        let tool = json!({"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_start","index":1,"content_block":{"type":"tool_use"}}});
+        assert!(decode(&tool).is_empty());
+    }
+    #[test]
+    fn quota_windows_carry_their_length_for_the_pace_marker() {
+        let limits = usage_limits(&json!({"unifiedWindows":{
+            "five_hour":{"utilization":0.4,"resetsAt":1_800_000_000},
+            "seven_day":{"utilization":0.76,"resetsAt":1_800_000_000}
+        }}));
+        let windows = limits["windows"].as_array().unwrap();
+        assert_eq!(windows[0]["windowDurationMins"], 300);
+        assert_eq!(windows[1]["windowDurationMins"], 10080);
+        assert_eq!(windows[1]["usedPercent"], 76.0);
+    }
     fn fixtures(name: &str) -> Vec<Value> {
         let text = match name {
             "permission" => include_str!("../tests/fixtures/claude/permission.jsonl"),
@@ -920,11 +1459,13 @@ mod tests {
         let pid = child.id().unwrap();
         let stamp = tokio::time::Instant::now();
         let session = Session {
+            _agent_scope: None,
+            native_mcp: None,
             _mcp_config: None,
             stdin: child.stdin.take().unwrap(),
             stdout: BufReader::new(child.stdout.take().unwrap()),
             child,
-            buffer: vec![],
+            buffer: FrameBuffer::default(),
             native: "fixture".into(),
             cwd: PathBuf::new(),
             options: Value::Null,
@@ -942,6 +1483,72 @@ mod tests {
             .unwrap();
         assert!(provider.sessions.lock().unwrap().is_empty());
         assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists());
+    }
+    #[tokio::test]
+    async fn refresh_lists_models_the_cli_reports_and_rediscovers_after_an_update() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir()
+            .join(crate::store::random_id().unwrap())
+            .join("model-discovery");
+        std::fs::create_dir_all(&dir).unwrap();
+        let binary = dir.join("claude");
+        let script = |model: &str| {
+            format!(
+                r#"#!/usr/bin/env python3
+import json, os, sys
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "spawns"), "a") as f:
+    f.write("x")
+for line in sys.stdin:
+    request = json.loads(line)
+    if request.get("request_id") == "initialize":
+        models = [{{"value": "fable", "resolvedModel": "{model}", "displayName": "Fable Next",
+                   "supportsEffort": True, "supportedEffortLevels": ["low", "medium", "high"]}}]
+        print(json.dumps({{"type": "control_response", "response": {{"subtype": "success",
+              "request_id": "initialize", "response": {{"models": models}}}}}}), flush=True)
+"#
+            )
+        };
+        let install = |model: &str| {
+            std::fs::write(&binary, script(model)).unwrap();
+            std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755)).unwrap();
+        };
+        let spawns = || {
+            std::fs::read_to_string(dir.join("spawns"))
+                .unwrap_or_default()
+                .len()
+        };
+        let listed = |provider: &ClaudeProvider| -> Vec<String> {
+            provider.config()[0]["models"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|m| m["slug"].as_str().unwrap().to_owned())
+                .collect()
+        };
+        install("claude-fable-9-1");
+        let provider = ClaudeProvider::new(binary.clone());
+        assert!(!listed(&provider).contains(&"claude-fable-9-1".to_owned()));
+        provider.refresh().await.unwrap();
+        assert_eq!(spawns(), 1);
+        assert_eq!(listed(&provider)[0], "claude-fable-9-1");
+        let selection = json!({"model":"fable","options":[{"id":"effort","value":"high"}]});
+        assert_eq!(
+            crate::claude_models::compile(&selection, &provider.reported())
+                .unwrap()
+                .0,
+            "claude-fable-9-1"
+        );
+        // An unchanged binary is not spawned again on every health refresh.
+        provider.refresh().await.unwrap();
+        assert_eq!(spawns(), 1);
+        // Updating the CLI changes the binary, so the next refresh asks it again.
+        install("claude-fable-9-20");
+        provider.refresh().await.unwrap();
+        assert_eq!(spawns(), 2);
+        assert_eq!(listed(&provider)[0], "claude-fable-9-20");
+        assert!(!listed(&provider).contains(&"claude-fable-9-1".to_owned()));
+        provider.shutdown().await;
+        std::fs::remove_dir_all(dir.parent().unwrap()).unwrap();
     }
     #[tokio::test]
     async fn text_generation_cannot_remove_a_colliding_conversation_session() {
@@ -962,11 +1569,13 @@ mod tests {
             .unwrap();
         let pid = child.id().unwrap();
         let session = Session {
+            _agent_scope: None,
+            native_mcp: None,
             _mcp_config: None,
             stdin: child.stdin.take().unwrap(),
             stdout: BufReader::new(child.stdout.take().unwrap()),
             child,
-            buffer: vec![],
+            buffer: FrameBuffer::default(),
             native: "conversation".into(),
             cwd: PathBuf::new(),
             options: Value::Null,
@@ -979,6 +1588,7 @@ mod tests {
             .unwrap()
             .insert("collision".into(), session);
         let input = RunInput {
+            native_mcp: None,
             provider_instance_id: "claudeAgent".into(),
             native_session_id: None,
             thread_id: "collision".into(),
@@ -1057,7 +1667,7 @@ mod tests {
         );
     }
     #[tokio::test]
-    async fn oversized_and_malformed_frames_fail_bounded() {
+    async fn oversized_frames_are_skipped_and_malformed_frames_fail() {
         let mut child = Command::new("sh")
             .args(["-c", "printf 'not-json\\n'"])
             .stdin(Stdio::piped())
@@ -1066,11 +1676,13 @@ mod tests {
             .spawn()
             .unwrap();
         let mut s = Session {
+            _agent_scope: None,
+            native_mcp: None,
             _mcp_config: None,
             stdin: child.stdin.take().unwrap(),
             stdout: BufReader::new(child.stdout.take().unwrap()),
             child,
-            buffer: vec![],
+            buffer: FrameBuffer::default(),
             native: String::new(),
             cwd: PathBuf::new(),
             options: Value::Null,
@@ -1080,27 +1692,57 @@ mod tests {
         assert!(s.frame().await.unwrap_err().contains("invalid JSON"));
         let _ = s.child.wait().await;
         let mut child = Command::new("sh")
-            .args(["-c", "head -c 1048577 /dev/zero"])
+            .args([
+                "-c",
+                "head -c 67108865 /dev/zero; printf '\\n{\"type\":\"result\"}\\n'",
+            ])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .kill_on_drop(true)
             .spawn()
             .unwrap();
         let mut s = Session {
+            _agent_scope: None,
+            native_mcp: None,
             _mcp_config: None,
             stdin: child.stdin.take().unwrap(),
             stdout: BufReader::new(child.stdout.take().unwrap()),
             child,
-            buffer: vec![],
+            buffer: FrameBuffer::default(),
             native: String::new(),
             cwd: PathBuf::new(),
             options: Value::Null,
             browser: false,
             idle_since: tokio::time::Instant::now(),
         };
-        assert!(s.frame().await.unwrap_err().contains("exceeds"));
+        let skipped = s.frame().await.unwrap();
+        assert_eq!(skipped["type"], "o3_oversized_frame");
+        assert_eq!(skipped["bytes"], MAX_FRAME + 2);
         assert!(s.buffer.len() <= MAX_FRAME);
+        assert_eq!(s.frame().await.unwrap()["type"], "result");
         s.stop().await;
+    }
+    #[test]
+    fn tool_result_images_are_not_forwarded_as_base64() {
+        let data = "A".repeat(4 * 1024 * 1024);
+        let frame = json!({"type":"user","parent_tool_use_id":null,"message":{"role":"user","content":[
+            {"type":"tool_result","tool_use_id":"read","content":[
+                {"type":"image","source":{"type":"base64","media_type":"image/png","data":data}}
+            ]}
+        ]}});
+        let events = decode(&frame);
+        let tool = events
+            .iter()
+            .find_map(|e| match e {
+                ProviderEvent::Native(v) if v["type"] == "tool" => Some(v),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(
+            tool["block"]["content"][0]["source"]["data"],
+            "[omitted 4194304 bytes of base64 data]"
+        );
+        assert!(serde_json::to_vec(tool).unwrap().len() < 4096);
     }
     #[test]
     fn observed_steering_and_interrupt_boundaries() {
@@ -1124,6 +1766,43 @@ mod tests {
             .any(|e| matches!(e, ProviderEvent::Failed(_))));
     }
     #[test]
+    fn empty_task_notification_result_does_not_finish_submitted_prompt() {
+        let mut boundary = TurnBoundary::default();
+        let unrelated = json!({"type":"result","subtype":"success","is_error":false,
+            "origin":{"kind":"task-notification"},"num_turns":0,
+            "result":"","usage":{"input_tokens":0,"output_tokens":0}});
+        for event in decode(&unrelated) {
+            if matches!(event, ProviderEvent::Completed | ProviderEvent::Failed(_)) {
+                boundary.terminal = Some(event);
+            }
+        }
+        assert!(
+            !boundary.ready(),
+            "a notification is not the submitted prompt's result"
+        );
+        let reply = json!({"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"actual reply"}}});
+        assert!(!decode(&reply).is_empty());
+        let own = json!({"type":"result","subtype":"success","num_turns":1,
+            "origin":{"kind":"human"},"usage":{"input_tokens":10,"output_tokens":2}});
+        for event in decode(&own) {
+            if matches!(event, ProviderEvent::Completed | ProviderEvent::Failed(_)) {
+                boundary.terminal = Some(event);
+            }
+        }
+        assert!(boundary.ready());
+        // Do not hide zero-turn human commands, errors or real notification turns.
+        for result in [
+            json!({"type":"result","subtype":"success","num_turns":0,"origin":{"kind":"human"}}),
+            json!({"type":"result","subtype":"error_during_execution","is_error":true,"num_turns":0,"origin":{"kind":"task-notification"}}),
+            json!({"type":"result","subtype":"success","num_turns":1,"origin":{"kind":"task-notification"}}),
+        ] {
+            assert!(decode(&result)
+                .iter()
+                .any(|e| matches!(e, ProviderEvent::Completed | ProviderEvent::Failed(_))));
+        }
+    }
+
+    #[test]
     fn background_acknowledgement_does_not_finish_parent() {
         let frames: Vec<Value> = include_str!("../tests/fixtures/claude/subagent.jsonl")
             .lines()
@@ -1143,7 +1822,30 @@ mod tests {
         // Reorder the observed terminal boundary to exercise a background completion race.
         assert!(!boundary.ready());
         boundary.observe(done).unwrap();
+        assert!(!boundary.ready(), "the parent's response is still unread");
+        assert!(boundary.awaiting_continuation);
+        let reply = json!({"type":"result","subtype":"success","origin":{"kind":"task-notification"},"num_turns":1});
+        for event in decode_with_continuation(&reply, boundary.awaiting_continuation) {
+            if matches!(event, ProviderEvent::Completed | ProviderEvent::Failed(_)) {
+                boundary.terminal = Some(event);
+            }
+        }
         assert!(boundary.ready());
+        boundary.observe(done).unwrap();
+        assert!(
+            boundary.ready(),
+            "a duplicate must not reopen the continuation"
+        );
+    }
+
+    #[test]
+    fn owned_zero_turn_notification_settles_only_its_continuation() {
+        let result = json!({"type":"result","subtype":"success","is_error":false,
+            "origin":{"kind":"task-notification"},"num_turns":0});
+        assert!(decode(&result).is_empty());
+        assert!(decode_with_continuation(&result, true)
+            .iter()
+            .any(|event| matches!(event, ProviderEvent::Completed)));
     }
     #[tokio::test]
     #[ignore = "uses installed Claude credentials and Haiku quota; only temporary workspace"]
@@ -1161,6 +1863,7 @@ mod tests {
             resume: Option<String>,
         ) -> Vec<ProviderEvent> {
             let input = RunInput {
+                native_mcp: None,
                 provider_instance_id: "claude".into(),
                 native_session_id: resume,
                 thread_id: "live".into(),

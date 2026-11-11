@@ -112,11 +112,11 @@ The measured server executable and all measurement state were always on Btrfs.
 Branch-local validation before integration: o3-server had 23 passing tests with bridge and 22 without it; format,
 `clippy --all-targets -- -D warnings`, and compatibility generation pass.
 
-All development commands must use disk-backed paths, for example:
+All development commands must use paths under `/home` (see [DEV_PATHS.md](DEV_PATHS.md)), for example:
 
 ```sh
-export CARGO_TARGET_DIR=/var/tmp/o3-build/main
-export TMPDIR=/var/tmp/o3-build/tmp
+export CARGO_TARGET_DIR=~/.cache/o3-build/main
+export TMPDIR=~/.cache/o3-build/tmp
 nice cargo test -j 4 --locked
 ```
 
@@ -134,8 +134,8 @@ pressure 40–60%) and also ended with the setup timeout after 343.49 seconds. N
 host I/O pressure clears:
 
 ```sh
-CARGO_TARGET_DIR=/var/tmp/o3-build/main \
-TMPDIR=/var/tmp/o3-build/tmp \
+CARGO_TARGET_DIR=~/.cache/o3-build/main \
+TMPDIR=~/.cache/o3-build/tmp \
 nice cargo test -j 4 --manifest-path ~/Work/omabridge-embed/Cargo.toml --locked
 ```
 

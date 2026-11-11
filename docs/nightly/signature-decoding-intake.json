@@ -1,0 +1,41 @@
+{
+  "checkedAt": "2026-11-04T23:00:27.865622+00:00",
+  "tag": "v0.1.8-nightly.20261104.4192",
+  "reference": "7f6f47b27b44456f1c8214d3b566b375c09f629e",
+  "previous": "9e85538535c8553901351112ab02dd1dd62db5ee",
+  "url": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.8-nightly.20261104.4192",
+  "scope": "Nightly 4192 crypto/signing intake: node:crypto and jose moved to effect/crypto, PayloadSigner, AssetSigner, EnvironmentSigningKey/CloudMintSigner, shared DPoP proof creation and a client stream-defect fix. Complete protocol goal remains active.",
+  "sourceFiles": [
+    "apps/server/src/auth/PayloadSigner.ts",
+    "apps/server/src/auth/SessionStore.ts",
+    "apps/server/src/auth/utils.ts",
+    "apps/server/src/assets/AssetSigner.ts",
+    "apps/server/src/assets/AssetAccess.ts",
+    "apps/server/src/assets/AttachmentUpload.ts",
+    "apps/server/src/scheduledTasks/webhookVerification.ts",
+    "apps/server/src/secrets/SecretRequests.ts",
+    "packages/shared/src/desktopBootstrapToken.ts",
+    "packages/client-runtime/src/rpc/client.ts",
+    "effect@4.1.2 src/encoding/Base64.ts, Base64Url.ts, Hex.ts"
+  ],
+  "unchanged": [
+    "Session, websocket, asset and attachment-upload token layout, claims, HMAC-SHA256 input and signing-key names (server-signing-key, asset-access-signing-key) are byte-identical; signatures are still unpadded base64url.",
+    "T3's secret-request ref derivation still keys HMAC with the salt's hex text, so its refs are unchanged. o3's secrets.answerSecretRequest store is private (refs never reach clients) and needs no change; the full request_secret MCP tool/ref lifecycle is still pending.",
+    "Desktop bootstrap token derivation (HMAC over t3-desktop-bootstrap:<window>, hex, +-1 window) is unchanged; o3 does not serve that surface.",
+    "MCP OAuth client-id and CSRF signing keep the same domain-prefixed payloads; o3 does not serve that surface.",
+    "The client-runtime stream-defect change parks a subscription on reported defects instead of ending it; no server wire change."
+  ],
+  "implemented": [
+    "Session/websocket and asset/upload grant verification decode payload and signature with Effect Base64Url rules: padded or unpadded, CR/LF stripped, non-zero trailing bits ignored. Tokens split like `const [payload, signature] = token.split(\".\")`: both non-empty, later segments ignored.",
+    "Webhook signature tags decode with Effect Hex (even length, ASCII hex digits only, so Rust's sign-accepting from_str_radix is no longer used) and Base64 (canonical padding, CR/LF stripped, trailing bits ignored), then verify the HMAC over raw body bytes."
+  ],
+  "validation": {
+    "status": "passed",
+    "directed": "auth decoder table matches effect@4.1.2 dist Base64Url/Base64/Hex.decode output for 33 inputs; session verify accepts padded signatures and trailing segments; webhook end-to-end test over the real listener rejects sign-prefixed hex and unpadded base64 and accepts uppercase hex and non-canonical trailing bits (failed on the previous source); asset grants accept padded/trailing-segment variants.",
+    "suites": "463 default / 460 without default features, 28 opt-ins ignored each; strict all-target Clippy both modes, fmt, generated compatibility and diff checks."
+  },
+  "pending": [
+    "Relay JWT/EnvironmentSigningKey/CloudMintSigner, DPoP proof, desktop bootstrap and MCP OAuth surfaces are not served by o3; their 4192 refactors were inspected for semantics only.",
+    "request_secret MCP tool and secret-request store, remaining MCP/auth/environment/driver/importer surfaces and the differential/UI/resource backlog remain open."
+  ]
+}

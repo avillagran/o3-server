@@ -146,10 +146,16 @@ fn shell_threads(c: &Connection) -> Vec<Value> {
         .unwrap()
         .clone()
 }
+fn launch_project(s: &Server, c: &Connection) {
+    let root = s.dir.join("workspace");
+    std::fs::create_dir_all(&root).unwrap();
+    c.rpc("projects.mutate",json!({"type":"project.create","commandId":"project","projectId":"p1","title":"Scheduled","workspaceRoot":root})).unwrap();
+}
 
 #[test]
 fn scheduled_tasks_are_stored_validated_and_launch_threads() {
     let (s, c) = with_provider();
+    launch_project(&s, &c);
     let created = c
         .rpc(
             "scheduledTasks.upsert",
@@ -193,7 +199,7 @@ fn scheduled_tasks_are_stored_validated_and_launch_threads() {
     let mut missing = task("Ghost", json!({"type":"interval","everyMs":60000}));
     missing["id"] = json!("nope");
     missing["requireExisting"] = json!(true);
-    assert!(err(c.rpc("scheduledTasks.upsert", missing)).contains("no longer exists"));
+    assert!(err(c.rpc("scheduledTasks.upsert", missing)).contains("Schedule task not found."));
 
     // Editing keeps identity and history.
     let mut edit = task("Renamed", json!({"type":"interval","everyMs":120000}));
@@ -289,13 +295,20 @@ fn scheduled_tasks_are_stored_validated_and_launch_threads() {
         .as_array()
         .unwrap()
         .is_empty());
-    assert!(err(c.rpc("scheduledTasks.runNow", json!({"id":id}))).contains("does not exist"));
-    assert!(err(c.rpc("scheduledTasks.delete", json!({"id":id}))).contains("does not exist"));
+    assert!(
+        err(c.rpc("scheduledTasks.runNow", json!({"id":id}))).contains("Schedule task not found.")
+    );
+    // T3 deletes idempotently: a repeated delete still answers the id.
+    assert_eq!(
+        c.rpc("scheduledTasks.delete", json!({"id":id})).unwrap(),
+        json!({ "id": id })
+    );
 }
 
 #[test]
 fn a_task_that_cannot_launch_records_the_failure() {
-    let (_s, c) = plain();
+    let (s, c) = plain();
+    launch_project(&s, &c);
     let id = c
         .rpc(
             "scheduledTasks.upsert",
@@ -508,4 +521,162 @@ fn resource_telemetry_usage_and_cleanup() {
     assert_eq!(report.next(T), r);
     let reader = s.limited(&c, &["orchestration:read"]);
     assert!(err(reader.rpc("server.runStorageCleanup", json!({}))).contains("settings:write"));
+}
+
+/// T3 nightly 3991/4192 reads tasks only through `scheduledTasks.subscribe`; mutations follow
+/// ScheduledTaskService (id from commandId, idempotent delete, once, unchanged schedules).
+#[test]
+fn scheduled_tasks_follow_t3_nightly_service() {
+    let (s, c) = with_provider();
+    launch_project(&s, &c);
+    let reader = s.limited(&c, &["orchestration:read"]);
+    let mut owner_view = subscribe(s.connect(), "scheduledTasks.subscribe", json!({}));
+    assert_eq!(owner_view.next(T), json!({ "tasks": [] }));
+
+    // commandId resolves the id, so a replay updates the same row instead of adding one.
+    let mut input = task("Nightly", json!({"type":"interval","everyMs":60000}));
+    input["commandId"] = json!("cmd-1");
+    let first = c.rpc("scheduledTasks.upsert", input.clone()).unwrap()["task"].clone();
+    assert_eq!(first["id"], "scheduled-task:cmd-1");
+    let listed = owner_view.until(T, |v| v["tasks"].as_array().is_some_and(|t| t.len() == 1));
+    assert_eq!(
+        listed.last().unwrap()["tasks"][0]["id"],
+        "scheduled-task:cmd-1"
+    );
+    let replay = c.rpc("scheduledTasks.upsert", input.clone()).unwrap()["task"].clone();
+    assert_eq!(replay["id"], first["id"]);
+    // Same schedule and enabled state: the pending run is not postponed by an edit.
+    assert_eq!(replay["nextRunAt"], first["nextRunAt"]);
+    let generated = c
+        .rpc(
+            "scheduledTasks.upsert",
+            task("Fresh", json!({"type":"interval","everyMs":60000})),
+        )
+        .unwrap()["task"]["id"]
+        .clone();
+    assert!(generated.as_str().unwrap().starts_with("scheduled-task:"));
+
+    // setEnabled to the current value changes nothing.
+    let same = c
+        .rpc(
+            "scheduledTasks.setEnabled",
+            json!({"id":first["id"],"enabled":true}),
+        )
+        .unwrap()["task"]
+        .clone();
+    assert_eq!(same["updatedAt"], replay["updatedAt"]);
+
+    // once: explicit offsets normalize to UTC; past or impossible times are refused.
+    let future = c
+        .rpc(
+            "scheduledTasks.upsert",
+            task(
+                "Once",
+                json!({"type":"once","runAt":"2099-03-01T12:30+02:00"}),
+            ),
+        )
+        .unwrap()["task"]
+        .clone();
+    assert_eq!(
+        future["schedule"],
+        json!({"type":"once","runAt":"2099-03-01T10:30:00.000Z"})
+    );
+    assert_eq!(future["nextRunAt"], "2099-03-01T10:30:00.000Z");
+    assert!(err(c.rpc(
+        "scheduledTasks.upsert",
+        task(
+            "Late",
+            json!({"type":"once","runAt":"2001-01-01T00:00:00Z"})
+        )
+    ))
+    .contains("The run time has passed"));
+    let mut paused = task(
+        "Late",
+        json!({"type":"once","runAt":"2001-01-01T00:00:00Z"}),
+    );
+    paused["enabled"] = json!(false);
+    assert!(c.rpc("scheduledTasks.upsert", paused).is_ok());
+    for bad in [
+        "2099-02-30T10:00Z",
+        "2099-03-01T10:00",
+        "2099-03-01 10:00Z",
+        "9999-12-31T23:30-01:00",
+    ] {
+        assert!(
+            err(c.rpc(
+                "scheduledTasks.upsert",
+                task("Bad", json!({"type":"once","runAt":bad}))
+            ))
+            .contains("ISO date"),
+            "{bad}"
+        );
+    }
+
+    // Webhook URLs are visible only with orchestration:operate, in the stream and in list.
+    let hook = c
+        .rpc(
+            "scheduledTasks.upsert",
+            task("Hook", json!({"type":"webhook","signature":{"header":"X-Hub-Signature-256","encoding":"hex","prefix":"sha256=","secret":"fixture-only-key"}})),
+        )
+        .unwrap()["task"]
+        .clone();
+    assert!(hook["webhook"]["path"].is_string());
+    let mut reader_view = subscribe(
+        s.limited(&c, &["orchestration:read"]),
+        "scheduledTasks.subscribe",
+        json!({"_hideWebhook":false}),
+    );
+    let seen = reader_view.next(T);
+    let hidden = seen["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["id"] == hook["id"])
+        .unwrap();
+    assert!(hidden.get("webhook").is_none(), "{hidden}");
+    let read_list = reader
+        .rpc("scheduledTasks.list", json!({"_hideWebhook":false}))
+        .unwrap();
+    assert!(!read_list.to_string().contains("/api/hooks/"));
+    let owned = owner_view.until(T, |v| v.to_string().contains("/api/hooks/"));
+    assert!(!owned
+        .last()
+        .unwrap()
+        .to_string()
+        .contains("fixture-only-key"));
+    assert!(err(reader.rpc(
+        "scheduledTasks.upsert",
+        task("No", json!({"type":"interval","everyMs":60000}))
+    ))
+    .contains("orchestration:operate"));
+    assert!(
+        err(c.rpc("scheduledTasks.runNow", json!({"id":hook["id"]})))
+            .contains("Webhook tasks run when their URL receives a request.")
+    );
+
+    // Like T3's sliding PubSub, a busy subscriber sees the newest list, so `running` may be
+    // coalesced away; the settled run always arrives. Delete is idempotent and re-emits.
+    c.rpc("scheduledTasks.runNow", json!({"id":first["id"]}))
+        .unwrap();
+    owner_view.until(T, |v| {
+        v["tasks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["id"] == first["id"] && t["lastRunStatus"] == "succeeded")
+    });
+    for _ in 0..2 {
+        assert_eq!(
+            c.rpc("scheduledTasks.delete", json!({"id":first["id"]}))
+                .unwrap(),
+            json!({ "id": first["id"] })
+        );
+    }
+    owner_view.until(T, |v| {
+        !v["tasks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["id"] == first["id"])
+    });
 }

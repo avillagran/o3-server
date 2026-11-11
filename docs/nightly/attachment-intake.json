@@ -1,0 +1,54 @@
+{
+  "checkedAt": "2026-11-04T11:25:29.988616+00:00",
+  "tag": "v0.1.8-nightly.20261104.4165",
+  "reference": "8b44f42b14c8e273156474a924ccf29680dd7857",
+  "url": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.8-nightly.20261104.4165",
+  "scope": "Ordinary compatible-client/MCP attachment intake, MCP attachment toolkit and isolated nine-format document extraction. Complete protocol goal remains active.",
+  "sourceFiles": [
+    "apps/server/src/orchestration-v2/ThreadMessageIntake.ts",
+    "apps/server/src/orchestration-v2/AttachmentClaims.ts",
+    "apps/server/src/attachmentStore.ts",
+    "apps/server/src/mcp/toolkits/attachment/tools.ts",
+    "apps/server/src/mcp/toolkits/attachment/input.ts",
+    "apps/server/src/mcp/toolkits/attachment/handlers.ts",
+    "apps/server/src/provider/DocumentText.ts",
+    "apps/server/src/provider/documentTextWorker.ts",
+    "apps/server/src/provider/userInputAttachments.ts",
+    "apps/server/src/provider/userInputAttachments.test.ts",
+    "packages/contracts/src/assets.ts",
+    "packages/contracts/src/chatAttachment.ts",
+    "packages/shared/src/composerContextReferences.ts"
+  ],
+  "implemented": [
+    "Three MCP tools increase core catalog to34: prepare signed upload, caller-owned pending discard and send attachments through ordinary auto steering/queue admission.",
+    "Native thread or external request-namespace ownership survives transport reinitialization; ephemeral owner map expires staged entries on preparation and resets on restart. MCP grants do not require an ordinary owner session.",
+    "Nonpending MCP references must already exist in target messages; canonical stored metadata wins. Archived/unrelated/unauthorized targets reject; native sender and agent/MCP message/item origin survive active steering.",
+    "Shared claims copy/fsync pending files outside SQLite write locks across message dispatch, queued edits, question responses and staged launch. Rollback releases proven-unused copies, accepted receipt replay reuses durable identities after pending deletion.",
+    "100-attachment/80MiB image aggregate limits and image/file individual bounds precede copy. Duplicate ids reject. Future unknown descriptors preserve contract semantics. Context remapping changes only image/file attachment records.",
+    "Question references append quoted original/optional-extracted paths without changing string/array answer semantics; request and questionAnswer projections retain attachments and question text.",
+    "Rust worker supports docx/xlsx/pptx/odt/ods/odp/rtf/epub/ipynb, preserving source structure, cell normalization, format metadata, slide notes, notebook outputs, Unicode/code pages and HTML5 entities.",
+    "Worker:15s wall/CPU,256MiB address space,16MiB input,32MiB ZIP expansion,2048 entries,200k XML nodes/depth128,10k rows or notebook cells and512 columns,1million UTF16 output units and source truncation marker. No external retrieval or macro execution.",
+    "Per-State extraction serialization, immediate existing-sidecar reads, permanent invalid-input/1s transient failure caches, private atomic text sidecars. Parser failure retains original attachment. Embedded State exposes worker selection; binary selects itself.",
+    "Attachment-only provider bootstrap preserves stored user text and optional Ultrathink prefix. Both providers receive original/extracted file paths; previously queued file inputs can lazily obtain extraction outside DB lock."
+  ],
+  "evidence": [
+    "Six HTTP/lib-t3-rust/native-peer integration tests cover canonical metadata/ownership/rejection, copy rollback/replay, queue editing, question sidecars/projection and independent SQLite writes during gated parsing.",
+    "Both native transports prepare/upload/send to their own default thread, discard pending across a fresh MCP transport session and read the accepted original plus extracted notebook.",
+    "Three document integration tests drive real CLI with64 nightly structure fixtures plus RTF/notebook/Unicode/ANSI and archive-count/expanded-size/compression-ratio/input/raw-output bounds.",
+    "Two worker unit tests cover transient/permanent failure cache behavior, cached-sidecar override,0600 permissions and oversized input/output fallback.",
+    "Installed Claude Haiku and Codex gpt-6.1-sol both completed examples/live_attachment_intake.rs: actual uploaded DOCX had generated hidden token; after pending deletion the agent read extracted path and wrote the token exactly.",
+    "Full suites382 default/379 no-default passed,21 opt-ins ignored each. Final affected default151/151 (6 opt-ins ignored), no-default53/53 (1 opt-in ignored); strict Clippy all targets both modes, fmt/generated compatibility/nightly monitor9 passed."
+  ],
+  "pending": [
+    "Guest-share attachment mediation belongs to the guest-sharing protocol backlog.",
+    "Full latest differential/current desktop and Android UI acceptance; remaining MCP toolkits and result images.",
+    "Provider/project catalog override precedence; numeric checkout progress and naming beyond launch; transfer/cross-instance continuation/settlement.",
+    "Linked routing/OAuth/DPoP/SSE/hosted links, broader auth/environment/provider protocol and nightly4165 native recovery/awareness changes."
+  ],
+  "limits": [
+    "Optional extraction preserves original files on failure. PDFs and unsupported formats have no new text sidecar.",
+    "The parser process is bounded on Unix; this checkpoint does not claim a filesystem/SQLite cross-resource crash-atomic transaction. Unaccepted copies may remain after process death.",
+    "Fixture/source behavior coverage is not a complete protocol-equivalence or current client-UI claim.",
+    "No deployment, main promotion or M2 runtime replacement."
+  ]
+}

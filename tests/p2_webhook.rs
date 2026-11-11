@@ -54,7 +54,8 @@ fn signed_webhook_definition_is_readable_without_leaking_secret() {
     db.execute("UPDATE hook_queue SET due=0,expires=0", [])
         .unwrap();
     drop(db);
-    scheduled_tasks::set_enabled(&c, "hook", true).unwrap();
+    // An unchanged setEnabled is a no-op in T3, so wake the timer directly.
+    s.state.streams.ops.wake_scheduler();
     assert!(support::wait_for(std::time::Duration::from_secs(2), || s
         .state
         .db
@@ -92,18 +93,61 @@ fn signed_webhook_definition_is_readable_without_leaking_secret() {
     );
 }
 
-fn sign(body: &str) -> String {
+#[test]
+fn signature_tags_decode_like_t3_effect_encoding() {
+    use base64::Engine;
+    let s = support::start(|_| {});
+    let c = s.connect();
+    let hook = |id: &str, encoding: &str| {
+        let p = json!({"id":id,"title":"Hook","prompt":"inspect {{body.action}}","enabled":true,"schedule":{"type":"webhook","signature":{"header":"x-hub-signature-256","encoding":encoding,"prefix":"sha256=","secret":"fixture-only-key"}},"projectId":"p","workspaceStrategy":{"type":"root"},"modelSelection":{"instanceId":"scripted","model":"m"},"runtimeMode":"full-access","interactionMode":"default"});
+        let reply = scheduled_tasks::upsert(&c, &TaskUpsert::from_json(&p).unwrap()).unwrap();
+        reply["task"]["webhook"]["path"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let hex_path = hook("hex-hook", "hex");
+    // Rust's from_str_radix takes "+f"; Effect's Hex.decode does not, so neither may we.
+    let (low, body) = (0..)
+        .map(|n| format!(r#"{{"id":"plus-{n}","action":"opened"}}"#))
+        .map(|body| (tag(&body), body))
+        .find(|(t, _)| t[0] < 0x10)
+        .unwrap();
+    let plus = format!("sha256=+{}", &hex(&low)[1..]);
+    assert!(post(&s.base, &hex_path, &body, &plus).contains("401"));
+    let upper = format!("SHA256={}", hex(&low).to_uppercase());
+    assert!(post(&s.base, &hex_path, &body, &upper).contains("accepted"));
+
+    let b64_path = hook("b64-hook", "base64");
+    let body = r#"{"id":"b64","action":"opened"}"#;
+    let canonical = base64::engine::general_purpose::STANDARD.encode(tag(body));
+    // 32 bytes leave two unused bits in the final symbol; Effect ignores them.
+    let (head, last) = canonical.trim_end_matches('=').split_at(42);
+    let alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let symbol = alphabet.find(last).unwrap() | 0b11;
+    let noisy = format!("sha256={head}{}=", &alphabet[symbol..symbol + 1]);
+    assert_ne!(noisy, format!("sha256={canonical}"));
+    assert!(post(&s.base, &b64_path, body, &noisy).contains("accepted"));
+    // Base64.decode still requires canonical padding.
+    let other = r#"{"id":"b64-unpadded","action":"opened"}"#;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(tag(other));
+    let unpadded = format!("sha256={}", encoded.trim_end_matches('='));
+    assert!(post(&s.base, &b64_path, other, &unpadded).contains("401"));
+    let reply = post(&s.base, &b64_path, other, &format!("sha256={encoded}"));
+    assert!(reply.contains("accepted"), "{reply}");
+}
+
+fn tag(body: &str) -> Vec<u8> {
     use hmac::{Hmac, Mac};
     let mut m = Hmac::<sha2::Sha256>::new_from_slice(b"fixture-only-key").unwrap();
     m.update(body.as_bytes());
-    format!(
-        "sha256={}",
-        m.finalize()
-            .into_bytes()
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect::<String>()
-    )
+    m.finalize().into_bytes().to_vec()
+}
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+fn sign(body: &str) -> String {
+    format!("sha256={}", hex(&tag(body)))
 }
 fn post(base: &str, path: &str, body: &str, signature: &str) -> String {
     use std::io::{Read, Write};
@@ -206,6 +250,18 @@ fn failed_dispatch_keeps_accepted_work_durable() {
         1,
         "failed dispatch lost accepted job"
     );
+    // runCount commits before the failed claim is requeued. Wait for that final
+    // transition so the worker cannot overwrite our simulated restart with its backoff.
+    assert!(support::wait_for(std::time::Duration::from_secs(2), || {
+        let due: i64 = s
+            .state
+            .db
+            .lock()
+            .unwrap()
+            .query_row("SELECT due FROM hook_queue", [], |r| r.get(0))
+            .unwrap();
+        due != i64::MAX && due > o3_server::store::now_ms()
+    }));
     // Simulate a crash after the dispatch receipt commit but before queue deletion.
     let db = s.state.db.lock().unwrap();
     let job: String = db
@@ -218,7 +274,8 @@ fn failed_dispatch_keeps_accepted_work_durable() {
     .unwrap();
     db.execute("UPDATE hook_queue SET due=0", []).unwrap();
     drop(db);
-    scheduled_tasks::set_enabled(&c, "retry", true).unwrap();
+    // An unchanged setEnabled is a no-op in T3, so wake the timer directly.
+    s.state.streams.ops.wake_scheduler();
     assert!(support::wait_for(std::time::Duration::from_secs(2), || s
         .state
         .db
@@ -232,4 +289,31 @@ fn failed_dispatch_keeps_accepted_work_durable() {
         scheduled_tasks::list(&c).unwrap()["tasks"][0]["runCount"],
         1
     );
+}
+
+#[test]
+fn command_id_hooks_route_through_their_encoded_path() {
+    let s = support::start(|_| {});
+    let c = s.connect();
+    let p = json!({"commandId":"android-hook","title":"Hook","prompt":"inspect {{body.action}}","enabled":true,"schedule":{"type":"webhook","signature":{"header":"X-Hub-Signature-256","encoding":"hex","prefix":"sha256=","secret":"fixture-only-key"}},"projectId":"p","workspaceStrategy":{"type":"root"},"modelSelection":{"instanceId":"scripted","model":"m"},"runtimeMode":"full-access","interactionMode":"default"});
+    let task =
+        scheduled_tasks::upsert(&c, &TaskUpsert::from_json(&p).unwrap()).unwrap()["task"].clone();
+    assert_eq!(task["id"], "scheduled-task:android-hook");
+    // T3 stores the header lowercased and encodes the id like encodeURIComponent.
+    assert_eq!(
+        task["schedule"]["signature"]["header"],
+        "x-hub-signature-256"
+    );
+    assert_eq!(
+        task["schedule"]["maxDeliveryAgeMinutes"],
+        serde_json::Value::Null
+    );
+    let path = task["webhook"]["path"].as_str().unwrap();
+    assert!(
+        path.starts_with("/api/hooks/scheduled-task%3Aandroid-hook/"),
+        "{path}"
+    );
+    let body = r#"{"action":"opened"}"#;
+    assert!(post(&s.base, path, body, "sha256=00").contains("401"));
+    assert!(post(&s.base, path, body, &sign(body)).contains("accepted"));
 }

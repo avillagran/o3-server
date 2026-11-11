@@ -1,4 +1,4 @@
-//! o3-server's own SQLite state. T3's database is never written: its schema changes every nightly.
+//! O3's private SQLite state; shared T3 history is synchronized through `t3_shared`.
 use crate::auth;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
@@ -27,12 +27,27 @@ pub const STANDARD_SCOPES: [&str; 16] = [
 ];
 
 pub struct State {
+    pub(crate) shutting_down: std::sync::atomic::AtomicBool,
+    pub agent_scopes: std::sync::Arc<crate::agent_scope::Registry>,
+    pub(crate) forge: crate::forge::GitHub,
     pub(crate) rollback_pending: std::sync::atomic::AtomicBool,
     pub(crate) http: crate::http::Limits,
+    pub(crate) mcp: crate::mcp::Sessions,
+    pub(crate) native_mcp: crate::native_mcp::Registry,
+    pub(crate) executions: crate::provider::Executions,
+    pub(crate) worktree_handoffs: Mutex<std::collections::HashSet<String>>,
+    pub(crate) workspace_detach_started: std::sync::atomic::AtomicBool,
+    pub(crate) provider_switch_gates:
+        Mutex<std::collections::BTreeMap<String, std::sync::Weak<tokio::sync::Mutex<()>>>>,
+    pub(crate) restart_started: std::sync::atomic::AtomicBool,
+    pub(crate) launches: crate::thread_launch::Registry,
+    pub(crate) document_text: crate::document_text::Registry,
+    pub(crate) attachment_uploads: crate::mcp_attachments::Registry,
+    pub(crate) deletion_started: std::sync::atomic::AtomicBool,
     #[cfg(feature = "bridge")]
     pub bridge_endpoints: Mutex<Vec<Value>>,
     pub db: Mutex<Connection>,
-    pub(crate) worktree_gate: std::sync::RwLock<()>,
+    pub(crate) worktree_gate: tokio::sync::RwLock<()>,
     pub(crate) reader: Mutex<Connection>,
     pub(crate) identities_started: std::sync::atomic::AtomicBool,
     pub(crate) rpc_clients: std::sync::atomic::AtomicUsize,
@@ -100,10 +115,63 @@ CREATE TABLE IF NOT EXISTS auth_pairing_links(
   label TEXT, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, consumed_at INTEGER, revoked_at INTEGER);
 ";
 
+/// `sql-profile` builds: attach a statement profiler to a connection. No-op otherwise.
+#[allow(unused_variables)]
+pub fn profiled(conn: &mut Connection) {
+    #[cfg(feature = "sql-profile")]
+    sql_profile::attach(conn);
+}
+#[cfg(feature = "sql-profile")]
+mod sql_profile {
+    use std::{collections::HashMap, sync::Mutex, time::Duration};
+    static STATS: Mutex<Option<HashMap<String, (u64, Duration)>>> = Mutex::new(None);
+    static STARTED: std::sync::Once = std::sync::Once::new();
+    fn record(sql: &str, took: Duration) {
+        let key: String = sql
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .chars()
+            .take(160)
+            .collect();
+        let mut g = STATS.lock().unwrap();
+        let e = g.get_or_insert_with(HashMap::new).entry(key).or_default();
+        e.0 += 1;
+        e.1 += took;
+    }
+    pub fn attach(conn: &mut rusqlite::Connection) {
+        #[allow(deprecated)]
+        conn.profile(Some(record));
+        STARTED.call_once(|| {
+            std::thread::spawn(|| loop {
+                std::thread::sleep(Duration::from_secs(60));
+                let Some(stats) = STATS.lock().unwrap().take() else {
+                    continue;
+                };
+                let mut rows: Vec<_> = stats.into_iter().collect();
+                rows.sort_by_key(|row| std::cmp::Reverse(row.1 .1));
+                eprintln!("sql-profile: {} statement shapes in 60 s", rows.len());
+                for (sql, (n, took)) in rows.into_iter().take(15) {
+                    eprintln!(
+                        "sql-profile: {n:>7} calls {:>9.1} ms  {sql}",
+                        took.as_secs_f64() * 1000.0
+                    );
+                }
+            });
+        });
+    }
+}
+
 impl State {
+    /// Embedded hosts select the o3-server binary used by the isolated document parser.
+    pub fn set_document_worker(&self, path: PathBuf) {
+        self.document_text.set_worker(path);
+    }
+
     pub fn open(dir: &Path) -> Result<Self, String> {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
         let mut db = Connection::open(dir.join("o3.sqlite")).map_err(|e| e.to_string())?;
+        profiled(&mut db);
         db.execute_batch(SCHEMA).map_err(|e| e.to_string())?;
         // A deferred read-to-write upgrade fails instantly, ignoring busy_timeout, when the
         // checkpointer connection has moved the WAL. Taking the write lock up front waits.
@@ -116,6 +184,8 @@ impl State {
         reader
             .execute_batch("PRAGMA cache_size=-512; PRAGMA mmap_size=0;")
             .map_err(|e| e.to_string())?;
+        let mut reader = reader;
+        profiled(&mut reader);
         let signing_key = auth::load_or_create_key(&dir.join("secrets/server-signing-key.bin"))
             .map_err(|e| e.to_string())?;
         let id_path = dir.join("environment-id");
@@ -130,11 +200,27 @@ impl State {
         let label = std::env::var("O3_LABEL").unwrap_or_else(|_| "o3-server".into());
         let (changed, _) = tokio::sync::watch::channel(0);
         crate::events::initialize(&db)?;
+        let agent_scopes = crate::agent_scope::Registry::new(dir);
         let streams = crate::streams::Hub::new();
+        streams.terminals.set_agent_scopes(agent_scopes.clone());
         streams.terminals.restore(&dir.join("terminal-history"))?;
         Ok(Self {
+            shutting_down: Default::default(),
+            agent_scopes,
+            forge: Default::default(),
             rollback_pending: std::sync::atomic::AtomicBool::new(false),
             http: crate::http::Limits::default(),
+            mcp: crate::mcp::Sessions::default(),
+            native_mcp: crate::native_mcp::Registry::default(),
+            executions: Default::default(),
+            deletion_started: Default::default(),
+            restart_started: Default::default(),
+            launches: Default::default(),
+            document_text: Default::default(),
+            attachment_uploads: Default::default(),
+            workspace_detach_started: Default::default(),
+            provider_switch_gates: Default::default(),
+            worktree_handoffs: Default::default(),
             #[cfg(feature = "bridge")]
             bridge_endpoints: Mutex::new(Vec::new()),
             settings_lock: Mutex::new(()),
@@ -150,7 +236,7 @@ impl State {
             checkpoint_started: std::sync::atomic::AtomicBool::new(false),
             checkpoint_wake: std::sync::Arc::new((Mutex::new(true), std::sync::Condvar::new())),
             db: Mutex::new(db),
-            worktree_gate: std::sync::RwLock::new(()),
+            worktree_gate: tokio::sync::RwLock::new(()),
             signing_key,
             environment_id,
             label,
@@ -183,7 +269,8 @@ impl State {
         let path = self.dir.join("o3.sqlite");
         let wake = self.checkpoint_wake.clone();
         std::thread::Builder::new().name("sqlite-checkpoint".into()).stack_size(256 * 1024).spawn(move || {
-            let Ok(db) = Connection::open(path) else { return };
+            let Ok(mut db) = Connection::open(path) else { return };
+            profiled(&mut db);
             let _ = db.execute_batch("PRAGMA busy_timeout=0; PRAGMA journal_size_limit=33554432; PRAGMA wal_autocheckpoint=0;");
             while weak.strong_count() != 0 {
                 let (dirty,signal)=&*wake;
@@ -268,7 +355,21 @@ impl State {
     pub fn session(&self, token: &str) -> Option<Value> {
         let now = now_ms();
         let claims = auth::verify(token, "session", &self.signing_key, now)?;
-        self.live(claims, now)
+        self.live(claims, now).filter(|v| v["sub"] != "mcp-client")
+    }
+
+    /// Dedicated MCP sessions never authenticate ordinary HTTP or WebSocket RPC.
+    pub fn mcp_session(&self, token: &str) -> Option<Value> {
+        let now = now_ms();
+        let claims = auth::verify(token, "session", &self.signing_key, now)?;
+        self.live(claims, now).filter(|v| {
+            v["sub"] == "mcp-client"
+                && v["jkt"].is_null()
+                && v["method"] == "bearer-access-token"
+                && v["scopes"]
+                    .as_array()
+                    .is_some_and(|a| a.iter().any(|s| s == "orchestration:read"))
+        })
     }
 
     /// The owning session of a websocket ticket; revoking a session voids its tickets.
@@ -278,28 +379,18 @@ impl State {
         if !claims["aud"].is_null() && claims["aud"] != usage {
             return None;
         }
-        self.live(claims, now)
+        self.live(claims, now).filter(|v| v["sub"] != "mcp-client")
     }
 
     fn live(&self, claims: Value, now: i64) -> Option<Value> {
         let sid = claims["sid"].as_str()?;
-        self.reader.lock().unwrap().query_row(
-            "SELECT 1 FROM auth_sessions WHERE session_id=? AND revoked_at IS NULL AND expires_at>?",
-            params![sid, now], |_| Ok(()),
-        ).optional().ok()??;
-        let (scopes, subject): (String, String) = self
-            .reader
-            .lock()
-            .unwrap()
-            .query_row(
-                "SELECT scopes,subject FROM auth_sessions WHERE session_id=?",
-                [sid],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .ok()?;
+        let (scopes, subject, client): (String, String, String) = self.reader.lock().unwrap()
+            .query_row("SELECT scopes,subject,client FROM auth_sessions WHERE session_id=? AND revoked_at IS NULL AND expires_at>?", params![sid,now], |r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional().ok()??;
         let mut claims = claims;
         claims["scopes"] = json!(scopes.split_whitespace().collect::<Vec<_>>());
         claims["sub"] = subject.into();
+        let client: Value = serde_json::from_str(&client).ok()?;
+        claims["runtimeModeCeiling"] = client["runtimeModeCeiling"].clone();
         Some(claims)
     }
 
@@ -310,9 +401,35 @@ impl State {
         ttl: i64,
         label: &str,
     ) -> Result<String, String> {
+        self.issue_session_client(subject, scopes, ttl, &json!({"client_label":label}))
+    }
+    pub fn issue_mcp_session(&self, access: &str, ttl: i64, label: &str) -> Result<String, String> {
+        let scopes: &[&str] = match access {
+            "read-only" => &["orchestration:read"],
+            "approval-required" | "auto-accept-edits" | "auto" => {
+                &["orchestration:read", "orchestration:operate"]
+            }
+            "full-access" => &[
+                "orchestration:read",
+                "orchestration:operate",
+                "settings:write",
+                "source-control:write",
+            ],
+            _ => return Err("invalid MCP access level".into()),
+        };
+        self.issue_session_client("mcp-client", &scopes.iter().map(|s|(*s).to_owned()).collect::<Vec<_>>(),ttl,
+            &json!({"client_label":label,"runtimeModeCeiling":if access=="read-only"{Value::Null}else{json!(access)}}))
+    }
+    fn issue_session_client(
+        &self,
+        subject: &str,
+        scopes: &[String],
+        ttl: i64,
+        client: &Value,
+    ) -> Result<String, String> {
         let sid = random_id()?;
         let now = now_ms();
-        self.db.lock().unwrap().execute("INSERT INTO auth_sessions(session_id,subject,scopes,method,client,issued_at,expires_at) VALUES(?,?,?,?,?,?,?)",params![sid,subject,scopes.join(" "),"bearer-access-token",json!({"client_label":label}).to_string(),now,now+ttl]).map_err(|e|e.to_string())?;
+        self.db.lock().unwrap().execute("INSERT INTO auth_sessions(session_id,subject,scopes,method,client,issued_at,expires_at) VALUES(?,?,?,?,?,?,?)",params![sid,subject,scopes.join(" "),"bearer-access-token",client.to_string(),now,now+ttl]).map_err(|e|e.to_string())?;
         Ok(auth::sign(
             &json!({"v":1,"kind":"session","sid":sid,"sub":subject,"scopes":scopes,"method":"bearer-access-token","iat":now,"exp":now+ttl}),
             &self.signing_key,
@@ -325,6 +442,15 @@ impl State {
         self.rpc_clients.load(std::sync::atomic::Ordering::Relaxed) > 0
             || !self.active.lock().unwrap().is_empty()
     }
+    /// Fence provider receipts before closing native processes. A server shutdown
+    /// leaves durable executions available to startup recovery, without user Stop.
+    pub fn begin_shutdown(&self) {
+        let _db = self.db.lock().unwrap();
+        self.shutting_down
+            .store(true, std::sync::atomic::Ordering::Release);
+        self.notify();
+    }
+
     pub fn notify(&self) {
         let (dirty, wake) = &*self.checkpoint_wake;
         *dirty.lock().unwrap() = true;

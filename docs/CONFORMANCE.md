@@ -1,5 +1,137 @@
 # Conformance evidence
 
+## Server shutdown continuity, 2026-11-06
+
+Server teardown now fences late provider receipts before closing native transports.
+The fence shares the database writer barrier with receipt persistence. Pending
+work remains eligible for startup recovery, while user Stop retains its existing
+behavior. Generated systemd units use `KillMode=mixed` so the supervising server
+handles SIGTERM before native child processes are reaped.
+
+The affected default checks pass **199 cases**, with nine explicit native or
+platform opt-ins ignored. Real server process checks cover SIGKILL and SIGTERM
+followed by restart, preserved goal objective/budget/usage and app run, and native
+automatic completion without any goal-control RPC. A separate late-receipt check
+retains running work and its active goal after native failure, interruption and
+paused-goal notifications during teardown. The full suites pass **547 default /
+544 minimal**, with no failures and36 opt-ins ignored per mode across98 test
+executables. Strict Clippy in both modes, formatting, compatibility generation
+and all nine nightly-watch checks pass.
+
+A private probe reproduced failed execution state on SIGTERM in83ce347;445f545
+already passes the active-goal version of that probe. This change does not claim
+a newly reproduced deterministic445f545 goal regression. See
+[nightly/shutdown-intake.json](nightly/shutdown-intake.json) for scope and gaps.
+
+## Terminal resource scopes, 2026-11-06
+
+Interactive terminals and managed project/setup PTYs now use the nightly general
+collecting agents slice rather than the per-profile orphan slice. The registry
+constructs one shared scope command policy for native providers and terminals.
+Terminal launches keep their explicit sanitized environment; an empty/missing
+runtime directory falls back to the server runtime. Resource discovery is awaited
+only for an actual spawn, before taking synchronous PTY locks. The owned setup
+subreaper accepts wrapper argv, with all CString storage prepared before fork,
+and adjusts the executed child OOM score using only async-signal-safe syscalls.
+
+The complete container suites pass **533 default / 530 minimal**, no failures,
+36 opt-in cases ignored per configuration. Strict Clippy, formatting, compatibility
+generation and nine nightly-watch checks pass. New checks cover manager-free
+PTY fallback without parent-environment inheritance and invalid open/attach
+requests without policy initialization. Upstream Terminal Manager source is
+unchanged between4262 and4275.
+
+The real systemd opt-in case passes in both modes. Interactive and managed Python
+PTYs preserve PID=session=process-group identity, controlling TTY, a literal
+environment value, absence of an excluded parent variable, OOM score800 and the
+general agents slice. A terminal API request initializes the backend lazily, and
+profile orphan cleanup leaves the PTYs alive. This verifies resource policy and
+process ownership; it does not add persistent PTY reconnection after a real server
+restart. No live services were deployed.
+
+## Server-browser resource scopes, 2026-11-06
+
+Server browsers now use the profile registry and the upstream unowned collecting
+scope policy. Scope preparation precedes CDP descriptor allocation; the duplicate
+uses an owned file descriptor on every failure path. The actor waits for scope
+cleanup before reporting completion. Human and agent previews reuse the same
+launcher and shared browser profiles retain their process until the final tab closes.
+
+Nine affected compatible-client cases pass in each feature mode, along with
+strict Clippy. The real systemd opt-in case also passes in both modes: descriptors
+3/4 carry CDP commands and screenshot replies through systemd-run, the process
+has OOM score800 and belongs to the expected profile slice, closing one tab
+preserves a sibling, and final shutdown reaps the browser process. This uses a
+private Python CDP peer, not an actual Chromium renderer. Upstream ServerBrowser
+source is unchanged between4262 and4275. No host deployment occurred.
+
+## Native agent resource scopes, 2026-11-06
+
+The headless server enables one per-profile Linux registry for native Claude and
+Codex processes, including configured instances and auxiliary discovery/quota
+actors. Embedded hosts opt in explicitly. The registry mirrors nightly 4275's
+systemd scope discovery, owned-slice hash, orphan cleanup, memory headroom,
+CPU/IO/task weights, OOMPolicy fallback, scope tracking, delayed OOM diagnosis and
+stop/kill guards. Child OOM adjustment uses only async-signal-safe syscalls before
+exec; it does not add a shell wrapper. Adapter shutdown awaits scope cleanup.
+Codex actors retain shared ownership and cannot be killed for one thread. Joining
+an existing actor clears stale ownership from another session; an old lease cannot
+clear its replacement. Claude descendants receive the trusted app thread ID.
+
+The six scoped upstream files are unchanged between 4262 and 4275. Executing the
+actual upstream helpers produced **163 cases** for profile hashes, memory limits
+and scope classification. Fourteen container checks cover lifecycle/races,
+fallbacks, configured Claude/Codex transports and the real compatible client's
+confirmed OOM message. The complete suites passed **531 default / 528 minimal**,
+no failures, 35 opt-in tests ignored per mode, before adding the dedicated native
+systemd opt-in case.
+
+`tools/test-agent-systemd` compiles that additional case and runs it in a disposable
+rootless container with a real systemd user manager, private PID/cgroup namespaces,
+a read-only root and binary mount, no network or host bus, and a 768 MiB outer
+memory limit. It verifies detached `setsid` descendants are reaped after parent
+exit, `cgroup.kill` terminates the owned tree, shared processes survive a per-thread
+kill request, an asserted 32 MiB kernel memory cap produces a sticky OOM result,
+and restarted-profile cleanup preserves another profile. The container is removed
+after success or failure. The initial OOM fixture timed out with a separate 24 MiB
+throttling limit; the final fixture disables its own throttling and checks the
+kernel hard cap before allocation. Production headroom limits remain unchanged.
+
+The native case and all fourteen affected checks passed in both feature modes;
+strict Clippy also passed in both modes. This is resource/lifecycle acceptance, not an
+installed authenticated inference comparison. Public `forceStopThread`, PTY and
+browser scope integration, and complete typed failure cards (including `oom_kill`)
+remain open; the run currently exposes the confirmed OOM message. No live host
+was deployed or had its service manager altered. See
+[`nightly/agent-scope-intake.json`](nightly/agent-scope-intake.json).
+
+## Rust test isolation, 2026-11-06
+
+`tools/test-rust-sandbox` compiles with Cargo on the host, then executes every
+native test binary in rootless Podman. The source checkout, Git metadata, test
+binaries and private Node installation are read-only mounts; the container root
+is read-only, external networking is disabled and all fixture writes stay in
+private temporary filesystems. The runner checks mount flags before executing
+tests, forwards Cargo name filters, limits memory/processes and stops its own
+container on completion or interruption. The local derived image adds ffmpeg to
+`localhost/android-sandbox:latest`; it is not published.
+
+Both complete configurations passed: **517 default / 514 minimal**, no failures,
+35 opt-in tests ignored per configuration, 95 executable groups each. The
+managed-provider fixture still exercises installation through its private npm
+peer; Node comes from a read-only runtime mount. A process-parent death regression
+also passed independently in the container. The runner does not supply real
+credentials, hardware, an official nightly or network access to ignored tests.
+
+Test portability fixes use the configured temporary directory and let a pure
+process-parent fixture run without Node. The differential harness no longer
+recursively removes old profiles by matching broad prefixes in a shared host
+directory; its parent-death fixture removes only its own pid file and empty
+directory. CI also executes Rust checks inside a disposable job container,
+using the container configuration already validated by the parallel fresh-context
+branch. This block changes verification infrastructure, not nightly feature
+coverage or any deployed host.
+
 This is a partial operational checkpoint, not a full interchangeability certificate.
 The owner reprioritized startup memory and P0 operation; unresolved work is listed below.
 
@@ -2733,3 +2865,899 @@ unshielded read returns Interrupted, shielded read receives the byte. The masks
 and handler are restored in the dedicated fixture process. No RPC is replayed
 and no production signal policy is changed. Remote CI still must confirm the
 background/VCS failures are resolved on the runner.
+
+### Resumed Claude notification boundary (2026-11-03)
+
+A real migrated session exposed a completed run with no assistant output while the native
+CLI continued generating the answer. Its result usage contained zero new tokens. The
+original result's origin was not retained, so this incident alone does not prove its exact
+wire subtype. The adapter accepted every success result as the submitted prompt's terminal.
+Upstream ClaudeAdapterV2 explicitly excludes zero-turn task-notification results.
+
+The decoder now drops successful `origin.kind=task-notification`, `num_turns=0` results,
+including their unrelated usage; human command results, real notification turns and errors
+remain terminal. Result usage records retain origin, turn count and subtype for diagnosis.
+A red/green replay and the fake native peer in `tests/fixtures/claude/notification-result.py`
+exercise an unrelated result followed by the actual reply through the real provider and
+projection. This is a bounded fix, not full prompt-UUID correlation or proof that the
+already-affected live session is repaired.
+
+Migration still imports messages/items without the original runs/attempts/checkpoints.
+Native bindings alone therefore do not preserve execution history or run ordinals. Existing
+long-lived threads and `/mcp` orchestration remain outside validated migration acceptance;
+a short new-thread smoke test is insufficient evidence for that use case.
+
+### Large handoffs and cold Claude compaction
+
+Historical upload descriptors are supplied as file references alongside handoff text, so old
+images remain readable without re-encoding all of them into the next inference request.
+Current user attachments retain their normal image/file handling and limits. Codex outgoing
+RPC frames allow 16 MiB to carry the existing 8 MiB input budget plus its envelope; incoming
+frames retain their independent 1 MiB limit.
+
+For a Claude `/compact` request after a provider change with a pending historical handoff,
+o3 first requests a continuation summary in a persistent session with tools and MCP disabled,
+then sends the literal native `/compact` command. Completion is emitted only after that
+second result. The limited process is closed afterward so subsequent ordinary turns resume
+with their usual tools. A deterministic native fixture verifies both phases and tool policy.
+This does not implement Codex native compaction or change the general migration importer.
+
+### Final Codex input character budget
+
+Codex also enforces an aggregate 1,048,576-character text-input limit independent of
+JSON transport size. A near-1-MiB handoff plus historical file references and the current
+request can exceed it even after Claude compaction, because a provider switch reconstructs
+context from the retained application transcript.
+
+Composition now accounts for the final text blocks, preserving the entire current request,
+context and attachment descriptions. Overflowing historical context is retained atomically
+in a private content-addressed file; the inline message includes its path, an explicit
+abbreviation notice and a UTF-8-safe recent excerpt within the remaining budget. The original
+transcript is not changed. Current user input which alone exceeds the native limit is
+rejected explicitly rather than silently shortened. Tests enforce the native text limit in
+the Codex peer, exercise a completed continuation turn with an oversized handoff, and verify
+that Unicode history remains byte-for-byte readable from the retained file.
+
+### Nightly workspace content search (2026-11-04)
+
+`projects.searchContents` is now routed with its existing `filesystem:read` scope.
+The implementation follows the contract and fixtures in nightly 4119 source
+`cefb544af3c98224874419198c0359b652ca3c94`, notably `packages/contracts/src/project.ts`
+and `apps/server/src/workspace/WorkspaceEntries.test.ts`. It searches file contents
+with literal/regex, case-sensitive and whole-word options; whitespace in the query
+is significant. Match offsets are UTF-16 code units, including after astral letters.
+Invalid or unsupported regex falls back to a literal query and returns
+`regexFallbackError`. Zero-width matches are omitted.
+
+At most two blocking workers scan fresh files using the Rust ignore/regex libraries. It honors
+ignore files, includes hidden files, excludes `.git`, does not follow symlinks and
+skips binary/non-UTF-8 content. Search results are bounded to 500 lines overall and
+100 lines per file. Additional o3 budgets are 250 ms of scan time, 1 MiB per file,
+64 KiB per line and 2 MiB serialized items; skipped oversized content or an exhausted
+budget sets `truncated`. The deadline is cooperative between filesystem operations
+and lines, not a hard deadline for slow filesystem calls. This is not upstream's
+persistent fff index, ranking, or a guarantee of full regex dialect equivalence.
+
+The real Connection regressions failed before implementation with RpcNotImplemented.
+They cover Unicode and punctuation word boundaries, case/regex escapes, whitespace,
+late whole-word matches, ignored/binary/external symlink content, per-file/global
+limits, fresh edits, fallback and oversized content. Unit tests check typed errors
+and schema bounds. No live nightly differential or desktop/Android UI acceptance
+has been run for this port; the compatibility row remains partial.
+
+### MCP transport and readers (2026-11-04)
+
+See [MCP.md](MCP.md) for the separate MCP credential audience, transport contract,
+published reader tools, protocol regressions and explicit gaps. `/mcp` now exists;
+it does not yet implement all upstream toolkits or fix existing external integrations
+automatically. The older browser-only per-run broker is independent. Full nightly
+MCP parity remains unproven.
+
+### MCP thread control and transaction-time admission (2026-11-04)
+
+Thread tools reuse the ordinary dispatchers. MCP authority is not accepted in wire
+commands; current credential/target modes are checked under the SQLite write lock,
+before replay or mutation. Receipts and native delivery preserve the ordinary outbox
+boundary, with agent/mcp provenance for submitted messages. New tests cover send
+deduplication, queue edits/order/cancel, steering/promotion, question-only responses,
+interrupt/wait and mode refusals. The stale-authority unit test covers both dispatch
+paths. See MCP.md for exact tools and remaining restart/launch/provider-registry gaps.
+This is still partial MCP parity; no daily profile or service deployment occurred.
+
+
+### Provider-owned MCP injection (2026-11-04)
+
+Normal supervised Claude/Codex turns now receive the shared MCP endpoint, with
+process/session-owned in-memory credentials and current calling-thread authority.
+Browser disable retains orchestration; foreground completion cleans scoped browser
+tabs without expiring a cached CLI's credential. Explicit shutdown and observed
+process exit revoke credentials and transport sessions, even with request references
+remaining. Claude configuration stays in a private temporary file; Codex configuration
+travels over app-server stdin. Native tokens cannot authorize ordinary HTTP/WS routes.
+
+Three registry/policy regressions and real subprocess peers exercise credential reuse,
+current modes, background-provider ownership, default targets, browser disable, abrupt
+exit/replacement and shutdown. This supersedes the earlier private browser listener's
+per-turn lifecycle and the provider-registry gap above. Source reference: nightly4151
+322f6544dfad0a3c8a0c8cbecf2c7f7874b14268, McpSessionRegistry/McpInvocationContext/threadAccess.
+See [MCP.md](MCP.md) for exact behavior and limits. The full preview/project/task/PR/device/
+HTML toolkits, OAuth/DPoP/SSE, linked environments, remaining providers and live client
+acceptance remain incomplete; this does not establish complete nightly parity.
+
+Validation for this block: 319 default / 316 no-default pass; 21 opt-ins ignored each.
+Strict Clippy in both modes, fmt, generated compatibility and nine nightly-monitor
+tests pass. No service deployment occurred.
+
+
+### MCP projects and workspace inspection (2026-11-04)
+
+Four project mutations and two worktree readers now use the shared MCP transport.
+Project writes require full-access/default and recheck authority under the SQLite
+transaction, before replay. The ordinary project path also enforces atomic workspace
+uniqueness, nonempty deletion, pin/archive fields, monogram graphemes and script-ID rules.
+Cloning is shared with sourceControl.cloneRepository, stays separate from registration,
+and supports raw remotes plus GitHub gh lookup/protocol fallback. Native and external
+worktree readers share existing ref pagination and the missing-worktree fallback.
+
+The existing readers/thread-control tests remain; new MCP/Git tests exercise actual
+settings, files, checkouts, native defaults and rejected authority. A subprocess host
+fixture verifies protocol selection and failure retention; a transaction regression
+covers stale authority and receipt replay. See [MCP.md](MCP.md) for behavior and limits.
+Worktree handoff and thread launch remain pending with provider detach/setup/continuation;
+other-host repository lookup and full project enrichment still need source parity.
+No service deployment or full-nightly conformance is asserted.
+
+Validation: full suites pass with 326 default / 323 no-default tests (21 opt-ins
+ignored each). Final MCP/project/clone/native regressions and strict Clippy pass in
+both configurations; fmt, generated compatibility and nine nightly-monitor tests pass.
+The existing compatible desktop and live hosted-network flows were not exercised.
+
+Source audit also found a required integration follow-up: force deletion currently
+marks child records deleted, whereas ProjectService.deleteChildThread plans durable
+thread-deletion effects. Native/session/run cancellation and resource cleanup must
+be aligned before integrating the draft project port. This gap is preserved explicitly
+rather than treating CRUD persistence tests as proof of the whole deletion lifecycle.
+
+
+### Durable deletion integration follow-up resolved (2026-11-04)
+
+This supersedes the force-deletion gap recorded above. Ordinary thread.delete and
+forced project deletion now share receipt-atomic cancellation and a durable resource
+outbox, following nightly4151 ThreadDeletion/ResourceCleanupService/EffectWorker.
+Native MCP is revoked, active work stops, cached Claude sessions are reaped and affected
+Codex native threads are unsubscribed without stopping shared-process siblings. The
+outbox retries failures/restarts and legacy tombstones are planned before run recovery.
+Terminal history, previews, scheduled tasks and attachment sidecars are cleaned;
+attachments shared by live threads and checkout folders are retained.
+
+Four new integration tests exercise actual HTTP MCP and native-protocol subprocesses,
+including active self-deletion, retired pools, failed unsubscribe, late binding replies,
+atomic receipt rollback/replay, startup recovery and partial filesystem failures.
+Full suites: 330 default / 327 no-default pass, 21 opt-ins ignored in each. Final
+Codex/deletion/provider/MCP/background/browser regressions and strict Clippy pass in both
+modes; fmt, generated compatibility and nine monitor tests pass. Source rechecked at
+06:06 UTC remains nightly4151 (322f6544dfad0a3c8a0c8cbecf2c7f7874b14268).
+Installed-provider inference, compatible desktop acceptance and the broader nightly
+protocol remain unverified/incomplete; no service deployment occurred. See [MCP.md](MCP.md).
+
+
+### Workspace metadata transitions (2026-11-04)
+
+Ordinary thread.metadata.update now enforces expectedWorktreePath, expectedBranch and
+expectedEmpty under the receipt transaction and plans a durable native detach on a real
+path change. Live work is interrupted; queued messages wait behind the detach barrier
+and resume the same native conversation in the new cwd. Shared Codex credentials and
+sibling threads survive; exclusive Claude sessions restart with --resume. No-op/title
+changes leave sessions attached. A separate durable queue-release marker covers a
+restart after native detach; failures retry and late native bindings are unloaded.
+Source: nightly4151 Orchestrator, ProviderSessionManager and ProviderSessionTransitionPolicy,
+confirmed at 06:15 UTC (322f6544dfad0a3c8a0c8cbecf2c7f7874b14268).
+
+Tests inspect actual RPC/MCP and subprocess native-protocol traffic plus transaction
+rollback, expected-state races and persistent restart boundaries. This completes a
+prerequisite for MCP handoff, whose branch/base/create/setup/continuation service remains
+pending; no new MCP tool or full-nightly conformance is asserted. See [MCP.md](MCP.md).
+
+Validation for this block: full suites pass with 333 default / 330 no-default tests,
+21 opt-ins ignored each. Final transaction/recovery module tests plus 32 workspace,
+deletion, queue/thread-command and HTTP MCP regressions pass per configuration.
+Strict Clippy passes in both modes; fmt, generated compatibility and all nine
+nightly-monitor tests pass. No service deployment occurred.
+
+
+### MCP worktree handoff (2026-11-04)
+
+The handoff-pending audit entries above are superseded: t3_worktree_handoff now creates
+and binds a managed checkout, preserves remote/local base metadata, launches the effective
+setup terminal by default and durably stages its optional continuation with the binding.
+The shared workspace-transition lifecycle handles native detach and queue release.
+Authority is rechecked after checkout; concurrent calls are serialized per thread and
+binding failures roll back only owned Git resources. Transport disconnect does not lose
+the admitted operation. Setup/continuation failures remain explicit fields on a successful
+binding result; setup started does not imply command exit success.
+
+Seven integration tests inspect actual HTTP MCP, real Git repositories/remotes and
+subprocess native-protocol peers, including both Claude/Codex conversation identity,
+setup environment/files/terminal, remote aliases/stale refs, atomic receipt rollback,
+partial follow-up failures, UI races, authority loss and disconnected callers.
+Source: nightly4151, 322f6544dfad0a3c8a0c8cbecf2c7f7874b14268, checked 06:36 UTC;
+WorktreeMcpService, GitVcsDriverCore/GitManager, ProjectSetupScriptRunner/projectScripts
+and worktree contracts. See [MCP.md](MCP.md). Full-nightly differential and compatible
+client acceptance are still pending; no service deployment occurred.
+
+Validation: full suites pass with 340 default / 337 no-default tests, with 21 opt-ins
+ignored each. Final workspace/deletion/MCP-project regressions and strict Clippy pass
+in both configurations; fmt, generated compatibility and nine monitor tests pass.
+The opt-in live_worktree_handoff example also passed with installed Claude Haiku and
+Codex gpt-6.1-sol: each called the actual MCP handoff, ran setup and wrote a code remembered
+from before the move in its queued continuation. Event history contains one distinct
+native conversation ID per proof; both have interrupted then completed runs. This is
+an isolated server/native-CLI acceptance proof, not full compatible-desktop acceptance.
+
+
+### Same-run Codex interrupt/restart (2026-11-04)
+
+The earlier restart_active/MCP restart gap is closed for same-instance Codex turns.
+Source is nightly4151, `322f6544dfad0a3c8a0c8cbecf2c7f7874b14268`:
+Orchestrator.dispatchSteerIntoRun, ThreadManagementService.latestSteerableRun and the
+provider adapters. The source advertises interrupt/restart for Codex and refuses Claude.
+The durable operation retains the run ID, supersedes the old attempt and creates an
+ordinally increasing steering_restart attempt/root. It waits for the old native terminal
+and executor drainage before submitting the replacement in the same native conversation.
+
+Four HTTP/native-peer integration tests and two module tests cover same-run identity,
+MCP caller scope with a newer queued run, same-instance model changes, receipt atomicity
+and replay, preserved app-owned delegation, attempt-separated output/checkpoints,
+stale frames/requests, capability/maintenance rejection, failed/missing acknowledgement,
+Stop/delete/archive races and startup recovery. Before native admission, startup recovers
+the exact durable replacement; after ambiguous admission it fails explicitly and preserves
+the message without replay. Old executor fallback, output and checkpoint writes are
+fenced by attempt ownership. See [MCP.md](MCP.md) for delivery bounds.
+
+The opt-in live_run_restart example passed with installed Codex gpt-6.1-sol: the replacement
+recovered a code from earlier native context, with one run, two attempts and one native
+conversation ID. This is isolated native-CLI evidence. Full-nightly differential and
+compatible desktop/Android acceptance remain pending. Cross-instance active handoff,
+thread launch/transfer and cross-thread restart-continuation following remain open;
+this does not establish full protocol parity.
+
+Validation for this restart block: full suites pass with 346 default / 343 no-default
+tests, 21 opt-ins ignored in each configuration. Strict Clippy passes in both modes;
+fmt, generated compatibility and all nine nightly-monitor tests pass.
+
+
+### Linux setup descendants and launch prerequisite (2026-11-04)
+
+The failed setup-cancellation attempt recorded above is superseded for Linux process
+ownership: worktree-handoff setup terminals now use an isolated subreaper, with an
+owner pipe rather than environment tokens or shared process-group assumptions. It
+reaps descendants that double-fork, setsid and clear their environment. Its separate
+session survives a group signal to the server; owner EOF triggers cleanup. It blocks
+on owner/child events rather than polling. Setup terminal close and thread cleanup
+await reaping; ordinary terminal process semantics and other targets are unchanged.
+
+Two module tests cover admission failures and daemon cleanup on cancel, owner drop,
+normal shell exit, SIGKILL owner and SIGKILL owner group. The subprocess owner test
+kills an actual Rust owning process. An HTTP integration uses real Connection, native
+Codex protocol peers and two worktree setups: closing one returns only after its daemon
+is absent from /proc, while the other's daemon remains alive, then is closed separately.
+
+This was the prerequisite checkpoint for ThreadLaunchService. Staged preparation,
+tracking/cancel, completion and retry/recovery were still pending at PR24; the next
+checkpoint below implements that shared RPC service. MCP launch remains pending.
+The source intake is nightly4165, SHA
+8b44f42b14c8e273156474a924ccf29680dd7857 (08:04 UTC). The launch/setup service and
+tracker/contract are unchanged from4151; native runtime recovery and awareness projection
+changes require follow-up. See [thread-launch-intake.json](nightly/thread-launch-intake.json).
+
+Validation: full suites pass with 349 default / 346 no-default tests, 21 opt-ins
+ignored each. After the final signal/event handling change, all library and handoff
+tests pass again in both configurations (102 passed, 5 opt-ins ignored per mode).
+Strict Clippy passes in both modes; fmt, generated compatibility and nine monitor
+tests pass. No service deployment occurred.
+
+
+### Shared staged launch and setup lifecycle (2026-11-04)
+
+This supersedes the earlier synchronous workspace preparation and atomic-all launch
+claims in this document. ThreadLaunchService's durable thread claim commits first;
+initial message/context/run/events and its preparation job then commit atomically.
+A rejected message keeps an empty claim, and retry admits that message once without
+prior workspace effects. Accepted initial runs read `preparing` before Git/setup;
+release records provider execution intent only after the selected setup policy.
+
+The shared service prepares remote/local bases, managed checkouts/submodules,
+binds workspace metadata, observes setup completion, and releases the initial run.
+Synchronous failure retains its terminal/checkout for inspection and same-run retry.
+Async setup releases the agent while tracking continues. Shell readiness uses live
+bracketed-paste events or the quiet fallback, and keeps waiting on startup child
+prompts. Setup uses the Linux scope prerequisite above to reap escaped descendants.
+
+Worktree snapshots now contain ordered stages, bounded UTF-16 detail/tail/error,
+monotonic sequence and finished retention. Cancel is effective before release and
+returns false afterward. Checkout/ref rollback is restricted to owned resources;
+shared/external workspaces remain. Failed cleanup is durable and gates retry.
+Temporary branch generation follows naming/project override/collision rules, with
+rename intent persisted before Git mutation. Managed Scratch launches allocate a
+non-Git folder once. Preparation recovery resumes only unstarted work and explicitly
+fails uncertain effects without replaying a potentially started setup script.
+
+`tests/staged_launch.rs` provides ten HTTP/real-builder/native-peer regressions:
+both providers' sync setup ordering and replay, escaped daemon cancellation plus
+held queued input/retry, async release, sync failure inspection/retry, shell startup
+prompt, Scratch replay, branch policy/collision, physical rename followed by rejected
+metadata, locked checkout cleanup and project settings inside worktrees. Two module
+regressions reopen SQLite for safe resume/explicit retry and corrupt request/snapshot
+JSON, including valid JSON with an invalid type. Existing launch-reader, storage,
+scheduler and native-import regressions now follow deferred admission and source
+claim/replay semantics. Storage collection and async checkout binding share a gate.
+
+`examples/live_staged_launch.rs` passed using installed Claude Haiku and Codex
+gpt-6.1-sol. Each accepted one preparing run, waited for a gated synchronous script
+without provider turns, then used the native provider to copy the prepared checkout's
+file into a proof file. The same launch receipt replayed one run; tracking finished.
+These are isolated profiles, not a deployment or a desktop/Android UI acceptance run.
+
+Source: nightly4165 `8b44f42b14c8e273156474a924ccf29680dd7857`, confirmed
+09:51 UTC. MCP launch/mode-limited replay, Scratch bootstrap, numeric Git checkout
+percentages, first-message naming outside launch, full provider/project enable
+precedence, latest live reference differential and compatible UI acceptance stay
+open. The complete protocol goal also retains transfer/cross-instance handoff,
+continuation settlement, newer native recovery and the published toolkit/auth/
+environment/provider backlog. See MCP.md and RECOVERY.md.
+
+Validation: full suites pass with 361 default / 358 no-default tests, 21 opt-ins ignored each. Final library, staged launch, storage, import/reader and handoff regressions are also checked after the last recovery/readiness changes. Strict Clippy runs in both configurations; fmt, generated compatibility and nine monitor tests pass.
+
+
+### MCP launch, transaction ceilings and upload claims (2026-11-04)
+
+MCP `t3_thread_launch` now calls the shared staged service. This supersedes earlier
+MCP-launch pending notes; broader protocol limits remain. The source intake is still
+nightly4165 SHA8b44f42b14c8e273156474a924ccf29680dd7857, confirmed at 10:37 UTC.
+
+`tests/mcp_launch.rs` adds ten integration tests with real MCP HTTP and Connection:
+
+- Effective project/global model defaults, configured exhausted-default fallback,
+  caller/key replay after defaults disappear, options preservation and legacy forms.
+- Explicit/inherited supported modes, narrowed headers and target-mode checks on replay.
+- A trigger changes or revokes the grant at thread-claim commit: message/run admission
+  fails, no preparation executes, and restoring authority retries the same identity.
+- Project Git worktree membership (including stale/recreated paths), invalid local
+  bases before claim, remote-only bases and Git commit-search preparation.
+- Shared Scratch bootstrap, icon preservation, distinct folders/replay and typed RPC
+  refusal when the server profile is inside a Git checkout.
+- Pending upload copies, failed claim/message rollback and retry, deletion of pending
+  originals before gated setup, and native consumption of the copied bytes by both
+  Claude/Codex peers. Native caller sessions also invoke launch themselves: the new
+  thread inherits project/model/modes and sender identity, defaults to project root
+  despite the caller's worktree, and remains top-level rather than delegated.
+
+`examples/live_mcp_launch.rs` passed with installed Claude Haiku and Codex gpt-6.1-sol.
+Each native parent created one new top-level thread through MCP launch; model/modes/
+project inherited, the synchronous setup gate prevented child provider admission,
+and the child read a setup file and wrote its exact bytes into a proof file in the
+new checkout. Both runs completed. These isolated live proofs do not certify the
+compatible desktop/Android UI or external OAuth/linked routing.
+
+Full suites pass with 371/368 tests and 21 opt-ins ignored per mode. Final affected MCP/staged/
+handoff tests and strict Clippy pass in both configurations; fmt, generated table
+and nine monitor tests pass. Non-MCP attachment intake, richer extraction, full provider/
+project enable precedence, numeric checkout progress, transfer/continuation, remaining
+toolkits/auth/environment/providers, newer runtime recovery and current differential/
+UI acceptance remain part of the active goal. No deployment/main promotion.
+
+### Shared attachment intake and document worker, 2026-11-04
+
+PR26's exact head db56824 passed both CI modes and merged into dev e561df2.
+The next port follows nightly4165 (`8b44f42b14c8e273156474a924ccf29680dd7857`),
+confirmed again at 11:25 UTC. Ordinary messages, queued edits, runtime question
+answers, staged launch and three new MCP attachment tools share pending-copy
+admission outside SQLite's write lock. Scoped writes recheck authority at commit;
+accepted receipts preserve their first copied identities and rejected attempts
+remove unused copies. Native active sends retain sender and agent/MCP origin in
+both the message and user-message item. Question answers expose original and
+extracted paths with their source answer and attachment projection.
+
+`tests/attachment_intake.rs` uses actual HTTP, the compatible lib-t3-rust client,
+SQLite rejection injection and both native transport peers. It proves upload
+ownership across transport sessions, native caller defaulting, canonical stored
+metadata, unrelated-thread rejection, rollback and retry, queue-edit replay,
+question sidecars and concurrent independent SQLite writes during gated extraction.
+The native peers read the copied notebook and extracted text after pending discard.
+`tests/document_text.rs` runs the real CLI against 64 evaluated nightly structure
+fixtures plus RTF/notebook/Unicode cases and explicit archive/output/input bounds.
+The parser covers all nine source formats. Unit tests exercise the isolated worker's
+transient/permanent failure caches, private sidecars and output limits.
+
+Installed Claude Haiku and Codex gpt-6.1-sol each completed
+`examples/live_attachment_intake.rs`: an actual uploaded DOCX contained a generated
+token unavailable in the prompt, the pending source was deleted, and the agent read
+the extracted path and wrote the token exactly into its workspace. These are native
+provider and compatible-client proofs for this flow. They do not certify full nightly
+equivalence or current desktop/Android UI acceptance. Guest-sharing attachment
+mediation and the rest of the protocol backlog remain pending. No deployment or
+main promotion occurred. Source/validation inventory:
+[attachment-intake.json](nightly/attachment-intake.json).
+
+### Provider enablement, registry hydration and admission, 2026-11-04
+
+PR27 passed both checks on dfae324 and merged into dev
+002f26443e62d85ecaa132bc182ab2da043373be. The next port follows nightly4165,
+confirmed at 11:53 UTC. Source instance defaults, envelope/config false precedence,
+project override precedence and union hydration now drive the native registry and
+shared message/launch admission. Omitted enable flags remain omitted when saved;
+unknown ids do not inherit enabled state. Project-only enablement probes/executes
+the configured native instance without changing its global setting. Other projects
+remain refused, and accepted command replay survives a later disable.
+
+`tests/provider_policy.rs` exercises real Claude/Codex adapter processes and the
+compatible client, including its model catalog reader. It verifies lazy discovery,
+settings-driven enable/disable/removal, rejected title generation while another
+project keeps the registry entry enabled, unavailable-driver snapshots and default
+probe exclusion/recovery after invalid JSON. `tests/mcp.rs` checks invalid_request
+errors for disabled launch/plain/attachment sends with real HTTP and an uploaded
+file. The policy matrix checks source driver defaults and all flag/override
+combinations, plus model overrides and opaque-setting isolation. Scripted fixtures
+now register their synthetic instance explicitly instead of depending on unknown
+ids being enabled.
+
+Full suites pass 388 default / 385 no-default, 21 opt-ins ignored each. This evidence
+covers enablement, not full catalog/text-generation/driver equivalence. Current UI
+acceptance, additional providers, history/managed-policy restoration, complete
+text-generation fallback and the broader protocol backlog remain open. Source and
+validation inventory: [provider-policy-intake.json](nightly/provider-policy-intake.json).
+No deployment or main promotion.
+
+## Context-transfer checkpoint (2026-11-04)
+
+Pinned nightly4165 source drives ordinary fork/merge-back/side-chat plans and native
+handoff delivery. `tests/context_transfer.rs` uses the compatible client and real
+adapter subprocess peers for canonical boundaries, supersession/receipt replay,
+metadata reset, merge guards, per-fork visibility, provider-changing merge in both
+directions, side-chat digests, injection fallback and durable unknown-delivery refusal.
+`tests/mcp.rs` checks status under read-only access and both write target ceilings.
+
+The history fixture generator runs the pinned pure TypeScript functions. Seven
+budgets match Rust message conversion, coverage, exact selection, rendered content,
+response items and serialized cost. `tools/live-transfer-e2e` passed eight installed
+Claude Haiku/Codex turns in isolated homes: private-codeword inheritance, historical
+Codex anchoring after a later override, actual merge context consumption and latest
+Claude side-chat framing with a preassigned native id. Native providers shut down
+before temporary credential-copy homes are removed.
+
+The command table explicitly marks fork/merge partial: Claude historical native
+anchors, native-window budget integration, automatic uncertain-conversation replacement
+and remaining provider-handoff/continuation parity are still open. See
+[context-transfer-intake.json](nightly/context-transfer-intake.json). No deployment or
+main promotion is part of this checkpoint.
+
+Validation: full suites 403 default / 400 no-default, 22 opt-ins ignored each; final
+affected suites 151 / 151 (6 ignored each), strict all-target Clippy both modes, fmt,
+generated compatibility and nightly monitor (9 tests) pass. The eight-turn native opt-in
+also passed explicitly.
+
+## Native provider home checkpoint (2026-11-04)
+
+PR31 passed both checks on fe2a063 and merged into dev
+6f8257083009dc5b27782ccca4815cd5207b924f. The next port follows nightly4179,
+confirmed through the official release API. The native runtime and continuation
+keys now share Codex/Claude home resolution. Codex account overlays share history
+and runtime state while preserving private authentication, model cache and local
+runtime directories. Source-shaped conflicts reject existing real shared entries
+and private auth symlinks; live local writer locks remain local until later setup.
+
+Twenty-one generated cases execute pinned TypeScript resolvers. Filesystem tests
+cover concurrent/idempotent setup, stale and relative links, runtime lock migration
+and explicit error shapes. The compatible Rust client and subprocess peers cover
+relative configured homes before workspace cwd changes, exact alias configuration,
+shared native history across separate credential sentinels, pre-launch auth-symlink
+refusal and recovery after explicit repair. No private credential is linked or copied
+by the overlay materializer.
+
+An installed Codex run found that unsubscribe can acknowledge before writer cache
+eviction. Native sessions now request zero retention after unsubscribe and detach
+waits for the native close notification under a deadline. A delayed-eviction peer
+with OS writer locks covers this ordering. Three installed Codex inference turns
+pass through the direct profile and two overlays: one native conversation, earlier
+private codewords, separate regular auth files, no portable handoff or model tool use.
+The proof uses private copies of one login; distinct account logins are not claimed.
+
+Validation inventory: [provider-home-intake.json](nightly/provider-home-intake.json).
+Complete selection/registry lifetime policy, active cross-instance lifecycle,
+request_secret4179, broader provider/MCP/auth surfaces, current desktop/Android
+acceptance and resource measurements remain open. No deployment or main promotion.
+
+Validation: full suites 432 default / 429 no-default, 25 opt-ins ignored each;
+strict all-target Clippy both modes, fmt, generated compatibility, monitor (9),
+fixture reproduction and diff checks pass. The final default home integration
+also passes with the sibling native process assertion.
+
+## Selection transition checkpoint (2026-11-04)
+
+PR32 passed both checks on 2cec3bd and merged into dev
+0d6a6280380d139046a563e63aa116bc13dfd6d0 after the webhook fixture and
+bounded parallel discovery repairs.
+
+The next port follows nightly4179 source policy and its native adapter classifiers.
+It distinguishes reuse, next-turn switching, restart/resume, portable handoff and
+refusal; runtime/workspace changes do not override an adapter refusal or explicit
+handoff. The planner selects the newest live session and retains negotiated
+capabilities from dead records when native history remains. Metadata decisions
+persist privately until native-owner admission, including same-instance classified
+restart/handoff and queued restoration after unexecuted composer preferences.
+
+Both native adapters accept same-instance preference changes while a turn is active.
+Steering preserves that run/attempt and its original model/runtime policy; the next
+turn captures the new preferences. Equivalent option reordering retains the native
+process, MCP owner and approval policies. provider.switch uses the shared receipt
+path. Legacy aliases use canonical driver/home/enable settings when no exact alias
+exists, including a differently configured native driver under the canonical name.
+
+The generator executes pinned TypeScript: 82 policy cases, 8 equality cases and 6 ACP
+classifications. Service/compatible-client tests cover live/dead capability fallback,
+corrupt-plan rollback, restart/handoff/refusal, State reopen, unavailable targets,
+delete and native-owner queue restoration. Four installed Claude Haiku/Codex app
+turns plus two active steering deliveries preserve a running shell command, one
+original attempt and a private codeword in the same native conversation. Temporary
+credential-copy homes and owned processes are cleaned on success/failure.
+
+Full active cross-instance lifecycle, registry/pool cleanup, SDK options and source
+background guards, exact exotic ICU collation ties, event/timeline fidelity and the
+broader protocol/UI/resource backlog remain open. Evidence and validation inventory:
+[selection-transition-intake.json](nightly/selection-transition-intake.json).
+
+Validation: complete suites 441 default / 438 without default features, 26 opt-ins ignored each.
+A final implicit restart preference regression was red, then fixed to use current
+thread preferences; final restart/selection/compatible-client suites 28 per mode
+(1 opt-in ignored), strict all-target Clippy both modes, fmt, generated compatibility,
+9 monitor tests, 96-case fixture reproduction and diff checks pass. Four installed app
+turns plus steering pass explicitly.
+
+## Active provider transition checkpoint (2026-11-04)
+
+PR33 passed both checks on 3d87dfc5eb424e6fd6af67b94efc11230c122ba9 and merged
+into dev3aaaef3b9f2a48a693cf89f84e5d3cea734568a0. Its staged checkout cancellation
+fixture now waits for durable cleanup acknowledgement as well as path removal.
+
+The next adaptation follows nightly4179 active steering/restart policy. It compares
+the incoming selection with the admitted run, preserves next-turn native steering,
+and promotes an immediate provider/session change to interrupt-and-restart. The
+run keeps its identity; the new attempt/root receives the incoming provider and
+model. Compatible profiles resume their native history. Portable handoffs include
+the current active ordinal and snapshot history before the replacement message.
+Claude session binding preserves the staged attempt/root identity.
+
+The restart journal waits for old native acknowledgement and execution release,
+then detaches the exact outgoing native binding before registering the replacement
+under the same run ID. Native release failures prevent delivery. Codex interrupted
+command items can lack item/completed: tracked terminal IDs must pass explicit
+termination/list confirmation before the adapter retires those command items.
+Ordinary completed turns retain the existing owned-item drain.
+
+Compatible-client regressions cover explicit restart, steer and auto, preference
+changes, receipt rollback, delayed acknowledgement, stale old output, release
+failure, physical terminal containment refusal and stop/delete/archive while
+waiting. The installed-provider proof and final validation inventory are recorded
+in [active-provider-handoff-intake.json](nightly/active-provider-handoff-intake.json).
+
+Recursive native descendant containment, complete pooled/retired-session cleanup,
+SDK options, source guards and exact event/modelSwitch/checkpoint-scope fidelity
+remain open, alongside the broader MCP/auth/environment/drivers, differential,
+desktop/Android and resource backlog. This is a partial protocol checkpoint.
+
+Validation: final full suites447 default /444 without default features,27 opt-ins
+ignored each; strict all-target Clippy both modes, fmt, generated compatibility,
+9 monitor tests,96 pinned selection fixture reproduction and diff checks pass.
+Four installed app turns prove both active replacement paths and private-history
+recall. Native first-use shared-home SQLite initialization is serialized in that
+proof; concurrent first-use initialization remains unverified.
+
+## Provider scope and selected-binding checkpoint (2026-11-04)
+
+PR34 passed both checks on d89b749182d531e57d66187dffb9c5c6cfd64110 and merged
+into dev75fb4390e8f0d49502bc5a9da4f2e158e2676f2c. The next adaptation follows
+nightly4179 ProviderInstanceRegistry scope replacement and ProviderSwitchService
+release selection.
+
+Modified and removed native instances retire before replacements admit native
+work. Executions receive native interruption; metadata operations cancel. Closure
+waits for admitted operations and native disposal, with cleanup owned independently
+of the waiter. Builtin default scopes obey the same rule when overridden or restored;
+other providers retain their processes. Scope snapshots prevent settings changes
+from routing startup through an unmanaged default.
+
+The private native-binding index retains the original owner key and binding
+incarnation. Normal selection journals all planner-selected historical sessions,
+preserving target peers and stopped/error records. Native ACKs mark only matching
+bindings; a later rebind gets a fresh physical release receipt. Historical native
+background work refuses direct selection atomically. Workspace planning uses live
+session cwd before the target worktree path, as the source service does.
+
+A controlled regression reproduced the fresh-home Codex SQLite failure: discovery
+uses its own temporary app-server while the inference actor initializes the same
+store. Startup now serializes initialize by shared home, including overlays; an
+independent home can start while another is held. Cancellation retains that startup
+gate until its child is reaped. Instance disposal also owns transient discovery and
+quota actors, and confirms reaping when an initialize waiter disappears.
+
+Four installed app turns with Codex CLI0.166.0 gpt-6.1-sol and Claude Haiku change
+instance environment while a native shell runs. The old shell and CLI are reaped
+before the replacement; the new process resumes native history and recalls a private
+random codeword absent from its input. Native-peer tests additionally cover default
+override/removal and unchanged neighbor processes. The final installed proof uses
+the completed registry implementation; builtin routing is covered separately by
+those process tests.
+
+Full shared-session attachment/releaseUnlessBusy and queued background policy,
+projection reconciliation on registry changes, credential/forced-rebuild epochs,
+legacy owner reconstruction, recursive native lineage and the broader protocol,
+differential/UI/resource backlog remain open. Evidence and final validation inventory:
+[provider-pool-lifetime-intake.json](nightly/provider-pool-lifetime-intake.json).
+
+Validation: full suites460 default /457 without default features,28 opt-ins
+ignored each; strict all-target Clippy both modes, fmt, generated compatibility,
+9 monitor tests,96 pinned selection fixture reproduction and diff checks pass.
+The workspace service and concurrent startup regressions were observed red before
+their production fixes; cancelled initialization verifies the exact child PID is
+reaped before disposal acknowledges.
+
+Nightly4192 (7f6f47b27b44456f1c8214d3b566b375c09f629e) appeared during final
+validation. Registry, switch/session/orchestrator/selection sources and contract
+schemas are unchanged from4179; inspected Codex adapter changes replace an
+undefined-valued Effect with Effect.undefined. This checkpoint remains applicable
+to those unchanged lifecycle sources. Broader4192 crypto/auth/PayloadSigner/DPoP
+and stream-defect recovery changes require their own intake and verification.
+
+## Nightly 4192 signature decoding checkpoint (2026-11-04)
+
+PR35 passed both checks on fb8c09b672add3f4c3bfad9f8e18fee742cbf894 and merged
+into dev 0070bf3. Nightly 4192 (7f6f47b27b44456f1c8214d3b566b375c09f629e) moves
+server HMAC, key and random work from node:crypto/jose to effect/crypto behind
+PayloadSigner and AssetSigner. Token layouts, claims, HMAC inputs and signing-key
+names are byte-identical, so tokens issued by either server keep verifying.
+
+The observable change is decoding. PayloadSigner and token payloads use Effect's
+Base64Url: padded or unpadded input, CR/LF stripped, non-zero trailing bits
+ignored. Tokens split as `const [payload, signature] = token.split(".")`, so later
+segments are ignored. Webhook tags use Effect's Hex (ASCII hex digits only) and
+Base64 (canonical padding, trailing bits ignored) before HMAC verification. o3's
+session/websocket, asset/upload and webhook verifiers now follow those rules. The
+decoder table is checked against effect@4.1.2 output, and the webhook regression
+failed on the previous source because `"+f"` was accepted as a hex byte.
+
+Desktop bootstrap, relay JWT/environment signing, DPoP and MCP OAuth refactors keep
+their semantics; o3 does not serve those surfaces. The client-runtime stream-defect
+fix changes no server wire. Evidence:
+[signature-decoding-intake.json](nightly/signature-decoding-intake.json).
+
+Validation: full suites 463 default / 460 without default features, 28 opt-ins
+ignored each; strict all-target Clippy both modes, fmt, generated compatibility
+and diff checks pass.
+
+## Scheduled tasks for Android (2026-11-04)
+
+Android acceptance on 2026-11-03 authenticated to both hosts, then failed with
+`Unknown request tag: scheduledTasks.list`. That text is the defect of Effect's
+RpcServer, so the replies came from T3 Node, not from o3, which answers unknown tags
+with `o3-server does not implement …`. T3 nightly 3991 (live on NODE) and 4192 define
+no `scheduledTasks.list`: their only task read is the `scheduledTasks.subscribe`
+stream. lib-t3-rust had registered `list` from the older pinned contract.
+
+o3 now serves `scheduledTasks.subscribe` like ScheduledTaskService.subscribeList.
+It emits `{tasks}` at once, then the full newest-first list after every write, and
+hides `webhook` without `orchestration:operate`. Upsert, setEnabled, delete and runNow
+follow the nightly service: commandId-derived ids, `once` schedules, kept `nextRunAt`
+for unchanged schedules, normalized webhook schedules with encoded hook paths,
+idempotent delete, and webhook runNow refusal. `scheduledTasks.list` stays for older o3
+clients. lib-t3-rust PR26 reads `scheduledTasks.list` from the stream, falling back
+to the RPC only when the stream is unknown. Evidence:
+[scheduled-tasks-intake.json](nightly/scheduled-tasks-intake.json).
+
+Validation: full suites 466 default / 463 without default features, 29 opt-ins
+ignored each; strict all-target Clippy both modes, fmt, generated compatibility and
+diff checks pass. The opt-in differential against real T3 3991 and the existing signed
+webhook differential pass.
+
+
+## 2026-11-06 — Consume Claude's response after a background notification
+
+The previous background test proved ownership until task completion, but accepted
+settlement immediately on the last `task_notification`. It did not prove that the
+parent's subsequent response reached the client. That was an execution parity gap.
+
+A successful root result received while background work is pending only acknowledges
+that root turn. When an owned task subsequently notifies completion, the adapter now
+invalidates that earlier success and keeps reading until Claude finishes its response
+to the notification. Duplicate or unrelated notifications do not invalidate a result.
+An interrupt still settles from its existing acknowledgement without requiring another
+native result. A zero-turn notification result is accepted only while consuming an
+owned continuation; an unrelated notification cannot finish a newly submitted prompt.
+
+Evidence: the real-client regression gates the parent's result independently from task
+completion and requires the parent's streamed text while the app run is still running.
+It failed against the previous adapter. The strengthened installed-Claude Haiku proof
+also failed before the fix (only `STARTED` survived). After the fix, a background Bash
+command exits with code 7, Claude receives its failure notification, runs a second Bash
+command that writes `RECOVERY_OK`, and replies `AFTER_NOTIFICATION` before app completion.
+The protocol-client background, legacy identity, restart and interrupt cases pass.
+
+This corrects premature settlement during an owned run. It does not establish complete
+idle-session wake routing or native goal projection parity, and does not replay failed
+commands or infer that all provider errors are safe to retry.
+
+
+## 2026-11-06 — Provider-native goals and owned automatic turns
+
+Reference: nightly4262, `c55db3e9c72fdf584f4b54192fb39beb88667b59`.
+The Codex adapter previously submitted `/goal` as ordinary inference text and
+closed a successful native turn without owning the next automatic goal turn.
+
+Control-only commands now use native goal APIs and synthetic provider turns with
+no native rollback reference. Set validates the 4000-character Unicode objective
+limit before changing the current goal, installs it paused, starts with the run's
+captured execution settings, and activates only afterward. Resume uses empty native
+input. Goal turns remain one app run while their provider turns and messages close
+separately. The five-second continuation grace pauses a goal before releasing its
+run. Stop can proceed while activation is pending; later acknowledgements and native
+orphan turns are fenced and stopped. Request responses cannot overwrite newer goal
+notifications. Explicit user provenance is kept for Codex0.167 compatibility.
+
+Claude acknowledgements and synthetic Stop-hook feedback update the goal projection.
+A successful checked root can complete the goal. Child output, unverified command
+acknowledgements, failed turns and non-completion terminal reasons cannot do so.
+
+`tools/generate-native-goal-fixtures.mjs` executes 49 cases through the pinned
+upstream parser and goal normalizers. `tests/native_goals.rs` drives the real
+Connection through control commands, fast completion, automatic continuation,
+Stop/activation races, late orphan starts, cleared goals, resume, rollback references,
+Unicode objective limits and failed replacements. Installed Codex0.166/0.167 and
+Claude Haiku have separate isolated-state proofs. The installed Codex continuation
+proof requires PHASE_ONE and PHASE_TWO in separate native turns within one app run,
+with terminal assistant messages and a completed native goal.
+
+Exact validation and remaining limits: [native-goal-intake.json](nightly/native-goal-intake.json).
+
+### Resume notifications and activation ordering
+
+Installed Codex 0.167 omits goals from `thread/resume`'s thread object and can emit
+`thread/goal/updated` separately while resuming an active objective. A private
+offline container probe preserved the objective and token budget across a native
+process restart, confirming that the notification is authoritative. It used an
+empty native home, no credentials and no network; no successful inference was
+required.
+
+The actor now retains normalized goal notifications before subscription, including
+explicit clears. The cache has 512 entries, bounds native IDs and objectives,
+rejects malformed budgets and protects currently subscribed entries from eviction.
+RPC snapshots remain fenced by the notification version. The provider publishes
+the observed state after binding and uses it for automatic-turn ownership. Unknown
+native children do not become owned root conversations.
+
+Three compatible-client regressions cover a missing legacy goal on resumed active
+work, a native clear overriding stale active state, and an unrelated child whose
+goal must neither be adopted nor paused. The active-resume regression fails on
+the preceding implementation: its app run completes while its goal remains null.
+All three assert that ordinary messages issue no native goal-control RPCs.
+
+A separate actor regression stalls the consumer until activation succeeds, then
+checks the preparation notification, fast first-turn completion, active update
+and acknowledgement in exact wire order. Successful activation enters the same
+bounded route; its oneshot reports errors and deadlines without applying success
+out of order. The internal acknowledgement never reaches the public event stream.
+
+This evidence covers the subscription and activation boundaries. It does not
+certify the complete idle-wake, automatic-turn recovery or cross-process handover
+lifecycle, and introduces no deployment.
+
+## 2026-11-06 — Structured terminal provider failures
+
+Failed turns previously retained an error string without the terminal error card
+that current clients render. The supervisor now accepts structured failure fields
+and publishes one error turn item in the same transaction as terminal state.
+Legacy failure strings pass through the common bounded redactor too. Card IDs use
+the upstream provider-item derivation and the owning native turn, or the upstream
+attempt-derived failed-start identity when no native turn was admitted.
+
+Normalization retains class, code, retryability and valid ISO usage reset instants.
+Messages and codes are bounded by UTF-16 length without splitting supplementary
+characters. Redaction removes URL credentials/query/fragment, auth headers, secret
+fields, unsafe controls and recognized token shapes. Unknown defect messages are
+hidden when a structured cause is supplied; curated domain errors and provider
+wrapper guidance use the pinned source wording. Existing adapters that supply an
+explicit string retain their redacted text; their complete typed classification
+remains a separate task.
+
+`tools/generate-provider-failure-fixtures.mjs` executes the original failure module
+with its real Effect dependency and the source ID derivation. Its 243 normalization
+cases and eight terminal cards cover curated errors, redaction boundaries, Unicode,
+lengths, usage-reset fields and startup identity. The expanded comparison found a
+real distinction between ECMAScript `/gu` and `/giu` word boundaries for token
+redaction, which is preserved in the Rust implementation.
+
+Compatible-client checks exercise failed startup, a native-turn failure and a
+usage-limit card, including duplicate terminal delivery, visible-item projection
+and the actual timeline renderer. A transaction-level regression rejects stale
+attempt failures and prevents a second terminal from replacing the first card.
+The existing confirmed-OOM transport case also checks `oom_kill` and the original
+failure class. OOM diagnosis uses the previously validated scope/cgroup mechanism;
+this block introduces no new host memory-pressure experiment.
+
+Exact evidence and remaining limits are in
+[`provider-failure-intake.json`](nightly/provider-failure-intake.json).
+
+## 2026-11-06 — Live conversation visibility and upgrade continuation
+
+A long-running thread could reopen with only its older-history control and a
+collapsed tools group. Its answer was still stored. The bounded reader selected
+physical SQLite row ages and omitted messages outside that selection, including
+the answer still growing in the active run.
+
+The window now follows canonical visible positions and retains the exact selected
+row IDs across messages, items, compact bodies and older pages. An index supports
+the position ordering; only IDs are sorted before bounded payloads are read. As in
+the pinned ProjectionStore, messages belonging to queued, preparing, starting,
+running or waiting runs remain available independently of the visible tool page.
+The existing 75/500-row policy, byte budget and legacy numeric cursor interface
+remain in place; the complete native cursor/deferred-work protocol remains open.
+
+The compatible client exercises plain and compact HTTP snapshots after 600 tools,
+with the streaming answer both outside the page and updated to a later logical
+position. Every command and the answer remains reachable through older pages.
+A separate test kills and restarts the actual server binary on a private legacy
+profile: the native goal, objective, usage and budget survive in the same app run,
+and an automatic native turn completes it without goal-control RPCs. The test
+waits for the replacement binding, so stale state cannot satisfy restart readiness.
+
+An installed Codex0.167 offline protocol probe also starts an automatic turn while
+resuming an active goal and accepts a subsequent explicit turn start. It uses a
+private local HTTP failure peer, no credentials and no external network.
+
+Validation uses a dedicated Cargo target directory. A shared target reused a
+different checkout's library after the red-baseline build; those mixed artifacts
+were discarded as evidence. The isolated candidate passes the affected library
+and both client/server regressions in both feature modes. Full CI and installation
+evidence are tracked separately; passing a checkout is not an installed fix.
+This block is not a complete headless parity certificate; [PARITY.md](PARITY.md)
+includes every headless surface, methods without a current client caller, the new
+RPCs and the migration80 acceptance backlog.
+## 2026-11-06 — Nightly thread reads
+
+`tests/thread_reads.rs` drives title batches, thread families and worktree membership
+through the real compatible client. Archived threads retain titles; deleted and unknown
+IDs do not. Family selection accepts deleted anchors and includes active forks,
+subagent descendants and side chats, ordered by update time and ID. Worktree selection
+uses the exact stored path. Family summaries and their replay boundary use one SQLite
+read transaction. All three methods require `orchestration:read`.
+
+The opt-in `official_nightly_matches_thread_read_membership_order_and_titles` runs
+against the official 4262 headless release in rootless Podman with no network,
+credentials or writable host mounts. Twelve valid query comparisons and 31 malformed
+input comparisons agree, including complete `Die` exit frames and Unicode whitespace.
+Nine additional comparisons verify scope/decode ordering and permission denials,
+including the upstream legacy `requiredScope` and granular `requiredPermission` pair.
+Regular tests also cover 35000-ID title batches, denied scopes and wire defects.
+
+Run `tools/test-headless-reference /path/to/extracted-nightly` to reproduce the native
+comparison. It compiles on the host and executes the proof in the container. This is
+evidence for the queries' selection, ordering, input decoding and authorization;
+complete common shell summaries and source-wide error taxonomy remain open.
+
+See `nightly/thread-reads-intake.json` and `PARITY.md` for current scope.
+## 2026-11-06 — Personal GitHub star operations
+
+`src/forge.rs` and `tests/forge.rs` cover star reads and mutations with real HTTP
+and the compatible RPC client. A private loopback fixture proves read/404, PUT/204
+and read/204 without external mutations. Only HTTP 204 succeeds. Header, quota reserve,
+credential boundary and pause cases use actual requests. Local port-discovery probes
+receive 404 without consuming a prepared forge response.
+
+Eighty-three cases execute the upstream's host, path, API-root, environment-token and
+private-slot naming helpers. Twenty-two comparisons with the official 4262 runtime
+cover unsupported/disabled cases, malformed-input wire defects and read-only scopes;
+their source is unchanged in 4275. Native token placeholders load from T3's private
+`.bin` slot, keyed literals are redacted, and settings round trips preserve them.
+
+GitHub App sign-in, secret-provider resolution, source-wide secret persistence and
+credential/quota integration with other forge consumers are still partial. No real
+GitHub repository is starred by these tests. Evidence and remaining limits live in
+`nightly/forge-star-intake.json`; this block does not certify full headless parity.

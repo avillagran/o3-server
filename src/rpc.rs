@@ -72,8 +72,19 @@ pub fn authorize(session: &Value, tag: &str, p: &Value) -> Result<(), Value> {
         {
             Ok(())
         } else {
+            let legacy_scope = match scope {
+                "filesystem:read" | "diagnostics:read" => "orchestration:read",
+                "settings:write"
+                | "providers:manage"
+                | "environment:maintain"
+                | "preview:operate"
+                | "source-control:write"
+                | "filesystem:write" => "orchestration:operate",
+                "terminal:read" => "terminal:operate",
+                scope => scope,
+            };
             Err(
-                json!({"_tag":"EnvironmentAuthorizationError","message":format!("The authenticated token is missing required scope: {scope}."),"requiredScope":scope}),
+                json!({"_tag":"EnvironmentAuthorizationError","message":format!("The authenticated token is missing required scope: {scope}."),"requiredScope":legacy_scope,"requiredPermission":scope}),
             )
         }
     };
@@ -114,8 +125,15 @@ pub fn authorize(session: &Value, tag: &str, p: &Value) -> Result<(), Value> {
     Ok(())
 }
 fn dispatch_command_error(s: &Arc<State>, p: &Value, message: String) -> Value {
+    let disabled = crate::provider_policy::disabled_error(&message);
+    let message = crate::provider_policy::display_error(message);
     let mut detail = message.clone();
-    let mut cause = json!({"name":"Error","message":message});
+    let mut cause = disabled
+        .map(|mut e| {
+            e["name"] = e["_tag"].clone();
+            e
+        })
+        .unwrap_or_else(|| json!({"name":"Error","message":message}));
     if matches!(p["type"].as_str(), Some("run.interrupt" | "thread.stop")) {
         let tid = p["threadId"].as_str().unwrap_or("");
         if events::get(&s.db.lock().unwrap(), "thread", tid).is_err() {
@@ -143,7 +161,7 @@ fn dispatch(s: &Arc<State>, tag: &str, p: &Value) -> Result<Value, Value> {
         "server.getSettings"=>return settings::get(s).map_err(|message|json!({"_tag":"ServerSettingsError","settingsPath":s.dir.join("settings.json"),"operation":"read","message":message})),
         "server.updateSettings"=>return settings::update(s,p).map_err(|message|json!({"_tag":"ServerSettingsError","settingsPath":s.dir.join("settings.json"),"operation":"write","message":message})),
         "projects.mutate"=>return crate::projects::mutate(s,p).map_err(|message|json!({"_tag":"ProjectMutationError","message":message})),
-        "orchestration.launchThread"=>return events::launch(s,p).map_err(|message|json!({"_tag":"OrchestrationV2ThreadLaunchError","commandId":p["commandId"],"projectId":p["projectId"],"message":message})),
+        "orchestration.launchThread"=>return events::launch(s,p).map_err(|message|json!({"_tag":"OrchestrationV2ThreadLaunchError","commandId":p["commandId"],"projectId":p["projectId"],"message":crate::provider_policy::display_error(message)})),
         "orchestration.dispatchCommand"=>return events::dispatch(s,p).map_err(|m|dispatch_command_error(s,p,m)),
         _=>Err(format!("o3-server does not implement {tag}")),
     }.map_err(error)
@@ -409,7 +427,17 @@ pub async fn run<S: AsyncRead + AsyncWrite + Unpin>(
                                 "Eof"=>eof=true,
                                 "Request" if !eof=>{
                                     let tag=frame["tag"].as_str().unwrap_or("");let p=&frame["payload"];
+                                    let decoded=match crate::rpc_input::decode(tag,p) {
+                                        Ok(decoded)=>decoded,
+                                        Err(defect)=>{
+                                            if send(&mut ws,json!({"_tag":"Exit","requestId":id,"exit":{"_tag":"Failure","cause":[{"_tag":"Die","defect":defect}]}})).await.is_err(){return}
+                                            continue;
+                                        }
+                                    };
+                                    let p=decoded.as_ref().unwrap_or(p);
                                     if let Err(e)=authorize(&session,tag,p){if send(&mut ws,exit(&id,Err(e))).await.is_err(){return}continue;}
+                                    // T3 strips task webhooks for sessions without operate; never trust a client flag.
+                                    let task_view;let p=if matches!(tag,"scheduledTasks.list"|"scheduledTasks.subscribe") {let mut v=p.clone();if !v.is_object(){v=json!({});}v["_hideWebhook"]=json!(authorize(&session,"scheduledTasks.upsert",&Value::Null).is_err());task_view=v;&task_view}else{p};
                                     if crate::streams::is_live_tag(tag) {
                                         if subscriptions.len()>=64||subscriptions.contains_key(&id.to_string()) {if send(&mut ws,exit(&id,Err(error("subscription limit or duplicate id".into())))).await.is_err(){return}continue;}
                                         match crate::streams::open(&s,tag,p).await {

@@ -2,6 +2,7 @@
 """Reject foreign native IDs and require the previous turn's transcript."""
 import json, sys
 claude = '-p' in sys.argv
+native = sys.argv[sys.argv.index('--session-id')+1] if '--session-id' in sys.argv else 'claude-native'
 seen_seed = claude and '--resume' in sys.argv
 if seen_seed:
     assert sys.argv[sys.argv.index('--resume')+1] == 'claude-native'
@@ -25,6 +26,8 @@ for line in sys.stdin:
         elif m == 'turn/start':
             text = f['params']['input'][0]['text']
             result = {'turn':{'id':'turn'}}
+        elif m == 'thread/inject_items':
+            print(json.dumps({'id':i,'error':{'code':-32601,'message':'unsupported'}}), flush=True); continue
         else: result = {}
         print(json.dumps({'id':i,'result':result}), flush=True)
         if m != 'turn/start': continue
@@ -33,21 +36,17 @@ for line in sys.stdin:
     if text.startswith('seed-proof'): seen_seed = True
     if 'fork-proof' in text:
 
-        assert 'user: seed-proof' in text and 'context-proof' in text, text
+        assert 'seed-proof' in text and 'Historical user' in text, text
         assert 'later-proof' not in text, text
-        assert 'tool-output-proof' in text, text
+        assert 'tool-output-proof' not in text and 'context-proof' not in text, text
+        assert 'Attached files and native tool/reasoning state are not replayed' in text, text
         blocks = f['message']['content'] if claude else f['params']['input']
-        images = [b for b in blocks if b['type'] in ('image','localImage')]
-        assert len(images) == 1, blocks
-        if claude:
-            import base64
-            assert base64.b64decode(images[0]['source']['data']) == b'\x89PNG\r\n\x1a\n'
-        else:
-            assert open(images[0]['path'],'rb').read() == b'\x89PNG\r\n\x1a\n'
+        assert not [b for b in blocks if b['type'] in ('image','localImage')]
+        assert 'Historical attachment (read when relevant):' not in text
     if claude:
-        print(json.dumps({'type':'system','subtype':'init','session_id':'claude-native'}), flush=True)
+        print(json.dumps({'type':'system','subtype':'init','session_id':native}), flush=True)
         print(json.dumps({'type':'stream_event','event':{'type':'content_block_delta','delta':{'type':'text_delta','text':'remembered-proof'}}}), flush=True)
-        print(json.dumps({'type':'result','subtype':'success','session_id':'claude-native'}), flush=True)
+        print(json.dumps({'type':'result','subtype':'success','session_id':native}), flush=True)
     else:
         print(json.dumps({'method':'item/agentMessage/delta','params':{'threadId':'codex-native','turnId':'turn','delta':'remembered-proof'}}), flush=True)
         print(json.dumps({'method':'turn/completed','params':{'threadId':'codex-native','turn':{'id':'turn','status':'completed'}}}), flush=True)

@@ -1,3 +1,4 @@
+mod support;
 #[path = "support/wire.rs"]
 mod wire;
 use o3_server::{import::from_t3, store::State};
@@ -228,23 +229,48 @@ fn worktree_and_reuse_launch() {
         "-qm",
         "fixture",
     ]);
-    let s = std::sync::Arc::new(State::open(&dir.join("profile")).unwrap());
+    let server = support::start(|_| {});
+    let s = server.state.clone();
     o3_server::events::mutate_project(&s,&json!({"type":"project.create","commandId":"p","projectId":"p","title":"Project","workspaceRoot":root})).unwrap();
     let mut p = json!({"commandId":"launch","threadId":"t","projectId":"p","title":"Thread","modelSelection":{"instanceId":"codex","model":"test"},"runtimeMode":"full-access","interactionMode":"default","workspaceStrategy":{"type":"worktree","baseRef":"HEAD","branch":"fixture-branch"}});
     let result = o3_server::events::launch(&s, &p).unwrap();
-    let path = result["projection"]["thread"]["worktreePath"]
+    assert_eq!(
+        result["projection"]["thread"]["worktreePath"],
+        serde_json::Value::Null
+    );
+    assert!(support::wait_for(
+        std::time::Duration::from_secs(10),
+        || o3_server::events::projection(&s, "t").unwrap()["thread"]["worktreePath"].is_string()
+    ));
+    let path = o3_server::events::projection(&s, "t").unwrap()["thread"]["worktreePath"]
         .as_str()
-        .unwrap();
-    assert!(std::path::Path::new(path).join(".git").exists());
-    assert_eq!(o3_server::events::launch(&s, &p).unwrap(), result);
+        .unwrap()
+        .to_owned();
+    assert!(std::path::Path::new(&path).join(".git").exists());
+    assert_eq!(o3_server::events::launch(&s, &p).unwrap()["resumed"], true);
     p["commandId"] = json!("reuse");
     p["reuseExistingThread"] = json!(true);
-    assert_eq!(o3_server::events::launch(&s, &p).unwrap()["resumed"], true);
+    p["workspaceStrategy"] =
+        json!({"type":"existing_worktree","worktreePath":path,"branch":"fixture-branch"});
+    assert_eq!(o3_server::events::launch(&s, &p).unwrap()["resumed"], false);
     p["commandId"] = json!("existing");
     p["threadId"] = json!("t2");
     p["reuseExistingThread"] = json!(false);
     p["workspaceStrategy"] = json!({"type":"existing_worktree","worktreePath":path});
     assert!(o3_server::events::launch(&s, &p).is_ok());
+    assert!(support::wait_for(
+        std::time::Duration::from_secs(10),
+        || s.db
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT count(*) FROM thread_launches WHERE completed=0",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap()
+            == 0
+    ));
     drop(s);
     std::fs::remove_dir_all(dir).unwrap();
 }
@@ -487,4 +513,39 @@ fn restart_finalizes_streaming_transcript_and_provider_nodes() {
     );
     drop(s);
     std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn import_copies_t3_attachment_files_without_following_links_or_overwriting() {
+    let dir = directory();
+    let source = dir.join("attachments");
+    std::fs::create_dir_all(&source).unwrap();
+    let id = "thread-1-00000000-0000-4000-8000-000000000001";
+    std::fs::write(source.join(format!("{id}.png")), b"png bytes").unwrap();
+    std::fs::write(source.join("notes.txt"), b"not an attachment").unwrap();
+    let outside = dir.join("outside.png");
+    std::fs::write(&outside, b"outside").unwrap();
+    let linked = "thread-1-00000000-0000-4000-8000-000000000002";
+    std::os::unix::fs::symlink(&outside, source.join(format!("{linked}.png"))).unwrap();
+    let state = State::open(&dir.join("target")).unwrap();
+    let report = o3_server::import::attachments(&state, &source).unwrap();
+    assert_eq!(report, json!({"copied":1,"alreadyPresent":0,"skipped":2}));
+    let copied = o3_server::assets::attachment_path(&state, id).unwrap();
+    assert_eq!(std::fs::read(&copied).unwrap(), b"png bytes");
+    use std::os::unix::fs::PermissionsExt;
+    assert_eq!(
+        std::fs::metadata(&copied).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    assert!(o3_server::assets::attachment_path(&state, linked).is_none());
+    // A second run never replaces what is already in the profile.
+    std::fs::write(&copied, b"edited").unwrap();
+    let again = o3_server::import::attachments(&state, &source).unwrap();
+    assert_eq!(again, json!({"copied":0,"alreadyPresent":1,"skipped":2}));
+    assert_eq!(std::fs::read(&copied).unwrap(), b"edited");
+    assert_eq!(
+        std::fs::read(source.join(format!("{id}.png"))).unwrap(),
+        b"png bytes"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
 }

@@ -1,0 +1,49 @@
+{
+  "reference": {
+    "tag": "v0.1.8-nightly.20261106.4262",
+    "commit": "c55db3e9c72fdf584f4b54192fb39beb88667b59"
+  },
+  "sourceFiles": [
+    "packages/contracts/src/orchestrationV2.ts",
+    "packages/contracts/src/baseSchemas.ts",
+    "packages/contracts/src/auth.ts",
+    "apps/server/src/ws.ts",
+    "apps/server/src/auth/RpcAuthorization.ts",
+    "apps/server/src/orchestration-v2/ProjectionStore.ts"
+  ],
+  "implemented": [
+    "Batched thread titles include archived threads and omit deleted and unknown IDs; duplicates collapse.",
+    "Active thread families include forks, descendants and side chats, even when queried through a deleted or archived anchor.",
+    "Active exact-path worktree membership returns threadIds ordered by update time and ID.",
+    "Family summaries and snapshotSequence share a SQLite read snapshot.",
+    "Three input schemas decode ECMAScript-trimmed nonempty strings and reject malformed inputs with upstream Die wire defects.",
+    "All three RPCs require orchestration:read; the title method is added to the generated contract scope table.",
+    "RPC permission denials include both legacy requiredScope and granular requiredPermission, matching authScopeRequiredResponse."
+  ],
+  "validation": {
+    "regularCompatibleClientTests": 3,
+    "batchIds": 35000,
+    "nativeValidQueryComparisons": 12,
+    "nativeMalformedInputWireComparisons": 31,
+    "nativePermissionAndDecodeOrderComparisons": 9,
+    "nativeCommand": "tools/test-headless-reference /path/to/extracted-nightly",
+    "nativeIsolation": "Rootless Podman; read-only source, binaries and reference; network none; tmpfs state; no native credentials or host writes.",
+    "affectedDefault": {
+      "passed": 194,
+      "failed": 0,
+      "ignored": 6
+    },
+    "affectedMinimal": {
+      "passed": 194,
+      "failed": 0,
+      "ignored": 6
+    },
+    "strictClippy": "Passed all targets in both feature modes with warnings denied.",
+    "routineChecks": "Formatting, whitespace, generated scope and compatibility tables, Python/JSON syntax and nine nightly-watch tests passed."
+  },
+  "pending": [
+    "Complete common shell-summary field parity and source-wide typed database failure taxonomy.",
+    "The broader RPC, driver, idle-wake, authentication and shared-migration backlog remains in PARITY.md."
+  ],
+  "deployment": "Not deployed. The three live hosts still run background-continuation fix 83ce347."
+}

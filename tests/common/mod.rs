@@ -1,5 +1,5 @@
 //! Shared fixtures: a real server on loopback, the real `t3-protocol` client, scratch dirs on disk
-//! (`/var/tmp`, never tmpfs) and fake `code`/`gh` executables on PATH.
+//! (`$TMPDIR`, kept under `~/.cache`, never tmpfs or `/var/tmp`) and fake `code`/`gh` executables on PATH.
 #![allow(dead_code)]
 // Both harnesses can be used independently in the same test crate. Include
 // this stateless helper here without loading its module twice.
@@ -77,6 +77,11 @@ pub fn setup(name: &str) -> Env {
     let state = scratch.join("userdata");
     std::fs::create_dir_all(&state).unwrap();
     let st = o3_server::store::State::open(&state).unwrap();
+    std::fs::write(
+        st.dir.join("settings.json"),
+        json!({"providerInstances":{"scripted":{"driver":"scripted","enabled":true}}}).to_string(),
+    )
+    .unwrap();
     let pairing = st.issue_pairing(Some("test"), 60_000).unwrap()["credential"]
         .as_str()
         .unwrap()

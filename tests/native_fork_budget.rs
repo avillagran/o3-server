@@ -28,7 +28,7 @@ fn native_fork_does_not_apply_fallback_attachment_budget() {
         )
         .unwrap();
     }
-    c.rpc("orchestration.dispatchCommand",json!({"type":"thread.fork","commandId":"fork","sourceThreadId":"t","targetThreadId":"fork","sourcePoint":{"type":"latest_stable"}})).unwrap();
+    c.rpc("orchestration.dispatchCommand",json!({"type":"thread.fork","commandId":"fork","sourceThreadId":"t","targetThreadId":"fork","sourcePoint":{"type":"run","runId":"r"}})).unwrap();
     let p = orchestration::thread_projection(&c, "fork").unwrap();
     assert_eq!(p["thread"]["nativeForkSource"], "native-proof");
     // An older boundary cannot use the latest native session.

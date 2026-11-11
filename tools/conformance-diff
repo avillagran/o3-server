@@ -1,7 +1,8 @@
 #!/bin/sh
 set -eu
-export TMPDIR=/var/tmp/o3-build/tmp
-export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-/var/tmp/o3-build/main}
+O3_BUILD_ROOT=${O3_BUILD_ROOT:-$HOME/.cache/o3-build}
+export TMPDIR=$O3_BUILD_ROOT/tmp
+export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$O3_BUILD_ROOT/main}
 mkdir -p "$TMPDIR"
 filter=upstream_differential
 if [ "${1:-}" = concurrent ]; then filter=upstream_concurrent_differential; fi

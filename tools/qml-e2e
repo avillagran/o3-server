@@ -8,22 +8,24 @@ backend is pinned to a GPU with no connected display (it only supplies the buffe
 the GPU that drives the user's screen is never opened.
 
 Everything (HOME, XDG dirs, T3CODE_HOME, screenshots, the quickshell config folder)
-lives under a fresh /var/tmp/o3-build/qml/run-* directory; the user's Wayland session,
+lives under a fresh $O3_BUILD_ROOT/ (default ~/.cache/o3-build)/qml/run-* directory; the user's Wayland session,
 D-Bus, ~/.t3 and installed app are never touched. One real haiku turn seeds the thread,
 a second is sent from the real composer; both use a credential copy removed afterwards.
 
-  O3_BIN=...            o3-server binary   (default /var/tmp/o3-build/main/release/o3-server)
-  O3_DESKTOP=...        desktop worktree   (default /var/tmp/o3-build/qml/desktop, branch feat/o3-server)
-  O3_DESKTOP_BIN=...    omarchy-t3-client  (default /var/tmp/o3-build/e2e/desktop-target/debug/omarchy-t3-client)
+  O3_BIN=...            o3-server binary   (default $O3_BUILD_ROOT/main/release/o3-server)
+  O3_DESKTOP=...        desktop worktree   (default $O3_BUILD_ROOT/qml/desktop, branch feat/o3-server)
+  O3_DESKTOP_BIN=...    omarchy-t3-client  (default $O3_BUILD_ROOT/e2e/desktop-target/debug/omarchy-t3-client)
   --keep                keep the run directory (it holds screenshots and logs)
 """
 import json, os, pathlib, shutil, signal, subprocess, sys, tempfile, time, uuid
+BUILD_ROOT = os.environ.get('O3_BUILD_ROOT') or os.path.expanduser('~/.cache/o3-build')
+os.makedirs(os.path.join(BUILD_ROOT, 'tmp'), exist_ok=True)
 
 here = pathlib.Path(__file__).resolve().parent
-base = pathlib.Path('/var/tmp/o3-build/qml')
-server = os.environ.get('O3_BIN', '/var/tmp/o3-build/main/release/o3-server')
+base = pathlib.Path(os.path.join(BUILD_ROOT, 'qml'))
+server = os.environ.get('O3_BIN', os.path.join(BUILD_ROOT, 'main/release/o3-server'))
 desktop = pathlib.Path(os.environ.get('O3_DESKTOP', str(base / 'desktop')))
-client = os.environ.get('O3_DESKTOP_BIN', '/var/tmp/o3-build/e2e/desktop-target/debug/omarchy-t3-client')
+client = os.environ.get('O3_DESKTOP_BIN', os.path.join(BUILD_ROOT, 'e2e/desktop-target/debug/omarchy-t3-client'))
 keep = '--keep' in sys.argv
 omarchy = pathlib.Path('/usr/share/omarchy/shell')
 real_home = pathlib.Path.home()

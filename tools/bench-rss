@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Isolated release RSS probe, using a real authenticated WebSocket and 1000 durable messages."""
 import base64,hashlib,json,os,pathlib,socket,struct,subprocess,sys,tempfile,time
+BUILD_ROOT = os.environ.get('O3_BUILD_ROOT') or os.path.expanduser('~/.cache/o3-build')
+os.makedirs(os.path.join(BUILD_ROOT, 'tmp'), exist_ok=True)
 sys.dont_write_bytecode=True
 if '--profile' in sys.argv:
  from rss_profile import run
@@ -10,9 +12,9 @@ if '--profile' in sys.argv:
  run(profile_memory)
  sys.exit(0)
 repo=pathlib.Path(__file__).resolve().parent.parent
-build_dir=os.environ.get('CARGO_TARGET_DIR','/var/tmp/o3-build/main')
+build_dir=os.environ.get('CARGO_TARGET_DIR',os.path.join(BUILD_ROOT, 'main'))
 if len(sys.argv)<2:
- subprocess.run(['nice','cargo','build','--release','--locked','-j','4'],cwd=repo,env={**os.environ,'CARGO_TARGET_DIR':build_dir,'TMPDIR':'/var/tmp/o3-build/tmp'},check=True)
+ subprocess.run(['nice','cargo','build','--release','--locked','-j','4'],cwd=repo,env={**os.environ,'CARGO_TARGET_DIR':build_dir,'TMPDIR':os.path.join(BUILD_ROOT, 'tmp')},check=True)
 binary=pathlib.Path(sys.argv[1] if len(sys.argv)>1 else build_dir+'/release/o3-server').resolve()
 assert '/release/' in str(binary), 'benchmark requires a release binary' 
 class WS:
@@ -45,7 +47,7 @@ class WS:
   self.send({'_tag':'Request','id':'1','tag':tag,'payload':payload,'headers':[]});v=self.recv();assert v['exit']['_tag']=='Success',v;return v['exit']['value']
 def memory(pid):
  return {k:int(v.split()[0]) for k,v in (line.split(':',1) for line in pathlib.Path(f'/proc/{pid}/status').read_text().splitlines() if ':' in line) if k in ('VmRSS','VmHWM','RssAnon','RssFile','Threads','THP_enabled')}
-with tempfile.TemporaryDirectory(prefix='o3-rss-',dir='/var/tmp/o3-build') as temp:
+with tempfile.TemporaryDirectory(prefix='o3-rss-',dir=BUILD_ROOT) as temp:
  env={**os.environ,'T3CODE_HOME':temp,'HOME':temp,'CODEX_HOME':str(pathlib.Path(temp)/'codex'),'CLAUDE_CONFIG_DIR':str(pathlib.Path(temp)/'claude')}
  browser_fixture=os.environ.get('O3_BENCH_BROWSER_FIXTURE')=='1'
  if browser_fixture:env['O3_BROWSER_BINARY']=str(repo/'tests/fixtures/browser-cdp.py')
@@ -113,7 +115,7 @@ with tempfile.TemporaryDirectory(prefix='o3-rss-',dir='/var/tmp/o3-build') as te
   for i in range(1000):churn.rpc('server.getSettings',{})
   churn.s.close();time.sleep(.2)
   final=memory(process.pid)
-  result={'startup_to_websocket_ms':startup_to_websocket_ms,'measured_at_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'binary':str(binary),'binary_bytes':binary.stat().st_size,'seed_messages':1000,'message_model_selection':bool(selection),'append_last_100_ms':{'median':sorted(append_ms[-100:])[50],'p95':sorted(append_ms[-100:])[94],'max':max(append_ms[-100:])},'metadata_append_100_ms':{'median':sorted(metadata_ms)[50],'p95':sorted(metadata_ms)[94],'max':max(metadata_ms)},'threads':20,'subscribers':3,'unary_calls':1000,'text_bytes_per_message':1000,'cold_kib':cold,'seeded_kib':idle,'subscribed_kib':subscribed,'after_churn_kib':final,'snapshot_messages':counts,'under_50_mib':final['VmHWM']<50*1024,'under_50_mb':final['VmHWM']*1024<50_000_000,'providers':[{'instanceId':p['instanceId'],'installed':p.get('installed'),'status':p.get('status')} for p in providers],'bridge_enabled':True,'gateway_hosting':bool(gateway_args),'provider_workload':'registered and probed; inference excluded (defer_start)','measurement':'Linux /proc/PID/status; disk profile under /var/tmp','allocator_env':{k:v for k,v in env.items() if k.startswith('MIMALLOC_')}}
+  result={'startup_to_websocket_ms':startup_to_websocket_ms,'measured_at_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'binary':str(binary),'binary_bytes':binary.stat().st_size,'seed_messages':1000,'message_model_selection':bool(selection),'append_last_100_ms':{'median':sorted(append_ms[-100:])[50],'p95':sorted(append_ms[-100:])[94],'max':max(append_ms[-100:])},'metadata_append_100_ms':{'median':sorted(metadata_ms)[50],'p95':sorted(metadata_ms)[94],'max':max(metadata_ms)},'threads':20,'subscribers':3,'unary_calls':1000,'text_bytes_per_message':1000,'cold_kib':cold,'seeded_kib':idle,'subscribed_kib':subscribed,'after_churn_kib':final,'snapshot_messages':counts,'under_50_mib':final['VmHWM']<50*1024,'under_50_mb':final['VmHWM']*1024<50_000_000,'providers':[{'instanceId':p['instanceId'],'installed':p.get('installed'),'status':p.get('status')} for p in providers],'bridge_enabled':True,'gateway_hosting':bool(gateway_args),'provider_workload':'registered and probed; inference excluded (defer_start)','measurement':'Linux /proc/PID/status; disk profile under ~/.cache/o3-build','allocator_env':{k:v for k,v in env.items() if k.startswith('MIMALLOC_')}}
   result['browser_idle']=browser_idle
   print(json.dumps(result,indent=2))
   assert result['under_50_mb'], 'server HWM exceeded 50 MB'

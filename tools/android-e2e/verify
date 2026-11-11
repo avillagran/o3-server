@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Fail closed on missing RPC/UI evidence; emit a public, synthetic-only summary."""
 import pathlib,json,xml.etree.ElementTree as ET,datetime,hashlib,subprocess,re
-W=pathlib.Path('/var/tmp/o3-build/android'); E=W/'evidence'
+import os
+BUILD_ROOT = os.environ.get('O3_BUILD_ROOT') or os.path.expanduser('~/.cache/o3-build')
+os.makedirs(os.path.join(BUILD_ROOT, 'tmp'), exist_ok=True)
+W=pathlib.Path(os.path.join(BUILD_ROOT, 'android')); E=W/'evidence'
 def rpc(name):
     v=json.loads((E/(name+'.json')).read_text());assert v['_tag']=='Success';return v['value']
 def ui(name,text):
@@ -31,5 +34,5 @@ for run in restart['runs']:
     inference.extend(s for s in samples if start<=s['at']<=end)
 assert inference
 start=float((E/'offline-start.txt').read_text());rs=float((E/'restart-start.txt').read_text())
-result={'server_head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'release_sha256':hashlib.sha256(pathlib.Path('/var/tmp/o3-build/main/release/o3-server').read_bytes()).hexdigest(),'flows':{x:'PASS' for x in ['haiku','summary_title','codex_expected_fallback_title','approved_write','image','terminal','restart_same_thread','offline_label','inference_memory']},'claude_title':title,'offline_observed_seconds':[round((E/(n+'.xml')).stat().st_mtime-start,2) for n in ['08-offline-2s','08-offline-12s']],'connected_observed_seconds':round((E/'07-reply.xml').stat().st_mtime-rs,2),'max_sampled_hwm_kib':max(s['VmHWM'] for s in samples),'max_during_inference_kib':max(s['VmHWM'] for s in inference),'measurement':'/proc/PID/status sampled at 250ms; server only, provider children excluded','server_bug':None,'client_bug':'AppScreens.kt graph-owner lookup during graph removal; guarded in Android feat/o3-server'}
+result={'server_head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'release_sha256':hashlib.sha256(pathlib.Path(os.path.join(BUILD_ROOT, 'main/release/o3-server')).read_bytes()).hexdigest(),'flows':{x:'PASS' for x in ['haiku','summary_title','codex_expected_fallback_title','approved_write','image','terminal','restart_same_thread','offline_label','inference_memory']},'claude_title':title,'offline_observed_seconds':[round((E/(n+'.xml')).stat().st_mtime-start,2) for n in ['08-offline-2s','08-offline-12s']],'connected_observed_seconds':round((E/'07-reply.xml').stat().st_mtime-rs,2),'max_sampled_hwm_kib':max(s['VmHWM'] for s in samples),'max_during_inference_kib':max(s['VmHWM'] for s in inference),'measurement':'/proc/PID/status sampled at 250ms; server only, provider children excluded','server_bug':None,'client_bug':'AppScreens.kt graph-owner lookup during graph removal; guarded in Android feat/o3-server'}
 print(json.dumps(result,indent=2))

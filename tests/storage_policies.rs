@@ -44,7 +44,30 @@ fn real_storage_writers_drive_collection_and_preserve_unsafe_worktrees() {
     ] {
         c.rpc("orchestration.launchThread",json!({"commandId":id,"threadId":id,"projectId":"p","title":id,"modelSelection":{"instanceId":"codex","model":"test"},"runtimeMode":"full-access","interactionMode":"default","workspaceStrategy":{"type":"worktree","baseRef":"HEAD"}})).unwrap();
     }
+    assert!(support::wait_for(
+        std::time::Duration::from_secs(10),
+        || {
+            s.state
+                .db
+                .lock()
+                .unwrap()
+                .query_row(
+                    "SELECT count(*) FROM thread_launches WHERE completed=1",
+                    [],
+                    |r| r.get::<_, usize>(0),
+                )
+                .unwrap()
+                == 9
+        }
+    ));
     let path = |id: &str| {
+        assert!(support::wait_for(
+            std::time::Duration::from_secs(10),
+            || {
+                let p = t3_protocol::api::orchestration::thread_projection(&c, id).unwrap();
+                p["thread"]["worktreePath"].is_string()
+            }
+        ));
         t3_protocol::api::orchestration::thread_projection(&c, id).unwrap()["thread"]
             ["worktreePath"]
             .as_str()
@@ -69,6 +92,10 @@ fn real_storage_writers_drive_collection_and_preserve_unsafe_worktrees() {
         ],
     );
     c.rpc("orchestration.launchThread",json!({"commandId":"reuse-external","threadId":"reused","reuseExistingThread":true,"projectId":"p","title":"Clean","modelSelection":{"instanceId":"codex","model":"test"},"runtimeMode":"full-access","interactionMode":"default","workspaceStrategy":{"type":"existing_worktree","worktreePath":external}})).unwrap();
+    assert!(support::wait_for(
+        std::time::Duration::from_secs(10),
+        || path("reused") == external.to_str().unwrap()
+    ));
     assert!(!s.state.db.lock().unwrap().query_row("SELECT json_extract(body,'$.ownedWorktree') FROM records WHERE kind='thread' AND id='reused'",[],|r|r.get::<_,bool>(0)).unwrap());
     // Reuse must not transfer ownership to an existing external worktree.
     let dirty = path("dirty");

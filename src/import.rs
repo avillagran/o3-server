@@ -127,3 +127,49 @@ pub fn from_t3(s: &State, path: &Path) -> Result<Value, String> {
     s.notify();
     Ok(Value::Object(counts))
 }
+
+/// Copies T3 attachment files the imported messages reference into this profile. Read-only on
+/// the source: regular files with attachment names only (no symlinks), never overwriting.
+/// `std::fs::copy` clones extents where the filesystem supports it.
+pub fn attachments(s: &State, source: &Path) -> Result<Value, String> {
+    use std::os::unix::fs::PermissionsExt;
+    let dest = crate::assets::attachments_dir(s);
+    std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
+    let (mut copied, mut present, mut skipped) = (0u64, 0u64, 0u64);
+    for entry in std::fs::read_dir(source)
+        .map_err(|e| e.to_string())?
+        .flatten()
+    {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            skipped += 1;
+            continue;
+        };
+        let valid = name.split_once('.').is_some_and(|(id, _)| {
+            crate::assets::attachment_path_in(source, id).is_some_and(|p| p == entry.path())
+        });
+        let regular =
+            std::fs::symlink_metadata(entry.path()).is_ok_and(|m| m.file_type().is_file());
+        if !valid || !regular {
+            skipped += 1;
+            continue;
+        }
+        let target = dest.join(name);
+        if std::fs::symlink_metadata(&target).is_ok() {
+            present += 1;
+            continue;
+        }
+        let partial = dest.join(format!(".import-{}", random_id()?));
+        std::fs::copy(entry.path(), &partial).map_err(|e| e.to_string())?;
+        std::fs::set_permissions(&partial, std::fs::Permissions::from_mode(0o600))
+            .map_err(|e| e.to_string())?;
+        // Never replace a file that appeared meanwhile.
+        if std::fs::hard_link(&partial, &target).is_ok() {
+            copied += 1;
+        } else {
+            present += 1;
+        }
+        let _ = std::fs::remove_file(&partial);
+    }
+    Ok(json!({"copied":copied,"alreadyPresent":present,"skipped":skipped}))
+}

@@ -63,7 +63,7 @@ fn instance_switch_starts_fresh_with_real_transcript_in_both_directions() {
 }
 
 #[test]
-fn historical_fork_supplies_image_and_context_to_fresh_native_peers() {
+fn historical_fork_replays_intact_visible_items_without_native_tools_or_attachments() {
     for instance in ["claudeAgent", "codex"] {
         let peer = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests/fixtures/input/history.py");
@@ -92,6 +92,9 @@ fn historical_fork_supplies_image_and_context_to_fresh_native_peers() {
             (2, "fork", "fork-proof"),
         ] {
             if n == 2 {
+                let db = s.state.db.lock().unwrap();
+                db.execute("UPDATE records SET body=json_set(body,'$.nativeThreadRef.strength','weak') WHERE kind='providerThreads'",[]).unwrap();
+                drop(db);
                 c.rpc("orchestration.dispatchCommand",json!({"type":"thread.fork","commandId":"fork","sourceThreadId":"t","targetThreadId":"fork","sourcePoint":{"type":"run","runId":boundary}})).unwrap();
             }
             c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":format!("s{n}"),"threadId":tid,"messageId":format!("m{n}"),"text":text,"modelSelection":{"instanceId":instance,"model":if n==1 {"changed"} else {"test"}},"dispatchMode":{"type":"start_immediately"},"attachments":if n==0 {json!([image])} else {json!([])},"context":if n==0 {json!({"proof":"context-proof"})} else {json!(null)}})).unwrap();
@@ -151,11 +154,44 @@ fn fallback_tool_context_drops_oldest_with_an_explicit_marker() {
             db.execute("INSERT INTO records(kind,id,thread_id,body) VALUES ('turnItems',?,'t',?)",rusqlite::params![format!("tool{n}"),json!({"id":format!("tool{n}"),"runId":"r","type":"dynamic_tool","toolName":"Read","output":format!("proof-{n} {}", "x".repeat(600000))}).to_string()]).unwrap();
         }
     }
-    c.rpc("orchestration.dispatchCommand",json!({"type":"thread.fork","commandId":"fork","sourceThreadId":"t","targetThreadId":"fork","sourcePoint":{"type":"latest_stable"}})).unwrap();
+    c.rpc("orchestration.dispatchCommand",json!({"type":"thread.fork","commandId":"fork","sourceThreadId":"t","targetThreadId":"fork","sourcePoint":{"type":"run","runId":"r"}})).unwrap();
     let p = orchestration::thread_projection(&c, "fork").unwrap();
     let text = p["thread"]["providerHandoff"].as_str().unwrap();
     assert!(text.len() <= 1024 * 1024);
     assert!(text.contains("Historical context truncated"));
     assert!(!text.contains("proof-0"));
     assert!(text.contains("proof-2"));
+}
+
+#[test]
+fn rejected_codex_first_input_does_not_consume_handoff_when_binding_exists() {
+    let s = support::start(|s| {
+        *s.provider.lock().unwrap() = Some(Arc::new(o3_server::codex::CodexProvider::new(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/codex/mock-server.py"),
+            None,
+        )));
+    });
+    let c = s.connect();
+    c.rpc("orchestration.dispatchCommand",json!({"type":"thread.create","commandId":"create","threadId":"t","projectId":"p","title":"Retry","modelSelection":{"instanceId":"codex","model":"test"},"runtimeMode":"full-access","interactionMode":"default"})).unwrap();
+    s.state.db.lock().unwrap().execute("UPDATE records SET body=json_set(body,'$.providerHandoff','retained-handoff-proof') WHERE kind='thread' AND id='t'",[]).unwrap();
+    for n in 1..=2 {
+        c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":format!("send{n}"),"messageId":format!("message{n}"),"threadId":"t","text":"reject-once-handoff-proof","attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
+        assert!(support::wait_for(Duration::from_secs(10), || {
+            let p = orchestration::thread_projection(&c, "t").unwrap();
+            p["runs"][n - 1]["status"] == if n == 1 { "failed" } else { "completed" }
+        }));
+        assert!(support::wait_for(Duration::from_secs(3), || s
+            .state
+            .active
+            .lock()
+            .unwrap()
+            .is_empty()));
+    }
+    let p = orchestration::thread_projection(&c, "t").unwrap();
+    assert!(p["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|m| m["text"] == "RETRY_CONTEXT_OK"));
 }

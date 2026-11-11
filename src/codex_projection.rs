@@ -73,6 +73,14 @@ pub(crate) fn persist(
         .as_str()
         .or_else(|| p["turn"]["id"].as_str())
         .unwrap_or("");
+    let root = run["rootNodeId"].as_str().unwrap_or(rid).to_owned();
+    let aid = run["activeAttemptId"]
+        .as_str()
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("attempt-{rid}"));
+    let previous_attempt = get(db, "attempts", &aid).unwrap_or_default();
+    let ordinal = previous_attempt["attemptOrdinal"].as_i64().unwrap_or(1);
+    let reason = previous_attempt["reason"].as_str().unwrap_or("initial");
     let session_id = format!("codex-session-{tid}");
     let pt = thread["activeProviderThreadId"]
         .as_str()
@@ -83,10 +91,29 @@ pub(crate) fn persist(
         .as_str()
         .or_else(|| p["item"]["id"].as_str())
         .unwrap_or(native_turn);
-    let id = format!("codex-item-{rid}-{native_item}");
-    let mut base = json!({"id":id,"threadId":tid,"runId":rid,"nodeId":rid,"providerThreadId":pt,"providerTurnId":pv,"nativeItemRef":{"driver":"codex","nativeId":native_item,"strength":"strong"},"parentItemId":null,"ordinal":db.query_row("SELECT coalesce(max(json_extract(body,'$.ordinal')),-1)+1 FROM records WHERE kind='turnItems' AND thread_id=?",[tid],|r|r.get::<_,i64>(0)).map_err(|e|e.to_string())?,"status":"running","title":null,"startedAt":at,"completedAt":null,"updatedAt":at});
+    let id = format!("codex-item-{root}-{native_item}");
+    let mut base = json!({"id":id,"threadId":tid,"runId":rid,"nodeId":root,"providerThreadId":pt,"providerTurnId":pv,"nativeItemRef":{"driver":"codex","nativeId":native_item,"strength":"strong"},"parentItemId":null,"ordinal":db.query_row("SELECT coalesce(max(json_extract(body,'$.ordinal')),-1)+1 FROM records WHERE kind='turnItems' AND thread_id=?",[tid],|r|r.get::<_,i64>(0)).map_err(|e|e.to_string())?,"status":"running","title":null,"startedAt":at,"completedAt":null,"updatedAt":at});
     match method {
+        "o3/goal" => {
+            crate::native_goal::publish(db, tid, thread, native_thread, p["goal"].clone(), at)?
+        }
+        "o3/goal-turn-completed" => {
+            if let Ok(mut turn) = get(db, "providerTurns", &pv) {
+                turn["status"] = json!("completed");
+                turn["completedAt"] = json!(at);
+                record(
+                    db,
+                    tid,
+                    thread,
+                    "providerTurns",
+                    "provider-turn.updated",
+                    turn,
+                )?;
+            }
+            crate::provider::finish_assistant_message(db, tid, rid, thread, run, at)?;
+        }
         "o3/binding" => {
+            crate::native_recovery::bound(db, run, native_thread)?;
             let mut t = thread.clone();
             t["codexNativeThreadId"] = json!(native_thread);
             t["activeProviderThreadId"] = json!(pt);
@@ -99,7 +126,7 @@ pub(crate) fn persist(
                 &t,
                 "providerThreads",
                 "provider-thread.updated",
-                json!({"id":pt,"appThreadId":tid,"driver":"codex","ownerNodeId":null,"nativeConversationHeadRef":null,"firstRunOrdinal":previous.get("firstRunOrdinal").unwrap_or(&run["ordinal"]),"lastRunOrdinal":run["ordinal"],"handoffIds":[],"forkedFrom":null,"providerInstanceId":thread["providerInstanceId"],"providerSessionId":session_id,"nativeThreadRef":{"driver":"codex","nativeId":native_thread,"strength":"strong"},"status":"active","createdAt":previous.get("createdAt").unwrap_or(&json!(at)),"updatedAt":at,"contextUsage":null,"goal":null,"nativeMetadata":null,"pendingBackgroundTasks":[]}),
+                json!({"id":pt,"appThreadId":tid,"driver":"codex","ownerNodeId":null,"nativeConversationHeadRef":null,"firstRunOrdinal":previous.get("firstRunOrdinal").filter(|ordinal|ordinal.is_number()).unwrap_or(&run["ordinal"]),"lastRunOrdinal":run["ordinal"],"handoffIds":previous.get("handoffIds").cloned().unwrap_or(json!([])),"forkedFrom":previous["forkedFrom"],"providerInstanceId":thread["providerInstanceId"],"providerSessionId":session_id,"nativeThreadRef":{"driver":"codex","nativeId":native_thread,"strength":"strong"},"status":"active","createdAt":previous.get("createdAt").unwrap_or(&json!(at)),"updatedAt":at,"contextUsage":if previous["nativeThreadRef"]["nativeId"]==native_thread{previous["contextUsage"].clone()}else{Value::Null},"goal":if previous["nativeThreadRef"]["nativeId"]==native_thread{previous["goal"].clone()}else{Value::Null},"nativeMetadata":if previous["nativeThreadRef"]["nativeId"]==native_thread{previous["nativeMetadata"].clone()}else{Value::Null},"pendingBackgroundTasks":if previous["nativeThreadRef"]["nativeId"]==native_thread{previous.get("pendingBackgroundTasks").cloned().unwrap_or(json!([]))}else{json!([])}}),
             )?;
             record(
                 db,
@@ -107,7 +134,7 @@ pub(crate) fn persist(
                 &t,
                 "providerSessions",
                 "provider-session.updated",
-                json!({"id":session_id,"driver":"codex","providerInstanceId":thread["providerInstanceId"],"cwd":p["cwd"],"model":thread["modelSelection"]["model"],"capabilities":serde_json::from_str::<Value>(include_str!("codex-capabilities.json")).unwrap(),"lastError":null,"status":"ready","createdAt":at,"updatedAt":at}),
+                json!({"id":session_id,"driver":"codex","providerInstanceId":thread["providerInstanceId"],"cwd":p["cwd"],"model":run["modelSelection"]["model"],"capabilities":serde_json::from_str::<Value>(include_str!("codex-capabilities.json")).unwrap(),"lastError":null,"status":"ready","createdAt":at,"updatedAt":at}),
             )?;
         }
         // A native turn result can precede item completion. The supervisor owns
@@ -123,26 +150,34 @@ pub(crate) fn persist(
             }
         }
         "turn/started" => {
+            if p["o3GoalTurn"] == true {
+                run["codexGoalMessageSuffix"] = json!(native_turn);
+            } else if let Some(run) = run.as_object_mut() {
+                run.remove("codexGoalMessageSuffix");
+            }
+            let turn_ordinal=get(db,"providerTurns",&pv).ok().and_then(|v|v["ordinal"].as_i64()).unwrap_or(db.query_row("SELECT coalesce(max(json_extract(body,'$.ordinal')),0)+1 FROM records WHERE kind='providerTurns' AND thread_id=?1 AND json_extract(body,'$.providerThreadId')=?2",rusqlite::params![tid,pt],|r|r.get::<_,i64>(0)).map_err(|e|e.to_string())?);
             run["status"] = json!("running");
-            run["rootNodeId"] = json!(rid);
+            run["rootNodeId"] = json!(root);
             run["codexProviderTurnId"] = json!(pv);
-            run["activeAttemptId"] = json!(format!("attempt-{rid}"));
-            run["startedAt"] = json!(at);
+            run["activeAttemptId"] = json!(aid);
+            if run["startedAt"].is_null() {
+                run["startedAt"] = json!(at);
+            }
             for (kind, event, v) in [
                 (
                     "providerTurns",
                     "provider-turn.updated",
-                    json!({"id":pv,"providerThreadId":pt,"nodeId":rid,"runAttemptId":format!("attempt-{rid}"),"ordinal":run["ordinal"],"nativeTurnRef":{"driver":"codex","nativeId":native_turn,"strength":"strong"},"status":"running","startedAt":at,"completedAt":null}),
+                    json!({"id":pv,"providerThreadId":pt,"nodeId":root,"runAttemptId":aid,"ordinal":turn_ordinal,"nativeTurnRef":if p["o3GoalCommand"] == true {Value::Null}else{json!({"driver":"codex","nativeId":native_turn,"strength":"strong"})},"status":"running","startedAt":at,"completedAt":null}),
                 ),
                 (
                     "nodes",
                     "node.updated",
-                    json!({"id":rid,"threadId":tid,"runId":rid,"parentNodeId":null,"rootNodeId":rid,"kind":"root_turn","status":"running","countsForRun":true,"providerThreadId":pt,"providerTurnId":pv,"nativeItemRef":null,"runtimeRequestId":null,"checkpointScopeId":null,"startedAt":at,"completedAt":null}),
+                    json!({"id":root,"threadId":tid,"runId":rid,"parentNodeId":null,"rootNodeId":root,"kind":"root_turn","status":"running","countsForRun":true,"providerThreadId":pt,"providerTurnId":pv,"nativeItemRef":null,"runtimeRequestId":null,"checkpointScopeId":null,"startedAt":at,"completedAt":null}),
                 ),
                 (
                     "attempts",
                     "attempt.updated",
-                    json!({"id":format!("attempt-{rid}"),"runId":rid,"attemptOrdinal":1,"providerInstanceId":thread["providerInstanceId"],"providerThreadId":pt,"reason":"initial","rootNodeId":rid,"providerTurnId":pv,"status":"running","startedAt":at,"completedAt":null}),
+                    json!({"id":aid,"runId":rid,"attemptOrdinal":ordinal,"providerInstanceId":thread["providerInstanceId"],"providerThreadId":pt,"reason":reason,"rootNodeId":root,"nativeThreadId":native_thread,"providerTurnId":pv,"status":"running","startedAt":at,"completedAt":null}),
                 ),
             ] {
                 record(db, tid, thread, kind, event, v)?;
@@ -158,7 +193,7 @@ pub(crate) fn persist(
                 crate::background::update(
                     db,
                     tid,
-                    rid,
+                    run,
                     thread,
                     at,
                     n["id"].as_str().ok_or("item id missing")?,
@@ -317,7 +352,7 @@ pub(crate) fn persist(
                 thread,
                 "plans",
                 "plan.updated",
-                json!({"id":plan_id,"threadId":tid,"runId":rid,"nodeId":rid,"status":"active","kind":"todo_list","steps":steps,"explanation":p["explanation"]}),
+                json!({"id":plan_id,"threadId":tid,"runId":rid,"nodeId":root,"status":"active","kind":"todo_list","steps":steps,"explanation":p["explanation"]}),
             )?;
             base["id"] = json!(format!("item-{plan_id}"));
             base["type"] = json!("todo_list");
@@ -422,7 +457,7 @@ pub(crate) fn persist(
                 thread,
                 "nodes",
                 "node.updated",
-                json!({"id":node,"threadId":tid,"runId":rid,"parentNodeId":rid,"rootNodeId":rid,"kind":if user{"user_input_request"}else{"approval_request"},"status":"waiting","countsForRun":false,"providerThreadId":pt,"providerTurnId":pv,"nativeItemRef":base["nativeItemRef"],"runtimeRequestId":request_id,"checkpointScopeId":null,"startedAt":at,"completedAt":null}),
+                json!({"id":node,"threadId":tid,"runId":rid,"parentNodeId":root,"rootNodeId":root,"kind":if user{"user_input_request"}else{"approval_request"},"status":"waiting","countsForRun":false,"providerThreadId":pt,"providerTurnId":pv,"nativeItemRef":base["nativeItemRef"],"runtimeRequestId":request_id,"checkpointScopeId":null,"startedAt":at,"completedAt":null}),
             )?;
             record(
                 db,
@@ -497,7 +532,7 @@ pub(crate) fn finish(
             if v["runId"] != rid
                 || matches!(
                     v["status"].as_str(),
-                    Some("completed" | "failed" | "interrupted" | "cancelled")
+                    Some("completed" | "failed" | "interrupted" | "cancelled" | "superseded")
                 )
             {
                 continue;
@@ -532,10 +567,18 @@ pub(crate) fn finish(
             for (row, body) in rows {
                 cursor = row;
                 let mut v: Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
-                if v[field] != rid
+                let owner = if kind == "providerTurns" {
+                    get(db, "runs", rid).unwrap_or_default()["rootNodeId"]
+                        .as_str()
+                        .unwrap_or(rid)
+                        .to_owned()
+                } else {
+                    rid.into()
+                };
+                if v[field] != owner
                     || matches!(
                         v["status"].as_str(),
-                        Some("completed" | "failed" | "interrupted" | "cancelled")
+                        Some("completed" | "failed" | "interrupted" | "cancelled" | "superseded")
                     )
                 {
                     continue;

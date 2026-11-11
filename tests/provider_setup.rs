@@ -37,7 +37,7 @@ fn sign_in_install_update_and_registry() {
         &format!(
             r#"case "$1 $2" in
 "--version ") echo "2.1.0 (Claude Code)";;
-"auth login") echo "Open https://claude.example/oauth?code_challenge=abc to sign in"; if [ -f {d}/hang ]; then sleep 30; fi; read code; [ "$code" = good ] && touch {s};;
+"auth login") echo "Open https://claude.example/oauth?code_challenge=abc to sign in"; if [ -f {d}/hang ]; then sleep 30; fi; read code; if [ "$code" != good ]; then echo "Paste code here if prompted > Invalid code. Please make sure the full code was copied."; read code; fi; [ "$code" = good ] && touch {s};;
 "auth status") [ -f {s} ];;
 "auth logout") rm -f {s};;
 "update ") echo updating >> {d}/update.log;;
@@ -160,6 +160,14 @@ esac"#,
         .unwrap();
     auth.until(T, |v| {
         v["phase"] == "waiting" && v["flowId"] == started["flowId"]
+    });
+    c.rpc("provider.auth.respond", json!({"instanceId":"claudeAgent","flowId":started["flowId"],"interactionId":"browser","response":{"type":"terminal","data":"bad\n"}})).unwrap();
+    // The CLI says why and waits for another code, as Claude does.
+    auth.until(T, |v| {
+        v["phase"] == "waiting"
+            && v["message"]
+                .as_str()
+                .is_some_and(|m| m.starts_with("Invalid code"))
     });
     c.rpc("provider.auth.respond", json!({"instanceId":"claudeAgent","flowId":started["flowId"],"interactionId":"browser","response":{"type":"terminal","data":"bad\n"}})).unwrap();
     let failed = auth.until(T, |v| v["phase"] == "failed");

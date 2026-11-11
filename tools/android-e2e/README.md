@@ -2,20 +2,21 @@
 
 Run from the repository root. The helper is deliberately resumable: it never silently
 replaces an existing server/emulator. It fixes the SDK device to `emulator-5570`, port
-38900, release executable `/var/tmp/o3-build/main/release/o3-server`, profile
-`/var/tmp/o3-build/android/profile`, and evidence directory under that same root.
+38900, release executable `$O3_BUILD_ROOT/main/release/o3-server`, profile
+`$O3_BUILD_ROOT/android/profile`, and evidence directory under that same root.
 It does not call T3 device tools or access public routes. Do not use a physical phone.
 
 Prerequisites: Node with WebSocket support, Python, installed SDK Android 34 Google
 APIs x86_64 image, KVM, `unshare` user/mount namespaces, debug O3 APK, authenticated
 Claude/Codex CLIs. Put runnable provider executables in `$W/bin`. The runner prepends
 that directory to PATH. Java builds require Java 21 and an explicit disk temporary
-directory (`JAVA_TOOL_OPTIONS=-Djava.io.tmpdir=/var/tmp/o3-build/android/tmp`).
+directory (`JAVA_TOOL_OPTIONS=-Djava.io.tmpdir=$O3_BUILD_ROOT/android/tmp`).
 
 ```sh
-export W=/var/tmp/o3-build/android
-mkdir -p "$W"/tmp /var/tmp/o3-build/tmp
-TMPDIR=/var/tmp/o3-build/tmp CARGO_TARGET_DIR=/var/tmp/o3-build/main nice cargo build --release --locked -j 4
+export O3_BUILD_ROOT=${O3_BUILD_ROOT:-$HOME/.cache/o3-build}
+export W=$O3_BUILD_ROOT/android
+mkdir -p "$W"/tmp "$O3_BUILD_ROOT"/tmp
+TMPDIR=$O3_BUILD_ROOT/tmp CARGO_TARGET_DIR=$O3_BUILD_ROOT/main nice cargo build --release --locked -j 4
 tools/android-e2e/run avd       # fresh AVD only; never recreate while running
 tools/android-e2e/run emulator  # private mount namespace confines SDK crashpad temporaries
 tools/android-e2e/run adb wait-for-device

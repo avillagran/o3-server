@@ -30,6 +30,11 @@ fn spawn_with_provider(fake: bool) -> (String, String) {
     ));
     let _ = std::fs::remove_dir_all(&dir);
     let state = o3_server::store::State::open(&dir).unwrap();
+    std::fs::write(
+        state.dir.join("settings.json"),
+        json!({"providerInstances":{"scripted":{"driver":"scripted","enabled":true}}}).to_string(),
+    )
+    .unwrap();
     let pairing = state.issue_pairing(Some("test"), 60_000).unwrap()["credential"]
         .as_str()
         .unwrap()
@@ -313,13 +318,14 @@ fn bounded_history_pages_do_not_lose_messages() {
             )
             .unwrap();
         let items = page["items"].as_array().unwrap();
-        assert!(items.len() <= 20);
+        // Older pages allow twice the user turns, as T3's `olderHistoryPagePolicy`.
+        assert!(items.len() <= 40);
         assert!(
             items
                 .iter()
                 .filter(|r| r["item"]["type"] == "user_message")
                 .count()
-                <= 10
+                <= 20
         );
         all.splice(0..0, page["items"].as_array().unwrap().clone());
         if page["hasMoreHistory"] == false {
@@ -348,8 +354,13 @@ fn bounded_history_pages_do_not_lose_messages() {
 fn launch_empty_thread_is_idempotent() {
     let (_, c) = connected(false);
     let p = json!({"commandId":"launch","projectId":"p1","title":"Launch","modelSelection":{"instanceId":"scripted","model":"test","options":[]},"runtimeMode":"full-access","interactionMode":"default","workspaceStrategy":{"type":"root"}});
+    assert!(c.rpc("orchestration.launchThread", p.clone()).is_err());
+    c.rpc("projects.mutate",json!({"type":"project.create","commandId":"project","projectId":"p1","title":"Launch","workspaceRoot":std::env::temp_dir()})).unwrap();
     let a = c.rpc("orchestration.launchThread", p.clone()).unwrap();
-    assert_eq!(a, c.rpc("orchestration.launchThread", p).unwrap());
+    let replay = c.rpc("orchestration.launchThread", p).unwrap();
+    assert_eq!(a["threadId"], replay["threadId"]);
+    assert_eq!(a["resumed"], false);
+    assert_eq!(replay["resumed"], true);
     assert_eq!(a["projection"]["thread"]["title"], "Launch");
 }
 fn wait_status(c: &Connection, status: &str) -> serde_json::Value {
@@ -533,7 +544,7 @@ fn protocol_rejected_before_auth() {
 #[test]
 fn projects_share_the_thread_sequence_and_replay_log() {
     let (_, c) = connected(false);
-    let p = json!({"type":"project.create","commandId":"project-create","projectId":"p1","title":"Project","workspaceRoot":"/var/tmp/o3-build/tmp","scripts":[]});
+    let p = json!({"type":"project.create","commandId":"project-create","projectId":"p1","title":"Project","workspaceRoot":std::env::temp_dir(),"scripts":[]});
     let result = c.rpc("projects.mutate", p.clone()).unwrap();
     assert_eq!(result, c.rpc("projects.mutate", p).unwrap());
     let shell = c
@@ -664,7 +675,7 @@ fn queued_dispatch_waits_for_completion_and_steering_reuses_active_run() {
     create(&c, "t1");
     c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"send","messageId":"first","threadId":"t1","text":"first","attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
     let first = wait_status(&c, "waiting")["projection"]["runs"][0]["id"].clone();
-    c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"queue","messageId":"second","threadId":"t1","text":"second","attachments":[],"dispatchMode":{"type":"queue_after_active"}})).unwrap();
+    c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"queue","messageId":"second","threadId":"t1","text":"second","attachments":[],"dispatchMode":{"type":"start_immediately"},"deliveryIntent":"auto"})).unwrap();
     let queued = snap(&c, "t1");
     assert_eq!(queued["projection"]["runs"][1]["status"], "queued");
     let steer = json!({"type":"message.dispatch","commandId":"steer","messageId":"steer","threadId":"t1","text":"STEERING","attachments":[],"dispatchMode":{"type":"steer_active","targetRunId":first}});
@@ -694,6 +705,75 @@ fn queued_dispatch_waits_for_completion_and_steering_reuses_active_run() {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
     c.rpc("orchestration.dispatchCommand",json!({"type":"runtime-request.respond","commandId":"approve-second","threadId":"t1","requestId":"approval-1","decision":"accept"})).unwrap();
+}
+
+#[test]
+fn a_steer_reply_is_a_new_assistant_message_after_the_steer() {
+    let (_, c) = connected(true);
+    create(&c, "t1");
+    c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"send","messageId":"first","threadId":"t1","text":"first","attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
+    let run = wait_status(&c, "waiting")["projection"]["runs"][0]["id"].clone();
+    c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"steer","messageId":"steer","threadId":"t1","text":"STEERING","attachments":[],"dispatchMode":{"type":"steer_active","targetRunId":run}})).unwrap();
+    // The scripted adapter answers the steer, then completes on the approval.
+    c.rpc("orchestration.dispatchCommand",json!({"type":"runtime-request.respond","commandId":"approve","threadId":"t1","requestId":"approval-1","decision":"accept"})).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    let messages = loop {
+        let s = snap(&c, "t1");
+        if s["projection"]["runs"][0]["status"] == "completed" {
+            break s["projection"]["messages"].as_array().unwrap().clone();
+        }
+        assert!(std::time::Instant::now() < deadline, "{s}");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    };
+    let roles: Vec<_> = messages
+        .iter()
+        .map(|m| {
+            format!(
+                "{}:{}",
+                m["role"].as_str().unwrap(),
+                m["text"].as_str().unwrap()
+            )
+        })
+        .collect();
+    assert_eq!(
+        roles,
+        [
+            "user:first",
+            "assistant:scripted response",
+            "user:STEERING",
+            "assistant:STEERING"
+        ],
+        "{messages:?}"
+    );
+    assert!(
+        messages.iter().all(|m| m["streaming"] == false),
+        "{messages:?}"
+    );
+    assert_ne!(messages[1]["id"], messages[3]["id"]);
+}
+
+#[test]
+fn steering_that_cannot_reach_the_adapter_is_queued_instead_of_rejected() {
+    let (_, c) = connected(true);
+    create(&c, "t1");
+    c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"send","messageId":"first","threadId":"t1","text":"first","attachments":[],"dispatchMode":{"type":"start_immediately"}})).unwrap();
+    let first = wait_status(&c, "waiting")["projection"]["runs"][0]["id"].clone();
+    // More steers than the control channel holds while the adapter is blocked on an approval.
+    for i in 0..12 {
+        let steer = json!({"type":"message.dispatch","commandId":format!("steer-{i}"),"messageId":format!("steer-{i}"),"threadId":"t1","text":format!("STEER {i}"),"attachments":[],"dispatchMode":{"type":"steer_active","targetRunId":first}});
+        c.rpc("orchestration.dispatchCommand", steer).unwrap();
+    }
+    // A steer aimed at a run that is no longer live becomes an ordinary message.
+    c.rpc("orchestration.dispatchCommand",json!({"type":"runtime-request.respond","commandId":"approve-first","threadId":"t1","requestId":"approval-1","decision":"accept"})).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    while snap(&c, "t1")["projection"]["runs"][0]["status"] != "completed" {
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    c.rpc("orchestration.dispatchCommand",json!({"type":"message.dispatch","commandId":"late","messageId":"late","threadId":"t1","text":"late","attachments":[],"dispatchMode":{"type":"steer_active","targetRunId":first}})).unwrap();
+    let runs = snap(&c, "t1")["projection"]["runs"].clone();
+    assert_eq!(runs.as_array().unwrap().len(), 2, "{runs}");
+    assert_eq!(runs[1]["userMessageId"], "late", "{runs}");
 }
 
 #[test]

@@ -1,25 +1,101 @@
-//! Codex 0.166 app-server: one process, bounded multiplexing, no retained history.
+//! Codex 0.166: shared inference actor, scoped probes and bounded multiplexing.
 use crate::provider::{Provider, ProviderControl, ProviderEvent, RunInput};
 use serde_json::{json, Value};
 use std::{collections::HashMap, future::Future, path::PathBuf, pin::Pin, sync::Mutex};
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncWriteExt, BufReader},
     process::Command,
     sync::{mpsc, oneshot, watch},
 };
 
-const MAX_FRAME: usize = 1024 * 1024;
+#[path = "codex_goal.rs"]
+mod goals;
+#[path = "codex_lifetime.rs"]
+mod lifetime;
+
+use crate::provider_frames::{Frame, FrameBuffer, FrameError, MAX_FRAME};
+// Provider input admits 8 MiB of serialized content, plus the RPC envelope.
+const MAX_OUTGOING_FRAME: usize = 16 * 1024 * 1024;
+/// Notifications queued for one Codex thread while its turn loop is busy (writing events,
+/// awaiting an RPC). Bounded by bytes, not count: a burst of parallel tool calls emits many
+/// small frames, and dropping any of them would corrupt the turn.
+const ROUTE_BACKLOG_BYTES: usize = 8 * 1024 * 1024;
+type Frames = mpsc::UnboundedReceiver<(Value, usize)>;
+struct Route {
+    tx: mpsc::UnboundedSender<(Value, usize)>,
+    queued: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+impl Route {
+    /// Never blocks the shared reader; false when the consumer is gone or over budget.
+    /// A single frame larger than the budget is admitted when nothing else is queued.
+    fn push(&self, frame: Value, size: usize) -> bool {
+        use std::sync::atomic::Ordering;
+        let queued = self.queued.fetch_add(size, Ordering::AcqRel);
+        if queued > 0 && queued + size > ROUTE_BACKLOG_BYTES {
+            return false;
+        }
+        self.tx.send((frame, size)).is_ok()
+    }
+}
+struct Inbox {
+    rx: Frames,
+    queued: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+impl Inbox {
+    fn pair() -> (Route, Inbox) {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let queued = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        (
+            Route {
+                tx,
+                queued: queued.clone(),
+            },
+            Inbox { rx, queued },
+        )
+    }
+    async fn recv(&mut self) -> Option<Value> {
+        let (frame, size) = self.rx.recv().await?;
+        self.queued
+            .fetch_sub(size, std::sync::atomic::Ordering::AcqRel);
+        Some(frame)
+    }
+}
 type Reply = oneshot::Sender<Result<Value, String>>;
+#[derive(Clone, Copy)]
+enum ReplyOrder {
+    Independent,
+    GoalActivation,
+}
+#[derive(Clone, Copy)]
+enum Release {
+    Revoke,
+    Finalize,
+    Unload,
+}
 enum Op {
-    Call(String, Value, Reply),
+    AttachAgentThread(String, oneshot::Sender<()>),
+    Call(String, Value, Reply, ReplyOrder),
     Reply(Value),
     Subscribe(
         String,
-        mpsc::Sender<Value>,
-        oneshot::Sender<Result<(), String>>,
+        Route,
+        oneshot::Sender<Result<Option<Value>, String>>,
     ),
     Unsubscribe(String),
+    WatchGoal(String, bool),
     Shutdown(oneshot::Sender<()>),
+    WaitForClose(String, oneshot::Sender<Result<(), String>>),
+    ReleaseMcp(
+        String,
+        Option<String>,
+        Release,
+        oneshot::Sender<Vec<String>>,
+    ),
+    RetainMcp(
+        String,
+        std::sync::Arc<crate::native_mcp::Context>,
+        oneshot::Sender<Result<(), String>>,
+    ),
 }
 #[derive(Clone)]
 struct Client(mpsc::Sender<Op>);
@@ -27,7 +103,7 @@ impl Client {
     async fn call(&self, method: &str, params: Value) -> Result<Value, String> {
         let (tx, rx) = oneshot::channel();
         self.0
-            .send(Op::Call(method.into(), params, tx))
+            .send(Op::Call(method.into(), params, tx, ReplyOrder::Independent))
             .await
             .map_err(|_| "Codex process closed")?;
         tokio::time::timeout(std::time::Duration::from_secs(30), rx)
@@ -38,13 +114,40 @@ impl Client {
 }
 
 pub struct CodexProvider {
+    agent_scopes: Option<std::sync::Arc<crate::agent_scope::Registry>>,
     executable: PathBuf,
     home: Option<PathBuf>,
+    home_setup: Option<std::sync::Arc<crate::provider_home::Setup>>,
     environment: Vec<(String, String)>,
     launch_args: Vec<String>,
     idle_timeout: std::time::Duration,
     client: tokio::sync::Mutex<Option<Client>>,
+    actors: lifetime::Actors,
     descriptor: std::sync::Arc<Mutex<Value>>,
+    /// The auth the app-server last reported, with the auth.json timestamp it was read under.
+    auth_seen: Mutex<Option<(Option<std::time::SystemTime>, Value)>>,
+}
+/// Modification time of the credentials file; a sign-in or sign-out rewrites or removes it.
+fn auth_stamp(home: Option<&std::path::Path>) -> Option<std::time::SystemTime> {
+    codex_home(home)
+        .and_then(|d| std::fs::metadata(d.join("auth.json")).ok())
+        .and_then(|m| m.modified().ok())
+}
+/// Writes the `account/read` result into the provider descriptor's auth and status.
+fn apply_auth(d: &mut Value, auth: &Value) {
+    let authenticated = !auth["account"].is_null() || auth["requiresOpenaiAuth"] == false;
+    d["auth"] = json!({"status":if authenticated{"authenticated"}else{"unauthenticated"}});
+    for key in ["email", "workspaceId"] {
+        if let Some(value) = auth["account"].get(key).filter(|v| v.is_string()) {
+            d["auth"][key] = value.clone();
+        }
+    }
+    d["status"] = json!(if authenticated { "ready" } else { "warning" });
+    d["message"] = json!(if authenticated {
+        "Codex app-server initialized"
+    } else {
+        "Codex requires authentication"
+    });
 }
 fn codex_home(home: Option<&std::path::Path>) -> Option<PathBuf> {
     home.map(PathBuf::from)
@@ -136,14 +239,23 @@ impl Default for CodexProvider {
     }
 }
 impl CodexProvider {
+    /// Records the descriptor's current auth against the credentials file it was read under.
+    fn remember_auth(&self) {
+        let auth = self.descriptor.lock().unwrap()["auth"].clone();
+        *self.auth_seen.lock().unwrap() = Some((auth_stamp(self.home.as_deref()), auth));
+    }
     pub fn new(executable: PathBuf, home: Option<PathBuf>) -> Self {
         Self {
+            agent_scopes: None,
             executable: crate::executable::resolve(&executable).unwrap_or(executable),
             home,
+            home_setup: None,
             environment: Vec::new(),
             launch_args: Vec::new(),
             idle_timeout: std::time::Duration::from_secs(60),
             client: tokio::sync::Mutex::new(None),
+            auth_seen: Mutex::new(None),
+            actors: Default::default(),
             descriptor: std::sync::Arc::new(Mutex::new(json!({
                 "instanceId":"codex", "driver":"codex", "displayName":"Codex", "enabled":true,
                 "installed":false,"version":null,"status":"warning","auth":{"status":"unknown"},
@@ -153,8 +265,33 @@ impl CodexProvider {
             }))),
         }
     }
+    fn with_actor_scope(mut self, actors: lifetime::Actors) -> Self {
+        self.actors = actors;
+        self
+    }
+    pub fn with_agent_scopes(
+        mut self,
+        registry: std::sync::Arc<crate::agent_scope::Registry>,
+    ) -> Self {
+        self.agent_scopes = Some(registry);
+        self
+    }
+    pub(crate) fn with_optional_agent_scopes(
+        mut self,
+        registry: Option<std::sync::Arc<crate::agent_scope::Registry>>,
+    ) -> Self {
+        self.agent_scopes = registry;
+        self
+    }
     pub fn with_launch_args(mut self, args: Vec<String>) -> Self {
         self.launch_args = args;
+        self
+    }
+    pub(crate) fn with_home_setup(
+        mut self,
+        setup: Option<std::sync::Arc<crate::provider_home::Setup>>,
+    ) -> Self {
+        self.home_setup = setup;
         self
     }
     pub fn with_environment(mut self, environment: Vec<(String, String)>) -> Self {
@@ -162,18 +299,38 @@ impl CodexProvider {
         self
     }
     pub async fn probe(&self) -> Result<(), String> {
-        if self
+        let live = self
             .client
             .lock()
             .await
             .as_ref()
-            .is_some_and(|c| !c.0.is_closed())
-        {
+            .filter(|c| !c.0.is_closed())
+            .cloned();
+        if let Some(c) = live {
+            // A running app-server keeps the account it read at startup; ask again so a
+            // sign-in or sign-out made since then shows up without restarting Codex.
+            let auth = c
+                .call("account/read", json!({"refreshToken":false}))
+                .await?;
+            apply_auth(&mut self.descriptor.lock().unwrap(), &auth);
+            self.remember_auth();
             return Ok(());
+        }
+        if let Some(setup) = &self.home_setup {
+            setup.prepare().await?;
         }
         self.probe_cached()
     }
     pub fn probe_cached(&self) -> Result<(), String> {
+        if let Some(setup) = &self.home_setup {
+            if let Err(error) = setup.check_private() {
+                let mut d = self.descriptor.lock().unwrap();
+                d["status"] = json!("error");
+                d["message"] = json!(crate::provider_home::display_error(&error));
+                d["models"] = json!([]);
+                return Err(error);
+            }
+        }
         let installed = crate::executable::resolve(&self.executable).is_some();
         let mut d = self.descriptor.lock().unwrap();
         d["installed"] = json!(installed);
@@ -184,14 +341,31 @@ impl CodexProvider {
                 (true, false) => "warning",
             }
         );
-        d["auth"] = json!({"status":"unknown"});
+        // Without a running app-server, the credentials file stands in for the account:
+        // keep what the app-server last reported while auth.json is unchanged, report a
+        // fresh sign-in once it changes, and signed out once it is gone. The first turn's
+        // app-server reads the account again. Retained limits belong to the last verified
+        // identity, so an availability check keeps it while the credentials are unchanged.
+        let stamp = auth_stamp(self.home.as_deref());
+        let seen = self.auth_seen.lock().unwrap().clone();
+        let verified = (!d["usageLimits"].is_null() && d["auth"]["status"] == "authenticated")
+            .then(|| d["auth"].clone());
+        d["auth"] = match seen {
+            Some((at, auth)) if at == stamp => auth,
+            _ if credentials_present(self.home.as_deref()) => {
+                verified.unwrap_or_else(|| json!({"status":"authenticated"}))
+            }
+            _ => json!({"status":"unauthenticated"}),
+        };
         d["message"] = json!(if installed {
             "Codex available; starts on first turn, authentication checked then"
         } else {
             "Codex binary not found"
         });
         d["checkedAt"] = json!(crate::store::iso(crate::store::now_ms()));
-        if d["models"].as_array().is_none_or(|m| m.is_empty()) {
+        if self.home_setup.as_ref().is_none_or(|setup| setup.ready())
+            && d["models"].as_array().is_none_or(|m| m.is_empty())
+        {
             d["models"] = cached_models(self.home.as_deref());
         }
         if installed {
@@ -209,11 +383,14 @@ impl CodexProvider {
         }
     }
     async fn connection(&self) -> Result<Client, String> {
+        self.connection_for(None).await
+    }
+    async fn connection_for(&self, thread: Option<&str>) -> Result<Client, String> {
         let mut guard = self.client.lock().await;
         if let Some(c) = guard.as_ref().filter(|c| !c.0.is_closed()) {
             return Ok(c.clone());
         }
-        let result = self.launch().await;
+        let result = self.launch(thread).await;
         match &result {
             Ok(c) => *guard = Some(c.clone()),
             Err(e) => {
@@ -226,26 +403,61 @@ impl CodexProvider {
         }
         result
     }
-    async fn launch(&self) -> Result<Client, String> {
+    async fn launch(&self, thread: Option<&str>) -> Result<Client, String> {
+        let state_home = match &self.home_setup {
+            Some(setup) => setup.shared_home().to_owned(),
+            None => self
+                .home
+                .clone()
+                .or_else(|| {
+                    self.environment
+                        .iter()
+                        .rev()
+                        .find(|(k, _)| k == "CODEX_HOME")
+                        .map(|(_, v)| PathBuf::from(v))
+                })
+                .or_else(|| codex_home(None))
+                .unwrap_or(crate::provider_home::host_home()?.join(".codex")),
+        };
+        let state_home = crate::provider_home::absolute(
+            &state_home,
+            &std::env::current_dir().map_err(|e| e.to_string())?,
+        );
+        let state_home = state_home.canonicalize().unwrap_or(state_home);
+        let mut startup = lifetime::startup(state_home).await;
+        if let Some(setup) = &self.home_setup {
+            setup.prepare().await?;
+        }
         let mut cmd = Command::new(&self.executable);
         cmd.envs(self.environment.iter().cloned());
-        cmd.arg("app-server")
-            .arg("--stdio")
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .kill_on_drop(true);
+        cmd.arg("app-server").arg("--stdio");
         if let Some(home) = &self.home {
             cmd.env("CODEX_HOME", home);
         }
         cmd.args(&self.launch_args);
+        let (mut cmd, agent_scope) = if let Some(registry) = &self.agent_scopes {
+            registry.wrap(cmd, "codex", thread, true, false).await?
+        } else {
+            (cmd, None)
+        };
+        cmd.stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .kill_on_drop(true);
         let child = cmd
             .spawn()
             .map_err(|e| format!("Cannot spawn Codex: {e}"))?;
         let (tx, rx) = mpsc::channel(32);
-        tokio::spawn(actor(child, rx, self.descriptor.clone(), self.idle_timeout));
+        let (finished, closed) = watch::channel(false);
+        let (descriptor, idle_timeout) = (self.descriptor.clone(), self.idle_timeout);
+        tokio::spawn(async move {
+            actor(child, rx, descriptor, idle_timeout, agent_scope).await;
+            finished.send_replace(true);
+        });
         let c = Client(tx);
+        startup.spawned(self.actors.track(&c, closed));
         let init=c.call("initialize",json!({"clientInfo":{"name":"o3-server","version":env!("CARGO_PKG_VERSION")},"capabilities":{"experimentalApi":true}})).await?;
+        startup.initialized();
         c.0.send(Op::Reply(json!({"method":"initialized","params":{}})))
             .await
             .map_err(|_| "Codex closed")?;
@@ -259,26 +471,37 @@ impl CodexProvider {
             .as_str()
             .and_then(|a| a.split('/').nth(1))
             .and_then(|a| a.split_whitespace().next()));
-        let authenticated = !auth["account"].is_null() || auth["requiresOpenaiAuth"] == false;
-        d["auth"] = json!({"status":if authenticated{"authenticated"}else{"unauthenticated"}});
-        for key in ["email", "workspaceId"] {
-            if let Some(value) = auth["account"].get(key).filter(|v| v.is_string()) {
-                d["auth"][key] = value.clone();
-            }
-        }
-        d["status"] = json!(if authenticated { "ready" } else { "warning" });
-        d["message"] = json!(if authenticated {
-            "Codex app-server initialized"
-        } else {
-            "Codex requires authentication"
-        });
+        apply_auth(&mut d, &auth);
+        *self.auth_seen.lock().unwrap() =
+            Some((auth_stamp(self.home.as_deref()), d["auth"].clone()));
         d["checkedAt"] = json!(crate::store::iso(crate::store::now_ms()));
         d["models"]=json!(models["data"].as_array().unwrap_or(&vec![]).iter().map(|m|json!({"slug":m["model"],"name":m["displayName"],"isCustom":false,"isDefault":m["isDefault"],"capabilities":model_capabilities(m)})).collect::<Vec<_>>());
         Ok(c)
     }
+    async fn recover_input(
+        &self,
+        input: &mut RunInput,
+        output: &mpsc::Sender<ProviderEvent>,
+        reason: crate::provider::NativeRecoveryReason,
+        current: &[Value],
+    ) -> Result<(), String> {
+        let previous = input.native_session_id.clone();
+        let id = crate::native_recovery::request(input, output, reason, current).await?;
+        self.detach(
+            &input.provider_instance_id,
+            &input.thread_id,
+            previous.as_deref(),
+            true,
+        )
+        .await?;
+        if let Some(context) = &input.native_mcp {
+            context.revoke();
+        }
+        crate::native_recovery::released(output, id).await
+    }
     async fn run(
         &self,
-        input: RunInput,
+        mut input: RunInput,
         output: mpsc::Sender<ProviderEvent>,
         mut control: mpsc::Receiver<ProviderControl>,
         mut cancel: watch::Receiver<bool>,
@@ -292,37 +515,177 @@ impl CodexProvider {
         ) {
             return Err("Codex runtime mode is not implemented".into());
         }
-        let content = crate::provider_input::content(&input, false)?;
-        let c = self.connection().await?;
-        let mut params = json!({"cwd":input.cwd,"model":input.model_selection["model"],"approvalPolicy":if input.runtime_mode=="full-access"{"never"}else{"on-request"},"sandbox":if input.runtime_mode=="full-access"{"danger-full-access"}else{"workspace-write"}});
-        // Explicitly clear the per-run server when browser access was withheld.
-        params["config"] = json!({"mcp_servers.t3-code":if input.model_selection["o3BrowserMcp"].is_object() {
-            json!({"url":input.model_selection["o3BrowserMcp"]["url"],"http_headers":input.model_selection["o3BrowserMcp"]["headers"]})
-        } else { json!({"enabled":false}) }});
-        let response = if let Some(id) = input.model_selection["nativeForkSource"].as_str() {
-            params["threadId"] = json!(id);
-            c.call("thread/fork", params).await?
-        } else if let Some(id) = input.native_session_id.as_ref() {
-            params["threadId"] = json!(id);
-            params["excludeTurns"] = json!(true);
-            c.call("thread/resume", params).await?
-        } else {
-            c.call("thread/start", params).await?
+        let mut content = crate::provider_input::content(&input, false)?;
+        if let Some(reason) = crate::handoff_delivery::recovery_reason(&input, &content) {
+            self.recover_input(&mut input, &output, reason, &content)
+                .await?;
+            content = crate::provider_input::content(&input, false)?;
+        }
+        let app_thread = input.model_selection["o3AppThreadId"]
+            .as_str()
+            .unwrap_or(&input.thread_id)
+            .to_owned();
+        let mut c = self.connection_for(Some(&app_thread)).await?;
+        let response = loop {
+            let (ack, ready) = oneshot::channel();
+            c.0.send(Op::AttachAgentThread(app_thread.clone(), ack))
+                .await
+                .map_err(|_| "Codex closed")?;
+            ready.await.map_err(|_| "Codex closed")?;
+            if let Some(context) = &input.native_mcp {
+                let context = context
+                    .refresh(&input.cwd, &input.model_selection["options"])
+                    .await?;
+                input.model_selection["o3NativeMcp"] = context.config();
+                input.native_mcp = Some(context);
+            }
+            let mut params = json!({"cwd":input.cwd,"model":input.model_selection["model"],"approvalPolicy":if input.runtime_mode=="full-access"{"never"}else{"on-request"},"sandbox":if input.runtime_mode=="full-access"{"danger-full-access"}else{"workspace-write"}});
+            let injected = if input.model_selection["o3NativeMcp"].is_object() {
+                &input.model_selection["o3NativeMcp"]
+            } else {
+                &input.model_selection["o3BrowserMcp"]
+            };
+            // Native subscriptions keep sessions alive between turns. Once unsubscribed,
+            // release the idle writer rather than retaining it in the old account process.
+            params["config"] = json!({"thread_unload_delay_secs":0,"mcp_servers.t3-code":if injected.is_object(){json!({"url":injected["url"],"http_headers":injected["headers"]})}else{json!({"enabled":false})}});
+            let result = if let Some(id) = input.model_selection["nativeForkSource"].as_str() {
+                params["threadId"] = json!(id);
+                if input.model_selection["nativeForkLastTurnId"].is_string() {
+                    params["lastTurnId"] = input.model_selection["nativeForkLastTurnId"].clone();
+                }
+                c.call("thread/fork", params).await
+            } else if let Some(id) = input.native_session_id.as_ref() {
+                params["threadId"] = json!(id);
+                params["excludeTurns"] = json!(true);
+                c.call("thread/resume", params).await
+            } else {
+                c.call("thread/start", params).await
+            };
+            match result {
+                Ok(response) => break response,
+                Err(_error) if input.model_selection["nativeForkSource"].is_string() => {
+                    self.recover_input(
+                        &mut input,
+                        &output,
+                        crate::provider::NativeRecoveryReason::ForkFailed,
+                        &content,
+                    )
+                    .await?;
+                    content = crate::provider_input::content(&input, false)?;
+                    c = self.connection_for(Some(&app_thread)).await?;
+                }
+                Err(error)
+                    if input.native_session_id.is_some()
+                        && !crate::native_recovery::thread_in_use(&error) =>
+                {
+                    self.recover_input(
+                        &mut input,
+                        &output,
+                        crate::provider::NativeRecoveryReason::ResumeFailed,
+                        &content,
+                    )
+                    .await?;
+                    content = crate::provider_input::content(&input, false)?;
+                    c = self.connection_for(Some(&app_thread)).await?;
+                }
+                Err(error) => return Err(error),
+            }
         };
+        let maintenance = crate::handoff_delivery::maintenance_input(&input);
+        let manual = if maintenance {
+            vec![]
+        } else {
+            crate::handoff_delivery::manual(&input, &mut content)?
+        };
+        let deliveries = crate::handoff_delivery::prepare(&input, &content)?;
         let tid = response["thread"]["id"]
             .as_str()
             .ok_or("Codex thread id missing")?
             .to_owned();
-        let (tx, mut frames) = mpsc::channel(16);
+        if let Some(context) = &input.native_mcp {
+            let sender = c.0.downgrade();
+            let key = context.thread_key();
+            let native = tid.clone();
+            context.set_disposer(std::sync::Arc::new(move |revoke| {
+                let sender = sender.clone();
+                let key = key.clone();
+                let native = native.clone();
+                Box::pin(async move {
+                    let Some(sender) = sender.upgrade() else {
+                        return Ok(());
+                    };
+                    unload(&Client(sender), &key, Some(&native), revoke).await
+                })
+            }));
+        }
+        if let Some(context) = &input.native_mcp {
+            let (ack, ready) = oneshot::channel();
+            c.0.send(Op::RetainMcp(tid.clone(), context.clone(), ack))
+                .await
+                .map_err(|_| "Codex closed")?;
+            ready.await.map_err(|_| "Codex closed")??;
+        }
+        let (tx, mut frames) = Inbox::pair();
         let (ack, ready) = oneshot::channel();
         c.0.send(Op::Subscribe(tid.clone(), tx, ack))
             .await
             .map_err(|_| "Codex closed")?;
-        ready.await.map_err(|_| "Codex closed")??;
+        let observed_goal = ready.await.map_err(|_| "Codex closed")??;
         let mut active_turn = None;
         let mut terminal_received = false;
+        let goal_command = crate::native_goal::parse(&input.text, &input.attachments);
+        let mut goal = goals::State::new(if let Some(goal) = &observed_goal {
+            goal.clone()
+        } else if input.native_session_id.as_deref() == Some(tid.as_str()) {
+            input.model_selection["o3NativeGoal"].clone()
+        } else {
+            Value::Null
+        });
+        goal.origin = if input.model_selection["o3GoalCommandOrigin"] == "user" {
+            "user"
+        } else {
+            "automatic"
+        };
+        if observed_goal.is_some() || !goal.current.is_null() {
+            c.0.send(Op::WatchGoal(tid.clone(), goal.active()))
+                .await
+                .map_err(|_| "Codex closed")?;
+        }
         let result=async {
             output.send(ProviderEvent::Codex(json!({"method":"o3/binding","params":{"threadId":tid,"cwd":input.cwd}}))).await.map_err(|_|"receiver closed")?;
+            if observed_goal.as_ref().is_some_and(|observed|observed!=&input.model_selection["o3NativeGoal"]) {goal.publish(&output,&tid).await?;}
+            if let Some(command) = &goal_command {
+                if let Some(reply) = goal.prepare(&c, &tid, command, &output).await? {
+                    output.send(ProviderEvent::Codex(json!({"method":"turn/started","params":{"threadId":tid,"o3GoalCommand":true,"turn":{"id":format!("goal-command:{}",input.model_selection["o3AttemptId"].as_str().unwrap_or(&input.run_id))}}}))).await.map_err(|_|"receiver closed")?;
+                    if let Some(reply) = reply { output.send(ProviderEvent::TextDelta(reply)).await.map_err(|_|"receiver closed")?; }
+                    terminal_received=true;
+                    output.send(ProviderEvent::Completed).await.map_err(|_|"receiver closed")?;
+                    return Ok(());
+                }
+                if let crate::native_goal::Command::Set(objective) = command {
+                    let original = std::mem::replace(&mut input.text, format!("Start working toward this goal: {objective}"));
+                    let prepared = crate::provider_input::content(&input, false);
+                    input.text = original;
+                    content = prepared?;
+                } else if matches!(command, crate::native_goal::Command::Resume) { content.clear(); }
+            }
+            let mut inline = vec![];
+            for delivery in &deliveries {
+                delivery.acknowledge(&output,&tid,"pending").await?;
+                match c.call("thread/inject_items",json!({"threadId":tid,"items":delivery.items()})).await {
+                    Ok(_)=>delivery.acknowledge(&output,&tid,"injected").await?,
+                    Err(error) if serde_json::from_str::<Value>(&error).is_ok_and(|e|e["code"]==-32601)=>if maintenance{delivery.acknowledge(&output,&tid,"unsent").await?;}else{inline.push(delivery)},
+                    Err(error)=>return Err(error),
+                }
+            }
+            if !inline.is_empty() {
+                let context = inline.iter().map(|d|d.inline()).collect::<Vec<_>>().join("\n\n");
+                let current=content[0]["text"].as_str().unwrap_or("");
+                content[0]["text"]=json!(format!("{context}\n\nUser message:\n{current}"));
+                if content.iter().filter_map(|v|v["text"].as_str()).map(str::len).sum::<usize>()>1024*1024 || serde_json::to_vec(&content).map_err(|e|e.to_string())?.len()>8*1024*1024 {return Err("Context handoff exceeds native input budget".into())}
+            }
+            for delivery in &manual {delivery.acknowledge(&output,&tid,"pending").await?;}
+            inline.extend(manual.iter());
             let effort=input.model_selection["options"].as_array().and_then(|a|a.iter().find(|v|v["id"]=="reasoningEffort")).map(|v|v["value"].clone());
             let mut turn_params=json!({"threadId":tid,"input":content,"model":input.model_selection["model"],"effort":effort});
             if let Some(tier) = input.model_selection["options"].as_array().and_then(|a| a.iter().find(|v| v["id"] == "serviceTier")).and_then(|v| v["value"].as_str()) {
@@ -331,21 +694,62 @@ impl CodexProvider {
             if input.interaction_mode=="plan" {turn_params["collaborationMode"]=json!({"mode":"plan","settings":{"model":input.model_selection["model"],"reasoning_effort":effort,"developer_instructions":null}});}
             // A pre-start interrupt can arrive while thread initialization is
             // awaiting its native acknowledgement. Never start a late turn.
-            if *cancel.borrow() || output.is_closed() || matches!(control.try_recv(), Ok(ProviderControl::Interrupt)) { return Ok(()); }
+            if *cancel.borrow() || output.is_closed() || matches!(control.try_recv(), Ok(ProviderControl::Interrupt)) {
+                for delivery in inline {delivery.acknowledge(&output,&tid,"unsent").await?;}
+                terminal_received=true; let _=output.send(ProviderEvent::Interrupted).await; return Ok(());
+            }
             let response=c.call("turn/start",turn_params).await?;
-            let turn=response["turn"]["id"].as_str().ok_or("Codex turn id missing")?.to_owned();
+            let mut turn=response["turn"]["id"].as_str().ok_or("Codex turn id missing")?.to_owned();
             active_turn=Some(turn.clone());
-            output.send(ProviderEvent::Codex(json!({"method":"turn/started","params":{"threadId":tid,"turn":response["turn"]}}))).await.map_err(|_|"receiver closed")?;
+            for delivery in inline { delivery.acknowledge(&output,&tid,"inline").await?; }
+            output.send(ProviderEvent::Codex(json!({"method":"turn/started","params":{"threadId":tid,"o3GoalTurn":goal.managed||goal.active(),"turn":response["turn"]}}))).await.map_err(|_|"receiver closed")?;
+            let mut activation = None;
+            if goal.managed {
+                let (reply, response) = oneshot::channel();
+                c.0.send(Op::Call("thread/goal/set".into(),json!({"threadId":tid,"status":"active","origin":goal.origin}),reply,ReplyOrder::GoalActivation)).await.map_err(|_|"Codex closed")?;
+                activation=Some(response);
+            }
+            let activation_deadline=tokio::time::Instant::now()+std::time::Duration::from_secs(30);
             let mut pending=HashMap::<String,(Value,String)>::new();
             let mut owned=std::collections::HashSet::<String>::new();
             let mut terminal=None;
+            let mut interrupting=false;
+            let mut owned_commands=HashMap::<String,Option<String>>::new();
+            let mut goal_deadline = None;
+            let mut terminal_at = None;
             loop {
                 if *cancel.borrow() { let _=c.call("turn/interrupt",json!({"threadId":tid,"turnId":turn})).await; return Ok(()); }
                 tokio::select! {
                     _=output.closed()=> { let _=c.call("turn/interrupt",json!({"threadId":tid,"turnId":turn})).await; return Ok(()); },
                     _=cancel.changed()=>continue,
+                    response=async {activation.as_mut().unwrap().await}, if activation.is_some()=>{
+                        response.map_err(|_|"Codex activation channel closed")?.map_err(goals::rejection)?;
+                        activation=None;
+                    },
+                    _=tokio::time::sleep_until(activation_deadline), if activation.is_some()=>return Err("Codex goal activation timed out".into()),
+                    _=async { tokio::time::sleep_until(goal_deadline.unwrap()).await }, if goal_deadline.is_some()=>{
+                        goal.pause(&c, &tid, &output).await?;
+                        terminal_received=true;
+                        output.send(terminal.take().unwrap()).await.map_err(|_|"receiver closed")?;
+                        return Ok(());
+                    },
                     action=control.recv()=>match action {
-                        Some(ProviderControl::Interrupt)=>{ if terminal.is_some() { terminal=Some(ProviderEvent::Interrupted); } c.call("turn/interrupt",json!({"threadId":tid,"turnId":turn})).await?; },
+                        Some(ProviderControl::Interrupt)=>{
+                            goal.pause(&c, &tid, &output).await?;
+                            interrupting=true;
+                            if terminal.is_some() {
+                                terminal=Some(ProviderEvent::Interrupted);
+                                contain_commands(&c,&tid,&mut owned,&mut owned_commands).await?;
+                                if owned.is_empty() { terminal_received=true; output.send(terminal.take().unwrap()).await.map_err(|_|"receiver closed")?; return Ok(()); }
+                            }
+                            if let Err(error)=c.call("turn/interrupt",json!({"threadId":tid,"turnId":turn})).await {
+                                let already_ended = !goal.current.is_null() && serde_json::from_str::<Value>(&error).is_ok_and(|error|error["code"]==-32602 && error["message"].as_str().is_some_and(|message|{
+                                    let message=message.to_lowercase();
+                                    ["already ended","not active","not running","not found","no active turn"].iter().any(|text|message.contains(text))
+                                }));
+                                if !already_ended {return Err(error);}
+                            }
+                        },
                         None=>return Err("provider control channel closed".into()),
                         Some(ProviderControl::SteerContent(content))=>{ c.call("turn/steer",json!({"threadId":tid,"expectedTurnId":turn,"input":content})).await?; },
                         Some(ProviderControl::Steer(text))=>{ c.call("turn/steer",json!({"threadId":tid,"expectedTurnId":turn,"input":[{"type":"text","text":text,"text_elements":[]}]})).await?; },
@@ -357,7 +761,35 @@ impl CodexProvider {
                     },
                     frame=frames.recv()=>{
                         let mut frame=frame.ok_or("Codex notification channel closed or overflowed")?;
+                        // The actor queues this acknowledgement in wire order. A separate
+                        // oneshot can overtake the preparation's older paused notification.
+                        if frame["method"]=="o3/goal-activated" {
+                            goal.activated(&frame["params"]["result"], &tid, &output).await?;
+                            if terminal.is_some() && owned.is_empty() {
+                                if goal.active() {goal_deadline=Some(terminal_at.unwrap_or_else(tokio::time::Instant::now)+std::time::Duration::from_secs(5));}
+                                else {terminal_received=true;output.send(terminal.take().unwrap()).await.map_err(|_|"receiver closed")?;return Ok(());}
+                            }
+                            continue;
+                        }
+                        if goal.observe(&frame, &output, &tid).await? {
+                            if !goal.active() && !goal.managed && terminal.is_some() && owned.is_empty() {
+                                terminal_received=true;
+                                output.send(terminal.take().unwrap()).await.map_err(|_|"receiver closed")?;
+                                return Ok(());
+                            }
+                            if goal.active() && terminal.is_some() && owned.is_empty() && goal_deadline.is_none() {
+                                goal_deadline=Some(terminal_at.unwrap_or_else(tokio::time::Instant::now)+std::time::Duration::from_secs(5));
+                            }
+                            continue;
+                        }
+                        if frame["method"]=="turn/started" && goal_deadline.is_some() && goal.active() && !interrupting {
+                            if let Some(next) = frame["params"]["turn"]["id"].as_str().filter(|next|*next!=turn) {
+                                output.send(ProviderEvent::Codex(json!({"method":"o3/goal-turn-completed","params":{"threadId":tid,"turnId":turn}}))).await.map_err(|_|"receiver closed")?;
+                                turn=next.to_owned(); active_turn=Some(turn.clone()); terminal=None; terminal_at=None; goal_deadline=None;
+                            }
+                        }
                         if frame["params"]["turnId"].as_str().or_else(||frame["params"]["turn"]["id"].as_str()).is_some_and(|id|id!=turn){continue;}
+                        if frame["method"]=="turn/started" && (goal.active()||goal.managed) {frame["params"]["o3GoalTurn"]=json!(true);}
                         if let Some(id)=frame.get("id").cloned() {
                             if pending.len()>=16 { return Err("Too many pending Codex requests".into()); }
                             let method=frame["method"].as_str().unwrap_or("").to_owned();
@@ -369,7 +801,7 @@ impl CodexProvider {
                             frame["params"]["o3RequestId"]=json!(request_id);
                         }
                         if frame["method"]=="account/rateLimits/updated" {
-                            self.descriptor.lock().unwrap()["usageLimits"]=usage_limits(&frame["params"]["rateLimits"]);
+                            publish_usage(&mut self.descriptor.lock().unwrap(), &frame["params"]["rateLimits"], None, frame["params"]["accountId"].as_str());
                         }
                         let failure_message=frame["params"]["turn"]["error"]["message"].as_str().unwrap_or("Codex turn failed").to_owned();
                         let done=frame["method"]=="turn/completed";
@@ -377,8 +809,11 @@ impl CodexProvider {
                             if frame["method"]=="item/started" && matches!(frame["params"]["item"]["type"].as_str(),Some("commandExecution"|"collabAgentToolCall")) {
                                 if owned.len()>=64 {return Err("Codex owned item limit".into());}
                                 owned.insert(id.to_owned());
+                                if frame["params"]["item"]["type"] == "commandExecution" {
+                                    owned_commands.insert(id.to_owned(),frame["params"]["item"]["processId"].as_str().map(str::to_owned));
+                                }
                             }
-                            if frame["method"]=="item/completed" {owned.remove(id);}
+                            if frame["method"]=="item/completed" {owned.remove(id);owned_commands.remove(id);}
                         }
                         let failed=frame["params"]["turn"]["status"]=="failed";
                         let interrupted=frame["params"]["turn"]["status"]=="interrupted";
@@ -387,12 +822,26 @@ impl CodexProvider {
                         let event=if frame["method"]=="item/agentMessage/delta" {ProviderEvent::TextDelta(text)}else{ProviderEvent::Codex(frame)};
                         tokio::select! { r=output.send(event)=>r.map_err(|_|"receiver closed")?, _=cancel.changed()=>continue, _=output.closed()=>return Ok(()) }
                         for command in commands {output.send(ProviderEvent::Command(command)).await.map_err(|_|"receiver closed")?;}
-                        if done {terminal=Some(if failed {ProviderEvent::Failed(failure_message)}else if interrupted{ProviderEvent::Interrupted}else{ProviderEvent::Completed});}
-                        if terminal.is_some() && owned.is_empty() { terminal_received=true; output.send(terminal.take().unwrap()).await.map_err(|_|"receiver closed")?; return Ok(()); }
+                        if interrupted {interrupting=true;}
+                        if done {terminal_at=Some(tokio::time::Instant::now());terminal=Some(if failed {ProviderEvent::Failed(failure_message)}else if interrupted{ProviderEvent::Interrupted}else{ProviderEvent::Completed});}
+                        if terminal.is_some() && interrupting {contain_commands(&c,&tid,&mut owned,&mut owned_commands).await?;}
+                        if terminal.is_some() && owned.is_empty() {
+                            if matches!(terminal,Some(ProviderEvent::Completed)) && (goal.active()||goal.managed) && !interrupting {
+                                if goal.active() && goal_deadline.is_none() {goal_deadline=Some(terminal_at.unwrap()+std::time::Duration::from_secs(5));}
+                            } else {terminal_received=true; output.send(terminal.take().unwrap()).await.map_err(|_|"receiver closed")?; return Ok(());}
+                        }
                     }
                 }
             }
         }.await;
+        let paused = if active_turn.is_some() || goal.managed {
+            goal.pause(&c, &tid, &output).await
+        } else {
+            Ok(())
+        };
+        if result.is_err() {
+            let _ = goal.publish(&output, &tid).await;
+        }
         if result.is_err() || !terminal_received {
             if let Some(turn) = active_turn {
                 let _ = c
@@ -401,18 +850,202 @@ impl CodexProvider {
             }
         }
         let _ = c.0.send(Op::Unsubscribe(tid)).await;
-        result
+        result.and(paused)
     }
 }
+// nightly4179 explicitly contains tracked terminals before retiring interrupted command items.
+// A terminal native turn does not guarantee that every command emits item/completed.
+async fn contain_commands(
+    client: &Client,
+    native: &str,
+    owned: &mut std::collections::HashSet<String>,
+    commands: &mut HashMap<String, Option<String>>,
+) -> Result<(), String> {
+    for (item, process) in commands.iter() {
+        if let Some(process) = process {
+            tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                let result = client
+                    .call(
+                        "thread/backgroundTerminals/terminate",
+                        json!({"threadId":native,"processId":process}),
+                    )
+                    .await?;
+                match result["terminated"].as_bool() {
+                    Some(true) => return Ok::<(), String>(()),
+                    Some(false) => {}
+                    None => return Err("Invalid Codex terminal termination response".into()),
+                }
+                let mut cursor = None;
+                for _ in 0..256 {
+                    let mut params = json!({"threadId":native});
+                    if let Some(cursor) = cursor {
+                        params["cursor"] = cursor;
+                    }
+                    let page = client
+                        .call("thread/backgroundTerminals/list", params)
+                        .await?;
+                    let data = page["data"]
+                        .as_array()
+                        .ok_or("Invalid Codex terminal list response")?;
+                    if data
+                        .iter()
+                        .any(|terminal| terminal["processId"] == process.as_str())
+                    {
+                        return Err(
+                            "Codex background terminal remained active after termination".into(),
+                        );
+                    }
+                    match page.get("nextCursor") {
+                        Some(Value::Null) => return Ok(()),
+                        Some(Value::String(next)) => cursor = Some(json!(next)),
+                        _ => return Err("Invalid Codex terminal list cursor".into()),
+                    }
+                }
+                Err("Codex terminal list pagination exceeded limit".into())
+            })
+            .await
+            .map_err(|_| "Codex terminal termination timed out")??;
+        }
+        owned.remove(item);
+    }
+    commands.clear();
+    Ok(())
+}
+async fn unload(
+    client: &Client,
+    key: &str,
+    native: Option<&str>,
+    revoke: bool,
+) -> Result<(), String> {
+    let (tx, rx) = oneshot::channel();
+    if client
+        .0
+        .send(Op::ReleaseMcp(
+            key.into(),
+            native.map(str::to_owned),
+            if revoke {
+                Release::Revoke
+            } else {
+                Release::Unload
+            },
+            tx,
+        ))
+        .await
+        .is_err()
+    {
+        return Ok(());
+    }
+    let ids = rx.await.map_err(|_| "Codex closed during thread unload")?;
+    for id in ids {
+        let (closed, finished) = oneshot::channel();
+        if client
+            .0
+            .send(Op::WaitForClose(id.clone(), closed))
+            .await
+            .is_err()
+        {
+            return Ok(());
+        }
+        let response = client
+            .call("thread/unsubscribe", json!({"threadId":id}))
+            .await;
+        if let Err(error) = &response {
+            let lower = error.to_lowercase();
+            if ![
+                "not found",
+                "not loaded",
+                "not subscribed",
+                "unknown thread",
+            ]
+            .iter()
+            .any(|s| lower.contains(s))
+            {
+                return Err(error.clone());
+            }
+        } else if response
+            .as_ref()
+            .ok()
+            .is_some_and(|r| matches!(r["status"].as_str(), Some("unsubscribed" | "notSubscribed")))
+        {
+            // The RPC acknowledges removal of a subscription. The native writer is
+            // released asynchronously; wait for its close notification before resuming elsewhere.
+            match tokio::time::timeout(std::time::Duration::from_secs(30), finished).await {
+                Ok(Ok(result)) => result?,
+                Ok(Err(_)) => {} // The actor reaped its process before dropping the waiter.
+                Err(_) => return Err("Codex native thread close timed out".into()),
+            }
+        }
+    }
+    // Keep owners reachable until the native acknowledgement, so retry can reach
+    // a retired provider pool after a transient unload failure.
+    if !revoke {
+        return Ok(());
+    }
+    let (tx, rx) = oneshot::channel();
+    if client
+        .0
+        .send(Op::ReleaseMcp(key.into(), None, Release::Finalize, tx))
+        .await
+        .is_ok()
+    {
+        let _ = rx.await;
+    }
+
+    Ok(())
+}
 impl Provider for CodexProvider {
+    fn dispose<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            self.shutdown().await;
+            self.actors.close().await
+        })
+    }
+
+    fn capabilities(&self, _instance: &str) -> Option<Value> {
+        crate::selection_transition::native_capabilities("codex")
+    }
+    fn plan_selection_transition(
+        &self,
+        _instance: &str,
+        _current: &Value,
+        _target: &Value,
+        _capabilities: &Value,
+    ) -> Result<Option<crate::selection_transition::Selection>, String> {
+        Ok(crate::selection_transition::turn_scoped())
+    }
+
+    fn detach<'a>(
+        &'a self,
+        _instance: &'a str,
+        key: &'a str,
+        native: Option<&'a str>,
+        revoke: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            let client = self
+                .client
+                .lock()
+                .await
+                .clone()
+                .filter(|c| !c.0.is_closed());
+            let Some(client) = client else {
+                return Ok(());
+            };
+            unload(&client, key, native, revoke).await
+        })
+    }
+
     fn discover<'a>(
         &'a self,
         cwd: PathBuf,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(async move {
             let discovery = Self::new(self.executable.clone(), self.home.clone())
+                .with_optional_agent_scopes(self.agent_scopes.clone())
                 .with_environment(self.environment.clone())
-                .with_launch_args(self.launch_args.clone());
+                .with_home_setup(self.home_setup.clone())
+                .with_launch_args(self.launch_args.clone())
+                .with_actor_scope(self.actors.clone());
             let result = async {
                 let c = discovery.connection().await?;
                 if let Ok(skills) = c.call("skills/list", json!({"cwds":[cwd]})).await {
@@ -487,13 +1120,28 @@ impl Provider for CodexProvider {
         Box::pin(async move {
             // Quota readers do not keep the inference actor alive between refreshes.
             let probe = Self::new(self.executable.clone(), self.home.clone())
+                .with_optional_agent_scopes(self.agent_scopes.clone())
                 .with_environment(self.environment.clone())
-                .with_launch_args(self.launch_args.clone());
+                .with_home_setup(self.home_setup.clone())
+                .with_launch_args(self.launch_args.clone())
+                .with_actor_scope(self.actors.clone());
             let result = async {
                 let c = probe.connection().await?;
                 let response = c.call("account/rateLimits/read", json!({})).await?;
-                self.descriptor.lock().unwrap()["usageLimits"] =
-                    usage_limits(&response["rateLimits"]);
+                let auth = probe.descriptor.lock().unwrap()["auth"].clone();
+                publish_usage(
+                    &mut self.descriptor.lock().unwrap(),
+                    &response["rateLimits"],
+                    Some(&auth),
+                    response["accountId"].as_str(),
+                );
+                // The probe read the account under the current credentials; keep that
+                // identity for availability checks until auth.json changes.
+                let seen = probe.auth_seen.lock().unwrap().clone();
+                if let Some((stamp, _)) = seen {
+                    let auth = self.descriptor.lock().unwrap()["auth"].clone();
+                    *self.auth_seen.lock().unwrap() = Some((stamp, auth));
+                }
                 Ok::<_, String>(())
             }
             .await;
@@ -546,52 +1194,79 @@ fn native_response(
         _ => Err(format!("Unsupported Codex server request: {method}")),
     }
 }
-// read_until would allocate without bound before checking the size. Read from the
-// fixed-capacity BufReader, checking each slice before extending the frame.
+// read_until would allocate without bound before checking the size. FrameBuffer reads
+// from the fixed-capacity BufReader and checks each slice before extending the frame.
+#[cfg(test)]
 async fn read_frame<R: tokio::io::AsyncBufRead + Unpin>(
     reader: &mut R,
-    frame: &mut Vec<u8>,
+    frame: &mut FrameBuffer,
 ) -> Result<Option<Value>, String> {
+    Ok(read_sized_frame(reader, frame).await?.map(|(v, _)| v))
+}
+/// Cancellation-safe: a partial line stays in `frame` for the next call. Frames above the
+/// buffering limit are drained and skipped so one oversized notification cannot stop every
+/// Codex thread sharing this app-server.
+async fn read_sized_frame<R: tokio::io::AsyncBufRead + Unpin>(
+    reader: &mut R,
+    frame: &mut FrameBuffer,
+) -> Result<Option<(Value, usize)>, String> {
     loop {
-        let buf = reader.fill_buf().await.map_err(|e| e.to_string())?;
-        if buf.is_empty() {
-            return if frame.is_empty() {
-                Ok(None)
-            } else {
-                Err("Truncated Codex frame".into())
-            };
-        }
-        let n = buf
-            .iter()
-            .position(|b| *b == b'\n')
-            .map(|n| n + 1)
-            .unwrap_or(buf.len());
-        if frame.len() + n > MAX_FRAME {
-            return Err("Codex frame exceeds 1 MiB".into());
-        }
-        frame.extend_from_slice(&buf[..n]);
-        reader.consume(n);
-        if frame.last() == Some(&b'\n') {
-            let result = serde_json::from_slice(frame)
-                .map(Some)
-                .map_err(|e| e.to_string());
-            frame.clear();
-            return result;
+        match frame.next(reader, MAX_FRAME).await {
+            Ok(Some(Frame::Json(v, size))) => return Ok(Some((v, size))),
+            Ok(Some(Frame::Oversized(_))) => continue,
+            Ok(None) => return Ok(None),
+            Err(FrameError::Truncated) => return Err("Truncated Codex frame".into()),
+            Err(FrameError::Io(e) | FrameError::Json(e)) => return Err(e),
         }
     }
 }
+async fn stop_orphan_goal(
+    stdin: &mut tokio::process::ChildStdin,
+    tid: &str,
+    turn: Option<&str>,
+) -> Result<(), String> {
+    let mut frames = vec![
+        json!({"id":format!("o3-orphan-goal-pause:{tid}"),"method":"thread/goal/set","params":{"threadId":tid,"status":"paused","origin":"automatic"}}),
+    ];
+    if let Some(turn) = turn {
+        frames.push(json!({"id":format!("o3-orphan-goal-interrupt:{tid}:{turn}"),"method":"turn/interrupt","params":{"threadId":tid,"turnId":turn}}));
+    }
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        for frame in frames {
+            stdin
+                .write_all(serde_json::to_string(&frame).unwrap().as_bytes())
+                .await?;
+            stdin.write_all(b"\n").await?;
+        }
+        Ok::<(), std::io::Error>(())
+    })
+    .await
+    .map_err(|_| "Codex orphan goal stop timed out")?
+    .map_err(|error| error.to_string())
+}
+
 async fn actor(
     mut child: tokio::process::Child,
     mut ops: mpsc::Receiver<Op>,
     descriptor: std::sync::Arc<Mutex<Value>>,
     idle_timeout: std::time::Duration,
+    agent_scope: Option<crate::agent_scope::Lease>,
 ) {
     let mut stdin = child.stdin.take().unwrap();
     let mut reader = BufReader::with_capacity(8192, child.stdout.take().unwrap());
-    let mut calls = HashMap::<u64, Reply>::new();
-    let mut routes = HashMap::<String, mpsc::Sender<Value>>::new();
+    let mut calls = HashMap::<u64, (String, Option<String>, Reply, ReplyOrder)>::new();
+    let mut unloaded = std::collections::HashSet::<String>::new();
+    let mut closing = HashMap::<String, Vec<oneshot::Sender<Result<(), String>>>>::new();
+    let mut native_contexts = HashMap::<String, std::sync::Arc<crate::native_mcp::Context>>::new();
+    let mut routes = HashMap::<String, Route>::new();
+    let mut root_goals = HashMap::<String, bool>::new();
+    let mut running_goal_turns = HashMap::<String, String>::new();
+    let mut goal_versions = HashMap::<String, u64>::new();
+    let mut goal_requests = HashMap::<u64, u64>::new();
+    let mut desired_goals = HashMap::<String, bool>::new();
+    let mut goal_snapshots = goals::Snapshots::default();
     let mut next = 0u64;
-    let mut buffer = Vec::new();
+    let mut buffer = FrameBuffer::default();
     let mut shutdown = None;
     let mut idle = tokio::time::interval(std::time::Duration::from_secs(1));
     let mut last_operation = tokio::time::Instant::now();
@@ -603,30 +1278,133 @@ async fn actor(
             op=ops.recv()=>{
                 last_operation=tokio::time::Instant::now();
                 let frame=match op {
+                    Some(Op::AttachAgentThread(thread,ack))=>{if let Some(scope)=&agent_scope {scope.attach(&thread);}let _=ack.send(());continue;},
                     None=>return Ok(()),
-                    Some(Op::Subscribe(id,tx,ack))=>{let result=if routes.len()>=32||routes.contains_key(&id){Err("Codex thread already active or capacity reached".into())}else{routes.insert(id,tx);Ok(())};let _=ack.send(result);continue;},
+                    Some(Op::Subscribe(id,tx,ack))=>{let result=if routes.len()>=32||routes.contains_key(&id){Err("Codex thread already active or capacity reached".into())}else{let goal=goal_snapshots.get(&id);routes.insert(id,tx);Ok(goal)};let _=ack.send(result);continue;},
                     Some(Op::Shutdown(ack))=>{shutdown=Some(ack);return Ok(());},
-                    Some(Op::Unsubscribe(id))=>{routes.remove(&id);continue;},
+                    Some(Op::WaitForClose(id,ack))=>{
+                        closing.retain(|_, waiters| {waiters.retain(|w| !w.is_closed()); !waiters.is_empty()});
+                        if closing.values().map(Vec::len).sum::<usize>() >= 256 {let _=ack.send(Err("Codex thread close waiter capacity reached".into()));}
+                        else {closing.entry(id).or_default().push(ack);}
+                        continue;
+                    },
+                    Some(Op::Unsubscribe(id))=>{
+                        routes.remove(&id);
+                        if root_goals.get(&id)==Some(&true) || (root_goals.contains_key(&id) && running_goal_turns.contains_key(&id)) {
+                            stop_orphan_goal(&mut stdin, &id, running_goal_turns.get(&id).map(String::as_str)).await?;
+                            root_goals.insert(id, false);
+                        }
+                        continue;
+                    },
+                    Some(Op::WatchGoal(id,active))=>{let active=goal_snapshots.get(&id).map(|goal|goal["status"]=="active").unwrap_or(active);desired_goals.insert(id.clone(),active);root_goals.insert(id,active);continue;},
+                    Some(Op::ReleaseMcp(key,native,release,ack))=>{
+                        let mut ids:Vec<_>=native_contexts.iter().filter(|(_,c)|c.thread_key()==key).map(|(id,_)|id.clone()).collect();
+                        if let Some(id)=native {
+                            if !ids.contains(&id)&&!native_contexts.contains_key(&id)&&routes.get(&id).is_none_or(|r|r.tx.is_closed()){ids.push(id);}
+                        }
+                        for id in &ids {
+                            if !matches!(release,Release::Unload) {if let Some(c)=native_contexts.get(id){c.revoke();}}
+                            if matches!(release,Release::Unload){unloaded.insert(id.clone());}
+                            if matches!(release,Release::Finalize){native_contexts.remove(id);unloaded.remove(id);}
+                        }
+                        let _=ack.send(ids);continue;
+                    },
+                    Some(Op::RetainMcp(id,context,ack))=>{unloaded.remove(&id);let result=if native_contexts.len()>=256 && !native_contexts.contains_key(&id){Err("Codex MCP session capacity reached".into())}else{if let Some(old)=native_contexts.insert(id,context.clone()){if old.id()!=context.id(){old.revoke();}}Ok(())};let _=ack.send(result);continue;},
                     Some(Op::Reply(frame))=>frame,
-                    Some(Op::Call(method,params,reply))=>{
+                    Some(Op::Call(method,params,reply,ordered_goal_activation))=>{
                         if calls.len()>=32 {let _=reply.send(Err("Codex RPC capacity reached".into()));continue;}
-                        next+=1;calls.insert(next,reply);json!({"id":next,"method":method,"params":params})
+                        if method.starts_with("thread/goal/") {if let Some(id)=params["threadId"].as_str(){root_goals.entry(id.into()).or_insert(false);}}
+                        next+=1;
+                        if method.starts_with("thread/goal/") {
+                            if let Some(tid)=params["threadId"].as_str() {
+                                goal_requests.insert(next,*goal_versions.get(tid).unwrap_or(&0));
+                                if method=="thread/goal/set" && params["status"].is_string() {desired_goals.insert(tid.into(),params["status"]=="active");}
+                                if method=="thread/goal/clear" {desired_goals.insert(tid.into(),false);}
+                            }
+                        }
+                        calls.insert(next,(method.clone(),params["threadId"].as_str().map(str::to_owned),reply,ordered_goal_activation));json!({"id":next,"method":method,"params":params})
                     }
                 };
                 let bytes=serde_json::to_vec(&frame).map_err(|e|e.to_string())?;
-                if bytes.len()>MAX_FRAME{return Err("Codex outgoing frame exceeds limit".into());}
+                if bytes.len()>MAX_OUTGOING_FRAME{return Err("Codex outgoing frame exceeds limit".into());}
                 tokio::time::timeout(std::time::Duration::from_secs(10),async {stdin.write_all(&bytes).await?;stdin.write_all(b"\n").await}).await.map_err(|_|"Codex write timed out")?.map_err(|e|e.to_string())?;
             },
-            frame=read_frame(&mut reader,&mut buffer)=>{
-                let frame=frame?.ok_or("Codex stdout closed")?;
-                if frame.get("method").is_none(){if let Some(id)=frame["id"].as_u64(){if let Some(reply)=calls.remove(&id){let _=reply.send(if frame.get("error").is_some(){Err(frame["error"].to_string())}else{Ok(frame["result"].clone())});}}continue;}
-                if frame["method"]=="account/rateLimits/updated" {descriptor.lock().unwrap()["usageLimits"]=usage_limits(&frame["params"]["rateLimits"]);}
+            frame=read_sized_frame(&mut reader,&mut buffer)=>{
+                let (frame,size)=frame?.ok_or("Codex stdout closed")?;
+                if frame.get("method").is_none(){
+                    if let Some(id)=frame["id"].as_u64(){
+                        if let Some((method,native,reply,ordered_goal_activation))=calls.remove(&id){
+                            let response=if frame.get("error").is_some(){Err(frame["error"].to_string())}else{Ok(frame["result"].clone())};
+                            let observed_version = goal_requests.remove(&id);
+                            if method.starts_with("thread/goal/") {
+                                if let (Some(native),Ok(result))=(&native,&response) {
+                                    if observed_version==Some(*goal_versions.get(native).unwrap_or(&0)) {
+                                        root_goals.insert(native.clone(),result["goal"]["status"]=="active");
+                                        goal_snapshots.remember(native,if method=="thread/goal/clear" {&Value::Null}else{&result["goal"]},|id|routes.contains_key(id));
+                                    }
+                                    // A cancelled activation may acknowledge after Stop's pause.
+                                    // Reassert the later intent instead of reviving orphan work.
+                                    if method=="thread/goal/set" && result["goal"]["status"]=="active" && desired_goals.get(native)==Some(&false) {
+                                        stop_orphan_goal(&mut stdin,native,None).await?;
+                                    }
+                                }
+                            }
+                            if matches!(ordered_goal_activation,ReplyOrder::GoalActivation) {
+                                if let (Some(native),Ok(result))=(&native,&response) {
+                                    let frame=json!({"method":"o3/goal-activated","params":{"threadId":native,"result":result}});
+                                    let size=serde_json::to_vec(&frame).map_err(|e|e.to_string())?.len();
+                                    if routes.get(native).is_some_and(|route|!route.push(frame,size)){routes.remove(native);}
+                                }
+                            }
+                            if let Err(Ok(response))=reply.send(response){
+                                if matches!(method.as_str(),"thread/start"|"thread/resume"|"thread/fork"){
+                                    if let Some(tid)=response["thread"]["id"].as_str().filter(|id|!routes.contains_key(*id)&&(!native_contexts.contains_key(*id)||unloaded.contains(*id))&&!calls.values().any(|(m,n,r,_)|m=="thread/resume"&&n.as_deref()==Some(*id)&&!r.is_closed())){
+                                        // Cancellation can precede the binding acknowledgement. Unload the
+                                        // orphan after learning its ID, without touching sibling threads.
+                                        let bytes=serde_json::to_vec(&json!({"id":format!("o3-dispose:{id}"),"method":"thread/unsubscribe","params":{"threadId":tid}})).map_err(|e|e.to_string())?;
+                                        tokio::time::timeout(std::time::Duration::from_secs(10),async{stdin.write_all(&bytes).await?;stdin.write_all(b"\n").await}).await.map_err(|_|"Codex orphan unload write timed out")?.map_err(|e|e.to_string())?;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    continue;
+                }
+                if frame["method"]=="thread/closed" {
+                    if let Some(id)=frame["params"]["threadId"].as_str(){
+                        if let Some(waiters)=closing.remove(id){for waiter in waiters{let _=waiter.send(Ok(()));}}
+                    }
+                }
+                goal_snapshots.observe(&frame,|id|routes.contains_key(id));
+                if frame["method"]=="account/rateLimits/updated" {publish_usage(&mut descriptor.lock().unwrap(), &frame["params"]["rateLimits"], None, frame["params"]["accountId"].as_str());}
                 let tid=frame["params"]["threadId"].as_str();
                 if let Some(tid)=tid {
-                    if let Some(tx)=routes.get(tid){if tx.try_send(frame.clone()).is_err(){routes.remove(tid);}}
+                    if routes.contains_key(tid) && matches!(frame["method"].as_str(),Some("thread/goal/updated"|"thread/goal/cleared")) {
+                        root_goals.entry(tid.into()).or_insert(false);
+                    }
+                    if routes.contains_key(tid) || root_goals.contains_key(tid) {
+                        if frame["method"]=="turn/started" {
+                            if let Some(turn)=frame["params"]["turn"]["id"].as_str() {running_goal_turns.insert(tid.into(),turn.into());}
+                        }
+                        if frame["method"]=="turn/completed" && running_goal_turns.get(tid).is_some_and(|turn|frame["params"]["turn"]["id"]==*turn) {running_goal_turns.remove(tid);}
+                    }
+                    if root_goals.contains_key(tid) {
+                        if matches!(frame["method"].as_str(),Some("thread/goal/updated"|"thread/goal/cleared")) {*goal_versions.entry(tid.into()).or_insert(0)+=1;}
+                        if frame["method"]=="thread/goal/updated" {root_goals.insert(tid.into(),frame["params"]["goal"]["status"]=="active");}
+                        if frame["method"]=="thread/goal/cleared" {root_goals.insert(tid.into(),false);}
+                        if frame["method"]=="turn/started" {
+                            if let Some(turn)=frame["params"]["turn"]["id"].as_str() {
+                                if !routes.contains_key(tid) {
+                                    stop_orphan_goal(&mut stdin, tid, Some(turn)).await?;
+                                    root_goals.insert(tid.into(),false);
+                                }
+                            }
+                        }
+                    }
+                    if let Some(route)=routes.get(tid){if !route.push(frame.clone(),size){routes.remove(tid);}}
                     else if let Some(id)=frame.get("id"){let bytes=serde_json::to_vec(&json!({"id":id,"error":{"code":-32601,"message":"No active thread"}})).unwrap();stdin.write_all(&bytes).await.map_err(|e|e.to_string())?;stdin.write_all(b"\n").await.map_err(|e|e.to_string())?;}
                 }else if frame["method"]=="account/rateLimits/updated"{
-                    routes.retain(|_,tx|tx.try_send(frame.clone()).is_ok());
+                    routes.retain(|_,route|route.push(frame.clone(),size));
                 }
             }
         }}
@@ -642,14 +1420,58 @@ async fn actor(
         }
         d["message"] = json!(reason);
     }
-    for (_, reply) in calls {
+    for (_, (_, _, reply, _)) in calls {
         let _ = reply.send(Err(reason.clone()));
     }
     let _ = child.kill().await;
     let _ = child.wait().await;
+    for context in native_contexts.values() {
+        context.revoke();
+    }
+    drop(native_contexts);
+    if let Some(mut scope) = agent_scope {
+        scope.stop().await;
+    }
     if let Some(ack) = shutdown {
         let _ = ack.send(());
     }
+}
+
+// Identity and limits form one observation. Native T3 uses rateLimits.accountId
+// as workspaceId; account/read alone does not provide it for ChatGPT accounts.
+fn publish_usage(
+    descriptor: &mut Value,
+    limits: &Value,
+    auth: Option<&Value>,
+    account_id: Option<&str>,
+) {
+    let source = auth.unwrap_or(&descriptor["auth"]);
+    let mut identity = json!({"status":source["status"].as_str().unwrap_or("unknown")});
+    for key in ["email", "workspaceId", "label"] {
+        if let Some(value) = source[key]
+            .as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty() && s.len() <= 320 && !s.chars().any(char::is_control))
+        {
+            identity[key] = json!(value);
+        }
+    }
+    if let Some(account) = account_id
+        .or(limits["accountId"].as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && s.len() <= 320 && !s.chars().any(char::is_control))
+    {
+        if auth.is_none()
+            && identity["workspaceId"]
+                .as_str()
+                .is_some_and(|previous| previous != account)
+        {
+            identity.as_object_mut().unwrap().remove("email");
+        }
+        identity["workspaceId"] = json!(account);
+    }
+    descriptor["auth"] = identity;
+    descriptor["usageLimits"] = usage_limits(limits);
 }
 
 fn usage_limits(limits: &Value) -> Value {
@@ -662,6 +1484,13 @@ fn usage_limits(limits: &Value) -> Value {
         if !w.is_object() {
             continue;
         }
+        // Codex can report only a weekly limit in `primary`. Its position is
+        // not its period; keep the same duration-based classification as T3.
+        let (label, kind) = match w["windowDurationMins"].as_u64() {
+            Some(10080) => ("Weekly", "weekly"),
+            Some(300) => ("Session", "session"),
+            _ => (label, kind),
+        };
         let mut window = json!({"id":id,"kind":kind,"label":label,"usedPercent":w["usedPercent"].as_f64().unwrap_or(0.0).clamp(0.0,100.0)});
         if let Some(mins) = w["windowDurationMins"].as_u64() {
             window["windowDurationMins"] = json!(mins);
@@ -708,8 +1537,173 @@ fn command_events(frame: &Value, rid: &str) -> Vec<crate::command_output::Comman
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn goal_activation_ack_stays_after_queued_preparation_notifications() {
+        let root = std::env::temp_dir().join(format!(
+            "o3-goal-order-{}",
+            crate::store::random_id().unwrap()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("no-next"), "").unwrap();
+        let provider = CodexProvider::new(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/goal-peer.py"),
+            None,
+        );
+        let client = provider.connection().await.unwrap();
+        let thread = client
+            .call("thread/start", json!({"cwd":root}))
+            .await
+            .unwrap();
+        let tid = thread["thread"]["id"].as_str().unwrap();
+        let (route, mut inbox) = Inbox::pair();
+        let (ack, ready) = oneshot::channel();
+        client
+            .0
+            .send(Op::Subscribe(tid.into(), route, ack))
+            .await
+            .unwrap();
+        ready.await.unwrap().unwrap();
+        let prepared = client.call("thread/goal/set", json!({"threadId":tid,"objective":"Finish the work","status":"paused","origin":"user"})).await.unwrap();
+        client
+            .call("turn/start", json!({"threadId":tid}))
+            .await
+            .unwrap();
+        let (ack, ready) = oneshot::channel();
+        client
+            .0
+            .send(Op::Call(
+                "thread/goal/set".into(),
+                json!({"threadId":tid,"status":"active","origin":"user"}),
+                ack,
+                ReplyOrder::GoalActivation,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(ready.await.unwrap().unwrap()["goal"]["status"], "active");
+
+        // Consume nothing until the acknowledgement is ready, forcing the queue
+        // to retain the older paused update and the fast first turn's completion.
+        let (output, mut events) = mpsc::channel(16);
+        let mut goal = goals::State::new(prepared["goal"].clone());
+        goal.managed = true;
+        let mut methods = vec![];
+        loop {
+            let frame = tokio::time::timeout(std::time::Duration::from_secs(5), inbox.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            let method = frame["method"].as_str().unwrap().to_owned();
+            methods.push(method.clone());
+            if method == "o3/goal-activated" {
+                goal.activated(&frame["params"]["result"], tid, &output)
+                    .await
+                    .unwrap();
+                break;
+            }
+            goal.observe(&frame, &output, tid).await.unwrap();
+            if method == "turn/completed" {
+                assert!(goal.managed, "preparation must not end native ownership");
+            }
+        }
+        assert_eq!(
+            methods,
+            [
+                "thread/goal/updated",
+                "turn/started",
+                "item/agentMessage/delta",
+                "turn/completed",
+                "thread/goal/updated",
+                "o3/goal-activated"
+            ]
+        );
+        assert!(goal.active());
+        assert!(!goal.managed);
+        while let Ok(event) = events.try_recv() {
+            if let ProviderEvent::Codex(frame) = event {
+                assert_eq!(frame["params"]["goal"]["status"], "active");
+            }
+        }
+        provider.shutdown().await;
+    }
+    #[tokio::test]
+    async fn quota_probe_retains_verified_account_identity_without_retaining_actor() {
+        let executable = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/codex/usage-identity.py");
+        for account in ["one", "two"] {
+            let provider = CodexProvider::new(executable.clone(), None)
+                .with_environment(vec![("O3_TEST_ACCOUNT".into(), account.into())]);
+            provider.poll_usage().await.unwrap();
+            let config = provider.config();
+            assert_eq!(
+                config[0]["auth"]["email"],
+                format!("{account}@example.test")
+            );
+            assert_eq!(
+                config[0]["auth"]["workspaceId"],
+                format!("account-{account}")
+            );
+            assert_eq!(
+                config[0]["usageLimits"]["windows"][0]["usedPercent"].as_f64(),
+                Some(37.0)
+            );
+            assert!(
+                provider.client.lock().await.is_none(),
+                "quota probe retained inference actor"
+            );
+            provider.probe_cached().unwrap();
+            assert_eq!(
+                provider.config()[0]["auth"],
+                config[0]["auth"],
+                "cached availability stripped identity from last quota observation"
+            );
+        }
+    }
+    #[test]
+    fn quota_window_period_follows_duration_not_primary_position() {
+        let limits = usage_limits(
+            &json!({"primary":{"windowDurationMins":10080,"usedPercent":6},"secondary":{"windowDurationMins":300,"usedPercent":20}}),
+        );
+        assert_eq!(limits["windows"][0]["kind"], "weekly");
+        assert_eq!(limits["windows"][0]["label"], "Weekly");
+        assert_eq!(limits["windows"][1]["kind"], "session");
+        assert_eq!(limits["windows"][1]["label"], "Session");
+    }
+    #[test]
+    fn quota_identity_is_public_and_notifications_keep_account_boundaries() {
+        let mut d = json!({});
+        let auth =
+            json!({"status":"authenticated","email":"same@example.test","accessToken":"PRIVATE"});
+        publish_usage(
+            &mut d,
+            &json!({"accountId":"workspace-one","primary":{"usedPercent":10}}),
+            Some(&auth),
+            None,
+        );
+        assert_eq!(d["auth"]["workspaceId"], "workspace-one");
+        assert!(!d.to_string().contains("PRIVATE"));
+        publish_usage(
+            &mut d,
+            &json!({"accountId":"workspace-one","primary":{"usedPercent":20}}),
+            None,
+            None,
+        );
+        assert_eq!(d["auth"]["email"], "same@example.test");
+        publish_usage(
+            &mut d,
+            &json!({"accountId":"workspace-two","primary":{"usedPercent":30}}),
+            None,
+            None,
+        );
+        assert!(
+            d["auth"].get("email").is_none(),
+            "workspace change reused prior identity without account/read"
+        );
+        assert_eq!(d["auth"]["workspaceId"], "workspace-two");
+    }
+
     fn input(thread: &str, resume: Option<String>) -> RunInput {
         RunInput {
+            native_mcp: None,
             provider_instance_id: "codex".into(),
             thread_id: thread.into(),
             run_id: format!("run-{thread}"),
@@ -725,6 +1719,119 @@ mod tests {
         }
     }
     #[tokio::test]
+    async fn instance_disposal_reaps_a_cancelled_discovery_handshake_before_another_start() {
+        let home = std::env::temp_dir().join(format!(
+            "o3-cancel-startup-{}",
+            crate::store::random_id().unwrap()
+        ));
+        std::fs::create_dir(&home).unwrap();
+        std::fs::write(home.join(".selection-init-lock-test"), "").unwrap();
+        let provider = std::sync::Arc::new(CodexProvider::new(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/selection-peer.py"),
+            Some(home.clone()),
+        ));
+        let p = provider.clone();
+        let cwd = home.clone();
+        let discovery = tokio::spawn(async move { p.discover(cwd).await });
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while !home.join(".selection-init-entered").exists() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let pid = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                if let Some(pid) = std::fs::read_to_string(home.join(".selection-init-entered"))
+                    .ok()
+                    .and_then(|p| p.trim().parse::<u32>().ok())
+                {
+                    break pid;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        discovery.abort();
+        assert!(discovery.await.unwrap_err().is_cancelled());
+        tokio::time::timeout(std::time::Duration::from_secs(5), provider.dispose())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            !PathBuf::from(format!("/proc/{pid}")).exists(),
+            "cancelled probe was acknowledged before its child was reaped"
+        );
+        std::fs::write(home.join(".selection-init-release"), "").unwrap();
+        let (out, _events) = mpsc::channel(16);
+        let (_ctl, controls) = mpsc::channel(8);
+        let (_cancel, cancel) = watch::channel(false);
+        let mut run = input("after-cancel", None);
+        run.cwd = home.clone();
+        provider.run(run, out, controls, cancel).await.unwrap();
+        provider.dispose().await.unwrap();
+        std::fs::remove_dir_all(home).unwrap();
+    }
+    #[tokio::test]
+    async fn discovery_and_runtime_serialize_first_use_of_the_same_native_state_directory() {
+        let home =
+            std::env::temp_dir().join(format!("o3-startup-{}", crate::store::random_id().unwrap()));
+        std::fs::create_dir(&home).unwrap();
+        std::fs::write(home.join(".selection-init-lock-test"), "").unwrap();
+        let provider = std::sync::Arc::new(CodexProvider::new(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/selection-peer.py"),
+            Some(home.clone()),
+        ));
+        let p = provider.clone();
+        let cwd = home.clone();
+        let discovery = tokio::spawn(async move { p.discover(cwd).await });
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while !home.join(".selection-init-entered").exists() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let (out, _events) = mpsc::channel(16);
+        let (_ctl, controls) = mpsc::channel(8);
+        let (_cancel, cancel) = watch::channel(false);
+        let mut run = input("startup", None);
+        run.cwd = home.clone();
+        let p = provider.clone();
+        let mut runtime = tokio::spawn(async move { p.run(run, out, controls, cancel).await });
+        let result =
+            tokio::time::timeout(std::time::Duration::from_millis(150), &mut runtime).await;
+        assert!(
+            result.is_err(),
+            "runtime attempted overlapping native initialization: {result:?}"
+        );
+        let independent = home.join("independent");
+        std::fs::create_dir(&independent).unwrap();
+        let other = CodexProvider::new(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/selection-peer.py"),
+            Some(independent.clone()),
+        );
+        let (out, _events) = mpsc::channel(16);
+        let (_ctl, controls) = mpsc::channel(8);
+        let (_cancel, cancel) = watch::channel(false);
+        let mut run = input("independent", None);
+        run.cwd = independent;
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            other.run(run, out, controls, cancel),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        other.dispose().await.unwrap();
+        std::fs::write(home.join(".selection-init-release"), "").unwrap();
+        discovery.await.unwrap().unwrap();
+        runtime.await.unwrap().unwrap();
+        provider.shutdown().await;
+        std::fs::remove_dir_all(home).unwrap();
+    }
+    #[tokio::test]
     async fn signed_in_lazy_provider_is_selectable_by_clients_without_spawning() {
         let dir = std::env::temp_dir().join(format!("o3-codex-ready-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -738,9 +1845,11 @@ mod tests {
         // HOME and OPENAI_API_KEY can sign a developer in, so only assert the file-based branch.
         if std::env::var_os("OPENAI_API_KEY").is_none() {
             assert_eq!(provider.config()[0]["status"], "warning");
+            assert_eq!(provider.config()[0]["auth"]["status"], "unauthenticated");
         }
         std::fs::write(dir.join("auth.json"), "{}").unwrap();
         provider.probe().await.unwrap();
+        assert_eq!(provider.config()[0]["auth"]["status"], "authenticated");
         assert!(
             provider.client.lock().await.is_none(),
             "readiness spawned app-server"
@@ -750,6 +1859,38 @@ mod tests {
         assert_eq!(config[0]["status"], "ready");
         // The real client rule: only `ready` providers offer their models.
         assert_eq!(config[0]["models"][0]["slug"], "a");
+    }
+    #[tokio::test]
+    async fn sign_in_after_an_unauthenticated_read_shows_without_spawning() {
+        let dir = std::env::temp_dir().join(format!("o3-codex-resign-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("auth.json"), "{}").unwrap();
+        let script =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/codex/mock-server.py");
+        let provider = CodexProvider::new(script, Some(dir.clone()));
+        // The app-server read the account while auth.json was being replaced by a login.
+        *provider.auth_seen.lock().unwrap() =
+            Some((auth_stamp(Some(&dir)), json!({"status":"unauthenticated"})));
+        provider.probe().await.unwrap();
+        assert_eq!(provider.config()[0]["auth"]["status"], "unauthenticated");
+        // The login finishes and rewrites the credentials file.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(dir.join("auth.json"), "{\"tokens\":{}}").unwrap();
+        provider.probe().await.unwrap();
+        let signed_in = provider.config()[0]["auth"]["status"].clone();
+        assert!(
+            provider.client.lock().await.is_none(),
+            "probe spawned app-server"
+        );
+        // Signing out removes the file.
+        std::fs::remove_file(dir.join("auth.json")).unwrap();
+        provider.probe().await.unwrap();
+        let signed_out = provider.config()[0]["auth"]["status"].clone();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(signed_in, "authenticated");
+        if std::env::var_os("OPENAI_API_KEY").is_none() {
+            assert_eq!(signed_out, "unauthenticated");
+        }
     }
     #[test]
     fn models_come_from_the_cache_without_spawning() {
@@ -792,6 +1933,57 @@ mod tests {
         .unwrap();
         let next = provider.connection().await.unwrap();
         assert!(!next.0.is_closed());
+        provider.shutdown().await;
+    }
+    #[tokio::test]
+    async fn handoff_continuation_fits_native_text_limit_not_only_transport_limit() {
+        let provider = CodexProvider::new(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/codex/mock-server.py"),
+            None,
+        );
+        let mut input = input("budget-proof", None);
+        input.text = "burst followup proof".into();
+        input.model_selection["o3HistoricalContext"] = json!("h".repeat(1_057_107));
+        let dir = std::env::temp_dir().join(format!(
+            "o3-native-budget-{}",
+            crate::store::random_id().unwrap()
+        ));
+        input.attachment_root = dir.clone();
+        let (tx, mut rx) = mpsc::channel(1024);
+        let (_control, crx) = mpsc::channel(8);
+        let (_cancel, cancel) = watch::channel(false);
+        let read = async {
+            let mut completed = false;
+            while let Some(e) = rx.recv().await {
+                completed |= matches!(e, ProviderEvent::Completed);
+            }
+            completed
+        };
+        let (result, completed) = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            tokio::join!(provider.run(input, tx, crx, cancel), read)
+        })
+        .await
+        .unwrap();
+        result.unwrap();
+        assert!(completed);
+        provider.shutdown().await;
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[tokio::test]
+    async fn large_outgoing_context_does_not_use_the_incoming_frame_limit() {
+        let provider = CodexProvider::new(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/codex/mock-server.py"),
+            None,
+        );
+        let connection = provider.connection().await.unwrap();
+        let response = connection
+            .call(
+                "model/list",
+                json!({"contextProbe":"x".repeat(2*1024*1024)}),
+            )
+            .await
+            .unwrap();
+        assert!(response.is_object());
         provider.shutdown().await;
     }
     #[tokio::test]
@@ -876,10 +2068,41 @@ mod tests {
         provider.shutdown().await;
     }
     #[tokio::test]
+    async fn notification_burst_with_a_slow_consumer_keeps_every_frame() {
+        let provider = std::sync::Arc::new(CodexProvider::new(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/codex/mock-server.py"),
+            None,
+        ));
+        let (out, mut events) = mpsc::channel(1);
+        let (_tx, rx) = mpsc::channel(8);
+        let (_cancel, cancel) = watch::channel(false);
+        let mut run = input("burst", None);
+        run.text = "burst".into();
+        let a = provider.clone();
+        let task = tokio::spawn(async move { a.run(run, out, rx, cancel).await });
+        // Hold the consumer while the whole burst is produced, as a busy writer would.
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        let mut text = String::new();
+        let mut completed = false;
+        while let Some(e) = events.recv().await {
+            match e {
+                ProviderEvent::TextDelta(t) => text.push_str(&t),
+                ProviderEvent::Completed => completed = true,
+                ProviderEvent::Failed(m) => panic!("turn failed: {m}"),
+                _ => {}
+            }
+        }
+        task.await.unwrap().unwrap();
+        assert!(completed);
+        let expected: String = (0..600).map(|n| format!("{n},")).collect();
+        assert_eq!(text, expected);
+        provider.shutdown().await;
+    }
+    #[tokio::test]
     async fn bounded_frames_survive_cancelled_read() {
         let (mut writer, reader) = tokio::io::duplex(128);
         let mut reader = BufReader::new(reader);
-        let mut bytes = Vec::new();
+        let mut bytes = FrameBuffer::default();
         writer.write_all(b"{\"method\":").await.unwrap();
         assert!(tokio::time::timeout(
             std::time::Duration::from_millis(10),
@@ -892,12 +2115,13 @@ mod tests {
             read_frame(&mut reader, &mut bytes).await.unwrap().unwrap()["method"],
             "test"
         );
-        let oversized = vec![b'x'; MAX_FRAME + 1];
+        let mut oversized = vec![b'x'; MAX_FRAME + 1];
+        oversized.extend_from_slice(b"\n{\"method\":\"after\"}\n");
         let mut reader = BufReader::new(oversized.as_slice());
-        assert!(read_frame(&mut reader, &mut bytes)
-            .await
-            .unwrap_err()
-            .contains("1 MiB"));
+        assert_eq!(
+            read_frame(&mut reader, &mut bytes).await.unwrap().unwrap()["method"],
+            "after"
+        );
     }
     #[test]
     fn native_response_shapes() {

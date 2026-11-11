@@ -1,0 +1,47 @@
+{
+  "checkedAt": "2026-11-04T11:53:12.552669+00:00",
+  "tag": "v0.1.8-nightly.20261104.4165",
+  "reference": "8b44f42b14c8e273156474a924ccf29680dd7857",
+  "url": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.8-nightly.20261104.4165",
+  "scope": "Provider-instance enable defaults, project precedence, registry union hydration and shared admission. Complete protocol goal remains active.",
+  "sourceFiles": [
+    "packages/contracts/src/settings.ts",
+    "packages/contracts/src/settings.test.ts",
+    "packages/shared/src/projectSettings.ts",
+    "apps/server/src/provider/ProviderInstanceRegistryHydration.ts",
+    "apps/server/src/provider/ProviderInstanceRegistryHydration.test.ts",
+    "apps/server/src/provider/ProviderInstanceRegistry.ts",
+    "apps/server/src/provider/unavailableProviderSnapshot.ts",
+    "apps/server/src/serverSettings.ts",
+    "apps/server/src/serverSettings.test.ts",
+    "apps/server/src/orchestration-v2/ThreadManagementService.ts",
+    "apps/server/src/orchestration-v2/ThreadManagementService.test.ts",
+    "apps/server/src/mcp/threadAccess.ts",
+    "apps/server/src/mcp/toolkits/project/handlers.ts"
+  ],
+  "implemented": [
+    "Driver defaults and explicit-false envelope/legacy-config precedence; project overrides authoritative even over a global disable. Unconfigured default ids codex/claudeAgent only.",
+    "Boolean legacy enabled flag folding; omitted flags and opaque invalid config fields preserved.",
+    "Hydrated registry probes union of globally and project-enabled configured instances, clearing both legacy/global false flags in runtime config only; removed ids are not recreated.",
+    "Settings-driven project reconciliation/discovery, per-default probe exclusion/history, disabled discovery/usage/health suppression and last-valid registry configuration on read failure.",
+    "Unsupported driver snapshots explicitly unavailable with source reason, no invented installation/setup.",
+    "Ordinary messages/continuations and staged launch/retry/release share enable policy after receipt lookup; current MCP authority checks still precede receipt replay. Disabled errors preserve project/instance and map to invalid_request for MCP launch/plain/attachment send.",
+    "Project model/title/source-control guards; allowed project setting whitelist preserves global driver configurations and ignores opaque environment-overwrite attempts."
+  ],
+  "evidence": [
+    "Four integration tests: actual compatible-client model catalog/settings, real native Claude/Codex adapter peers, globally disabled/project-enabled execution, other-project and title denial, removal, accepted replay, selected-instance admission and unsupported snapshots.",
+    "One actual HTTP MCP regression for disabled launch/plain/attachment sends, using a real uploaded pending file and asserting no admitted messages.",
+    "Policy matrix exercises source driver defaults, conflicting flags, project overrides/hydration, opaque-field preservation and model override isolation.",
+    "Full suites388 default/385 no-default passed,21 opt-ins ignored each. Final affected regressions146/146 both modes (5 opt-ins ignored each), plus22 default generation/MCP/native-policy tests and final compatible-catalog regression. Strict all-target Clippy both modes, fmt/generated compatibility/nightly monitor9 passed."
+  ],
+  "pending": [
+    "Complete provider catalog and text-generation/custom-model/quota fallback precedence, legacy history-based enable restoration and managed-provider policies.",
+    "Additional ACP/OpenCode/etc providers, forceStopThread, execution-history importer and remaining protocol toolkits/auth/environment.",
+    "Numeric checkout progress/naming outside launch, active cross-instance handoff/transfer/continuations/settlement.",
+    "Latest native recovery/awareness/MCP result images, guest sharing and current reference/UI acceptance."
+  ],
+  "limits": [
+    "Does not certify full provider/catalog or nightly-protocol equivalence.",
+    "No deployment or main promotion; M2 runtime remains untouched."
+  ]
+}

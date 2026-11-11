@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Isolated native desktop management against the embedded bridge (no services)."""
 import json, os, pathlib, subprocess, tempfile, time, urllib.request
-root = pathlib.Path('/var/tmp/o3-build')
+BUILD_ROOT = os.environ.get('O3_BUILD_ROOT') or os.path.expanduser('~/.cache/o3-build')
+os.makedirs(os.path.join(BUILD_ROOT, 'tmp'), exist_ok=True)
+root = pathlib.Path(BUILD_ROOT)
 server = pathlib.Path(os.environ.get('O3_BIN', str(root / 'main/debug/o3-server'))).resolve()
 client = pathlib.Path(os.environ.get('O3_DESKTOP_BIN', str(root / 'main/debug/omarchy-t3-client'))).resolve()
 with tempfile.TemporaryDirectory(prefix='db-', dir=root) as temp:

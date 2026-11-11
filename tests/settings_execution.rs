@@ -30,6 +30,11 @@ fn real_settings_reader_controls_paragraph_and_turn_publication() {
     for mode in ["paragraph", "turn"] {
         let release = Arc::new(tokio::sync::Notify::new());
         let s = support::start(|s| {
+            o3_server::settings::update(
+                s,
+                &json!({"patch":{"providerInstances":{"test":{"driver":"codex","enabled":true}}}}),
+            )
+            .unwrap();
             *s.provider.lock().unwrap() = Some(Arc::new(Stream(release.clone())))
         });
         let c = s.connect();
